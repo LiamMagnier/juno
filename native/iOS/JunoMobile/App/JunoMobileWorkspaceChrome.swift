@@ -49,6 +49,13 @@ struct JunoMobileSegmented<Value: Hashable>: View {
                     Text(option.title)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(selected ? Color.primary : Color.junoMutedForeground)
+                        // A switch that wraps is not a switch. This one is now
+                        // used inside the Code composer, where three options,
+                        // a repository chip and Send share one line on a small
+                        // phone — so the labels give up a little size under
+                        // pressure rather than breaking onto a second row.
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                         .padding(.horizontal, 14)
                         .frame(height: 28)
                         .background {
@@ -238,6 +245,18 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
     var actionImage: String?
     var action: (() -> Void)?
     var footnote: String?
+    /// The section's test identifier, landed on the **header** rather than left
+    /// for the caller to stamp on the whole section.
+    ///
+    /// An identifier on a container is inherited by every descendant and
+    /// overwrites theirs: a section marked `juno.mobile.project-instructions`
+    /// took that identifier all the way down, so its Edit button, its body text
+    /// and the clamp's own "Show all" toggle all reported the section's
+    /// identifier and none reported its own — the toggle simply did not exist to
+    /// find. Naming the header names the section and leaves the controls inside
+    /// it their own names. Same rule as ``JunoMobileSearchView`` and
+    /// ``JunoMobileIncognitoChat``, both of which have been bitten by it.
+    var identifier: String?
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -247,6 +266,7 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier(identifier ?? "")
                 Spacer(minLength: 0)
                 if let action, let actionTitle {
                     Button(action: action) {

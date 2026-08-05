@@ -25,8 +25,7 @@ import SwiftUI
 /// for — All Photos, in the corner, in real glass.
 struct JunoMobilePhotosPanel: View {
     let selectionLimit: Int
-    /// Called as each photo is chosen, so a picked photo is on its way to the
-    /// server before the panel is even closed.
+    /// Called once when the reader confirms the staged selection.
     let onPick: ([PhotosPickerItem]) -> Void
     let close: () -> Void
 
@@ -46,7 +45,7 @@ struct JunoMobilePhotosPanel: View {
                 // heavier moment than it is.
                 Color.black.opacity(0.001)
                     .contentShape(Rectangle())
-                    .onTapGesture(perform: close)
+                    .onTapGesture(perform: dismiss)
                     .accessibilityLabel("attachments.photos.close")
                     .accessibilityAddTraits(.isButton)
 
@@ -70,13 +69,6 @@ struct JunoMobilePhotosPanel: View {
             preferredItemEncoding: .current,
             photoLibrary: .shared()
         )
-        .onChange(of: selection) { _, items in
-            guard !items.isEmpty else { return }
-            // Cleared immediately so choosing the same photo twice still
-            // registers as a change.
-            selection = []
-            onPick(items)
-        }
     }
 
     private func panel(_ metrics: JunoFloatingPanelMetrics) -> some View {
@@ -98,7 +90,11 @@ struct JunoMobilePhotosPanel: View {
             HStack(spacing: 0) {
                 backButton
                 Spacer(minLength: 12)
-                allPhotosButton
+                if selection.isEmpty {
+                    allPhotosButton
+                } else {
+                    confirmButton
+                }
             }
         }
         .padding(.horizontal, JunoFloatingPanelMetrics.chromePadding)
@@ -109,9 +105,8 @@ struct JunoMobilePhotosPanel: View {
         PhotosPicker(
             selection: $selection,
             maxSelectionCount: selectionLimit,
-            // Continuous: with no confirm button there is nothing to press to
-            // finish, so each photo is attached as it is tapped — and the
-            // picker's own checkmarks are what say so.
+            // Keep the picker in multi-select mode; Juno commits the bound
+            // selection explicitly with the glass checkmark below.
             selectionBehavior: .continuousAndOrdered,
             // Images only: the server's accepted set is images and documents, so
             // offering video would mean letting someone choose a file that can
@@ -139,7 +134,7 @@ struct JunoMobilePhotosPanel: View {
 
     /// Out, without choosing anything.
     private var backButton: some View {
-        Button(action: close) {
+        Button(action: dismiss) {
             Image(systemName: "chevron.left")
                 .font(.system(size: 19, weight: .semibold))
                 .foregroundStyle(.white)
@@ -173,6 +168,35 @@ struct JunoMobilePhotosPanel: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("juno.mobile.photos-all")
+    }
+
+    /// Confirm the staged selection and return to the composer. The selected
+    /// assets are handed to the attachment coordinator only at this point.
+    private var confirmButton: some View {
+        Button(action: confirmSelection) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 19, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 52, height: 52)
+                .junoGlass(in: Circle(), interactive: true)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Confirm photo selection")
+        .accessibilityIdentifier("juno.mobile.photos-confirm")
+    }
+
+    private func dismiss() {
+        selection = []
+        showingFullLibrary = false
+        close()
+    }
+
+    private func confirmSelection() {
+        guard !selection.isEmpty else { return }
+        let selected = selection
+        onPick(selected)
+        dismiss()
     }
 }
 

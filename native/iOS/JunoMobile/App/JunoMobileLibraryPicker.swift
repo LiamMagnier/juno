@@ -43,7 +43,7 @@ struct JunoMobileLibraryPicker: View {
     var body: some View {
         NavigationStack {
             content
-                .background(Color.junoCanvas)
+                .junoScreenCanvas()
                 .navigationTitle("attachments.library")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {

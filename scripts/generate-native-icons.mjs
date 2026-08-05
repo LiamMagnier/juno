@@ -26,15 +26,25 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const lucideDir = join(root, "node_modules/lucide-react/dist/esm/icons");
 
 /**
- * Name -> Lucide icon file, mirroring `src/lib/app-icons.ts` exactly: the first
- * group is `AppIcons` (destinations), the second is `CodeIcons` (the things
- * Juno Code talks about). Adding a mark means adding it in both places — the
- * asset name is `nav-<key>` throughout, including for the code group, because
- * the prefix is only a flat namespace inside the catalog and renaming the
- * existing eleven would be churn for nothing.
+ * Name -> Lucide icon file. The first group mirrors `src/lib/app-icons.ts`
+ * exactly — `AppIcons` (destinations), then `CodeIcons` (the things Juno Code
+ * talks about) — and adding a mark there means adding it here too. The asset
+ * name is `nav-<key>` throughout, including for the code group, because the
+ * prefix is only a flat namespace inside the catalog and renaming the existing
+ * eleven would be churn for nothing.
+ *
+ * The last group is the marks native needs that no `app-icons.ts` row covers,
+ * because the web draws them somewhere that isn't a destination list. Each
+ * still names its web source below rather than being chosen here: a glyph
+ * invented for native is the drift this file exists to prevent.
+ *
+ * Every key must match a `JunoIcon` case in JunoBrand.swift, whose `assetName`
+ * is `nav-<rawValue>` — a key with no case is a dead asset, and a case with no
+ * key renders as empty space with no error.
  */
 const ICONS = {
   home: "home",
+  work: "briefcase",
   code: "code-2",
   library: "library",
   artifacts: "layers-3",
@@ -56,6 +66,24 @@ const ICONS = {
   refresh: "refresh-cw",
   external: "arrow-up-right",
   file: "file-text",
+
+  // Settings is reached from the user menu rather than the rail, so it has no
+  // row in `AppIcons` — `src/components/app/user-menu.tsx` is its source.
+  settings: "settings",
+
+  // The composer's "+" menu, from `src/components/chat/composer.tsx`: what it
+  // adds to a message, then the tools it arms. `canvas` is the "Create a
+  // canvas" action and `artifactsTool` the "Canvas & artifacts" toggle — two
+  // rows, two marks on the web, so two here. Connectors is not listed: that
+  // row draws Plug, which `connections` above already generates.
+  attach: "paperclip",
+  photos: "image-plus",
+  files: "file-up",
+  canvas: "square-pen",
+  research: "telescope",
+  web: "globe",
+  artifactsTool: "layout-template",
+  memory: "notebook-pen",
 };
 
 const TARGETS = [
@@ -137,4 +165,4 @@ for (const target of TARGETS) {
 }
 
 console.log(`Generated ${count} navigation icons across ${TARGETS.length} asset catalogs.`);
-console.log(`Source: lucide-react (ISC) via src/lib/app-icons.ts`);
+console.log(`Source: lucide-react (ISC), mirroring the marks the web already draws.`);

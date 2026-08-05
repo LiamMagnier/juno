@@ -1,3 +1,5 @@
+import SwiftUI
+
 /// The two pure inputs the composer aura is driven by: what colour a lab's
 /// light is, and how much of it a thinking level earns.
 ///

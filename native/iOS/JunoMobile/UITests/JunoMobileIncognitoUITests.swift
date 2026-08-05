@@ -84,12 +84,24 @@ final class JunoMobileIncognitoUITests: XCTestCase {
         )
         ghost.tap()
 
-        let close = app.buttons["juno.mobile.incognito-close"]
+        // The filled ghost in the toolbar IS the way out, and it carries the
+        // mode's own identifier: an identifier on the incognito container would
+        // be inherited by the composer and Send and shadow theirs, so the screen
+        // is named by this control rather than by a wrapper. There is no separate
+        // close button to look for.
+        let close = app.buttons["juno.mobile.incognito"]
         XCTAssertTrue(
             close.waitForExistence(timeout: 10),
             "No way to leave incognito. On screen:\n\(app.debugDescription)"
         )
         close.tap()
+
+        // The behaviour under test, stated directly: an empty session asks
+        // nothing before it goes.
+        XCTAssertFalse(
+            app.staticTexts["End this incognito chat?"].waitForExistence(timeout: 2),
+            "An empty incognito session asked for confirmation before closing."
+        )
 
         let gone = expectation(
             for: NSPredicate(format: "exists == false"),

@@ -304,6 +304,7 @@ final class CodePreviewHarnessTests: XCTestCase {
         var channels: Set<ToolOutputChannel> = []
         var decisions: Set<ApprovalDecision> = []
         var risks: Set<ActionRisk> = []
+        var subagentStatuses: Set<SubagentStatus> = []
         var payloadKinds: Set<String> = []
         var sawPendingApproval = false
         var sawRunningTool = false
@@ -361,6 +362,9 @@ final class CodePreviewHarnessTests: XCTestCase {
                     payloadKinds.insert("testRunCompleted")
                     sawPassingTests = sawPassingTests || run.passed
                     sawFailingTests = sawFailingTests || !run.passed
+                case let .subagentUpdated(update):
+                    payloadKinds.insert("subagentUpdated")
+                    subagentStatuses.insert(update.status)
                 case .goalUpdated: payloadKinds.insert("goalUpdated")
                 case .statusChanged: payloadKinds.insert("statusChanged")
                 case let .errorOccurred(error):
@@ -407,11 +411,23 @@ final class CodePreviewHarnessTests: XCTestCase {
         XCTAssertTrue(sawConflictedGit, "a conflicted Git status")
         XCTAssertTrue(sawCleanGit, "a clean Git status")
 
+        // Both halves of the Sub-agents pane must be inspectable, or the sweep
+        // proves nothing about the Active/Done split or the live elapsed timer.
+        XCTAssertTrue(
+            subagentStatuses.contains(.running),
+            "a running sub-agent must appear so the Active section and its timer are inspectable"
+        )
+        XCTAssertTrue(
+            subagentStatuses.contains(.completed),
+            "a finished sub-agent must appear so the Done section is inspectable"
+        )
+
         for kind in ["sessionCreated", "turnConfiguration", "userPrompt",
                      "assistantMessage", "reasoningSummary",
                      "toolProposed", "toolStarted", "toolOutput", "toolCompleted",
                      "approvalRequested", "approvalResolved", "fileChanged",
-                     "testRunCompleted", "errorOccurred", "runCompleted"] {
+                     "testRunCompleted", "subagentUpdated", "errorOccurred",
+                     "runCompleted"] {
             XCTAssertTrue(payloadKinds.contains(kind), "no fixture renders \(kind)")
         }
     }

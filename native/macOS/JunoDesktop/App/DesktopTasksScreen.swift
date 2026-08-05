@@ -269,11 +269,15 @@ struct DesktopTasksScreen: View {
     @ViewBuilder
     private var emptyState: some View {
         let message = "Juno can run a prompt for you every morning — a news brief, a metrics check, a language lesson."
+        // The destination's own mark rather than SF's `clock`. The web draws no
+        // glyph in this state at all, so there is nothing to copy — but a page
+        // whose sidebar row is a Lucide calendar-clock should not name itself
+        // with a borrowed one when its empty state is the only picture on it.
         if canCreate {
             JunoEmptyState(
                 title: "Nothing scheduled",
                 message: message,
-                symbol: "clock",
+                icon: .tasks,
                 actionLabel: "New Task",
                 action: newTask
             )
@@ -283,7 +287,7 @@ struct DesktopTasksScreen: View {
                 message: modelOptions.isEmpty
                     ? "No model is available to schedule against yet."
                     : message,
-                symbol: "clock"
+                icon: .tasks
             )
         }
     }
@@ -391,6 +395,12 @@ struct DesktopTasksScreen: View {
             .width(min: 160, ideal: 260)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
+        // The selected row in the web's warm grey rather than the app accent,
+        // which is what macOS paints a focused table selection with. It has to
+        // sit *below* the row switch's own `.tint(Color.junoAccent)` in the
+        // hierarchy — a tint set inside a cell wins over the table's — which is
+        // why the switch stays coral while the row behind it goes grey.
+        .junoSidebarSelectionTint()
         .contextMenu(forSelectionType: NativeScheduledTask.ID.self) { ids in
             if let target = model.task(withID: ids.first) {
                 rowMenu(for: target)
@@ -1074,10 +1084,15 @@ private struct TaskStatusLine {
 private extension NativeScheduledTask {
     var statusLine: TaskStatusLine {
         if let run = latestRun, run.isRunning {
+            // Muted, not coral. The web's `StatusLine` sets every state but a
+            // failure in `text-muted-foreground`, running included
+            // (`task-card.tsx:38-40`) — the ellipsis is what says it is live.
+            // Colouring it accent made a running task read as the page's primary
+            // action rather than as a fact about a row.
             return TaskStatusLine(
                 text: "Running now…",
                 symbol: "circle.dotted",
-                tint: .junoAccent,
+                tint: .junoMutedForeground,
                 help: "A run started \(run.startedAt.formatted(date: .abbreviated, time: .shortened))."
             )
         }

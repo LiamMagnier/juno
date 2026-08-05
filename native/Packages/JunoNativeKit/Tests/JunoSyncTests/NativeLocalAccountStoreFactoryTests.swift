@@ -98,6 +98,136 @@ final class NativeLocalAccountStoreFactoryTests: XCTestCase {
             )
         }
         XCTAssertEqual(keychain.insertCount, 0)
+        // The archive-and-recreate path is reachable ONLY through
+        // `recoverAndOpenRepository`. The launch path still refuses, because a
+        // Keychain read that fails for a reason nobody has diagnosed yet must
+        // not cost the user their database.
+        XCTAssertEqual(
+            FileManager.default.contents(atPath: location.databaseURL.path),
+            Data("existing".utf8)
+        )
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(
+                atPath: location.directoryURL.path
+            ),
+            ["accounts.sqlite3"]
+        )
+    }
+
+    func testRecoveryArchivesTheUnreadableDatabaseAndOpensAFreshOne() async throws {
+        let location = try FactoryDatabaseLocation()
+        defer { location.remove() }
+        let manager = FileManager.default
+        let stranded = Data("stranded".utf8)
+        XCTAssertTrue(
+            manager.createFile(atPath: location.databaseURL.path, contents: stranded)
+        )
+        // SQLite leaves both of these beside the database in WAL mode, and a
+        // replay of either into the new store would be a decryption failure.
+        for suffix in ["-wal", "-shm"] {
+            XCTAssertTrue(
+                manager.createFile(
+                    atPath: location.databaseURL.path + suffix,
+                    contents: Data(suffix.utf8)
+                )
+            )
+        }
+        let keychain = AtomicKeychainClient()
+
+        let recovery = try NativeLocalAccountStoreFactory(
+            databaseURL: location.databaseURL,
+            securityClient: keychain,
+            randomGenerator: FixedSecureRandom(byte: 0x54)
+        ).recoverAndOpenRepository()
+
+        let archived = try XCTUnwrap(recovery.archivedDatabaseURL)
+        XCTAssertEqual(
+            archived.deletingLastPathComponent().path,
+            location.directoryURL.path
+        )
+        XCTAssertNotEqual(archived.path, location.databaseURL.path)
+        XCTAssertEqual(manager.contents(atPath: archived.path), stranded)
+        for suffix in ["-wal", "-shm"] {
+            XCTAssertFalse(
+                manager.fileExists(atPath: location.databaseURL.path + suffix)
+            )
+            XCTAssertEqual(
+                manager.contents(atPath: archived.path + suffix),
+                Data(suffix.utf8)
+            )
+        }
+
+        XCTAssertEqual(keychain.insertCount, 1)
+        XCTAssertEqual(
+            keychain.data(for: NativeLocalAccountStoreFactory.encryptionKeyItem),
+            Data(repeating: 0x54, count: 32)
+        )
+        let accountID = StorageAccountID("account-a")
+        let snapshot = try await recovery.repository.snapshot(for: accountID)
+        XCTAssertTrue(snapshot.records.isEmpty)
+        try await recovery.repository.close()
+    }
+
+    func testRecoveryMovesNothingWhenThereIsNoDatabase() async throws {
+        let location = try FactoryDatabaseLocation()
+        defer { location.remove() }
+        let keychain = AtomicKeychainClient()
+
+        let recovery = try NativeLocalAccountStoreFactory(
+            databaseURL: location.databaseURL,
+            securityClient: keychain,
+            randomGenerator: FixedSecureRandom(byte: 0x55)
+        ).recoverAndOpenRepository()
+
+        XCTAssertNil(recovery.archivedDatabaseURL)
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(
+                atPath: location.directoryURL.path
+            ).filter { $0.contains("unreadable") },
+            []
+        )
+        XCTAssertEqual(keychain.insertCount, 1)
+        try await recovery.repository.close()
+    }
+
+    /// The recovery is destructive enough that a stale button press must not be
+    /// able to trigger it: the keychain client falls back to the legacy macOS
+    /// keychain on `errSecMissingEntitlement`, so the key can come back between
+    /// the failed launch and the user clicking.
+    func testRecoveryLeavesAReadableDatabaseAloneWhenTheKeyIsPresent() async throws {
+        let location = try FactoryDatabaseLocation()
+        defer { location.remove() }
+        let keychain = AtomicKeychainClient()
+        let accountID = StorageAccountID("account-a")
+        let recordKey = RecordKey(namespace: "conversation", id: "conversation-1")
+        let record = StoredRecord(
+            accountID: accountID,
+            key: recordKey,
+            revision: 1,
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            payload: Data("encrypted-record".utf8)
+        )
+        let original = try NativeLocalAccountStoreFactory(
+            databaseURL: location.databaseURL,
+            securityClient: keychain,
+            randomGenerator: FixedSecureRandom(byte: 0x56)
+        ).openRepository()
+        _ = try await original.apply(
+            StorageTransaction(accountID: accountID, operations: [.upsert(record)])
+        )
+        try await original.close()
+
+        let recovery = try NativeLocalAccountStoreFactory(
+            databaseURL: location.databaseURL,
+            securityClient: keychain,
+            randomGenerator: FixedSecureRandom(byte: 0x57)
+        ).recoverAndOpenRepository()
+
+        XCTAssertNil(recovery.archivedDatabaseURL)
+        let snapshot = try await recovery.repository.snapshot(for: accountID)
+        XCTAssertEqual(snapshot.records[recordKey], record)
+        XCTAssertEqual(keychain.insertCount, 1)
+        try await recovery.repository.close()
     }
 
     func testRepositoryPurgerUsesOnlyTheRequestedAccountPartition() async throws {

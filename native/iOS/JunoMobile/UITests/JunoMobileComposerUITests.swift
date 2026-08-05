@@ -184,6 +184,27 @@ final class JunoMobileComposerUITests: XCTestCase {
         XCTAssertFalse(thinkingSlider(app).waitForExistence(timeout: 2))
     }
 
+    /// The whole capsule opens the picker, not just the word printed on it.
+    ///
+    /// The chip was untappable at its own centre. Liquid Glass is drawn by the
+    /// system rather than by content of ours, so with no declared hit shape the
+    /// only touchable parts of a 56pt capsule were the glyphs inside it — a live
+    /// band about 13pt wide — and the chip's centre, pushed rightwards by the
+    /// chevron, sat in the gap beside it. Three tests failed on `chip.tap()`
+    /// while the control looked perfectly ordinary in a screenshot.
+    ///
+    /// Aimed at 85% across on purpose: that is over the chevron, in the dead
+    /// zone, and a plain centre tap would not notice the defect coming back.
+    @MainActor
+    func testTappingTheThinkingChipOverItsChevronOpensThePicker() {
+        let app = launch(["--juno-preview-model", "openai:gpt-5-6"])
+
+        let chip = thinkingChip(app)
+        require(chip, app)
+        chip.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)).tap()
+        require(thinkingSlider(app), app, timeout: 5)
+    }
+
     /// A menu row, however this OS chooses to expose one. Menus have reported
     /// their rows as buttons and as static text across releases, and a lookup
     /// that guesses wrong fails identically to a menu that never opened.

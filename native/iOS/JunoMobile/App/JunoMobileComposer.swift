@@ -62,6 +62,15 @@ struct JunoMobileComposer: View {
     /// occupies a strip at the bottom of it. See ``auraLayer``.
     var chatColumnHeight: CGFloat = 0
     var composerFocused: FocusState<Bool>.Binding
+    /// The swell an accepted send fires, owned by the screen because the light it
+    /// drives is not always behind this view — see ``JunoMobileSendSwell``.
+    var sendSwell: JunoMobileSendSwell
+    /// True while the screen is showing its greeting.
+    ///
+    /// The bloom moves there when it is: the web lights the greeting and the
+    /// composer with one element, and a second instance here would double every
+    /// alpha in the ramp. See ``auraLayer`` and ``JunoMobileGreeting``.
+    var greetingVisible: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -78,9 +87,6 @@ struct JunoMobileComposer: View {
     /// Why the last spoken turn was refused. Shown in the same notice row as the
     /// attachment errors, because it is the same kind of news.
     @State private var voiceTurnError: String?
-    /// Drives ``JunoComposerAura``'s swell. See ``fireSendSwell()``.
-    @State private var sendSwell = false
-    @State private var sendSwellReset: Task<Void, Never>?
     /// Whether Dictate Mode has taken over the composer.
     @State private var dictating = false
     /// Whether a very large draft has been opened back up for editing. Huge
@@ -336,12 +342,20 @@ struct JunoMobileComposer: View {
 
     // MARK: Aura
 
-    /// The two auras, which are mutually exclusive on purpose.
+    /// The two auras, which are mutually exclusive on purpose — and, once there
+    /// is a greeting on screen, neither.
     ///
     /// A call replaces the composer's bloom with the voice field for its whole
     /// duration — the web makes the same swap, and for the same reason: two
     /// lights under one capsule read as a bug, and while someone is talking the
     /// thing worth reporting is the conversation, not which model is selected.
+    ///
+    /// The greeting takes it on the same terms. There is exactly one bloom in
+    /// the browser and it is tall enough to light both the sentence and the
+    /// capsule from one place; a SwiftUI background is sized by its host, so
+    /// native gets the same result by *moving* the mount rather than by adding a
+    /// second one — see ``JunoMobileGreeting``. That is what ``greetingVisible``
+    /// decides, and why this view draws nothing at all on an empty screen.
     ///
     /// **The voice field is scoped to the column but mounted here, and that is a
     /// choice rather than an accident.** On the web the field is a sibling of the
@@ -368,26 +382,20 @@ struct JunoMobileComposer: View {
                 controller: voiceSession.controller,
                 columnHeight: chatColumnHeight
             )
-        } else {
-            JunoComposerAura(
-                // The lab's own light, or the account's accent for a model this
-                // client has never heard of — ``JunoProviderGlow/glow(providerID:dark:)``
-                // makes that call, matching the web's `--aura-provider` fallback.
-                tint: JunoProviderGlow.glow(
-                    providerID: selectedModel?.providerID ?? "",
-                    dark: colorScheme == .dark
-                ),
-                // Gated on whether a thinking control is actually on screen,
-                // which is the composer's own test below — not on whether the
-                // model reasons. Models that reason without exposing tiers would
-                // otherwise burn at the dimmest end with no slider anywhere to
-                // explain why.
-                think: JunoProviderGlow.auraThink(
-                    effort: reasoningEffort?.rawValue,
-                    hasEffortControl: thinkingScale?.isPresentable ?? false
-                ),
-                focused: composerFocused.wrappedValue,
-                sending: sendSwell,
+        } else if !greetingVisible {
+            // Only when nothing else is holding it. On an empty screen the
+            // greeting carries the undocked bloom instead, because that is where
+            // the web's one 32rem-tall element actually lands — see
+            // ``JunoMobileGreeting``. Mounting it in both places would double
+            // every alpha in the ramp.
+            //
+            // Through ``JunoMobileAuraLayer`` rather than straight into
+            // `JunoComposerAura`: this bloom is regularly *born* with the send
+            // already in flight — sending the first message is what takes the
+            // greeting away and puts this one on screen — and an aura born hot
+            // never sees the rising edge its swell needs.
+            JunoMobileAuraLayer(
+                light: light,
                 // The dialled-down variant inside a conversation: there are
                 // messages above it to stay out of the way of.
                 docked: conversation != nil
@@ -395,22 +403,17 @@ struct JunoMobileComposer: View {
         }
     }
 
-    /// One swell on an accepted send, cleared on a timer.
-    ///
-    /// A timer and **not** an animation-completion callback. The website hit
-    /// exactly this bug: it drove the swell from a CSS class and removed it on
-    /// `animationend`, and under `prefers-reduced-motion` the keyframes are
-    /// switched off — so the event never arrived and the class stuck for the
-    /// rest of the session. A timer fires whether or not anything animated,
-    /// which is the property that matters.
-    private func fireSendSwell() {
-        sendSwellReset?.cancel()
-        sendSwell = true
-        sendSwellReset = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1150))
-            guard !Task.isCancelled else { return }
-            sendSwell = false
-        }
+    /// The bloom's inputs, in the one form the greeting reads them too, so the
+    /// two mount points cannot describe different light.
+    private var light: JunoMobileAuraLight {
+        JunoMobileAuraLight(
+            model: selectedModel,
+            effort: reasoningEffort,
+            focused: composerFocused.wrappedValue,
+            sending: sendSwell.active,
+            viewport: chatColumnHeight,
+            dark: colorScheme == .dark
+        )
     }
 
     /// The quiet offer under a long draft: "That's a long one — attach it as a
@@ -664,12 +667,12 @@ struct JunoMobileComposer: View {
                 Button {
                     open(.photos)
                 } label: {
-                    Label("attachments.photos", systemImage: "photo")
+                    JunoIconLabel("attachments.photos", icon: .photos)
                 }
                 .disabled(!canAttachInVoice)
 
                 Button {} label: {
-                    Label("composer.voice.files-chat-only", systemImage: "paperclip")
+                    JunoIconLabel("composer.voice.files-chat-only", icon: .files)
                 }
                 .disabled(true)
             }
@@ -927,7 +930,7 @@ struct JunoMobileComposer: View {
             sendVoiceTurn(voiceSession)
             return
         }
-        fireSendSwell()
+        sendSwell.fire()
         let attachmentIDs = attachmentModel?.uploadedIDs ?? []
         // Read the tools once, here, and let the read disarm research. Reading
         // them again inside `deliver` would mean a draft's send resolved them
@@ -1027,7 +1030,16 @@ struct JunoMobileComposer: View {
         // bytes only ever existed on the server — neither can be shown to a
         // model over this socket, so the turn is refused rather than silently
         // sent without them.
-        let images = staged.compactMap(\.previewData)
+        //
+        // The uploaded id rides along where there is one, and nil where the
+        // upload has not landed yet — see ``JunoVoiceTurnImage``. Waiting for it
+        // would hold a spoken turn on a network round trip the model does not
+        // need.
+        let images = staged.compactMap { attachment in
+            attachment.previewData.map {
+                JunoVoiceTurnImage(jpeg: $0, attachmentID: attachment.uploadedID)
+            }
+        }
         guard images.count == staged.count else {
             voiceTurnError = String(localized: "composer.voice.images-only")
             return
@@ -1037,7 +1049,7 @@ struct JunoMobileComposer: View {
             return
         }
 
-        fireSendSwell()
+        sendSwell.fire()
         let text = prompt
         isSendingVoiceTurn = true
         Task {

@@ -147,17 +147,66 @@ final class CodeThinkingWireTests: XCTestCase {
         }
     }
 
-    /// Anthropic gets neither `thinking` nor `output_config`, and the ceiling is
-    /// left alone — the headroom only exists to pay for thinking tokens.
-    func testNoDepthSendsNoAnthropicThinkingAndDoesNotRaiseTheCeiling() {
+    /// Anthropic gets no `output_config` and the ceiling is left alone — the
+    /// headroom only exists to pay for thinking tokens.
+    ///
+    /// `thinking` is the exception, and used to be asserted nil here. Sonnet 5
+    /// is adaptive and reasons when the field is OMITTED, so "no thinking" has
+    /// to be said out loud or the user pays for reasoning they turned off.
+    func testNoDepthDisablesAdaptiveThinkingAndDoesNotRaiseTheCeiling() {
         let bits = CodeThinkingWire.anthropicBits(
             providerModelID: "claude-sonnet-5",
             maxTokens: 8_192,
             effort: nil
         )
-        XCTAssertNil(bits.thinking)
+        XCTAssertEqual(bits.thinking, .object(["type": .string("disabled")]))
         XCTAssertNil(bits.outputConfig)
         XCTAssertEqual(bits.maxTokens, 8_192)
+    }
+
+    /// Only the models that reason by default get an explicit disable. Opus
+    /// 4.7/4.8 default OFF when omitted, and Fable/Mythos are always-on and
+    /// REJECT `disabled` — sending it would 400 them.
+    func testOnlyDefaultOnAdaptiveModelsAreExplicitlyDisabled() {
+        for model in ["claude-opus-4-8", "claude-fable-5", "claude-mythos-1"] {
+            XCTAssertNil(
+                CodeThinkingWire.anthropicBits(
+                    providerModelID: model, maxTokens: 8_192, effort: nil
+                ).thinking,
+                "\(model) must not be sent an explicit disable"
+            )
+        }
+        // Manual-thinking families were never affected: omitting `thinking` is
+        // genuinely off for them.
+        XCTAssertNil(
+            CodeThinkingWire.anthropicBits(
+                providerModelID: "claude-haiku-4-5", maxTokens: 8_192, effort: nil
+            ).thinking
+        )
+    }
+
+    /// GPT-5.5/5.6 default to `medium` when reasoning_effort is absent, so "Off"
+    /// has to be sent as "none" rather than omitted.
+    func testNoDepthSendsNoneToTheOpenAIModelsThatDefaultToThinking() {
+        for model in ["gpt-5.5", "gpt-5.6", "gpt-5.6-sol"] {
+            XCTAssertEqual(
+                CodeThinkingWire.chatParameters(
+                    providerID: "openai", providerModelID: model, effort: nil
+                )["reasoning_effort"],
+                .string("none"),
+                "\(model) must be told not to think"
+            )
+        }
+        // gpt-5-pro always reasons and the original gpt-5 predates "none";
+        // sending it to either is a 400, not a faster answer.
+        for model in ["gpt-5-pro", "gpt-5", "gpt-4o"] {
+            XCTAssertTrue(
+                CodeThinkingWire.chatParameters(
+                    providerID: "openai", providerModelID: model, effort: nil
+                ).isEmpty,
+                "\(model) must receive nothing"
+            )
+        }
     }
 
     /// The Responses body omits the whole `reasoning` object.

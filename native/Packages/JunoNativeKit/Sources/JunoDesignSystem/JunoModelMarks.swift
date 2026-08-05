@@ -349,6 +349,11 @@ public struct JunoModelSpecSheet: View {
                 if let reason = model.unavailabilityReason {
                     detailLine("Availability", reason)
                 }
+                // Before the note, because the date is the part a person acts
+                // on: the note is prose that repeats it in a sentence.
+                if let retires = model.retiresOn.flatMap(JunoModelFormatting.retirementDate) {
+                    detailLine("Available until", retires)
+                }
                 if let note = model.deprecationNote {
                     detailLine("Note", note)
                 }

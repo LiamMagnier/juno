@@ -64,17 +64,191 @@ public protocol SecurityKeychainClient: Sendable {
     func delete(_ item: SecurityKeychainItem) throws -> Bool
 }
 
+#if os(macOS)
+/// Whether this process may use the macOS data-protection keychain at all.
+///
+/// It is not always allowed to. The data-protection keychain requires the caller
+/// to carry an `application-identifier` entitlement, and on macOS that entitlement
+/// arrives only in an embedded provisioning profile. A build signed for
+/// development and exported without one — which is exactly what
+/// `native/Scripts/release-macos.sh` produces when no Developer ID certificate is
+/// installed — has no such profile, so every query returns
+/// `errSecMissingEntitlement` and the app cannot read its own tokens or its
+/// database key. Juno 0.4.0 shipped that way and could not get past sign-in.
+///
+/// So the attribute is treated as an optimisation rather than a requirement:
+/// asked for, and abandoned for the life of the process the first time macOS
+/// says no. Properly provisioned builds keep the stronger store and the
+/// protection class that goes with it; the rest fall back to the file-based
+/// keychain, which is where every Juno release before 0.4.0 kept these items
+/// anyway. The alternative — failing closed — locks the user out of an app whose
+/// secrets are sitting readable on the same disk either way.
+///
+/// One latch per process, not per call: the answer depends on the code signature,
+/// which cannot change while the app is running, and re-asking would spend a
+/// failed Security round trip on every read.
+private final class DataProtectionKeychainGate: @unchecked Sendable {
+    static let shared = DataProtectionKeychainGate()
+
+    private let lock = NSLock()
+    private var available = true
+
+    var isAvailable: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return available
+    }
+
+    /// - Returns: true the first time, so exactly one caller retries.
+    func markUnavailable() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard available else { return false }
+        available = false
+        return true
+    }
+}
+#endif
+
 /// Stores generic-password items locally on this Apple device. Keychain syncing is disabled.
 public struct SystemSecurityKeychainClient: SecurityKeychainClient {
     public init() {}
 
-    public func read(_ item: SecurityKeychainItem) throws -> Data? {
-        var query = baseQuery(for: item)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
+    /// Legacy Keychain migration is safe only for a provisioned macOS build.
+    /// An ad-hoc build can see the old item but cannot decrypt it, and the
+    /// synchronous Security call may wait forever for an entitlement-owned
+    /// credential prompt. The data-protection query still runs and reports the
+    /// normal Keychain failure; we simply do not make a second blocking legacy
+    /// query in that build.
+    private var canMigrateLegacyKeychain: Bool {
+        #if os(macOS)
+        let profile = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/embedded.provisionprofile")
+        return FileManager.default.fileExists(atPath: profile.path)
+        #else
+        return false
+        #endif
+    }
 
+    /// Runs a Security call, and runs it once more against the file-based
+    /// keychain if macOS answers that this build is not entitled to the
+    /// data-protection one.
+    ///
+    /// The query is rebuilt inside the closure rather than passed in, because the
+    /// retry has to pick up the flipped gate — a dictionary built before the
+    /// first attempt still carries `kSecUseDataProtectionKeychain: true` and
+    /// would fail identically.
+    private func withKeychainFallback(_ operation: () -> OSStatus) -> OSStatus {
+        let status = operation()
+        #if os(macOS)
+        guard status == errSecMissingEntitlement,
+              DataProtectionKeychainGate.shared.markUnavailable()
+        else { return status }
+        return operation()
+        #else
+        return status
+        #endif
+    }
+
+    public func read(_ item: SecurityKeychainItem) throws -> Data? {
+        if let data = try copyValue(for: item, dataProtection: true) {
+            return data
+        }
+        return try migrateLegacyItem(item)
+    }
+
+    public func upsert(_ data: Data, for item: SecurityKeychainItem) throws {
+        // Clear any legacy copy first, so the value this call writes is the only
+        // one left on disk rather than shadowing a stale readable token.
+        _ = try migrateLegacyItem(item)
+        let addStatus = withKeychainFallback {
+            SecItemAdd(newItemAttributes(data, for: item) as CFDictionary, nil)
+        }
+        guard addStatus == errSecDuplicateItem else {
+            guard addStatus == errSecSuccess else {
+                throw SecurityKeychainClientError.unexpectedStatus(Int32(addStatus))
+            }
+            return
+        }
+
+        let updates: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String:
+                kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        let updateStatus = withKeychainFallback {
+            SecItemUpdate(
+                baseQuery(for: item) as CFDictionary,
+                updates as CFDictionary
+            )
+        }
+        guard updateStatus == errSecSuccess else {
+            throw SecurityKeychainClientError.unexpectedStatus(Int32(updateStatus))
+        }
+    }
+
+    public func insertIfAbsent(
+        _ data: Data,
+        for item: SecurityKeychainItem
+    ) throws -> Bool {
+        // An item that exists only in the legacy keychain is still PRESENT. Miss
+        // that and this returns true for "inserted", which is how a freshly
+        // generated database key would come to replace the one the existing
+        // store was encrypted with.
+        if try migrateLegacyItem(item) != nil { return false }
+        let status = withKeychainFallback {
+            SecItemAdd(newItemAttributes(data, for: item) as CFDictionary, nil)
+        }
+        switch status {
+        case errSecSuccess:
+            return true
+        case errSecDuplicateItem:
+            return false
+        default:
+            throw SecurityKeychainClientError.unexpectedStatus(Int32(status))
+        }
+    }
+
+    public func delete(_ item: SecurityKeychainItem) throws -> Bool {
+        var removed = try remove(item, dataProtection: true)
+        // Sign-out has to clear the legacy copy too, or the token it was asked
+        // to destroy stays readable on disk.
+        if canMigrateLegacyKeychain,
+            try remove(item, dataProtection: false)
+        {
+            removed = true
+        }
+        return removed
+    }
+
+    private func remove(
+        _ item: SecurityKeychainItem,
+        dataProtection: Bool
+    ) throws -> Bool {
+        let status = withKeychainFallback {
+            SecItemDelete(baseQuery(for: item, dataProtection: dataProtection) as CFDictionary)
+        }
+        switch status {
+        case errSecSuccess:
+            return true
+        case errSecItemNotFound:
+            return false
+        default:
+            throw SecurityKeychainClientError.unexpectedStatus(Int32(status))
+        }
+    }
+
+    private func copyValue(
+        for item: SecurityKeychainItem,
+        dataProtection: Bool
+    ) throws -> Data? {
         var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        let status = withKeychainFallback {
+            var query = baseQuery(for: item, dataProtection: dataProtection)
+            query[kSecReturnData as String] = true
+            query[kSecMatchLimit as String] = kSecMatchLimitOne
+            return SecItemCopyMatching(query as CFDictionary, &result)
+        }
         switch status {
         case errSecSuccess:
             guard let data = result as? Data else {
@@ -88,68 +262,73 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         }
     }
 
-    public func upsert(_ data: Data, for item: SecurityKeychainItem) throws {
-        let attributes = newItemAttributes(data, for: item)
-
-        let addStatus = SecItemAdd(attributes as CFDictionary, nil)
-        guard addStatus == errSecDuplicateItem else {
-            guard addStatus == errSecSuccess else {
-                throw SecurityKeychainClientError.unexpectedStatus(Int32(addStatus))
-            }
-            return
+    /// Moves an item written before this client set `kSecUseDataProtectionKeychain`
+    /// out of the legacy keychain, returning its value if there was one.
+    ///
+    /// Without this, turning the attribute on reads as data loss rather than a
+    /// storage change: the old items are still on disk, but a data-protection
+    /// query cannot see them, so every lookup returns "not found". For the auth
+    /// tokens that would be a spurious sign-out. This same client also holds the
+    /// local database encryption key, and a missing key with an existing
+    /// `accounts.sqlite3` is unrecoverable from inside the app — the launch path
+    /// throws `.missingEncryptionKey`, every model comes back nil, and the user
+    /// gets "Juno cannot unlock the existing local account database" with the
+    /// sign-in button hidden.
+    ///
+    /// A no-op on iOS, which has always defaulted to the data-protection keychain.
+    @discardableResult
+    private func migrateLegacyItem(_ item: SecurityKeychainItem) throws -> Data? {
+        #if os(macOS)
+        guard canMigrateLegacyKeychain else { return nil }
+        guard let data = try copyValue(for: item, dataProtection: false) else {
+            return nil
         }
-
-        let updates: [String: Any] = [
-            kSecValueData as String: data,
-            kSecAttrAccessible as String:
-                kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-        ]
-        let updateStatus = SecItemUpdate(
-            baseQuery(for: item) as CFDictionary,
-            updates as CFDictionary
-        )
-        guard updateStatus == errSecSuccess else {
-            throw SecurityKeychainClientError.unexpectedStatus(Int32(updateStatus))
+        // Write the new copy BEFORE dropping the old one. If this is interrupted
+        // in between, the secret is duplicated — recoverable. The other order
+        // destroys it.
+        let status = withKeychainFallback {
+            SecItemAdd(newItemAttributes(data, for: item) as CFDictionary, nil)
         }
-    }
-
-    public func insertIfAbsent(
-        _ data: Data,
-        for item: SecurityKeychainItem
-    ) throws -> Bool {
-        let status = SecItemAdd(
-            newItemAttributes(data, for: item) as CFDictionary,
-            nil
-        )
-        switch status {
-        case errSecSuccess:
-            return true
-        case errSecDuplicateItem:
-            return false
-        default:
+        guard status == errSecSuccess || status == errSecDuplicateItem else {
             throw SecurityKeychainClientError.unexpectedStatus(Int32(status))
         }
+        _ = try remove(item, dataProtection: false)
+        return data
+        #else
+        return nil
+        #endif
     }
 
-    public func delete(_ item: SecurityKeychainItem) throws -> Bool {
-        let status = SecItemDelete(baseQuery(for: item) as CFDictionary)
-        switch status {
-        case errSecSuccess:
-            return true
-        case errSecItemNotFound:
-            return false
-        default:
-            throw SecurityKeychainClientError.unexpectedStatus(Int32(status))
-        }
-    }
-
-    private func baseQuery(for item: SecurityKeychainItem) -> [String: Any] {
+    private func baseQuery(
+        for item: SecurityKeychainItem,
+        dataProtection: Bool = true
+    ) -> [String: Any] {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: item.service,
             kSecAttrAccount as String: item.account,
             kSecAttrSynchronizable as String: false,
         ]
+        // Without this, macOS routes these items to the LEGACY file-based
+        // keychain, which ignores kSecAttrAccessible outright — so the
+        // AfterFirstUnlockThisDeviceOnly protection class declared below was
+        // silently doing nothing there, and the bearer tokens it guards were not
+        // protected as the code claimed. iOS already defaults to the
+        // data-protection keychain, so this only changes macOS behaviour.
+        //
+        // It must be on EVERY query, not just writes: the two keychains cannot
+        // see each other's items. `dataProtection: false` is how
+        // `migrateLegacyItem` reaches what previous versions wrote, and is only
+        // ever passed on macOS.
+        #if os(macOS)
+        // Resolved through the gate, so once macOS has said this build is not
+        // entitled to the data-protection keychain every later query — read,
+        // write and delete alike — addresses the same store the fallback wrote to.
+        query[kSecUseDataProtectionKeychain as String] =
+            dataProtection && DataProtectionKeychainGate.shared.isAvailable
+        #else
+        query[kSecUseDataProtectionKeychain as String] = true
+        #endif
         if let accessGroup = item.accessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
@@ -216,20 +395,26 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
     private let securityClient: any SecurityKeychainClient
     private let service: String
     private let accessGroup: String?
+    private let activeAccountHint: any AuthActiveAccountHint
 
     public init(
         accessGroup: String? = nil,
-        securityClient: any SecurityKeychainClient = SystemSecurityKeychainClient()
+        securityClient: any SecurityKeychainClient = SystemSecurityKeychainClient(),
+        activeAccountHint: any AuthActiveAccountHint =
+            UserDefaultsAuthActiveAccountHint()
     ) {
         service = Self.defaultService
         self.accessGroup = accessGroup
         self.securityClient = securityClient
+        self.activeAccountHint = activeAccountHint
     }
 
     public init(
         service: String,
         accessGroup: String? = nil,
-        securityClient: any SecurityKeychainClient = SystemSecurityKeychainClient()
+        securityClient: any SecurityKeychainClient = SystemSecurityKeychainClient(),
+        activeAccountHint: any AuthActiveAccountHint =
+            UserDefaultsAuthActiveAccountHint()
     ) throws {
         guard !service.isEmpty,
             !service.unicodeScalars.contains(where: {
@@ -242,6 +427,7 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
         self.service = service
         self.accessGroup = accessGroup
         self.securityClient = securityClient
+        self.activeAccountHint = activeAccountHint
     }
 
     public func load(for accountID: AccountID) async throws -> AuthTokenSet? {
@@ -257,15 +443,44 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
 
     /// Restores the account selected by the last successful token installation.
     public func loadActive() async throws -> AuthTokenSet? {
-        let activeItem = activeAccountItem()
-        guard let accountID = try activeAccountID() else {
+        let hintedAccountID = activeAccountHint.load()
+        let keychainAccountID: AccountID?
+        do {
+            keychainAccountID = try readActiveAccountID()
+        } catch {
+            // A bundle replacement can make one Keychain query temporarily
+            // unavailable. The preference contains no secret, so it is safe to
+            // use it as the locator while the token item itself remains the
+            // source of truth.
+            guard hintedAccountID != nil else { throw error }
+            keychainAccountID = nil
+        }
+
+        let accountIDs = [keychainAccountID, hintedAccountID]
+            .compactMap { $0 }
+            .reduce(into: [AccountID]()) { result, accountID in
+                if !result.contains(accountID) { result.append(accountID) }
+            }
+        guard !accountIDs.isEmpty else {
             return nil
         }
-        guard let tokens = try loadStored(for: accountID) else {
-            _ = try securityClient.delete(activeItem)
-            return nil
+
+        for accountID in accountIDs {
+            guard let tokens = try loadStored(for: accountID) else { continue }
+            activeAccountHint.store(accountID)
+            if keychainAccountID != accountID {
+                // Repair the pointer opportunistically. A failed repair must
+                // not turn a successful credential read into a sign-out.
+                try? securityClient.upsert(
+                    Data(accountID.rawValue.utf8),
+                    for: activeAccountItem()
+                )
+            }
+            return tokens
         }
-        return tokens
+
+        clearActiveAccountLocators()
+        return nil
     }
 
     public func storeInitial(_ tokenSet: AuthTokenSet) async throws {
@@ -285,11 +500,13 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
                 Data(tokenSet.accountID.rawValue.utf8),
                 for: activeAccountItem()
             )
+            activeAccountHint.store(tokenSet.accountID)
         } catch {
             _ = try? securityClient.delete(tokenItem)
             if isAccountSwitch {
                 _ = try? securityClient.delete(activeAccountItem())
             }
+            if isAccountSwitch { activeAccountHint.remove() }
             throw error
         }
     }
@@ -330,12 +547,7 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
         guard try securityClient.delete(item(for: accountID)) else {
             return false
         }
-        let activeItem = activeAccountItem()
-        if let activeData = try securityClient.read(activeItem),
-            String(data: activeData, encoding: .utf8) == accountID.rawValue
-        {
-            _ = try securityClient.delete(activeItem)
-        }
+        clearActiveAccountLocators(for: accountID)
         return true
     }
 
@@ -356,15 +568,60 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
     }
 
     private func activeAccountID() throws -> AccountID? {
-        guard let data = try securityClient.read(activeAccountItem()) else {
-            return nil
+        try readActiveAccountID() ?? activeAccountHint.load()
+    }
+
+    /// Reads the current pointer and the service-specific pointer used by
+    /// early native builds. The latter is harmless to keep around and lets an
+    /// update recover a session written by a custom-store build.
+    private func readActiveAccountID() throws -> AccountID? {
+        for item in activeAccountItems() {
+            guard let data = try securityClient.read(item) else { continue }
+            guard let rawValue = String(data: data, encoding: .utf8),
+                let accountID = try? AccountID(rawValue)
+            else {
+                throw KeychainAuthTokenStoreError.malformedData
+            }
+            return accountID
         }
-        guard let rawValue = String(data: data, encoding: .utf8),
-            let accountID = try? AccountID(rawValue)
-        else {
-            throw KeychainAuthTokenStoreError.malformedData
+        return nil
+    }
+
+    private func activeAccountItems() -> [SecurityKeychainItem] {
+        var items = [activeAccountItem()]
+        let historicalService = "\(service).active-account"
+        if historicalService != Self.activeAccountService {
+            items.append(
+                SecurityKeychainItem(
+                    service: historicalService,
+                    account: Self.activeAccountName,
+                    accessGroup: accessGroup
+                )
+            )
         }
-        return accountID
+        return items
+    }
+
+    private func clearActiveAccountLocators(for accountID: AccountID? = nil) {
+        if let accountID {
+            if activeAccountHint.load() == accountID {
+                activeAccountHint.remove()
+            }
+            for item in activeAccountItems() {
+                guard let data = try? securityClient.read(item),
+                    let rawValue = String(data: data, encoding: .utf8),
+                    rawValue == accountID.rawValue
+                else {
+                    continue
+                }
+                _ = try? securityClient.delete(item)
+            }
+            return
+        }
+        for item in activeAccountItems() {
+            _ = try? securityClient.delete(item)
+        }
+        activeAccountHint.remove()
     }
 
     private func encode(_ tokenSet: AuthTokenSet) throws -> Data {

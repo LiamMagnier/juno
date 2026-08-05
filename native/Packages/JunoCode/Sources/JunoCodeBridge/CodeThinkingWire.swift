@@ -128,13 +128,23 @@ public enum CodeThinkingWire {
         effort: ReasoningEffort?
     ) -> AnthropicBits {
         let cap = anthropicOutputCap(providerModelID)
-        // No depth to ask for: send neither `thinking` nor `output_config`, and
-        // leave the ceiling alone. The headroom below only exists to pay for
-        // thinking tokens, so adding it here would just raise the bill.
+        // No depth to ask for.
+        //
+        // Omitting `thinking` is NOT the same as switching it off. An adaptive
+        // model that defaults thinking ON — Sonnet 5 — reasons anyway when the
+        // field is absent, so "Off" was a no-op and the user paid for thinking
+        // tokens they had explicitly declined. Those models need an explicit
+        // `{"type": "disabled"}`; the ones that default off still get nothing,
+        // because Fable/Mythos REJECT being disabled.
+        //
+        // The headroom added below exists only to pay for thinking tokens, so
+        // the ceiling is left alone here either way.
         guard let effort else {
+            let disable = anthropicThinkingKind(providerModelID: providerModelID) == .adaptive
+                && adaptiveDefaultsOn(providerModelID)
             return AnthropicBits(
                 maxTokens: min(maxTokens, cap),
-                thinking: nil,
+                thinking: disable ? .object(["type": .string("disabled")]) : nil,
                 outputConfig: nil
             )
         }
@@ -192,11 +202,35 @@ public enum CodeThinkingWire {
         // publish no tiers and all reject the parameter — `reasoning_effort is not
         // enabled for this model` is a 400, so a session on one of them failed
         // every turn rather than merely thinking at the wrong depth.
-        guard let effort else { return [:] }
-
         let provider = providerID.lowercased()
         let id = providerModelID.lowercased()
         var parameters: [String: JSONValue] = [:]
+
+        // "Off" is a REQUEST, not an omission.
+        //
+        // GPT-5.5/5.6, Gemini and the GLM/Qwen hybrids all think by default when
+        // the parameter is absent, so omitting it made Juno's "Off" silently do
+        // nothing on half the catalog — and the user paid for reasoning tokens
+        // they had turned off. Each provider spells the off-state differently;
+        // this mirrors the website's per-provider rules rather than guessing,
+        // because sending the wrong spelling is a 400, not a slower answer.
+        guard let effort else {
+            if canDisableViaNoneEffort(provider: provider, id: id) {
+                return ["reasoning_effort": .string("none")]
+            }
+            // Everything else keeps sending nothing, deliberately.
+            //
+            // The website decides this per model from its reasoningCaps table
+            // (canDisable), which does not exist on this side. Guessing is not
+            // the safe direction: sending a disable to a model that does not
+            // expose one is not a slower answer, it is
+            // "reasoning_effort is not enabled for this model" — a 400 on every
+            // single turn, which is how the Mistral outage happened. So GLM,
+            // the Qwen hybrids, Kimi and MiniMax still over-think when switched
+            // off, and closing that needs the caps table ported, not a wider
+            // guess here.
+            return [:]
+        }
 
         // Qwen (DashScope) drives thinking with enable_thinking + a token
         // budget, never OpenAI's reasoning_effort — sending both is redundant
@@ -249,6 +283,36 @@ public enum CodeThinkingWire {
         default:
             return false
         }
+    }
+
+    /// Adaptive Claude models that reason when `thinking` is OMITTED, and so
+    /// need an explicit disable to actually stop.
+    ///
+    /// Sonnet 5 defaults on; Opus 4.7/4.8 default off. Fable and Mythos are
+    /// always-on and reject `disabled` outright, which is why they must not be
+    /// listed here.
+    static func adaptiveDefaultsOn(_ providerModelID: String) -> Bool {
+        let id = providerModelID.lowercased()
+        if id.contains("fable") || id.contains("mythos") { return false }
+        return id.contains("sonnet-5")
+    }
+
+    /// True when the model expresses "don't think" as reasoning_effort:"none".
+    ///
+    /// Mirrors canDisableViaNoneEffort in src/lib/openai-compat.ts. The
+    /// exclusions are the load-bearing part: gpt-5-pro always reasons, the
+    /// original gpt-5 predates "none" (its floor is "minimal"), and sending the
+    /// parameter to a Mistral model that does not expose it returns
+    /// "reasoning_effort is not enabled for this model" — a 400 on every turn.
+    static func canDisableViaNoneEffort(provider: String, id: String) -> Bool {
+        // OpenAI only, and only where the website has verified it. Google and
+        // Mistral also accept "none" on SOME models, but both gate it on a
+        // per-model capability this side cannot see, and both 400 the models
+        // that do not expose it.
+        guard provider == "openai" else { return false }
+        if id.contains("-pro") { return false }        // gpt-5-pro always reasons
+        // 5.1+ only; the original gpt-5 predates "none" (its floor is "minimal").
+        return id.range(of: #"gpt-5\.\d"#, options: .regularExpression) != nil
     }
 
     /// The on-state spelling for providers that switch thinking with a

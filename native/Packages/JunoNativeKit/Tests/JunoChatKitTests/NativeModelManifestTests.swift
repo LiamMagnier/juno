@@ -2,6 +2,7 @@ import Foundation
 import JunoAPI
 import JunoAuth
 import JunoCore
+import JunoDesignSystem
 import JunoSync
 import XCTest
 @testable import JunoChatKit
@@ -28,6 +29,44 @@ final class NativeModelManifestTests: XCTestCase {
         XCTAssertTrue(model.supportsWebSearch)
         XCTAssertEqual(model.supportedReasoningEfforts, [.low, .high, .max])
         XCTAssertNil(model.unavailability)
+    }
+
+    func testRetirementDateSurvivesDecodingAndFormats() async throws {
+        // The date is what a person acts on; `deprecationNote` only says it in a
+        // sentence, which no client can parse. A model with no announced
+        // retirement — most of the catalog — must decode to nil, not to a
+        // fabricated date.
+        let retiring = fullModel.replacingOccurrences(
+            of: "\"deprecationNote\": null",
+            with: "\"deprecationNote\": \"Retires Oct 23, 2026 — use GPT-5.5\", \"retiresOn\": \"2026-10-23\""
+        )
+        let client = client(body: manifest(models: [retiring]))
+
+        let catalog = try await client.modelCatalog(for: accountID)
+        let model = try XCTUnwrap(catalog.models.first)
+
+        XCTAssertEqual(model.retiresOn, "2026-10-23")
+        XCTAssertEqual(JunoModelFormatting.retirementDate("2026-10-23"), "23 Oct 2026")
+        XCTAssertEqual(model.junoDescriptor.retiresOn, "2026-10-23")
+    }
+
+    func testAModelWithNoRetirementDecodesToNil() async throws {
+        let client = client(body: manifest(models: [fullModel]))
+
+        let catalog = try await client.modelCatalog(for: accountID)
+        let model = try XCTUnwrap(catalog.models.first)
+
+        XCTAssertNil(model.retiresOn)
+        XCTAssertNil(model.junoDescriptor.retiresOn)
+    }
+
+    func testAMalformedRetirementDateIsNotRendered() async throws {
+        // Rendering has to refuse anything that is not a calendar day rather
+        // than print the raw string into a spec sheet.
+        XCTAssertNil(JunoModelFormatting.retirementDate("soon"))
+        XCTAssertNil(JunoModelFormatting.retirementDate("2026-13-01"))
+        XCTAssertNil(JunoModelFormatting.retirementDate("26-10-23"))
+        XCTAssertEqual(JunoModelFormatting.retirementDate("2026-01-05"), "5 Jan 2026")
     }
 
     func testServerOrderIsPreservedSoAutoStaysFirst() async throws {
