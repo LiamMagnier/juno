@@ -21,7 +21,10 @@ const WIDTH_KEY = "juno:sidebar:width";
 const SIDEBAR_MIN = 240;
 const SIDEBAR_MAX = 400;
 const SIDEBAR_DEFAULT = 280;
-const PREFETCH_ROUTES = ["/chat", "/library", "/artifacts", "/projects", "/memory", "/settings", "/roadmap", "/upgrade"];
+// The landing route of every product mode belongs here: switching modes routes
+// immediately, so a cold /work is the one navigation the user cannot absorb as
+// "the page is loading".
+const PREFETCH_ROUTES = ["/chat", "/work", "/library", "/artifacts", "/projects", "/memory", "/settings", "/roadmap", "/upgrade"];
 
 function clampWidth(w: number) {
   return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w)));

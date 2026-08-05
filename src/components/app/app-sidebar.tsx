@@ -46,10 +46,29 @@ import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useApp } from "@/components/app/app-provider";
 import { CODE_SYNC_EVENT } from "@/hooks/use-code-session";
+import {
+  WORK_POLL_MS,
+  WORK_SYNC_EVENT,
+  fetchWorkSessions,
+} from "@/components/work/work-transport";
+import { WorkStatusDot } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
+import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ClientConversation } from "@/types/chat";
 
 type ConfirmState = { title: string; description: string; confirmLabel: string; onConfirm: () => void } | null;
+
+/** The product mode the whole sidebar is threaded through. */
+type SidebarMode = "home" | "work" | "code";
+
+/** Landing route per mode — what switching the toggle actually navigates to. */
+const MODE_HOME: Record<SidebarMode, string> = {
+  home: "/chat",
+  // `/work` is a real page, unlike `/code`, which has no index and is why Code
+  // has to land on `/code/new`.
+  work: "/work",
+  code: "/code/new",
+};
 
 type SidebarProject = {
   id: string;
@@ -115,9 +134,14 @@ export function AppSidebar({
   const [projectsError, setProjectsError] = React.useState(false);
   const [starredCollapsed, setStarredCollapsed] = React.useState(false);
   const [recentsCollapsed, setRecentsCollapsed] = React.useState(false);
-  // Home shows web + app chats; Code shows Juno Code sessions synced from the
-  // app (conversations with kind "code"). Persisted like the collapse prefs.
-  const [mode, setMode] = React.useState<"home" | "code">("home");
+  // Home shows web + app chats; Work shows Juno Work tasks (their own model,
+  // not conversations); Code shows Juno Code sessions synced from the app
+  // (conversations with kind "code"). Persisted like the collapse prefs.
+  const [mode, setMode] = React.useState<SidebarMode>("home");
+  // Work mode data: the user's Work tasks, polled like the Code lists below.
+  const [workSessions, setWorkSessions] = React.useState<ClientWorkSession[]>([]);
+  const [workLoaded, setWorkLoaded] = React.useState(false);
+  const [workError, setWorkError] = React.useState(false);
   // Code mode data: the app's workspaces (project folders) mirrored from
   // /api/code/workspaces, and remote code tasks for status rows.
   const [codeWorkspaces, setCodeWorkspaces] = React.useState<CodeWorkspace[]>([]);
@@ -187,7 +211,7 @@ export function AppSidebar({
       const recents = localStorage.getItem("juno:sidebar:recents:collapsed");
       if (recents) setRecentsCollapsed(JSON.parse(recents));
       const modePref = localStorage.getItem("juno:sidebar:mode");
-      if (modePref === "code") setMode("code");
+      if (modePref === "code" || modePref === "work") setMode(modePref);
       const expanded = JSON.parse(localStorage.getItem(CODE_EXPANDED_KEY) || "{}");
       if (expanded && typeof expanded === "object") setCodeExpanded(expanded);
     } catch {}
@@ -285,7 +309,7 @@ export function AppSidebar({
   };
 
   const switchMode = React.useCallback(
-    (next: "home" | "code") => {
+    (next: SidebarMode) => {
       setMode(next);
       try {
         localStorage.setItem("juno:sidebar:mode", next);
@@ -293,10 +317,8 @@ export function AppSidebar({
       // Switching the toggle should change the MAIN view too, not just the
       // sidebar — otherwise the composer only updates after a separate New
       // chat / New session click. Land on the mode's home composer directly.
-      if (next === "code") {
-        router.push("/code/new");
-      } else {
-        router.push("/chat");
+      router.push(MODE_HOME[next]);
+      if (next === "home") {
         // A no-op push when already on /chat won't remount, so also reset any
         // stale chat state (mirrors newChat()).
         window.dispatchEvent(new CustomEvent("juno:new-chat"));
@@ -309,8 +331,54 @@ export function AppSidebar({
   const filtered = React.useMemo(() => {
     // Home shows every web/app chat; Code shows the synced Juno Code sessions.
     // Grouping now lives in Projects, so there's no folder scoping here.
+    //
+    // Work is deliberately absent: a Work task is a WorkSession, not a
+    // Conversation, so there is no `kind` to filter on and nothing here to
+    // show. Giving Work a conversation kind purely to reuse this list would
+    // put every Work task into the chat sidebar of anyone on an older client.
+    if (mode === "work") return [];
     return conversations.filter((c) => (mode === "code" ? c.kind === "code" : c.kind !== "code"));
   }, [conversations, mode]);
+
+  const loadWork = React.useCallback(async () => {
+    const result = await fetchWorkSessions(30);
+    if (result.kind !== "ok") {
+      setWorkError(true);
+      return;
+    }
+    setWorkError(false);
+    setWorkSessions(result.value);
+    setWorkLoaded(true);
+  }, []);
+
+  // The same interval + visibility + event trio the Code lists use, and for the
+  // same reason: the sidebar mounts once in the persistent shell, so a task that
+  // starts running (or stops to ask a question) would otherwise keep the status
+  // it had when the mode was first opened.
+  React.useEffect(() => {
+    if (mode !== "work") return;
+    void loadWork();
+    const tick = () => {
+      if (!document.hidden) void loadWork();
+    };
+    const interval = window.setInterval(tick, WORK_POLL_MS);
+    window.addEventListener(WORK_SYNC_EVENT, tick);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener(WORK_SYNC_EVENT, tick);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [mode, loadWork]);
+
+  const workAttention = React.useMemo(
+    () => workSessions.filter((session) => session.needsAttention),
+    [workSessions],
+  );
+  const workRecent = React.useMemo(
+    () => workSessions.filter((session) => !session.needsAttention && !session.archived),
+    [workSessions],
+  );
 
   const loadCode = React.useCallback(async () => {
     setCodeError(false);
@@ -495,6 +563,11 @@ export function AppSidebar({
     setSidebarOpen(false);
   };
 
+  const newWorkTask = () => {
+    router.push("/work");
+    setSidebarOpen(false);
+  };
+
   // Collapsed icon rail (desktop only). Fixed width + keyed fade-in so the
   // content doesn't reflow while the shell animates the aside's width, and the
   // layout swap reads as a cross-fade instead of a pop.
@@ -513,7 +586,18 @@ export function AppSidebar({
           <ModeToggle mode={mode} onChange={switchMode} compact />
         </div>
         <div className="mt-3 flex flex-col items-center gap-1">
-          {mode === "code" ? (
+          {mode === "work" ? (
+            <>
+              <RailIcon onClick={newWorkTask} label="New task">
+                <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                  <SidebarMotionIcon kind="new" className="h-4 w-4" />
+                </span>
+              </RailIcon>
+              <RailIcon href="/tasks" active={pathname === "/tasks"} label="Scheduled"><SidebarMotionIcon kind="tasks" /></RailIcon>
+              <RailIcon href="/connections" active={pathname === "/connections"} label="Connected apps"><SidebarMotionIcon kind="connections" /></RailIcon>
+              <RailIcon href="/artifacts" active={pathname === "/artifacts"} label="Documents"><SidebarMotionIcon kind="artifacts" /></RailIcon>
+            </>
+          ) : mode === "code" ? (
             <>
               <RailIcon onClick={newCodeSession} label="New session">
                 <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
@@ -599,7 +683,22 @@ export function AppSidebar({
       {/* Primary destinations — Home keeps the full chat nav; Code gets its own
           compact set (only surfaces with a real data path behind them). */}
       <nav className="space-y-0.5 px-2 pt-1">
-        {mode === "code" ? (
+        {mode === "work" ? (
+          <>
+            <NavRow
+              onClick={newWorkTask}
+              icon={
+                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-[8px] bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                  <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
+                </span>
+              }
+              label="New task"
+            />
+            <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="tasks" />} label="Scheduled" />
+            <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="connections" />} label="Connected apps" />
+            <NavRow href="/artifacts" active={pathname === "/artifacts"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="artifacts" />} label="Documents" />
+          </>
+        ) : mode === "code" ? (
           <>
             <NavRow
               onClick={newCodeSession}
@@ -643,6 +742,61 @@ export function AppSidebar({
               <div key={i} className="skeleton h-8 rounded-lg" style={{ animationDelay: `${i * 60}ms` }} />
             ))}
           </div>
+        ) : mode === "work" ? (
+          <>
+            {workError && <InlineErrorRow message="Couldn’t load your Work tasks." onRetry={loadWork} />}
+            {!workLoaded && !workError ? (
+              <div className="space-y-1 px-1 pt-1">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="skeleton h-8 rounded-lg" style={{ animationDelay: `${i * 60}ms` }} />
+                ))}
+              </div>
+            ) : (
+              <>
+                {/* Attention first and always disclosed. A task that has stopped
+                    to ask something is the one row a user must not have to go
+                    looking for, so this section is never collapsible. */}
+                {workAttention.length > 0 && (
+                  <Section label="Needs you">
+                    {workAttention.map((session) => (
+                      <WorkSessionRow
+                        key={session.id}
+                        session={session}
+                        active={pathname === `/work/${session.id}`}
+                        onNavigate={() => setSidebarOpen(false)}
+                      />
+                    ))}
+                  </Section>
+                )}
+                {workRecent.length > 0 ? (
+                  <Section
+                    label="Tasks"
+                    collapsible
+                    isCollapsed={recentsCollapsed}
+                    onToggleCollapse={toggleRecentsCollapsed}
+                  >
+                    <div className="mt-1 space-y-0.5">
+                      {workRecent.map((session) => (
+                        <WorkSessionRow
+                          key={session.id}
+                          session={session}
+                          active={pathname === `/work/${session.id}`}
+                          onNavigate={() => setSidebarOpen(false)}
+                        />
+                      ))}
+                    </div>
+                  </Section>
+                ) : (
+                  workAttention.length === 0 &&
+                  !workError && (
+                    <p className="px-3 py-8 text-center text-sm text-muted-foreground" aria-live="polite">
+                      No tasks yet.<br />Start one above.
+                    </p>
+                  )
+                )}
+              </>
+            )}
+          </>
         ) : mode === "code" ? (
           <>
             {/* Projects always renders in Code mode — a mirror with zero
@@ -897,17 +1051,19 @@ export function AppSidebar({
   );
 }
 
-/** Home/Code switch. A thin wrapper over the shared SegmentedControl: same
+/** Home/Work/Code switch. A thin wrapper over the shared SegmentedControl: same
  *  depth idiom (well track + raised thumb) and radiogroup semantics, laid out
  *  vertically (icon-only) in the collapsed rail. The segment icons keep the
- *  sidebar's hover micro-motion. */
+ *  sidebar's hover micro-motion. SegmentedControl measures its own geometry, so
+ *  a third option needs no sizing here — the thumb glides between three
+ *  segments exactly as it did between two. */
 function ModeToggle({
   mode,
   onChange,
   compact,
 }: {
-  mode: "home" | "code";
-  onChange: (mode: "home" | "code") => void;
+  mode: SidebarMode;
+  onChange: (mode: SidebarMode) => void;
   compact?: boolean;
 }) {
   return (
@@ -918,11 +1074,51 @@ function ModeToggle({
       orientation={compact ? "vertical" : "horizontal"}
       labelHidden={compact}
       ringOffsetClassName="focus-visible:ring-offset-sidebar"
+      // Narrower labels than the two-up version: at the 240px minimum sidebar
+      // width three segments of `px-3` overflow the track and the thumb lands
+      // short of the segment it is meant to sit under.
+      optionClassName={compact ? undefined : "gap-1.5 px-2"}
       options={[
         { value: "home", label: "Home", icon: <SidebarMotionIcon kind="home" className="h-3.5 w-3.5" /> },
+        { value: "work", label: "Work", icon: <SidebarMotionIcon kind="work" className="h-3.5 w-3.5" /> },
         { value: "code", label: "Code", icon: <SidebarMotionIcon kind="code" className="h-3.5 w-3.5" /> },
       ]}
     />
+  );
+}
+
+/** A Juno Work task in the sidebar: title, and the one fact that decides
+ *  whether the user needs to open it. The status is a dot rather than a word
+ *  because the row is 14px of type in a 240px column, and the word for
+ *  `waiting_approval` does not fit beside a real task title. */
+function WorkSessionRow({
+  session,
+  active,
+  onNavigate,
+}: {
+  session: ClientWorkSession;
+  active: boolean;
+  onNavigate: () => void;
+}) {
+  return (
+    <Link
+      href={`/work/${session.id}`}
+      onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
+      title={session.title || session.goal}
+      className={cn(
+        "group flex items-center gap-2.5 rounded-[10px] py-1.5 pl-2 pr-2 text-[14px] font-medium transition-[background-color,color] duration-base ease-out-soft",
+        active
+          ? "bg-sidebar-accent font-semibold text-foreground"
+          : "text-sidebar-foreground/90 hover:bg-sidebar-accent hover:text-foreground",
+      )}
+    >
+      <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-base group-hover:text-foreground">
+        <SidebarMotionIcon kind="work" className="h-[15px] w-[15px]" />
+      </span>
+      <span className="min-w-0 flex-1 truncate">{session.title || "Untitled task"}</span>
+      <WorkStatusDot status={session.status} />
+    </Link>
   );
 }
 
