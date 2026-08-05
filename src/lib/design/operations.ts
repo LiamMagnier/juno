@@ -430,14 +430,24 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
     case "createNode": {
       const id = operation.node.id ?? ctx.mintId("n");
       if (doc.nodes[id]) throw new DesignOperationError("invalid", `A node with id ${id} already exists.`);
-      const raw = {
-        ...nodeDefaultsFor(operation.node.type),
-        ...(operation.node.patch ?? {}),
+      const defaults = nodeDefaultsFor(operation.node.type);
+      const patch = (operation.node.patch ?? {}) as Record<string, unknown>;
+      const raw: Record<string, unknown> = {
+        ...defaults,
+        ...patch,
         id,
         type: operation.node.type,
         name: operation.node.name ?? operation.node.patch?.name ?? defaultName(operation.node.type),
         parentId: operation.parentId,
       };
+      // `typography` MERGES with the default, exactly as `updateNode` does.
+      // A plain spread would let `{fontSize: 28}` replace the whole block and
+      // take the family, line height and alignment with it — the node would
+      // then fail validation on a field the caller never mentioned, which is a
+      // confusing way to reject a perfectly reasonable request.
+      if (patch.typography && defaults.typography) {
+        raw.typography = { ...(defaults.typography as object), ...(patch.typography as object) };
+      }
       const parsed = nodeSchema.safeParse(raw);
       if (!parsed.success) {
         throw new DesignOperationError("invalid", `New ${operation.node.type} is not a valid node: ${parsed.error.issues[0]?.message ?? ""}`);
