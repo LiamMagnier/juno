@@ -453,7 +453,15 @@ private struct DesktopWorkSidebar: View {
             Color.clear.frame(height: titlebarClearance)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            footer.junoSidebarFooter()
+            // Opaque backing, not just an inset. Without it a scrolled source
+            // list slides its rows under the footer, which is the same defect
+            // Code documents on the other end of this column for the product
+            // switch — an inset reserves space and paints nothing.
+            footer
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.vertical, JunoSpace.snug)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.bar)
         }
         .accessibilityIdentifier("juno.work.sidebar")
     }

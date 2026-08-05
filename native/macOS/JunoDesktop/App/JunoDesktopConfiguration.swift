@@ -7,6 +7,7 @@ import JunoCodeKit
 import JunoCore
 import JunoStorage
 import JunoSync
+import JunoWorkKit
 
 @MainActor
 struct JunoDesktopConfiguration {
@@ -36,6 +37,14 @@ struct JunoDesktopConfiguration {
     /// the two are unrelated jobs sharing one surface — one reads the account's
     /// tasks, the other writes this machine's heartbeat.
     let codeHostModel: DesktopCodeHostModel?
+    /// The account's Work tasks, as this Mac reads them.
+    let workModel: NativeWorkModel?
+    /// The other direction, mirroring `codeHostModel`: whether this Mac serves
+    /// Juno Work, and on what terms. Separate from `workModel` for the same
+    /// reason Code keeps its two apart — one reads the account's tasks, the
+    /// other is this machine's standing decision about itself, and folding them
+    /// together is how signing in comes to imply consent.
+    let workHostModel: DesktopWorkHostModel?
     let libraryModel: NativeLibraryModel?
     let requestSender: (any NativeAuthenticatedRequestSending)?
     let accountDataClient: NativeAccountDataClient?
@@ -185,6 +194,15 @@ struct JunoDesktopConfiguration {
                     // start; the switch is what decides whether it does.
                     relay: NativeCodeRemoteClient(sender: runtime)
                 ),
+                workModel: NativeWorkModel(
+                    client: NativeWorkClient(sender: runtime, streamer: runtime)
+                ),
+                // Constructed unconditionally, unlike the loop it drives: the
+                // model has to exist for Settings to show the switch that is
+                // off, and a nil model would render that surface as
+                // unavailable rather than as switched off — two different
+                // sentences with two different fixes.
+                workHostModel: DesktopWorkHostModel(),
                 libraryModel: NativeLibraryModel(
                     client: NativeLibraryClient(sender: runtime),
                     // The picker draws the file, which means resolving its
@@ -252,6 +270,8 @@ struct JunoDesktopConfiguration {
             codeModel: nil,
             remoteCodeModel: nil,
             codeHostModel: nil,
+            workModel: nil,
+            workHostModel: nil,
             libraryModel: nil,
             requestSender: nil,
             accountDataClient: nil,
