@@ -209,3 +209,53 @@ final class WorkHostPolicyTests: XCTestCase {
         )
     }
 }
+
+/// The refusal lists, attacked with the one input that used to walk past them.
+final class WorkHostPolicyCaseTests: XCTestCase {
+    func testABlockedAppIsRefusedWhateverCaseItReportsItselfIn() {
+        let policy = WorkHostPolicy(
+            enabled: true, allowsComputerUse: true,
+            allowedApps: ["com.apple.terminal", "COM.APPLE.Terminal"],
+            blockedApps: ["com.apple.terminal"]
+        )
+        XCTAssertFalse(policy.permits(app: "com.apple.terminal"))
+        XCTAssertFalse(
+            policy.permits(app: "COM.APPLE.Terminal"),
+            "macOS does not guarantee the identifier a process reports matches the case written "
+                + "in a settings list, and an exact comparison made the blocklist decorative"
+        )
+    }
+
+    func testARestrictedCategoryIsRefusedWhateverCaseItReportsItselfIn() {
+        let policy = WorkHostPolicy(
+            enabled: true, allowsComputerUse: true,
+            allowedApps: ["COM.APPLE.KeychainAccess", "Com.Bitwarden.Desktop"]
+        )
+        XCTAssertFalse(policy.permits(app: "COM.APPLE.KeychainAccess"))
+        XCTAssertFalse(policy.permits(app: "Com.Bitwarden.Desktop"))
+    }
+
+    func testAnAllowedAppStillMatchesAcrossCase() {
+        let policy = WorkHostPolicy(
+            enabled: true, allowsComputerUse: true, allowedApps: ["com.apple.Notes"]
+        )
+        XCTAssertTrue(policy.permits(app: "COM.APPLE.NOTES"), "folding must not break the allow path")
+    }
+
+    func testWhitespaceTypedIntoASettingsFieldDoesNotDefeatTheList() {
+        let policy = WorkHostPolicy(
+            enabled: true, allowsComputerUse: true,
+            allowedApps: ["com.apple.Notes"], blockedApps: [" com.apple.Notes "]
+        )
+        XCTAssertFalse(
+            policy.permits(app: "com.apple.Notes"),
+            "a trailing space is exactly as invisible as a capital letter"
+        )
+    }
+
+    func testAnEmptyIdentifierIsRefused() {
+        let policy = WorkHostPolicy(enabled: true, allowsComputerUse: true, allowedApps: [""])
+        XCTAssertFalse(policy.permits(app: ""))
+        XCTAssertFalse(policy.permits(app: "   "))
+    }
+}

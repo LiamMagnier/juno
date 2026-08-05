@@ -130,11 +130,31 @@ public struct WorkHostPolicy: Equatable, Sendable {
     /// Block first, then allowlist, then a default of refusal. The default
     /// matters: a bundle identifier nobody has considered is one the user has
     /// not thought about, and the safe reading of "not considered" is no.
+    ///
+    /// Compared case-folded, which is not cosmetic. This used to be an exact
+    /// `Set.contains`, and macOS does not guarantee that the identifier a
+    /// process reports matches the case of the one written in a settings list.
+    /// `COM.APPLE.Terminal` therefore walked straight past a blocklist entry of
+    /// `com.apple.terminal` AND past every restricted category, all of which are
+    /// written lower-case — so the two lists that exist to refuse things refused
+    /// nothing, and the failure was invisible because the identifier looked
+    /// right to anyone reading it.
     public func permits(app bundleIdentifier: String) -> Bool {
         guard enabled, allowsComputerUse else { return false }
-        if blockedApps.contains(bundleIdentifier) { return false }
-        if Self.restrictedCategories.contains(bundleIdentifier) { return false }
-        return allowedApps.contains(bundleIdentifier)
+        let target = Self.normalizeIdentifier(bundleIdentifier)
+        guard !target.isEmpty else { return false }
+        if blockedApps.contains(where: { Self.normalizeIdentifier($0) == target }) { return false }
+        if Self.restrictedCategories.contains(where: { Self.normalizeIdentifier($0) == target }) {
+            return false
+        }
+        return allowedApps.contains(where: { Self.normalizeIdentifier($0) == target })
+    }
+
+    /// Trimmed and case-folded, the same treatment `normalizeHost` gives a
+    /// domain. Both lists are user-authored, and a trailing space typed into a
+    /// settings field is exactly as invisible as a capital letter.
+    static func normalizeIdentifier(_ identifier: String) -> String {
+        identifier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     /// Whether a domain may be driven in the browser.
