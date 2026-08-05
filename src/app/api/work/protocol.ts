@@ -97,9 +97,9 @@ export const createSessionSchema = z.object({
   model: z.string().trim().min(1).max(MAX_ID_CHARS).optional(),
   reasoningEffort: reasoningEffort.optional(),
   // Files the reader picked in the composer, by attachment id. The route
-  // re-checks each one against `Attachment{id, userId}` before it becomes a
-  // grant — an id in a request body is a claim about ownership, and the only
-  // thing that makes it true is a row that also carries this user's id.
+  // re-checks every one of them against the signed-in account before it becomes
+  // a grant — an id in a request body is a claim about ownership, and the only
+  // thing that makes it true is an `Attachment` row scoped to that account.
   //
   // Bounded by the same `MAX_ATTACHMENTS` the chat composer and `/api/chat`
   // use, imported rather than restated: a cap that disagreed with the one the

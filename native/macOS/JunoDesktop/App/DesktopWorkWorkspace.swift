@@ -113,6 +113,7 @@ struct DesktopWorkWorkspace: View {
                 hostModel: hostModel,
                 sessions: visibleSessions,
                 selection: selection,
+                product: $product,
                 compose: { isComposing = true }
             )
             .junoSidebarColumn()
@@ -223,13 +224,12 @@ struct DesktopWorkWorkspace: View {
     /// does not have to re-find between a run starting and finishing.
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
-        // `.principal`, not `.navigation`: `.navigation` places an item in the
-        // sidebar's titlebar beside the traffic lights, which would put the
-        // top-level product switch inside the task list. Chat and Code both put
-        // it here, so it does not move when the product does.
-        ToolbarItem(placement: .principal) {
-            DesktopProductSwitcher(selection: $product)
-        }
+        // The product switch is deliberately absent. It now sits at the top of
+        // the navigation column, on the column it switches, in every product —
+        // see ``DesktopSidebarProductHeader``. Chat and Code moved together and
+        // this window has to move with them, because the one property that
+        // control must have is that it does not travel across the window when
+        // the product does.
 
         ToolbarItem(placement: .primaryAction) {
             Button {
@@ -412,12 +412,12 @@ private struct DesktopWorkSidebar: View {
     let hostModel: DesktopWorkHostModel?
     let sessions: [WorkSessionSummary]
     @Binding var selection: String?
+    /// Which half of the app the window is showing, so the switch at the top of
+    /// this column can move it. Read by nothing else here — it exists to give
+    /// the header something to write through, exactly as Chat's and Code's do.
+    @Binding var product: DesktopProductMode
     let compose: () -> Void
 
-    /// How far the source list starts below the top of the window. A `.sidebar`
-    /// `List` is laid out from the very top, and the titlebar overlapping it is
-    /// taller than the traffic lights alone.
-    private var titlebarClearance: CGFloat { DesktopSidebarChromeMetrics.titlebarClearance }
 
     private var attention: [WorkSessionSummary] {
         let needing = Set(model.sessionsNeedingAttention.map(\.sessionID))
@@ -449,8 +449,15 @@ private struct DesktopWorkSidebar: View {
         }
         .listStyle(.sidebar)
         .junoSidebarSelectionTint()
+        // The strip at the top of the column, which is the product switch and
+        // not merely the space one would need. It is opaque for the same reason
+        // the footer below it is: an inset reserves space and paints nothing, so
+        // a scrolled list slides its rows through it — and a `.sidebar` List
+        // pins its section headers to its own top, where no inset reaches them
+        // at all. "Waiting on you" arriving level with the traffic lights is the
+        // failure this prevents.
         .safeAreaInset(edge: .top, spacing: 0) {
-            Color.clear.frame(height: titlebarClearance)
+            DesktopSidebarProductHeader(product: $product)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // Opaque backing, not just an inset. Without it a scrolled source
