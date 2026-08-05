@@ -4,14 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import {
   WORK_LIVE_STATUSES,
-  describeCapability,
-  selectTarget,
-  type WorkCapability,
-  type WorkTarget,
 } from "@/lib/work/domain";
 import { finishRun } from "@/lib/work/store";
 import {
-  hostCapabilityView,
   isTimeTriggerKind,
   isValidTimeZone,
   nextFireForTriggers,
@@ -20,58 +15,12 @@ import {
   planScheduleEdit,
   scheduleTargetOf,
   serializeSchedule,
-  type WorkHostRow,
 } from "@/lib/work/schedule";
 import { normalizeTriggerDrafts, sameTriggerSet, type TriggerDraft } from "@/lib/work/triggers";
-import { refusalForSelection, type RunRefusal } from "@/app/api/work/protocol";
+import { admissionRefusal } from "@/app/api/work/protocol";
 
 export const runtime = "nodejs";
 
-/** Matches the constant the other Work dispatch surfaces hold. */
-const CLOUD_WORK_AVAILABLE = true;
-
-/**
- * Whether an edited schedule still has anywhere to run.
- *
- * The same guard the create route applies, and it is here for the same reason:
- * a schedule repointed at a Mac that cannot serve it is accepted without
- * complaint and then fails once a day, unattended, in a marker run nobody is
- * watching for. Every Mac is presented as `idle` rather than at its current
- * heartbeat, because a laptop being shut at the moment of the edit says nothing
- * about 07:00 tomorrow — that question belongs to `hostOfflinePolicy`. What is
- * refused is what does not fix itself overnight: a revoked Mac, one switched off
- * for Juno Work, or one that was never granted a capability this schedule needs.
- */
-function admissionRefusal(
-  target: WorkTarget,
-  named: WorkHostRow | undefined,
-  required: readonly WorkCapability[],
-  hosts: readonly WorkHostRow[]
-): RunRefusal | null {
-  const ordered = named ? [named, ...hosts.filter((host) => host.id !== named.id)] : hosts;
-  const refusal = refusalForSelection(
-    selectTarget({
-      requested: target,
-      required,
-      hosts: ordered.map((host) => hostCapabilityView(host, "idle")),
-      cloudAvailable: CLOUD_WORK_AVAILABLE,
-    })
-  );
-  if (!refusal || !named) return refusal;
-
-  // `selectTarget` describes an unusable host by its state, which reads as
-  // "MacBook is idle" for a machine whose real problem is a permission it never
-  // had. Only the sentence is replaced; the decision stays the dispatcher's.
-  const why =
-    named.revokedAt !== null
-      ? `You revoked Juno's access to ${named.displayName}.`
-      : !named.enabled
-        ? `${named.displayName} is switched off for Juno Work.`
-        : refusal.missing.length > 0
-          ? `${named.displayName} has not been granted ${refusal.missing.map(describeCapability).join(", ")}.`
-          : refusal.message;
-  return { ...refusal, message: `${why} This schedule would fail every time it fired.` };
-}
 
 /**
  * The stored run configuration as a plain object, for merging a patch into.

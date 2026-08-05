@@ -19,14 +19,18 @@ import {
   WORK_HOST_STATES,
   WORK_STATUSES,
   WORK_TARGETS,
+  describeCapability,
   hostStateFor,
+  selectTarget,
   type TargetSelection,
+  type WorkTarget,
   type WorkApprovalDecision,
   type WorkCapability,
   type WorkDegradation,
   type WorkHostState,
   type WorkStatus,
 } from "@/lib/work/domain";
+import { hostCapabilityView, type WorkHostRow } from "@/lib/work/schedule";
 import { verifyApproval } from "@/lib/work/digests";
 
 // ---------------------------------------------------------------------------
@@ -398,4 +402,40 @@ export function parseSessionListQuery(params: URLSearchParams): SessionListQuery
       limit,
     },
   };
+}
+/** Matches the constant the run-dispatch route and the scheduler each hold, for
+ *  the same reason: turning cloud off should produce an honest refusal rather
+ *  than schedules accepted for an executor that will never exist. */
+const CLOUD_WORK_AVAILABLE = true;
+
+export function admissionRefusal(
+  target: WorkTarget,
+  named: WorkHostRow | undefined,
+  required: readonly WorkCapability[],
+  hosts: readonly WorkHostRow[]
+): RunRefusal | null {
+  // The named Mac first, because `selectTarget` takes the first fully capable
+  // host in the list. Ordered rather than filtered, so this asks exactly the
+  // question the dispatcher will ask — it orders the same way, and an
+  // `automatic` schedule really can end up on the second Mac.
+  const ordered = named ? [named, ...hosts.filter((host) => host.id !== named.id)] : hosts;
+  const refusal = refusalForSelection(
+    selectTarget({
+      requested: target,
+      required,
+      hosts: ordered.map((host) => hostCapabilityView(host, "idle")),
+      cloudAvailable: CLOUD_WORK_AVAILABLE,
+    })
+  );
+  if (!refusal || !named) return refusal;
+
+  const why =
+    named.revokedAt !== null
+      ? `You revoked Juno's access to ${named.displayName}.`
+      : !named.enabled
+        ? `${named.displayName} is switched off for Juno Work.`
+        : refusal.missing.length > 0
+          ? `${named.displayName} has not been granted ${refusal.missing.map(describeCapability).join(", ")}.`
+          : refusal.message;
+  return { ...refusal, message: `${why} This schedule would fail every time it fired.` };
 }

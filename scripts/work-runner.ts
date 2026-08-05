@@ -66,6 +66,15 @@ const LEASE_RENEW_MS = Math.floor(RUN_LEASE_MS / 3);
 const ATTENDED_WAIT_MS = 4 * 60_000;
 /** How often to look for the answer while attached. */
 const ANSWER_POLL_MS = 1_000;
+/**
+ * How often a driving executor re-reads its own run's status.
+ *
+ * Short, because the whole value of a stop is that it happens while the user
+ * is still looking at the screen. One extra indexed primary-key read per
+ * second per in-flight run is a price worth paying for a Stop button that
+ * stops things.
+ */
+const CONTROL_POLL_MS = 1_000;
 
 /** A stable identity for this worker, recorded on every lease it takes. */
 const EXECUTOR_ID = `work-runner:${process.pid}:${process.env.HOSTNAME ?? "local"}`;
@@ -514,6 +523,39 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     },
   });
 
+  // A Stop button that does not stop anything.
+  //
+  // POST /api/work/runs/{id}/control writes a terminal row and appends an
+  // event, and that is all it can do: the executor lives in another process on
+  // another machine, and nothing was reading the row it wrote. So a cancel
+  // marked the run cancelled while the work carried on to the end — spending
+  // the rest of the budget, writing the files, and sending whatever it was
+  // about to send. The user watched a task they had stopped keep going, which
+  // is worse than a Stop button that is greyed out, because it looks like it
+  // worked.
+  //
+  // A poll rather than a notification because the decision can arrive at any of
+  // three places — the website, a phone, the Mac — and the only thing all three
+  // already write to is the database. The interval is short: the whole value of
+  // a stop is that it happens while the user is still looking at the screen.
+  const watcher = setInterval(() => {
+    void prisma.workRun
+      .findFirst({
+        where: { id: input.runId, userId: input.userId },
+        select: { status: true },
+      })
+      .then((row) => {
+        if (!row) return;
+        if (row.status === "cancelled") session.cancel("Stopped by the user.");
+        else if (row.status === "paused") session.pause("Paused by the user.");
+      })
+      .catch(() => {
+        // A failed poll is not worth ending the run over; the next one is a
+        // second away, and the lease sweep is the backstop if the database is
+        // genuinely gone.
+      });
+  }, CONTROL_POLL_MS);
+
   try {
     const result = await session.run();
     if (result.state === "paused") {
@@ -531,6 +573,8 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
       };
     }
     throw error;
+  } finally {
+    clearInterval(watcher);
   }
 }
 

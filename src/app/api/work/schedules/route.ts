@@ -2,85 +2,19 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import {
-  describeCapability,
-  selectTarget,
-  type WorkCapability,
-  type WorkTarget,
-} from "@/lib/work/domain";
-import {
   createScheduleSchema,
-  hostCapabilityView,
   isValidTimeZone,
   nextFireForTriggers,
   parseScheduleListQuery,
   serializeSchedule,
-  type WorkHostRow,
 } from "@/lib/work/schedule";
 import { normalizeTriggerDrafts } from "@/lib/work/triggers";
 import { createWorkSession } from "@/lib/work/store";
-import { refusalForSelection, type RunRefusal } from "@/app/api/work/protocol";
+import { admissionRefusal } from "@/app/api/work/protocol";
 
 export const runtime = "nodejs";
 
-/** Matches the constant the run-dispatch route and the scheduler each hold, for
- *  the same reason: turning cloud off should produce an honest refusal rather
- *  than schedules accepted for an executor that will never exist. */
-const CLOUD_WORK_AVAILABLE = true;
 
-/**
- * Whether a schedule with this target, host and capability list has anywhere to
- * run, and a sentence for the user when it does not.
- *
- * Every Mac is presented to `selectTarget` as `idle` — awake and free — rather
- * than at whatever its heartbeat currently says, and that is the substance of
- * this check. A nightly schedule is almost always created on a laptop that is
- * shut, so refusing it because the Mac is asleep at 23:00 would refuse the
- * ordinary case; `hostOfflinePolicy` is what answers "the Mac is away" at fire
- * time, and it can only answer it for a schedule that was allowed to exist.
- * What is worth refusing now is what will still be true tomorrow morning: a Mac
- * the user revoked, one switched off for Juno Work, or one that was never
- * granted a capability this schedule needs every time it fires. None of those
- * resolves overnight, and accepted here they become a `host_offline` marker run
- * every single morning that nobody is watching for.
- *
- * The decision is `selectTarget`'s — the same function the dispatcher will ask
- * at 07:00 — so a schedule that gets past here is one the dispatcher agrees has
- * somewhere to go. Only the sentence is replaced, and only when a specific Mac
- * was named: `selectTarget` describes an unusable host by its state, which comes
- * out as "MacBook is idle" for a machine whose real problem is a permission it
- * was never given.
- */
-function admissionRefusal(
-  target: WorkTarget,
-  named: WorkHostRow | undefined,
-  required: readonly WorkCapability[],
-  hosts: readonly WorkHostRow[]
-): RunRefusal | null {
-  // The named Mac first, because `selectTarget` takes the first fully capable
-  // host in the list. Ordered rather than filtered, so this asks exactly the
-  // question the dispatcher will ask — it orders the same way, and an
-  // `automatic` schedule really can end up on the second Mac.
-  const ordered = named ? [named, ...hosts.filter((host) => host.id !== named.id)] : hosts;
-  const refusal = refusalForSelection(
-    selectTarget({
-      requested: target,
-      required,
-      hosts: ordered.map((host) => hostCapabilityView(host, "idle")),
-      cloudAvailable: CLOUD_WORK_AVAILABLE,
-    })
-  );
-  if (!refusal || !named) return refusal;
-
-  const why =
-    named.revokedAt !== null
-      ? `You revoked Juno's access to ${named.displayName}.`
-      : !named.enabled
-        ? `${named.displayName} is switched off for Juno Work.`
-        : refusal.missing.length > 0
-          ? `${named.displayName} has not been granted ${refusal.missing.map(describeCapability).join(", ")}.`
-          : refusal.message;
-  return { ...refusal, message: `${why} This schedule would fail every time it fired.` };
-}
 
 export async function GET(req: Request) {
   const { user, error } = await requireUser();
