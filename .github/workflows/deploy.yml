@@ -248,6 +248,27 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow
           DIRECT_URL: postgresql://postgres:postgres@localhost:5432/shadow
 
+      # Every concurrency claim in src/lib/work/store.ts is an argument about
+      # what Postgres does under READ COMMITTED — that a condition inside an
+      # UPDATE's WHERE makes exactly one caller win, that the run's row lock
+      # serialises concurrent appends, that a terminal reason is written once.
+      # Claims of that shape are the ones that are wrong in a way no amount of
+      # reading catches, because the two callers have to actually race.
+      #
+      # This job is the only one in CI with a database, which is why the suite
+      # runs here rather than in `test`. It is skipped entirely unless
+      # WORK_TEST_DATABASE_URL is set, so the `test` job's run of the same glob
+      # neither connects to anything nor fails for the lack of it.
+      - name: The Work store's concurrency claims, against a real database
+        run: |
+          npx prisma migrate deploy
+          npx tsx --test tests/work-store-db.test.ts
+        env:
+          NODE_OPTIONS: --conditions=react-server
+          WORK_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/shadow
+
   # The vendored Cloud Code runner drives arbitrary agent-authored bash, so its
   # containment tests are a release gate rather than a nicety: they are what
   # prove a timed-out command cannot leave children running, and that a
