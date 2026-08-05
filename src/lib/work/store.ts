@@ -1,7 +1,7 @@
 import "server-only";
 import { Prisma } from "@prisma/client";
 import type { WorkRun, WorkSession } from "@prisma/client";
-import { prisma } from "@/lib/db";
+import { prisma, prismaUnguarded } from "@/lib/db";
 import type { EventVisibility } from "@/lib/event-envelope";
 import {
   NO_BUDGET,
@@ -527,4 +527,92 @@ export async function finishRun(input: FinishRunInput): Promise<FinishRunResult>
 
     return { finished: true, run, status };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Recovery
+// ---------------------------------------------------------------------------
+
+export interface ReclaimStalledRunsInput {
+  /** Scope to one account, or omit to sweep every account. */
+  userId?: string;
+  now?: Date;
+  /** Safety cap so one sweep cannot rewrite an unbounded number of rows. */
+  limit?: number;
+}
+
+export interface ReclaimStalledRunsResult {
+  /** Run ids moved to `interrupted`. */
+  reclaimed: string[];
+}
+
+/**
+ * Ends runs whose executor stopped renewing its lease.
+ *
+ * `claimRun` only ever takes a `queued` run, which is correct — a run already
+ * in flight must not be picked up by a second executor and replayed. The
+ * consequence is that a run whose executor died mid-flight has nobody who can
+ * take it and nobody who will finish it: it sits in `preparing` or `running`
+ * for ever, and every surface renders it as a task that is still going. That is
+ * exactly the endless spinner the whole target-selection design exists to
+ * avoid, arriving one layer further down.
+ *
+ * So the lease is swept rather than merely checked. An expired lease on a live
+ * run means the executor is gone, and the honest terminal state is
+ * `interrupted` — distinct from `failed`, which the run itself decided, and
+ * from `cancelled`, which a person decided. Nobody decided this one.
+ *
+ * Deliberately does NOT re-queue. A Work run can have moved files, sent a
+ * message, or spent most of a budget before its executor died, and restarting
+ * it automatically would repeat whichever of those had already happened. The
+ * user is told it was interrupted and offered a retry, which is a decision with
+ * an owner.
+ *
+ * Uses `prismaUnguarded` when sweeping every account, because the ownership
+ * guard is there to catch a query that forgot its userId and this one omits it
+ * on purpose.
+ */
+export async function reclaimStalledRuns(
+  input: ReclaimStalledRunsInput = {}
+): Promise<ReclaimStalledRunsResult> {
+  const now = input.now ?? new Date();
+  const limit = Math.min(Math.max(input.limit ?? 100, 1), 1_000);
+
+  const where: Prisma.WorkRunWhereInput = {
+    status: { in: ["preparing", "running"] },
+    leaseExpiresAt: { lt: now },
+    ...(input.userId ? { userId: input.userId } : {}),
+  };
+
+  // Scoped sweeps stay guarded; the cross-account one says out loud that it is
+  // global rather than tripping a guard whose whole job is to notice that.
+  const client = input.userId ? prisma : prismaUnguarded;
+  const stalled = await client.workRun.findMany({
+    where,
+    select: { id: true, userId: true },
+    orderBy: { leaseExpiresAt: "asc" },
+    take: limit,
+  });
+
+  const reclaimed: string[] = [];
+  for (const run of stalled) {
+    // Through finishRun rather than a bulk update, so a reclaimed run gets the
+    // same write-once terminal guard, the same session denormalisation and the
+    // same needs-attention handling as one that ended normally. A bulk update
+    // here would be the second place terminal state is decided, and the two
+    // would drift.
+    const result = await finishRun({
+      runId: run.id,
+      userId: run.userId,
+      reason: "interrupted",
+      detail:
+        "The executor stopped reporting and its lease expired. Juno does not " +
+        "restart an interrupted run on its own, because it may already have " +
+        "changed something.",
+      now,
+    });
+    if (result.finished) reclaimed.push(run.id);
+  }
+
+  return { reclaimed };
 }
