@@ -74,6 +74,44 @@ jobs:
       - name: Work contract is not stale
         run: npm run work:contract:check
 
+      # The line between what a Mac may see and what everybody else may see is
+      # two function names in src/lib/work/serializers.ts.
+      # `serializeGrantForHost` adds the absolute path a folder grant resolved
+      # to; `serializeCommandForHost` passes a command payload through
+      # unfiltered, including the path the user picked in a file dialog. Both
+      # are correct for the Mac that has to carry the instruction out. Both are
+      # a disclosure to anything else, and "anything else" includes the phone
+      # that asked for the work.
+      #
+      # A grep gate rather than a type-level one because only half of this is
+      # expressible in the type system. `ClientWorkGrant` declares `localPath`
+      # and `resolvedRealPath` as `never`, so the grant half fails to compile —
+      # but the host and remote *command* shapes differ only in which JSON keys
+      # survive, so both are assignable to each other and TypeScript has nothing
+      # to say. The failure is also invisible in review: `serializeCommandForHost`
+      # is a plausible thing to write in a route handler, it reads as deliberate,
+      # and the response looks right in the browser.
+      #
+      # Worth having now rather than when the host routes are written: today no
+      # route calls either function, because the host claim/acknowledge surface
+      # does not exist yet. A gate added after those routes land is a gate added
+      # after the mistake.
+      #
+      # Mirrored in scripts/release-gates.sh — change one, change both.
+      - name: No Work route uses a host-only serialiser
+        run: |
+          if [ ! -d src/app/api/work ]; then
+            echo "::error::src/app/api/work does not exist, so this gate is checking nothing."
+            exit 1
+          fi
+          if hits=$(grep -rn 'serializeGrantForHost\|serializeCommandForHost' src/app/api/work); then
+            echo "::error::A Work route references a host-only serialiser. Those shapes carry local filesystem paths and unfiltered command payloads to remote clients."
+            printf '%s\n' "$hits"
+            echo "Use serializeGrantForRemote / serializeCommandForRemote, or the unqualified serializeGrant / serializeCommand, which are bound to them."
+            exit 1
+          fi
+          echo "No route under src/app/api/work references a host-only Work serialiser."
+
   # A migration whose SQL does not reproduce the schema is discovered at deploy
   # time, against the production database, with half the release already out.
   # Replaying the migrations into a throwaway Postgres and diffing the result
@@ -99,6 +137,56 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v4
+
+      # The two checks below are filesystem greps and run before `npm ci`, so a
+      # migration mistake costs seconds rather than the two minutes it takes to
+      # install and boot Postgres only to be told the same thing.
+
+      # Every Work table — sessions, runs, events, approvals, grants, commands,
+      # artifacts — arrives in this one migration. Prisma identifies an applied
+      # migration by its directory name and stores that name in
+      # _prisma_migrations, so the name is permanent: rename it and every
+      # deployed database holds a row pointing at a directory that no longer
+      # exists while `migrate deploy` starts treating the renamed one as new.
+      # Pinning the exact name is therefore stronger than globbing for something
+      # Work-shaped, not more brittle.
+      - name: The Work migration is present
+        run: |
+          work_migration=prisma/migrations/20260805120000_work_domain/migration.sql
+          if [ ! -f "$work_migration" ]; then
+            echo "::error::$work_migration is missing. The Work tables would have no migration, and every Work route would fail on its first query against a freshly migrated database."
+            exit 1
+          fi
+          echo "Found $work_migration."
+
+      # Prisma wraps each migration file in a single transaction, and
+      # CREATE INDEX CONCURRENTLY cannot run inside one. It does not fail
+      # cleanly either: the usual workaround is a bare COMMIT partway through
+      # the file, which leaves the migration half-applied and a failed
+      # _prisma_migrations row that P3009-blocks every later deploy.
+      #
+      # Comments are stripped and newlines flattened before matching, because a
+      # bare search for the word has two false positives that would each get
+      # this gate switched off. 20260717220000_chat_first_submission_receipt
+      # explains in prose why its indexes do *not* need CONCURRENTLY, and a
+      # statement broken across two lines is equally valid SQL that a
+      # line-oriented grep would sail past.
+      - name: No migration uses CREATE INDEX CONCURRENTLY
+        run: |
+          offenders=""
+          while IFS= read -r file; do
+            if sed 's/--.*$//' "$file" | tr '\n' ' ' \
+              | grep -qiE 'create[[:space:]]+(unique[[:space:]]+)?index[[:space:]]+concurrently'; then
+              offenders="${offenders}${file}"$'\n'
+            fi
+          done < <(find prisma/migrations -type f -name '*.sql' | sort)
+          if [ -n "$offenders" ]; then
+            echo "::error::CREATE INDEX CONCURRENTLY cannot run inside the transaction Prisma wraps each migration file in."
+            printf '%s' "$offenders"
+            echo "Build the index without CONCURRENTLY, or create the table in the same migration so the index is built on an empty one."
+            exit 1
+          fi
+          echo "No migration uses CREATE INDEX CONCURRENTLY."
 
       - uses: actions/setup-node@v4
         with:
@@ -164,6 +252,13 @@ jobs:
   # containment tests are a release gate rather than a nicety: they are what
   # prove a timed-out command cannot leave children running, and that a
   # credential in the environment is not reachable from agent shell.
+  #
+  # The same package now also holds the Juno Work orchestration runtime under
+  # `src/work` — the budget guard, the tool-tier lattice, the plan/progress
+  # checker and the untrusted-content scanner. Those are policy rather than
+  # plumbing, and untested policy is a comment, so this job is the gate for them
+  # too. It is deliberately not path filtered: `runner/agent-core` is outside the
+  # root tsconfig, so nothing else in CI compiles it.
   runner:
     runs-on: ubuntu-latest
     steps:
@@ -181,6 +276,42 @@ jobs:
 
       - name: Runner tests, including the adversarial containment suite
         run: npm test --prefix runner/agent-core
+
+      # `npm test` above is `node --test dist/test/*.test.js` — the COMPILED
+      # output. A suite that stops being emitted does not fail that command: the
+      # shell glob simply matches fewer files and the run is still green. So a
+      # `tsconfig.json` whose `include` narrows, a renamed file, or a suite moved
+      # out of `src/test` all read as "all tests passed".
+      #
+      # That matters most for Work, whose suites are the only executable
+      # statement of what the budget ceilings and the injection scanner actually
+      # do. A silently absent injection test looks exactly like a passing one.
+      #
+      # Derived from the sources rather than hardcoded, so a module or suite
+      # added next month is covered without anyone remembering this step exists.
+      - name: The Work orchestration runtime and its suites reached the compiled output
+        run: |
+          checked=0
+          missing=0
+          for source in runner/agent-core/src/work/*.ts \
+                        runner/agent-core/src/test/work-*.test.ts; do
+            [ -f "$source" ] || continue
+            checked=$((checked + 1))
+            compiled="runner/agent-core/dist/${source#runner/agent-core/src/}"
+            compiled="${compiled%.ts}.js"
+            if [ ! -f "$compiled" ]; then
+              echo "::error file=$source::did not compile to $compiled, so it was not part of the build or the test run above."
+              missing=1
+            fi
+          done
+          if [ "$checked" -eq 0 ]; then
+            echo "::error::No Work orchestration sources were found under runner/agent-core/src, so this gate is checking nothing."
+            exit 1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "All $checked Work orchestration sources and suites are present in dist/."
 
   build-and-deploy:
     needs: [test, runner, migrations]
