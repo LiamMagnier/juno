@@ -8,6 +8,8 @@ import { readTaskToken, verifyTaskToken } from "@/lib/cloud-code-token";
 import { verifyGithubActionsOidc } from "@/lib/github-oidc";
 import type { ClientActivityEvent } from "@/types/chat";
 
+export { appendTaskEvents, type TaskEventInput } from "@/lib/code-task-events";
+
 export const ONLINE_WINDOW_MS = 120_000;
 
 export const TASK_STATUSES = ["queued", "running", "awaiting_approval", "done", "failed", "cancelled"] as const;
@@ -33,8 +35,6 @@ export const EVENT_KINDS = [
   // multi-agent runs — the web UI renders live agent cards from these.
   "agent",
 ] as const;
-
-const CONTROL_KINDS = ["approval_response", "cancel_request"];
 
 export async function requireUser(): Promise<
   { user: SessionUser; error: null } | { user: null; error: NextResponse }
@@ -236,13 +236,6 @@ export function serializeTaskEvent(event: CodeTaskEvent) {
   };
 }
 
-export type TaskEventInput = {
-  kind: string;
-  payload: Prisma.InputJsonValue;
-  /** Producer-supplied idempotency key; see `CodeTaskEvent.eventKey`. */
-  key?: string | null;
-};
-
 /** Deterministic Message id for the assistant turn a linked task produced —
  *  one task, one message, so repeated terminal posts upsert instead of piling
  *  up duplicates, and the web client can address the row without a join. */
@@ -382,82 +375,5 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
   await prisma.conversation.updateMany({
     where: { id: conversation.id, userId: task.userId },
     data: { lastMessageAt: new Date() },
-  });
-}
-
-/** Callers MUST have ownership-checked `taskId` (findFirst with userId) before
- *  calling — the transaction below updates the task by bare id, so it uses the
- *  unguarded client. */
-export async function appendTaskEvents(
-  taskId: string,
-  events: TaskEventInput[],
-  opts: { status?: string; afterControlSeq?: number; fromStatus?: string } = {},
-): Promise<{
-  task: CodeTask;
-  lastSeq: number;
-  control: { seq: number; kind: string; payload: Prisma.JsonValue }[];
-}> {
-  return prismaUnguarded.$transaction(async (tx) => {
-    // Drop events this task has already stored.
-    //
-    // The runner retries a batch whose POST committed but whose response was
-    // lost. Filtering here rather than relying on the unique index alone means
-    // the sequence numbers stay contiguous: `createMany({skipDuplicates})`
-    // would have already incremented `lastSeq` for rows it then skipped,
-    // leaving gaps that the SSE cursor reads as missing events forever.
-    const keyed = events.filter((event) => typeof event.key === "string" && event.key.length > 0);
-    let deliverable = events;
-    if (keyed.length > 0) {
-      const seen = await tx.codeTaskEvent.findMany({
-        where: { taskId, eventKey: { in: keyed.map((event) => event.key as string) } },
-        select: { eventKey: true },
-      });
-      if (seen.length > 0) {
-        const already = new Set(seen.map((row) => row.eventKey));
-        deliverable = events.filter((event) => !event.key || !already.has(event.key));
-      }
-    }
-    events = deliverable;
-
-    // Conditional status transition: only apply opts.status when the task is
-    // still in opts.fromStatus, so a concurrently-finished task cannot be
-    // flipped back (e.g. a late approval reviving a completed run).
-    let applyStatus = opts.status;
-    if (opts.status && opts.fromStatus) {
-      const moved = await tx.codeTask.updateMany({
-        where: { id: taskId, status: opts.fromStatus },
-        data: { status: opts.status },
-      });
-      if (moved.count === 0) applyStatus = undefined;
-    }
-    const task = await tx.codeTask.update({
-      where: { id: taskId },
-      data: {
-        lastSeq: { increment: events.length },
-        ...(applyStatus && !opts.fromStatus ? { status: applyStatus } : {}),
-      },
-    });
-    const firstSeq = task.lastSeq - events.length + 1;
-    if (events.length > 0) {
-      await tx.codeTaskEvent.createMany({
-        data: events.map((event, i) => ({
-          taskId,
-          seq: firstSeq + i,
-          kind: event.kind,
-          payload: event.payload,
-          eventKey: event.key ?? null,
-        })),
-      });
-    }
-    const control =
-      opts.afterControlSeq === undefined
-        ? []
-        : (
-            await tx.codeTaskEvent.findMany({
-              where: { taskId, kind: { in: CONTROL_KINDS }, seq: { gt: opts.afterControlSeq } },
-              orderBy: { seq: "asc" },
-            })
-          ).map((event) => ({ seq: event.seq, kind: event.kind, payload: event.payload }));
-    return { task, lastSeq: task.lastSeq, control };
   });
 }

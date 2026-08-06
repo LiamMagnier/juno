@@ -12,10 +12,11 @@
  *   npm run tasks:sweep            # apply
  *   npm run tasks:sweep -- --dry   # report what would change, write nothing
  *
- * Requires NODE_OPTIONS=--conditions=react-server (set by the npm script).
+ * This worker intentionally has a database-only import graph, so it can run
+ * under plain Node without Next's React server condition.
  */
 import { prismaUnguarded } from "@/lib/db";
-import { appendTaskEvents } from "@/lib/code-remote";
+import { appendTaskEvents } from "@/lib/code-task-events";
 import { selectStuckTasks, sweepCutoff, SWEEPABLE_STATUSES } from "@/lib/stuck-task-sweeper";
 
 const DRY = process.argv.includes("--dry") || process.argv.includes("--dry-run");
