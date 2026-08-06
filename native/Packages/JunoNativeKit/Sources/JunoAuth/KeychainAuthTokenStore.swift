@@ -93,7 +93,7 @@ public protocol SecurityKeychainClient: Sendable {
 /// One latch per process, not per call: the answer depends on the code signature,
 /// which cannot change while the app is running, and re-asking would spend a
 /// failed Security round trip on every read.
-private final class DataProtectionKeychainGate: @unchecked Sendable {
+final class DataProtectionKeychainGate: @unchecked Sendable {
     static let shared = DataProtectionKeychainGate()
 
     private let lock = NSLock()
@@ -112,6 +112,15 @@ private final class DataProtectionKeychainGate: @unchecked Sendable {
         guard available else { return false }
         available = false
         return true
+    }
+
+    /// Restores the launch state. The latch is per-process by design, so this
+    /// is the only way a test can express "and now the app is opened again" —
+    /// which is the exact transition the legacy-keychain read path got wrong.
+    func resetForTesting() {
+        lock.lock()
+        defer { lock.unlock() }
+        available = true
     }
 }
 #endif
@@ -160,7 +169,38 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         if let data = try copyValue(for: item, dataProtection: true) {
             return data
         }
+        #if os(macOS)
+        if canMigrateLegacyKeychain {
+            return try migrateLegacyItem(item)
+        }
+        // The build that most needs the legacy keychain was the one branch that
+        // could not reach it, and this is where "I have to sign in every time I
+        // open the app" came from.
+        //
+        // The latch below only flips on `errSecMissingEntitlement`, and that is
+        // the answer macOS gives an unentitled process for a *write*. For a
+        // *read* it answers `errSecItemNotFound` instead — measured, not
+        // assumed: the data-protection query returns -25300 while the very same
+        // item reads back fine with the attribute off. So the first launch
+        // wrote the token to the legacy store through the write-path fallback,
+        // every later launch asked the data-protection store, was told "no such
+        // item", and `migrateLegacyItem` declined to look further because a
+        // development-signed export has no embedded provisioning profile. The
+        // credential was on disk the whole time.
+        //
+        // Read where the writes actually went. Migration still needs the
+        // profile — moving the item requires being able to write the new one —
+        // but simply reading it never did.
+        guard let data = try copyValue(for: item, dataProtection: false) else {
+            return nil
+        }
+        // Having found it there, pin the rest of this process to the same store
+        // so a later write or delete cannot address the other one.
+        _ = DataProtectionKeychainGate.shared.markUnavailable()
+        return data
+        #else
         return try migrateLegacyItem(item)
+        #endif
     }
 
     public func upsert(_ data: Data, for item: SecurityKeychainItem) throws {
@@ -220,6 +260,19 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         // generated database key would come to replace the one the existing
         // store was encrypted with.
         if try migrateLegacyItem(item) != nil { return false }
+        #if os(macOS)
+        // Same blind spot as `read`: on a build with no provisioning profile
+        // the line above cannot see the legacy store, so the existing database
+        // key was invisible here and this returned "inserted" for a key that
+        // already existed. That is the unrecoverable one — it re-keys a store
+        // whose contents were encrypted with the old value.
+        if !canMigrateLegacyKeychain,
+            try copyValue(for: item, dataProtection: false) != nil
+        {
+            _ = DataProtectionKeychainGate.shared.markUnavailable()
+            return false
+        }
+        #endif
         let status = withKeychainFallback {
             SecItemAdd(newItemAttributes(data, for: item) as CFDictionary, nil)
         }
@@ -236,12 +289,16 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
     public func delete(_ item: SecurityKeychainItem) throws -> Bool {
         var removed = try remove(item, dataProtection: true)
         // Sign-out has to clear the legacy copy too, or the token it was asked
-        // to destroy stays readable on disk.
-        if canMigrateLegacyKeychain,
-            try remove(item, dataProtection: false)
-        {
+        // to destroy stays readable on disk. This used to be gated on the
+        // provisioning profile, which meant the builds that kept their tokens
+        // in the legacy store — the only ones with anything to clear there —
+        // were the builds that skipped this. Deleting needs no profile: it
+        // does not have to decrypt the value or write a replacement.
+        #if os(macOS)
+        if try remove(item, dataProtection: false) {
             removed = true
         }
+        #endif
         return removed
     }
 
