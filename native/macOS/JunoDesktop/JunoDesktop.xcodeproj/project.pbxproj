@@ -9,7 +9,7 @@
 /* Begin PBXBuildFile section */
 		04169127F49812FA944A751B /* DesktopAccountScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50B52B2ED47181984DAA60FA /* DesktopAccountScreens.swift */; };
 		0426BE42124381AC99FECA7F /* JunoStorage in Frameworks */ = {isa = PBXBuildFile; productRef = F3EED4921EF67BDAF82CE484 /* JunoStorage */; };
-		069E0AF8AA3667EFF937AB73 /* JunoSimulator in Frameworks */ = {isa = PBXBuildFile; productRef = FB3831ED4C4BD74987286F40 /* JunoSimulator */; };
+		069E0AF8AA3667EFF937AB73 /* JunoCodeRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 62E21499C7F7CE6030BADC07 /* JunoCodeRuntime */; };
 		06ECC43C4ACC61C22CFB9A95 /* JunoDesktopRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07D60B417E58BE70E432E20F /* JunoDesktopRootView.swift */; };
 		07A83475FE4A621A61851E47 /* DesktopCodeStudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE0BCDD021BF5183D9F1413D /* DesktopCodeStudio.swift */; };
 		08972069C96DFC6ADEA5FA47 /* DesktopModelSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DFFC07CCB09E2219AC6EC1C /* DesktopModelSelector.swift */; };
@@ -18,16 +18,19 @@
 		1FBA7F3706AB561CE743A713 /* DesktopUsageModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35DCD47A7263FCF81A8C3CA /* DesktopUsageModel.swift */; };
 		2155687BD62CFDED5F0224D5 /* DesktopProductMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3937DD015DAB7C6F68939F1F /* DesktopProductMode.swift */; };
 		3014845877708BCAAA05C720 /* DesktopCodeWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F2B1A470F0961AE5B4912BF /* DesktopCodeWorkspace.swift */; };
-		3096C27D297E8F1082F823D2 /* JunoWorkCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4CCC409B5E5ACAEC6B72728A /* JunoWorkCore */; };
+		3096C27D297E8F1082F823D2 /* JunoDesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = E202312A6F472CE7FDF350EC /* JunoDesignKit */; };
 		3165507567EC5879E6D83B4F /* DesktopLibraryScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD1849262D77AE703CF3750A /* DesktopLibraryScreen.swift */; };
 		3876B11FBB8D803ECEA1F668 /* JunoAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 6283BAAB57F871FA6DEA8C7E /* JunoAuth */; };
+		3BEBA44CF855CBBB59BF077E /* DesktopWorkExecutorAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F6F78E25A138CC03095B9BF /* DesktopWorkExecutorAdapter.swift */; };
 		40DC421EE2BBF10E74F5B273 /* DesktopCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADA36220F51C8AF1A7636D73 /* DesktopCommands.swift */; };
 		41EC9D370B2856FDE84BCED7 /* DesktopCodeModelMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3B8EFA669098DBC556746C /* DesktopCodeModelMappingTests.swift */; };
 		436B5F3E43E4D083EC052871 /* DesktopNavigationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F7DAFF580CD4F8CAF1786FD /* DesktopNavigationState.swift */; };
 		47D96B5E0848A0BF5C8E121D /* editor.js in Resources */ = {isa = PBXBuildFile; fileRef = 6210C6C1160169228FB44B4F /* editor.js */; };
 		47DF0131EACF190E4A9D473B /* DesktopUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3860896B80760B16162D025A /* DesktopUpdater.swift */; };
+		4C3C218723E4BC294E43678A /* DesktopWorkRegistrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73A8E5419B9997BCF678F158 /* DesktopWorkRegistrationTests.swift */; };
 		4CD88EA3645E23668326B681 /* DesignEditor in Resources */ = {isa = PBXBuildFile; fileRef = C9B7E47195BE33A3D52A312A /* DesignEditor */; };
 		505D69963EC9D57AE39EAA45 /* JunoDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 55A9A1662D6F3D2BCAD4A158 /* JunoDesignSystem */; };
+		51542D355FE463627ADA2C52 /* JunoWorkLocal in Frameworks */ = {isa = PBXBuildFile; productRef = 3388EA506215D40715BEF82A /* JunoWorkLocal */; };
 		532BCFE269F7B252E8489257 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 80E08901FA58A4F4DD67CE18 /* PrivacyInfo.xcprivacy */; };
 		55466220EEF30B70294F6955 /* Newsreader24pt-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 173680B695930DC0611EDE9B /* Newsreader24pt-SemiBold.ttf */; };
 		55B00F0E648F53F760605A2A /* Newsreader24pt-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 4C61EDFFB61392831EDE140B /* Newsreader24pt-Regular.ttf */; };
@@ -37,6 +40,7 @@
 		69E11E717D21C0C6BE70BADC /* DesktopArtifactStatusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31EE69BC10B8DCBBD935BE0 /* DesktopArtifactStatusTests.swift */; };
 		69FE6F53B9A5D56EA6B1FD55 /* JunoVoiceKit in Frameworks */ = {isa = PBXBuildFile; productRef = 3CB7210CF53FFE65EC87E032 /* JunoVoiceKit */; };
 		6AB8AEB19F1F19BDCE5FC234 /* DesktopConnectionsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5F69EF2AA9F880481293377 /* DesktopConnectionsScreen.swift */; };
+		6B0C5FC854812F554B931E05 /* JunoWorkRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = B7BDDE3580B3DF9E8F3F7EB2 /* JunoWorkRuntime */; };
 		6C5FD3E41B08E1098C21DEFB /* DesktopSettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5B8BB4BEB0D113319C846F6 /* DesktopSettingsScreen.swift */; };
 		70C7D6F21F795F1A92984D27 /* DesktopChatWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 254B3DC49106D54CC41DE6B9 /* DesktopChatWorkspace.swift */; };
 		7374309827C987CF0E3D49A9 /* DesktopCodeHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7597B1472C5D749C74C2C1D4 /* DesktopCodeHost.swift */; };
@@ -55,11 +59,13 @@
 		9D75E980D81ADDC7975A56F9 /* JunoWorkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0FD1B5C83E81A48727EDB93C /* JunoWorkKit */; };
 		9F557E5FA44FA90F49F145FB /* DesktopIncognito.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD3EC56B8C293F8C8B49E027 /* DesktopIncognito.swift */; };
 		A30222FE187C44D417955604 /* DesktopNavigationStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87DDC6F2406B896D29731CCE /* DesktopNavigationStateTests.swift */; };
+		A5BA0EFC89B801F86E417AD3 /* DesktopWorkGrants.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4EE09E260A978CAC5D0F4BC /* DesktopWorkGrants.swift */; };
+		AB8B403AB4A8C4BEE6DAFFA4 /* DesktopWorkRunHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B686C9AA50D7A315EE7582E /* DesktopWorkRunHost.swift */; };
 		AD6B1689CAD891B86E63BAB7 /* DesktopUsageScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53235B497624DA5B65F9B902 /* DesktopUsageScreen.swift */; };
-		B490FB2BAFDB355789A46FD4 /* JunoWorkLocal in Frameworks */ = {isa = PBXBuildFile; productRef = 3388EA506215D40715BEF82A /* JunoWorkLocal */; };
+		B490FB2BAFDB355789A46FD4 /* JunoWorkCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4CCC409B5E5ACAEC6B72728A /* JunoWorkCore */; };
 		B57AFDB3B9177B18ED798202 /* DesktopChatAura.swift in Sources */ = {isa = PBXBuildFile; fileRef = A629AF2CFF4D13A74F719EEB /* DesktopChatAura.swift */; };
 		B99BB7C7AC7E6AC8D3F78EBC /* JunoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0C2E44197323B51128487570 /* JunoCore */; };
-		BB22BF5F1464FBB377AF8646 /* JunoDesignKit in Frameworks */ = {isa = PBXBuildFile; productRef = E202312A6F472CE7FDF350EC /* JunoDesignKit */; };
+		BB22BF5F1464FBB377AF8646 /* JunoSimulator in Frameworks */ = {isa = PBXBuildFile; productRef = FB3831ED4C4BD74987286F40 /* JunoSimulator */; };
 		BB3109274012618E706FCA22 /* DesktopArtifactsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F663C28052DA8E4FB85A3E8 /* DesktopArtifactsScreen.swift */; };
 		BC163A0B07ABE65AB4E3C777 /* JunoDesktopLaunchUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D463890A20F5FF7F5301DF69 /* JunoDesktopLaunchUITests.swift */; };
 		C09E8A9D069038F4C7082316 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 51D7DEFA18FA775DFB14FA34 /* Assets.xcassets */; };
@@ -74,10 +80,12 @@
 		DF2A1897160CC8887E91F7D2 /* index.html in Resources */ = {isa = PBXBuildFile; fileRef = 6A84BDBBCFA23EE700276267 /* index.html */; };
 		E336B77CE73142E75F694359 /* DesktopDictation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62E8526B391F544C70A2BDD2 /* DesktopDictation.swift */; };
 		E62290491ABB53306CC92F92 /* JunoDesktopConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26008ECC25E4124A91F43DC5 /* JunoDesktopConfiguration.swift */; };
+		E6A407159EF0A4D0C25ED4F3 /* DesktopWorkExecutorAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F61A1B77F46EDBD78017C2D /* DesktopWorkExecutorAdapterTests.swift */; };
 		E7123B1DC6096690E0373BDD /* JunoDesktopWebAuthenticationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F03B02FCF79ED91840D543DC /* JunoDesktopWebAuthenticationClient.swift */; };
 		E768A34B4CFED7C10A5D9FBF /* JunoDesktopPreviewRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1494E7FFF5D8759026B73974 /* JunoDesktopPreviewRoot.swift */; };
 		EC0331AAF291C463F51FD118 /* Newsreader24pt-MediumItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 4709C37AEBA1C5BAEC8D25A3 /* Newsreader24pt-MediumItalic.ttf */; };
 		EF6B0AA71D4C8A18AECCBF04 /* DesktopCodeAccountFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83368A128D410411E190E1E4 /* DesktopCodeAccountFooter.swift */; };
+		F0415B5D42956526FE49F11E /* JunoWorkAutomation in Frameworks */ = {isa = PBXBuildFile; productRef = EFDF48E1D7E6735BFAC0AD07 /* JunoWorkAutomation */; };
 		F40DDADC53615BD5A497147D /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 9DB86AE5BD906CBD665AA5B2 /* OFL.txt */; };
 		F76D9918A5174888330695D5 /* DesktopVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = A41D89E15AF31ED40FD20526 /* DesktopVoice.swift */; };
 		FA5F0BCBFA358AB2CAE56273 /* Newsreader24pt-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 808EF0C3D75DC5359F776E19 /* Newsreader24pt-Medium.ttf */; };
@@ -104,6 +112,8 @@
 		00EF62FB4286BF63383E60F3 /* JunoDesktopSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoDesktopSmokeTests.swift; sourceTree = "<group>"; };
 		07D60B417E58BE70E432E20F /* JunoDesktopRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoDesktopRootView.swift; sourceTree = "<group>"; };
 		0AE553639B716F86EEF81F0B /* JunoDesktopUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = JunoDesktopUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		0B686C9AA50D7A315EE7582E /* DesktopWorkRunHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkRunHost.swift; sourceTree = "<group>"; };
+		0F6F78E25A138CC03095B9BF /* DesktopWorkExecutorAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkExecutorAdapter.swift; sourceTree = "<group>"; };
 		1494E7FFF5D8759026B73974 /* JunoDesktopPreviewRoot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoDesktopPreviewRoot.swift; sourceTree = "<group>"; };
 		173680B695930DC0611EDE9B /* Newsreader24pt-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader24pt-SemiBold.ttf"; sourceTree = "<group>"; };
 		18E25C3C510164E4281E592D /* DesktopSearchScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSearchScreen.swift; sourceTree = "<group>"; };
@@ -128,6 +138,7 @@
 		524F462202D5559551BED6F0 /* DesktopSegmented.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSegmented.swift; sourceTree = "<group>"; };
 		53235B497624DA5B65F9B902 /* DesktopUsageScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopUsageScreen.swift; sourceTree = "<group>"; };
 		5F1AD59AF5368F1B3A84D0F2 /* JunoDesktop-Next.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoDesktop-Next.xcconfig"; sourceTree = "<group>"; };
+		5F61A1B77F46EDBD78017C2D /* DesktopWorkExecutorAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkExecutorAdapterTests.swift; sourceTree = "<group>"; };
 		6210C6C1160169228FB44B4F /* editor.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = editor.js; sourceTree = "<group>"; };
 		62E8526B391F544C70A2BDD2 /* DesktopDictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDictation.swift; sourceTree = "<group>"; };
 		67002ACB31FEB3D116EE36AB /* Navigation.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Navigation.xcassets; sourceTree = "<group>"; };
@@ -136,6 +147,7 @@
 		6C25A824ACBDFBAEF6DF8035 /* JunoDesktop-Stable.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoDesktop-Stable.xcconfig"; sourceTree = "<group>"; };
 		6F663C28052DA8E4FB85A3E8 /* DesktopArtifactsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopArtifactsScreen.swift; sourceTree = "<group>"; };
 		6F7DAFF580CD4F8CAF1786FD /* DesktopNavigationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNavigationState.swift; sourceTree = "<group>"; };
+		73A8E5419B9997BCF678F158 /* DesktopWorkRegistrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkRegistrationTests.swift; sourceTree = "<group>"; };
 		7597B1472C5D749C74C2C1D4 /* DesktopCodeHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCodeHost.swift; sourceTree = "<group>"; };
 		774077F2584C1A4709F9E8E2 /* DesktopDesignEditorHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDesignEditorHost.swift; sourceTree = "<group>"; };
 		7A3B8EFA669098DBC556746C /* DesktopCodeModelMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCodeModelMappingTests.swift; sourceTree = "<group>"; };
@@ -161,6 +173,7 @@
 		C9B7E47195BE33A3D52A312A /* DesignEditor */ = {isa = PBXFileReference; lastKnownFileType = folder; name = DesignEditor; path = Resources/DesignEditor; sourceTree = SOURCE_ROOT; };
 		CD1849262D77AE703CF3750A /* DesktopLibraryScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopLibraryScreen.swift; sourceTree = "<group>"; };
 		D463890A20F5FF7F5301DF69 /* JunoDesktopLaunchUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoDesktopLaunchUITests.swift; sourceTree = "<group>"; };
+		D4EE09E260A978CAC5D0F4BC /* DesktopWorkGrants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWorkGrants.swift; sourceTree = "<group>"; };
 		D9EB13875731628203A4F315 /* editor.css */ = {isa = PBXFileReference; lastKnownFileType = text.css; path = editor.css; sourceTree = "<group>"; };
 		E32AE9A2B8BCB8FB3A234FF9 /* DesktopArtifactCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopArtifactCanvas.swift; sourceTree = "<group>"; };
 		E35DCD47A7263FCF81A8C3CA /* DesktopUsageModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopUsageModel.swift; sourceTree = "<group>"; };
@@ -187,10 +200,13 @@
 				920EBFD18DE90BC1BD60CC8E /* JunoPreviewSupport in Frameworks */,
 				D4BA69411D695B3CA7C42F81 /* JunoCodeBridge in Frameworks */,
 				7B50A4DA215D4A4FF2BDDF4E /* JunoCodeUI in Frameworks */,
-				069E0AF8AA3667EFF937AB73 /* JunoSimulator in Frameworks */,
-				BB22BF5F1464FBB377AF8646 /* JunoDesignKit in Frameworks */,
-				3096C27D297E8F1082F823D2 /* JunoWorkCore in Frameworks */,
-				B490FB2BAFDB355789A46FD4 /* JunoWorkLocal in Frameworks */,
+				069E0AF8AA3667EFF937AB73 /* JunoCodeRuntime in Frameworks */,
+				BB22BF5F1464FBB377AF8646 /* JunoSimulator in Frameworks */,
+				3096C27D297E8F1082F823D2 /* JunoDesignKit in Frameworks */,
+				B490FB2BAFDB355789A46FD4 /* JunoWorkCore in Frameworks */,
+				51542D355FE463627ADA2C52 /* JunoWorkLocal in Frameworks */,
+				6B0C5FC854812F554B931E05 /* JunoWorkRuntime in Frameworks */,
+				F0415B5D42956526FE49F11E /* JunoWorkAutomation in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -269,7 +285,10 @@
 				E35DCD47A7263FCF81A8C3CA /* DesktopUsageModel.swift */,
 				53235B497624DA5B65F9B902 /* DesktopUsageScreen.swift */,
 				A41D89E15AF31ED40FD20526 /* DesktopVoice.swift */,
+				0F6F78E25A138CC03095B9BF /* DesktopWorkExecutorAdapter.swift */,
+				D4EE09E260A978CAC5D0F4BC /* DesktopWorkGrants.swift */,
 				3EBD8AF37B6F60E4B079D55D /* DesktopWorkHost.swift */,
+				0B686C9AA50D7A315EE7582E /* DesktopWorkRunHost.swift */,
 				42BA94CA2D66FA985D4EE0D7 /* DesktopWorkSettings.swift */,
 				275F5720505693133CBAB593 /* DesktopWorkWorkspace.swift */,
 				C4B82B415445DE8D72316DC0 /* JunoDesktopApp.swift */,
@@ -332,6 +351,8 @@
 				7A3B8EFA669098DBC556746C /* DesktopCodeModelMappingTests.swift */,
 				87DDC6F2406B896D29731CCE /* DesktopNavigationStateTests.swift */,
 				6BE662C8AAB794BA99D7E03F /* DesktopUsageModelTests.swift */,
+				5F61A1B77F46EDBD78017C2D /* DesktopWorkExecutorAdapterTests.swift */,
+				73A8E5419B9997BCF678F158 /* DesktopWorkRegistrationTests.swift */,
 				00EF62FB4286BF63383E60F3 /* JunoDesktopSmokeTests.swift */,
 			);
 			path = Tests;
@@ -404,10 +425,13 @@
 				35AB29EB28C0B56EEAD2AAAB /* JunoPreviewSupport */,
 				689E8F208D90FF8819D502E1 /* JunoCodeBridge */,
 				344C68219BB8A74BBFEB2F9A /* JunoCodeUI */,
+				62E21499C7F7CE6030BADC07 /* JunoCodeRuntime */,
 				FB3831ED4C4BD74987286F40 /* JunoSimulator */,
 				E202312A6F472CE7FDF350EC /* JunoDesignKit */,
 				4CCC409B5E5ACAEC6B72728A /* JunoWorkCore */,
 				3388EA506215D40715BEF82A /* JunoWorkLocal */,
+				B7BDDE3580B3DF9E8F3F7EB2 /* JunoWorkRuntime */,
+				EFDF48E1D7E6735BFAC0AD07 /* JunoWorkAutomation */,
 			);
 			productName = JunoDesktop;
 			productReference = A04642CF9C92F6D20314B2D2 /* JunoDesktop.app */;
@@ -556,7 +580,10 @@
 				1FBA7F3706AB561CE743A713 /* DesktopUsageModel.swift in Sources */,
 				AD6B1689CAD891B86E63BAB7 /* DesktopUsageScreen.swift in Sources */,
 				F76D9918A5174888330695D5 /* DesktopVoice.swift in Sources */,
+				3BEBA44CF855CBBB59BF077E /* DesktopWorkExecutorAdapter.swift in Sources */,
+				A5BA0EFC89B801F86E417AD3 /* DesktopWorkGrants.swift in Sources */,
 				C811AAC4B9F0229208452F6D /* DesktopWorkHost.swift in Sources */,
+				AB8B403AB4A8C4BEE6DAFFA4 /* DesktopWorkRunHost.swift in Sources */,
 				7C82A2990D5EC0A04055C206 /* DesktopWorkSettings.swift in Sources */,
 				81719C10965D3ADC5675E061 /* DesktopWorkWorkspace.swift in Sources */,
 				8199D14233F78AB073D930CD /* JunoDesktopApp.swift in Sources */,
@@ -584,6 +611,8 @@
 				41EC9D370B2856FDE84BCED7 /* DesktopCodeModelMappingTests.swift in Sources */,
 				A30222FE187C44D417955604 /* DesktopNavigationStateTests.swift in Sources */,
 				92B937323764063EA9C4214E /* DesktopUsageModelTests.swift in Sources */,
+				E6A407159EF0A4D0C25ED4F3 /* DesktopWorkExecutorAdapterTests.swift in Sources */,
+				4C3C218723E4BC294E43678A /* DesktopWorkRegistrationTests.swift in Sources */,
 				C7182D3BF762DDD9FB6E64AB /* JunoDesktopSmokeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1033,6 +1062,10 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = JunoAuth;
 		};
+		62E21499C7F7CE6030BADC07 /* JunoCodeRuntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoCodeRuntime;
+		};
 		6696C1EC4C2EE4496A403864 /* JunoChatKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = JunoChatKit;
@@ -1049,9 +1082,17 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = JunoSync;
 		};
+		B7BDDE3580B3DF9E8F3F7EB2 /* JunoWorkRuntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoWorkRuntime;
+		};
 		E202312A6F472CE7FDF350EC /* JunoDesignKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = JunoDesignKit;
+		};
+		EFDF48E1D7E6735BFAC0AD07 /* JunoWorkAutomation */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoWorkAutomation;
 		};
 		F3EED4921EF67BDAF82CE484 /* JunoStorage */ = {
 			isa = XCSwiftPackageProductDependency;

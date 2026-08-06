@@ -79,6 +79,11 @@ targets:
         product: JunoCodeBridge
       - package: JunoCode
         product: JunoCodeUI
+      # The model transport contract. Juno Work has no transport of its own —
+      # both products stream turns from `/api/agent` — and a second one would be
+      # a second thing to keep correct rather than a boundary worth having.
+      - package: JunoCode
+        product: JunoCodeRuntime
       # Juno Simulator's services and models. The pane lives in JunoCodeUI; the
       # window shell owns the session's lifetime, so it needs the types directly.
       - package: JunoCode
@@ -90,6 +95,19 @@ targets:
         product: JunoWorkCore
       - package: JunoWork
         product: JunoWorkLocal
+      # The half of Juno Work that actually does anything. Core and Local alone
+      # ship the value logic and the containment boundary; without Runtime the
+      # binary has no LocalWorkExecutor, no WorkToolRegistry and no approval
+      # coordinator, so the app advertised a Mac that could serve Work and had
+      # nothing to serve it with.
+      - package: JunoWork
+        product: JunoWorkRuntime
+      # Browser, accessibility and screen control. Linked so the app can put the
+      # controls into a run's tool registry — see `WorkToolRegistry.adding`,
+      # which exists because this dependency direction forbids Runtime naming
+      # them itself.
+      - package: JunoWork
+        product: JunoWorkAutomation
     configFiles:
       Debug: ../../Config/JunoDesktop-Debug.xcconfig
       Stable: ../../Config/JunoDesktop-Stable.xcconfig

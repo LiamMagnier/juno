@@ -55,6 +55,30 @@ public struct WorkToolRegistry: Sendable {
         )
     }
 
+    /// The registry for tools that act on this Mac rather than inside a granted
+    /// folder — the browser, accessibility and screen controls.
+    ///
+    /// `standard` cannot name ``BrowserControl``, ``AccessibilityControl`` or
+    /// ``VisualControl`` and must not learn how: they live in JunoWorkAutomation,
+    /// which depends on *this* target precisely so that an automated action is
+    /// gated by the same approval coordinator and the same ``WorkTool`` protocol
+    /// a file operation is. Naming them here would invert that edge and buy a
+    /// second approval path, and the one that got less attention would be the one
+    /// driving somebody's screen. So the caller supplies them, from the layer
+    /// that knows which tiers this Mac actually holds a macOS permission for.
+    /// Until something called this, the three controls were unreachable from any
+    /// registry at all: they conformed to ``WorkTool``, passed their own tests,
+    /// and no run could invoke one.
+    ///
+    /// **The mode is `readWrite` and that widens nothing.** No ``GrantAccessing``
+    /// is involved, so the question the approval gate asks first — was this
+    /// folder shared for reading only — has no answer here. Any narrower mode
+    /// would make that question refuse every automated action outright, before
+    /// the risk ladder that actually governs them got to decide.
+    public static func automation(tools: [any WorkTool]) -> WorkToolRegistry {
+        WorkToolRegistry(tools: tools, mode: .readWrite)
+    }
+
     public var allTools: [any WorkTool] {
         tools.values.sorted { $0.name < $1.name }
     }

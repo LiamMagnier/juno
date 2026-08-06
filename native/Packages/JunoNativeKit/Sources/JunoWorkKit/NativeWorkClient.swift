@@ -154,22 +154,144 @@ public struct NativeWorkClient: Sendable {
     /// none of it is worth showing.
     static let maximumStreamErrorBytes = 64 * 1_024
 
+    /// The version of the *derivation rules* behind the advertised capability
+    /// list, not of the list itself.
+    ///
+    /// Sent so the relay can tell an old Mac's manifest from a new one that
+    /// happens to advertise the same keys for different reasons. Bumped when
+    /// `WorkHostPolicy.advertisedCapabilities` changes what a key means, never
+    /// when a key is added.
+    static let capabilitiesVersion = 1
+
     private let sender: any NativeAuthenticatedRequestSending
     private let streamer: any NativeAuthenticatedByteStreaming
 
+    /// The Mac this client speaks for, when it speaks for one.
+    ///
+    /// Nil on the phone and in every read-only use, and that is the whole
+    /// reason it is optional: a client fetching the account's sessions has no
+    /// business carrying a device id, while the host loop cannot advertise
+    /// without one. `advertiseWorkHost` refuses rather than inventing a
+    /// registration body around a Mac it cannot name.
+    ///
+    /// Asked rather than stored, because the identity is not available when the
+    /// app composes its dependencies: Work reuses the Juno Code device row, and
+    /// on a first launch that row does not exist until Code's own heartbeat has
+    /// landed. A value captured at composition would be nil for the whole of
+    /// that session — the one session in which somebody is setting Juno up.
+    public let hostIdentity: (@Sendable () -> WorkHostIdentity?)?
+
+    /// What this Mac is carrying, read at the moment of each advertisement. See
+    /// ``WorkHostRunCounts`` for why it is a question rather than a value.
+    public let runCounts: (@Sendable () async -> WorkHostRunCounts)?
+
     public init(
         sender: any NativeAuthenticatedRequestSending,
-        streamer: any NativeAuthenticatedByteStreaming
+        streamer: any NativeAuthenticatedByteStreaming,
+        hostIdentity: (@Sendable () -> WorkHostIdentity?)? = nil,
+        runCounts: (@Sendable () async -> WorkHostRunCounts)? = nil
     ) {
         self.sender = sender
         self.streamer = streamer
+        self.hostIdentity = hostIdentity
+        self.runCounts = runCounts
     }
 
-    public init(transport: any NativeWorkTransport) {
-        self.init(sender: transport, streamer: transport)
+    public init(
+        transport: any NativeWorkTransport,
+        hostIdentity: (@Sendable () -> WorkHostIdentity?)? = nil,
+        runCounts: (@Sendable () async -> WorkHostRunCounts)? = nil
+    ) {
+        self.init(
+            sender: transport,
+            streamer: transport,
+            hostIdentity: hostIdentity,
+            runCounts: runCounts
+        )
     }
 
     // MARK: - Hosts
+
+    /// Registers this Mac for Juno Work, or re-advertises it.
+    ///
+    /// One endpoint for both, because they are the same statement — this is what
+    /// this machine can do right now — and because the `WorkHost` row's id is
+    /// only obtainable from its response. Nothing else in the product hands a
+    /// Mac a `hostID`, which is why no amount of switching Work on in Settings
+    /// used to make a task run here: the claim loop needs an id that only this
+    /// call produces.
+    ///
+    /// The counts describe *remote* work this host is carrying and nothing
+    /// else. Reporting a local session here would put a badge on the phone for
+    /// work the phone never sent.
+    public func registerWorkHost(
+        identity: WorkHostIdentity,
+        policy: WorkHostPolicy,
+        for accountID: AccountID
+    ) async throws -> WorkHostRegistration {
+        try validate(identity.deviceID)
+        let counts = await runCounts?() ?? .none
+        let response = try await send(
+            .post,
+            "/api/work/hosts/register",
+            body: Self.hostRegistrationBody(
+                identity: identity,
+                policy: policy,
+                counts: counts
+            ),
+            for: accountID
+        )
+        guard let root = try decodeObject(response),
+            case .object(let host)? = root["host"],
+            case .string(let hostID)? = host["id"]
+        else { throw WorkRemoteError.malformedResponse }
+        var routable: [String] = []
+        if case .array(let keys)? = root["routableCapabilities"] {
+            routable = keys.compactMap(\.stringValue)
+        }
+        return WorkHostRegistration(hostID: hostID, routableCapabilities: routable)
+    }
+
+    /// The registration body, exactly as `hostRegistrationSchema` in
+    /// `src/lib/work/relay.ts` reads it.
+    ///
+    /// Built by a pure function so the payload can be asserted without a server.
+    /// It is worth pinning: every field here is either a permission this Mac is
+    /// handing out or the identity the relay pairs it by, and a silently dropped
+    /// key is a Mac that advertises more than its owner allowed or less than it
+    /// can do.
+    public static func hostRegistrationBody(
+        identity: WorkHostIdentity,
+        policy: WorkHostPolicy,
+        counts: WorkHostRunCounts
+    ) -> JunoJSONValue {
+        .object([
+            "deviceId": .string(identity.deviceID),
+            "displayName": .string(identity.displayName),
+            // Work is macOS-only, and the route takes a literal rather than an
+            // open string, so this is a constant and not a lookup.
+            "platform": .string("macos"),
+            "appVersion": .string(identity.appVersion),
+            "protocolVersion": .number(Double(protocolVersion)),
+            "enabled": .bool(policy.enabled),
+            "allowsFileWork": .bool(policy.allowsFileWork),
+            "allowsBrowser": .bool(policy.allowsBrowser),
+            "allowsComputerUse": .bool(policy.allowsComputerUse),
+            "allowsShell": .bool(policy.allowsShell),
+            "allowsBackground": .bool(policy.allowsBackground),
+            "approvalPolicy": .string(policy.approvalPolicy.rawValue),
+            "capabilities": .array(policy.advertisedCapabilities.map { .string($0) }),
+            "capabilitiesVersion": .number(Double(capabilitiesVersion)),
+            // Sorted so two advertisements of the same policy are byte-identical.
+            // An unordered set would make every heartbeat look like a change to
+            // anything downstream that diffs them.
+            "allowedApps": .array(policy.allowedApps.sorted().map { .string($0) }),
+            "blockedApps": .array(policy.blockedApps.sorted().map { .string($0) }),
+            "allowedDomains": .array(policy.allowedDomains.sorted().map { .string($0) }),
+            "activeRunCount": .number(Double(max(0, counts.active))),
+            "queuedRunCount": .number(Double(max(0, counts.queued))),
+        ])
+    }
 
     /// The Macs signed in to Juno Work for this account.
     ///

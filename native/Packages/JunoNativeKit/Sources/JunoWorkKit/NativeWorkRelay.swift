@@ -18,6 +18,12 @@ import JunoCore
 /// a revoked host that retries forever keeps polling a relay that has already
 /// told it to stop, and a transient failure treated as permanent takes the Mac
 /// offline until someone notices and restarts the app.
+/// `registerWorkHost` already has the shape; the conformance is what lets a host
+/// model hold a seam rather than the concrete client, so the first registration
+/// of a Mac — the one case with no `hostID` to fall back on — can be exercised
+/// without a server.
+extension NativeWorkClient: WorkHostRegistering {}
+
 extension NativeWorkClient: WorkRelaying {
     /// The wire generation this build speaks.
     ///
@@ -25,7 +31,14 @@ extension NativeWorkClient: WorkRelaying {
     /// additive field — the relay refuses to hand a host a kind its declared
     /// version cannot parse, so a version bumped for a harmless addition takes
     /// every older Mac out of service for no reason.
-    static let protocolVersion = 1
+    ///
+    /// **2, matching `RELAY_PROTOCOL_VERSION` in `src/lib/work/relay.ts`.** It
+    /// said 1 while the relay was at 2, and `hostUnderstands` withholds any kind
+    /// whose required version is above what the host declares — so `undo`,
+    /// `grant_folder` and `revoke_grant` were never handed to this Mac at all.
+    /// They are implemented here and were unreachable, which presents as a
+    /// person tapping Undo on their phone and nothing whatsoever happening.
+    static let protocolVersion = 2
 
     /// The relay's own ceiling on an acknowledgement's error text.
     static let maximumErrorCharacters = 10_000
@@ -102,29 +115,33 @@ extension NativeWorkClient: WorkRelaying {
     /// The capability list comes from `advertisedCapabilities` rather than
     /// being passed separately, so a manifest that disagrees with the switches
     /// cannot be assembled at this layer either.
+    ///
+    /// **`POST /register`, not `PATCH /api/work/hosts/{id}`.** The PATCH route
+    /// is the *owner's* surface — the narrowing a person applies from their
+    /// phone — and its schema has no `capabilities`, no `platform` and no
+    /// `lastSeenAt`. So a heartbeat sent there wrote a few booleans, silently
+    /// discarded the whole manifest, and never refreshed presence: the relay
+    /// aged this Mac out to `offline` while it was awake and beating twice a
+    /// minute, and `selectTarget` routed every local task away from it. The
+    /// register route is the one that treats an advertisement as an
+    /// advertisement.
     public func advertiseWorkHost(
         hostID: String,
         policy: WorkHostPolicy,
         for accountID: AccountID
     ) async throws {
         try validateRelayIdentifier(hostID)
-        let body: [String: JunoJSONValue] = [
-            "enabled": .bool(policy.enabled),
-            "allowsFileWork": .bool(policy.allowsFileWork),
-            "allowsBrowser": .bool(policy.allowsBrowser),
-            "allowsComputerUse": .bool(policy.allowsComputerUse),
-            "allowsShell": .bool(policy.allowsShell),
-            "allowsBackground": .bool(policy.allowsBackground),
-            "approvalPolicy": .string(policy.approvalPolicy.rawValue),
-            "capabilities": .array(policy.advertisedCapabilities.map { .string($0) }),
-            // Sorted so two advertisements of the same policy are byte-identical.
-            // An unordered set would make every heartbeat look like a change to
-            // anything downstream that diffs them.
-            "allowedApps": .array(policy.allowedApps.sorted().map { .string($0) }),
-            "blockedApps": .array(policy.blockedApps.sorted().map { .string($0) }),
-            "allowedDomains": .array(policy.allowedDomains.sorted().map { .string($0) }),
-        ]
-        _ = try await relaySend(.patch, "/api/work/hosts/\(hostID)", body: .object(body), for: accountID)
+        guard let identity = hostIdentity?() else { throw WorkRemoteError.hostNotRegistered }
+        _ = try await relaySend(
+            .post,
+            "/api/work/hosts/register",
+            body: Self.hostRegistrationBody(
+                identity: identity,
+                policy: policy,
+                counts: await runCounts?() ?? .none
+            ),
+            for: accountID
+        )
     }
 }
 

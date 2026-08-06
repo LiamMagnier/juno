@@ -37,6 +37,20 @@ public protocol WorkRelaying: Sendable {
     ) async throws
 }
 
+/// How a Mac obtains — and keeps — its place on the account's host list.
+///
+/// A seam for the same reason ``WorkRelaying`` is one: the interesting cases are
+/// a registration that lands after sign-out, a Mac whose device row was revoked,
+/// and the very first registration of a machine that has no `hostID` yet. None
+/// of those can be reached from a live server on demand.
+public protocol WorkHostRegistering: Sendable {
+    func registerWorkHost(
+        identity: WorkHostIdentity,
+        policy: WorkHostPolicy,
+        for accountID: AccountID
+    ) async throws -> WorkHostRegistration
+}
+
 /// What a claimed command is handed to.
 ///
 /// The host loop deliberately executes nothing itself. It claims, checks,

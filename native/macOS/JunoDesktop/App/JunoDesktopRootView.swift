@@ -199,6 +199,13 @@ struct JunoDesktopRootView: View {
         // exists — so it starts with everything else rather than behind a
         // switch. What it does *not* do is accept work; see DesktopCodeHost.swift.
         configuration.codeHostModel?.start(for: accountID)
+        // The same split, for Work. Its heartbeat is what creates the WorkHost
+        // row and hands this Mac the id every host-plane route is addressed by —
+        // nothing else in the product produces one, which is why switching Juno
+        // Work on used to leave the settings card saying this Mac had not
+        // finished pairing for ever. Whether it then *claims* anything is the
+        // master switch's decision, made in DesktopWorkHost.swift.
+        configuration.workHostModel?.start(for: accountID)
 
         if let runtime = configuration.runtime {
             workbenchModel = WorkbenchModel(

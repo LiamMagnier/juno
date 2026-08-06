@@ -64,6 +64,70 @@ public struct WorkHostSummary: Equatable, Sendable, Identifiable {
     }
 }
 
+/// The facts about one Mac that do not change between heartbeats.
+///
+/// Carried as a value rather than as three parameters threaded through the
+/// relay, because `POST /api/work/hosts/register` needs all three on *every*
+/// advertisement — it is one endpoint for "this Mac exists" and "this is what it
+/// can do right now" — and a heartbeat that could be assembled without the
+/// device id would be a heartbeat that 400s at the one moment the loop has no
+/// person watching it.
+///
+/// `deviceID` is the Juno Code device row's id, replayed from
+/// `juno.code.deviceId`. Work deliberately does not mint an identity of its own:
+/// the registration route looks the device up on the account and refuses an id
+/// it does not own, so reusing it is what makes the pairing already-solved
+/// rather than a second protocol to keep correct.
+public struct WorkHostIdentity: Equatable, Sendable {
+    public let deviceID: String
+    /// The Mac's name as its owner would recognise it, and as the Code device
+    /// list already shows it.
+    public let displayName: String
+    public let appVersion: String
+
+    public init(deviceID: String, displayName: String, appVersion: String) {
+        self.deviceID = deviceID
+        self.displayName = displayName
+        self.appVersion = appVersion
+    }
+}
+
+/// How much remote work this Mac is carrying at the moment it advertises.
+///
+/// Asked per advertisement rather than passed in once, because two things
+/// advertise this Mac — the host model's heartbeat and the claim loop's own
+/// pass — and a value captured by either of them is a value the other
+/// overwrites. The relay reads `activeRunCount` to decide whether this Mac is
+/// `online` or merely `idle`, so two writers disagreeing makes a busy Mac flap
+/// between the two on every beat.
+public struct WorkHostRunCounts: Equatable, Sendable {
+    public let active: Int
+    public let queued: Int
+
+    public init(active: Int, queued: Int) {
+        self.active = active
+        self.queued = queued
+    }
+
+    public static let none = WorkHostRunCounts(active: 0, queued: 0)
+}
+
+/// What the relay hands back when this Mac registers.
+public struct WorkHostRegistration: Equatable, Sendable {
+    /// The `WorkHost` row's id — the value every other host-plane route is
+    /// addressed by, and the one thing a Mac cannot obtain any other way.
+    public let hostID: String
+    /// The subset of the advertised manifest this backend will actually route
+    /// on. Returned so a newer Mac can see that half its advertisement is being
+    /// ignored, rather than infer it from work that never arrives.
+    public let routableCapabilities: [String]
+
+    public init(hostID: String, routableCapabilities: [String]) {
+        self.hostID = hostID
+        self.routableCapabilities = routableCapabilities
+    }
+}
+
 /// A folder or file source a run may use, as a remote client may see it.
 ///
 /// There is no `localPath` on this type and there must never be one. The
@@ -333,6 +397,12 @@ public struct WorkCommand: Equatable, Sendable, Identifiable {
 
 public enum WorkRemoteError: Error, Equatable, LocalizedError, Sendable {
     case invalidIdentifier
+    /// Something tried to advertise a Mac that has never been registered, so
+    /// there is no `WorkHostIdentity` to register it with. Its own case rather
+    /// than `invalidIdentifier`, because the two have opposite fixes: one is a
+    /// hostile string, the other is a client composed without the device row it
+    /// speaks for.
+    case hostNotRegistered
     case unsupportedCommand(String)
     case malformedResponse
     case hostRevoked
@@ -346,6 +416,8 @@ public enum WorkRemoteError: Error, Equatable, LocalizedError, Sendable {
         switch self {
         case .invalidIdentifier:
             "Juno could not safely address that Mac or task."
+        case .hostNotRegistered:
+            "This Mac has not finished pairing with your account yet."
         case .unsupportedCommand(let kind):
             "This build cannot carry out a \"\(kind)\" instruction."
         case .malformedResponse:
@@ -375,7 +447,7 @@ public enum WorkRemoteError: Error, Equatable, LocalizedError, Sendable {
         case .server(_, _, let retryable): retryable
         case .hostRevoked, .hostNotEnabled, .capabilityNotGranted,
              .approvalDigestMismatch, .approvalExpired, .invalidIdentifier,
-             .unsupportedCommand, .malformedResponse:
+             .hostNotRegistered, .unsupportedCommand, .malformedResponse:
             false
         }
     }

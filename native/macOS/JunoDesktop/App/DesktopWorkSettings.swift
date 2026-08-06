@@ -1,5 +1,7 @@
+import AppKit
 import JunoCore
 import JunoDesignSystem
+import JunoWorkCore
 import JunoWorkKit
 import SwiftUI
 
@@ -53,6 +55,15 @@ struct DesktopWorkHostTile: View {
     /// get one tile below.
     @State private var isConfirmingRevocation = false
 
+    /// The macOS permissions as they were when this card was last drawn.
+    ///
+    /// Re-read on appear and whenever the window comes back to the front, because
+    /// granting Accessibility happens in *System Settings* — the reader leaves,
+    /// grants it, and returns. A card that only sampled TCC once would still be
+    /// telling them the permission is missing after they granted it, which is
+    /// exactly the moment they conclude the feature is broken.
+    @State private var permissions = DesktopWorkSystemPermissions.none
+
     var body: some View {
         // Establishes the dependency described on `switchGeneration`. A bump
         // with no read in *this* body re-renders nothing at all.
@@ -74,6 +85,12 @@ struct DesktopWorkHostTile: View {
             Divider()
             pairing
         }
+        .onAppear { refreshPermissions() }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: NSApplication.didBecomeActiveNotification
+            )
+        ) { _ in refreshPermissions() }
         .alert("Revoke this Mac?", isPresented: $isConfirmingRevocation) {
             Button("Revoke", role: .destructive) {
                 host.detach(reason: "Revoked on this Mac.")
@@ -167,14 +184,37 @@ struct DesktopWorkHostTile: View {
                 detail: "Opens pages in a profile that is already signed in, so it acts as you.",
                 isOn: binding { host.allowsBrowser } set: { host.allowsBrowser = $0 }
             )
+            .disabled(!permissions.accessibility)
             .accessibilityIdentifier("juno.desktop.settings.work-host-browser")
+
+            if !permissions.accessibility {
+                permissionRow(
+                    "Driving a browser needs macOS Accessibility permission, which Juno does not have.",
+                    pane: Self.accessibilityPane,
+                    identifier: "juno.desktop.settings.work-host-accessibility-permission"
+                )
+            }
 
             DesktopWorkSwitchRow(
                 title: "Screen control",
                 detail: "Screenshots, clicks and typing — it sees whatever is on screen, including windows the task has nothing to do with.",
                 isOn: binding { host.allowsComputerUse } set: { host.allowsComputerUse = $0 }
             )
+            // Both permissions, and switched off rather than merely unadvertised
+            // when either is missing. A switch that moves under the pointer and
+            // changes nothing is worse than one that will not move: the reader
+            // believes they have granted screen control, and finds out they have
+            // not when a task fails on its first click.
+            .disabled(!permissions.accessibility || !permissions.screenRecording)
             .accessibilityIdentifier("juno.desktop.settings.work-host-computer-use")
+
+            if !permissions.screenRecording {
+                permissionRow(
+                    "Screen control needs macOS Screen Recording permission, which Juno does not have.",
+                    pane: Self.screenRecordingPane,
+                    identifier: "juno.desktop.settings.work-host-screen-permission"
+                )
+            }
 
             // Off by default and last, with the plainest warning on the card.
             // A shell is not a larger version of clicking around an app; it is
@@ -237,15 +277,36 @@ struct DesktopWorkHostTile: View {
 
     /// The folders this Mac has handed over, by the name the user gave them.
     ///
-    /// Read-only here, and that is not an omission. A grant is created by
-    /// choosing a folder in a panel — an act of pointing at something — and a
-    /// settings list that could conjure one from a typed name would be a list
-    /// that could be talked into granting the wrong folder. Revoking is the
-    /// direction this card would eventually add.
+    /// A grant is created by choosing a folder in a panel — an act of pointing at
+    /// something — never by naming one. There is no text field here and there
+    /// must not be: a list that could conjure a grant from a typed name is a list
+    /// that could be talked into granting the wrong folder, which is precisely
+    /// what routing this through `NSOpenPanel` prevents.
+    ///
+    /// The mode is offered at the moment of choosing, and again per row, because
+    /// "Juno may read this" and "Juno may move things out of this" are different
+    /// consents and a single Share button would have to assume one of them.
     private var grantedFolders: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            Text("Folders Juno Work may use")
-                .junoCaption()
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                Text("Folders Juno Work may use")
+                    .junoCaption()
+                Spacer(minLength: JunoSpace.snug)
+                if let actions = host.grantActions {
+                    Menu("Add folder…") {
+                        ForEach(Self.grantableModes, id: \.self) { mode in
+                            Button(Self.accessLabel(mode.rawValue)) {
+                                actions.addFolder(mode)
+                                switchGeneration &+= 1
+                            }
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .disabled(!host.allowsFileWork)
+                    .accessibilityIdentifier("juno.desktop.settings.work-host-grants-add")
+                }
+            }
 
             if host.grants.isEmpty {
                 Text("No folders have been granted on this Mac.")
@@ -254,34 +315,122 @@ struct DesktopWorkHostTile: View {
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(host.grants) { grant in
-                    HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                        Image(systemName: Self.grantSymbol(grant))
-                            .foregroundStyle(Color.junoMutedForeground)
-                            .accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                            Text(grant.displayName)
-                                .junoRowLabel()
-                                .lineLimit(1)
-                            Text(Self.accessLabel(grant.accessMode))
-                                .junoCaption()
-                        }
-                        Spacer(minLength: JunoSpace.snug)
-                        if !grant.isActive {
-                            Text("Revoked")
-                                .junoCodeSmall()
-                                .foregroundStyle(Color.junoDanger)
-                        } else if let lastUsed = grant.lastUsedAt {
-                            Text("used \(lastUsed.formatted(.relative(presentation: .named)))")
-                                .junoCodeSmall()
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    grantRow(grant)
                 }
                 .accessibilityIdentifier("juno.desktop.settings.work-host-grants")
             }
         }
     }
+
+    @ViewBuilder
+    private func grantRow(_ grant: WorkGrantSummary) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+            Image(systemName: Self.grantSymbol(grant))
+                .foregroundStyle(Color.junoMutedForeground)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                Text(grant.displayName)
+                    .junoRowLabel()
+                    .lineLimit(1)
+                Text(Self.accessLabel(grant.accessMode))
+                    .junoCaption()
+            }
+            Spacer(minLength: JunoSpace.snug)
+            if !grant.isActive {
+                Text("Revoked")
+                    .junoCodeSmall()
+                    .foregroundStyle(Color.junoDanger)
+            } else if let actions = host.grantActions {
+                if let lastUsed = grant.lastUsedAt {
+                    Text("used \(lastUsed.formatted(.relative(presentation: .named)))")
+                        .junoCodeSmall()
+                        .foregroundStyle(.secondary)
+                }
+                Menu("Change…") {
+                    ForEach(Self.grantableModes, id: \.self) { mode in
+                        Button(Self.accessLabel(mode.rawValue)) {
+                            actions.setMode(mode, WorkGrantID(value: grant.grantID))
+                            switchGeneration &+= 1
+                        }
+                        .disabled(grant.accessMode == mode.rawValue)
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .accessibilityLabel("Change what Juno may do in \(grant.displayName)")
+
+                // Immediate, and deliberately without a confirmation. Taking
+                // access back is the safe direction — the folder can be shared
+                // again in two clicks — and a sheet in front of it is a sheet
+                // between somebody and the button they reached for because they
+                // had changed their mind.
+                Button {
+                    actions.revoke(WorkGrantID(value: grant.grantID))
+                    switchGeneration &+= 1
+                } label: {
+                    Image(systemName: "minus.circle")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Stop sharing \(grant.displayName) with Juno")
+                .accessibilityLabel("Stop sharing \(grant.displayName)")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The modes a person can choose from.
+    ///
+    /// Every case, in widening order, so the narrowest is the first thing the
+    /// pointer lands on. There is no case that permits a permanent delete, and
+    /// adding one would not be enough to enable it — see ``WorkAccessMode``.
+    private static let grantableModes: [WorkAccessMode] = [
+        .read, .readWriteNoDelete, .readWrite,
+    ]
+
+    /// One missing macOS permission, and the way to grant it.
+    ///
+    /// The button opens System Settings rather than prompting. A TCC prompt
+    /// raised from a settings card appears behind whatever the reader was
+    /// looking at and, once refused, never appears again — leaving a switch that
+    /// cannot be turned on and no way at all to find out why.
+    @ViewBuilder
+    private func permissionRow(
+        _ message: String, pane: String, identifier: String
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+            Label {
+                Text(message)
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "lock")
+                    .foregroundStyle(Color.junoCaution)
+            }
+            Spacer(minLength: JunoSpace.snug)
+            Button("Open Settings") {
+                if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
+            }
+            .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func refreshPermissions() {
+        let current = DesktopWorkSystemPermissions.current
+        guard current != permissions else { return }
+        permissions = current
+        // The advertised manifest is derived from these, so the relay has to be
+        // told: a permission granted while Juno is open makes this Mac routable
+        // for work it was being passed over for.
+        switchGeneration &+= 1
+    }
+
+    private static let accessibilityPane =
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+    private static let screenRecordingPane =
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
 
     // MARK: - Applications
 
