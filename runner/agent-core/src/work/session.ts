@@ -449,7 +449,6 @@ export class WorkAgentSession {
       },
       this.options.budgetCheckIntervalMs ?? BUDGET_CHECK_INTERVAL_MS,
     );
-    ceilings.unref?.();
 
     let loopError: string | null = null;
     try {

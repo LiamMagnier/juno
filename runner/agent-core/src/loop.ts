@@ -137,9 +137,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
         silent = true;
         turn.abort();
       }, silenceMs);
-      // Never hold the process open on account of a deadline that is only
-      // there to end something early.
-      deadline.unref?.();
+      // Keep the deadline referenced. If a provider request is the only live
+      // work in a short-lived runner, unref'ing this timer lets Node exit before
+      // the abort fires and leaves the caller's promise unresolved forever.
+      // Long-lived hosts already have their server handle; this makes the
+      // fail-safe correct for both hosts and one-shot CLI/test processes.
     };
 
     try {
