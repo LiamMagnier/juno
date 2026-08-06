@@ -39,6 +39,11 @@ const PLACED_IMAGE_MAX = 400;
 /** Points per line for a wheel that reports `DOM_DELTA_LINE` — Firefox and
  *  most non-Apple mice. Chrome's own default for the same conversion. */
 const WHEEL_LINE_HEIGHT = 16;
+/** How far, in screen pixels, a press may wander and still count as a click
+ *  rather than a drag. Measured in client space rather than canvas points on
+ *  purpose: it is about the hand holding the mouse, so it must not grow or
+ *  shrink with the zoom. */
+const CLICK_SLOP = 3;
 
 export type CanvasTool = "select" | "frame" | "rectangle" | "ellipse" | "line" | "text" | "image";
 
@@ -151,6 +156,11 @@ export function DesignCanvas({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   /** Where the picture being chosen will land, held across the file dialog. */
   const placementRef = React.useRef<{ x: number; y: number; width: number; height: number; parentId: NodeId | null } | null>(null);
+  /** A press that could still turn out to be a click into the selection rather
+   *  than a drag of it. Set on pointer-down, thrown away by movement, spent on
+   *  pointer-up. A ref because nothing on screen depends on it — making it
+   *  state would re-render the canvas on every press. */
+  const descentRef = React.useRef<{ path: NodeId[]; originClient: { x: number; y: number } } | null>(null);
 
   const boxes = React.useMemo(() => layoutPage(doc, pageId), [doc, pageId]);
   const rendered = React.useMemo(() => renderPageSvg(doc, pageId, { includeNodeIds: true }), [doc, pageId]);
@@ -280,37 +290,18 @@ export function DesignCanvas({
 
   // ---------------------------------------------------------------- hit test
 
-  /** Topmost node under a point. Clicking selects the outermost non-locked
-   *  ancestor; a double-click (or ⌘/Ctrl-click) selects the deepest — the
-   *  standard "deep select through containers" behaviour. */
-  const hitTest = React.useCallback(
-    (point: { x: number; y: number }, deep: boolean): NodeId | null => {
-      const page = doc.pages.find((p) => p.id === pageId);
-      if (!page) return null;
-
-      const inside = (id: NodeId) => {
-        const box = boxes.get(id);
-        return !!box && point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height;
-      };
-
-      const search = (ids: NodeId[], ancestors: NodeId[]): NodeId | null => {
-        // Back-to-front array means the last match is the topmost.
-        for (let i = ids.length - 1; i >= 0; i--) {
-          const id = ids[i];
-          const node = doc.nodes[id];
-          if (!node || !node.visible || node.locked) continue;
-          if (!inside(id)) continue;
-          if (isContainer(node) && node.children.length > 0) {
-            const child = search(node.children, [...ancestors, id]);
-            if (child) return deep ? child : ancestors[0] ?? id;
-          }
-          return deep ? id : ancestors[0] ?? id;
-        }
-        return null;
-      };
-      return search(page.children, []);
-    },
+  const pathAt = React.useCallback(
+    (point: { x: number; y: number }) => hitPath(point, doc, pageId, boxes),
     [boxes, doc, pageId]
+  );
+
+  /** Topmost node under a point. Clicking selects the outermost non-locked
+   *  ancestor; a ⌘/Ctrl-click selects the deepest — the standard "deep select
+   *  through containers" behaviour. Both are ends of the same chain, so both
+   *  come from one walk. */
+  const hitTest = React.useCallback(
+    (point: { x: number; y: number }, deep: boolean): NodeId | null => pathHit(pathAt(point), deep),
+    [pathAt]
   );
 
   // ------------------------------------------------------------------ guides
@@ -381,6 +372,12 @@ export function DesignCanvas({
   );
 
   const onPointerDown = (event: React.PointerEvent) => {
+    // Cleared before any of the early exits below, not after them: a pan, a
+    // right-click or a draw that started while a descent candidate was still
+    // held would otherwise spend it on its own release and reselect a layer
+    // nobody clicked.
+    descentRef.current = null;
+
     if (event.button === 1 || (event.button === 0 && event.altKey && tool === "select")) {
       beginDrag(event, "pan");
       return;
@@ -394,13 +391,25 @@ export function DesignCanvas({
 
     const scene = toScene(event.clientX, event.clientY);
     const deepSelect = event.metaKey || event.ctrlKey;
+    const path = pathAt(scene);
     const press = canvasPress({
-      hit: hitTest(scene, deepSelect),
+      hit: pathHit(path, deepSelect),
       selection,
       insideSelection: pressLandsInSelection(scene, selection, boxes, doc),
       shiftKey: event.shiftKey,
       deepSelect,
     });
+
+    // A press inside the current selection is still a drag — that rule is what
+    // stopped the canvas moving the layer on top instead of the one you chose.
+    // Descending has to be told apart from dragging without weakening it, and
+    // Figma's answer is the release: a press that neither moved nor dragged
+    // descends on mouse-up. So the candidate is remembered here and spent
+    // there, and any movement past the slop throws it away.
+    descentRef.current =
+      press.kind === "move" && press.select === null && !event.shiftKey && !deepSelect
+        ? { path, originClient: { x: event.clientX, y: event.clientY } }
+        : null;
 
     if (press.kind === "marquee") {
       if (press.clear) onSelect([]);
@@ -416,6 +425,14 @@ export function DesignCanvas({
   };
 
   const onPointerMove = (event: React.PointerEvent) => {
+    const descent = descentRef.current;
+    if (
+      descent &&
+      Math.hypot(event.clientX - descent.originClient.x, event.clientY - descent.originClient.y) > CLICK_SLOP
+    ) {
+      descentRef.current = null;
+    }
+
     if (!drag) {
       if (tool === "select") {
         const scene = toScene(event.clientX, event.clientY);
@@ -618,9 +635,21 @@ export function DesignCanvas({
   );
 
   const onPointerUp = (event: React.PointerEvent) => {
-    if (!drag) return;
-    commitDrag(drag, event.shiftKey);
-    setDrag(null);
+    const descent = descentRef.current;
+    descentRef.current = null;
+
+    if (drag) {
+      // Within the slop this was a click, not a move: committing the drag would
+      // nudge the layer by the pixel or two the pointer wandered while the
+      // button was down, and a click in Figma never moves anything.
+      if (!descent) commitDrag(drag, event.shiftKey);
+      setDrag(null);
+    }
+
+    if (descent) {
+      const next = descendSelection({ path: descent.path, selection });
+      if (next !== null) onSelect([next]);
+    }
   };
 
   /** Place the chosen picture, sized to the box that was drawn or — for a plain
@@ -701,12 +730,13 @@ export function DesignCanvas({
     [doc, editingId, onApply]
   );
 
-  /** Double-click edits a text layer and deep-selects anything else. */
+  /** The two clicks that make up a double-click have already walked two levels
+   *  down the tree between them. All that is left for the gesture itself is the
+   *  thing a second click cannot do: put a caret in a text layer. */
   const onDoubleClick = (event: React.MouseEvent) => {
-    const hit = hitTest(toScene(event.clientX, event.clientY), true);
+    const hit = doubleClickTarget({ path: pathAt(toScene(event.clientX, event.clientY)), selection });
     if (!hit) return;
     const node = doc.nodes[hit];
-    onSelect([hit]);
     setEditingId(!readOnly && node?.type === "text" && !node.locked ? hit : null);
   };
 
@@ -1033,6 +1063,108 @@ export function DesignCanvas({
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * The chain of layers under a point, outermost first and deepest last.
+ *
+ * One walk answers every question the canvas asks about a press: the outermost
+ * frame a plain click selects is the first entry, the layer a ⌘/Ctrl-click
+ * selects is the last, and the layer a *second* click descends to is the one
+ * after whatever is selected now. Answering with the chain rather than with a
+ * single id is what makes descending possible at all — "one level down towards
+ * the cursor" is not a question you can ask a function that replies with one
+ * node, which is why the canvas could only ever offer the outermost frame or
+ * the deepest child and nothing in between.
+ *
+ * Locked and hidden layers are skipped, and skipping one skips its children: a
+ * locked frame is not a lid you can reach through.
+ */
+export function hitPath(
+  point: { x: number; y: number },
+  doc: DesignDocument,
+  pageId: string,
+  boxes: LayoutMap
+): NodeId[] {
+  const page = doc.pages.find((p) => p.id === pageId);
+  if (!page) return [];
+
+  const inside = (id: NodeId) => {
+    const box = boxes.get(id);
+    return !!box && point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height;
+  };
+
+  const search = (ids: readonly NodeId[], prefix: NodeId[]): NodeId[] | null => {
+    // Back-to-front array means the last match is the topmost.
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const id = ids[i];
+      const node = doc.nodes[id];
+      if (!node || !node.visible || node.locked) continue;
+      if (!inside(id)) continue;
+      const here = [...prefix, id];
+      if (isContainer(node) && node.children.length > 0) {
+        const deeper = search(node.children, here);
+        if (deeper) return deeper;
+      }
+      return here;
+    }
+    return null;
+  };
+  return search(page.children, []) ?? [];
+}
+
+/** The end of a hit path a press acts on: the deepest layer when ⌘/Ctrl is
+ *  held, the outermost frame otherwise. */
+export function pathHit(path: readonly NodeId[], deep: boolean): NodeId | null {
+  return (deep ? path[path.length - 1] : path[0]) ?? null;
+}
+
+/**
+ * Where a repeated click goes.
+ *
+ * Figma's rule, and the one people mean by "clicking again should go deeper":
+ * the first click on a frame selects the frame, and clicking **again** on
+ * something inside the current selection descends one level towards the layer
+ * under the cursor. Repeated clicks walk down the tree; clicking another branch
+ * or bare canvas selects normally and starts again at the top, because no
+ * selected layer is under the pointer and there is nothing to descend from.
+ *
+ * The descent starts from the *deepest* selected layer the click landed inside,
+ * so each click advances exactly one level however many ancestors happen to be
+ * selected at once.
+ *
+ * Returning null means "this was not a repeat click, pick normally".
+ */
+export function descendSelection(input: { path: readonly NodeId[]; selection: readonly NodeId[] }): NodeId | null {
+  const { path, selection } = input;
+  let from = -1;
+  for (let i = 0; i < path.length; i++) {
+    if (selection.includes(path[i])) from = i;
+  }
+  if (from < 0) return null;
+  return path[from + 1] ?? null;
+}
+
+/**
+ * The layer a double-click acts on.
+ *
+ * A double-click *is* two clicks, and each of them has already descended a
+ * level on its own release — so by the time the `dblclick` arrives the gesture
+ * has walked two levels down and the layer it landed on is simply the deepest
+ * selected one under the cursor. This reads that answer rather than descending
+ * again: doing both would move three levels for one double-click.
+ *
+ * It replaces a jump straight to the deepest layer under the cursor, which on a
+ * real screen is a label four frames down that you then have no way of telling
+ * apart from any other label. The everyday case is unchanged — a text layer
+ * sitting in a frame is two clicks away, which is what a double-click is.
+ */
+export function doubleClickTarget(input: { path: readonly NodeId[]; selection: readonly NodeId[] }): NodeId | null {
+  const { path, selection } = input;
+  for (let i = path.length - 1; i >= 0; i--) {
+    if (selection.includes(path[i])) return path[i];
+  }
+  return null;
+}
 
 /** What a press on the canvas turns out to mean. `select: null` on a move is
  *  the important case: keep the selection exactly as it is and drag it. */

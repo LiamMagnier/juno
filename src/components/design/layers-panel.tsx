@@ -18,6 +18,12 @@
  * Both live in collections beside the node tree rather than on the node, so
  * until a row said so there was no way to tell an animated layer from a still
  * one without opening every animation in the document and reading its tracks.
+ *
+ * The lock and visibility toggles on a row are load-bearing for the same
+ * reason. Locking or hiding a layer removes it from the canvas's hit test, so
+ * the surface that could reverse it — a press, a marquee, a right-click — is
+ * exactly the surface the change just closed. This list is what is left, which
+ * is why both toggles work in both directions and stay on screen once engaged.
  */
 
 import * as React from "react";
@@ -292,13 +298,26 @@ export function LayersPanel({
                 </button>
               )}
 
+              {/* Hidden on hover, shown for good once engaged.
+                  These two are the only way back. The canvas cannot hit-test a
+                  locked or a hidden layer, so no press, no marquee and no
+                  right-click will ever land on one — this row is the whole of
+                  its remaining surface, and a control you have to know to hover
+                  over is not a way back for a layer you can no longer see. So
+                  the eye stays put while the layer is hidden and the padlock
+                  while it is locked, which is also how the state is legible at
+                  a glance in a list of forty rows. */}
               <button
                 type="button"
                 disabled={readOnly}
                 onClick={() => onApply([{ op: "updateNode", nodeId: id, patch: { visible: !node.visible } }], node.visible ? "Hide layer" : "Show layer")}
                 aria-label={node.visible ? `Hide ${node.name}` : `Show ${node.name}`}
                 aria-pressed={!node.visible}
-                className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
+                title={node.visible ? "Hide" : "Show"}
+                className={cn(
+                  "shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100",
+                  node.visible ? "opacity-0" : "opacity-100"
+                )}
               >
                 {node.visible ? <Eye className="size-3" aria-hidden /> : <EyeOff className="size-3" aria-hidden />}
               </button>
@@ -308,6 +327,7 @@ export function LayersPanel({
                 onClick={() => onApply([{ op: "updateNode", nodeId: id, patch: { locked: !node.locked } }], node.locked ? "Unlock layer" : "Lock layer")}
                 aria-label={node.locked ? `Unlock ${node.name}` : `Lock ${node.name}`}
                 aria-pressed={node.locked}
+                title={node.locked ? "Unlock" : "Lock"}
                 className={cn(
                   "shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100",
                   node.locked ? "opacity-100" : "opacity-0"
