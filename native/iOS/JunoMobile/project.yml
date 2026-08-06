@@ -38,6 +38,8 @@ targets:
       - package: JunoNativeKit
         product: JunoCore
       - package: JunoNativeKit
+        product: JunoDesignKit
+      - package: JunoNativeKit
         product: JunoDesignSystem
       - package: JunoNativeKit
         product: JunoStorage
