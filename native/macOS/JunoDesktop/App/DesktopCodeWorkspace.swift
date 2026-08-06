@@ -92,6 +92,10 @@ struct DesktopCodeWorkspace: View {
     @State private var simulatorHost = DesktopSimulatorHost()
     /// Whether the dictation capsule is up over the Code canvas.
     @State private var isDictating = false
+    /// The web preview is a sibling of the transcript, not an inspector tab.
+    /// Keeping the target here lets the dock and its optional pop-out share one
+    /// `CodePreviewModel` and one dev-server process.
+    @State private var previewTarget: CodePreviewTarget?
     /// The Code composer can host the same realtime voice dock as Chat. The
     /// transcript is saved as a normal conversation when the call ends.
     @State private var voiceSession: DesktopVoiceSession?
@@ -228,14 +232,24 @@ struct DesktopCodeWorkspace: View {
             )
             .junoSidebarColumn()
         } detail: {
-            // A real docked sibling column, never a second `.inspector` — see the
-            // crash note below and `DesktopSimulatorDock`'s own. Web projects are
-            // untouched: `CodePreviewScene` still owns those.
-            DesktopSimulatorDock(
-                model: simulatorHost.isOpen ? simulatorHost.model : nil,
-                close: { withAnimation(JunoMotion.fast) { simulatorHost.closePane() } }
+            // Both web preview and the Apple simulator are real sibling panes,
+            // never a second `.inspector`. They are mutually exclusive: each
+            // needs a readable trailing column, and stacking two overlays would
+            // turn the right side into two competing resize handles.
+            DesktopCodePreviewDock(
+                target: previewTarget,
+                close: closePreview,
+                openInWindow: {
+                    guard let previewTarget else { return }
+                    openPreviewWindow(previewTarget)
+                }
             ) {
-                detail
+                DesktopSimulatorDock(
+                    model: simulatorHost.isOpen ? simulatorHost.model : nil,
+                    close: { withAnimation(JunoMotion.fast) { simulatorHost.closePane() } }
+                ) {
+                    detail
+                }
             }
                 .junoReadingCanvas()
                 .navigationTitle("")
@@ -326,8 +340,14 @@ struct DesktopCodeWorkspace: View {
         .task(id: selectedSessionID) { await resolveController() }
         // A simulator belongs to one workspace. Changing workspace or session ends
         // the previous build, log stream and capture before anything new starts.
-        .onChange(of: targetRepository?.id) { _, _ in simulatorHost.tearDown() }
-        .onChange(of: selectedSessionID) { _, _ in simulatorHost.tearDown() }
+        .onChange(of: targetRepository?.id) { _, _ in
+            simulatorHost.tearDown()
+            closePreview()
+        }
+        .onChange(of: selectedSessionID) { _, _ in
+            simulatorHost.tearDown()
+            closePreview()
+        }
         .task(id: selectedTask?.id) { followSelectedTask() }
         .task(id: remoteDeviceID) { await loadRemoteSessions() }
         .task(id: selection.wrappedValue) { await followSelectedRemoteSession() }
@@ -373,6 +393,7 @@ struct DesktopCodeWorkspace: View {
         // re-attaches a cached controller.
         .onDisappear {
             simulatorHost.tearDown()
+            previewTarget = nil
             guard let controller else { return }
             Task { await controller.detach() }
         }
@@ -987,6 +1008,7 @@ struct DesktopCodeWorkspace: View {
             if let repository = targetRepository {
                 Button {
                     withAnimation(JunoMotion.fast) {
+                        closePreview()
                         simulatorHost.open(
                             workspaceKey: repository.id.value,
                             workspaceRoot: URL(fileURLWithPath: repository.descriptor.localPathHint)
@@ -1012,7 +1034,12 @@ struct DesktopCodeWorkspace: View {
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button(action: openPreview) {
-                    Label("Open Preview", systemImage: "rectangle.on.rectangle")
+                    Label(
+                        previewTarget == nil ? "Open Preview" : "Hide Preview",
+                        systemImage: previewTarget == nil
+                            ? "rectangle.on.rectangle"
+                            : "rectangle.on.rectangle.slash"
+                    )
                 }
                 .keyboardShortcut("p", modifiers: [.command, .option])
                 .disabled(controller?.context == nil)
@@ -1188,10 +1215,20 @@ struct DesktopCodeWorkspace: View {
 
     private func openPreview() {
         guard let root = controller?.context?.access.rootURL else { return }
-        openWindow(
-            id: CodePreviewScene.windowID,
-            value: CodePreviewTarget(workspaceRoot: root)
-        )
+        if previewTarget != nil {
+            closePreview()
+            return
+        }
+        simulatorHost.closePane()
+        previewTarget = CodePreviewTarget(workspaceRoot: root)
+    }
+
+    private func closePreview() {
+        previewTarget = nil
+    }
+
+    private func openPreviewWindow(_ target: CodePreviewTarget) {
+        openWindow(id: CodePreviewScene.windowID, value: target)
     }
 
     /// Creates and starts the local run described by the launch composer.

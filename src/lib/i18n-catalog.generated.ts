@@ -3514,6 +3514,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Pick a repository"
   },
   {
+    "id": "46f00ca41aa7dbb8",
+    "source": "Invalid or already-resolved Code usage reservation."
+  },
+  {
     "id": "46fada35cacbde87",
     "source": "· Juno"
   },
@@ -9864,6 +9868,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c699aa00b26d36f6",
     "source": "No changes"
+  },
+  {
+    "id": "c6c55fe1da7ea288",
+    "source": "A Code usage reservation is required."
   },
   {
     "id": "c6de6f45c827f464",

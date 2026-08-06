@@ -71,13 +71,18 @@ test("hardening really does strip the sandbox variables, which is why order matt
   assert.equal(fake.env.JUNO_HOME, "/tmp/juno-home", "JUNO_HOME is on the allowlist and must survive");
 });
 
-test("a run with no container says so rather than pretending", () => {
-  // The absence used to be silent, which is how it survived. Any future
-  // refactor that drops the warning re-creates a boundary nobody can audit
-  // from the logs.
+test("a run with no container refuses rather than falling back to the host", () => {
+  // The production driver must make the failure explicit and refuse to run.
+  // Keeping the reason in the error makes a missing image diagnosable without
+  // weakening the fail-closed boundary.
+  assert.match(
+    SOURCE,
+    /refusing to run agent-authored commands on the runner host/,
+    "the runner must refuse to execute agent commands when no container sandbox is configured"
+  );
   assert.match(
     SOURCE,
     /no container sandbox configured/,
-    "the runner must log when agent commands are about to run uncontained"
+    "the refusal must identify the missing sandbox configuration"
   );
 });

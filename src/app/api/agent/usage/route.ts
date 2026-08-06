@@ -1,9 +1,24 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { z } from "zod";
 import { getCurrentUser } from "@/lib/session";
-import { getUserPlan, consumeMessage, recordTokens, refundMessage } from "@/lib/usage";
+import {
+  getUserPlan,
+  getQuota,
+  recordTokens,
+  reserveCodeMessage,
+  resolveCodeUsageReservation,
+} from "@/lib/usage";
 import { checkBudget, budgetExceededMessage, recordSpend } from "@/lib/spend";
 
 export const runtime = "nodejs";
+
+const usageSchema = z.object({
+  phase: z.enum(["start", "record", "refund"]),
+  reservationId: z.string().min(1).max(100).optional(),
+  promptTokens: z.number().int().min(0).max(10_000_000).optional(),
+  completionTokens: z.number().int().min(0).max(10_000_000).optional(),
+  model: z.string().trim().min(1).max(200).optional(),
+});
 
 /**
  * Usage accounting for Juno Code. The native/desktop engine calls this so
@@ -31,12 +46,11 @@ export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { phase?: string; promptTokens?: number; completionTokens?: number; model?: string };
-  try {
-    body = await req.json();
-  } catch {
+  const parsed = usageSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
+  const body = parsed.data;
 
   const plan = await getUserPlan(user.id);
 
@@ -48,27 +62,40 @@ export async function POST(req: NextRequest) {
         { status: 402 },
       );
     }
-    const consumed = await consumeMessage(user.id, plan);
-    if (!consumed.allowed) {
+    const reserved = await reserveCodeMessage(user.id, plan);
+    if (!reserved.allowed) {
       return NextResponse.json(
         {
           error: "You've reached your monthly usage limit. Upgrade your plan to keep using Juno Code.",
           code: "QUOTA_EXCEEDED",
-          quota: consumed.quota,
+          quota: reserved.quota,
         },
         { status: 402 },
       );
     }
-    return NextResponse.json({ ok: true, quota: consumed.quota });
+    return NextResponse.json({
+      ok: true,
+      reservationId: reserved.reservationId,
+      quota: reserved.quota,
+    });
   }
 
   if (body.phase === "record") {
-    const promptTokens = Math.max(0, Math.floor(body.promptTokens ?? 0));
-    const completionTokens = Math.max(0, Math.floor(body.completionTokens ?? 0));
+    if (!body.reservationId) {
+      return NextResponse.json({ error: "A Code usage reservation is required." }, { status: 400 });
+    }
+    const resolution = await resolveCodeUsageReservation(user.id, body.reservationId, "recorded");
+    if (resolution === "not_found" || resolution === "conflict") {
+      return NextResponse.json({ error: "Invalid or already-resolved Code usage reservation." }, { status: 409 });
+    }
+    if (resolution === "already_resolved") return NextResponse.json({ ok: true, alreadyResolved: true });
+
+    const promptTokens = body.promptTokens ?? 0;
+    const completionTokens = body.completionTokens ?? 0;
     await recordTokens(user.id, promptTokens, completionTokens);
     await recordSpend({
       userId: user.id,
-      model: typeof body.model === "string" && body.model ? body.model : "unknown",
+      model: body.model ?? "unknown",
       kind: "code",
       source: "app",
       promptTokens,
@@ -78,8 +105,14 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.phase === "refund") {
-    const quota = await refundMessage(user.id, plan);
-    return NextResponse.json({ ok: true, quota });
+    if (!body.reservationId) {
+      return NextResponse.json({ error: "A Code usage reservation is required." }, { status: 400 });
+    }
+    const resolution = await resolveCodeUsageReservation(user.id, body.reservationId, "refunded");
+    if (resolution === "not_found" || resolution === "conflict") {
+      return NextResponse.json({ error: "Invalid or already-resolved Code usage reservation." }, { status: 409 });
+    }
+    return NextResponse.json({ ok: true, alreadyResolved: resolution === "already_resolved", quota: await getQuota(user.id, plan) });
   }
 
   return NextResponse.json({ error: "Unknown phase." }, { status: 400 });

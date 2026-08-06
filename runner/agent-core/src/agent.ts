@@ -11,6 +11,7 @@ import type {
   UserContent,
 } from './types.js';
 import type { ProviderAdapter } from './providers/types.js';
+import { assertContainedPath } from './tools/fs.js';
 import type { ToolContext, ToolDefinition } from './tools/types.js';
 import type { ContainerSandboxConfig } from './tools/container-sandbox.js';
 import { PermissionEngine, classifyRisk } from './permissions.js';
@@ -366,7 +367,22 @@ export class AgentSession {
       env: this.env,
       containerSandbox: this.containerSandbox,
     };
-    for (const abs of tool.mutatedPaths?.(call.input, ctx) ?? []) {
+    // Contain every path the tool says it will mutate before anything is
+    // snapshotted, so a denied call cannot leave a half-written checkpoint. The
+    // canonical paths are kept from that same pass: re-resolving them below
+    // would be a second trip through the filesystem, and a throw there would
+    // escape this handler.
+    let mutatedPaths: string[] = [];
+    try {
+      mutatedPaths = (tool.mutatedPaths?.(call.input, ctx) ?? []).map((abs) =>
+        assertContainedPath(ctx, abs),
+      );
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.emit({ type: 'tool_denied', callId: call.id, name: call.name, reason });
+      return { type: 'tool_result', toolCallId: call.id, content: reason, isError: true };
+    }
+    for (const abs of mutatedPaths) {
       this.checkpoints.snapshot(turnIndex, abs);
     }
 

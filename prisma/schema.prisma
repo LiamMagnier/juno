@@ -62,6 +62,7 @@ model User {
   conversationMemories     ConversationMemory[]
   attachments              Attachment[]
   usage                    Usage[]
+  codeUsageReservations    CodeUsageReservation[]
   featureRequests          FeatureRequest[]
   votes                    FeatureVote[]
   featureComments          FeatureComment[]
@@ -700,6 +701,24 @@ model Usage {
 
   @@unique([userId, period])
   @@index([userId])
+}
+
+// One single-use reservation per authenticated Juno Code turn. The native
+// client receives the opaque id at `phase=start`; record/refund must consume
+// that exact id once, which prevents replayed or fabricated accounting calls
+// from changing quota repeatedly.
+model CodeUsageReservation {
+  id         String    @id @default(cuid())
+  userId     String
+  period     String
+  state      String    @default("reserved") // reserved | recorded | refunded
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([state, createdAt])
 }
 
 // Fixed-window rate limiting (works across serverless instances).

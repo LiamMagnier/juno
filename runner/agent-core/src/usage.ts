@@ -23,36 +23,50 @@ export interface BackendUsageConfig {
 
 /** POSTs to `<baseUrl>/usage`; see the backend route for the contract. */
 export class BackendUsageReporter implements UsageReporter {
+  private reservationId: string | null = null;
+
   constructor(private config: BackendUsageConfig) {}
 
-  private async post(body: Record<string, unknown>): Promise<{ status: number; error?: string } | null> {
+  private async post(body: Record<string, unknown>): Promise<{
+    status: number;
+    error?: string;
+    data?: Record<string, unknown>;
+  } | null> {
     try {
       const res = await fetch(`${this.config.baseUrl.replace(/\/+$/, '')}/usage`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', Cookie: this.config.cookie },
         body: JSON.stringify(body),
       });
-      const data = res.ok ? {} : ((await res.json().catch(() => ({}))) as { error?: string });
-      return { status: res.status, error: data.error };
+      const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      return {
+        status: res.status,
+        error: typeof data.error === 'string' ? data.error : undefined,
+        data,
+      };
     } catch {
-      return null; // network failure: fail open so a flaky report can't block work
+      return null;
     }
   }
 
   async reserve(): Promise<{ allowed: boolean; message?: string }> {
     const result = await this.post({ phase: 'start' });
-    // Only a real quota rejection (402) blocks the turn. A transient 401/5xx or
-    // a network failure must fail OPEN — never tell the user they're out of
-    // quota because the accounting endpoint blipped.
     if (result && result.status === 402) {
       return { allowed: false, message: result.error ?? "You've reached your plan's usage limit." };
     }
+    const reservationId = result?.data?.reservationId;
+    if (!result || result.status < 200 || result.status >= 300 || typeof reservationId !== 'string' || !reservationId) {
+      return { allowed: false, message: result?.error ?? 'Juno could not verify Code usage for this account.' };
+    }
+    this.reservationId = reservationId;
     return { allowed: true };
   }
 
   async record(model: string, usage: Usage): Promise<void> {
+    if (!this.reservationId) return;
     await this.post({
       phase: 'record',
+      reservationId: this.reservationId,
       model,
       promptTokens: usage.inputTokens,
       completionTokens: usage.outputTokens,
@@ -60,6 +74,7 @@ export class BackendUsageReporter implements UsageReporter {
   }
 
   async refund(): Promise<void> {
-    await this.post({ phase: 'refund' });
+    if (!this.reservationId) return;
+    await this.post({ phase: 'refund', reservationId: this.reservationId });
   }
 }

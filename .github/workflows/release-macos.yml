@@ -60,6 +60,12 @@ jobs:
 
       - run: npm ci
 
+      - name: Build and test the Cloud Code runner
+        run: |
+          npm ci --prefix runner/agent-core
+          npm run build --prefix runner/agent-core
+          npm test --prefix runner/agent-core
+
       - name: Web and contract release gates
         run: |
           npm test

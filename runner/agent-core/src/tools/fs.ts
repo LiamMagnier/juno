@@ -12,6 +12,43 @@ function resolve(ctx: ToolContext, p: string): string {
   return path.isAbsolute(p) ? p : path.resolve(ctx.cwd, p);
 }
 
+/**
+ * Resolve a path through the real filesystem and require it to remain inside
+ * the agent's workspace. The cloud runner's Bash tool is containerized, but
+ * these Node filesystem tools execute in the driver process, so lexical
+ * `../` checks alone are not enough: an in-worktree symlink can escape too.
+ *
+ * For a new file, realpath the deepest existing ancestor and append the
+ * not-yet-created suffix. This protects write_file before it creates parent
+ * directories, including when an existing parent is a symlink.
+ */
+export function assertContainedPath(ctx: ToolContext, candidate: string): string {
+  const root = fs.realpathSync(ctx.cwd);
+  const resolved = path.normalize(path.isAbsolute(candidate) ? candidate : path.resolve(ctx.cwd, candidate));
+  let probe = resolved;
+  const suffix: string[] = [];
+  while (!fs.existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) break;
+    suffix.unshift(path.basename(probe));
+    probe = parent;
+  }
+  const canonical = path.resolve(fs.realpathSync(probe), ...suffix);
+  const relative = path.relative(root, canonical);
+  const outside =
+    relative === '..' ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative);
+  if (outside) {
+    throw new Error(`Denied: ${candidate} is outside the agent workspace.`);
+  }
+  return canonical;
+}
+
+function safePattern(pattern: string): boolean {
+  return !path.isAbsolute(pattern) && !pattern.split(/[\\/]+/).includes('..');
+}
+
 export const readFileTool: ToolDefinition = {
   kind: 'read',
   spec: {
@@ -30,7 +67,12 @@ export const readFileTool: ToolDefinition = {
   },
   summarize: (i) => `Read ${i.path}`,
   async execute(input, ctx): Promise<ToolResult> {
-    const abs = resolve(ctx, String(input.path));
+    let abs: string;
+    try {
+      abs = assertContainedPath(ctx, resolve(ctx, String(input.path)));
+    } catch (error) {
+      return { output: error instanceof Error ? error.message : String(error), isError: true };
+    }
     if (!fs.existsSync(abs)) return { output: `File not found: ${abs}`, isError: true };
     const stat = fs.statSync(abs);
     if (stat.isDirectory()) {
@@ -68,7 +110,12 @@ export const writeFileTool: ToolDefinition = {
   summarize: (i) => `Write ${i.path}`,
   mutatedPaths: (input, ctx) => [resolve(ctx, String(input.path))],
   async execute(input, ctx): Promise<ToolResult> {
-    const abs = resolve(ctx, String(input.path));
+    let abs: string;
+    try {
+      abs = assertContainedPath(ctx, resolve(ctx, String(input.path)));
+    } catch (error) {
+      return { output: error instanceof Error ? error.message : String(error), isError: true };
+    }
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     fs.writeFileSync(abs, String(input.content), 'utf8');
     return { output: `Wrote ${String(input.content).length} chars to ${abs}` };
@@ -95,7 +142,12 @@ export const editFileTool: ToolDefinition = {
   summarize: (i) => `Edit ${i.path}`,
   mutatedPaths: (input, ctx) => [resolve(ctx, String(input.path))],
   async execute(input, ctx): Promise<ToolResult> {
-    const abs = resolve(ctx, String(input.path));
+    let abs: string;
+    try {
+      abs = assertContainedPath(ctx, resolve(ctx, String(input.path)));
+    } catch (error) {
+      return { output: error instanceof Error ? error.message : String(error), isError: true };
+    }
     if (!fs.existsSync(abs)) return { output: `File not found: ${abs}`, isError: true };
     const text = fs.readFileSync(abs, 'utf8');
     const oldStr = String(input.old_string);
@@ -129,15 +181,27 @@ export const globTool: ToolDefinition = {
   },
   summarize: (i) => `Glob ${i.pattern}`,
   async execute(input, ctx): Promise<ToolResult> {
-    const matches = await fg(String(input.pattern), {
+    const pattern = String(input.pattern);
+    if (!safePattern(pattern)) {
+      return { output: 'Denied: glob patterns must stay inside the agent workspace.', isError: true };
+    }
+    const matches = await fg(pattern, {
       cwd: ctx.cwd,
       ignore: IGNORE,
       onlyFiles: true,
       dot: false,
     });
-    const shown = matches.slice(0, MAX_GLOB_RESULTS);
+    const contained = matches.filter((match) => {
+      try {
+        assertContainedPath(ctx, path.resolve(ctx.cwd, match));
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    const shown = contained.slice(0, MAX_GLOB_RESULTS);
     let out = shown.join('\n') || 'No matches.';
-    if (matches.length > MAX_GLOB_RESULTS) out += `\n…[${matches.length - MAX_GLOB_RESULTS} more]`;
+    if (contained.length > MAX_GLOB_RESULTS) out += `\n…[${contained.length - MAX_GLOB_RESULTS} more]`;
     return { output: out };
   },
 };
@@ -165,21 +229,25 @@ export const grepTool: ToolDefinition = {
     } catch (e) {
       return { output: `Invalid regex: ${String(e)}`, isError: true };
     }
-    const files = await fg(String(input.glob ?? '**/*'), {
+    const pattern = String(input.glob ?? '**/*');
+    if (!safePattern(pattern)) {
+      return { output: 'Denied: grep patterns must stay inside the agent workspace.', isError: true };
+    }
+    const files = await fg(pattern, {
       cwd: ctx.cwd,
       ignore: IGNORE,
       onlyFiles: true,
       dot: false,
-      absolute: true,
     });
     const results: string[] = [];
     for (const file of files) {
       if (results.length >= MAX_GREP_MATCHES) break;
       let text: string;
       try {
-        const stat = fs.statSync(file);
+        const abs = assertContainedPath(ctx, path.resolve(ctx.cwd, file));
+        const stat = fs.statSync(abs);
         if (stat.size > 2_000_000) continue;
-        text = fs.readFileSync(file, 'utf8');
+        text = fs.readFileSync(abs, 'utf8');
         if (text.includes('\0')) continue; // binary
       } catch {
         continue;
@@ -187,8 +255,10 @@ export const grepTool: ToolDefinition = {
       const lines = text.split('\n');
       for (let n = 0; n < lines.length && results.length < MAX_GREP_MATCHES; n++) {
         if (re.test(lines[n])) {
-          const rel = path.relative(ctx.cwd, file);
-          results.push(`${rel}:${n + 1}: ${lines[n].slice(0, 300)}`);
+          // `file` already comes back relative to `ctx.cwd`, so it is the path to
+          // show. Re-running `path.relative` here would resolve it against the
+          // driver's own cwd, which is not the session workspace.
+          results.push(`${file}:${n + 1}: ${lines[n].slice(0, 300)}`);
         }
       }
     }

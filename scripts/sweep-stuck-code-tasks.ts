@@ -19,8 +19,11 @@ import { appendTaskEvents } from "@/lib/code-remote";
 import { selectStuckTasks, sweepCutoff, SWEEPABLE_STATUSES } from "@/lib/stuck-task-sweeper";
 
 const DRY = process.argv.includes("--dry") || process.argv.includes("--dry-run");
+const DAEMON = process.argv.includes("--daemon");
+const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+let stopping = false;
 
-async function main(): Promise<void> {
+export async function sweepOnce(): Promise<void> {
   const now = new Date();
   const candidates = await prismaUnguarded.codeTask.findMany({
     where: {
@@ -82,9 +85,37 @@ async function main(): Promise<void> {
   if (failed > 0) process.exitCode = 1;
 }
 
-main()
-  .catch((err) => {
-    console.error(err);
-    process.exitCode = 1;
-  })
-  .finally(() => prismaUnguarded.$disconnect());
+async function main(): Promise<void> {
+  // The daemon mode is used by PM2 in production. Keeping the loop in one
+  // process avoids cron races and makes a temporary database outage visible in
+  // logs without creating overlapping sweepers.
+  do {
+    try {
+      await sweepOnce();
+    } catch (err) {
+      console.error("[sweep] run failed", err);
+      if (!DAEMON) {
+        process.exitCode = 1;
+        break;
+      }
+    }
+    if (DAEMON && !stopping) {
+      await new Promise((resolve) => setTimeout(resolve, SWEEP_INTERVAL_MS));
+    }
+  } while (DAEMON && !stopping);
+
+  await prismaUnguarded.$disconnect();
+}
+
+process.once("SIGTERM", () => {
+  stopping = true;
+});
+process.once("SIGINT", () => {
+  stopping = true;
+});
+
+main().catch((err) => {
+  console.error(err);
+  process.exitCode = 1;
+  return prismaUnguarded.$disconnect();
+});

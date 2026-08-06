@@ -149,6 +149,24 @@ module.exports = {
       merge_logs: true,
     },
     {
+      // Reconciles Cloud Code tasks whose runner stopped reporting before it
+      // could post a terminal event. This is intentionally a long-lived,
+      // single-instance loop rather than a best-effort manual command: a task
+      // that stays `running` forever is a broken product surface.
+      name: "juno-code-sweeper",
+      script: "npm",
+      args: "run tasks:sweep -- --daemon",
+      watch: false,
+      max_memory_restart: "400M",
+      env: {
+        NODE_ENV: "production",
+      },
+      error_file: "logs/code-sweeper-err.log",
+      out_file: "logs/code-sweeper-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+    },
+    {
       name: "juno-voice-relay",
       cwd: path.join(__dirname, "..", "relay"),
       script: "npm",

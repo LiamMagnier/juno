@@ -126,6 +126,11 @@ MARKETING="$(awk -F'= *' '/^MARKETING_VERSION/{print $2}' native/Config/Base.xcc
 
 step "Tests"
 swift test --package-path native/Packages/JunoNativeKit --scratch-path "$BUILD_DIR/pkg" >/dev/null
+if [ -f runner/agent-core/package-lock.json ]; then
+  npm ci --prefix runner/agent-core >/dev/null
+  npm run build --prefix runner/agent-core >/dev/null
+  npm test --prefix runner/agent-core >/dev/null
+fi
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
   -destination 'platform=macOS' -derivedDataPath "$BUILD_DIR/test" \
   CODE_SIGNING_ALLOWED=NO -only-testing:JunoDesktopTests test >/dev/null

@@ -34,6 +34,35 @@ test('write/read/edit tools round-trip', async () => {
   assert.ok(missing.isError);
 });
 
+test('filesystem tools reject workspace escapes and symlink escapes', async () => {
+  const cwd = tmpdir();
+  const outside = tmpdir();
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'private');
+  fs.symlinkSync(outside, path.join(cwd, 'linked-outside'));
+  const ctx = { cwd };
+
+  const absolute = await readFileTool.execute({ path: path.join(outside, 'secret.txt') }, ctx);
+  assert.ok(absolute.isError);
+  assert.match(absolute.output, /outside the agent workspace/);
+
+  const traversal = await writeFileTool.execute({ path: '../escaped.txt', content: 'nope' }, ctx);
+  assert.ok(traversal.isError);
+  assert.ok(!fs.existsSync(path.join(path.dirname(cwd), 'escaped.txt')));
+
+  const symlink = await readFileTool.execute({ path: 'linked-outside/secret.txt' }, ctx);
+  assert.ok(symlink.isError);
+  assert.match(symlink.output, /outside the agent workspace/);
+});
+
+test('glob and grep reject parent traversal patterns', async () => {
+  const cwd = tmpdir();
+  const ctx = { cwd };
+  const globbed = await globTool.execute({ pattern: '../**/*' }, ctx);
+  const grepped = await grepTool.execute({ pattern: 'secret', glob: '../**/*' }, ctx);
+  assert.ok(globbed.isError);
+  assert.ok(grepped.isError);
+});
+
 test('edit tool rejects ambiguous matches without replace_all', async () => {
   const cwd = tmpdir();
   const ctx = { cwd };

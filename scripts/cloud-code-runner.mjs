@@ -545,22 +545,22 @@ async function main() {
   // Reading first rather than adding the names to the allowlist: the allowlist
   // governs what an agent shell can see, and the sandbox configuration has no
   // business being visible from inside the sandbox it describes.
-  const containerSandbox = containerSandboxFromEnv(process.env, workdir) ?? undefined;
+  const containerSandbox = containerSandboxFromEnv(process.env, workdir);
+  if (!containerSandbox) {
+    // Cloud Code executes model-authored shell commands without a human in the
+    // loop. A missing Docker image is therefore a security failure, not a
+    // reason to fall back to the GitHub runner host. Local development still
+    // omits the option deliberately; this driver is the production cloud path.
+    throw new Error(
+      "Cloud Code runner: no container sandbox configured; refusing to run agent-authored commands on the runner host",
+    );
+  }
 
   // Harden the DRIVER's own env (defence in depth for /proc/environ) and build a
   // minimal, secret-free env for agent-spawned shells. The agent needs zero Juno
   // secrets — it only runs build/test tools in the workdir.
   hardenDriverEnv();
   const agentEnv = buildAgentEnv();
-
-  if (!containerSandbox) {
-    // Say so out loud. A cloud run without the container is a materially
-    // weaker run, and it previously happened on every single one while the
-    // logs said nothing at all.
-    console.warn(
-      "[runner] no container sandbox configured — agent commands will run directly on this VM",
-    );
-  }
 
   const session = AgentSession.create({
     provider,
@@ -577,7 +577,7 @@ async function main() {
     // PR with its scoped credentials — which is what stops "the agent can run
     // arbitrary bash" from meaning "the agent can push anywhere the runner
     // can". Unset (local runs) the commands execute here, as before.
-    containerSandbox,
+    containerSandbox: containerSandbox ?? undefined,
     callbacks: {
       onEvent: (event) => onAgentEvent(sink, event),
       // No human is attached; auto-approve, but log an audit trail. The agent
