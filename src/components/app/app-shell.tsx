@@ -24,7 +24,7 @@ const SIDEBAR_DEFAULT = 280;
 // The landing route of every product mode belongs here: switching modes routes
 // immediately, so a cold /work is the one navigation the user cannot absorb as
 // "the page is loading".
-const PREFETCH_ROUTES = ["/chat", "/work", "/library", "/artifacts", "/projects", "/memory", "/settings", "/roadmap", "/upgrade"];
+const PREFETCH_ROUTES = ["/chat", "/work", "/design", "/library", "/artifacts", "/projects", "/memory", "/settings", "/roadmap", "/upgrade"];
 
 function clampWidth(w: number) {
   return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w)));

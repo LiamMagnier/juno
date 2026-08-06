@@ -58,8 +58,14 @@ import type { ClientConversation } from "@/types/chat";
 
 type ConfirmState = { title: string; description: string; confirmLabel: string; onConfirm: () => void } | null;
 
-/** The product mode the whole sidebar is threaded through. */
-type SidebarMode = "home" | "work" | "code" | "design";
+/** The product mode the whole sidebar is threaded through.
+ *
+ *  Design is deliberately not one of these. A mode owns the whole sidebar —
+ *  its own nav rows, its own list, its own rail — and Design never had any of
+ *  that, so being the fourth segment only ever meant "route away and leave
+ *  Home's sidebar standing". It is a destination, and it lives in the footer
+ *  next to the account row where a destination belongs. */
+type SidebarMode = "home" | "work" | "code";
 
 /** Landing route per mode — what switching the toggle actually navigates to. */
 const MODE_HOME: Record<SidebarMode, string> = {
@@ -68,7 +74,6 @@ const MODE_HOME: Record<SidebarMode, string> = {
   // has to land on `/code/new`.
   work: "/work",
   code: "/code/new",
-  design: "/design",
 };
 
 type SidebarProject = {
@@ -337,10 +342,7 @@ export function AppSidebar({
     // Conversation, so there is no `kind` to filter on and nothing here to
     // show. Giving Work a conversation kind purely to reuse this list would
     // put every Work task into the chat sidebar of anyone on an older client.
-    // Design, like Work, lists its own objects rather than conversations: a
-    // design is an Artifact, not a Conversation, so there is no `kind` to
-    // filter on and nothing here to show.
-    if (mode === "work" || mode === "design") return [];
+    if (mode === "work") return [];
     return conversations.filter((c) => (mode === "code" ? c.kind === "code" : c.kind !== "code"));
   }, [conversations, mode]);
 
@@ -630,7 +632,13 @@ export function AppSidebar({
             <SidebarMotionIcon kind="search" />
           </RailIcon>
         </div>
-        <div className="mt-auto">
+        {/* Mirrors the expanded footer: Design sits at the bottom corner in
+            both layouts, so the rail and the full sidebar agree about where
+            the door is. */}
+        <div className="mt-auto flex flex-col items-center gap-1">
+          <RailIcon href="/design" active={pathname === "/design"} label="Design">
+            <SidebarMotionIcon kind="design" />
+          </RailIcon>
           <UserMenu compact />
         </div>
       </div>
@@ -986,6 +994,21 @@ export function AppSidebar({
         )}
       </div>
 
+      {/* The door to Design. Not a mode: a mode owns the sidebar under it, and
+          Design has no nav rows, no list and no rail of its own — as a fourth
+          segment it only routed away and left Home's sidebar standing. A
+          destination belongs with the destinations, at the bottom, above the
+          account row. */}
+      <div className="px-2 pb-1">
+        <NavRow
+          href="/design"
+          active={pathname === "/design"}
+          onClick={() => setSidebarOpen(false)}
+          icon={<SidebarMotionIcon kind="design" />}
+          label="Design"
+        />
+      </div>
+
       {/* The account row and, beside it, the way to get the app. A separate
           control rather than a row inside the account menu: downloading Juno is
           not an account setting, and a person looking for it is looking at the
@@ -1055,7 +1078,7 @@ export function AppSidebar({
   );
 }
 
-/** Home/Work/Code/Design switch. A thin wrapper over the shared SegmentedControl: same
+/** Home/Work/Code switch. A thin wrapper over the shared SegmentedControl: same
  *  depth idiom (well track + raised thumb) and radiogroup semantics, laid out
  *  vertically (icon-only) in the collapsed rail. The segment icons keep the
  *  sidebar's hover micro-motion. SegmentedControl measures its own geometry, so
@@ -1078,18 +1101,14 @@ function ModeToggle({
       orientation={compact ? "vertical" : "horizontal"}
       labelHidden={compact}
       ringOffsetClassName="focus-visible:ring-offset-sidebar"
-      // Tighter again for the four-up version. At the 240px minimum sidebar
-      // width three segments of `px-3` already overflowed the track; four
-      // segments have roughly 56px each, which fits an icon and a short label
-      // only at this padding. The labels stay rather than going icon-only
-      // because "Design" and "Code" are not guessable from a glyph, and a mode
-      // switch nobody can read is a mode switch nobody uses.
-      optionClassName={compact ? undefined : "gap-1 px-1.5 text-[11px]"}
+      // At the 240px minimum sidebar width three segments of `px-3` overflow
+      // the track, so the padding stays tightened; with Design gone the labels
+      // get their size back.
+      optionClassName={compact ? undefined : "gap-1.5 px-2"}
       options={[
         { value: "home", label: "Home", icon: <SidebarMotionIcon kind="home" className="h-3.5 w-3.5" /> },
         { value: "work", label: "Work", icon: <SidebarMotionIcon kind="work" className="h-3.5 w-3.5" /> },
         { value: "code", label: "Code", icon: <SidebarMotionIcon kind="code" className="h-3.5 w-3.5" /> },
-        { value: "design", label: "Design", icon: <SidebarMotionIcon kind="design" className="h-3.5 w-3.5" /> },
       ]}
     />
   );
