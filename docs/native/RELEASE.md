@@ -21,9 +21,9 @@ below.
 - This machine has an Apple Development identity, but no Developer ID
   Application identity or notarization credentials for distribution.
 - GitHub CLI is authenticated for `LiamMagnier` with `repo` and `workflow`
-  scopes. The public `v0.10.0` artifact is retained as a development
-  prerelease; it is intentionally excluded from `/api/downloads` because
-  Gatekeeper rejects it.
+  scopes. The public `v0.10.0` and `v0.10.1` artifacts are non-notarized
+  development builds; they are intentionally excluded from `/api/downloads`
+  because Gatekeeper rejects them.
 
 These facts are diagnostic evidence, not release approval.
 
@@ -189,8 +189,8 @@ the publication gate.
 - The protected `production-release` environment still needs the Apple
   Developer ID certificate and App Store Connect notary secrets listed above.
 - Production APNs and StoreKit values require the product owner.
-- The current development prerelease is not a production artifact; the first
-  stable replacement must be produced by the protected workflow.
+- The current development builds are not production artifacts; the next stable
+  replacement must be produced by the protected workflow.
 
 Continue all unprivileged development and validation before asking the owner for
 proprietary inputs. Never replace a missing release gate with a success claim.
