@@ -42,7 +42,7 @@ struct JunoMobileInlineArtifactView: View {
             .padding(.top, 4)
             .padding(.bottom, 14)
 
-            NativeArtifactPreview(
+            JunoMobileArtifactBody(
                 kind: artifact.kind,
                 content: reference.content,
                 mode: displayMode

@@ -206,6 +206,7 @@ struct JunoMobileWorkView: View {
         JunoMobileWorkSessionCard(
             session: session,
             status: model.displayStatus(of: session),
+            hostName: JunoMobileWorkHost.name(of: session.hostID, in: model.hosts),
             open: { openSessionID = session.sessionID },
             togglePin: { Task { await model.setPinned(!session.pinned, on: session) } },
             archive: { Task { await model.setArchived(true, on: session) } },
@@ -215,6 +216,24 @@ struct JunoMobileWorkView: View {
 }
 
 // MARK: - Macs
+
+/// Naming the Mac a task is on.
+///
+/// `WorkSessionSummary.hostDisplayName` decodes a `hostDisplayName` key that
+/// `serializeSession` has never emitted, so it is always nil. That went
+/// unnoticed for as long as no Mac could register: with an empty host list
+/// every local task fell through to the same generic phrase, and the phrase was
+/// right. Macs register now, this screen already holds the host list in order to
+/// draw the card at the top of it, and a task that ran on a named machine should
+/// say which one. "A Mac of yours" is the answer to a different question, and it
+/// is kept only for the case it was written for — a task aimed at "any of mine"
+/// that no Mac has claimed yet.
+enum JunoMobileWorkHost {
+    static func name(of hostID: String?, in hosts: [WorkHostSummary]) -> String? {
+        guard let hostID else { return nil }
+        return hosts.first { $0.hostID == hostID }?.displayName
+    }
+}
 
 /// Which of the reader's Macs can take work, in the state each is actually in.
 ///
@@ -291,6 +310,9 @@ private struct JunoMobileWorkSessionCard: View {
     /// ``JunoMobileWorkView``. Passed in rather than derived so the card cannot
     /// accidentally read the raw status.
     let status: JunoWorkStatus
+    /// Resolved from the host list, for the same reason `status` is passed in:
+    /// the card must not be able to reach the session's own always-nil copy.
+    let hostName: String?
     let open: () -> Void
     let togglePin: () -> Void
     let archive: () -> Void
@@ -355,7 +377,7 @@ private struct JunoMobileWorkSessionCard: View {
         else { return when }
         switch target {
         case .cloud: return "Cloud · \(when)"
-        case .local: return "\(session.hostDisplayName ?? "A Mac of yours") · \(when)"
+        case .local: return "\(hostName ?? "A Mac of yours") · \(when)"
         // `automatic` is a request and never an outcome; reaching this means the
         // server sent one, which is worth saying rather than guessing at.
         case .automatic: return "Not yet decided · \(when)"
@@ -559,6 +581,11 @@ private struct JunoMobileWorkThread: View {
     }
 
     /// Where the task ran, named from the run rather than from the request.
+    ///
+    /// The Mac is named from the *run's* host where there is one: that is the
+    /// machine that actually claimed the work, and the session carries only the
+    /// one that was asked for. See ``JunoMobileWorkHost`` for why neither is
+    /// read from the session's own display name.
     private func runningWhere(_ session: WorkSessionSummary) -> String {
         let effective = run?.effectiveTarget ?? session.effectiveTarget
         guard let effective, let target = JunoWorkTarget(rawValue: effective) else {
@@ -566,7 +593,9 @@ private struct JunoMobileWorkThread: View {
         }
         switch target {
         case .cloud: return "Runs in the cloud"
-        case .local: return "Runs on \(session.hostDisplayName ?? "a Mac of yours")"
+        case .local:
+            let name = JunoMobileWorkHost.name(of: run?.hostID ?? session.hostID, in: model.hosts)
+            return "Runs on \(name ?? "a Mac of yours")"
         case .automatic: return "Where this runs has not been decided"
         }
     }

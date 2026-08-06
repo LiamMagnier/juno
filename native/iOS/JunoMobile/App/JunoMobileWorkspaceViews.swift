@@ -1276,7 +1276,7 @@ struct JunoMobileArtifactDetail: View {
             }
 
             if let version {
-                NativeArtifactPreview(
+                JunoMobileArtifactBody(
                     kind: artifact.kind,
                     content: version.content,
                     mode: displayMode
