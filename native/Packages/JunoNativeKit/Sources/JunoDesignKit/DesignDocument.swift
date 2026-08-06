@@ -279,6 +279,35 @@ public struct GlassEffect: Codable, Hashable, Sendable {
     public var visible: Bool?
 }
 
+/// The three pre-`effects` node properties, read only so they can be folded.
+/// Never encoded — this build writes `effects` and nothing else.
+struct LegacyShadow: Decodable {
+    enum Kind: String, Decodable { case drop, inner }
+    var type: Kind
+    var color: Rgba
+    var offsetX: Double
+    var offsetY: Double
+    var blur: Double
+    var spread: Double
+    var visible: Bool?
+}
+
+struct LegacyBlur: Decodable {
+    enum Kind: String, Decodable { case layer, background }
+    var type: Kind
+    var radius: Double
+    var saturation: Double?
+}
+
+struct LegacyNoise: Decodable {
+    var opacity: Double
+    var density: Double
+    var seed: Double
+    var monochrome: Bool
+    var blend: EffectBlendMode
+    var visible: Bool?
+}
+
 public enum EffectBlendMode: String, Codable, Hashable, Sendable {
     case normal, multiply, screen, overlay
     case softLight = "soft-light"
@@ -497,6 +526,8 @@ public struct DesignNode: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, type, name, parentId, x, y, width, height, rotation, opacity, visible, locked
         case blendMode, fills, strokes, cornerRadius, effects, constraints
+        // Read on the way in only, to fold a pre-`effects` document. Never written.
+        case shadows, blur, noise
         case widthMode, heightMode, limits, layoutChild, boundVariables
         case children, clipsContent, layout
         case componentId, variantProperties, overrides
@@ -523,7 +554,49 @@ public struct DesignNode: Codable, Hashable, Sendable {
         fills = try c.decode([Paint].self, forKey: .fills)
         strokes = try c.decode([Stroke].self, forKey: .strokes)
         cornerRadius = try c.decode(CornerRadius.self, forKey: .cornerRadius)
-        effects = try c.decodeIfPresent([Effect].self, forKey: .effects) ?? []
+        // The effect stack replaced `shadows`, `blur` and `noise`, and documents
+        // written before that are on disk in people's accounts. The website
+        // folds them on the way in (`foldLegacyEffects` in schema.ts); so does
+        // this, in the same order the old renderer applied them — backdrop or
+        // layer blur, then grain, then the shadows in their stored order — so a
+        // folded document draws what it always drew rather than being quietly
+        // rearranged. Without this the Mac opens every pre-existing design with
+        // its shadows and blurs silently dropped, which is data loss that looks
+        // like a rendering bug.
+        if let stored = try c.decodeIfPresent([Effect].self, forKey: .effects) {
+            effects = stored
+        } else {
+            var folded: [Effect] = []
+            if let blur = try c.decodeIfPresent(LegacyBlur.self, forKey: .blur) {
+                let payload = BlurEffect(
+                    type: blur.type == .layer ? "layer-blur" : "background-blur",
+                    radius: blur.radius,
+                    saturation: blur.saturation,
+                    visible: nil
+                )
+                folded.append(blur.type == .layer ? .layerBlur(payload) : .backgroundBlur(payload))
+            }
+            if let noise = try c.decodeIfPresent(LegacyNoise.self, forKey: .noise) {
+                folded.append(.noise(NoiseEffect(
+                    opacity: noise.opacity, density: noise.density, seed: noise.seed,
+                    monochrome: noise.monochrome, blend: noise.blend, visible: noise.visible
+                )))
+            }
+            for shadow in try c.decodeIfPresent([LegacyShadow].self, forKey: .shadows) ?? [] {
+                if shadow.type == .drop {
+                    folded.append(.dropShadow(DropShadowEffect(
+                        color: shadow.color, offsetX: shadow.offsetX, offsetY: shadow.offsetY,
+                        blur: shadow.blur, spread: shadow.spread, visible: shadow.visible
+                    )))
+                } else {
+                    folded.append(.innerShadow(InnerShadowEffect(
+                        color: shadow.color, offsetX: shadow.offsetX, offsetY: shadow.offsetY,
+                        blur: shadow.blur, spread: shadow.spread, visible: shadow.visible
+                    )))
+                }
+            }
+            effects = folded
+        }
         constraints = try c.decode(Constraints.self, forKey: .constraints)
         widthMode = try c.decode(SizingMode.self, forKey: .widthMode)
         heightMode = try c.decode(SizingMode.self, forKey: .heightMode)
