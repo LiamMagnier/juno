@@ -704,6 +704,19 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       if (id.includes("k3")) return caps(["low", "high", "max"], false);
       if (id.includes("k2.7")) return caps([], false); // "disabled" is rejected — always on
       return caps([], true, true); // k2.6: thinking enabled/disabled
+    case "meta":
+      // Muse Spark exposes the full OpenAI-style reasoning_effort ladder EXCEPT
+      // "max": minimal|low|medium|high|xhigh, default medium. canDisable is
+      // false on purpose — reasoning is mandatory on this line, there is no
+      // configuration that returns the weights without some deliberation, so an
+      // "Instant" tier here would be a lie that still bills reasoning tokens.
+      //
+      // Curated from Meta's model docs, not probed: the account's billing is not
+      // yet verified, so every completion returns 402 and no live oracle exists.
+      // /v1/models confirms the id; the effort enum is documentation-only. Worth
+      // re-probing once billing clears.
+      if (id.includes("muse-spark")) return caps(["minimal", ...LMHX], false);
+      return caps([], false); // retired Llama ids resolving through migration
     case "minimax":
       if (id.includes("m3")) return caps([], true, true); // adaptive/disabled toggle
       return caps([], false); // M2.x: thinking param ignored, always on

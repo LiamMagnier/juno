@@ -519,17 +519,16 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "google:gemini-2.5-flash": "google:gemini-3.5-flash",
   "google:veo-3.0-generate-001": "google:veo-3.1-generate-preview", // shut down 2026-06-30
   "google:veo-2.0": "google:veo-3.1-generate-preview", // wrong id + shut down 2026-06-30
-  // Meta — the Llama API shut down entirely on 2026-07-06 and the Meta Model API
-  // that replaced it does NOT serve the Llama ids, so those stay retired and
-  // still leave the provider. The unversioned Muse aliases are a different case
-  // now that Muse has an API: they land on the live Spark model rather than
-  // being sent to Anthropic.
+  // Meta — the Llama ids are still retired (the Meta Model API does not serve
+  // them), but they no longer leave the provider. Migrating a Meta selection to
+  // Anthropic was a stopgap for the window when Meta had no API at all; now that
+  // it does, a stored Meta id stays on Meta. Nothing here crosses vendors.
   "meta:muse-max": "meta:muse-spark-1.2",
   "meta:muse-spark": "meta:muse-spark-1.2",
   "meta:muse-flash": "meta:muse-spark-1.2",
-  "meta:Llama-4-Maverick-17B-128E-Instruct-FP8": "anthropic:claude-sonnet-5",
-  "meta:Llama-4-Scout-17B-16E-Instruct-FP8": "anthropic:claude-sonnet-5",
-  "meta:Llama-3.3-70B-Instruct": "anthropic:claude-sonnet-5",
+  "meta:Llama-4-Maverick-17B-128E-Instruct-FP8": "meta:muse-spark-1.2",
+  "meta:Llama-4-Scout-17B-16E-Instruct-FP8": "meta:muse-spark-1.2",
+  "meta:Llama-3.3-70B-Instruct": "meta:muse-spark-1.2",
   // Zhipu
   "zhipu:glm-4-plus": "zhipu:glm-5.2", // absent from all current Z.AI/bigmodel listings
   // 400 code 1211 "模型不存在" on both /images/generations and /chat/completions,
