@@ -319,11 +319,24 @@ git push origin "v$VERSION"
 # v0.10.0 and v0.10.1 carried the same three, and this keeps the shelf
 # consistent rather than mixing two kinds of release under one style.
 TITLE="Juno for Mac $VERSION"
-PRERELEASE=()
+# A plain string, deliberately, and expanded unquoted below.
+#
+# The obvious spelling is an array — `PRERELEASE=(--prerelease)` and
+# `"${PRERELEASE[@]}"` — and it is a trap here. macOS ships bash 3.2, which is
+# what this script's `#!/bin/bash` resolves to, and in 3.2 expanding an *empty*
+# array under `set -u` aborts with "unbound variable". The array is empty on
+# exactly one path: the notarized one. So the first real Developer ID release
+# would have died at `gh release create`, twenty minutes into the build and
+# after `git push origin "v$VERSION"` had already made the tag public — leaving
+# a tag with no release behind it and a version number that can never be reused.
+#
+# Unquoted word-splitting is safe for this value because it is a fixed literal
+# chosen by the line below, never anything read from outside.
+PRERELEASE_FLAG=""
 DEVELOPMENT_NOTE=""
 if [ "$NOTARIZE" != 1 ]; then
   TITLE="$TITLE (Development build)"
-  PRERELEASE=(--prerelease)
+  PRERELEASE_FLAG="--prerelease"
   DEVELOPMENT_NOTE="
 
 **This build is not notarized.** macOS Gatekeeper will refuse to open it after download. It updates existing installs that are themselves development-signed by this team; on any other Mac, build from source."
@@ -333,7 +346,7 @@ gh release create "v$VERSION" "$DMG" \
   "$DSYM" \
   "$CHECKSUMS" \
   --repo "$REPO" \
-  "${PRERELEASE[@]}" \
+  $PRERELEASE_FLAG \
   --title "$TITLE" \
   --notes "$(cat <<NOTES
 Source commit \`$(git rev-parse HEAD)\`
