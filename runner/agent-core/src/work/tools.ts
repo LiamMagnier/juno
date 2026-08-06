@@ -194,6 +194,22 @@ export function workspaceTools(): WorkToolDefinition[] {
   ];
 }
 
+/**
+ * Removes the tools that operate on the executor's local checkout.
+ *
+ * Cloud Work is not allowed to inherit the worker's cwd: on the production
+ * VM that cwd is the Juno application checkout, which contains deployment
+ * files and secrets alongside the source tree. Keep this as a derived filter
+ * over `workspaceTools()` rather than a second hand-maintained name list, so a
+ * new local file or shell tool cannot silently become cloud-reachable.
+ */
+export function withoutHostWorkspaceTools(
+  tools: readonly WorkToolDefinition[],
+): WorkToolDefinition[] {
+  const hostWorkspaceNames = new Set(workspaceTools().map((tool) => tool.spec.name));
+  return tools.filter((tool) => !hostWorkspaceNames.has(tool.spec.name));
+}
+
 // ---------------------------------------------------------------------------
 // The web
 // ---------------------------------------------------------------------------

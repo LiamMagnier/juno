@@ -1450,7 +1450,17 @@ function buildTools(input: {
     },
   });
 
-  return [...connectorTools, ...research, deliverables, cloudFiles, ...runtime.workspaceTools()];
+  // The worker process runs from the deployed Juno checkout. Keep the local
+  // file/shell definitions out of the cloud toolset until Work has a real
+  // per-run container and workspace mount; an approval prompt is not a
+  // filesystem boundary.
+  return runtime.withoutHostWorkspaceTools([
+    ...connectorTools,
+    ...research,
+    deliverables,
+    cloudFiles,
+    ...runtime.workspaceTools(),
+  ]);
 }
 
 /**

@@ -186,6 +186,7 @@ export {
   narrowToPermittedTools,
   stripUntrustedEnvelope,
   toolNames,
+  withoutHostWorkspaceTools,
   webFetchTool,
   webSearchTool,
   workspaceTools,
