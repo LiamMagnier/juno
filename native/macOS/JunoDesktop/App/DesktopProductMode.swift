@@ -4,6 +4,11 @@ import SwiftUI
 enum DesktopProductMode: String, CaseIterable, Identifiable {
     case chat
     case code
+    /// Juno Work — tasks that run somewhere, on a Mac or in the cloud, rather
+    /// than a conversation that runs here. It is a third top-level product and
+    /// not a Chat destination because it owns the window: its own source list of
+    /// tasks, its own thread, and its own toolbar.
+    case work
 
     var id: Self { self }
 
@@ -11,6 +16,7 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
         switch self {
         case .chat: "Chat"
         case .code: "Code"
+        case .work: "Work"
         }
     }
 
@@ -18,158 +24,160 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
         switch self {
         case .chat: "bubble.left.and.bubble.right"
         case .code: "chevron.left.forwardslash.chevron.right"
+        case .work: "checklist"
         }
     }
 }
 
-/// The top-level Chat / Code switch, as the platform's own segmented control.
+/// The top-level Chat / Code / Work switch, in the app's own segmented control.
 ///
-/// This was a pair of `Button`s in a rounded rectangle, with a drop-shadowed
-/// white pill standing in for the selected segment. That reproduces the *look* of
-/// a segmented control on one OS version and then drifts: it misses the real
-/// control's keyboard traversal, its focus ring, its pressed and disabled states,
-/// and its Increase Contrast treatment. `Picker` in `.segmented` style is the
-/// component; there is no reason to imitate it.
+/// **Why not AppKit's.** For as long as this lived in the toolbar it was
+/// `Picker(...).pickerStyle(.segmented)`, and that was the right call there:
+/// window chrome is exactly where AppKit's chrome belongs, and imitating a
+/// system control that sits among system controls is how a window ends up
+/// looking like a rendering of itself. Moving it to the top of the sidebar
+/// changed the question. On the sidebar's own material the same picker draws a
+/// flat, dim slab with hard dividers — louder than the column it heads and
+/// lit from nowhere the rest of the surface is lit from. That is verbatim the
+/// complaint ``DesktopSegmented`` was written to answer for the artifact
+/// canvas, and it went unanswered here only because the control was in another
+/// file under a name that claimed to be about canvases.
 ///
-/// **A Liquid Glass rebuild was tried and reverted.** This comment used to claim
-/// the system grants segmented controls glass for free on macOS 26; it does not,
-/// at least not inside a toolbar item, where AppKit draws the pre-Tahoe track and
-/// knob. A hand-built `GlassEffectContainer` version with a `glassEffectID` knob
-/// did produce the glass capsule — and cost arrow-key traversal, because a
-/// focusable container takes initial focus and wears a permanent accent ring. It
-/// was reverted by preference: the native control's behaviour is worth more than
-/// the material. Do not re-derive the glass version from the old comment's premise
-/// without re-checking it against a screenshot.
+/// **What that costs, stated plainly.** AppKit's control gives arrow-key
+/// traversal across segments from one tab stop; a row of buttons gives one tab
+/// stop per segment and no arrow keys. The keyboard answer is not the control,
+/// it is the Product menu in ``JunoDesktopCommands`` — an inline `Picker` in the
+/// menu bar that shows a checkmark against the current mode and works with the
+/// column collapsed, which the control itself cannot do at all.
 ///
-/// **Metrics.** The control used to be pinned to a flat `.frame(width: 148)` by
-/// its toolbar item, which is where the cramped look came from: 148pt split
-/// between two segments leaves each label sitting on its own segment's edge, and
-/// a fixed width cannot grow when the user turns up their text size. It now
-/// asks for a per-segment measure instead, so the labels keep real shoulders and
-/// the pill scales with Dynamic Type.
+/// This is also the note that used to warn against hand-building. It was written
+/// about a `GlassEffectContainer` version whose knob carried a `glassEffectID`,
+/// and its finding was specific: a *focusable container* takes initial focus and
+/// wears a permanent accent ring. ``DesktopSegmented`` has no container to focus
+/// — it is an `HStack` of ordinary buttons — so the finding does not reach it.
+/// Do not read the old warning as a general one; it was about a shape, not about
+/// hand-building.
 ///
-/// **Motion.** The knob's slide is the system's, but only if the change is
-/// animated — a `@SceneStorage`-backed binding set outside a transaction moves
-/// it in one frame. Writing through `withAnimation` is what makes the segment
-/// travel, and it is also what drives the workspace transition on the other side
-/// of the binding, so the pill and the content move together rather than the
-/// content snapping while the pill glides.
+/// **Motion.** The switch animates its own knob, on its own curve, and this
+/// wrapper stays out of it. It used to wrap the binding in a second
+/// `withAnimation(JunoMotion.standard)`, which nested around the one inside
+/// ``DesktopSegmented`` — and the outer transaction wins, so the knob travelled
+/// on `snappy(0.26)` while the file two doors down declared the curve it was
+/// supposed to use and was quietly ignored. The same control then animated
+/// differently depending on which of its two call sites you were looking at.
+/// The workspace on the other side of the binding does not need this
+/// transaction either: it reacts in `onChange`, not to an animated value.
 struct DesktopProductSwitcher: View {
     @Binding var selection: DesktopProductMode
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// Wide enough for "Chat"/"Code" plus the shoulders a segmented control
-    /// wants on each side. A minimum rather than a fixed size: the control may
-    /// grow for a longer localisation or a larger text size, it may not shrink
-    /// below legibility.
-    private static let minimumSegmentWidth: CGFloat = 58
-
-    private var animatedSelection: Binding<DesktopProductMode> {
-        Binding(
-            get: { selection },
-            set: { mode in
-                guard mode != selection else { return }
-                withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-                    selection = mode
-                }
-            }
-        )
-    }
 
     var body: some View {
-        Picker("Juno product", selection: animatedSelection) {
-            ForEach(DesktopProductMode.allCases) { mode in
-                Text(mode.label)
-                    .tag(mode)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        // `.regular`, the size every other toolbar control uses.
-        //
-        // At `.large` the switch was the tallest and widest thing in the titlebar —
-        // a chunky pill that dominated the window's own title, and, because two
-        // leading toolbar items share the space before the title, one that squeezed
-        // the session name into a slot narrow enough to truncate ("Fix the design of
-        // Jun…") while the bar had obvious room to spare.
-        .controlSize(.regular)
-        .frame(
-            minWidth: Self.minimumSegmentWidth * CGFloat(DesktopProductMode.allCases.count)
+        DesktopSegmented(
+            options: DesktopProductMode.allCases.map { .init($0, $0.label) },
+            selection: $selection,
+            accessibilityLabel: "Juno product"
         )
-        .fixedSize()
         .accessibilityIdentifier("Juno product")
     }
 }
 
-/// Shared measurements for the small pieces of window chrome that sit above the
-/// two native source lists. Keeping these here prevents Chat and Code from
-/// drifting by a few points when one of their sidebars is refreshed.
+/// Shared measurements for the strip above the two native source lists. Keeping
+/// this here prevents Chat and Code from drifting when one of their sidebars is
+/// refreshed.
+///
+/// The strip used to be empty and had one number. It now carries the product
+/// switch, so it has two: what the *window* owns and what *Juno* draws under it.
+/// Stated separately because they answer to different things — the first to
+/// AppKit's titlebar geometry, the second to the height of a segmented control —
+/// and adding them at the bottom is what keeps a change to either from silently
+/// moving the other.
 enum DesktopSidebarChromeMetrics {
-    /// The native source-list icons begin on this 4-point-grid column.
-    static let productBrandLeadingInset = JunoSpace.regular
-    static let productBrandTrailingInset = JunoSpace.tight
-    /// The mark and its product name are one compact identity, not two controls.
-    static let productBrandSpacing = JunoSpace.hairline
-    /// Clears the titlebar row before the first source-list row begins.
-    static let titlebarClearance: CGFloat = 76
-    /// Keeps the custom split-view control visibly inside the navigation column.
-    static let sidebarToggleLeadingInset = JunoSpace.snug
+    /// The band the window's own chrome owns above the *sidebar*: the traffic
+    /// lights, and nothing else.
+    ///
+    /// 52 at first, which was the toolbar's height — and wrong, because the
+    /// toolbar is over the *detail* column. Above the navigation column the only
+    /// thing to clear is the three buttons, whose 12pt circles are centred about
+    /// 20pt down, so they end by 26. 38 leaves a dozen points of air over them
+    /// and no more; at 52 the switch sat a control's height below the lights it
+    /// was supposed to sit beside, which is what a reader reads as the column
+    /// starting late.
+    static let trafficLightClearance: CGFloat = 38
+
+    /// The switch's own row: ``DesktopSegmented``'s 28pt segment, the 2pt its
+    /// track adds on each side, and the gap to the first source-list row.
+    static let productSwitcherRow: CGFloat = 28 + 4 + JunoSpace.snug
+
+    static let titlebarClearance: CGFloat = trafficLightClearance + productSwitcherRow
 }
 
-/// A stable split-view control shared by Chat and Code.
-///
-/// macOS supplies a default toggle for `NavigationSplitView`, but its toolbar
-/// item is flush against the column divider. Juno owns this small control so its
-/// hit target and leading inset match the rest of the sidebar chrome.
-struct DesktopSidebarToggle: View {
-    @Binding var visibility: NavigationSplitViewVisibility
-
-    private var sidebarIsVisible: Bool {
-        visibility != .detailOnly
-    }
-
-    var body: some View {
-        Button {
-            withAnimation(JunoMotion.standard) {
-                visibility = sidebarIsVisible ? .detailOnly : .all
-            }
-        } label: {
-            Image(systemName: "sidebar.left")
-                .frame(width: 28, height: 28)
+extension View {
+    /// Puts the product switch above this source list.
+    ///
+    /// **Above, not inset into.** This was a `safeAreaInset(edge: .top)`, and it
+    /// placed the same header at two different heights: 38pt down the Code
+    /// column and 90pt down the Chat one, from one constant and one view. An
+    /// inset is measured against the *content's* safe area, and each column's
+    /// list resolves that differently — Chat's begins with an unheaded
+    /// `Section`, Code's with bare rows — so the one control that must occupy
+    /// the same spot in every product was being positioned by whatever its list
+    /// happened to start with. Laid out above the list, all three agree by
+    /// construction.
+    ///
+    /// It also retires the hazard the opaque backing was working around. A
+    /// `.sidebar` List pins its section headers to the top of *its own* bounds,
+    /// where a top inset never reaches them — which is how "Today" or "Waiting
+    /// on you" arrived level with the traffic lights on a scrolled column. The
+    /// list's bounds now begin below the strip, so there is nothing above it to
+    /// pin over.
+    func junoSidebarProductHeader(product: Binding<DesktopProductMode>) -> some View {
+        VStack(spacing: 0) {
+            DesktopSidebarProductHeader(product: product)
+            self
         }
-        .padding(.leading, DesktopSidebarChromeMetrics.sidebarToggleLeadingInset)
-        .help(sidebarIsVisible ? "Hide Sidebar" : "Show Sidebar")
-        .accessibilityLabel(sidebarIsVisible ? "Hide Sidebar" : "Show Sidebar")
-        .accessibilityIdentifier("juno.desktop.sidebar.toggle")
+        // The strip measures from the window's top edge, not from wherever the
+        // column's safe area happens to begin.
+        //
+        // This is the second half of the same bug. Chat's sidebar carries a
+        // ~48pt titlebar inset and Code's does not, so a clearance *added* to
+        // the safe area put the switch 38pt down one column and 86pt down the
+        // other — the strip painting up into the inset all the while, which is
+        // why it looked like one tall band rather than a control sitting low.
+        // Taking the top safe area here makes the arithmetic absolute: the strip
+        // owns the band from the window's edge to `titlebarClearance`, the
+        // traffic lights sit inside it, and the list starts under it. The list
+        // keeps its own bottom safe area, which is what the footer is measured
+        // against.
+        .ignoresSafeArea(.container, edges: .top)
     }
 }
 
-/// The window-level identity shown beside the traffic lights.
+/// The Chat / Code / Work switch, in the strip above a source list.
 ///
-/// A repository or conversation is content, not the product name. Keeping that
-/// content out of the titlebar leaves one stable orientation point while moving
-/// between Chat and Code, and makes the two products read as one Juno app.
-struct DesktopProductBrand: View {
-    let product: DesktopProductMode
-
-    private var title: String {
-        product == .code ? "Juno Code" : "Juno"
-    }
+/// **The strip paints nothing.** It used to fill `Color.junoSidebar` at full
+/// opacity, which was working around a `.sidebar` List pinning its headers to
+/// the top of its own bounds — and those bounds now begin *below* this strip,
+/// so there is nothing left to work around. What the fill did in the meantime
+/// was switch off vibrancy for the one band at the top of the window: an opaque
+/// rectangle sitting on a translucent column, lit from nowhere the rest of the
+/// surface is lit from, with the knob's glass sampling flat paint instead of
+/// the desktop behind it. Removing it is what lets the glass actually refract
+/// something.
+///
+/// **When the sidebar is collapsed** the switch goes with it. The answer is the
+/// Product menu in ``JunoDesktopCommands`` — an inline `Picker` in the menu bar
+/// that reads and writes the focused window's mode — which is reachable with the
+/// column closed and shows a checkmark against the mode the window is in.
+struct DesktopSidebarProductHeader: View {
+    @Binding var product: DesktopProductMode
 
     var body: some View {
-        HStack(spacing: DesktopSidebarChromeMetrics.productBrandSpacing) {
-            JunoMark(size: 18)
-                .foregroundStyle(Color.primary)
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.primary)
-                .lineLimit(1)
-        }
-        .padding(.leading, DesktopSidebarChromeMetrics.productBrandLeadingInset)
-        .padding(.trailing, DesktopSidebarChromeMetrics.productBrandTrailingInset)
-        .frame(minHeight: 28)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
-        .accessibilityIdentifier("juno.product-brand.\(product.rawValue)")
+        DesktopProductSwitcher(selection: $product)
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.bottom, JunoSpace.snug)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(
+                height: DesktopSidebarChromeMetrics.titlebarClearance,
+                alignment: .bottom
+            )
     }
 }

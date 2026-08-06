@@ -2,9 +2,6 @@ import type { ArtifactType } from "@/lib/message-content";
 
 /**
  * How a given artifact can be executed in the browser sandbox.
- *  - "design"  → a Juno Design scene document, opened in the design editor.
- *                It is data, not code: there is nothing to execute, and no
- *                user-authored script ever runs for it.
  *  - "web"     → rendered live in an iframe (HTML/CSS/SVG/Mermaid/React/JSX).
  *  - "console" → executed headlessly; stdout/stderr/console stream to a terminal
  *                panel (JavaScript, TypeScript, Python via Pyodide).
@@ -20,8 +17,8 @@ export interface RuntimeInfo {
   label: string;
   /** console sub-runtime, when mode === "console". */
   engine?: "js" | "python" | "unsupported";
-  /** Verb shown on the action button: "Preview" for web, "Run" for console,
-   *  "Edit" for a design document (which is opened, never executed). */
+  /** Verb shown on the action button: "Preview" for web, "Run" for console. */
+  /** "Edit" for a design document, which is opened rather than executed. */
   runVerb: "Preview" | "Run" | "Edit";
 }
 
@@ -44,7 +41,6 @@ const ALIASES: Record<string, string> = {
   "c#": "csharp", cs: "csharp", csharp: "csharp",
   java: "java", kotlin: "kotlin", kt: "kotlin", swift: "swift",
   ruby: "ruby", rb: "ruby", php: "php", perl: "perl",
-  design: "design",
   json: "json", yaml: "yaml", yml: "yaml", toml: "toml", xml: "xml",
   dockerfile: "dockerfile", makefile: "makefile", ini: "ini", graphql: "graphql",
   vue: "vue", svelte: "svelte", dart: "dart", r: "r", lua: "lua", scala: "scala", elixir: "elixir", haskell: "haskell",
@@ -97,7 +93,8 @@ export function langLabel(lang: string): string {
 export function runtimeFor(type: ArtifactType, language?: string | null): RuntimeInfo {
   const lang = canonicalLang(language);
 
-  // Registry types with a fixed meaning win first.
+  // Registry types with a fixed meaning win first. A design document is data
+  // the editor owns, not code the sandbox executes.
   if (type === "DESIGN") return { mode: "design", lang: "design", label: "Design", runVerb: "Edit" };
   if (type === "REACT") return { mode: "web", lang: "tsx", label: "React", runVerb: "Preview" };
   if (type === "HTML") return { mode: "web", lang: "html", label: "HTML", runVerb: "Preview" };

@@ -265,10 +265,18 @@ const CURATED: ModelInfo[] = [
   // only Gemini model the old caps marked canDisable:true, i.e. Juno's sole
   // advertised Gemini "Instant" was on an unreachable model. See RETIRED_MODELS.
 
-  // —— Meta · Llama —— (provider decommissioned)
-  // Meta shut down the entire Llama API (llama.developer.meta.com) on
-  // 2026-07-06 with no successor developer surface — its new Muse models are
-  // consumer-only, no API. All Llama entries moved to RETIRED_MODELS below.
+  // —— Meta · Muse —— (provider recommissioned 2026-08-06)
+  // The Llama API (llama.developer.meta.com) is still gone as of 2026-07-06 and
+  // every Llama id stays retired below. What changed is the "no successor
+  // developer surface" part: Muse turned out not to be consumer-only after all.
+  // Meta opened the Meta Model API (api.meta.ai) with Muse Spark 1.1 on
+  // 2026-07-09 and shipped 1.2 on 2026-08-05.
+  //
+  // NOT verified live — the repo has no working Meta credential, so unlike the
+  // Anthropic/OpenAI/Google entries this one is curated from Meta's own launch
+  // material and OpenRouter's listing, not from a 200 on our own key. Confirm
+  // the id, base URL and modalities against a real key before relying on it.
+  def({ provider: "meta", id: "muse-spark-1.2", name: "Muse Spark 1.2", family: "muse-spark", status: "current", released: "2026-08", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Meta's agentic reasoner — coding-tuned, 1M context, with image, video and PDF input." }),
 
   // —— Zhipu / Z.AI ——
   def({ provider: "zhipu", id: "glm-5.2", name: "GLM-5.2", family: "glm", status: "current", released: "2026-05", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "Z.AI's flagship — frontier reasoning and 1M-token context." }),
@@ -355,10 +363,12 @@ const CURATED: ModelInfo[] = [
   def({ provider: "mimo", id: "mimo-v2-flash", name: "MiMo V2 Flash", family: "mimo-flash", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, contextWindow: 256_000, description: "Efficient reasoning and coding at high speed." }),
 
   // —— Alibaba · Qwen (DashScope / Model Studio, OpenAI-compatible) ——
-  // qwen3.8-max-preview: Alibaba Model Studio / Token Plan only (Beijing Token Plan
-  // keys, and listed on international docs as Token Plan). Thinking always on;
-  // no public pay-as-you-go $/MTok yet — billed via Token Plan credits.
-  def({ provider: "qwen", id: "qwen3.8-max-preview", name: "Qwen3.8 Max Preview", family: "qwen-max", status: "current", released: "2026-07", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 983_616, description: "Newest Qwen flagship preview — always-on deep thinking, vision, and ~1M context. Model Studio Token Plan access only." }),
+  // qwen3.8-max: the GA of the 3.8 Max preview, which this replaces — same
+  // always-on thinking, vision and ~1M context, on a stable Model Studio id
+  // instead of a preview snapshot. Alibaba has not published pay-as-you-go
+  // $/MTok for it, so pricing.ts and model-metrics.ts still carry an estimate a
+  // notch above 3.7 Max rather than an `official()` rate.
+  def({ provider: "qwen", id: "qwen3.8-max", name: "Qwen3.8 Max", family: "qwen-max", status: "current", released: "2026-08", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 983_616, description: "Newest Qwen flagship — always-on deep thinking, vision, and ~1M context." }),
   def({ provider: "qwen", id: "qwen3.7-max", name: "Qwen3.7 Max", family: "qwen-max", status: "legacy", released: "2026-05", minPlan: "PRO", reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Previous Max flagship — strong reasoning served extremely fast (~190 tok/s). Standard Model Studio pay-as-you-go API." }),
   def({ provider: "qwen", id: "qwen3.7-plus", name: "Qwen3.7 Plus", family: "qwen-plus", status: "current", released: "2026-05", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Balanced multimodal hybrid-thinking model with 1M context." }),
   def({ provider: "qwen", id: "qwen3.6-flash", name: "Qwen3.6 Flash", family: "qwen-flash", status: "current", released: "2026-03", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Fastest, cheapest Qwen tier for high-volume multimodal tasks." }),
@@ -509,14 +519,16 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "google:gemini-2.5-flash": "google:gemini-3.5-flash",
   "google:veo-3.0-generate-001": "google:veo-3.1-generate-preview", // shut down 2026-06-30
   "google:veo-2.0": "google:veo-3.1-generate-preview", // wrong id + shut down 2026-06-30
-  // Meta — the Llama API shut down entirely on 2026-07-06 (Meta's Muse line is
-  // consumer-only, no API), so every Meta id migrates to the default model.
-  "meta:muse-max": "anthropic:claude-sonnet-5",
-  "meta:muse-spark": "anthropic:claude-sonnet-5",
-  "meta:muse-flash": "anthropic:claude-sonnet-5",
-  "meta:Llama-4-Maverick-17B-128E-Instruct-FP8": "anthropic:claude-sonnet-5",
-  "meta:Llama-4-Scout-17B-16E-Instruct-FP8": "anthropic:claude-sonnet-5",
-  "meta:Llama-3.3-70B-Instruct": "anthropic:claude-sonnet-5",
+  // Meta — the Llama ids are still retired (the Meta Model API does not serve
+  // them), but they no longer leave the provider. Migrating a Meta selection to
+  // Anthropic was a stopgap for the window when Meta had no API at all; now that
+  // it does, a stored Meta id stays on Meta. Nothing here crosses vendors.
+  "meta:muse-max": "meta:muse-spark-1.2",
+  "meta:muse-spark": "meta:muse-spark-1.2",
+  "meta:muse-flash": "meta:muse-spark-1.2",
+  "meta:Llama-4-Maverick-17B-128E-Instruct-FP8": "meta:muse-spark-1.2",
+  "meta:Llama-4-Scout-17B-16E-Instruct-FP8": "meta:muse-spark-1.2",
+  "meta:Llama-3.3-70B-Instruct": "meta:muse-spark-1.2",
   // Zhipu
   "zhipu:glm-4-plus": "zhipu:glm-5.2", // absent from all current Z.AI/bigmodel listings
   // 400 code 1211 "模型不存在" on both /images/generations and /chat/completions,
@@ -534,13 +546,13 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "xai:grok-3-image": "xai:grok-imagine-image-quality", // never existed
   "xai:grok-2-image": "xai:grok-imagine-image-quality", // retired 2026-02-28 (real id grok-2-image-1212)
   // Qwen — older aliases/snapshots replaced by versioned Model Studio ids.
-  // Was pinned to 3.7 Max because 3.8-max-preview is Token Plan only, but 3.7
-  // Max is `legacy` — so this migrated a retired id onto a model the pickers do
-  // not offer, which `validate:models` has been failing on. A retired id has to
-  // land somewhere selectable; Token Plan is a billing question for the account,
-  // not a reason to strand the migration on a hidden model.
-  "qwen:qwen3-max": "qwen:qwen3.8-max-preview",
-  "qwen:qwen3.8-max": "qwen:qwen3.8-max-preview",
+  // A retired id has to land somewhere selectable (`validate:models` enforces
+  // that the target is `current`), which is why these point at the Max family's
+  // live flagship rather than at 3.7 Max, which is `legacy` and hidden.
+  "qwen:qwen3-max": "qwen:qwen3.8-max",
+  // The 3.8 preview is gone now that the GA id serves the same model; anyone
+  // holding the preview id in a stored conversation lands on the GA one.
+  "qwen:qwen3.8-max-preview": "qwen:qwen3.8-max",
   "qwen:qwen-plus": "qwen:qwen3.7-plus",
   "qwen:qwen-flash": "qwen:qwen3.6-flash",
 };

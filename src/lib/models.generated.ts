@@ -10,7 +10,7 @@ export interface DiscoveredModel {
 }
 
 /** ISO timestamp of the last successful `--write` sync (null = never synced). */
-export const SYNC_STAMP: string | null = "2026-08-01T06:42:32.831Z";
+export const SYNC_STAMP: string | null = "2026-08-06T06:48:39.664Z";
 
 /** Genuinely new chat models found on providers' live model APIs. Dumb data —
  *  plan/vision/reasoning/cost/webSearch are derived in models.ts via the
@@ -19,4 +19,7 @@ export const DISCOVERED: DiscoveredModel[] = [];
 
 /** Canonical "provider:providerModel" ids of curated CHAT models the live API
  *  no longer serves — hidden from pickers; stored ids migrate in models.ts. */
-export const UNAVAILABLE: string[] = [];
+export const UNAVAILABLE: string[] = [
+  "deepseek:deepseek-chat",
+  "deepseek:deepseek-reasoner",
+];

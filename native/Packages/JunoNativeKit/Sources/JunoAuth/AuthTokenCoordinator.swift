@@ -155,8 +155,20 @@ public actor AuthTokenCoordinator {
                 } catch let failure as AuthRefreshFailure {
                     throw failure
                 }
-                try Task.checkCancellation()
 
+                // Past this line the rotation has already happened on the
+                // server: the token we sent is spent, and the only copy of its
+                // replacement is in `refreshed`. There is no cancellation check
+                // here on purpose. There used to be one, and it meant that
+                // quitting the app — which cancels this task — threw the new
+                // token away while leaving the spent one in the Keychain. The
+                // next launch presented that spent token, the server read it as
+                // reuse and revoked the whole device session, and the user got
+                // the sign-in screen. Closing the app was the bug.
+                //
+                // Cancellation is honoured before the request (line above) and
+                // by the caller after this returns. Between the two, finishing
+                // is the only safe move.
                 let replacement = try AuthTokenSet(
                     accountID: current.accountID,
                     deviceID: current.deviceID,
@@ -165,11 +177,17 @@ public actor AuthTokenCoordinator {
                     refreshToken: refreshed.refreshToken,
                     refreshTokenExpiresAt: refreshed.refreshTokenExpiresAt
                 )
-                guard try await store.replace(
-                    for: accountID,
-                    expectedRefreshToken: current.refreshToken,
-                    with: replacement
-                ) else {
+                // Shielded from the enclosing cancellation as well: an
+                // unstructured Task does not inherit it, so a cancel that lands
+                // mid-write cannot leave the Keychain holding the spent token.
+                let persisted = try await Task {
+                    try await store.replace(
+                        for: accountID,
+                        expectedRefreshToken: current.refreshToken,
+                        with: replacement
+                    )
+                }.value
+                guard persisted else {
                     throw AuthTokenCoordinatorError.credentialsChanged
                 }
                 return replacement

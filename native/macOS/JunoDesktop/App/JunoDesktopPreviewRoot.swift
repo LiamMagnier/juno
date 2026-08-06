@@ -54,6 +54,11 @@ private struct JunoDesktopPreviewWorkspace: View {
     init(world: PreviewWorld) {
         self.world = world
         let sender = world.chatTransport
+#if DEBUG
+        if JunoPreviewEnvironment.updateReady {
+            DesktopUpdateModel.shared.setPreviewReady(version: "0.1.3")
+        }
+#endif
         let codeModel = NativeCodeModel(
             client: NativeCodeTaskClient(sender: sender, streamer: sender)
         )
@@ -88,6 +93,10 @@ private struct JunoDesktopPreviewWorkspace: View {
             // a registration from here would put a fake host in the real one's
             // list — visible on the reader's phone.
             codeHostModel: nil,
+            // The preview harness drives fixtures, not a relay: a Work model with
+            // no transport and no host is what the screenshots are of.
+            workModel: nil,
+            workHostModel: nil,
             libraryModel: world.libraryModel,
             requestSender: sender,
             accountDataClient: world.accountDataClient,

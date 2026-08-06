@@ -7,6 +7,8 @@ import JunoCodeKit
 import JunoCore
 import JunoStorage
 import JunoSync
+import JunoWorkKit
+import JunoWorkRuntime
 
 @MainActor
 struct JunoDesktopConfiguration {
@@ -36,6 +38,23 @@ struct JunoDesktopConfiguration {
     /// the two are unrelated jobs sharing one surface — one reads the account's
     /// tasks, the other writes this machine's heartbeat.
     let codeHostModel: DesktopCodeHostModel?
+    /// The account's Work tasks, as this Mac reads them.
+    let workModel: NativeWorkModel?
+    /// The other direction, mirroring `codeHostModel`: whether this Mac serves
+    /// Juno Work, and on what terms. Separate from `workModel` for the same
+    /// reason Code keeps its two apart — one reads the account's tasks, the
+    /// other is this machine's standing decision about itself, and folding them
+    /// together is how signing in comes to imply consent.
+    let workHostModel: DesktopWorkHostModel?
+    /// The folders this Mac has handed to Juno Work, and the only surface that
+    /// can create one. Held here so Settings and the local executor read the
+    /// same store rather than two copies that disagree about what is shared.
+    ///
+    /// Defaulted, and therefore a `var` among lets, for the reason
+    /// ``localStoreRecovery`` gives: the DEBUG preview harness composes a
+    /// configuration with no live Work runtime at all and should not have to name
+    /// a dependency it has no use for.
+    var workGrantStore: DesktopWorkGrantStore? = nil
     let libraryModel: NativeLibraryModel?
     let requestSender: (any NativeAuthenticatedRequestSending)?
     let accountDataClient: NativeAccountDataClient?
@@ -118,6 +137,51 @@ struct JunoDesktopConfiguration {
                 sender: runtime
             )
 
+            // Juno Work, assembled in one place because its pieces only mean
+            // anything together: a host model with no executor advertises a Mac
+            // that claims nothing, an executor with no grants can touch nothing,
+            // and a grant store nobody listens to is a folder shared with
+            // something that never hears about it. Each of those was the state
+            // this app actually shipped in.
+            // The undo ledger is shared on purpose. `WorkGrantRuntime.standard`
+            // hands it to every grant's batch executor and `LocalWorkExecutor`
+            // reads it to answer "undo that" — two ledgers would mean the batch
+            // that ran a second ago was recorded in the one nobody asks.
+            let workUndoLedger = WorkUndoLedger()
+            let workGrantStore = DesktopWorkGrantStore(undo: workUndoLedger)
+            let workHostModel = DesktopWorkHostModel()
+            let workRelayClient = NativeWorkClient(
+                sender: runtime,
+                streamer: runtime,
+                hostIdentity: { DesktopWorkHostModel.identity() },
+                runCounts: { [weak workHostModel] in
+                    await MainActor.run {
+                        guard let workHostModel else { return .none }
+                        return WorkHostRunCounts(
+                            active: workHostModel.activeRunCount,
+                            queued: workHostModel.queuedRunCount
+                        )
+                    }
+                }
+            )
+            let workLocalRuntime = DesktopWorkLocalRuntime(
+                host: workHostModel,
+                grants: workGrantStore,
+                streamer: runtime,
+                reporter: workRelayClient,
+                undo: workUndoLedger
+            )
+            workHostModel.connect(
+                registrar: workRelayClient,
+                relay: workRelayClient,
+                executorFactory: { hostID, accountID in
+                    workLocalRuntime.makeExecutor(hostID: hostID, accountID: accountID)
+                },
+                policyObserver: { policy in workLocalRuntime.apply(policy) }
+            )
+            workHostModel.systemPermissions = { .current }
+            workHostModel.grantActions = .over(workGrantStore)
+
             return Self(
                 authModel: NativeAuthModel(
                     runtime: runtime,
@@ -185,6 +249,16 @@ struct JunoDesktopConfiguration {
                     // start; the switch is what decides whether it does.
                     relay: NativeCodeRemoteClient(sender: runtime)
                 ),
+                workModel: NativeWorkModel(
+                    client: NativeWorkClient(sender: runtime, streamer: runtime)
+                ),
+                // Constructed unconditionally, unlike the loop it drives: the
+                // model has to exist for Settings to show the switch that is
+                // off, and a nil model would render that surface as
+                // unavailable rather than as switched off — two different
+                // sentences with two different fixes.
+                workHostModel: workHostModel,
+                workGrantStore: workGrantStore,
                 libraryModel: NativeLibraryModel(
                     client: NativeLibraryClient(sender: runtime),
                     // The picker draws the file, which means resolving its
@@ -252,6 +326,8 @@ struct JunoDesktopConfiguration {
             codeModel: nil,
             remoteCodeModel: nil,
             codeHostModel: nil,
+            workModel: nil,
+            workHostModel: nil,
             libraryModel: nil,
             requestSender: nil,
             accountDataClient: nil,

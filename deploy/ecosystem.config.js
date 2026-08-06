@@ -99,6 +99,56 @@ module.exports = {
       merge_logs: true,
     },
     {
+      // Cloud Work executor: claims queued cloud runs every 5s and drives the
+      // agent runtime (scripts/work-runner.ts). Loads the repo .env itself.
+      //
+      // Its own app rather than a second process of juno-scheduler, because a
+      // Work run holds a model provider open for minutes at a time and a
+      // scheduled task does not: sharing a process would mean one OOM restart
+      // takes both down, and a Work run that is restarted mid-flight is a run
+      // that has already moved files or sent a message.
+      //
+      // Headroom above the scheduler's 400M for the same reason: a run holds a
+      // transcript, a plan, up to three connectors' MCP sessions and the bytes
+      // of any deliverable it is packing, and MAX_CONCURRENT_RUNS is 3.
+      name: "juno-work",
+      script: "npm",
+      args: "run work:runner",
+      watch: false,
+      max_memory_restart: "900M",
+      env: {
+        NODE_ENV: "production",
+      },
+      error_file: "logs/work-err.log",
+      out_file: "logs/work-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+    },
+    {
+      // Work schedules and triggers: turns a due WorkSchedule into a queued
+      // WorkRun, which juno-work then claims (scripts/work-scheduler.ts).
+      //
+      // Separate from juno-work deliberately. The executor is horizontally
+      // scalable — leases mean several may run at once — while the thing that
+      // decides a schedule is due must not be, or one cron expression fires
+      // twice. Keeping them apart is what lets the executor be scaled without
+      // anybody having to remember that.
+      //
+      name: "juno-work-scheduler",
+      script: "npm",
+      args: "run work:scheduler",
+      watch: false,
+      max_memory_restart: "400M",
+      env: {
+        NODE_ENV: "production",
+        NODE_OPTIONS: "--conditions=react-server",
+      },
+      error_file: "logs/work-scheduler-err.log",
+      out_file: "logs/work-scheduler-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+    },
+    {
       name: "juno-voice-relay",
       cwd: path.join(__dirname, "..", "relay"),
       script: "npm",

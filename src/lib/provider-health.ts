@@ -1,6 +1,13 @@
 import "server-only";
 import { alertOperator } from "@/lib/alerts";
-import { classifyProviderError, type ProviderErrorClass } from "@/lib/provider-error";
+import { classifyProviderError } from "@/lib/provider-error";
+import {
+  healthTransition,
+  isHealthStale,
+  nextHealthState,
+  type ProbeOutcome,
+  type ProviderHealthState,
+} from "@/lib/provider-health-policy";
 import { MODELS } from "@/lib/models";
 import {
   PROVIDERS,
@@ -39,25 +46,16 @@ import {
  *    mark a provider down.
  *
  * State is per-process and in memory, like the model-discovery cache beside it.
+ *
+ * Known limitation: the probe is a chat completion, so a provider with no
+ * curated chat model — an image/video-only one such as seedance — cannot be
+ * probed and stays assumed-healthy. That is the fail-open default rather than a
+ * special case, and it is the honest state: nothing has been proven about it.
  */
 
-export interface ProviderHealth {
-  provider: Provider;
-  healthy: boolean;
-  /** Epoch ms of the last completed probe; null when never probed. */
-  checkedAt: number | null;
-  /** Why it is down, when it is down. */
-  failure: ProviderErrorClass | null;
-  detail: string | null;
-}
+/** Re-exported so callers need only this module. */
+export type ProviderHealth = ProviderHealthState;
 
-const HEALTHY_TTL = 10 * 60 * 1000;
-/**
- * Back off harder on a provider already known to be down. Several providers
- * meter free tiers by request count rather than tokens, and re-probing 14
- * providers every 10 minutes is ~2k requests/day per instance.
- */
-const UNHEALTHY_TTL = 30 * 60 * 1000;
 const PROBE_TIMEOUT_MS = 8_000;
 
 const health = new Map<Provider, ProviderHealth>();
@@ -120,16 +118,28 @@ function record(provider: Provider, next: ProviderHealth): void {
   const previous = health.get(provider);
   health.set(provider, next);
 
-  if (previous?.healthy === next.healthy) return;
-  // First observation of a healthy provider is not news.
-  if (previous === undefined && next.healthy) return;
+  const transition = healthTransition(previous, next);
+  if (transition === null) return;
 
-  if (!next.healthy) {
+  if (transition === "down") {
+    // An account with no credit left is not mailed about, only logged.
+    //
+    // It is a real condition and the catalog does hide the provider, but it is
+    // not an incident: nobody can act on it except by topping the account up,
+    // which the person receiving the mail already knows. It also persists — a
+    // dry account fails every probe for as long as it stays dry — and the mail
+    // dedupe is per-process and in memory, so every deploy resets the window and
+    // sends the same message again. The result was a mailbox full of "this API
+    // has no credit" for a fact the owner learned the first time.
+    const isFunding = next.failure === "billing";
     alertOperator({
       kind: "provider_unhealthy",
       key: provider,
-      severity: "critical",
-      title: `${PROVIDERS[provider].label} cannot serve requests`,
+      severity: isFunding ? "warn" : "critical",
+      mail: !isFunding,
+      title: isFunding
+        ? `${PROVIDERS[provider].label} has no credit left`
+        : `${PROVIDERS[provider].label} cannot serve requests`,
       detail: {
         provider,
         failure: next.failure,
@@ -139,10 +149,16 @@ function record(provider: Provider, next: ProviderHealth): void {
       },
     });
   } else {
+    // Recovery is only news if the outage was. Pairing a "recovered" mail with a
+    // "down" that was deliberately silent would reintroduce the noise from the
+    // other side — and topping an account up is not something to be congratulated
+    // on by email.
+    const wasFunding = previous?.failure === "billing";
     alertOperator({
       kind: "provider_recovered",
       key: provider,
       severity: "warn",
+      mail: !wasFunding,
       title: `${PROVIDERS[provider].label} is serving requests again`,
       detail: { provider },
     });
@@ -150,41 +166,15 @@ function record(provider: Provider, next: ProviderHealth): void {
 }
 
 async function refresh(provider: Provider): Promise<void> {
+  let outcome: ProbeOutcome;
   try {
     await probeOnce(provider);
-    record(provider, { provider, healthy: true, checkedAt: Date.now(), failure: null, detail: null });
+    outcome = { ok: true };
   } catch (err) {
     const { class: klass, status, raw } = classifyProviderError(err);
-    const accountFault = klass === "auth" || klass === "billing";
-    const previous = health.get(provider);
-
-    if (!accountFault) {
-      // Busy, overloaded, timed out, or a model-specific problem. Not evidence
-      // about the key — keep the previous verdict but move the clock on so a
-      // flapping provider is not re-probed on every single request.
-      record(provider, {
-        provider,
-        healthy: previous?.healthy ?? true,
-        checkedAt: Date.now(),
-        failure: previous?.failure ?? null,
-        detail: previous?.detail ?? null,
-      });
-      return;
-    }
-
-    record(provider, {
-      provider,
-      healthy: false,
-      checkedAt: Date.now(),
-      failure: klass,
-      detail: `${status !== null ? `${status} ` : ""}${raw}`.slice(0, 300),
-    });
+    outcome = { ok: false, class: klass, status, raw };
   }
-}
-
-function isStale(entry: ProviderHealth | undefined, now: number): boolean {
-  if (!entry || entry.checkedAt === null) return true;
-  return now - entry.checkedAt > (entry.healthy ? HEALTHY_TTL : UNHEALTHY_TTL);
+  record(provider, nextHealthState(provider, health.get(provider), outcome, Date.now()));
 }
 
 /**
@@ -194,7 +184,7 @@ function isStale(entry: ProviderHealth | undefined, now: number): boolean {
 export function ensureProviderHealthFresh(): void {
   const now = Date.now();
   for (const provider of configuredProviders()) {
-    if (!isStale(health.get(provider), now)) continue;
+    if (!isHealthStale(health.get(provider), now)) continue;
     if (inFlight.has(provider)) continue;
     const run = refresh(provider)
       .catch((err) => {

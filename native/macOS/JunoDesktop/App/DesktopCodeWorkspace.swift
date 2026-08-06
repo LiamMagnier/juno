@@ -12,6 +12,19 @@ import JunoVoiceKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// The Code inspector shares the trailing toolbar with the session search
+/// field. Keep its narrowest state wide enough for that field, with the same
+/// 12-point shoulder on both sides, so resizing never clips or crowds Search
+/// sessions.
+private enum DesktopCodeInspectorMetrics {
+    private static let searchFieldWidth: CGFloat = 308
+    private static let horizontalPadding: CGFloat = JunoSpace.cozy
+
+    static let minimum = searchFieldWidth + (horizontalPadding * 2)
+    static let ideal = minimum
+    static let maximum = JunoInspectorMetrics.maximum
+}
+
 /// The Code window: one layout owner, two columns, one optional trailing
 /// inspector.
 ///
@@ -74,13 +87,9 @@ struct DesktopCodeWorkspace: View {
     @State private var renameText = ""
     @State private var isOpeningQuickly = false
     /// Owns the simulator session for the selected workspace. Created lazily —
-    /// discovery spawns xcodebuild, which is not something to do for every
+    /// discovery spawns `xcodebuild`, which is not something to do for every
     /// Code session on every Mac.
     @State private var simulatorHost = DesktopSimulatorHost()
-    /// The web preview is a sibling dock rather than a second .inspector.
-    /// Keeping the target at the window level lets the preview own a real
-    /// long-lived dev-server session while the transcript remains mounted.
-    @State private var previewTarget: CodePreviewTarget?
     /// Whether the dictation capsule is up over the Code canvas.
     @State private var isDictating = false
     /// The Code composer can host the same realtime voice dock as Chat. The
@@ -207,6 +216,7 @@ struct DesktopCodeWorkspace: View {
                 remote: remoteModel,
                 selection: selection,
                 remoteDeviceID: $remoteDeviceID,
+                product: $product,
                 isBootstrapping: isBootstrapping,
                 session: session,
                 avatarModel: configuration?.avatarModel,
@@ -218,31 +228,26 @@ struct DesktopCodeWorkspace: View {
             )
             .junoSidebarColumn()
         } detail: {
-            // Real docked sibling columns, never a second .inspector — see
-            // the crash note below and each dock's own. The web preview and
-            // Simulator use the same reserved-space pattern, so a project can
-            // be inspected without ejecting the reader into another window.
+            // A real docked sibling column, never a second `.inspector` — see the
+            // crash note below and `DesktopSimulatorDock`'s own. Web projects are
+            // untouched: `CodePreviewScene` still owns those.
             DesktopSimulatorDock(
                 model: simulatorHost.isOpen ? simulatorHost.model : nil,
                 close: { withAnimation(JunoMotion.fast) { simulatorHost.closePane() } }
             ) {
-                DesktopCodePreviewDock(
-                    target: previewTarget,
-                    close: { withAnimation(JunoMotion.fast) { previewTarget = nil } },
-                    openInWindow: openPreviewWindow
-                ) {
-                    detail
-                }
+                detail
             }
                 .junoReadingCanvas()
-                .navigationTitle(windowTitle)
+                .navigationTitle("")
                 // No `.navigationSubtitle`.
                 //
                 // It restated what the detail column already shows in its own header
                 // one line below — the same path, the same "Folder"/"Git repository"
                 // — so the window said it twice. It also made the titlebar two lines
                 // tall, which is what pushed the leading title block wide enough to
-                // shove the `.principal` product switcher off centre.
+                // shove the `.principal` product switcher off centre — a symptom the
+                // switch's move to the sidebar has taken away, and the reason to
+                // leave it out that has not moved is the first one.
                 .toolbar { detailToolbar }
                 // The search field belongs to the **detail** column, not to the
                 // split view and not to the sidebar.
@@ -319,18 +324,10 @@ struct DesktopCodeWorkspace: View {
         .task { await bootstrap() }
         .task(id: liveRunCount) { await readPlan() }
         .task(id: selectedSessionID) { await resolveController() }
-        // A simulator and a web preview belong to one workspace. Changing
-        // workspace or session ends the previous build, log stream, capture and
-        // dev-server process before anything new starts, so nothing is ever left
-        // running against a folder the reader has moved on from.
-        .onChange(of: targetRepository?.id) { _, _ in
-            simulatorHost.tearDown()
-            previewTarget = nil
-        }
-        .onChange(of: selectedSessionID) { _, _ in
-            simulatorHost.tearDown()
-            previewTarget = nil
-        }
+        // A simulator belongs to one workspace. Changing workspace or session ends
+        // the previous build, log stream and capture before anything new starts.
+        .onChange(of: targetRepository?.id) { _, _ in simulatorHost.tearDown() }
+        .onChange(of: selectedSessionID) { _, _ in simulatorHost.tearDown() }
         .task(id: selectedTask?.id) { followSelectedTask() }
         .task(id: remoteDeviceID) { await loadRemoteSessions() }
         .task(id: selection.wrappedValue) { await followSelectedRemoteSession() }
@@ -376,7 +373,6 @@ struct DesktopCodeWorkspace: View {
         // re-attaches a cached controller.
         .onDisappear {
             simulatorHost.tearDown()
-            previewTarget = nil
             guard let controller else { return }
             Task { await controller.detach() }
         }
@@ -592,8 +588,21 @@ struct DesktopCodeWorkspace: View {
                 reviewVisible = false
                 consoleVisible = false
                 selection.wrappedValue = id.map { .repository($0) } ?? .draft
-            }
+            },
+            beginVoice: { modelID in
+                startVoice(modelID: modelID, projectID: record?.id.value)
+            },
+            connectorModel: configuration?.connectorModel,
+            voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) }
         )
+        // Applied to the draft view itself, not around it.
+        //
+        // The single reading canvas this window owns is on the detail column
+        // above, and `.junoReadingCanvas()` is an opaque `.background` — so a
+        // field mounted anywhere outside that canvas stacks behind an opaque
+        // fill and draws nothing. Here it is a descendant of the canvas rather
+        // than a sibling of it, which is the arrangement Chat gets for free.
+        .junoVoiceField(voiceColumn)
     }
 
     // MARK: - The session surface
@@ -626,6 +635,20 @@ struct DesktopCodeWorkspace: View {
     // The two disclosure flags cross as bindings rather than as values so the
     // toolbar's toggles and the canvas's own affordances — clicking a changed file
     // opens Review — cannot disagree about what is showing.
+    //
+    // **Both halves of voice cross as erased views**, and for one reason:
+    // `JunoCodeUI` depends on neither this target nor `JunoVoiceKit`, so it
+    // cannot name a `DesktopVoiceColumn` or a `JunoRealtimeVoiceController`.
+    // The dock has always crossed that way; the field now crosses beside it.
+    //
+    // The field could not simply be wrapped around `CodeSessionCanvas(…)` from
+    // out here, which is the obvious thing and the thing that draws nothing at
+    // all: the canvas paints `junoReadingCanvas()` — an opaque background —
+    // inside its own body, and successive `.background` layers stack further
+    // back, so a field written outside it lands behind an opaque fill. Handed in
+    // through the initialiser it is mounted between that fill and the transcript,
+    // which is where the light belongs. Chat never had to solve this because its
+    // canvas sits on an ancestor of the column it lights, not on the column.
 
     private func localSession(_ controller: SessionController) -> some View {
         CodeSessionCanvas(
@@ -633,13 +656,16 @@ struct DesktopCodeWorkspace: View {
             model: workbenchModel,
             showsReview: $reviewVisible,
             showsConsole: $consoleVisible,
-            beginDictation: {
-                withAnimation(JunoMotion.fast) { isDictating = true }
-            },
+            beginDictation: JunoSpeechService.isSupported
+                ? {
+                    withAnimation(JunoMotion.fast) { isDictating = true }
+                }
+                : nil,
             beginVoice: {
                 startVoice(for: controller)
             },
-            voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) }
+            voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) },
+            voiceField: voiceColumn?.erasedField
         )
         // The same capsule the Chat composer uses, over the Code canvas.
         //
@@ -724,6 +750,17 @@ struct DesktopCodeWorkspace: View {
     }
 
     private func startVoice(for controller: SessionController) {
+        startVoice(
+            modelID: controller.session.configuration.modelID,
+            projectID: controller.session.workspaceID?.value
+        )
+    }
+
+    /// Starts the same realtime call from either a running Code session or the
+    /// first-turn composer. A draft has no `SessionController` yet, but voice
+    /// still has the same account-authenticated relay and can be saved against
+    /// the selected project when the call ends.
+    private func startVoice(modelID: String, projectID: String?) {
         guard voiceSession == nil else { return }
         guard let configuration, let session, let sender = configuration.requestSender else {
             voiceUnavailable = "Juno is not signed in, so it cannot start a voice conversation."
@@ -731,6 +768,10 @@ struct DesktopCodeWorkspace: View {
         }
         guard configuration.voiceTranscriptClient != nil else {
             voiceUnavailable = "Voice is unavailable for this account."
+            return
+        }
+        guard !modelID.isEmpty else {
+            voiceUnavailable = "Choose a model before starting voice mode."
             return
         }
 
@@ -741,9 +782,9 @@ struct DesktopCodeWorkspace: View {
                     accountID: session.profile.id
                 )
             ),
-            modelID: controller.session.configuration.modelID,
+            modelID: modelID,
             conversationID: nil,
-            projectID: controller.session.workspaceID?.value
+            projectID: projectID
         )
         voiceSession = started
         Task { await started.controller.start() }
@@ -769,9 +810,9 @@ struct DesktopCodeWorkspace: View {
             }
         }
         .inspectorColumnWidth(
-            min: JunoInspectorMetrics.minimum,
-            ideal: JunoInspectorMetrics.ideal,
-            max: JunoInspectorMetrics.maximum
+            min: DesktopCodeInspectorMetrics.minimum,
+            ideal: DesktopCodeInspectorMetrics.ideal,
+            max: DesktopCodeInspectorMetrics.maximum
         )
     }
 
@@ -858,45 +899,6 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    // MARK: - Title
-
-    private var windowTitle: String {
-        switch selection.wrappedValue {
-        case .session(let id):
-            return workbenchModel.sessions.first { $0.id == id }?.title ?? "Session"
-        case .task(let id):
-            return codeModel.tasks.first { $0.id == id }?.title ?? "Run"
-        case .remote:
-            return selectedRemoteSummary?.title ?? "Remote session"
-        case .allProjects:
-            return "All Projects"
-        case .draft:
-            return "New conversation"
-        case .pulls:
-            return "Pull requests"
-        case .connections:
-            return "Connections"
-        case .usage:
-            return "Usage"
-        case .settings:
-            return "Settings"
-        case .repository(let id):
-            return workbenchModel.workspaces.first { $0.id == id }?
-                .descriptor.displayName ?? "New conversation"
-        case nil:
-            return workbenchModel.workspaces.first?.descriptor.displayName ?? "New conversation"
-        }
-    }
-
-    // There is no `windowSubtitle`, and there is no computation for one.
-    //
-    // It survived the removal of `.navigationSubtitle` as an unreferenced 50-line
-    // string builder that named a repository, a branch and an engine nothing read.
-    // Every one of those facts is already on screen a line below — the draft's
-    // repository bar states the path and whether it is a Git checkout, and a live
-    // session's own header states its branch — which is the reason the subtitle
-    // went in the first place.
-
     // MARK: - Toolbar
 
     /// A fixed set. Every item is present in every state and disables rather than
@@ -905,31 +907,24 @@ struct DesktopCodeWorkspace: View {
     /// pointer does not have to re-find.
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
-        // In the toolbar rather than at the top of the sidebar: as a
-        // `safeAreaInset` on the column the switch had no opaque backing, so a
-        // scrolled source list slid its rows under both the switch and the
-        // window's traffic lights. It also stays reachable here when the sidebar
-        // is collapsed.
-        // `.principal`, not `.navigation`.
+        // **No product switch here.** It is the first thing in the sidebar now —
+        // `DesktopSidebarProductHeader`, drawn identically by both columns.
         //
-        // `.navigation` placement in a `NavigationSplitView` puts an item in the
-        // **sidebar's** titlebar, alongside the traffic lights — so the top-level
-        // Chat/Code switch sat inside the navigation column, crowding the window
-        // controls and reading as though it belonged to the project list under it.
-        // It is a window-level control, not a sidebar one. `.principal` places it in
-        // the content area's toolbar, where it is still always visible with the
-        // sidebar collapsed.
+        // It was in the toolbar because the first sidebar version was a bare
+        // `safeAreaInset` with nothing painted behind it, so scrolled rows slid
+        // under the switch and on under the traffic lights. That failure was the
+        // missing backing, not the placement, and the header fixes it there. What
+        // the toolbar cost in exchange was real: `.principal` shares the leading
+        // half of the bar with the window's title block — the reason
+        // `.navigationSubtitle` had to go was that a two-line titlebar shoved this
+        // item off centre — and a control that changes what the *navigation*
+        // column lists is a strange thing to have to reach for at the top of the
+        // *content* column. `.navigation` was never an option: in a
+        // `NavigationSplitView` it lands in the sidebar's titlebar, beside the
+        // traffic lights.
         //
-        // Both windows move together: this is the one control that occupies the same
-        // spot in Chat and Code, and a different placement in each would make it jump
-        // on every mode change.
-        ToolbarItem(placement: .principal) {
-            // No width imposed here: the switcher owns its own metrics (see
-            // `DesktopProductSwitcher`). A flat width from the toolbar is what
-            // squeezed the two labels against their segment edges and stopped the
-            // control growing with Dynamic Type.
-            DesktopProductSwitcher(selection: $product)
-        }
+        // Both windows still move together: the header is one view, so the switch
+        // cannot sit in one place in Chat and another in Code.
 
         // Trailing, not `.navigation`: that placement draws into the *sidebar's*
         // titlebar beside the traffic lights, which is how a window action ended up
@@ -942,55 +937,60 @@ struct DesktopCodeWorkspace: View {
             .accessibilityIdentifier("juno.code.new-session")
         }
 
-        ToolbarItem(placement: .status) {
-            statusIndicator
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button { consoleVisible.toggle() } label: {
+                Image(systemName: "terminal")
+            }
+            .tint(consoleVisible ? Color.junoAccent : nil)
+            .keyboardShortcut("c", modifiers: [.command, .option])
+            .help(consoleVisible ? "Hide console" : "Show console")
+            .accessibilityLabel(consoleVisible ? "Hide console" : "Show console")
+            .accessibilityIdentifier("juno.code.console.toggle")
+            .disabled(controller == nil)
+
+            Button { reviewVisible.toggle() } label: {
+                Image(systemName: "plusminus.circle")
+            }
+            .tint(reviewVisible ? Color.junoAccent : nil)
+            .keyboardShortcut("r", modifiers: [.command, .option])
+            .help(reviewVisible ? "Close review" : "Open review")
+            .accessibilityLabel(reviewVisible ? "Close review" : "Open review")
+            .accessibilityIdentifier("juno.code.review.toggle")
+            .disabled(controller == nil)
+
+            if let repository = targetRepository {
+                Button {
+                    withAnimation(JunoMotion.fast) {
+                        simulatorHost.open(
+                            workspaceKey: repository.id.value,
+                            workspaceRoot: URL(fileURLWithPath: repository.descriptor.localPathHint)
+                        )
+                    }
+                } label: {
+                    Label("Simulator", systemImage: "iphone")
+                }
+                .help("Build and run this project's iOS app in a simulator")
+                .accessibilityIdentifier("juno.code.simulator")
+            }
+
+            Button { inspectorVisible.toggle() } label: {
+                Image(systemName: "sidebar.trailing")
+            }
+            .tint(inspectorVisible ? Color.junoAccent : nil)
+            .keyboardShortcut("i", modifiers: [.command, .option])
+            .help(inspectorVisible ? "Hide Code panels" : "Show Code panels")
+            .accessibilityLabel(inspectorVisible ? "Hide Code panels" : "Show Code panels")
+            .accessibilityIdentifier("juno.code.inspector.toggle")
         }
 
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button(action: openPreview) {
-                    Label("Show Preview Pane", systemImage: "rectangle.on.rectangle")
+                    Label("Open Preview", systemImage: "rectangle.on.rectangle")
                 }
                 .keyboardShortcut("p", modifiers: [.command, .option])
                 .disabled(controller?.context == nil)
                 .accessibilityIdentifier("juno.code.preview")
-
-                Button { consoleVisible.toggle() } label: {
-                    Label("Console", systemImage: "terminal")
-                }
-                .keyboardShortcut("c", modifiers: [.command, .option])
-                .disabled(controller == nil)
-                .accessibilityIdentifier("juno.code.console")
-
-                Button { reviewVisible.toggle() } label: {
-                    Label(reviewTitle, systemImage: "plusminus.circle")
-                }
-                .keyboardShortcut("r", modifiers: [.command, .option])
-                .disabled(controller == nil)
-                .accessibilityIdentifier("juno.code.review")
-
-                if let repository = targetRepository {
-                    Button {
-                        withAnimation(JunoMotion.fast) {
-                            previewTarget = nil
-                            simulatorHost.open(
-                                workspaceKey: repository.id.value,
-                                workspaceRoot: URL(fileURLWithPath: repository.descriptor.localPathHint)
-                            )
-                        }
-                    } label: {
-                        Label("Simulator", systemImage: "iphone")
-                    }
-                    .help("Build and run this project's iOS app in a simulator")
-                    .accessibilityIdentifier("juno.code.simulator")
-                }
-
-                Button { inspectorVisible.toggle() } label: {
-                    Label("Inspector", systemImage: "sidebar.trailing")
-                }
-                .keyboardShortcut("i", modifiers: [.command, .option])
-                .disabled(controller == nil)
-                .accessibilityIdentifier("juno.code.inspector")
 
                 // `OpenQuicklySheet` is a complete 163-line file browser that had
                 // zero call sites: nothing in the app or the package ever presented
@@ -1074,35 +1074,6 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    /// Real elapsed time while a run is live, the run's own status otherwise.
-    /// The ticking clock only exists while something is actually running.
-    @ViewBuilder
-    private var statusIndicator: some View {
-        if let status = currentStatus {
-            if status.isActive, let startedAt = controller?.runStartedAt {
-                TimelineView(.periodic(from: startedAt, by: 1)) { context in
-                    Label(
-                        "\(status.label) · \(elapsed(from: startedAt, to: context.date))",
-                        systemImage: status.symbol
-                    )
-                    .foregroundStyle(status.tint)
-                    .monospacedDigit()
-                }
-                .accessibilityLabel("\(status.label), running")
-            } else {
-                Label(status.label, systemImage: status.symbol)
-                    .foregroundStyle(status.tint)
-            }
-        } else {
-            // Not `square.and.pencil`: that is the New-session button's glyph, and
-            // a toolbar drawing the same icon twice a few points apart reads as two
-            // of the same control rather than as an action and a status.
-            Label("Draft", systemImage: "circle.dashed")
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("New session draft")
-        }
-    }
-
     private var currentStatus: CodeRunStatus? {
         if let controller {
             return CodeRunStatus(
@@ -1113,11 +1084,6 @@ struct DesktopCodeWorkspace: View {
         if let selectedTask { return CodeRunStatus(selectedTask.status) }
         if let selectedRemoteSummary { return CodeRunStatus(selectedRemoteSummary) }
         return nil
-    }
-
-    private var reviewTitle: String {
-        let pending = controller?.changes.filter { $0.reviewState == .pending }.count ?? 0
-        return pending == 0 ? "Review" : "Review (\(pending))"
     }
 
     private var isRunning: Bool {
@@ -1196,12 +1162,6 @@ struct DesktopCodeWorkspace: View {
 
     private func openPreview() {
         guard let root = controller?.context?.access.rootURL else { return }
-        simulatorHost.closePane()
-        previewTarget = CodePreviewTarget(workspaceRoot: root)
-    }
-
-    private func openPreviewWindow() {
-        guard let root = controller?.context?.access.rootURL else { return }
         openWindow(
             id: CodePreviewScene.windowID,
             value: CodePreviewTarget(workspaceRoot: root)
@@ -1232,6 +1192,12 @@ struct DesktopCodeWorkspace: View {
             selection.wrappedValue = .session(session.id)
             guard let created = await workbenchModel.controller(for: session.id) else {
                 return
+            }
+            for path in draft.fileReferences {
+                created.registerComposerFileReference(path)
+            }
+            for attachment in draft.attachments {
+                created.attach(attachment)
             }
             created.composerText = draft.prompt
             await created.send()

@@ -1,7 +1,28 @@
 import { prisma } from "@/lib/prisma";
 import { serializeArtifact } from "@/lib/serializers";
+import { normalizeDesignArtifact } from "@/lib/design/authoring";
+import { DesignValidationError } from "@/lib/design/schema";
 import type { ParsedArtifact } from "@/lib/message-content";
 import type { ClientArtifact } from "@/types/chat";
+
+/**
+ * A DESIGN artifact is stored as a full `DesignDocument`, but the model writes
+ * the compact authoring form — so it is expanded here, once, on the way in.
+ *
+ * A body that cannot be expanded is dropped rather than stored: an artifact the
+ * editor cannot open is worse than no artifact, because it reads as data loss.
+ * The failure is logged with its reason so it is diagnosable rather than silent.
+ */
+function normalizeForStorage(artifact: ParsedArtifact): ParsedArtifact | null {
+  if (artifact.type !== "DESIGN") return artifact;
+  try {
+    return { ...artifact, content: normalizeDesignArtifact(artifact.content, artifact.identifier) };
+  } catch (error) {
+    const detail = error instanceof DesignValidationError ? error.issues.join("; ") : String(error);
+    console.warn(`[artifacts] dropped an unreadable design artifact "${artifact.identifier}": ${detail}`);
+    return null;
+  }
+}
 
 export class ArtifactVersionConflictError extends Error {
   constructor() {
@@ -21,7 +42,9 @@ export async function persistArtifacts(
 ): Promise<ClientArtifact[]> {
   const out: ClientArtifact[] = [];
 
-  for (const a of parsed) {
+  for (const raw of parsed) {
+    const a = normalizeForStorage(raw);
+    if (!a) continue;
     const existing = await prisma.artifact.findUnique({
       where: { conversationId_identifier: { conversationId, identifier: a.identifier } },
     });

@@ -553,6 +553,7 @@ struct JunoMobileArtifactsView: View {
         case .markdown: "doc.text"
         case .svg: "scribble.variable"
         case .mermaid: "flowchart"
+        case .design: "pencil.and.outline"
         }
     }
 
@@ -564,6 +565,7 @@ struct JunoMobileArtifactsView: View {
         case .markdown: "Document"
         case .svg: "Vector"
         case .mermaid: "Diagram"
+        case .design: "Design"
         }
     }
 }
@@ -1098,6 +1100,7 @@ struct JunoMobileArtifactDetail: View {
         case .markdown: "Markdown"
         case .svg: "SVG"
         case .mermaid: "Diagram"
+        case .design: "Design"
         }
     }
 
@@ -1106,6 +1109,7 @@ struct JunoMobileArtifactDetail: View {
         case .react, .html: "curlybraces.square"
         case .svg: "square.on.circle"
         case .mermaid: "flowchart"
+        case .design: "pencil.and.outline"
         case .markdown: "doc.text"
         case .code: "chevron.left.forwardslash.chevron.right"
         }
@@ -1272,7 +1276,7 @@ struct JunoMobileArtifactDetail: View {
             }
 
             if let version {
-                NativeArtifactPreview(
+                JunoMobileArtifactBody(
                     kind: artifact.kind,
                     content: version.content,
                     mode: displayMode

@@ -17,21 +17,18 @@ packages:
     path: ../../Packages/JunoNativeKit
   JunoCode:
     path: ../../Packages/JunoCode
+  JunoWork:
+    path: ../../Packages/JunoWork
 targets:
   JunoDesktop:
     type: application
     platform: macOS
     sources:
       - path: App
-        # Migration copies are retained for recovery, but must never become
-        # duplicate Swift declarations when XcodeGen regenerates the project.
-        excludes:
-          - "**/* 2.swift"
       - path: Resources
         excludes:
           - Info.plist
           - JunoDesktop.entitlements
-          - "**/* 2.*"
         buildPhase: resources
       - path: ../../iOS/JunoMobile/Resources/Fonts
         buildPhase: resources
@@ -48,7 +45,7 @@ targets:
       # missing on the other.
       - path: ../../iOS/JunoMobile/Resources/Localizable.xcstrings
         buildPhase: resources
-      # The bundled Juno Design editor. Copied as a folder reference so
+      # The bundled Juno Design editor. A folder reference so
       # `Bundle.main.url(forResource:withExtension:subdirectory:)` finds
       # "DesignEditor/index.html" and the host can scope file read access to
       # that directory alone. Built by `npm run design:editor`.
@@ -65,6 +62,8 @@ targets:
       - package: JunoNativeKit
         product: JunoCodeKit
       - package: JunoNativeKit
+        product: JunoWorkKit
+      - package: JunoNativeKit
         product: JunoCore
       - package: JunoNativeKit
         product: JunoDesignSystem
@@ -80,6 +79,11 @@ targets:
         product: JunoCodeBridge
       - package: JunoCode
         product: JunoCodeUI
+      # The model transport contract. Juno Work has no transport of its own —
+      # both products stream turns from `/api/agent` — and a second one would be
+      # a second thing to keep correct rather than a boundary worth having.
+      - package: JunoCode
+        product: JunoCodeRuntime
       # Juno Simulator's services and models. The pane lives in JunoCodeUI; the
       # window shell owns the session's lifetime, so it needs the types directly.
       - package: JunoCode
@@ -87,6 +91,23 @@ targets:
       # The Juno Design scene contract, for the hosted design editor.
       - package: JunoNativeKit
         product: JunoDesignKit
+      - package: JunoWork
+        product: JunoWorkCore
+      - package: JunoWork
+        product: JunoWorkLocal
+      # The half of Juno Work that actually does anything. Core and Local alone
+      # ship the value logic and the containment boundary; without Runtime the
+      # binary has no LocalWorkExecutor, no WorkToolRegistry and no approval
+      # coordinator, so the app advertised a Mac that could serve Work and had
+      # nothing to serve it with.
+      - package: JunoWork
+        product: JunoWorkRuntime
+      # Browser, accessibility and screen control. Linked so the app can put the
+      # controls into a run's tool registry — see `WorkToolRegistry.adding`,
+      # which exists because this dependency direction forbids Runtime naming
+      # them itself.
+      - package: JunoWork
+        product: JunoWorkAutomation
     configFiles:
       Debug: ../../Config/JunoDesktop-Debug.xcconfig
       Stable: ../../Config/JunoDesktop-Stable.xcconfig
@@ -103,8 +124,6 @@ targets:
     platform: macOS
     sources:
       - path: Tests
-        excludes:
-          - "**/* 2.swift"
     dependencies:
       - target: JunoDesktop
     configFiles:
@@ -120,8 +139,6 @@ targets:
     platform: macOS
     sources:
       - path: UITests
-        excludes:
-          - "**/* 2.swift"
     dependencies:
       - target: JunoDesktop
     configFiles:

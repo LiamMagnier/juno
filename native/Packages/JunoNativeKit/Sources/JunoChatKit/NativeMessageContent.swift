@@ -375,7 +375,7 @@ public enum NativeMessageContent {
     }
 
     private static let knownKinds: Set<String> = [
-        "HTML", "REACT", "CODE", "MARKDOWN", "SVG", "MERMAID",
+        "HTML", "REACT", "CODE", "MARKDOWN", "SVG", "MERMAID", "DESIGN",
     ]
 
     private static func normalizedKind(_ raw: String?) -> String {

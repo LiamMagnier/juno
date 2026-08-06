@@ -23,6 +23,7 @@
 
 import { z } from "zod";
 import {
+  assetSchema,
   autoLayoutSchema,
   animationSchema,
   blurSchema,
@@ -36,6 +37,7 @@ import {
   motionTrackSchema,
   nodeSchema,
   paintSchema,
+  rgbaSchema,
   shadowSchema,
   sizeLimitsSchema,
   sizingModeSchema,
@@ -53,6 +55,15 @@ import { isContainer, type DesignDocument, type DesignNode, type NodeId } from "
 
 const idSchema = z.string().min(1).max(120);
 const idList = z.array(idSchema).min(1).max(2_000);
+
+/** Mirrors the document schema's page ceiling. Refusing here means a document
+ *  that grew one page too far is rejected while it can still be described, not
+ *  after it has been written and can no longer be parsed back. */
+const MAX_PAGES = 200;
+
+/** The background `createDesignDocument` gives a document's first page, so a
+ *  page added later does not arrive a different colour. */
+const DEFAULT_PAGE_BACKGROUND = { r: 0.96, g: 0.96, b: 0.97, a: 1 };
 
 /** The subset of node fields an `updateNode` may write. Deliberately explicit:
  *  `id`, `type`, `parentId` and `children` are structural and only the
@@ -166,6 +177,31 @@ export const designOperationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("deleteVariable"), variableId: idSchema }),
   z.object({ op: z.literal("bindVariable"), nodeId: idSchema, property: z.string().min(1).max(120), variableId: idSchema.nullable() }),
   z.object({ op: z.literal("setVariableMode"), collectionId: idSchema, modeId: idSchema }),
+  z.object({
+    op: z.literal("createPage"),
+    /** Caller-chosen id, so the editor can switch to the page it just asked for
+     *  without waiting for the transaction to come back. */
+    pageId: idSchema.optional(),
+    name: z.string().min(1).max(300),
+    index: z.number().int().min(0).max(MAX_PAGES).optional(),
+    backgroundColor: rgbaSchema.optional(),
+  }),
+  z.object({ op: z.literal("deletePage"), pageId: idSchema }),
+  z.object({ op: z.literal("renamePage"), pageId: idSchema, name: z.string().min(1).max(300) }),
+  /**
+   * The document's own name — what an SVG, PNG or handoff export is called.
+   *
+   * `name` mirrors the document schema exactly (`max(300)`, no minimum) rather
+   * than borrowing `renamePage`'s `min(1)`. An operation has to be able to
+   * express every state its target can legally hold, or its inverse is not
+   * total: a stored document whose name is the empty string — the schema takes
+   * one, and a document minted across the design bridge can carry one — would
+   * produce an inverse the schema then refuses, and the undo would throw where
+   * the redo did not.
+   */
+  z.object({ op: z.literal("renameDocument"), name: z.string().max(300) }),
+  z.object({ op: z.literal("createAsset"), asset: assetSchema }),
+  z.object({ op: z.literal("deleteAsset"), assetId: idSchema }),
   z.object({ op: z.literal("createInteraction"), interaction: interactionSchema }),
   z.object({ op: z.literal("deleteInteraction"), interactionId: idSchema }),
   z.object({ op: z.literal("createAnimation"), animation: animationSchema }),
@@ -294,6 +330,113 @@ export function invertTransaction(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Batching and checkpoints
+// ---------------------------------------------------------------------------
+
+/**
+ * Drop the intermediate states from a run of operations.
+ *
+ * An `updateNode` assigns whole fields, so an earlier assignment is dead as
+ * soon as a later one covers every field it wrote — which is what a stream of
+ * pointer-driven edits is: forty `{x, y}` patches on the same node where only
+ * the last one is worth sending. The earlier one is only dropped when
+ * everything between the two is also an `updateNode`, because nothing else can
+ * be assumed to leave the node's fields alone: a delete, a reparent or a group
+ * in between makes the intermediate state load-bearing again.
+ *
+ * The result applies to the same base revision and produces the same document
+ * as the input; it is a smaller way of saying the same thing, not a different
+ * change.
+ */
+export function coalesceOperations(operations: DesignOperation[]): DesignOperation[] {
+  const kept: (DesignOperation | null)[] = [...operations];
+
+  for (let i = operations.length - 1; i >= 0; i--) {
+    const later = kept[i];
+    if (!later || later.op !== "updateNode") continue;
+    const laterKeys = Object.keys(later.patch);
+    for (let j = i - 1; j >= 0; j--) {
+      const earlier = kept[j];
+      if (!earlier) continue;
+      if (earlier.op !== "updateNode") break;
+      if (earlier.nodeId !== later.nodeId) continue;
+      if (Object.keys(earlier.patch).every((key) => laterKeys.includes(key))) kept[j] = null;
+    }
+  }
+
+  return kept.filter((operation): operation is DesignOperation => operation !== null);
+}
+
+/**
+ * Whether any of these operations will mint an id.
+ *
+ * Ids come from a minter seeded with the transaction's own id, so the same
+ * transaction replayed anywhere produces the same document (see the module
+ * note). The other side of that bargain is that operations which mint cannot be
+ * moved into a transaction with a different id: the store would create the same
+ * layer under a name the editor has never heard of, and the next gesture would
+ * address a node that does not exist. A caller that batches has to keep these
+ * in a transaction of their own, under the id they were applied with.
+ */
+export function mintsIds(operations: DesignOperation[]): boolean {
+  return operations.some((operation) => {
+    switch (operation.op) {
+      case "createNode":
+        return !operation.node.id;
+      case "duplicateNodes":
+        return true;
+      case "groupNodes":
+        return !operation.groupId;
+      case "createComponent":
+        return !operation.componentId;
+      case "createInstance":
+        return !operation.instanceId;
+      case "createPage":
+        return !operation.pageId;
+      default:
+        return false;
+    }
+  });
+}
+
+/**
+ * How long a run of edits keeps folding into the same stored checkpoint.
+ *
+ * Long enough that a burst of dragging, nudging and recolouring is one entry in
+ * the version list; short enough that stepping away and coming back gives you
+ * something to go back to.
+ */
+export const CHECKPOINT_WINDOW_MS = 30_000;
+
+export interface StoredCheckpoint {
+  /** `origin` of the newest stored version. */
+  origin: string | null;
+  /** How old that version is, in milliseconds, as this transaction lands. */
+  ageMs: number;
+}
+
+/**
+ * Whether a transaction deserves a version of its own.
+ *
+ * The alternative is that it rewrites the newest version in place, which is how
+ * continuous manipulation stops costing a permanent copy of the document per
+ * gesture. Only a run of the user's own recent edits may be folded together:
+ * generated output and restore points are never overwritten, and a change Juno
+ * authored is the unit a person reviews and reverts, so it always stands alone.
+ */
+export function allocatesCheckpoint(
+  latest: StoredCheckpoint | null,
+  transaction: DesignTransaction,
+  origin: "edit" | "restore"
+): boolean {
+  if (!latest) return true;
+  if (origin !== "edit" || latest.origin !== "edit") return true;
+  if (transaction.author !== "user") return true;
+  // A negative age is a clock that disagrees with itself; take the safe branch.
+  return latest.ageMs < 0 || latest.ageMs >= CHECKPOINT_WINDOW_MS;
+}
+
 /** Deterministic id minter seeded by the transaction id (see the module note on
  *  replay). Never `Math.random`: a replayed transaction must produce the same
  *  document on the Mac as in the browser. */
@@ -313,6 +456,22 @@ function requireNode(doc: DesignDocument, id: NodeId): DesignNode {
   const node = doc.nodes[id];
   if (!node) throw new DesignOperationError("not-found", `No node ${id} in this document.`);
   return node;
+}
+
+/**
+ * An image layer is exactly as real as the asset it names.
+ *
+ * `assetId` has no empty form, so a layer created without one used to be
+ * refused by the node schema with a message about string length — and a layer
+ * pointed at an id nothing defines drew a grey placeholder for good. Both are
+ * caught here instead, in the caller's vocabulary: put the asset in the same
+ * transaction as the layer.
+ */
+function requireAsset(doc: DesignDocument, assetId: unknown): void {
+  if (typeof assetId !== "string" || assetId.length === 0) {
+    throw new DesignOperationError("invalid", "An image layer needs a picture. Create its asset in the same transaction.");
+  }
+  if (!doc.assets[assetId]) throw new DesignOperationError("not-found", `No image asset ${assetId} in this document.`);
 }
 
 function requireUnlocked(doc: DesignDocument, id: NodeId): DesignNode {
@@ -430,14 +589,25 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
     case "createNode": {
       const id = operation.node.id ?? ctx.mintId("n");
       if (doc.nodes[id]) throw new DesignOperationError("invalid", `A node with id ${id} already exists.`);
-      const raw = {
-        ...nodeDefaultsFor(operation.node.type),
-        ...(operation.node.patch ?? {}),
+      const defaults = nodeDefaultsFor(operation.node.type);
+      const patch = (operation.node.patch ?? {}) as Record<string, unknown>;
+      const raw: Record<string, unknown> = {
+        ...defaults,
+        ...patch,
         id,
         type: operation.node.type,
         name: operation.node.name ?? operation.node.patch?.name ?? defaultName(operation.node.type),
         parentId: operation.parentId,
       };
+      // `typography` MERGES with the default, exactly as `updateNode` does.
+      // A plain spread would let `{fontSize: 28}` replace the whole block and
+      // take the family, line height and alignment with it — the node would
+      // then fail validation on a field the caller never mentioned, which is a
+      // confusing way to reject a perfectly reasonable request.
+      if (patch.typography && defaults.typography) {
+        raw.typography = { ...(defaults.typography as object), ...(patch.typography as object) };
+      }
+      if (operation.node.type === "image") requireAsset(doc, raw.assetId);
       const parsed = nodeSchema.safeParse(raw);
       if (!parsed.success) {
         throw new DesignOperationError("invalid", `New ${operation.node.type} is not a valid node: ${parsed.error.issues[0]?.message ?? ""}`);
@@ -462,6 +632,7 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
         }
         before[key] = record[key];
       }
+      if ("assetId" in patch) requireAsset(doc, patch.assetId);
       // Typography merges rather than replaces so "make it bold" does not drop
       // the family, size and alignment the caller never mentioned.
       const next: Record<string, unknown> = { ...record, ...patch };
@@ -483,11 +654,22 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
     // ---------------------------------------------------------------- delete
     case "deleteNodes": {
       const inverse: DesignOperation[] = [];
-      for (const rootId of operation.nodeIds) {
-        requireUnlocked(doc, rootId);
-        const ids = subtreeIds(doc, rootId);
+      // Sibling indexes are read before anything is detached, and the roots are
+      // then rebuilt in ascending index order. Reading them as we went recorded
+      // every root at the position left by the previous detach, so undoing a
+      // multi-layer delete used to hand back the layers in reverse z-order.
+      const roots = operation.nodeIds.map((rootId) => {
+        const node = requireUnlocked(doc, rootId);
         const pageId = pageIdOf(doc, rootId);
-        const { parentId, index } = detach(doc, rootId);
+        return { rootId, pageId, index: siblingList(doc, node.parentId, pageId).indexOf(rootId) };
+      });
+      roots.sort((a, b) => a.index - b.index);
+
+      for (const { rootId, pageId, index } of roots) {
+        // An ancestor selected alongside its own child already took it.
+        if (!doc.nodes[rootId]) continue;
+        const ids = subtreeIds(doc, rootId);
+        const { parentId } = detach(doc, rootId);
         // Parents before children, so the inverse rebuilds top-down: a child's
         // createNode attaches itself to a parent that already exists, which is
         // what restores the original sibling order without recording indexes.
@@ -706,6 +888,93 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
         inverse.unshift({ op: "groupNodes", nodeIds: children, groupId, name: group.name });
       }
       return { inverse, summary: "Ungroup" };
+    }
+
+    // ----------------------------------------------------------------- pages
+    case "createPage": {
+      if (doc.pages.length >= MAX_PAGES) {
+        throw new DesignOperationError("invalid", `A document can hold at most ${MAX_PAGES} pages.`);
+      }
+      const pageId = operation.pageId ?? ctx.mintId("p");
+      if (doc.pages.some((p) => p.id === pageId)) {
+        throw new DesignOperationError("invalid", `A page with id ${pageId} already exists.`);
+      }
+      const at = operation.index === undefined ? doc.pages.length : Math.max(0, Math.min(operation.index, doc.pages.length));
+      doc.pages.splice(at, 0, {
+        id: pageId,
+        name: operation.name,
+        children: [],
+        backgroundColor: { ...(operation.backgroundColor ?? DEFAULT_PAGE_BACKGROUND) },
+      });
+      return { inverse: [{ op: "deletePage", pageId }], summary: `Add page ${operation.name}` };
+    }
+
+    case "deletePage": {
+      const index = doc.pages.findIndex((p) => p.id === operation.pageId);
+      if (index < 0) throw new DesignOperationError("not-found", `No page ${operation.pageId} in this document.`);
+      // The document schema requires a page: a document with none could be
+      // written but never read back.
+      if (doc.pages.length === 1) throw new DesignOperationError("invalid", "A document must keep at least one page.");
+
+      const page = doc.pages[index];
+      // Delegate the artwork to `deleteNodes` rather than tearing the tree down
+      // here, so a page delete and a layer delete produce the same inverse and
+      // the same interaction/animation cleanup.
+      const removedArtwork = page.children.length
+        ? applyOne(doc, { op: "deleteNodes", nodeIds: [...page.children] }, ctx).inverse
+        : [];
+      doc.pages.splice(index, 1);
+      return {
+        // The page has to exist again before its layers can be attached to it.
+        inverse: [
+          { op: "createPage", pageId: page.id, name: page.name, index, backgroundColor: page.backgroundColor },
+          ...removedArtwork,
+        ],
+        summary: `Delete page ${page.name}`,
+      };
+    }
+
+    case "renamePage": {
+      const page = doc.pages.find((p) => p.id === operation.pageId);
+      if (!page) throw new DesignOperationError("not-found", `No page ${operation.pageId} in this document.`);
+      const before = page.name;
+      page.name = operation.name;
+      return { inverse: [{ op: "renamePage", pageId: page.id, name: before }], summary: `Rename page to ${operation.name}` };
+    }
+
+    case "renameDocument": {
+      // The header's name field used to PATCH the artifact and stop there, so
+      // the artifact was renamed and the document was not — and every export
+      // still carried the authored name, because `doc.name` is what names the
+      // file. Renaming through the operation layer is what puts the two back in
+      // step, and what makes the rename undoable with everything else.
+      const before = doc.name;
+      doc.name = operation.name;
+      return { inverse: [{ op: "renameDocument", name: before }], summary: `Rename design to ${operation.name}` };
+    }
+
+    // ---------------------------------------------------------------- assets
+    case "createAsset": {
+      const before = doc.assets[operation.asset.id];
+      doc.assets[operation.asset.id] = operation.asset;
+      return {
+        inverse: before ? [{ op: "createAsset", asset: before }] : [{ op: "deleteAsset", assetId: operation.asset.id }],
+        summary: "Add image",
+      };
+    }
+
+    case "deleteAsset": {
+      const removed = doc.assets[operation.assetId];
+      if (!removed) return { inverse: [], summary: "Remove image" };
+      delete doc.assets[operation.assetId];
+      // Image nodes keep pointing at it. There is no such thing as an image node
+      // without an asset id, so the reference cannot be cleared the way a
+      // variable binding is; the renderer draws its placeholder, and the inverse
+      // puts the picture back exactly where it was.
+      for (const node of Object.values(doc.nodes)) {
+        if (node.type === "image" && node.assetId === operation.assetId) ctx.touched.add(node.id);
+      }
+      return { inverse: [{ op: "createAsset", asset: removed }], summary: "Remove image" };
     }
 
     // ------------------------------------------------------------- selection

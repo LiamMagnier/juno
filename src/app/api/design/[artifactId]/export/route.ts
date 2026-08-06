@@ -14,15 +14,50 @@ import {
 import { exportTokens } from "@/lib/design/variables";
 import { serializeDesignDocument } from "@/lib/design/migrations";
 import { DesignValidationError } from "@/lib/design/schema";
+import type { DesignDocument, DesignNode, NodeId, PageId } from "@/lib/design/types";
 
 export const runtime = "nodejs";
 
 const querySchema = z.object({
   format: z.enum(["svg", "png", "pdf", "html", "react", "swiftui", "json", "tokens", "handoff"]),
-  /** Export one frame instead of the whole page. */
+  /** Export one layer instead of the whole page. The three document formats —
+   *  `json`, `tokens`, `handoff` — describe the document rather than draw it,
+   *  and are unaffected by it. */
   nodeId: z.string().min(1).max(120).optional(),
   pageId: z.string().min(1).max(120).optional(),
 });
+
+/**
+ * The document as it would be if `nodeId` were the only layer on the page.
+ *
+ * The PDF, HTML, React and SwiftUI exporters each walk a page: they take a page
+ * id and emit its roots. They were handed a `nodeId` they had no parameter for,
+ * so asking for one selected layer quietly produced the entire page — the one
+ * failure mode this route is otherwise careful to avoid. Rather than give four
+ * exporters a second traversal to keep in step with the first, the layer is
+ * lifted into a one-root view of the same document: it keeps its subtree,
+ * leaves its parent, and sits at the origin — exactly what `renderNodeSvg` does
+ * for the SVG and PNG paths, so all six formats now crop the same way.
+ *
+ * The result is a valid document in its own right, and it is never written
+ * back: exports read.
+ */
+function isolateLayer(doc: DesignDocument, pageId: PageId, nodeId: NodeId): DesignDocument {
+  const node = doc.nodes[nodeId];
+  const nodes: Record<NodeId, DesignNode> = { ...doc.nodes, [nodeId]: { ...node, parentId: null, x: 0, y: 0 } };
+  const parent = node.parentId ? nodes[node.parentId] : undefined;
+  if (parent && "children" in parent) {
+    nodes[parent.id] = { ...parent, children: parent.children.filter((id) => id !== nodeId) };
+  }
+  return {
+    ...doc,
+    pages: doc.pages.map((page) => ({
+      ...page,
+      children: page.id === pageId ? [nodeId] : page.children.filter((id) => id !== nodeId),
+    })),
+    nodes,
+  };
+}
 
 /**
  * Export a design document.
@@ -80,6 +115,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ artifact
       },
     });
 
+  // What the drawing formats render: the whole page, or the one layer asked for.
+  const drawn = parsed.data.nodeId ? isolateLayer(document, pageId, parsed.data.nodeId) : document;
+
   try {
     switch (parsed.data.format) {
       case "svg": {
@@ -91,7 +129,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ artifact
         return NextResponse.json({ rasterize: pngRequest(document, pageId, parsed.data.nodeId) });
       }
       case "pdf": {
-        const result = exportPdf(document, pageId);
+        const result = exportPdf(drawn, pageId);
         return new NextResponse(result.content, {
           headers: {
             "Content-Type": result.mimeType,
@@ -104,15 +142,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ artifact
         });
       }
       case "html": {
-        const result = exportHtmlPrototype(document, pageId);
+        const result = exportHtmlPrototype(drawn, pageId);
         return download(result.content, result.fileName, result.mimeType);
       }
       case "react": {
-        const result = exportReact(document, pageId);
+        const result = exportReact(drawn, pageId);
         return NextResponse.json({ file: result.fileName, content: result.content, mappings: result.mappings, unsupported: result.unsupported });
       }
       case "swiftui": {
-        const result = exportSwiftUI(document, pageId);
+        const result = exportSwiftUI(drawn, pageId);
         return NextResponse.json({ file: result.fileName, content: result.content, mappings: result.mappings, unsupported: result.unsupported });
       }
       case "tokens": {

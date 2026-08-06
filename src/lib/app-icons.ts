@@ -9,6 +9,7 @@
 import {
   AlertCircle,
   ArrowUpRight,
+  Briefcase,
   CalendarClock,
   Cloud,
   Code2,
@@ -28,6 +29,7 @@ import {
   MessageCircle,
   NotebookPen,
   Paperclip,
+  PenTool,
   Pin,
   Plug,
   Plus,
@@ -42,7 +44,16 @@ import {
 
 export const AppIcons = {
   home: Home,
+  /** Juno Work — tasks Juno carries out on your Mac or in the cloud. A
+   *  briefcase rather than a cog or a robot: the mode is about the errand, not
+   *  about automation as a technology, and the sidebar already spends its one
+   *  machine-shaped mark (Code2) on the Code mode beside it. */
+  work: Briefcase,
   code: Code2,
+  /** Juno Design — the visual design surface. A pen nib rather than a paint
+   *  brush or a square: the mode is about drawing something precise that
+   *  becomes real, and the brush reads as illustration. */
+  design: PenTool,
   library: Library,
   artifacts: Layers3,
   projects: Folder,

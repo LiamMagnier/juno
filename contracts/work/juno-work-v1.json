@@ -1,0 +1,1002 @@
+{
+  "$comment": "Canonical Juno Work vocabulary. The TypeScript half (src/lib/work/contract.ts) and the generated Swift half (native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoWorkContract.swift) both derive from this file, and src/lib/work/contract.ts asserts every list here against the constant of the same name in src/lib/work/domain.ts — so a value added on one platform and forgotten on the other is a failing check rather than a client that silently shows nothing. Each vocabulary names the domain constant it must equal, the Swift enum it becomes, and the attributes whose values are checked against the domain function that owns them. Regenerate Swift with: node scripts/generate-work-contract.mjs --output=native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoWorkContract.swift",
+  "version": 3,
+  "vocabularies": {
+    "statuses": {
+      "constant": "WORK_STATUSES",
+      "swiftEnum": "JunoWorkStatus",
+      "summary": "Every state a Work session or run can be in.",
+      "attributes": [
+        {
+          "name": "isTerminal",
+          "type": "boolean",
+          "summary": "Whether the run is over. A terminal status is never left again; resuming produces a new run."
+        },
+        {
+          "name": "needsAttention",
+          "type": "boolean",
+          "summary": "Whether the run cannot move without the user. True for host_offline too, because the run being over does not mean the decision is made."
+        }
+      ],
+      "partitions": [
+        { "constant": "WORK_LIVE_STATUSES", "attribute": "isTerminal", "equals": false },
+        { "constant": "WORK_TERMINAL_STATUSES", "attribute": "isTerminal", "equals": true }
+      ],
+      "values": [
+        {
+          "value": "draft",
+          "summary": "Composed but never dispatched. Costs nothing and holds no executor.",
+          "isTerminal": false,
+          "needsAttention": false
+        },
+        {
+          "value": "queued",
+          "summary": "Dispatched, waiting for an executor to claim it.",
+          "isTerminal": false,
+          "needsAttention": false
+        },
+        {
+          "value": "preparing",
+          "summary": "Claimed. Fetching inputs, resolving grants, starting the sandbox.",
+          "isTerminal": false,
+          "needsAttention": false
+        },
+        {
+          "value": "running",
+          "summary": "Executing steps.",
+          "isTerminal": false,
+          "needsAttention": false
+        },
+        {
+          "value": "waiting_input",
+          "summary": "Blocked on an answer from the user.",
+          "isTerminal": false,
+          "needsAttention": true
+        },
+        {
+          "value": "waiting_approval",
+          "summary": "Blocked on an approval decision.",
+          "isTerminal": false,
+          "needsAttention": true
+        },
+        {
+          "value": "paused",
+          "summary": "Stopped by the user, resumable.",
+          "isTerminal": false,
+          "needsAttention": false
+        },
+        {
+          "value": "completed",
+          "summary": "Finished the task it was given.",
+          "isTerminal": true,
+          "needsAttention": false
+        },
+        {
+          "value": "failed",
+          "summary": "The run itself decided it could not continue.",
+          "isTerminal": true,
+          "needsAttention": false
+        },
+        {
+          "value": "cancelled",
+          "summary": "Stopped by the user, or superseded by a newer run for the same session.",
+          "isTerminal": true,
+          "needsAttention": false
+        },
+        {
+          "value": "interrupted",
+          "summary": "The executor died without reporting. Distinct from failed, which the run decided; nobody decided this one.",
+          "isTerminal": true,
+          "needsAttention": false
+        },
+        {
+          "value": "host_offline",
+          "summary": "A local run whose Mac went away and whose remaining work needs it.",
+          "isTerminal": true,
+          "needsAttention": true
+        },
+        {
+          "value": "budget_exceeded",
+          "summary": "A cost, token or runtime ceiling stopped it.",
+          "isTerminal": true,
+          "needsAttention": false
+        },
+        {
+          "value": "timed_out",
+          "summary": "It ran past the wall-clock limit it was given.",
+          "isTerminal": true,
+          "needsAttention": false
+        }
+      ]
+    },
+    "terminalReasons": {
+      "constant": "WORK_TERMINAL_REASONS",
+      "swiftEnum": "JunoWorkTerminalReason",
+      "summary": "The authoritative reason a run ended, recorded once when it ends rather than inferred from the last event.",
+      "attributes": [
+        {
+          "name": "status",
+          "type": "reference",
+          "vocabulary": "statuses",
+          "summary": "The status the run lands in for this reason."
+        }
+      ],
+      "values": [
+        { "value": "completed", "summary": "The task was carried out.", "status": "completed" },
+        { "value": "failed", "summary": "The run could not carry the task out.", "status": "failed" },
+        { "value": "cancelled", "summary": "The user stopped it.", "status": "cancelled" },
+        {
+          "value": "budget_exceeded",
+          "summary": "A cost, token or runtime ceiling was reached.",
+          "status": "budget_exceeded"
+        },
+        { "value": "timed_out", "summary": "The wall-clock limit was reached.", "status": "timed_out" },
+        {
+          "value": "host_offline",
+          "summary": "The Mac the remaining work needed stopped answering.",
+          "status": "host_offline"
+        },
+        {
+          "value": "interrupted",
+          "summary": "The executor disappeared without recording an outcome.",
+          "status": "interrupted"
+        },
+        {
+          "value": "superseded",
+          "summary": "A newer run for the same session took over; the old one is cancelled rather than failed, because nothing went wrong.",
+          "status": "cancelled"
+        }
+      ]
+    },
+    "targets": {
+      "constant": "WORK_TARGETS",
+      "swiftEnum": "JunoWorkTarget",
+      "summary": "Where a task is asked to run.",
+      "attributes": [
+        {
+          "name": "isEffective",
+          "type": "boolean",
+          "summary": "Whether this can be an outcome as well as a request. Automatic cannot: something has to choose."
+        }
+      ],
+      "partitions": [
+        { "constant": "WORK_EFFECTIVE_TARGETS", "attribute": "isEffective", "equals": true }
+      ],
+      "values": [
+        {
+          "value": "cloud",
+          "summary": "Juno's own executor, which keeps going when every user device is offline.",
+          "isEffective": true
+        },
+        {
+          "value": "local",
+          "summary": "An opted-in Mac, which is the only place local files, apps and browsers exist.",
+          "isEffective": true
+        },
+        {
+          "value": "automatic",
+          "summary": "Let Juno choose from the capabilities the task requires. A request, never an outcome.",
+          "isEffective": false
+        }
+      ]
+    },
+    "capabilities": {
+      "constant": "WORK_CAPABILITIES",
+      "swiftEnum": "JunoWorkCapability",
+      "summary": "What a plan can require and a target can offer, named for what the user asked for rather than the tool that implements it.",
+      "attributes": [
+        {
+          "name": "requiresLocalHost",
+          "type": "boolean",
+          "summary": "Whether this only ever exists on an opted-in Mac."
+        },
+        {
+          "name": "userPhrase",
+          "type": "string",
+          "summary": "How this is named to the user in a sentence explaining why a task cannot run somewhere."
+        }
+      ],
+      "partitions": [
+        { "constant": "LOCAL_ONLY_CAPABILITIES", "attribute": "requiresLocalHost", "equals": true },
+        { "constant": "CLOUD_CAPABILITIES", "attribute": "requiresLocalHost", "equals": false }
+      ],
+      "values": [
+        {
+          "value": "local_files",
+          "summary": "Read and write files under a granted folder on a specific Mac.",
+          "requiresLocalHost": true,
+          "userPhrase": "access to a folder on your Mac"
+        },
+        {
+          "value": "local_apps",
+          "summary": "Drive an application on the Mac through its accessibility tree.",
+          "requiresLocalHost": true,
+          "userPhrase": "control of an app on your Mac"
+        },
+        {
+          "value": "local_browser",
+          "summary": "Drive a browser profile that is already signed in on the Mac.",
+          "requiresLocalHost": true,
+          "userPhrase": "your signed-in browser"
+        },
+        {
+          "value": "local_computer_use",
+          "summary": "Screenshot, click and type on the Mac.",
+          "requiresLocalHost": true,
+          "userPhrase": "screen control on your Mac"
+        },
+        {
+          "value": "local_shell",
+          "summary": "Run shell commands on the Mac. Developer workflows only.",
+          "requiresLocalHost": true,
+          "userPhrase": "a shell on your Mac"
+        },
+        {
+          "value": "web_research",
+          "summary": "Fetch and cite public web pages.",
+          "requiresLocalHost": false,
+          "userPhrase": "web research"
+        },
+        {
+          "value": "connectors",
+          "summary": "Call a linked connector or remote MCP server.",
+          "requiresLocalHost": false,
+          "userPhrase": "your connected apps"
+        },
+        {
+          "value": "cloud_files",
+          "summary": "Read and write files held by Juno or a cloud drive rather than a local disk.",
+          "requiresLocalHost": false,
+          "userPhrase": "files stored with Juno"
+        },
+        {
+          "value": "deliverables",
+          "summary": "Produce documents, workbooks, decks, PDFs and sites.",
+          "requiresLocalHost": false,
+          "userPhrase": "document and spreadsheet creation"
+        },
+        {
+          "value": "background_continuation",
+          "summary": "Keep going with every user device offline.",
+          "requiresLocalHost": false,
+          "userPhrase": "running while your devices are offline"
+        }
+      ]
+    },
+    "degradationKinds": {
+      "constant": "WORK_DEGRADATION_KINDS",
+      "swiftEnum": "JunoWorkDegradationKind",
+      "summary": "Why the run that executed differs from the run that was asked for. A client that cannot name one of these shows the user nothing, which is indistinguishable from nothing having gone wrong.",
+      "values": [
+        {
+          "value": "target_substituted",
+          "summary": "It ran somewhere other than where it was asked to run."
+        },
+        {
+          "value": "model_substituted",
+          "summary": "A different model answered than the one requested."
+        },
+        {
+          "value": "capability_unavailable",
+          "summary": "Something the task needs is not offered where it ran."
+        },
+        {
+          "value": "connector_unavailable",
+          "summary": "A linked app could not be called, so the steps that needed it did not happen."
+        },
+        {
+          "value": "host_offline",
+          "summary": "The Mac the task wanted was not reachable."
+        },
+        {
+          "value": "local_portion_skipped",
+          "summary": "The cloud part ran and the part that needed a Mac did not."
+        },
+        {
+          "value": "budget_reduced",
+          "summary": "A narrower ceiling from another layer applied instead of the one requested."
+        },
+        {
+          "value": "skill_version_pinned",
+          "summary": "An older version of a skill ran, because the newer one was not approved for this run."
+        }
+      ]
+    },
+    "permissionPolicies": {
+      "constant": "WORK_PERMISSION_POLICIES",
+      "swiftEnum": "JunoWorkPermissionPolicy",
+      "summary": "How readily a run may act without asking. Listed narrowest first: every layer may only narrow, never widen.",
+      "ordered": true,
+      "values": [
+        {
+          "value": "conservative",
+          "summary": "Ask before anything that changes state outside the run's own scratch space."
+        },
+        {
+          "value": "balanced",
+          "summary": "Act on reversible changes, ask before anything sensitive or irreversible."
+        },
+        {
+          "value": "permissive",
+          "summary": "Act on everything except what always requires a decision."
+        }
+      ]
+    },
+    "riskLevels": {
+      "constant": "WORK_RISK_LEVELS",
+      "swiftEnum": "JunoWorkRiskLevel",
+      "summary": "How much damage an action could do, lowest first.",
+      "attributes": [
+        {
+          "name": "alwaysRequiresApproval",
+          "type": "boolean",
+          "summary": "Whether an explicit decision is required whatever the permission policy says."
+        }
+      ],
+      "values": [
+        {
+          "value": "safe",
+          "summary": "Reads and computations that change nothing.",
+          "alwaysRequiresApproval": false
+        },
+        {
+          "value": "edit",
+          "summary": "Changes Juno can undo, inside a granted scope.",
+          "alwaysRequiresApproval": false
+        },
+        {
+          "value": "command",
+          "summary": "Runs a program, whose effects Juno cannot fully predict.",
+          "alwaysRequiresApproval": false
+        },
+        {
+          "value": "sensitive",
+          "summary": "Touches credentials, private data or another person's inbox.",
+          "alwaysRequiresApproval": true
+        },
+        {
+          "value": "irreversible",
+          "summary": "Cannot be undone by Juno: permanent delete, send, publish, purchase, account or security settings.",
+          "alwaysRequiresApproval": true
+        }
+      ]
+    },
+    "approvalDecisions": {
+      "constant": "WORK_APPROVAL_DECISIONS",
+      "swiftEnum": "JunoWorkApprovalDecision",
+      "summary": "The state of a request for permission to act.",
+      "values": [
+        { "value": "pending", "summary": "Asked, not yet answered, not yet expired." },
+        { "value": "allowed", "summary": "Permitted once, for this call only." },
+        {
+          "value": "allowed_always",
+          "summary": "Permitted for equivalent calls for the rest of the session."
+        },
+        { "value": "denied", "summary": "Refused by the user." },
+        {
+          "value": "expired",
+          "summary": "Nobody answered inside the window, so the answer is no by default."
+        },
+        {
+          "value": "superseded",
+          "summary": "Replaced by a later request for the same action, so answering the old one cannot replay it."
+        }
+      ]
+    },
+    "alwaysConfirmActions": {
+      "constant": "ALWAYS_CONFIRM_ACTIONS",
+      "swiftEnum": "JunoWorkAlwaysConfirmAction",
+      "summary": "Actions that require an explicit decision no matter what the policy says. Enumerated rather than pattern-matched, because a regex over tool names decides that delete_draft is a permanent delete and that send_to_trash is a send.",
+      "values": [
+        {
+          "value": "work.file.permanent_delete",
+          "summary": "Erase a file rather than move it to the Trash."
+        },
+        { "value": "work.file.empty_trash", "summary": "Erase everything already in the Trash." },
+        { "value": "work.app.purchase", "summary": "Buy something inside a native application." },
+        { "value": "work.browser.purchase", "summary": "Buy something in the browser." },
+        {
+          "value": "work.connector.send_message",
+          "summary": "Send an email, message or invitation on the user's behalf."
+        },
+        {
+          "value": "work.connector.publish",
+          "summary": "Make something visible outside the user's own account."
+        },
+        {
+          "value": "work.connector.delete",
+          "summary": "Delete a record in a linked app, where Juno has no undo."
+        },
+        { "value": "work.connector.payment", "summary": "Move money in a linked app." },
+        {
+          "value": "work.system.change_security_setting",
+          "summary": "Change a security setting on the Mac."
+        },
+        {
+          "value": "work.system.change_account_setting",
+          "summary": "Change an account setting on the Mac."
+        }
+      ]
+    },
+    "unattendedPolicies": {
+      "constant": "WORK_UNATTENDED_POLICIES",
+      "swiftEnum": "JunoWorkUnattendedPolicy",
+      "summary": "What a scheduled run may do when nobody is there to ask. There is deliberately no auto-approve: all three options are ways of not acting.",
+      "values": [
+        {
+          "value": "pause_for_approval",
+          "summary": "Stop and wait. The run sits in waiting_approval until someone answers."
+        },
+        { "value": "skip_irreversible", "summary": "Do everything else and report what was skipped." },
+        { "value": "disallow_irreversible", "summary": "Treat the attempt as an error." }
+      ]
+    },
+    "hostOfflinePolicies": {
+      "constant": "WORK_HOST_OFFLINE_POLICIES",
+      "swiftEnum": "JunoWorkHostOfflinePolicy",
+      "summary": "What a local schedule does when its Mac is not there.",
+      "values": [
+        { "value": "wait", "summary": "Hold the run until the Mac comes back." },
+        { "value": "skip", "summary": "Drop this occurrence and wait for the next one." },
+        {
+          "value": "cloud_subset",
+          "summary": "Run the part the cloud can do and report the rest as not done."
+        }
+      ]
+    },
+    "toolTiers": {
+      "constant": "WORK_TOOL_TIERS",
+      "swiftEnum": "JunoWorkToolTier",
+      "summary": "The order the agent must try things in, most precise first. The executor refuses a lower tier while a higher one has declared it can serve the same intent.",
+      "ordered": true,
+      "attributes": [
+        { "name": "tier", "type": "integer", "summary": "Rank, 1 being the most precise." },
+        { "name": "label", "type": "string", "summary": "How the tier is named to the user." }
+      ],
+      "values": [
+        {
+          "value": "connector",
+          "summary": "A scoped API for the exact operation, needing the least permission and leaving the least on screen.",
+          "tier": 1,
+          "label": "Connected app"
+        },
+        {
+          "value": "structured_file",
+          "summary": "A file or document tool that edits content directly.",
+          "tier": 2,
+          "label": "File or document tool"
+        },
+        {
+          "value": "browser_dom",
+          "summary": "The browser, driven through the page structure rather than the pixels.",
+          "tier": 3,
+          "label": "Browser"
+        },
+        {
+          "value": "accessibility",
+          "summary": "A native application, driven through its accessibility tree.",
+          "tier": 4,
+          "label": "App accessibility"
+        },
+        {
+          "value": "visual",
+          "summary": "Screenshot, click and type, which sees whatever is on screen.",
+          "tier": 5,
+          "label": "Screen control"
+        },
+        {
+          "value": "shell",
+          "summary": "A shell command, which is the least constrained thing Juno can do.",
+          "tier": 6,
+          "label": "Shell"
+        }
+      ]
+    },
+    "eventKinds": {
+      "constant": "WORK_EVENT_KINDS",
+      "swiftEnum": "JunoWorkEventKind",
+      "summary": "The events a Work run emits, discriminated per payload rather than left as one untyped blob.",
+      "attributes": [
+        {
+          "name": "visibility",
+          "type": "string",
+          "summary": "Who sees this by default: user, operator or internal. A kind nobody classified is internal, so a forgotten entry hides rather than leaks."
+        }
+      ],
+      "values": [
+        { "value": "run_started", "summary": "The run began executing.", "visibility": "user" },
+        {
+          "value": "plan_created",
+          "summary": "The agent published the plan it intends to follow.",
+          "visibility": "user"
+        },
+        {
+          "value": "plan_updated",
+          "summary": "A step was added, dropped or re-ordered after the plan was published.",
+          "visibility": "user"
+        },
+        { "value": "step_started", "summary": "A plan step began.", "visibility": "user" },
+        {
+          "value": "step_finished",
+          "summary": "A plan step ended, with its outcome.",
+          "visibility": "user"
+        },
+        {
+          "value": "assistant_message",
+          "summary": "Prose addressed to the user.",
+          "visibility": "user"
+        },
+        {
+          "value": "tool_started",
+          "summary": "A tool call began, with the tier it was served at.",
+          "visibility": "user"
+        },
+        { "value": "tool_finished", "summary": "A tool call returned.", "visibility": "user" },
+        {
+          "value": "tool_denied",
+          "summary": "A tool call was refused by policy, by an approval, or by the tier rule.",
+          "visibility": "user"
+        },
+        {
+          "value": "question_asked",
+          "summary": "The run needs an answer and has stopped until it gets one.",
+          "visibility": "user"
+        },
+        { "value": "question_answered", "summary": "The user answered.", "visibility": "user" },
+        {
+          "value": "user_message",
+          "summary": "The user said something to a run that had not asked anything: an instruction added while it works, which the executor reads before its next turn.",
+          "visibility": "user"
+        },
+        {
+          "value": "approval_requested",
+          "summary": "Permission to act was asked for, with the risk and the exact action.",
+          "visibility": "user"
+        },
+        {
+          "value": "approval_resolved",
+          "summary": "The request was allowed, denied, expired or superseded.",
+          "visibility": "user"
+        },
+        {
+          "value": "artifact_created",
+          "summary": "A deliverable now exists and can be downloaded.",
+          "visibility": "user"
+        },
+        {
+          "value": "artifact_updated",
+          "summary": "A new version of an existing deliverable was written.",
+          "visibility": "user"
+        },
+        {
+          "value": "source_cited",
+          "summary": "A page or document the run relied on, so the answer can be checked.",
+          "visibility": "user"
+        },
+        {
+          "value": "files_changed",
+          "summary": "Paths the run created, modified, moved or trashed.",
+          "visibility": "user"
+        },
+        {
+          "value": "batch_preview",
+          "summary": "What a bulk change would do, shown before it does it.",
+          "visibility": "user"
+        },
+        { "value": "batch_applied", "summary": "A previewed bulk change ran.", "visibility": "user" },
+        {
+          "value": "batch_undone",
+          "summary": "A bulk change was rolled back.",
+          "visibility": "user"
+        },
+        {
+          "value": "subagent_update",
+          "summary": "Progress from a delegated subagent.",
+          "visibility": "user"
+        },
+        {
+          "value": "degraded",
+          "summary": "Something the user asked for is not happening; carries a degradation kind.",
+          "visibility": "user"
+        },
+        {
+          "value": "budget_warning",
+          "summary": "The run is approaching a cost, token or runtime ceiling.",
+          "visibility": "user"
+        },
+        {
+          "value": "host_disconnected",
+          "summary": "The Mac running this stopped answering.",
+          "visibility": "user"
+        },
+        { "value": "host_reconnected", "summary": "The Mac came back.", "visibility": "user" },
+        { "value": "paused", "summary": "The run was paused.", "visibility": "user" },
+        { "value": "resumed", "summary": "The run continued from where it paused.", "visibility": "user" },
+        {
+          "value": "validation_result",
+          "summary": "The outcome of a check the run ran against its own work.",
+          "visibility": "user"
+        },
+        {
+          "value": "run_finished",
+          "summary": "The run reached a terminal status; carries the terminal reason.",
+          "visibility": "user"
+        },
+        {
+          "value": "error",
+          "summary": "Something went wrong, in language the user can act on.",
+          "visibility": "user"
+        }
+      ]
+    },
+    "artifactKinds": {
+      "constant": "WORK_ARTIFACT_KINDS",
+      "swiftEnum": "JunoWorkArtifactKind",
+      "summary": "What a run can produce and a client can download.",
+      "attributes": [
+        {
+          "name": "mime",
+          "type": "string",
+          "summary": "Canonical media type, used for download headers and export validation."
+        },
+        { "name": "fileExtension", "type": "string", "summary": "Canonical file extension, without the dot." },
+        {
+          "name": "maxBytes",
+          "type": "integer",
+          "summary": "Per-kind ceiling. One global number is either uselessly small for a deck or recklessly large for a note."
+        }
+      ],
+      "values": [
+        {
+          "value": "document",
+          "summary": "A Word document.",
+          "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "fileExtension": "docx",
+          "maxBytes": 26214400
+        },
+        {
+          "value": "spreadsheet",
+          "summary": "An Excel workbook.",
+          "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "fileExtension": "xlsx",
+          "maxBytes": 52428800
+        },
+        {
+          "value": "presentation",
+          "summary": "A PowerPoint deck.",
+          "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          "fileExtension": "pptx",
+          "maxBytes": 104857600
+        },
+        {
+          "value": "pdf",
+          "summary": "A PDF.",
+          "mime": "application/pdf",
+          "fileExtension": "pdf",
+          "maxBytes": 52428800
+        },
+        {
+          "value": "report",
+          "summary": "A written report in Markdown.",
+          "mime": "text/markdown",
+          "fileExtension": "md",
+          "maxBytes": 5242880
+        },
+        {
+          "value": "bundle",
+          "summary": "Several deliverables gathered into one download.",
+          "mime": "application/zip",
+          "fileExtension": "zip",
+          "maxBytes": 209715200
+        },
+        {
+          "value": "image",
+          "summary": "A single image.",
+          "mime": "image/png",
+          "fileExtension": "png",
+          "maxBytes": 26214400
+        },
+        {
+          "value": "site",
+          "summary": "A static site, delivered as an archive.",
+          "mime": "application/zip",
+          "fileExtension": "zip",
+          "maxBytes": 52428800
+        },
+        {
+          "value": "archive",
+          "summary": "Arbitrary files the run collected.",
+          "mime": "application/zip",
+          "fileExtension": "zip",
+          "maxBytes": 209715200
+        }
+      ]
+    },
+    "grantKinds": {
+      "constant": "WORK_GRANT_KINDS",
+      "swiftEnum": "JunoWorkGrantKind",
+      "summary": "What a user handed a run access to.",
+      "values": [
+        {
+          "value": "local_folder",
+          "summary": "A folder on a specific Mac, and everything beneath it."
+        },
+        { "value": "local_file", "summary": "One file on a specific Mac." },
+        { "value": "cloud_folder", "summary": "A folder in a linked drive." },
+        { "value": "cloud_file", "summary": "One file in a linked drive." },
+        {
+          "value": "connector_scope",
+          "summary": "A named scope on a linked app, rather than the whole account."
+        }
+      ]
+    },
+    "accessModes": {
+      "constant": "WORK_ACCESS_MODES",
+      "swiftEnum": "JunoWorkAccessMode",
+      "summary": "How far a grant goes, narrowest first.",
+      "attributes": [
+        { "name": "allowsWrite", "type": "boolean", "summary": "Whether content may be changed." },
+        {
+          "name": "allowsTrash",
+          "type": "boolean",
+          "summary": "Whether a file may be moved to the Trash. No mode permits a permanent delete; that is always an approval."
+        }
+      ],
+      "values": [
+        {
+          "value": "read",
+          "summary": "Look, do not touch.",
+          "allowsWrite": false,
+          "allowsTrash": false
+        },
+        {
+          "value": "read_write_no_delete",
+          "summary": "Change content, but leave every file where the user left it — including not moving it to the Trash, because the file is gone from where they left it either way.",
+          "allowsWrite": true,
+          "allowsTrash": false
+        },
+        {
+          "value": "read_write",
+          "summary": "Change content and move files to the Trash.",
+          "allowsWrite": true,
+          "allowsTrash": true
+        }
+      ]
+    },
+    "commandKinds": {
+      "constant": "WORK_COMMAND_KINDS",
+      "swiftEnum": "JunoWorkCommandKind",
+      "summary": "What the relay can ask a host to do.",
+      "values": [
+        { "value": "start", "summary": "Begin a run the server has already recorded." },
+        { "value": "pause", "summary": "Stop after the current step, keeping the run resumable." },
+        { "value": "resume", "summary": "Continue a paused run." },
+        { "value": "stop", "summary": "End the run now." },
+        { "value": "answer", "summary": "Deliver the user's answer to a question the run asked." },
+        {
+          "value": "steer",
+          "summary": "Deliver an instruction the run did not ask for. The run reads it before its next step and keeps what it has already done."
+        },
+        { "value": "approve", "summary": "Deliver an allow decision." },
+        { "value": "deny", "summary": "Deliver a refusal." },
+        { "value": "undo", "summary": "Roll back a change the run made." },
+        { "value": "grant_folder", "summary": "Hand the host access to a folder the user picked." },
+        { "value": "revoke_grant", "summary": "Take an existing grant away." },
+        {
+          "value": "refresh_capabilities",
+          "summary": "Ask the host to re-advertise what it can currently do."
+        },
+        { "value": "ping", "summary": "Prove the host is still there." }
+      ]
+    },
+    "commandStatuses": {
+      "constant": "WORK_COMMAND_STATUSES",
+      "swiftEnum": "JunoWorkCommandStatus",
+      "summary": "How far a relayed command got.",
+      "values": [
+        { "value": "pending", "summary": "Waiting for a host to claim it." },
+        { "value": "claimed", "summary": "A host holds the lease and is acting on it." },
+        { "value": "succeeded", "summary": "The host did it." },
+        { "value": "failed", "summary": "The host tried and could not." },
+        { "value": "expired", "summary": "Nothing claimed it before it went stale." },
+        { "value": "cancelled", "summary": "It was withdrawn before it ran." }
+      ]
+    },
+    "hostStates": {
+      "constant": "WORK_HOST_STATES",
+      "swiftEnum": "JunoWorkHostState",
+      "summary": "How reachable a Mac is, derived from its last heartbeat and whether it is running anything.",
+      "values": [
+        { "value": "online", "summary": "Heartbeating and running at least one run." },
+        { "value": "idle", "summary": "Heartbeating with nothing to do." },
+        {
+          "value": "stale",
+          "summary": "The last heartbeat is old enough to doubt but not old enough to give up on."
+        },
+        { "value": "offline", "summary": "Gone. Nothing local can be dispatched to it." }
+      ]
+    },
+    "triggerKinds": {
+      "constant": "WORK_TRIGGER_KINDS",
+      "swiftEnum": "JunoWorkTriggerKind",
+      "summary": "What can start a scheduled task.",
+      "attributes": [
+        {
+          "name": "requiresLocalHost",
+          "type": "boolean",
+          "summary": "Whether the trigger cannot fire without an online, opted-in Mac."
+        }
+      ],
+      "partitions": [
+        { "constant": "LOCAL_ONLY_TRIGGER_KINDS", "attribute": "requiresLocalHost", "equals": true }
+      ],
+      "values": [
+        { "value": "once", "summary": "At one moment, then never again.", "requiresLocalHost": false },
+        { "value": "hourly", "summary": "Every hour.", "requiresLocalHost": false },
+        { "value": "daily", "summary": "Every day at a chosen time.", "requiresLocalHost": false },
+        {
+          "value": "weekdays",
+          "summary": "Monday to Friday at a chosen time.",
+          "requiresLocalHost": false
+        },
+        { "value": "weekly", "summary": "On chosen days of the week.", "requiresLocalHost": false },
+        { "value": "monthly", "summary": "On a chosen day of the month.", "requiresLocalHost": false },
+        { "value": "yearly", "summary": "On a chosen date each year.", "requiresLocalHost": false },
+        {
+          "value": "cron",
+          "summary": "An explicit cron expression, for schedules the named ones cannot express.",
+          "requiresLocalHost": false
+        },
+        {
+          "value": "email_filter",
+          "summary": "When a message matching a filter arrives.",
+          "requiresLocalHost": false
+        },
+        {
+          "value": "calendar_window",
+          "summary": "Around an event in a linked calendar.",
+          "requiresLocalHost": false
+        },
+        {
+          "value": "topic_monitor",
+          "summary": "When something new appears on a topic the user is watching.",
+          "requiresLocalHost": false
+        },
+        {
+          "value": "connector_event",
+          "summary": "When a linked app reports an event.",
+          "requiresLocalHost": false
+        },
+        {
+          "value": "folder_change",
+          "summary": "When a watched folder on the Mac changes. Only a Mac can see this.",
+          "requiresLocalHost": true
+        },
+        { "value": "manual", "summary": "Only when the user runs it.", "requiresLocalHost": false }
+      ]
+    },
+    "missedRunPolicies": {
+      "constant": "WORK_MISSED_RUN_POLICIES",
+      "swiftEnum": "JunoWorkMissedRunPolicy",
+      "summary": "What happens to occurrences that came due while nothing could run them.",
+      "values": [
+        { "value": "skip", "summary": "Forget them and wait for the next occurrence." },
+        { "value": "run_once", "summary": "Catch up with a single run, however many were missed." },
+        { "value": "run_all", "summary": "Run every missed occurrence in order." }
+      ]
+    },
+    "auditKinds": {
+      "constant": "WORK_AUDIT_KINDS",
+      "swiftEnum": "JunoWorkAuditKind",
+      "summary": "The security-relevant facts Work records whether or not anyone is watching.",
+      "values": [
+        { "value": "grant_created", "summary": "A user handed a run access to something." },
+        { "value": "grant_revoked", "summary": "That access was taken away." },
+        { "value": "host_enabled", "summary": "A Mac was switched on for Juno Work." },
+        { "value": "host_disabled", "summary": "A Mac was switched off, reversibly." },
+        {
+          "value": "host_revoked",
+          "summary": "A Mac's credentials were revoked, so it cannot come back without being paired again."
+        },
+        { "value": "command_claimed", "summary": "A host took the lease on a relayed command." },
+        {
+          "value": "command_refused",
+          "summary": "A host declined a command it was not entitled to run."
+        },
+        { "value": "approval_requested", "summary": "Permission to act was asked for." },
+        { "value": "approval_decided", "summary": "A user allowed or refused it." },
+        {
+          "value": "approval_replay_refused",
+          "summary": "An approval was presented a second time and rejected, so one yes cannot authorise two actions."
+        },
+        {
+          "value": "policy_narrowed",
+          "summary": "A layer reduced what the run may do; recorded so the effective policy can be explained."
+        },
+        {
+          "value": "egress_blocked",
+          "summary": "An attempt to send data somewhere it was not allowed to go."
+        },
+        {
+          "value": "injection_detected",
+          "summary": "Content the run read tried to instruct it, and was treated as data."
+        },
+        {
+          "value": "path_escape_refused",
+          "summary": "A file operation tried to leave the granted folder."
+        },
+        {
+          "value": "permanent_delete_requested",
+          "summary": "An erase was proposed, which no access mode ever permits on its own."
+        },
+        {
+          "value": "screenshot_captured",
+          "summary": "A picture of the user's screen was taken, and where it went."
+        },
+        { "value": "skill_applied", "summary": "A skill version was loaded into a run." },
+        {
+          "value": "tier_downgrade_refused",
+          "summary": "A less precise tool was refused while a more precise one could serve the same intent."
+        }
+      ]
+    },
+    "auditSeverities": {
+      "constant": "WORK_AUDIT_SEVERITIES",
+      "swiftEnum": "JunoWorkAuditSeverity",
+      "summary": "How much an audit entry matters.",
+      "values": [
+        { "value": "info", "summary": "It happened and it was meant to." },
+        { "value": "warning", "summary": "It happened and someone should know." },
+        { "value": "refusal", "summary": "Juno declined to do something." },
+        { "value": "violation", "summary": "A rule was broken, or an attempt was made to break one." }
+      ]
+    },
+    "actors": {
+      "constant": "WORK_ACTORS",
+      "swiftEnum": "JunoWorkActor",
+      "summary": "Which piece of Juno did the thing being recorded.",
+      "values": [
+        { "value": "web", "summary": "The web application." },
+        { "value": "macos", "summary": "The Mac app, which is also the local host." },
+        { "value": "ios", "summary": "The iPhone and iPad app." },
+        { "value": "cloud_runner", "summary": "Juno's own executor." },
+        { "value": "scheduler", "summary": "The unattended trigger loop." }
+      ]
+    },
+    "sensitivities": {
+      "constant": "WORK_SENSITIVITIES",
+      "swiftEnum": "JunoWorkSensitivity",
+      "summary": "How closely content must be held, lowest first. Sensitivity only ever rises as a run reads more.",
+      "ordered": true,
+      "attributes": [
+        {
+          "name": "allowsScreenshotRelay",
+          "type": "boolean",
+          "summary": "Whether a screenshot containing this may leave the Mac. Checked before the image is stored or relayed; a redaction pass over an image already on the phone has redacted nothing."
+        }
+      ],
+      "values": [
+        {
+          "value": "public",
+          "summary": "Already published, or intended to be.",
+          "allowsScreenshotRelay": true
+        },
+        {
+          "value": "internal",
+          "summary": "The user's own material, not meant for anyone else.",
+          "allowsScreenshotRelay": true
+        },
+        {
+          "value": "confidential",
+          "summary": "Someone else's material the user is trusted with.",
+          "allowsScreenshotRelay": true
+        },
+        {
+          "value": "restricted",
+          "summary": "Credentials, health, financial or legal material. Never leaves the Mac in a picture.",
+          "allowsScreenshotRelay": false
+        }
+      ]
+    }
+  }
+}

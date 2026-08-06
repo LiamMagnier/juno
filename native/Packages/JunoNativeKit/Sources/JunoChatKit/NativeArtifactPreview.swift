@@ -110,9 +110,8 @@ public enum NativeArtifactSandbox {
         case .html:
             htmlDocument(content, policy: policy)
         case .react, .code, .markdown, .mermaid, .design:
-            // A design document is opened in the editor, never in this sandbox.
-            // Where the editor is unavailable, its JSON body is at least honest
-            // source rather than a blank pane.
+            // A design document opens in the editor, never in this sandbox. Where
+            // the editor is unavailable, its JSON body is at least honest source.
             escapedSourceDocument(content, policy: policy)
         }
     }

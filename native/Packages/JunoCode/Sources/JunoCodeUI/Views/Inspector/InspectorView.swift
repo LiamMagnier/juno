@@ -64,28 +64,13 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
         case .repository: "Branch, working tree, commits and pull request"
         }
     }
-
-    /// The inspector is narrow enough that five text segments compete with one
-    /// another. Icons keep the navigation legible at the minimum column width;
-    /// the full label remains available through the tooltip and accessibility
-    /// value.
-    public var symbol: String {
-        switch self {
-        case .changes: "plusminus.circle"
-        case .activity: "bolt.horizontal.circle"
-        case .subagents: "person.2"
-        case .preview: "rectangle.on.rectangle"
-        case .repository: "arrow.triangle.branch"
-        }
-    }
 }
 
 /// The trailing inspector.
 ///
-/// A compact icon rail with a named current pane. The old five-way segmented
-/// control forced long labels into tiny slices and made the inspector read like
-/// a toolbar assembled from leftovers. The rail gives each destination a real
-/// hit target while keeping the native pane visually quiet.
+/// Labelled segments instead of nine glyph tabs behind an overflow menu. Nothing
+/// here paints its own background: an inspector is a vibrant region on macOS,
+/// and filling it turns a native pane into a grey slab.
 public struct InspectorView: View {
     @Bindable private var controller: SessionController
     private let openPreview: (() -> Void)?
@@ -123,7 +108,19 @@ public struct InspectorView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            inspectorHeader
+            Picker("Inspector pane", selection: pane) {
+                ForEach(CodeInspectorPane.allCases) { candidate in
+                    Text(candidate.segmentLabel)
+                        .accessibilityLabel(candidate.label)
+                        .tag(candidate)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.tight)
+            .help(pane.wrappedValue.purpose)
+            .accessibilityIdentifier("juno.code.inspector.pane")
 
             Divider().overlay(Color.junoSeparator)
 
@@ -155,80 +152,6 @@ public struct InspectorView: View {
         .task(id: controller.sessionID) {
             await controller.refreshWorkspacePanels()
         }
-    }
-
-    private var inspectorHeader: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
-            HStack(spacing: JunoSpace.tight) {
-                Label(pane.wrappedValue.label, systemImage: pane.wrappedValue.symbol)
-                    .junoRowLabel()
-                    .lineLimit(1)
-                Spacer(minLength: JunoSpace.tight)
-                Menu {
-                    ForEach(CodeInspectorPane.allCases) { candidate in
-                        Button {
-                            pane.wrappedValue = candidate
-                        } label: {
-                            Label(candidate.label, systemImage: candidate.symbol)
-                        }
-                    }
-                } label: {
-                    Image(systemName: "chevron.up.chevron.down")
-                        .imageScale(.small)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, height: 24)
-                }
-                .menuStyle(.borderlessButton)
-                .help("Choose an inspector pane")
-                .accessibilityLabel("Choose inspector pane")
-            }
-
-            HStack(spacing: JunoSpace.hairline) {
-                ForEach(CodeInspectorPane.allCases) { candidate in
-                    Button {
-                        pane.wrappedValue = candidate
-                    } label: {
-                        Image(systemName: candidate.symbol)
-                            .imageScale(.small)
-                            .frame(maxWidth: .infinity, minHeight: 28)
-                            .background(
-                                RoundedRectangle(
-                                    cornerRadius: JunoRadius.control,
-                                    style: .continuous
-                                )
-                                .fill(
-                                    pane.wrappedValue == candidate
-                                        ? Color.junoRowSelected
-                                        : .clear
-                                )
-                            )
-                            .overlay {
-                                if pane.wrappedValue == candidate {
-                                    RoundedRectangle(
-                                        cornerRadius: JunoRadius.control,
-                                        style: .continuous
-                                    )
-                                    .strokeBorder(Color.junoBorder, lineWidth: 1)
-                                }
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(
-                        pane.wrappedValue == candidate
-                            ? Color.primary
-                            : Color.secondary
-                    )
-                    .help(candidate.purpose)
-                    .accessibilityLabel(candidate.label)
-                    .accessibilityValue(
-                        pane.wrappedValue == candidate ? "Selected" : ""
-                    )
-                }
-            }
-            .accessibilityIdentifier("juno.code.inspector.pane")
-        }
-        .padding(.horizontal, JunoSpace.snug)
-        .padding(.vertical, JunoSpace.tight)
     }
 }
 
@@ -510,7 +433,7 @@ struct ChangesTab: View {
 
 // MARK: - Preview
 
-/// The compact entry point for the same preview surface available from the
+/// The compact entry point for the same preview window available from the
 /// session-tools menu. The inspector is where the reader looks while reviewing
 /// a run, so preview should not require remembering a keyboard shortcut first.
 struct PreviewTab: View {
@@ -539,7 +462,7 @@ struct PreviewTab: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Preview workspace \(root.path)")
 
-                Button("Show Preview", action: { openPreview?() })
+                Button("Open Preview", action: { openPreview?() })
                     .buttonStyle(.borderedProminent)
                     .tint(Color.junoAccent)
                     .disabled(openPreview == nil)

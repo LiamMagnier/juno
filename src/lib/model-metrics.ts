@@ -106,9 +106,14 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["flash"], metric: metric(0.3, 2.5, 1_048_576, 9, 4) },
     { hints: ["pro"], metric: metric(1.25, 10, 1_048_576, 5, 5) },
   ],
-  // Llama API shut down 2026-07-06 — rules kept only so stragglers resolving
-  // through migration still price correctly. Grades reflect AA/arena standing.
   meta: [
+    // Muse Spark on the Meta Model API. Prices are Meta's published standard
+    // tier; the grades are positioning estimates — Spark 1.2 shipped 2026-08-05
+    // and has no AA/arena coverage yet, so this stays source:"provider" until
+    // the next benchmark sync grounds it.
+    { hints: ["muse-spark"], metric: metric(1.25, 4.25, 1_048_576, 6, 8) },
+    // Llama API shut down 2026-07-06 — rules below kept only so stragglers
+    // resolving through migration still price correctly.
     { hints: ["maverick"], metric: metric(0.35, 0.85, 1_000_000, 7, 2) }, // II 14.3
     { hints: ["scout"], metric: metric(0.17, 0.66, 10_000_000, 7, 1) }, // II 10.0
     { hints: ["llama-3.3"], metric: metric(0.2, 0.2, 128_000, 8, 1) },
@@ -176,8 +181,8 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["pro"], metric: official(0.435, 0.87, 256_000, 3, 7) }, // II 42.2 · 46 tok/s — arena-overperforms (#31)
   ],
   qwen: [
-    // 3.8 is Token Plan / credits-only publicly — no official $/MTok list yet.
-    // Estimate a notch above 3.7 Max until Alibaba publishes payg rates.
+    // 3.8 Max has no official $/MTok list yet. Estimate a notch above 3.7 Max
+    // until Alibaba publishes pay-as-you-go rates for it.
     { hints: ["qwen3.8-max"], metric: metric(3.0, 9.0, 983_616, 8, 8) },
     { hints: ["qwen3.7-max"], metric: official(2.5, 7.5, 1_000_000, 9, 7) }, // II 46.0 · 192 tok/s · arena #17
     { hints: ["qwen3.7-plus"], metric: official(0.4, 1.6, 1_000_000, 3, 6) }, // II 39.0 · 52 tok/s
@@ -213,7 +218,9 @@ const PROVIDER_DEFAULT: Partial<Record<Provider, ModelMetrics>> = {
   anthropic: metric(3, 15, 200_000, 5, 7),
   openai: metric(2.5, 15, 400_000, 6, 7),
   google: metric(1.5, 9, 1_048_576, 8, 6),
-  meta: metric(0.35, 0.85, 1_000_000, 7, 2),
+  // Anything Meta serves now comes off the Meta Model API, so the default
+  // tracks Muse Spark rather than the retired Llama pricing.
+  meta: metric(1.25, 4.25, 1_048_576, 6, 8),
   zhipu: metric(0.6, 2.2, 200_000, 6, 5),
   moonshot: metric(0.95, 4, 262_144, 4, 6),
   deepseek: metric(0.14, 0.28, 1_000_000, 6, 6),
@@ -697,6 +704,19 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       if (id.includes("k3")) return caps(["low", "high", "max"], false);
       if (id.includes("k2.7")) return caps([], false); // "disabled" is rejected — always on
       return caps([], true, true); // k2.6: thinking enabled/disabled
+    case "meta":
+      // Muse Spark exposes the full OpenAI-style reasoning_effort ladder EXCEPT
+      // "max": minimal|low|medium|high|xhigh, default medium. canDisable is
+      // false on purpose — reasoning is mandatory on this line, there is no
+      // configuration that returns the weights without some deliberation, so an
+      // "Instant" tier here would be a lie that still bills reasoning tokens.
+      //
+      // Curated from Meta's model docs, not probed: the account's billing is not
+      // yet verified, so every completion returns 402 and no live oracle exists.
+      // /v1/models confirms the id; the effort enum is documentation-only. Worth
+      // re-probing once billing clears.
+      if (id.includes("muse-spark")) return caps(["minimal", ...LMHX], false);
+      return caps([], false); // retired Llama ids resolving through migration
     case "minimax":
       if (id.includes("m3")) return caps([], true, true); // adaptive/disabled toggle
       return caps([], false); // M2.x: thinking param ignored, always on
@@ -705,7 +725,7 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
     case "qwen":
       if (id.includes("qwq")) return caps([], false); // QwQ always reasons, no control
       if (id.includes("coder")) return caps([], true); // Qwen3-Coder: non-thinking
-      // Qwen3.8 Max Preview: thinking always on (docs — no Instant). Budget tiers still apply.
+      // Qwen3.8 Max: thinking always on (docs — no Instant). Budget tiers still apply.
       if (id.includes("qwen3.8-max")) return caps(LMH, false);
       // enable_thinking + thinking_budget: depth tiers are mapped to budgets.
       return caps(LMH, true);

@@ -623,7 +623,7 @@ others are OpenAI-compatible** with a per-provider base URL and share
 | qwen | Alibaba · Qwen | `DASHSCOPE_API_KEY` | active |
 | seedance | ByteDance · Seedance | `SEEDANCE_API_KEY` | active (video only) |
 | longcat | Meituan · LongCat | `LONGCAT_API_KEY` | active (only model is `comingSoon`) |
-| meta | Meta · Llama | `LLAMA_API_KEY` | **decommissioned** — API shut down 2026-07-06; def kept only so straggler ids resolve; every `meta:*` id migrates to `claude-sonnet-5` |
+| meta | Meta · Muse | `META_API_KEY` (alias `LLAMA_API_KEY`) | active — recommissioned 2026-08-06 on the Meta Model API (`api.meta.ai`) after the Llama API's 2026-07-06 shutdown. Serves Muse Spark 1.2; the `meta:Llama-*` ids stay retired and still migrate to `claude-sonnet-5` |
 
 **Current selectable chat models** (as of this writing — the registry is the live
 truth): Anthropic Fable 5, Opus 4.8, **Sonnet 5** (default, FREE-eligible), Haiku 4.5;
@@ -632,7 +632,7 @@ Google Gemini 3.5 Flash, 3.1 Pro, 3.1 Flash-Lite; Zhipu GLM-5.2 + turbo/vision/f
 tiers; Moonshot Kimi K3 (flagship), K2.6, K2.7 Code (+ high-speed); DeepSeek V4
 Flash/Pro; Mistral Medium 3.5 / Large 3 / Small 4 / Codestral / Ministral;
 xAI Grok 4.5 (+ Build 0.1, Multi-Agent); MiniMax M3 / M2.7 Highspeed;
-MiMo V2.5 Pro / V2 Flash; Qwen 3.8 Max Preview / 3.7 Plus / 3.6 Flash / Long.
+MiMo V2.5 Pro / V2 Flash; Qwen 3.8 Max / 3.7 Plus / 3.6 Flash / Long.
 Image/video generation models (GPT Image, Nano Banana, Grok Imagine, GLM Image,
 Veo 3.1, Seedance, Hailuo, CogVideoX) require the **MAX** plan for video.
 

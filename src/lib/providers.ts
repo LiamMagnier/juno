@@ -57,13 +57,22 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     docsUrl: "https://aistudio.google.com/apikey",
   },
   meta: {
-    label: "Meta · Llama",
-    apiKeyEnv: "LLAMA_API_KEY",
-    apiKeyEnvAliases: ["META_API_KEY"],
+    // Recommissioned 2026-08-06. The Llama API (api.llama.com) did shut down on
+    // 2026-07-06, but the "no successor developer surface" half of that note is
+    // no longer true: Meta reopened developer access on a NEW host, the Meta
+    // Model API, serving the Muse Spark line (1.1 on 2026-07-09, 1.2 on
+    // 2026-08-05). Still OpenAI-compatible, so the shared adapter applies.
+    //
+    // The key env flips to META_API_KEY — this is a different product with a
+    // different credential, and LLAMA_API_KEY now names a dead service. It stays
+    // an alias so a deployment that still sets it keeps working.
+    label: "Meta · Muse",
+    apiKeyEnv: "META_API_KEY",
+    apiKeyEnvAliases: ["LLAMA_API_KEY"],
     baseUrlEnv: "META_BASE_URL",
-    defaultBaseUrl: "https://api.llama.com/compat/v1",
+    defaultBaseUrl: "https://api.meta.ai/v1",
     kind: "openai",
-    docsUrl: "https://llama.developer.meta.com/",
+    docsUrl: "https://developer.meta.com/ai/",
   },
   deepseek: {
     label: "DeepSeek",

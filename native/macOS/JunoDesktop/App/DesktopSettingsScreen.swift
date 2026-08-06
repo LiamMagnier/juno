@@ -74,6 +74,11 @@ struct DesktopSettingsScreen: View {
     /// Hosting for Juno Code Remote. Nil where the window has no host — the
     /// tile is absent rather than showing a switch that controls nothing.
     var codeHostModel: DesktopCodeHostModel?
+    /// Whether this Mac serves Juno Work, and on what terms. Nil for the same
+    /// reason `codeHostModel` is: a consent surface for a capability the window
+    /// cannot actually grant is worse than no surface, because the reader would
+    /// leave believing they had granted it.
+    var workHostModel: DesktopWorkHostModel?
 
     /// Whether the grid has room for two columns. Read from the page's own width
     /// rather than assumed, because the same view is 520pt wide in the ⌘, window
@@ -196,8 +201,14 @@ struct DesktopSettingsScreen: View {
                     memoryTile
                     accountTile
                 }
+                // Both host tiles are full width and `@ViewBuilder`-guarded, so
+                // the outer `if` is only here to stop an empty `GridRow` from
+                // claiming a row of vertical spacing when the model is nil.
                 if codeHostModel != nil {
                     GridRow { remoteHostTile.gridCellColumns(2) }
+                }
+                if workHostModel != nil {
+                    GridRow { workHostTile.gridCellColumns(2) }
                 }
                 if let settings = model.settings {
                     GridRow { notificationsTile(settings).gridCellColumns(2) }
@@ -222,6 +233,7 @@ struct DesktopSettingsScreen: View {
                 memoryTile
                 accountTile
                 remoteHostTile
+                workHostTile
                 if let settings = model.settings { notificationsTile(settings) }
                 aboutTile
                 dangerTile
@@ -507,6 +519,21 @@ struct DesktopSettingsScreen: View {
                     .accessibilityIdentifier("juno.desktop.settings.remote-host-kill")
                 }
             }
+        }
+    }
+
+    /// Juno Work's consent surface, which is a whole card of its own.
+    ///
+    /// It lives in ``DesktopWorkHostTile`` rather than inline here for the
+    /// reason the appearance and model tiles moved out: this page is already
+    /// 1600 lines, and a tile carrying eleven controls, two editable lists and a
+    /// confirmation would make the shape of the *page* — the grid, the two
+    /// orderings, the status chrome — impossible to see. The guard stays here so
+    /// the registration below reads identically to `remoteHostTile`'s.
+    @ViewBuilder
+    private var workHostTile: some View {
+        if let workHost = workHostModel {
+            DesktopWorkHostTile(host: workHost)
         }
     }
 

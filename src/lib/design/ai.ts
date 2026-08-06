@@ -288,6 +288,9 @@ const OPERATION_VOCABULARY = [
   `{"op":"createInteraction","interaction":{"id":"…","sourceNodeId":"<id>","trigger":{"type":"click|hover|press|drag|key|delay|scroll-into-view"},"action":{…},"transition":{"kind":"instant|dissolve|slide|push|move","durationMs":200,"delayMs":0,"easing":{"type":"ease-out"},"matchStableIds":true}}}`,
   `{"op":"createAnimation","animation":{"id":"…","name":"…","durationMs":300,"loop":false,"tracks":[{"nodeId":"<id>","property":"scale","keyframes":[{"time":0,"value":1,"easing":{"type":"spring","stiffness":300,"damping":22,"mass":1}}]}]}}`,
   `{"op":"setKeyframes","animationId":"<id>","track":{…as above…}}`,
+  `{"op":"createPage","pageId":"<optional>","name":"<name>","index":<n?>}  /  {"op":"deletePage","pageId":"<id>"}  /  {"op":"renamePage","pageId":"<id>","name":"<name>"}`,
+  `{"op":"renameDocument","name":"<name>"}  — the whole design's name, which is what its exports are called`,
+  `{"op":"createAsset","asset":{"id":"<optional>","name":"<name>","url":"<app-relative or data:image/…>","width":<n>,"height":<n>}}  /  {"op":"deleteAsset","assetId":"<id>"}`,
 ];
 
 /** Colours are objects with 0..1 components, so the model never has to guess a

@@ -40,13 +40,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { DesignCanvas, type CanvasTool } from "@/components/design/design-canvas";
+import { DesignCanvas, type CanvasTool, type DesignViewportHandle } from "@/components/design/design-canvas";
 import { InspectorPanel } from "@/components/design/inspector-panel";
 import { LayersPanel } from "@/components/design/layers-panel";
-import { useDesignDocument, type DesignEditorState, type DesignTransport } from "@/components/design/use-design-document";
+import {
+  useDesignDocument,
+  type DesignEditorState,
+  type DesignTransport,
+  type PendingProposal,
+} from "@/components/design/use-design-document";
 import { layoutPage } from "@/lib/design/layout";
 import { buildSelectionContext } from "@/lib/design/selection-context";
-import { isContainer, type NodeId } from "@/lib/design/types";
+import { isContainer, type DesignDocument, type NodeId } from "@/lib/design/types";
 import type { DesignOperation } from "@/lib/design/operations";
 import { cn } from "@/lib/utils";
 
@@ -79,9 +84,34 @@ const TOOLS: { tool: CanvasTool; icon: typeof Square; label: string; key: string
   { tool: "image", icon: ImageIcon, label: "Image", key: "I" },
 ];
 
+/**
+ * The editor's imperative surface for chrome that lives outside it.
+ *
+ * Everything here is something a host needs in order to *drive* the editor
+ * without owning a second copy of its state: the Ask Juno bar on the full-window
+ * route reads the selection, hands back a proposal, and its adjustment controls
+ * write ordinary transactions. Nothing on this handle bypasses the operation
+ * layer — `proposeTransaction` only previews, and `apply` is the same call the
+ * inspector makes.
+ */
 export interface DesignEditorHandle {
   /** Structured context for "Ask Juno about this selection". */
   selectionContext: () => ReturnType<typeof buildSelectionContext> | null;
+  /** Layer names for the current selection — what chrome can afford to read on
+   *  every selection change, where the full context (which renders an image)
+   *  cannot. */
+  selectionNames: () => string[];
+  /** The page the canvas is showing, which the selection context belongs to. */
+  pageId: () => string;
+  /** The committed document — read at the moment an operation is built, never
+   *  held, so chrome outside the editor cannot act on a stale scene. */
+  document: () => DesignDocument | null;
+  /** The live document's revision, so a request can name the scene it saw. */
+  revision: () => number | null;
+  /** Draw a proposal on the canvas without committing it. */
+  proposeTransaction: (proposal: PendingProposal) => void;
+  /** Run operations as an ordinary user transaction. */
+  apply: (operations: DesignOperation[], summary: string) => void;
 }
 
 export function DesignEditor({
@@ -89,9 +119,15 @@ export function DesignEditor({
   content,
   transport,
   readOnly,
+  surface = "embedded",
   onCommitted,
   onAskJuno,
   onSelectionChange,
+  onProposalResolved,
+  canvasDock,
+  chrome,
+  onViewportChange,
+  viewportRef,
   editorRef,
 }: {
   artifactId: string;
@@ -100,12 +136,39 @@ export function DesignEditor({
    *  the Mac host supplies the design bridge instead. */
   transport?: DesignTransport;
   readOnly?: boolean;
+  /**
+   * How much of the screen the editor has, which is the only thing the layers
+   * and inspector rails need to know.
+   *
+   * "embedded" (the default, and what the chat canvas panel and the Mac host
+   * get) collapses both rails on narrow viewports, because there a transcript
+   * is competing for the same few hundred pixels. That rule is also why a
+   * design opened from the chat panel showed a canvas with no layers and no
+   * inspector at all — so on "window", where the editor *is* the page, the
+   * rails simply stay.
+   */
+  surface?: "embedded" | "window";
   onCommitted?: (version: number) => void;
   /** Hand the selection to the conversation. Absent in read-only surfaces. */
   onAskJuno?: (context: ReturnType<typeof buildSelectionContext>) => void;
   /** Selection changed. The Mac host forwards this so native chrome can act on
    *  it without the editor owning any native UI. */
   onSelectionChange?: (revision: number, nodeIds: NodeId[]) => void;
+  /** A pending Juno proposal was accepted or discarded. */
+  onProposalResolved?: (outcome: "applied" | "rejected") => void;
+  /** Chrome docked to the bottom of the canvas, below the proposal review —
+   *  the Ask Juno bar and its adjustment controls. */
+  canvasDock?: React.ReactNode;
+  /** Controls placed in the toolbar, between the tools and the Export menu.
+   *  The window surface puts its zoom control here; embedded surfaces, which
+   *  are already short of toolbar width, pass nothing and the canvas keeps its
+   *  own floating one. */
+  chrome?: React.ReactNode;
+  /** Forwarded to the canvas, so `chrome` can show the live magnification. */
+  onViewportChange?: (zoom: number) => void;
+  /** Forwarded to the canvas, so `chrome` can drive it. Passing it moves
+   *  responsibility for showing the zoom onto the host — see `DesignCanvas`. */
+  viewportRef?: React.MutableRefObject<DesignViewportHandle | null>;
   editorRef?: React.MutableRefObject<DesignEditorHandle | null>;
 }) {
   const state = useDesignDocument({ artifactId, initialContent: content, transport, readOnly, onCommitted });
@@ -121,8 +184,19 @@ export function DesignEditor({
   }, [doc, pageId, selection]);
 
   React.useEffect(() => {
-    if (editorRef) editorRef.current = { selectionContext };
-  }, [editorRef, selectionContext]);
+    if (!editorRef) return;
+    editorRef.current = {
+      selectionContext,
+      selectionNames: () => (doc ? selection.flatMap((id) => (doc.nodes[id] ? [doc.nodes[id].name] : [])) : []),
+      pageId: () => pageId,
+      document: () => doc,
+      revision: () => doc?.revision ?? null,
+      proposeTransaction: state.proposeTransaction,
+      apply: (operations, summary) => {
+        apply(operations, summary);
+      },
+    };
+  }, [apply, doc, editorRef, pageId, selection, selectionContext, state.proposeTransaction]);
 
   React.useEffect(() => {
     if (doc) onSelectionChange?.(doc.revision, selection);
@@ -247,7 +321,12 @@ export function DesignEditor({
       // Never steal a keystroke aimed at a text field — including the chat
       // composer, which shares the page with this editor.
       if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
-      if (!rootRef.current?.contains(document.activeElement) && !rootRef.current?.matches(":hover")) return;
+      // Focus, not hover. Scoping on `:hover` meant Delete and ⌘Z fired at
+      // whatever the mouse happened to be resting over — so typing in the chat
+      // beside an embedded editor, with the pointer parked on the canvas, sent
+      // the keystroke to the design. The canvas takes focus on pointer-down
+      // now, which is what makes focus a sufficient test.
+      if (!rootRef.current?.contains(document.activeElement)) return;
 
       const mod = event.metaKey || event.ctrlKey;
       const step = event.shiftKey ? NUDGE_LARGE : NUDGE_SMALL;
@@ -266,11 +345,8 @@ export function DesignEditor({
       if (mod && event.key.toLowerCase() === "g") {
         event.preventDefault();
         if (selection.length < 2) return;
-        if (event.shiftKey) {
-          apply([{ op: "ungroupNodes", nodeIds: selection }], "Ungroup");
-        } else {
-          apply([{ op: "groupNodes", nodeIds: selection }], "Group");
-        }
+        if (event.shiftKey) apply([{ op: "ungroupNodes", nodeIds: selection }], "Ungroup");
+        else apply([{ op: "groupNodes", nodeIds: selection }], "Group");
         return;
       }
       if (mod && event.key.toLowerCase() === "a") {
@@ -293,8 +369,10 @@ export function DesignEditor({
 
       switch (event.key) {
         case "Escape":
-          if (state.pending) state.rejectPending();
-          else if (tool !== "select") setTool("select");
+          if (state.pending) {
+            state.rejectPending();
+            onProposalResolved?.("rejected");
+          } else if (tool !== "select") setTool("select");
           else selectNodes([]);
           return;
         case "Backspace":
@@ -332,7 +410,7 @@ export function DesignEditor({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [apply, doc, nudge, pageId, selection, selectNodes, state, tool]);
+  }, [apply, doc, nudge, onProposalResolved, pageId, selection, selectNodes, state, tool]);
 
   // ---------------------------------------------------------------- render
 
@@ -428,6 +506,8 @@ export function DesignEditor({
 
         <div className="flex-1" />
 
+        {chrome}
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -472,7 +552,7 @@ export function DesignEditor({
 
       {/* Body: layers · canvas · inspector */}
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-52 shrink-0 flex-col border-r border-border/60 md:flex">
+        <aside className={cn("w-52 shrink-0 flex-col border-r border-border/60", surface === "window" ? "flex" : "hidden md:flex")}>
           <div className="flex border-b border-border/60">
             {(["layers", "history"] as const).map((value) => (
               <button
@@ -516,11 +596,24 @@ export function DesignEditor({
             onToolUsed={() => setTool("select")}
             readOnly={readOnly || !!state.pending}
             highlightedIds={state.pending?.result.touchedNodeIds}
+            onViewportChange={onViewportChange}
+            viewportRef={viewportRef}
           />
-          {state.pending && <ProposalReview state={state} />}
+          {/* One bottom-anchored stack rather than two independently positioned
+              overlays: the review card and the Ask Juno bar are both docked to
+              the canvas, and stacking them is what keeps the bar reachable while
+              a proposal is on screen instead of buried under it. The column is
+              click-through so the canvas underneath still takes a drag between
+              them. */}
+          {(state.pending || canvasDock) && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 p-3">
+              {state.pending && <ProposalReview state={state} onResolved={onProposalResolved} />}
+              {canvasDock}
+            </div>
+          )}
         </div>
 
-        <aside className="hidden w-64 shrink-0 flex-col border-l border-border/60 lg:flex">
+        <aside className={cn("w-64 shrink-0 flex-col border-l border-border/60", surface === "window" ? "flex" : "hidden lg:flex")}>
           <InspectorPanel document={visibleDocument} selection={selection} onApply={(operations, summary) => apply(operations, summary)} readOnly={readOnly || !!state.pending} />
         </aside>
       </div>
@@ -533,11 +626,11 @@ function round(value: number): number {
 }
 
 /** The before/after review for a proposal Juno has made but nobody has accepted. */
-function ProposalReview({ state }: { state: DesignEditorState }) {
+function ProposalReview({ state, onResolved }: { state: DesignEditorState; onResolved?: (outcome: "applied" | "rejected") => void }) {
   const pending = state.pending;
   if (!pending) return null;
   return (
-    <div className="absolute inset-x-3 bottom-3 z-10 rounded-[16px] border border-border/70 bg-popover/95 p-3 shadow-soft backdrop-blur-xl motion-safe:animate-rise-in">
+    <div className="pointer-events-auto rounded-[16px] border border-border/70 bg-popover/95 p-3 shadow-soft backdrop-blur-xl motion-safe:animate-rise-in">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{pending.transaction.summary}</p>
@@ -554,10 +647,25 @@ function ProposalReview({ state }: { state: DesignEditorState }) {
           </p>
         </div>
         <div className="flex shrink-0 gap-1.5">
-          <Button variant="ghost" size="sm" onClick={state.rejectPending} className="gap-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              state.rejectPending();
+              onResolved?.("rejected");
+            }}
+            className="gap-1.5"
+          >
             <X className="size-3.5" aria-hidden /> Reject
           </Button>
-          <Button size="sm" onClick={() => void state.acceptPending()} className="gap-1.5">
+          <Button
+            size="sm"
+            onClick={() => {
+              void state.acceptPending();
+              onResolved?.("applied");
+            }}
+            className="gap-1.5"
+          >
             <Check className="size-3.5" aria-hidden /> Apply
           </Button>
         </div>

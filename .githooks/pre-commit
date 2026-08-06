@@ -16,10 +16,11 @@ npx eslint --no-warn-ignored $staged
 
 # A secret in a commit is unrecoverable once pushed. Cheap belt-and-braces on
 # top of .gitignore.
-# `.env.example` is the tracked template — all keys, no values — so it is
-# exempt. Everything else matching `.env` or a key extension is refused.
+# `.env.example` is the tracked template of empty placeholders and is exempt —
+# without this the guard makes the one env file that SHOULD be committed
+# impossible to edit. Everything else matching .env* stays blocked.
 if git diff --cached --name-only --diff-filter=ACMR \
-  | grep -vE '(^|/)\.env\.(example|sample|template)$' \
+  | grep -vE '(^|/)\.env\.example$' \
   | grep -qE '(^|/)\.env($|\.)|\.pem$|\.p12$|\.p8$'; then
   echo "pre-commit: refusing to commit what looks like a secret file." >&2
   echo "  If this is deliberate, re-run with --no-verify." >&2

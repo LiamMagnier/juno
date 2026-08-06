@@ -51,6 +51,41 @@ test("OpenAI's out-of-credit 429 is not mistaken for throttling", () => {
   assert.equal(classifyProviderError(realRateLimit).class, "rate_limit");
 });
 
+test("Google's throttle is not mistaken for an unfunded account", () => {
+  /*
+   * The mirror image of the test above, and the harder direction. OpenAI sends
+   * this sentence when the account really is out of money; Google sends the
+   * SAME sentence, verbatim, for an ordinary free-tier or per-minute limit.
+   * What separates them is the machine-readable tag: `insufficient_quota` vs
+   * `RESOURCE_EXHAUSTED`. Prose alone cannot, so the prose must not decide.
+   *
+   * Getting this wrong is not a cosmetic mislabel: billing is an account fault,
+   * so one throttled probe marks the provider unhealthy for 30 minutes, reroutes
+   * live conversations onto another lab, and pages the operator about an outage
+   * that is not happening.
+   */
+  const googleThrottle = {
+    status: 429,
+    error: {
+      message: "You exceeded your current quota, please check your plan and billing details.",
+      status: "RESOURCE_EXHAUSTED",
+    },
+  };
+  assert.equal(classifyProviderError(googleThrottle).class, "rate_limit");
+
+  // Same wording, no tag at all: still a 429, so still throttling.
+  const untagged = {
+    status: 429,
+    error: { message: "You exceeded your current quota, please check your plan and billing details." },
+  };
+  assert.equal(classifyProviderError(untagged).class, "rate_limit");
+
+  // But quota wording OUTSIDE a 429 is not throttling — nothing throttles with
+  // a 400 — so it stays a billing fault.
+  const quotaOn400 = { status: 400, error: { message: "Project quota exceeded." } };
+  assert.equal(classifyProviderError(quotaOn400).class, "billing");
+});
+
 test("a rejected or forbidden key is an auth fault", () => {
   assert.equal(classifyProviderError(badKey).class, "auth");
   assert.equal(classifyProviderError(xaiForbidden).class, "billing"); // body says credits

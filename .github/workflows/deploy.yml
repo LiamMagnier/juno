@@ -32,6 +32,18 @@ jobs:
       - name: Generate the i18n catalog
         run: npm run i18n:extract
 
+      # Same reason, one directory over: `runner/agent-core/dist` is build
+      # output and gitignored, and `scripts/work-runner.ts` imports it by path.
+      # The `runner` job below builds it, but that is a *different* job with a
+      # different checkout, so its dist never reaches this one — leaving the
+      # typecheck to fail on two unresolvable modules. Build it here too rather
+      # than excluding the script, which would stop typechecking the one file
+      # that drives the cloud Work executor.
+      - name: Build the vendored runner core
+        run: |
+          npm ci --prefix runner/agent-core
+          npm run build --prefix runner/agent-core
+
       - name: Typecheck
         run: npx tsc --noEmit
 
@@ -48,6 +60,57 @@ jobs:
       # nothing rather than something wrong.
       - name: Capability contract is not stale
         run: npm run capabilities:check
+
+      # The Work vocabulary is generated into Swift from the same JSON the
+      # TypeScript reads, so the two cannot disagree — but only if the
+      # checked-in Swift is actually regenerated. A stale enum is silent
+      # exactly where it matters: a client that does not recognise a status or
+      # a degradation kind shows the user nothing rather than something wrong.
+      #
+      # In deploy.yml rather than only native.yml because native.yml is path
+      # filtered: a commit touching only contracts/work/juno-work-v1.json or
+      # src/lib/work/domain.ts would never trigger it. That is the same gap
+      # the capability contract has, and there was no reason to reproduce it.
+      - name: Work contract is not stale
+        run: npm run work:contract:check
+
+      # The line between what a Mac may see and what everybody else may see is
+      # two function names in src/lib/work/serializers.ts.
+      # `serializeGrantForHost` adds the absolute path a folder grant resolved
+      # to; `serializeCommandForHost` passes a command payload through
+      # unfiltered, including the path the user picked in a file dialog. Both
+      # are correct for the Mac that has to carry the instruction out. Both are
+      # a disclosure to anything else, and "anything else" includes the phone
+      # that asked for the work.
+      #
+      # A grep gate rather than a type-level one because only half of this is
+      # expressible in the type system. `ClientWorkGrant` declares `localPath`
+      # and `resolvedRealPath` as `never`, so the grant half fails to compile —
+      # but the host and remote *command* shapes differ only in which JSON keys
+      # survive, so both are assignable to each other and TypeScript has nothing
+      # to say. The failure is also invisible in review: `serializeCommandForHost`
+      # is a plausible thing to write in a route handler, it reads as deliberate,
+      # and the response looks right in the browser.
+      #
+      # Worth having now rather than when the host routes are written: today no
+      # route calls either function, because the host claim/acknowledge surface
+      # does not exist yet. A gate added after those routes land is a gate added
+      # after the mistake.
+      #
+      # Mirrored in scripts/release-gates.sh — change one, change both.
+      - name: No Work route uses a host-only serialiser
+        run: |
+          if [ ! -d src/app/api/work ]; then
+            echo "::error::src/app/api/work does not exist, so this gate is checking nothing."
+            exit 1
+          fi
+          if hits=$(grep -rn 'serializeGrantForHost\|serializeCommandForHost' src/app/api/work); then
+            echo "::error::A Work route references a host-only serialiser. Those shapes carry local filesystem paths and unfiltered command payloads to remote clients."
+            printf '%s\n' "$hits"
+            echo "Use serializeGrantForRemote / serializeCommandForRemote, or the unqualified serializeGrant / serializeCommand, which are bound to them."
+            exit 1
+          fi
+          echo "No route under src/app/api/work references a host-only Work serialiser."
 
   # A migration whose SQL does not reproduce the schema is discovered at deploy
   # time, against the production database, with half the release already out.
@@ -75,6 +138,56 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The two checks below are filesystem greps and run before `npm ci`, so a
+      # migration mistake costs seconds rather than the two minutes it takes to
+      # install and boot Postgres only to be told the same thing.
+
+      # Every Work table — sessions, runs, events, approvals, grants, commands,
+      # artifacts — arrives in this one migration. Prisma identifies an applied
+      # migration by its directory name and stores that name in
+      # _prisma_migrations, so the name is permanent: rename it and every
+      # deployed database holds a row pointing at a directory that no longer
+      # exists while `migrate deploy` starts treating the renamed one as new.
+      # Pinning the exact name is therefore stronger than globbing for something
+      # Work-shaped, not more brittle.
+      - name: The Work migration is present
+        run: |
+          work_migration=prisma/migrations/20260805120000_work_domain/migration.sql
+          if [ ! -f "$work_migration" ]; then
+            echo "::error::$work_migration is missing. The Work tables would have no migration, and every Work route would fail on its first query against a freshly migrated database."
+            exit 1
+          fi
+          echo "Found $work_migration."
+
+      # Prisma wraps each migration file in a single transaction, and
+      # CREATE INDEX CONCURRENTLY cannot run inside one. It does not fail
+      # cleanly either: the usual workaround is a bare COMMIT partway through
+      # the file, which leaves the migration half-applied and a failed
+      # _prisma_migrations row that P3009-blocks every later deploy.
+      #
+      # Comments are stripped and newlines flattened before matching, because a
+      # bare search for the word has two false positives that would each get
+      # this gate switched off. 20260717220000_chat_first_submission_receipt
+      # explains in prose why its indexes do *not* need CONCURRENTLY, and a
+      # statement broken across two lines is equally valid SQL that a
+      # line-oriented grep would sail past.
+      - name: No migration uses CREATE INDEX CONCURRENTLY
+        run: |
+          offenders=""
+          while IFS= read -r file; do
+            if sed 's/--.*$//' "$file" | tr '\n' ' ' \
+              | grep -qiE 'create[[:space:]]+(unique[[:space:]]+)?index[[:space:]]+concurrently'; then
+              offenders="${offenders}${file}"$'\n'
+            fi
+          done < <(find prisma/migrations -type f -name '*.sql' | sort)
+          if [ -n "$offenders" ]; then
+            echo "::error::CREATE INDEX CONCURRENTLY cannot run inside the transaction Prisma wraps each migration file in."
+            printf '%s' "$offenders"
+            echo "Build the index without CONCURRENTLY, or create the table in the same migration so the index is built on an empty one."
+            exit 1
+          fi
+          echo "No migration uses CREATE INDEX CONCURRENTLY."
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -83,25 +196,127 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Both are required: the datasource block names DATABASE_URL *and*
+      # DIRECT_URL, and `prisma validate` resolves every `env()` in it before
+      # it will say anything about the schema. Without them the job fails on a
+      # missing variable and never reaches the check it exists to run.
       - name: Schema is valid
         run: npx prisma validate
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/shadow
 
-      # `--exit-code` makes a non-empty diff a failure. An empty diff means the
-      # migrations, replayed from nothing, produce exactly schema.prisma.
+      # Blocking: the migrations replayed from empty must reproduce
+      # `schema.prisma` exactly.
+      #
+      # This ran report-only for as long as it carried drift that predated it —
+      # six CodeTask columns the migrations create and the schema no longer
+      # declares, an Attachment index that changed uniqueness, an
+      # EntityRevision default, a renamed MutationReceipt index. Reconciling
+      # that was a decision about production data, not one a CI gate should
+      # force, so the step stayed advisory and said so here rather than being
+      # quietly dropped.
+      #
+      # 20260805130000_reconcile_schema_drift closes it out, so the step goes
+      # back to blocking — which is the only thing that stops the next drift
+      # accumulating the same way.
+      #
+      # The job summary is still written on the way out, so a failure reports
+      # what drifted rather than only that something did.
       - name: Migrations reproduce the schema
         run: |
+          set -o pipefail
           npx prisma migrate diff \
             --from-migrations prisma/migrations \
             --to-schema-datamodel prisma/schema.prisma \
             --shadow-database-url "$SHADOW_DATABASE_URL" \
-            --exit-code
+            --exit-code | tee /tmp/drift.txt && DRIFT=0 || DRIFT=$?
+          {
+            echo "## Migration drift"
+            if [ "${DRIFT:-0}" -eq 0 ]; then
+              echo "Migrations reproduce \`schema.prisma\` exactly."
+            else
+              echo "The migrations do NOT reproduce \`schema.prisma\`:"
+              echo '```'
+              cat /tmp/drift.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "${DRIFT:-0}"
         env:
           SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/shadow
+
+      # Every concurrency claim in src/lib/work/store.ts is an argument about
+      # what Postgres does under READ COMMITTED — that a condition inside an
+      # UPDATE's WHERE makes exactly one caller win, that the run's row lock
+      # serialises concurrent appends, that a terminal reason is written once.
+      # Claims of that shape are the ones that are wrong in a way no amount of
+      # reading catches, because the two callers have to actually race.
+      #
+      # This job is the only one in CI with a database, which is why the suite
+      # runs here rather than in `test`. It is skipped entirely unless
+      # WORK_TEST_DATABASE_URL is set, so the `test` job's run of the same glob
+      # neither connects to anything nor fails for the lack of it.
+      # Every concurrency claim in src/lib/work/store.ts is an argument about
+      # what Postgres does under READ COMMITTED — that a condition inside an
+      # UPDATE's WHERE makes exactly one caller win, that the run's row lock
+      # serialises concurrent appends, that a terminal reason is written once.
+      # Claims of that shape are the ones that are wrong in a way no amount of
+      # reading catches, because the two callers have to actually race.
+      #
+      # This job is the only one in CI with a database, which is why the suite
+      # runs here rather than in `test`. It is skipped entirely unless
+      # WORK_TEST_DATABASE_URL is set, so the `test` job's run of the same glob
+      # neither connects to anything nor fails for the lack of it.
+      #
+      # Its own database, not the `shadow` one the step above just left full.
+      # `migrate deploy` refuses a non-empty schema with P3005 — which is how
+      # this first failed — and the tempting fix, letting the suite reuse
+      # whatever `migrate diff` happened to leave behind, is a test that passes
+      # for a reason nobody wrote down and breaks when that step is reordered.
+      - name: The Work store's concurrency claims, against a real database
+        run: |
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE worktest'
+          npx prisma migrate deploy
+          npx tsx --test tests/work-store-db.test.ts
+        env:
+          ADMIN_URL: postgresql://postgres:postgres@localhost:5432/shadow
+          NODE_OPTIONS: --conditions=react-server
+          WORK_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/worktest
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/worktest
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/worktest
+
+      # Its own database, and its own step, for the reason the step above has
+      # one: these suites seed overlapping fixture rows and share no cleanup, so
+      # run together in one process against one database they fail on each
+      # other rather than on the code. Named explicitly rather than globbed —
+      # a glob here would silently adopt the next DB-backed suite somebody adds
+      # into a database it was not written against.
+      - name: The relay's dispatch claims, against a real database
+        run: |
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE relaytest'
+          npx prisma migrate deploy
+          npx tsx --test tests/work-relay-dispatch.test.ts
+        env:
+          ADMIN_URL: postgresql://postgres:postgres@localhost:5432/shadow
+          NODE_OPTIONS: --conditions=react-server
+          WORK_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/relaytest
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/relaytest
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/relaytest
 
   # The vendored Cloud Code runner drives arbitrary agent-authored bash, so its
   # containment tests are a release gate rather than a nicety: they are what
   # prove a timed-out command cannot leave children running, and that a
   # credential in the environment is not reachable from agent shell.
+  #
+  # The same package now also holds the Juno Work orchestration runtime under
+  # `src/work` — the budget guard, the tool-tier lattice, the plan/progress
+  # checker and the untrusted-content scanner. Those are policy rather than
+  # plumbing, and untested policy is a comment, so this job is the gate for them
+  # too. It is deliberately not path filtered: `runner/agent-core` is outside the
+  # root tsconfig, so nothing else in CI compiles it.
   runner:
     runs-on: ubuntu-latest
     steps:
@@ -119,6 +334,42 @@ jobs:
 
       - name: Runner tests, including the adversarial containment suite
         run: npm test --prefix runner/agent-core
+
+      # `npm test` above is `node --test dist/test/*.test.js` — the COMPILED
+      # output. A suite that stops being emitted does not fail that command: the
+      # shell glob simply matches fewer files and the run is still green. So a
+      # `tsconfig.json` whose `include` narrows, a renamed file, or a suite moved
+      # out of `src/test` all read as "all tests passed".
+      #
+      # That matters most for Work, whose suites are the only executable
+      # statement of what the budget ceilings and the injection scanner actually
+      # do. A silently absent injection test looks exactly like a passing one.
+      #
+      # Derived from the sources rather than hardcoded, so a module or suite
+      # added next month is covered without anyone remembering this step exists.
+      - name: The Work orchestration runtime and its suites reached the compiled output
+        run: |
+          checked=0
+          missing=0
+          for source in runner/agent-core/src/work/*.ts \
+                        runner/agent-core/src/test/work-*.test.ts; do
+            [ -f "$source" ] || continue
+            checked=$((checked + 1))
+            compiled="runner/agent-core/dist/${source#runner/agent-core/src/}"
+            compiled="${compiled%.ts}.js"
+            if [ ! -f "$compiled" ]; then
+              echo "::error file=$source::did not compile to $compiled, so it was not part of the build or the test run above."
+              missing=1
+            fi
+          done
+          if [ "$checked" -eq 0 ]; then
+            echo "::error::No Work orchestration sources were found under runner/agent-core/src, so this gate is checking nothing."
+            exit 1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "All $checked Work orchestration sources and suites are present in dist/."
 
   build-and-deploy:
     needs: [test, runner, migrations]
@@ -156,6 +407,27 @@ jobs:
         run: |
           npm ci --prefix relay
           npm run build --prefix relay
+
+      # The cloud Work executor imports `runner/agent-core/dist/work/index.js`
+      # by path, so `dist/` has to exist on the VM or `juno-work` crash-loops on
+      # its first claimed run with an unresolvable module — after the run has
+      # been marked `preparing`, which looks to the user like a task that hangs.
+      #
+      # `dist/` is gitignored, so it reaches the VM only because the rsync below
+      # ships this checkout rather than the repository. The `runner` job builds
+      # the same output, but that is a different job with a different checkout
+      # and its dist never leaves it.
+      #
+      # This is one of three parts and all three have to land together: the
+      # build here, `npm ci --omit=dev --prefix runner/agent-core` in the
+      # post-deploy step (node_modules is excluded from the rsync, so the
+      # runtime dependencies are not shipped), and the pm2 app in
+      # deploy/ecosystem.config.js. Two of the three produce a worker that looks
+      # deployed and never starts.
+      - name: Build the vendored runner core
+        run: |
+          npm ci --prefix runner/agent-core
+          npm run build --prefix runner/agent-core
 
       - name: Configure SSH
         env:
@@ -310,6 +582,13 @@ jobs:
           fi
           # Relay runtime deps (small/fast) + prisma client + schema + reload.
           npm ci --omit=dev --prefix relay
+          # The vendored runner core's own runtime dependencies. `dist/` was
+          # built in CI and shipped with the build, but `node_modules` is
+          # excluded from the rsync above at every level, so without this the
+          # compiled output is on the VM and the packages it imports are not —
+          # and juno-work dies on `require('fast-glob')` the first time an agent
+          # calls the glob tool, mid-run, with the lease still held.
+          npm ci --omit=dev --prefix runner/agent-core
           npx prisma generate
           # Historical deploys used db push and did not consistently record the
           # matching migrations. Converge that history once, then use reviewed

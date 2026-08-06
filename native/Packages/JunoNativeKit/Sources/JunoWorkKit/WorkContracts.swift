@@ -1,0 +1,454 @@
+import Foundation
+import JunoCore
+
+/// The value types a Juno Work client exchanges with the relay.
+///
+/// Every string enumeration here uses raw values identical to the canonical
+/// TypeScript vocabulary in `src/lib/work/domain.ts`, because these are the
+/// literal bytes on the wire. Where a generated mirror exists
+/// (`JunoCore/Generated/JunoWorkContract.swift`) prefer it; these types carry
+/// the *shapes*, not the vocabularies.
+
+// MARK: - Hosts
+
+/// A Mac as the relay describes it to a phone or to another Mac.
+///
+/// Note what is absent: no filesystem path, and no folder name that was not
+/// chosen for display. A supervising phone can say "organise the folder you
+/// call Downloads" without ever learning that it is `/Users/liam/Downloads`. A
+/// leaked absolute path gives away the account name, the directory layout, and
+/// usually the real identity of the work — and a path on a phone screen is a
+/// path in a screenshot, a support ticket, and a prompt-injection payload.
+public struct WorkHostSummary: Equatable, Sendable, Identifiable {
+    public let hostID: String
+    public let deviceID: String
+    public let displayName: String
+    /// "online" | "idle" | "stale" | "offline".
+    public let state: String
+    public let enabled: Bool
+    /// Capability keys the host itself advertised. Never inferred by the
+    /// client: a target selector that guesses is one that queues local work at
+    /// a Mac which cannot do it.
+    public let capabilities: [String]
+    public let activeRunCount: Int
+    public let queuedRunCount: Int
+    public let lastSeenAt: Date
+    public let revokedAt: Date?
+
+    public var id: String { hostID }
+
+    /// Whether dispatching local work here can actually be served right now.
+    ///
+    /// Deliberately conservative about `stale`: a host that is heartbeating but
+    /// not claiming will accept a command into the queue and never run it,
+    /// which presents to the user as a task that is "starting" forever.
+    public var canServeWork: Bool {
+        enabled && revokedAt == nil && (state == "online" || state == "idle")
+    }
+
+    public init(
+        hostID: String, deviceID: String, displayName: String, state: String,
+        enabled: Bool, capabilities: [String], activeRunCount: Int,
+        queuedRunCount: Int, lastSeenAt: Date, revokedAt: Date?
+    ) {
+        self.hostID = hostID
+        self.deviceID = deviceID
+        self.displayName = displayName
+        self.state = state
+        self.enabled = enabled
+        self.capabilities = capabilities
+        self.activeRunCount = activeRunCount
+        self.queuedRunCount = queuedRunCount
+        self.lastSeenAt = lastSeenAt
+        self.revokedAt = revokedAt
+    }
+}
+
+/// The facts about one Mac that do not change between heartbeats.
+///
+/// Carried as a value rather than as three parameters threaded through the
+/// relay, because `POST /api/work/hosts/register` needs all three on *every*
+/// advertisement — it is one endpoint for "this Mac exists" and "this is what it
+/// can do right now" — and a heartbeat that could be assembled without the
+/// device id would be a heartbeat that 400s at the one moment the loop has no
+/// person watching it.
+///
+/// `deviceID` is the Juno Code device row's id, replayed from
+/// `juno.code.deviceId`. Work deliberately does not mint an identity of its own:
+/// the registration route looks the device up on the account and refuses an id
+/// it does not own, so reusing it is what makes the pairing already-solved
+/// rather than a second protocol to keep correct.
+public struct WorkHostIdentity: Equatable, Sendable {
+    public let deviceID: String
+    /// The Mac's name as its owner would recognise it, and as the Code device
+    /// list already shows it.
+    public let displayName: String
+    public let appVersion: String
+
+    public init(deviceID: String, displayName: String, appVersion: String) {
+        self.deviceID = deviceID
+        self.displayName = displayName
+        self.appVersion = appVersion
+    }
+}
+
+/// How much remote work this Mac is carrying at the moment it advertises.
+///
+/// Asked per advertisement rather than passed in once, because two things
+/// advertise this Mac — the host model's heartbeat and the claim loop's own
+/// pass — and a value captured by either of them is a value the other
+/// overwrites. The relay reads `activeRunCount` to decide whether this Mac is
+/// `online` or merely `idle`, so two writers disagreeing makes a busy Mac flap
+/// between the two on every beat.
+public struct WorkHostRunCounts: Equatable, Sendable {
+    public let active: Int
+    public let queued: Int
+
+    public init(active: Int, queued: Int) {
+        self.active = active
+        self.queued = queued
+    }
+
+    public static let none = WorkHostRunCounts(active: 0, queued: 0)
+}
+
+/// What the relay hands back when this Mac registers.
+public struct WorkHostRegistration: Equatable, Sendable {
+    /// The `WorkHost` row's id — the value every other host-plane route is
+    /// addressed by, and the one thing a Mac cannot obtain any other way.
+    public let hostID: String
+    /// The subset of the advertised manifest this backend will actually route
+    /// on. Returned so a newer Mac can see that half its advertisement is being
+    /// ignored, rather than infer it from work that never arrives.
+    public let routableCapabilities: [String]
+
+    public init(hostID: String, routableCapabilities: [String]) {
+        self.hostID = hostID
+        self.routableCapabilities = routableCapabilities
+    }
+}
+
+/// A folder or file source a run may use, as a remote client may see it.
+///
+/// There is no `localPath` on this type and there must never be one. The
+/// server has two serialisers for a grant — one for remote clients and one for
+/// the owning Mac — and this is the remote shape. Adding a path field here
+/// would silently defeat that split, because the decoder would start accepting
+/// a field the server is careful not to send.
+public struct WorkGrantSummary: Equatable, Sendable, Identifiable {
+    public let grantID: String
+    /// "local_folder" | "local_file" | "cloud_folder" | "cloud_file" | "connector_scope".
+    public let kind: String
+    public let displayName: String
+    /// "read" | "read_write_no_delete" | "read_write".
+    public let accessMode: String
+    public let hostID: String?
+    public let revokedAt: Date?
+    public let lastUsedAt: Date?
+
+    public var id: String { grantID }
+
+    public var isActive: Bool { revokedAt == nil }
+
+    public init(
+        grantID: String, kind: String, displayName: String, accessMode: String,
+        hostID: String?, revokedAt: Date?, lastUsedAt: Date?
+    ) {
+        self.grantID = grantID
+        self.kind = kind
+        self.displayName = displayName
+        self.accessMode = accessMode
+        self.hostID = hostID
+        self.revokedAt = revokedAt
+        self.lastUsedAt = lastUsedAt
+    }
+}
+
+// MARK: - Sessions and runs
+
+public struct WorkSessionSummary: Equatable, Sendable, Identifiable {
+    public let sessionID: String
+    public let title: String
+    public let goal: String
+    /// One of the statuses in `src/lib/work/domain.ts`.
+    public let status: String
+    /// Stored server-side rather than derived, so every client agrees on what
+    /// "needs attention" means instead of re-implementing the same three-way
+    /// test three different ways.
+    public let needsAttention: Bool
+    public let requestedTarget: String
+    public let effectiveTarget: String?
+    public let hostID: String?
+    public let hostDisplayName: String?
+    public let pinned: Bool
+    public let archived: Bool
+    public let lastActivityAt: Date
+    public let currentRunID: String?
+    public let lastSeq: Int
+
+    public var id: String { sessionID }
+
+    public init(
+        sessionID: String, title: String, goal: String, status: String,
+        needsAttention: Bool, requestedTarget: String, effectiveTarget: String?,
+        hostID: String?, hostDisplayName: String?, pinned: Bool, archived: Bool,
+        lastActivityAt: Date, currentRunID: String?, lastSeq: Int
+    ) {
+        self.sessionID = sessionID
+        self.title = title
+        self.goal = goal
+        self.status = status
+        self.needsAttention = needsAttention
+        self.requestedTarget = requestedTarget
+        self.effectiveTarget = effectiveTarget
+        self.hostID = hostID
+        self.hostDisplayName = hostDisplayName
+        self.pinned = pinned
+        self.archived = archived
+        self.lastActivityAt = lastActivityAt
+        self.currentRunID = currentRunID
+        self.lastSeq = lastSeq
+    }
+}
+
+/// Why a run's effective shape differs from the requested one.
+///
+/// Carried as data rather than folded into a status string, because a client
+/// that cannot name a degradation shows the user nothing — and showing nothing
+/// is indistinguishable from nothing having gone wrong.
+public struct WorkDegradation: Equatable, Sendable {
+    public let kind: String
+    public let explanation: String
+    public let subject: String?
+
+    public init(kind: String, explanation: String, subject: String?) {
+        self.kind = kind
+        self.explanation = explanation
+        self.subject = subject
+    }
+}
+
+public struct WorkRunSummary: Equatable, Sendable, Identifiable {
+    public let runID: String
+    public let sessionID: String
+    public let attempt: Int
+    public let status: String
+    /// Authoritative, written once when the run ends. Never inferred from the
+    /// last event: the last event of a run killed mid-sentence is whatever it
+    /// happened to be emitting, and inferring from it states a confident wrong
+    /// cause.
+    public let terminalReason: String?
+    public let requestedTarget: String
+    public let effectiveTarget: String?
+    public let hostID: String?
+    public let effectiveModel: String?
+    public let degradation: [WorkDegradation]
+    public let costMicroUsd: Int
+    public let maxCostMicroUsd: Int
+    public let lastSeq: Int
+    public let startedAt: Date?
+    public let finishedAt: Date?
+
+    public var id: String { runID }
+
+    public init(
+        runID: String, sessionID: String, attempt: Int, status: String,
+        terminalReason: String?, requestedTarget: String, effectiveTarget: String?,
+        hostID: String?, effectiveModel: String?, degradation: [WorkDegradation],
+        costMicroUsd: Int, maxCostMicroUsd: Int, lastSeq: Int,
+        startedAt: Date?, finishedAt: Date?
+    ) {
+        self.runID = runID
+        self.sessionID = sessionID
+        self.attempt = attempt
+        self.status = status
+        self.terminalReason = terminalReason
+        self.requestedTarget = requestedTarget
+        self.effectiveTarget = effectiveTarget
+        self.hostID = hostID
+        self.effectiveModel = effectiveModel
+        self.degradation = degradation
+        self.costMicroUsd = costMicroUsd
+        self.maxCostMicroUsd = maxCostMicroUsd
+        self.lastSeq = lastSeq
+        self.startedAt = startedAt
+        self.finishedAt = finishedAt
+    }
+}
+
+// MARK: - Events
+
+public struct WorkEvent: Equatable, Sendable, Identifiable {
+    public let seq: Int
+    public let kind: String
+    public let payload: [String: JunoJSONValue]
+    public let agentID: String?
+    public let createdAt: Date
+
+    public var id: Int { seq }
+
+    public init(
+        seq: Int, kind: String, payload: [String: JunoJSONValue],
+        agentID: String?, createdAt: Date
+    ) {
+        self.seq = seq
+        self.kind = kind
+        self.payload = payload
+        self.agentID = agentID
+        self.createdAt = createdAt
+    }
+}
+
+// MARK: - Approvals
+
+/// One request for the user to authorise one exact action.
+///
+/// `actionDigest` travels with the request and must be echoed back with the
+/// decision. That is what stops an approval shown for one action from
+/// authorising a different one: the executor recomputes the digest immediately
+/// before acting and refuses on mismatch. A decision without the digest would
+/// be a decision about a description, not about an action.
+public struct WorkApprovalRequest: Equatable, Sendable, Identifiable {
+    public let approvalID: String
+    public let runID: String
+    public let action: String
+    /// "safe" | "edit" | "command" | "sensitive" | "irreversible".
+    public let risk: String
+    /// Exactly the sentence the user is shown, stored server-side so an audit
+    /// can prove what was on screen rather than what today's code would render.
+    public let summary: String
+    /// Display-safe structured detail. Counts and display names; never a path.
+    public let detail: [String: JunoJSONValue]
+    public let actionDigest: String
+    public let expiresAt: Date
+    public let decision: String
+
+    public var id: String { approvalID }
+
+    public var isPending: Bool { decision == "pending" }
+
+    /// Whether this can still be answered. Expiry is closed rather than
+    /// advisory: approving a send at 09:00 must not still authorise it at
+    /// 17:00 after the draft has been rewritten.
+    public func isAnswerable(at now: Date) -> Bool {
+        isPending && expiresAt > now
+    }
+
+    public init(
+        approvalID: String, runID: String, action: String, risk: String,
+        summary: String, detail: [String: JunoJSONValue], actionDigest: String,
+        expiresAt: Date, decision: String
+    ) {
+        self.approvalID = approvalID
+        self.runID = runID
+        self.action = action
+        self.risk = risk
+        self.summary = summary
+        self.detail = detail
+        self.actionDigest = actionDigest
+        self.expiresAt = expiresAt
+        self.decision = decision
+    }
+}
+
+// MARK: - Commands
+
+/// One instruction travelling client → relay → host.
+public struct WorkCommand: Equatable, Sendable, Identifiable {
+    public let id: String
+    public let sessionID: String
+    public let runID: String?
+    /// One of `WORK_COMMAND_KINDS`.
+    public let kind: String
+    public let payload: [String: JunoJSONValue]
+    public let status: String
+    /// When the relay will hand this to another host if it is not acknowledged.
+    /// A lease rather than a claim flag is what lets a crashed host's command
+    /// be re-delivered instead of stranding the session.
+    public let leaseExpiresAt: Date?
+    public let expiresAt: Date
+
+    public init(
+        id: String, sessionID: String, runID: String?, kind: String,
+        payload: [String: JunoJSONValue], status: String,
+        leaseExpiresAt: Date?, expiresAt: Date
+    ) {
+        self.id = id
+        self.sessionID = sessionID
+        self.runID = runID
+        self.kind = kind
+        self.payload = payload
+        self.status = status
+        self.leaseExpiresAt = leaseExpiresAt
+        self.expiresAt = expiresAt
+    }
+
+    /// Whether the host should still act on this.
+    ///
+    /// Checked at execution time, not only at claim time. A "stop" claimed by a
+    /// host that had been offline for an hour would stop a run the user has
+    /// since restarted.
+    public func isStillValid(at now: Date) -> Bool {
+        expiresAt > now
+    }
+}
+
+// MARK: - Errors
+
+public enum WorkRemoteError: Error, Equatable, LocalizedError, Sendable {
+    case invalidIdentifier
+    /// Something tried to advertise a Mac that has never been registered, so
+    /// there is no `WorkHostIdentity` to register it with. Its own case rather
+    /// than `invalidIdentifier`, because the two have opposite fixes: one is a
+    /// hostile string, the other is a client composed without the device row it
+    /// speaks for.
+    case hostNotRegistered
+    case unsupportedCommand(String)
+    case malformedResponse
+    case hostRevoked
+    case hostNotEnabled
+    case capabilityNotGranted(String)
+    case approvalDigestMismatch
+    case approvalExpired
+    case server(statusCode: Int, message: String, retryable: Bool)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidIdentifier:
+            "Juno could not safely address that Mac or task."
+        case .hostNotRegistered:
+            "This Mac has not finished pairing with your account yet."
+        case .unsupportedCommand(let kind):
+            "This build cannot carry out a \"\(kind)\" instruction."
+        case .malformedResponse:
+            "Juno received Work data it could not read."
+        case .hostRevoked:
+            "This Mac's access to Juno Work has been revoked."
+        case .hostNotEnabled:
+            "Juno Work is switched off on this Mac."
+        case .capabilityNotGranted(let capability):
+            "This Mac has not been granted \(capability)."
+        case .approvalDigestMismatch:
+            "What Juno was about to do no longer matches what you approved, so it stopped."
+        case .approvalExpired:
+            "That approval expired before Juno could act on it. Approve it again if you still want it."
+        case .server(_, let message, _):
+            message
+        }
+    }
+
+    /// Whether retrying could ever succeed.
+    ///
+    /// Revocation and a withheld capability are permanent by nature; retrying
+    /// them forever is how a decommissioned Mac keeps polling a relay that has
+    /// already told it to stop.
+    public var isRetryable: Bool {
+        switch self {
+        case .server(_, _, let retryable): retryable
+        case .hostRevoked, .hostNotEnabled, .capabilityNotGranted,
+             .approvalDigestMismatch, .approvalExpired, .invalidIdentifier,
+             .hostNotRegistered, .unsupportedCommand, .malformedResponse:
+            false
+        }
+    }
+}

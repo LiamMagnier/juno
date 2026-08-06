@@ -169,8 +169,7 @@ struct DesktopChatWorkspace: View {
             // `DesktopDestinationView` — which has nothing of its own to hand it.
             .environment(tasksSurface)
             .junoReadingCanvas()
-            .navigationTitle(windowTitle)
-            .navigationSubtitle(windowSubtitle)
+            .navigationTitle("")
             .toolbar { detailToolbar }
         }
         // `.inspector` goes on the split view, **not** on the detail column, and
@@ -295,22 +294,6 @@ struct DesktopChatWorkspace: View {
         destination.wrappedValue = .chat
     }
 
-    private var windowTitle: String {
-        DesktopNavigationState.windowTitle(
-            destination: currentDestination,
-            conversationTitle: model.selectedConversation?.title
-        )
-    }
-
-    /// The subtitle carries provenance, never the model id.
-    private var windowSubtitle: String {
-        let current = currentDestination
-        guard current == .chat, let conversation = model.selectedConversation else {
-            return ""
-        }
-        return conversation.updatedAt.formatted(date: .abbreviated, time: .shortened)
-    }
-
     /// Every item is present in every state and disables rather than vanishing.
     ///
     /// A `ToolbarItem` that appears and disappears makes SwiftUI rebuild the
@@ -320,34 +303,24 @@ struct DesktopChatWorkspace: View {
     /// does not have to re-find it.
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
-        // The product switch lives in the toolbar, not at the top of the sidebar.
-        // As a `safeAreaInset` on the column it had no opaque backing, so a
-        // scrolled source list slid its rows underneath the switch and under the
-        // window's traffic lights. The toolbar is also where macOS puts a
-        // top-level mode switch, and it stays reachable when the sidebar is
-        // collapsed — which the sidebar version was not.
-        // `.principal`, not `.navigation`.
+        // **No product switch here.** It is the first thing in the sidebar now —
+        // `DesktopSidebarProductHeader`, drawn identically by both columns.
         //
-        // `.navigation` placement in a `NavigationSplitView` puts an item in the
-        // **sidebar's** titlebar, alongside the traffic lights — so the top-level
-        // Chat/Code switch sat inside the navigation column, crowding the window
-        // controls and reading as though it belonged to the project list under it.
-        // It is a window-level control, not a sidebar one. `.principal` places it in
-        // the content area's toolbar, where it is still always visible with the
-        // sidebar collapsed.
+        // It was in the toolbar because the first sidebar version was a bare
+        // `safeAreaInset` with nothing painted behind it, so scrolled rows slid
+        // under the switch and on under the traffic lights. That failure was the
+        // missing backing, not the placement, and the header fixes it there. What
+        // the toolbar cost in exchange was real: `.principal` competes with the
+        // window's own title for the centre of the bar, and a control that changes
+        // what the *navigation* column lists is a strange thing to have to reach
+        // for at the top of the *content* column. `.navigation` was never an
+        // option — in a `NavigationSplitView` it lands in the sidebar's titlebar,
+        // beside the traffic lights.
         //
-        // Both windows move together: this is the one control that occupies the same
-        // spot in Chat and Code, and a different placement in each would make it jump
-        // on every mode change.
-        ToolbarItem(placement: .principal) {
-            // No width imposed here: the switcher owns its own metrics (see
-            // `DesktopProductSwitcher`). A flat width from the toolbar is what
-            // squeezed the two labels against their segment edges and stopped the
-            // control growing with Dynamic Type.
-            DesktopProductSwitcher(selection: $product)
-        }
+        // Both windows still move together: the header is one view, so the switch
+        // cannot sit in one place in Chat and another in Code.
 
-        ToolbarItem(placement: .navigation) {
+        ToolbarItem(placement: .primaryAction) {
             Button {
                 beginDraft()
             } label: {
@@ -471,9 +444,7 @@ private struct DesktopChatSidebar: View {
         .listStyle(.sidebar)
         // The selection is still the platform's — only its colour is Juno's.
         .junoSidebarSelectionTint()
-        .safeAreaInset(edge: .top, spacing: 0) {
-            Color.clear.frame(height: 28)
-        }
+        .junoSidebarProductHeader(product: $product)
         // `safeAreaBar`, not `safeAreaInset`: the bar variant is what the
         // system's bottom scroll-edge effect is measured against, and that
         // effect is what lets the footer sit on a translucent column without an

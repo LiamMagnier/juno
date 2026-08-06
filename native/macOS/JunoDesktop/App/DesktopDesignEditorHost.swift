@@ -1,4 +1,3 @@
-import Combine
 import JunoDesignKit
 import SwiftUI
 import WebKit
@@ -30,8 +29,15 @@ import WebKit
 ///    it. A replayed or stale transaction is refused, not applied twice.
 ///  - **Navigation pinned.** Any attempt to leave the editor's own file URL is
 ///    cancelled, so a stray link cannot turn the pane into a browser.
+///
+/// `@Observable` rather than `ObservableObject`: ``DesktopArtifactCanvas`` holds
+/// this in a `@State`, and SwiftUI does not subscribe to an `ObservableObject`
+/// stored that way. The status would move from `.loading` to `.ready` and the
+/// pane would never hear about it, so the spinner stayed sitting over a canvas
+/// that had finished drawing until something unrelated forced a re-render.
 @MainActor
-final class DesktopDesignEditorHost: NSObject, ObservableObject {
+@Observable
+final class DesktopDesignEditorHost: NSObject {
     /// What the pane is currently able to say about itself.
     enum Status: Equatable {
         case loading
@@ -43,14 +49,14 @@ final class DesktopDesignEditorHost: NSObject, ObservableObject {
         case failed(String)
     }
 
-    @Published private(set) var status: Status = .loading
-    @Published private(set) var selection: [String] = []
+    private(set) var status: Status = .loading
+    private(set) var selection: [String] = []
     /// The document as last committed by the editor and accepted here.
-    @Published private(set) var document: DesignDocument
+    private(set) var document: DesignDocument
     /// The most recent refused message, for diagnostics. Not surfaced as a
     /// failure: a stale frame that has been corrected is a resolved
     /// disagreement, not a broken editor.
-    @Published private(set) var lastRefusal: String?
+    private(set) var lastRefusal: String?
 
     /// Called with each accepted transaction so the shell can persist it.
     var onTransaction: ((DesignDocument, String, String) -> Void)?
@@ -191,18 +197,21 @@ final class DesktopDesignEditorHost: NSObject, ObservableObject {
 // MARK: - Navigation policy
 
 extension DesktopDesignEditorHost: WKNavigationDelegate, WKUIDelegate {
+    // `@MainActor` on the handler is part of the signature under Swift 6. Without
+    // it this only *nearly* matches the optional requirement — so it would never
+    // be called, and every navigation would be allowed by default. That is the
+    // opposite of what this method exists to do, and strict mode is what caught it.
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
-        preferences: WKWebpagePreferences,
-        decisionHandler: @escaping @MainActor (WKNavigationActionPolicy, WKWebpagePreferences) -> Void
+        decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
     ) {
-        guard let url = navigationAction.request.url else { return decisionHandler(.cancel, preferences) }
+        guard let url = navigationAction.request.url else { return decisionHandler(.cancel) }
         // The editor's own local files, and nothing else — not http, not
         // file:// elsewhere on disk, not a data: document.
         let directory = Self.bundleDirectory?.standardizedFileURL.path ?? ""
         let isEditorResource = url.isFileURL && !directory.isEmpty && url.standardizedFileURL.path.hasPrefix(directory)
-        decisionHandler(isEditorResource ? .allow : .cancel, preferences)
+        decisionHandler(isEditorResource ? .allow : .cancel)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

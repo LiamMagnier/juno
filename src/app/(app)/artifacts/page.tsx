@@ -161,6 +161,29 @@ export default function ArtifactsPage() {
     });
   }, [items, query, typeFilter]);
 
+  const [startingDesign, setStartingDesign] = React.useState(false);
+
+  /** Start a design from nothing, and open it.
+   *
+   *  An artifact belongs to a conversation, so the route creates both — which is
+   *  why this is a POST and a redirect rather than client-side state. */
+  const startDesign = React.useCallback(async () => {
+    setStartingDesign(true);
+    try {
+      const res = await fetch("/api/design", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Untitled design", preset: "phone" }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (!res.ok || !data.url) throw new Error(data.error ?? "Could not start a design.");
+      router.push(data.url);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not start a design.");
+      setStartingDesign(false);
+    }
+  }, [router]);
+
   const empty = !loading && !error && items.length === 0;
   const noResults = !loading && !error && items.length > 0 && filtered.length === 0;
 
@@ -245,11 +268,17 @@ export default function ArtifactsPage() {
             <AppIcons.artifacts className="size-[0.85em] shrink-0 text-muted-foreground/80" strokeWidth={1.6} aria-hidden />
             Artifacts
           </h1>
-          {!loading && !empty && !error && (
-            <span className="shrink-0 font-mono text-caption text-muted-foreground tabular-nums">
-              {items.length} {items.length === 1 ? "artifact" : "artifacts"}
-            </span>
-          )}
+          <div className="flex shrink-0 items-center gap-3">
+            {!loading && !empty && !error && (
+              <span className="font-mono text-caption text-muted-foreground tabular-nums">
+                {items.length} {items.length === 1 ? "artifact" : "artifacts"}
+              </span>
+            )}
+            <Button size="sm" variant="outline" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
+              <PenTool className="size-3.5" aria-hidden />
+              {startingDesign ? "Creating…" : "New design"}
+            </Button>
+          </div>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">Everything Juno built with you, newest first.</p>
 
@@ -322,11 +351,18 @@ export default function ArtifactsPage() {
           <div className="mt-12 flex flex-col items-center gap-3 py-10 text-center motion-safe:animate-rise-in">
             <p className="font-serif text-heading">Nothing here yet.</p>
             <p className="max-w-sm text-sm leading-6 text-muted-foreground">
-              Ask Juno to build a page, component, document, or diagram — it opens in the Canvas and collects here.
+              Ask Juno to build a page, component, document or diagram — or to design a screen — and it opens in the
+              Canvas and collects here.
             </p>
-            <Button size="sm" className="mt-2" onClick={() => router.push("/chat")}>
-              Start building
-            </Button>
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+              <Button size="sm" onClick={() => router.push("/chat")}>
+                Start building
+              </Button>
+              <Button size="sm" variant="outline" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
+                <PenTool className="size-3.5" aria-hidden />
+                {startingDesign ? "Creating…" : "New design"}
+              </Button>
+            </div>
           </div>
         ) : noResults ? (
           <div className="mt-12 flex flex-col items-center gap-3 py-10 text-center motion-safe:animate-fade-in">

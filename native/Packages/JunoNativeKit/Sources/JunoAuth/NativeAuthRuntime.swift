@@ -179,7 +179,7 @@ public actor NativeAuthRuntime {
                 return nil
             }
             stored = active
-        } catch {
+        } catch let error as SecurityKeychainClientError {
             // A Keychain read can be transiently unavailable while macOS is
             // replacing or re-signing the app bundle. Keep the last confirmed
             // account open locally and let the normal retry path reconnect it;
@@ -188,12 +188,36 @@ public actor NativeAuthRuntime {
                 return .unverified(cached, cause: error.localizedDescription)
             }
             throw error
+        } catch {
+            // Malformed or cross-account credential data is not a transient
+            // update condition. Preserve the fail-closed behavior for corrupt
+            // credentials and only use the cached session for Security.framework
+            // access failures.
+            throw error
         }
         do {
             let accessToken = try await coordinatedAccessToken(
                 for: stored.accountID
             )
-            let session = try await apiClient.session(accessToken: accessToken)
+            let session: NativeAuthenticatedSession
+            do {
+                session = try await apiClient.session(accessToken: accessToken)
+            } catch let rejection as NativeAuthAPIError
+                where rejection.invalidatesLocalCredentials
+            {
+                // The launch probe used to take the first 401 as final and
+                // delete the credential, while `send()` — the same request,
+                // one layer up — rotates and retries before giving up. A
+                // cached access token that went stale between quit and launch
+                // is the ordinary case, not an invalid account, and answering
+                // it with the sign-in screen threw away a refresh token that
+                // had 30 days left on it.
+                let refreshed = try await coordinatedAccessTokenAfterUnauthorized(
+                    for: stored.accountID,
+                    rejectedAccessToken: accessToken
+                )
+                session = try await apiClient.session(accessToken: refreshed)
+            }
             guard session.profile.id == stored.accountID,
                 session.deviceID == stored.deviceID
             else {

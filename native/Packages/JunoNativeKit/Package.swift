@@ -22,6 +22,7 @@ let package = Package(
         .library(name: "JunoDesignKit", targets: ["JunoDesignKit"]),
         .library(name: "JunoChatKit", targets: ["JunoChatKit"]),
         .library(name: "JunoCodeKit", targets: ["JunoCodeKit"]),
+        .library(name: "JunoWorkKit", targets: ["JunoWorkKit"]),
         .library(name: "JunoVoiceKit", targets: ["JunoVoiceKit"]),
         // Development-only: every source file is wrapped in `#if DEBUG`, so this
         // target contributes nothing to Release builds.
@@ -108,6 +109,13 @@ let package = Package(
             ]
         ),
         .target(
+            name: "JunoWorkKit",
+            dependencies: [
+                "JunoCore", "JunoAPI", "JunoAuth", "JunoStorage", "JunoSync",
+                "JunoDesignSystem",
+            ]
+        ),
+        .target(
             name: "JunoVoiceKit",
             dependencies: ["JunoCore", "JunoAPI", "JunoAuth", "JunoDesignSystem"],
             exclude: [
@@ -176,6 +184,13 @@ let package = Package(
             dependencies: [
                 "JunoCore", "JunoAPI", "JunoAuth", "JunoStorage", "JunoSync",
                 "JunoCodeKit",
+            ]
+        ),
+        .testTarget(
+            name: "JunoWorkKitTests",
+            dependencies: [
+                "JunoCore", "JunoAPI", "JunoAuth", "JunoStorage", "JunoSync",
+                "JunoWorkKit",
             ]
         ),
         .testTarget(

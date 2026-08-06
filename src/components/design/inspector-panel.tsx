@@ -8,11 +8,19 @@
  * are indistinguishable to the undo stack. Fields only appear for properties
  * the selected node type actually has — an inspector that shows a corner radius
  * for a line is an inspector that lies.
+ *
+ * With more than one layer selected the same rule applies to values. A field
+ * whose layers disagree reads "Mixed" instead of quietly showing the first
+ * one's, and every write is built per layer, so setting a stroke's weight
+ * cannot carry the first layer's colour onto the rest — which is exactly what
+ * reading from `nodes[0]` and writing to all of them used to do.
  */
 
 import * as React from "react";
+import { toast } from "sonner";
+import { readImageAsset } from "@/components/design/use-design-document";
 import { hexToRgba, rgbaToHex } from "@/lib/design/variables";
-import { isContainer, type AutoLayout, type DesignDocument, type DesignNode, type NodeId } from "@/lib/design/types";
+import { isContainer, type AutoLayout, type DesignDocument, type DesignNode, type ImageNode, type NodeId } from "@/lib/design/types";
 import type { DesignOperation, NodePatch } from "@/lib/design/operations";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +29,18 @@ interface Props {
   selection: NodeId[];
   onApply: (operations: DesignOperation[], summary: string) => void;
   readOnly?: boolean;
+}
+
+/** A value read across the selection: `mixed` when the layers disagree. */
+interface Shared<T> {
+  value: T;
+  mixed: boolean;
+}
+
+function shared<T>(nodes: DesignNode[], read: (node: DesignNode) => T): Shared<T> {
+  const value = read(nodes[0]);
+  const first = JSON.stringify(value ?? null);
+  return { value, mixed: nodes.some((node) => JSON.stringify(read(node) ?? null) !== first) };
 }
 
 export function InspectorPanel({ document: doc, selection, onApply, readOnly }: Props) {
@@ -34,15 +54,47 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
     );
   }
 
+  // A locked layer is left out of every write; it still counts for what the
+  // fields report, because it is still selected and still on screen.
+  const editable = nodes.filter((n) => !n.locked);
+
+  /** Write the same fields to every editable layer. Only ever the fields the
+   *  user just touched — never a value read back off another layer. */
   const patchAll = (patch: NodePatch, summary: string) =>
     onApply(
-      nodes.filter((n) => !n.locked).map((n) => ({ op: "updateNode" as const, nodeId: n.id, patch })),
+      editable.map((n) => ({ op: "updateNode" as const, nodeId: n.id, patch })),
       summary
     );
+
+  /** Write a patch computed from each layer's own state, for fields that live
+   *  inside a structure the layer already owns (a stroke, its constraints). */
+  const patchEach = (build: (node: DesignNode) => NodePatch | null, summary: string) => {
+    const operations = editable.flatMap((n) => {
+      const patch = build(n);
+      return patch ? [{ op: "updateNode" as const, nodeId: n.id, patch }] : [];
+    });
+    if (operations.length) onApply(operations, summary);
+  };
 
   const first = nodes[0];
   const single = nodes.length === 1 ? first : null;
   const allSameType = nodes.every((n) => n.type === first.type);
+
+  const x = shared(nodes, (n) => n.x);
+  const y = shared(nodes, (n) => n.y);
+  const width = shared(nodes, (n) => n.width);
+  const height = shared(nodes, (n) => n.height);
+  const rotation = shared(nodes, (n) => n.rotation);
+  const opacity = shared(nodes, (n) => n.opacity);
+  const widthMode = shared(nodes, (n) => n.widthMode);
+  const heightMode = shared(nodes, (n) => n.heightMode);
+  const horizontal = shared(nodes, (n) => n.constraints.horizontal);
+  const vertical = shared(nodes, (n) => n.constraints.vertical);
+  const radius = shared(nodes, (n) => (typeof n.cornerRadius === "number" ? n.cornerRadius : n.cornerRadius[0]));
+  const fill = shared(nodes, (n) => (n.fills[0]?.type === "solid" ? rgbaToHex(n.fills[0].color) : ""));
+  const strokeColor = shared(nodes, (n) => (n.strokes[0]?.paint.type === "solid" ? rgbaToHex(n.strokes[0].paint.color) : ""));
+  const strokeWeight = shared(nodes, (n) => n.strokes[0]?.weight ?? 0);
+  const hasStroke = nodes.some((n) => n.strokes.length > 0);
 
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
@@ -59,14 +111,36 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
 
       <Section title="Position & size">
         <div className="grid grid-cols-2 gap-1.5">
-          <NumberField label="X" value={first.x} disabled={readOnly} onCommit={(v) => patchAll({ x: v }, "Set position")} />
-          <NumberField label="Y" value={first.y} disabled={readOnly} onCommit={(v) => patchAll({ y: v }, "Set position")} />
-          <NumberField label="W" value={first.width} min={0} disabled={readOnly} onCommit={(v) => patchAll({ width: v, widthMode: "fixed" }, "Set size")} />
-          <NumberField label="H" value={first.height} min={0} disabled={readOnly} onCommit={(v) => patchAll({ height: v, heightMode: "fixed" }, "Set size")} />
-          <NumberField label="Rotate" value={first.rotation} suffix="°" disabled={readOnly} onCommit={(v) => patchAll({ rotation: v }, "Rotate")} />
+          <NumberField label="X" value={x.value} mixed={x.mixed} disabled={readOnly} onCommit={(v) => patchAll({ x: v }, "Set position")} />
+          <NumberField label="Y" value={y.value} mixed={y.mixed} disabled={readOnly} onCommit={(v) => patchAll({ y: v }, "Set position")} />
+          <NumberField
+            label="W"
+            value={width.value}
+            mixed={width.mixed}
+            min={0}
+            disabled={readOnly}
+            onCommit={(v) => patchAll({ width: v, widthMode: "fixed" }, "Set size")}
+          />
+          <NumberField
+            label="H"
+            value={height.value}
+            mixed={height.mixed}
+            min={0}
+            disabled={readOnly}
+            onCommit={(v) => patchAll({ height: v, heightMode: "fixed" }, "Set size")}
+          />
+          <NumberField
+            label="Rotate"
+            value={rotation.value}
+            mixed={rotation.mixed}
+            suffix="°"
+            disabled={readOnly}
+            onCommit={(v) => patchAll({ rotation: v }, "Rotate")}
+          />
           <NumberField
             label="Opacity"
-            value={Math.round(first.opacity * 100)}
+            value={Math.round(opacity.value * 100)}
+            mixed={opacity.mixed}
             min={0}
             max={100}
             suffix="%"
@@ -77,23 +151,17 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
         <div className="grid grid-cols-2 gap-1.5 pt-1.5">
           <SelectField
             label="Width"
-            value={first.widthMode}
-            options={[
-              { value: "fixed", label: "Fixed" },
-              { value: "hug", label: "Hug" },
-              { value: "fill", label: "Fill" },
-            ]}
+            value={widthMode.value}
+            mixed={widthMode.mixed}
+            options={SIZING_OPTIONS}
             disabled={readOnly}
             onChange={(v) => patchAll({ widthMode: v as NodePatch["widthMode"] }, "Set width behaviour")}
           />
           <SelectField
             label="Height"
-            value={first.heightMode}
-            options={[
-              { value: "fixed", label: "Fixed" },
-              { value: "hug", label: "Hug" },
-              { value: "fill", label: "Fill" },
-            ]}
+            value={heightMode.value}
+            mixed={heightMode.mixed}
+            options={SIZING_OPTIONS}
             disabled={readOnly}
             onChange={(v) => patchAll({ heightMode: v as NodePatch["heightMode"] }, "Set height behaviour")}
           />
@@ -104,24 +172,34 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
         <div className="grid grid-cols-2 gap-1.5">
           <SelectField
             label="Horizontal"
-            value={first.constraints.horizontal}
+            value={horizontal.value}
+            mixed={horizontal.mixed}
             options={CONSTRAINT_OPTIONS}
             disabled={readOnly}
             onChange={(v) =>
               onApply(
-                [{ op: "setConstraints", nodeIds: nodes.map((n) => n.id), constraints: { ...first.constraints, horizontal: v as never } }],
+                editable.map((n) => ({
+                  op: "setConstraints" as const,
+                  nodeIds: [n.id],
+                  constraints: { ...n.constraints, horizontal: v as never },
+                })),
                 "Set constraints"
               )
             }
           />
           <SelectField
             label="Vertical"
-            value={first.constraints.vertical}
+            value={vertical.value}
+            mixed={vertical.mixed}
             options={CONSTRAINT_OPTIONS}
             disabled={readOnly}
             onChange={(v) =>
               onApply(
-                [{ op: "setConstraints", nodeIds: nodes.map((n) => n.id), constraints: { ...first.constraints, vertical: v as never } }],
+                editable.map((n) => ({
+                  op: "setConstraints" as const,
+                  nodeIds: [n.id],
+                  constraints: { ...n.constraints, vertical: v as never },
+                })),
                 "Set constraints"
               )
             }
@@ -129,57 +207,64 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
         </div>
       </Section>
 
-      {single && isContainer(single) && (
-        <AutoLayoutSection node={single} onApply={onApply} readOnly={readOnly} />
-      )}
+      {single && isContainer(single) && <AutoLayoutSection node={single} onApply={onApply} readOnly={readOnly} />}
 
       {allSameType && first.type !== "line" && (
         <Section title="Appearance">
           <NumberField
             label="Corner radius"
-            value={typeof first.cornerRadius === "number" ? first.cornerRadius : first.cornerRadius[0]}
+            value={radius.value}
+            mixed={radius.mixed}
             min={0}
             disabled={readOnly}
             onCommit={(v) => patchAll({ cornerRadius: v }, "Set corner radius")}
           />
           <ColorField
             label="Fill"
-            value={first.fills[0]?.type === "solid" ? rgbaToHex(first.fills[0].color) : ""}
+            value={fill.value}
+            mixed={fill.mixed}
             disabled={readOnly}
             onCommit={(hex) => {
               const color = hexToRgba(hex);
               if (color) patchAll({ fills: [{ type: "solid", color }] }, "Set fill");
             }}
-            onClear={first.fills.length > 0 ? () => patchAll({ fills: [] }, "Remove fill") : undefined}
+            onClear={nodes.some((n) => n.fills.length > 0) ? () => patchAll({ fills: [] }, "Remove fill") : undefined}
           />
           <div className="grid grid-cols-2 gap-1.5">
             <ColorField
               label="Stroke"
-              value={first.strokes[0]?.paint.type === "solid" ? rgbaToHex(first.strokes[0].paint.color) : ""}
+              value={strokeColor.value}
+              mixed={strokeColor.mixed}
               disabled={readOnly}
               onCommit={(hex) => {
                 const color = hexToRgba(hex);
-                if (color) {
-                  patchAll(
-                    { strokes: [{ paint: { type: "solid", color }, weight: first.strokes[0]?.weight ?? 1, align: first.strokes[0]?.align ?? "center" }] },
-                    "Set stroke"
-                  );
-                }
+                if (!color) return;
+                // Weight and alignment are each layer's own; only the colour was
+                // asked for.
+                patchEach(
+                  (n) => ({
+                    strokes: [{ paint: { type: "solid", color }, weight: n.strokes[0]?.weight ?? 1, align: n.strokes[0]?.align ?? "center" }],
+                  }),
+                  "Set stroke"
+                );
               }}
-              onClear={first.strokes.length > 0 ? () => patchAll({ strokes: [] }, "Remove stroke") : undefined}
+              onClear={hasStroke ? () => patchAll({ strokes: [] }, "Remove stroke") : undefined}
             />
-            {first.strokes[0] && (
+            {hasStroke && (
               <NumberField
                 label="Weight"
-                value={first.strokes[0].weight}
+                value={strokeWeight.value}
+                mixed={strokeWeight.mixed}
                 min={0}
                 disabled={readOnly}
-                onCommit={(v) => patchAll({ strokes: [{ ...first.strokes[0], weight: v }] }, "Set stroke weight")}
+                onCommit={(v) => patchEach((n) => (n.strokes[0] ? { strokes: [{ ...n.strokes[0], weight: v }] } : null), "Set stroke weight")}
               />
             )}
           </div>
         </Section>
       )}
+
+      {single?.type === "image" && <ImageSection node={single} document={doc} onApply={onApply} readOnly={readOnly} />}
 
       {single?.type === "text" && (
         <Section title="Typography">
@@ -255,6 +340,12 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
     </div>
   );
 }
+
+const SIZING_OPTIONS = [
+  { value: "fixed", label: "Fixed" },
+  { value: "hug", label: "Hug" },
+  { value: "fill", label: "Fill" },
+];
 
 const CONSTRAINT_OPTIONS = [
   { value: "min", label: "Start" },
@@ -393,6 +484,97 @@ function AutoLayoutSection({
   );
 }
 
+/**
+ * The picture behind an image layer.
+ *
+ * An image layer has no meaning without an asset, so this is where one is
+ * chosen — the file is read into a data URL and put in the same transaction as
+ * the layer that points at it, which is what makes the change undoable in one
+ * step and impossible to half-apply. The asset it replaces is dropped in the
+ * same transaction when nothing else uses it: a document carries its pictures
+ * inside itself and shares one size budget with them, so an orphan is not free.
+ */
+function ImageSection({
+  node,
+  document: doc,
+  onApply,
+  readOnly,
+}: {
+  node: ImageNode;
+  document: DesignDocument;
+  onApply: (operations: DesignOperation[], summary: string) => void;
+  readOnly?: boolean;
+}) {
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  const asset = doc.assets[node.assetId];
+
+  const choose = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const chosen = await readImageAsset(file);
+      const operations: DesignOperation[] = [
+        { op: "createAsset", asset: chosen },
+        { op: "updateNode", nodeId: node.id, patch: { assetId: chosen.id } },
+      ];
+      if (asset && !isAssetUsedElsewhere(doc, asset.id, node.id)) {
+        operations.push({ op: "deleteAsset", assetId: asset.id });
+      }
+      onApply(operations, asset ? "Replace image" : "Set image");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not read that image.");
+    }
+  };
+
+  return (
+    <Section title="Image">
+      <p className="truncate font-mono text-[10px] text-muted-foreground">
+        {asset ? `${Math.round(asset.width)} × ${Math.round(asset.height)} ${asset.mimeType.replace("image/", "").toUpperCase()}` : "No picture yet"}
+      </p>
+      <button
+        type="button"
+        disabled={readOnly}
+        onClick={() => inputRef.current?.click()}
+        className="pressable w-full rounded-[10px] border border-border/60 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-10"
+      >
+        {asset ? "Replace picture…" : "Choose a picture…"}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden
+        onChange={choose}
+      />
+      <SelectField
+        label="Scaling"
+        value={node.scaleMode}
+        options={[
+          { value: "fill", label: "Fill" },
+          { value: "fit", label: "Fit" },
+          { value: "stretch", label: "Stretch" },
+          { value: "tile", label: "Tile" },
+        ]}
+        disabled={readOnly}
+        onChange={(v) => onApply([{ op: "updateNode", nodeId: node.id, patch: { scaleMode: v as ImageNode["scaleMode"] } }], "Set image scaling")}
+      />
+    </Section>
+  );
+}
+
+/** Whether anything other than `exceptNodeId` still needs this picture — an
+ *  image layer, or any node using it as an image fill. */
+function isAssetUsedElsewhere(doc: DesignDocument, assetId: string, exceptNodeId: NodeId): boolean {
+  return Object.values(doc.nodes).some((node) => {
+    if (node.id === exceptNodeId) return false;
+    if (node.type === "image" && node.assetId === assetId) return true;
+    return node.fills.some((paint) => paint.type === "image" && paint.assetId === assetId);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Fields
 // ---------------------------------------------------------------------------
@@ -415,6 +597,7 @@ const fieldClass =
 function NumberField({
   label,
   value,
+  mixed,
   min,
   max,
   step = 1,
@@ -424,6 +607,8 @@ function NumberField({
 }: {
   label: string;
   value: number;
+  /** The selected layers disagree: show nothing rather than the first one's. */
+  mixed?: boolean;
   min?: number;
   max?: number;
   step?: number;
@@ -433,7 +618,7 @@ function NumberField({
 }) {
   // Uncontrolled while focused so typing "12" does not fight a re-render at "1".
   const [draft, setDraft] = React.useState<string | null>(null);
-  const shown = draft ?? String(Math.round(value * 100) / 100);
+  const shown = draft ?? (mixed ? "" : String(Math.round(value * 100) / 100));
   return (
     <label className="block">
       <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">
@@ -444,6 +629,7 @@ function NumberField({
         type="number"
         className={fieldClass}
         value={shown}
+        placeholder={mixed ? "Mixed" : undefined}
         min={min}
         max={max}
         step={step}
@@ -510,15 +696,21 @@ function TextField({
   );
 }
 
+/** Sentinel for the "Mixed" row. Not the empty string: some of these selects
+ *  use "" for a real choice ("None"). */
+const MIXED_OPTION = "\u0000mixed";
+
 function SelectField({
   label,
   value,
+  mixed,
   options,
   disabled,
   onChange,
 }: {
   label: string;
   value: string;
+  mixed?: boolean;
   options: { value: string; label: string }[];
   disabled?: boolean;
   onChange: (value: string) => void;
@@ -526,7 +718,13 @@ function SelectField({
   return (
     <label className="block">
       <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">{label}</span>
-      <select className={fieldClass} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
+      <select
+        className={fieldClass}
+        value={mixed ? MIXED_OPTION : value}
+        disabled={disabled}
+        onChange={(e) => e.target.value !== MIXED_OPTION && onChange(e.target.value)}
+      >
+        {mixed && <option value={MIXED_OPTION}>Mixed</option>}
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
@@ -540,12 +738,14 @@ function SelectField({
 function ColorField({
   label,
   value,
+  mixed,
   disabled,
   onCommit,
   onClear,
 }: {
   label: string;
   value: string;
+  mixed?: boolean;
   disabled?: boolean;
   onCommit: (hex: string) => void;
   onClear?: () => void;
@@ -556,7 +756,7 @@ function ColorField({
       <div className="flex items-center gap-1.5">
         <input
           type="color"
-          value={value ? value.slice(0, 7) : "#000000"}
+          value={!mixed && value ? value.slice(0, 7) : "#000000"}
           disabled={disabled}
           onChange={(e) => onCommit(e.target.value)}
           className="size-7 shrink-0 cursor-pointer rounded-[6px] border border-border/60 bg-transparent p-0.5 disabled:opacity-50"
@@ -565,8 +765,8 @@ function ColorField({
         <input
           type="text"
           className={fieldClass}
-          value={value}
-          placeholder="none"
+          value={mixed ? "" : value}
+          placeholder={mixed ? "Mixed" : "none"}
           disabled={disabled}
           onChange={(e) => onCommit(e.target.value)}
           onKeyDown={(e) => e.stopPropagation()}

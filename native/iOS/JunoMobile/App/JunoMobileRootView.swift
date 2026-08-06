@@ -5,6 +5,7 @@ import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import JunoVoiceKit
+import JunoWorkKit
 import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
@@ -38,6 +39,11 @@ struct JunoMobileRootView: View {
     var connectorModel: NativeConnectorModel?
     var scheduledTaskModel: NativeScheduledTaskModel?
     var codeModel: NativeCodeModel?
+    /// Juno Work: the tasks the account has handed Juno, and the Macs that can
+    /// run them. Server-backed like the three above, and started at sign-in
+    /// rather than when the screen opens — the model polls the task list so the
+    /// "waiting on you" count is true before anybody navigates to it.
+    var workModel: NativeWorkModel?
     /// Backs the composer's "From your library".
     var libraryModel: NativeLibraryModel?
     /// The authenticated transport, used to mint a voice relay credential. See
@@ -208,6 +214,7 @@ struct JunoMobileRootView: View {
                 Task { await connectorModel?.start(for: session.profile.id) }
                 Task { await scheduledTaskModel?.start(for: session.profile.id) }
                 Task { await codeModel?.start(for: session.profile.id) }
+                Task { await workModel?.start(for: session.profile.id) }
                 libraryModel?.start(for: session.profile.id)
                 #if DEBUG
                 if pendingVoiceLaunch {
@@ -230,6 +237,10 @@ struct JunoMobileRootView: View {
                 connectorModel?.stop()
                 scheduledTaskModel?.stop()
                 codeModel?.stop()
+                // Signing out has to close the Work event stream as well as the
+                // poll: it is an authenticated connection following a task on a
+                // machine the signed-out reader no longer has an account for.
+                workModel?.stop()
                 libraryModel?.stop()
                 // A voice session outliving the account it was authorized for is
                 // a live microphone on a signed-out device.
@@ -766,6 +777,10 @@ struct JunoMobileRootView: View {
                     modelCatalog: conversationModel?.modelCatalog ?? [],
                     openSettings: { openSidebarDestination(.settings) }
                 )
+            } else { unavailable }
+        case .work:
+            if let workModel {
+                JunoMobileWorkView(model: workModel)
             } else { unavailable }
         case .tasks:
             if let scheduledTaskModel {

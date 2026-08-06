@@ -43,7 +43,13 @@ public enum SecurityKeychainClientError: Error, Equatable, Sendable, LocalizedEr
         case errSecInteractionNotAllowed:
             "the device is locked"
         case errSecAuthFailed:
-            "authentication failed"
+            // Almost always a re-signing rather than anything the user did
+            // wrong: Keychain ACLs name the code signature, so a build signed
+            // with a different certificate cannot read the previous build's
+            // saved credential. "Authentication failed" sent users looking for
+            // a password problem that does not exist; signing in again is the
+            // fix, and `upsert` now clears the unreachable item so it works.
+            "the saved sign-in was stored by a different version of Juno — sign in again"
         case errSecDecode:
             "the stored item could not be decoded"
         case errSecNotAvailable:
@@ -87,7 +93,7 @@ public protocol SecurityKeychainClient: Sendable {
 /// One latch per process, not per call: the answer depends on the code signature,
 /// which cannot change while the app is running, and re-asking would spend a
 /// failed Security round trip on every read.
-private final class DataProtectionKeychainGate: @unchecked Sendable {
+final class DataProtectionKeychainGate: @unchecked Sendable {
     static let shared = DataProtectionKeychainGate()
 
     private let lock = NSLock()
@@ -106,6 +112,15 @@ private final class DataProtectionKeychainGate: @unchecked Sendable {
         guard available else { return false }
         available = false
         return true
+    }
+
+    /// Restores the launch state. The latch is per-process by design, so this
+    /// is the only way a test can express "and now the app is opened again" —
+    /// which is the exact transition the legacy-keychain read path got wrong.
+    func resetForTesting() {
+        lock.lock()
+        defer { lock.unlock() }
+        available = true
     }
 }
 #endif
@@ -154,7 +169,38 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         if let data = try copyValue(for: item, dataProtection: true) {
             return data
         }
+        #if os(macOS)
+        if canMigrateLegacyKeychain {
+            return try migrateLegacyItem(item)
+        }
+        // The build that most needs the legacy keychain was the one branch that
+        // could not reach it, and this is where "I have to sign in every time I
+        // open the app" came from.
+        //
+        // The latch below only flips on `errSecMissingEntitlement`, and that is
+        // the answer macOS gives an unentitled process for a *write*. For a
+        // *read* it answers `errSecItemNotFound` instead — measured, not
+        // assumed: the data-protection query returns -25300 while the very same
+        // item reads back fine with the attribute off. So the first launch
+        // wrote the token to the legacy store through the write-path fallback,
+        // every later launch asked the data-protection store, was told "no such
+        // item", and `migrateLegacyItem` declined to look further because a
+        // development-signed export has no embedded provisioning profile. The
+        // credential was on disk the whole time.
+        //
+        // Read where the writes actually went. Migration still needs the
+        // profile — moving the item requires being able to write the new one —
+        // but simply reading it never did.
+        guard let data = try copyValue(for: item, dataProtection: false) else {
+            return nil
+        }
+        // Having found it there, pin the rest of this process to the same store
+        // so a later write or delete cannot address the other one.
+        _ = DataProtectionKeychainGate.shared.markUnavailable()
+        return data
+        #else
         return try migrateLegacyItem(item)
+        #endif
     }
 
     public func upsert(_ data: Data, for item: SecurityKeychainItem) throws {
@@ -183,6 +229,24 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
             )
         }
         guard updateStatus == errSecSuccess else {
+            // The item is there and this signature may not touch it — the same
+            // re-signing case the read path handles. Updating in place is not
+            // possible, but replacing it is: deleting does not require
+            // decrypting the value, so remove the unreachable item and add the
+            // new one. Without this, signing in again fails exactly where the
+            // read did and the user cannot get past the sign-in screen at all.
+            if updateStatus == errSecAuthFailed {
+                _ = withKeychainFallback {
+                    SecItemDelete(baseQuery(for: item) as CFDictionary)
+                }
+                let replaced = withKeychainFallback {
+                    SecItemAdd(newItemAttributes(data, for: item) as CFDictionary, nil)
+                }
+                guard replaced == errSecSuccess else {
+                    throw SecurityKeychainClientError.unexpectedStatus(Int32(replaced))
+                }
+                return
+            }
             throw SecurityKeychainClientError.unexpectedStatus(Int32(updateStatus))
         }
     }
@@ -196,6 +260,19 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         // generated database key would come to replace the one the existing
         // store was encrypted with.
         if try migrateLegacyItem(item) != nil { return false }
+        #if os(macOS)
+        // Same blind spot as `read`: on a build with no provisioning profile
+        // the line above cannot see the legacy store, so the existing database
+        // key was invisible here and this returned "inserted" for a key that
+        // already existed. That is the unrecoverable one — it re-keys a store
+        // whose contents were encrypted with the old value.
+        if !canMigrateLegacyKeychain,
+            try copyValue(for: item, dataProtection: false) != nil
+        {
+            _ = DataProtectionKeychainGate.shared.markUnavailable()
+            return false
+        }
+        #endif
         let status = withKeychainFallback {
             SecItemAdd(newItemAttributes(data, for: item) as CFDictionary, nil)
         }
@@ -212,12 +289,16 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
     public func delete(_ item: SecurityKeychainItem) throws -> Bool {
         var removed = try remove(item, dataProtection: true)
         // Sign-out has to clear the legacy copy too, or the token it was asked
-        // to destroy stays readable on disk.
-        if canMigrateLegacyKeychain,
-            try remove(item, dataProtection: false)
-        {
+        // to destroy stays readable on disk. This used to be gated on the
+        // provisioning profile, which meant the builds that kept their tokens
+        // in the legacy store — the only ones with anything to clear there —
+        // were the builds that skipped this. Deleting needs no profile: it
+        // does not have to decrypt the value or write a replacement.
+        #if os(macOS)
+        if try remove(item, dataProtection: false) {
             removed = true
         }
+        #endif
         return removed
     }
 
@@ -434,6 +515,37 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
         try loadStored(for: accountID)
     }
 
+    /// Writes a credential, replacing one this build is not allowed to touch.
+    ///
+    /// Keychain ACLs name the *code signature*, not the bundle id, so an app
+    /// re-signed with a different certificate cannot update the credential its
+    /// predecessor saved — `SecItemAdd` answers `errSecDuplicateItem` and the
+    /// `SecItemUpdate` behind it answers `errSecAuthFailed`.
+    ///
+    /// The read side of that is handled deliberately elsewhere: the runtime
+    /// keeps the cached session visible rather than signing the user out, since
+    /// the same status also covers transient conditions. What was missing was
+    /// the way out. Signing in again failed exactly where the read did, so no
+    /// action available to the user recovered the app — which is how "Keychain
+    /// error -25293" became terminal for anyone upgrading into a build signed
+    /// with a different certificate.
+    ///
+    /// Deleting does not require decrypting the value, so it succeeds where
+    /// updating does not. Scoped to that one status on purpose: a delete-then-add
+    /// on the ordinary path would open a window where the credential is simply
+    /// gone if the add then failed.
+    private func writeReplacingUnreachable(
+        _ data: Data,
+        for item: SecurityKeychainItem
+    ) throws {
+        do {
+            try securityClient.upsert(data, for: item)
+        } catch SecurityKeychainClientError.unexpectedStatus(errSecAuthFailed) {
+            _ = try? securityClient.delete(item)
+            try securityClient.upsert(data, for: item)
+        }
+    }
+
     private func loadStored(for accountID: AccountID) throws -> AuthTokenSet? {
         guard let data = try securityClient.read(item(for: accountID)) else {
             return nil
@@ -495,7 +607,7 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
         let data = try encode(tokenSet)
         let tokenItem = item(for: tokenSet.accountID)
         do {
-            try securityClient.upsert(data, for: tokenItem)
+            try writeReplacingUnreachable(data, for: tokenItem)
             try securityClient.upsert(
                 Data(tokenSet.accountID.rawValue.utf8),
                 for: activeAccountItem()
@@ -530,7 +642,7 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
         }
 
         let data = try encode(tokenSet)
-        try securityClient.upsert(data, for: item(for: accountID))
+        try writeReplacingUnreachable(data, for: item(for: accountID))
         return true
     }
 

@@ -32,12 +32,8 @@ export const LEGACY_KEY_ID = "legacy";
 /** The id given to the AUTH_SECRET-derived development key. */
 export const DERIVED_KEY_ID = "derived";
 
-export class MessageCryptoConfigError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "MessageCryptoConfigError";
-  }
-}
+export { MessageCryptoConfigError } from "@/lib/message-crypto-config";
+import { MessageCryptoConfigError } from "@/lib/message-crypto-config";
 
 export interface MessageKeyring {
   /** Key ids → 32-byte keys. Every key here can decrypt. */

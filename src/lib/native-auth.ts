@@ -4,6 +4,7 @@ import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import {
   NATIVE_AUTH_CODE_TTL_MS,
+  NATIVE_REFRESH_REPLAY_GRACE_MS,
   NATIVE_REFRESH_TTL_MS,
   hashSecret,
   isValidCodeVerifier,
@@ -21,6 +22,9 @@ export type NativeAuthErrorCode =
   | "token_expired"
   | "device_revoked"
   | "token_reuse_detected"
+  // A rotation that lost a race, not a rejected grant. Served as 5xx so the
+  // client retries rather than treating it as a dead credential.
+  | "refresh_conflict"
   | "not_found";
 
 export class NativeAuthError extends Error {
@@ -271,6 +275,55 @@ export async function rotateNativeRefreshToken(rawToken: string) {
       },
     });
     if (!current) return { kind: "invalid" as const };
+
+    const stillUsable =
+      current.expiresAt > new Date() &&
+      !current.deviceSession.revokedAt &&
+      !current.deviceSession.user.bannedAt;
+
+    // A replay of a token this device consumed moments ago is the rotation it
+    // never got to keep, not an attack. The client only persists a rotated
+    // token after the response lands, so quitting the app mid-refresh — the
+    // most reliable way there is to cancel that request — leaves the device
+    // holding a token the server has already marked used. Revoking the family
+    // for that is what turned "closed the app" into "sign in again".
+    //
+    // The successor is the evidence. If it was never used, the client did not
+    // receive it, so re-grant into the same family: drop the orphan and hand
+    // out a fresh child of the token that was actually presented. If it WAS
+    // used, this device demonstrably moved on and something else is holding
+    // the old secret — that is reuse whenever it arrives, and falls through.
+    if (current.usedAt && !current.revokedAt && stillUsable) {
+      const withinGrace =
+        Date.now() - current.usedAt.getTime() <= NATIVE_REFRESH_REPLAY_GRACE_MS;
+      if (withinGrace) {
+        const successor = await tx.nativeRefreshToken.findFirst({
+          where: { parentTokenId: current.id },
+          orderBy: { createdAt: "desc" },
+        });
+        if (successor && !successor.usedAt && !successor.revokedAt) {
+          await tx.nativeRefreshToken.update({
+            where: { id: successor.id },
+            data: { revokedAt: new Date() },
+          });
+          await tx.nativeRefreshToken.create({
+            data: {
+              deviceSessionId: current.deviceSessionId,
+              familyId: current.familyId,
+              parentTokenId: current.id,
+              tokenHash: hashSecret(nextToken),
+              expiresAt: nextExpiresAt,
+            },
+          });
+          await tx.nativeDeviceSession.update({
+            where: { id: current.deviceSessionId, userId: current.deviceSession.userId },
+            data: { lastSeenAt: new Date() },
+          });
+          return { kind: "ok" as const, current };
+        }
+      }
+    }
+
     if (current.usedAt || current.revokedAt) {
       await tx.nativeDeviceSession.updateMany({
         where: { id: current.deviceSessionId, userId: current.deviceSession.userId, revokedAt: null },
@@ -282,11 +335,7 @@ export async function rotateNativeRefreshToken(rawToken: string) {
       });
       return { kind: "reuse" as const };
     }
-    if (
-      current.expiresAt <= new Date() ||
-      current.deviceSession.revokedAt ||
-      current.deviceSession.user.bannedAt
-    ) return { kind: "invalid" as const };
+    if (!stillUsable) return { kind: "invalid" as const };
 
     const consumed = await tx.nativeRefreshToken.updateMany({
       where: { id: current.id, usedAt: null, revokedAt: null },
@@ -309,21 +358,22 @@ export async function rotateNativeRefreshToken(rawToken: string) {
     return { kind: "ok" as const, current };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
-  if (outcome.kind === "reuse" || outcome.kind === "race") {
-    if (outcome.kind === "race") {
-      // The token row carries no userId of its own; pull the owner off the
-      // device session so the revocation below can be scoped to it.
-      const found = await prisma.nativeRefreshToken.findUnique({
-        where: { tokenHash: hashSecret(rawToken) },
-        include: { deviceSession: { select: { userId: true } } },
-      });
-      if (found) {
-        await prisma.$transaction([
-          prisma.nativeDeviceSession.updateMany({ where: { id: found.deviceSessionId, userId: found.deviceSession.userId, revokedAt: null }, data: { revokedAt: new Date(), revocationReason: "refresh_token_reuse" } }),
-          prisma.nativeRefreshToken.updateMany({ where: { deviceSessionId: found.deviceSessionId, familyId: found.familyId, revokedAt: null }, data: { revokedAt: new Date() } }),
-        ]);
-      }
-    }
+  // A lost update is not an attack. `consumed.count !== 1` means something else
+  // claimed this row between the read and the write — a concurrent rotation, or
+  // a retried transaction — and the device that asked is still the legitimate
+  // owner of the secret it presented. This used to revoke the whole family, and
+  // the revocation ran outside the Serializable transaction, so it could also
+  // fire against a session a concurrent rotation had just refreshed. Answer
+  // retryably instead: 5xx maps to `.transient` on the client, which keeps the
+  // stored credentials and tries again.
+  if (outcome.kind === "race") {
+    throw new NativeAuthError(
+      "refresh_conflict",
+      503,
+      "The refresh grant was claimed concurrently. Retry.",
+    );
+  }
+  if (outcome.kind === "reuse") {
     throw new NativeAuthError("token_reuse_detected", 401, "Refresh-token reuse revoked this device session.");
   }
   if (outcome.kind !== "ok") throw new NativeAuthError("invalid_grant", 400, "The refresh grant is invalid.");

@@ -231,7 +231,8 @@ export async function* streamOpenAICompat(
    * ignored and at worst a 400 — so the parameter is gated to the providers whose
    * docs actually define it (verified 2026-07):
    *   reasoning_effort  → openai, google (Gemini compat shim), deepseek (v4),
-   *                       xai, mistral (high|none), zhipu (GLM-5.2 only)
+   *                       xai, mistral (high|none), zhipu (GLM-5.2 only),
+   *                       meta (Muse Spark)
    *   thinking:{type}   → zhipu (all), minimax, moonshot, mimo, longcat
    *   enable_thinking   → qwen
    */
@@ -250,6 +251,13 @@ export async function* streamOpenAICompat(
     model.provider === "deepseek" ||
     model.provider === "xai" ||
     model.provider === "mistral" ||
+    // Meta's Model API is OpenAI-compatible and Muse Spark takes the top-level
+    // reasoning_effort enum (minimal|low|medium|high|xhigh). Listed here for the
+    // reason Google is: caps in model-metrics decide what the SLIDER offers, but
+    // a tier that is never sent is an inert control that silently bills the
+    // provider default. Meta has no "none", so the Instant branch below can
+    // never fire for it — canDisable is false in reasoningCaps to match.
+    model.provider === "meta" ||
     (model.provider === "zhipu" && modelId.includes("glm-5.2")) ||
     // Kimi K3 introduced a top-level reasoning_effort enum (low|high|max),
     // replacing the K2.x `thinking` object. Only K3 speaks it on Moonshot; the
@@ -291,8 +299,8 @@ export async function* streamOpenAICompat(
   }
   if (isQwenThinking) {
     // Instant (no effort) turns Qwen thinking off for hybrid models. Qwen3.8 Max
-    // Preview is thinking-only (canDisable:false) so always send enable_thinking
-    // true and a budget (default high when the UI sent nothing).
+    // is thinking-only (canDisable:false) so always send enable_thinking true
+    // and a budget (default high when the UI sent nothing).
     const qwenAlwaysThinks = modelId.includes("qwen3.8-max") || !reasoningCaps(model).canDisable;
     const qwenEffort = effectiveReasoningEffort ?? (qwenAlwaysThinks ? "high" : null);
     params.enable_thinking = qwenAlwaysThinks ? true : !!qwenEffort;

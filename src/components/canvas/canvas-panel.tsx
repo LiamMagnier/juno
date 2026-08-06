@@ -42,7 +42,6 @@ import { ShareDialog } from "@/components/share/share-dialog";
 import { SandboxFrame, type SandboxElementSelection, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
 import { CodeSurface, type CodeSelection } from "@/components/canvas/code-surface";
 import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
-import type { DesignSelectionContext } from "@/lib/design/selection-context";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { diffLines, unifiedDiff } from "@/lib/line-diff";
 import { clampQuoteText, type ComposerQuote } from "@/lib/quote-context";
@@ -164,7 +163,6 @@ export function CanvasPanel({
   fullscreen,
   onToggleFullscreen,
   onQuote,
-  onDesignSelection,
   shareable,
 }: {
   artifact: ClientArtifact;
@@ -173,9 +171,6 @@ export function CanvasPanel({
   fullscreen: boolean;
   onToggleFullscreen: () => void;
   onQuote?: (quote: ComposerQuote) => void;
-  /** "Ask Juno about this selection" from the design editor. Absent where there
-   *  is no conversation to hand it to (a shared read-only artifact page). */
-  onDesignSelection?: (context: DesignSelectionContext, artifact: ClientArtifact) => void;
   /** Show the Share action — off for incognito artifacts (nothing persisted to share). */
   shareable?: boolean;
 }) {
@@ -1043,9 +1038,8 @@ export function CanvasPanel({
                   readOnly={!isLatest}
                   editorRef={designRef}
                   onCommitted={(version) => {
-                    // The editor already holds the authoritative document; this
-                    // only keeps the artifact envelope (version rail, history)
-                    // in step without refetching the body.
+                    // The editor holds the authoritative document; this only
+                    // keeps the artifact envelope (version rail, history) in step.
                     if (version <= artifact.currentVersion) return;
                     onArtifactUpdated({
                       ...artifact,
@@ -1056,7 +1050,6 @@ export function CanvasPanel({
                       ],
                     });
                   }}
-                  onAskJuno={onDesignSelection ? (context) => onDesignSelection(context, artifact) : undefined}
                 />
               </div>
             ) : isMarkdown ? (

@@ -12,7 +12,7 @@ final class JunoBrandTests: XCTestCase {
                 // AppIcons — the destinations. `settings` is the one the web
                 // draws in the user menu rather than the rail; native gives it a
                 // sidebar row, so it has to be in the generated set too.
-                "home", "code", "library", "artifacts", "projects",
+                "home", "work", "code", "library", "artifacts", "projects",
                 "tasks", "connections", "pulls", "conversation", "new", "search",
                 "settings",
                 // CodeIcons — the things Juno Code talks about.

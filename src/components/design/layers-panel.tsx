@@ -8,10 +8,15 @@
  * reversed, the way every design tool does. Reordering here emits the same
  * `reparentNodes` operation a drag on the canvas would; there is no separate
  * "layer move" code path that could disagree with the scene.
+ *
+ * Pages are edited from here too. The id of a new page is minted on this side
+ * so the editor can switch to the page it just asked for without waiting for
+ * the transaction to come back; the operation carries that id, so a replay
+ * still lands on the same page.
  */
 
 import * as React from "react";
-import { ChevronDown, ChevronRight, Eye, EyeOff, Lock, LockOpen } from "lucide-react";
+import { ChevronDown, ChevronRight, Eye, EyeOff, Lock, LockOpen, Plus, X } from "lucide-react";
 import { isContainer, type DesignDocument, type NodeId } from "@/lib/design/types";
 import type { DesignOperation } from "@/lib/design/operations";
 import { cn } from "@/lib/utils";
@@ -28,6 +33,9 @@ const TYPE_GLYPH: Record<string, string> = {
   text: "T",
   image: "▤",
 };
+
+let pageCounter = 0;
+const nextPageId = () => `page-${Date.now().toString(36)}-${(pageCounter++).toString(36)}`;
 
 export function LayersPanel({
   document: doc,
@@ -48,6 +56,7 @@ export function LayersPanel({
 }) {
   const [collapsed, setCollapsed] = React.useState<Set<NodeId>>(new Set());
   const [dragId, setDragId] = React.useState<NodeId | null>(null);
+  const [renamingId, setRenamingId] = React.useState<string | null>(null);
 
   const page = doc.pages.find((p) => p.id === pageId) ?? doc.pages[0];
 
@@ -91,24 +100,97 @@ export function LayersPanel({
     setDragId(null);
   };
 
+  const addPage = () => {
+    if (readOnly) return;
+    const id = nextPageId();
+    onApply([{ op: "createPage", pageId: id, name: `Page ${doc.pages.length + 1}` }], "Add page");
+    onPageChange(id);
+  };
+
+  const renamePage = (target: string, current: string, next: string) => {
+    setRenamingId(null);
+    const name = next.trim();
+    if (readOnly || !name || name === current) return;
+    onApply([{ op: "renamePage", pageId: target, name }], "Rename page");
+  };
+
+  const deletePage = (target: string) => {
+    if (readOnly || doc.pages.length < 2) return;
+    // Move off the page before it goes, so the canvas is never pointed at one
+    // that no longer exists.
+    if (target === page.id) {
+      const index = doc.pages.findIndex((p) => p.id === target);
+      onPageChange((doc.pages[index + 1] ?? doc.pages[index - 1]).id);
+    }
+    onApply([{ op: "deletePage", pageId: target }], "Delete page");
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-border/60 px-3 py-2">
-        <p className="pb-1 font-mono text-[10px] text-muted-foreground">Pages</p>
+        <div className="flex items-center justify-between pb-1">
+          <p className="font-mono text-[10px] text-muted-foreground">Pages</p>
+          <button
+            type="button"
+            disabled={readOnly}
+            onClick={addPage}
+            aria-label="Add page"
+            className="pressable rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+          >
+            <Plus className="size-3" aria-hidden />
+          </button>
+        </div>
         <div className="space-y-px">
           {doc.pages.map((p) => (
-            <button
+            <div
               key={p.id}
-              type="button"
-              onClick={() => onPageChange(p.id)}
-              aria-current={p.id === page.id}
               className={cn(
-                "pressable block w-full truncate rounded-[8px] px-2 py-1 text-left text-xs transition-colors coarse:min-h-9",
-                p.id === page.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                "group/page flex items-center gap-1 rounded-[8px] pr-1 transition-colors",
+                p.id === page.id ? "bg-primary/10" : "hover:bg-accent"
               )}
             >
-              {p.name}
-            </button>
+              {renamingId === p.id ? (
+                <input
+                  autoFocus
+                  defaultValue={p.name}
+                  aria-label={`Rename ${p.name}`}
+                  onBlur={(e) => renamePage(p.id, p.name, e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    if (e.key === "Escape") {
+                      setRenamingId(null);
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  className="min-w-0 flex-1 rounded-[6px] border border-border/60 bg-background px-1.5 py-0.5 text-xs outline-none focus-visible:border-primary/60"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onPageChange(p.id)}
+                  onDoubleClick={() => !readOnly && setRenamingId(p.id)}
+                  aria-current={p.id === page.id}
+                  className={cn(
+                    "pressable min-w-0 flex-1 truncate px-2 py-1 text-left text-xs transition-colors coarse:min-h-9",
+                    p.id === page.id ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {p.name}
+                </button>
+              )}
+              {doc.pages.length > 1 && (
+                <button
+                  type="button"
+                  disabled={readOnly}
+                  onClick={() => deletePage(p.id)}
+                  aria-label={`Delete ${p.name}`}
+                  className="pressable shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/page:opacity-100 coarse:opacity-100"
+                >
+                  <X className="size-3" aria-hidden />
+                </button>
+              )}
+            </div>
           ))}
         </div>
       </div>

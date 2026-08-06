@@ -42,7 +42,7 @@ struct JunoMobileInlineArtifactView: View {
             .padding(.top, 4)
             .padding(.bottom, 14)
 
-            NativeArtifactPreview(
+            JunoMobileArtifactBody(
                 kind: artifact.kind,
                 content: reference.content,
                 mode: displayMode
@@ -131,6 +131,7 @@ struct JunoMobileInlineArtifactView: View {
         case .markdown: "Markdown"
         case .svg: "SVG"
         case .mermaid: "Diagram"
+        case .design: "Design"
         }
     }
 
@@ -139,6 +140,7 @@ struct JunoMobileInlineArtifactView: View {
         case .react, .html: "curlybraces.square"
         case .svg: "square.on.circle"
         case .mermaid: "flowchart"
+        case .design: "pencil.and.outline"
         case .markdown: "doc.text"
         case .code: "chevron.left.forwardslash.chevron.right"
         }

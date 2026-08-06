@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 import JunoCodeCore
-import JunoCodeLocal
 import JunoDesignSystem
 
 /// The index over everything this session delegated: **Active · N** above
@@ -62,107 +61,35 @@ struct SubagentPane: View {
     }
 
     private func list(_ runs: [SubagentRun]) -> some View {
-        let active = SubagentDigest.active(in: runs)
-        let finished = SubagentDigest.finished(in: runs)
-
-        return ScrollView {
-            VStack(alignment: .leading, spacing: JunoSpace.section) {
-                overview(active: active, finished: finished)
-                section("Active", runs: active)
-                section("Done", runs: finished)
-            }
-            .padding(.horizontal, JunoSpace.snug)
-            .padding(.vertical, JunoSpace.regular)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        List {
+            section("Active", runs: SubagentDigest.active(in: runs))
+            section("Done", runs: SubagentDigest.finished(in: runs))
         }
+        .listStyle(.inset)
         .accessibilityIdentifier("juno.code.subagents")
-    }
-
-    private func overview(active: [SubagentRun], finished: [SubagentRun]) -> some View {
-        HStack(spacing: JunoSpace.snug) {
-            Image(systemName: active.isEmpty ? "person.2" : "person.2.wave.2")
-                .font(.title3)
-                .foregroundStyle(active.isEmpty ? Color.secondary : Color.junoAccent)
-                .frame(width: 34, height: 34)
-                .background(
-                    Circle()
-                        .fill(
-                            active.isEmpty
-                                ? Color.junoRowSelected
-                                : Color.junoAccent.opacity(0.14)
-                        )
-                )
-
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                Text("Parallel work")
-                    .junoRowLabel()
-                Text(
-                    active.isEmpty
-                        ? "No agents are running"
-                        : "\(active.count) agent\(active.count == 1 ? "" : "s") running"
-                )
-                .junoCaption()
-                .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: JunoSpace.tight)
-
-            VStack(alignment: .trailing, spacing: JunoSpace.hairline) {
-                Text("\(active.count)")
-                    .font(.headline)
-                    .monospacedDigit()
-                    .foregroundStyle(active.isEmpty ? .secondary : Color.junoAccent)
-                Text("active")
-                    .junoCaption()
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(JunoSpace.snug)
-        .background(Color.junoRaised)
-        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                .strokeBorder(Color.junoBorder, lineWidth: 1)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "Parallel work, \(active.count) active, \(finished.count) completed"
-        )
     }
 
     @ViewBuilder
     private func section(_ title: String, runs: [SubagentRun]) -> some View {
         if !runs.isEmpty {
-            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            Section {
+                ForEach(runs) { run in
+                    SubagentListRow(
+                        run: run,
+                        activity: activity(for: run),
+                        open: { focused = run.agentID }
+                    )
+                    // Opaque and raised, not glass: this is content a reader
+                    // studies, and the section reads as one panel of divided
+                    // rows rather than as loose text on the inspector.
+                    .listRowBackground(Color.junoRaised)
+                }
+            } header: {
                 HStack(spacing: JunoSpace.tight) {
-                    Text(title.uppercased())
-                        .junoSidebarSection()
-                    Text("\(runs.count)")
-                        .junoCaption()
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                    Text(title)
+                    Text("·")
+                    Text("\(runs.count)").monospacedDigit()
                     Spacer(minLength: 0)
-                }
-
-                VStack(spacing: 0) {
-                    ForEach(Array(runs.enumerated()), id: \.element.id) { index, run in
-                        if index > 0 {
-                            Divider().overlay(Color.junoBorder)
-                        }
-                        SubagentListRow(
-                            run: run,
-                            activity: activity(for: run),
-                            open: { focused = run.agentID }
-                        )
-                        .padding(.horizontal, JunoSpace.snug)
-                        .padding(.vertical, JunoSpace.tight)
-                    }
-                }
-                .background(Color.junoRaised)
-                .clipShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                        .strokeBorder(Color.junoBorder, lineWidth: 1)
                 }
             }
         }
@@ -261,9 +188,6 @@ private struct SubagentDetailPane: View {
     }
 
     @State private var load: Load = .loading
-    @State private var worktreeReview: WorktreeReview?
-    @State private var confirmsDiscard = false
-    @State private var actionInFlight = false
 
     private var activity: String {
         guard run.isActive, let child = run.childSessionID else { return "" }
@@ -289,9 +213,6 @@ private struct SubagentDetailPane: View {
                     } else if run.isActive {
                         Text("This sub-agent has not written a result yet.").junoCaption()
                     }
-                    if run.executionMode == .workspaceWrite {
-                        worktreeActions
-                    }
                     usage
                     session
                 }
@@ -311,25 +232,6 @@ private struct SubagentDetailPane: View {
             } else {
                 load = .missing
             }
-            worktreeReview = await controller.subagentWorktreeReview(child)
-        }
-        .confirmationDialog(
-            "Discard this sub-agent worktree?",
-            isPresented: $confirmsDiscard,
-            titleVisibility: .visible
-        ) {
-            Button("Discard Worktree", role: .destructive) {
-                guard let child = run.childSessionID else { return }
-                actionInFlight = true
-                Task {
-                    _ = await controller.discardSubagentChanges(child)
-                    worktreeReview = await controller.subagentWorktreeReview(child)
-                    actionInFlight = false
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This removes only Juno's isolated checkout. The parent workspace is unchanged.")
         }
     }
 
@@ -347,82 +249,11 @@ private struct SubagentDetailPane: View {
                         .foregroundStyle(SubagentFormatting.tint(run.status))
                 }
                 Spacer(minLength: JunoSpace.tight)
-                SubagentExecutionChip(mode: run.executionMode)
                 SubagentElapsed(run: run)
             }
         }
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, JunoSpace.snug)
-        .background(Color.junoRaised)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.junoBorder)
-                .frame(height: 1)
-        }
-    }
-
-    @ViewBuilder
-    private var worktreeActions: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
-            Text("Isolated changes").junoSidebarSection()
-            if let review = worktreeReview {
-                let changed = review.diff.isEmpty == false || review.untrackedPaths.isEmpty == false
-                Text(
-                    changed
-                        ? "Ready for review from \(review.worktree.branch)."
-                        : "No changes were recorded in the isolated checkout."
-                )
-                .junoCaption()
-                .foregroundStyle(.secondary)
-                if !review.untrackedPaths.isEmpty {
-                    Text("New files: \(review.untrackedPaths.joined(separator: ", "))")
-                        .junoCaption()
-                        .lineLimit(2)
-                }
-                if !review.diff.isEmpty {
-                    DisclosureGroup("View diff") {
-                        Text(review.diff)
-                            .font(.system(.caption, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(JunoSpace.tight)
-                            .background(Color.junoTerminal)
-                            .clipShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
-                    }
-                    .font(.caption.weight(.medium))
-                }
-                HStack(spacing: JunoSpace.tight) {
-                    Button("Apply to workspace") {
-                        guard let child = run.childSessionID else { return }
-                        actionInFlight = true
-                        Task {
-                            _ = await controller.applySubagentChanges(child)
-                            worktreeReview = await controller.subagentWorktreeReview(child)
-                            actionInFlight = false
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.junoAccent)
-                    .disabled(actionInFlight || !changed)
-                    Button("Discard", role: .destructive) {
-                        confirmsDiscard = true
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(actionInFlight)
-                }
-            } else {
-                Text("Juno is still preparing the isolated result.")
-                    .junoCaption()
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(JunoSpace.snug)
-        .background(Color.junoRaised)
-        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                .strokeBorder(Color.junoBorder, lineWidth: 1)
-        }
     }
 
     /// The only way out of a report, and sized like one.
@@ -554,13 +385,6 @@ private struct SubagentDetailPane: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(JunoSpace.snug)
-        .background(Color.junoRaised)
-        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                .strokeBorder(Color.junoBorder, lineWidth: 1)
-        }
     }
 }
 
@@ -600,29 +424,6 @@ private struct SubagentRoleChip: View {
         case .reviewer: "checkmark.seal"
         case .explainer: "text.book.closed"
         }
-    }
-}
-
-private struct SubagentExecutionChip: View {
-    let mode: SubagentExecutionMode
-
-    var body: some View {
-        Label(label, systemImage: symbol)
-            .font(.caption)
-            .imageScale(.small)
-            .foregroundStyle(mode == .workspaceWrite ? Color.junoAccent : Color.secondary)
-            .padding(.horizontal, JunoSpace.tight)
-            .padding(.vertical, JunoSpace.hairline)
-            .background(Capsule().fill(Color.junoRowSelected))
-            .accessibilityLabel(label)
-    }
-
-    private var label: String {
-        mode == .workspaceWrite ? "Isolated write" : "Read-only"
-    }
-
-    private var symbol: String {
-        mode == .workspaceWrite ? "arrow.triangle.branch" : "eye"
     }
 }
 

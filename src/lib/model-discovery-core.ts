@@ -11,8 +11,15 @@ import { MODELS, prettifyModelName, guessVision, guessPlan, guessReasoning, gues
 export const DEFAULT_DISCOVERY_TIMEOUT_MS = 2500;
 
 // Models that aren't general chat models, or that we never want to surface.
+//
+// `contributor` is the second kind, and the reason it is worth naming: Meta's
+// muse-spark-*-contributor ids are ordinary chat models sold at ~12x off in
+// exchange for the right to train on the prompts and completions sent to them.
+// Discovery keeps the LATEST id per family, so without this the nightly sync
+// could quietly promote the training-on tier over the standard one and move
+// users' conversations onto it. Opting into that is a decision for a human.
 export const JUNK_RE =
-  /(robot|antigravity|embed|tts|whisper|audio|speech|dall|image|imagen|veo|video|moderation|rerank|guard|safety|aqa|tuning|learnlm|gemma|banana|live|realtime|computer-use|vision-?only|ocr|distill|deprecat|legacy|^ada|babbage|davinci|curie|sora|moderation)/i;
+  /(robot|antigravity|embed|tts|whisper|audio|speech|dall|image|imagen|veo|video|moderation|rerank|guard|safety|aqa|tuning|learnlm|gemma|banana|live|realtime|computer-use|vision-?only|ocr|distill|deprecat|legacy|contributor|^ada|babbage|davinci|curie|sora|moderation)/i;
 
 export interface Family {
   label: string;
@@ -82,6 +89,10 @@ export const FAMILIES: Partial<Record<Provider, Family[]>> = {
     { label: "Gemini Pro", family: "pro", match: /gemini-[\d.]+-pro/i, minPlan: "PRO", vision: true },
   ],
   meta: [
+    // family "muse-spark" matches the curated slug on purpose: when Meta ships
+    // 1.3, latestPerFamily has to see it as the same line as the curated 1.2 and
+    // collapse them, instead of the picker listing two Sparks.
+    { label: "Muse Spark", family: "muse-spark", match: /^muse-spark/i, minPlan: "PRO", vision: true },
     { label: "Llama 4 Maverick", family: "llama-maverick", match: /^llama-4-maverick/i, minPlan: "PRO", vision: true },
     { label: "Llama 4 Scout", family: "llama-scout", match: /^llama-4-scout/i, minPlan: "FREE", vision: true },
     { label: "Llama 3.3 70B", family: "llama-70b", match: /^llama-3\.3-70b/i, minPlan: "FREE", vision: false },
@@ -141,7 +152,7 @@ export const FAMILIES: Partial<Record<Provider, Family[]>> = {
     { label: "MiMo Pro", family: "mimo", match: /^mimo-v\d+(?:\.\d+)?-pro$/i, minPlan: "PRO", vision: true },
   ],
   qwen: [
-    { label: "Qwen 3.8 Max Preview", family: "qwen-max", match: /^qwen3\.8-max/i, minPlan: "PRO", vision: true },
+    { label: "Qwen 3.8 Max", family: "qwen-max", match: /^qwen3\.8-max/i, minPlan: "PRO", vision: true },
     { label: "Qwen 3.7 Max", family: "qwen-max", match: /^qwen3\.7-max/i, minPlan: "PRO", vision: false },
     { label: "Qwen 3.7 Plus", family: "qwen-plus", match: /^qwen3\.7-plus/i, minPlan: "PRO", vision: true },
     { label: "Qwen 3.6 Flash", family: "qwen-flash", match: /^qwen3\.6-flash/i, minPlan: "FREE", vision: true },

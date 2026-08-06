@@ -37,12 +37,29 @@ function utcDayStamp(now = new Date()): string {
   return utcDayStart(now).toISOString().slice(0, 10);
 }
 
+/** Warn once per process, not once per call — this sits on the chat hot path. */
+let warnedAboutMalformedBudget = false;
+
 /** The configured ceiling in micro-USD, or null when no ceiling is set. */
 export function platformDailyCeilingMicroUsd(): number | null {
   const raw = process.env.PLATFORM_DAILY_BUDGET_USD;
   if (!raw) return null;
   const usd = Number(raw);
-  if (!Number.isFinite(usd) || usd <= 0) return null;
+  if (!Number.isFinite(usd) || usd <= 0) {
+    // Unset means "no ceiling" and is a legitimate configuration. A value that
+    // was SET and cannot be parsed is a typo, and silently treating it as no
+    // ceiling removes the only thing bounding the aggregate provider bill —
+    // `Number("$50")`, `Number("50 USD")` and `Number("50,00")` are all NaN, so
+    // the plausible mistakes are exactly the ones that disable it.
+    if (!warnedAboutMalformedBudget) {
+      warnedAboutMalformedBudget = true;
+      console.error(
+        `[alert] PLATFORM_DAILY_BUDGET_USD is set to ${JSON.stringify(raw)}, which is not a positive number. ` +
+          "No platform spending ceiling is in effect. Expected a bare number of US dollars, e.g. 50",
+      );
+    }
+    return null;
+  }
   return Math.round(usd * 1_000_000);
 }
 

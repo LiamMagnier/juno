@@ -8,6 +8,23 @@ export const NATIVE_ACCESS_AUDIENCE = "juno-native";
 export const NATIVE_ACCESS_TTL_SECONDS = 10 * 60;
 export const NATIVE_AUTH_CODE_TTL_MS = 2 * 60 * 1000;
 export const NATIVE_REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/**
+ * How long after a refresh token is consumed a replay of it is still treated as
+ * the same rotation rather than as an attack.
+ *
+ * Rotation is only durable on the client *after* the response arrives, so every
+ * rotation has a window in which the server has consumed the old token and the
+ * client still holds it: quit the app, lose the response, drop the connection,
+ * and the device wakes up holding a token the server has already marked used.
+ * With no grace that replay revoked the whole family, and the only way back was
+ * signing in again — which is exactly what it felt like, because quitting the
+ * app is the most reliable way to cancel an in-flight refresh.
+ *
+ * The window is only half the rule; see `rotateNativeRefreshToken`, which also
+ * requires that the successor was never used. A replay whose successor the
+ * client demonstrably received is still reuse, whenever it arrives.
+ */
+export const NATIVE_REFRESH_REPLAY_GRACE_MS = 60 * 1000;
 
 const BASE64URL_256 = /^[A-Za-z0-9_-]{43,256}$/;
 const INSTALLATION_ID = /^[A-Za-z0-9._:-]{16,200}$/;

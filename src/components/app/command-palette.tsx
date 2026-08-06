@@ -524,6 +524,14 @@ function CommandMenu() {
         },
       },
       {
+        id: "new-work",
+        group: "Quick actions",
+        label: "New Work task",
+        icon: AppIcons.work,
+        keywords: "work task do errand agent mac cloud automation",
+        run: () => go("/work"),
+      },
+      {
         id: "new-code",
         group: "Quick actions",
         label: "New code session",
@@ -573,7 +581,11 @@ function CommandMenu() {
 
     const actions: PaletteItem[] = [
       { id: "projects", group: "Actions", label: "Projects", icon: AppIcons.projects, keywords: "workspaces group", run: () => go("/projects") },
+      // Work lands on its own index, unlike Code, whose "/code" route has no
+      // page and so has to send people to the pull request list instead.
+      { id: "work", group: "Actions", label: "Work", icon: AppIcons.work, keywords: "tasks agent errands hosts macs approvals juno work", run: () => go("/work") },
       { id: "code", group: "Actions", label: "Code", icon: AppIcons.code, keywords: "sessions pull requests github reviews juno code", run: () => go("/code/pulls") },
+      { id: "design", group: "Actions", label: "Design", icon: AppIcons.design, keywords: "canvas frames mockup screen figma juno design", run: () => go("/design") },
       { id: "artifacts", group: "Actions", label: "Artifacts", icon: AppIcons.artifacts, keywords: "documents canvas generated", run: () => go("/artifacts") },
       { id: "library", group: "Actions", label: "Library", icon: AppIcons.library, keywords: "saved prompts snippets", run: () => go("/library") },
       { id: "connections", group: "Actions", label: "Connections", icon: AppIcons.connections, keywords: "plugins integrations github mcp connectors", run: () => go("/connections") },

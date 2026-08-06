@@ -31,8 +31,15 @@ enum DesktopChatMotion {
     static let riseIn = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.32)
     /// `translateY(8px) → 0`.
     static let riseDistance: CGFloat = 8
-    /// `--dur-base` on `--ease-out-soft`: a segmented control's thumb.
-    static let segmentTravel = Animation.timingCurve(0.33, 1, 0.68, 1, duration: 0.22)
+    /// A segmented control's knob, travelling.
+    ///
+    /// A spring rather than the web's `--ease-out-soft` curve, because the knob
+    /// is Liquid Glass now and glass is a material with mass — it stretches
+    /// toward where it is going and settles. An ease-out slides a shape; this
+    /// throws an object. The bounce is small on purpose: at more than about
+    /// 0.15 the knob visibly overshoots its segment and the label underneath it
+    /// reads as mistimed.
+    static let segmentTravel = Animation.smooth(duration: 0.34, extraBounce: 0.12)
     /// The greeting's first beat — the web's `[animation-delay:60ms]`.
     static let greetingPhraseBeat = Duration.milliseconds(60)
     /// Its second — `[animation-delay:180ms]` on the name.
