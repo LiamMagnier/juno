@@ -25,7 +25,7 @@
 
 import crypto from 'node:crypto';
 import { runAgentLoop } from '../loop.js';
-import type { ProviderAdapter } from '../providers/types.js';
+import type { ProviderAdapter, ReasoningEffort } from '../providers/types.js';
 import type { ChatMessage, ToolSpec, UserContent } from '../types.js';
 import type { ToolContext } from '../tools/types.js';
 import {
@@ -76,6 +76,24 @@ import {
  * reached 200 steps has a problem the budget was not written to catch.
  */
 export const MAX_STEPS_PER_RUN = 200;
+
+/**
+ * How often the run's ceilings are checked while it is busy.
+ *
+ * They used to be checked in exactly one place — `AgentLoopOptions.onStep`,
+ * which fires when a provider request comes back — so a run that was inside a
+ * request or inside a tool call was, for as long as that lasted, a run with no
+ * ceilings at all. That is not a corner: a 20-minute runtime limit could not
+ * stop a turn that never returned, and the executor renews its lease while it
+ * waits, so nothing else was going to stop it either. `WorkBudgetGuard.check`
+ * already says of itself that it is safe to call at any point; this is the
+ * timer that finally takes it up on that.
+ *
+ * Five seconds is chosen against the thing being measured. The ceilings are
+ * minutes and dollars, so five seconds of overshoot is noise, and one cheap
+ * arithmetic check every five seconds is not worth optimising.
+ */
+export const BUDGET_CHECK_INTERVAL_MS = 5_000;
 
 /**
  * The tool the model calls to ask the user something.
@@ -156,6 +174,20 @@ export interface WorkSessionOptions {
   maxSteps?: number;
   /** Extra guidance appended to the built system prompt. */
   systemSuffix?: string;
+  /**
+   * How much thinking the user asked for, or absent for Instant.
+   *
+   * Handed to every provider request rather than turned into a sentence in the
+   * system prompt. A sentence asking a model to think harder is not the control
+   * the composer draws, and dressing one up as the other is how a preference
+   * comes to look saved and have no effect. Providers that have no such
+   * parameter drop it; see `ProviderRequest.reasoningEffort`.
+   */
+  reasoningEffort?: ReasoningEffort;
+  /** Longest silence from the provider before a turn is judged dead, in ms. */
+  providerSilenceMs?: number;
+  /** How often the ceilings are re-checked while a turn is in flight, in ms. */
+  budgetCheckIntervalMs?: number;
   /** The resolved permission policy; digested so approvals are pinned to it. */
   permissionPolicy?: Record<string, unknown>;
   validate?: WorkValidator;
@@ -395,6 +427,18 @@ export class WorkAgentSession {
     this.aborter = new AbortController();
     this.budget.start();
 
+    // The ceilings, on a clock of their own. `onStep` below still records what
+    // each request cost — that is where the tokens are — but it is not the only
+    // thing that can end a run any more, because it never runs at all while a
+    // turn is stuck.
+    const ceilings = setInterval(
+      () => {
+        if (this.budget.check()) this.aborter?.abort();
+      },
+      this.options.budgetCheckIntervalMs ?? BUDGET_CHECK_INTERVAL_MS,
+    );
+    ceilings.unref?.();
+
     let loopError: string | null = null;
     try {
       const result = await runAgentLoop({
@@ -405,6 +449,12 @@ export class WorkAgentSession {
         tools: [...this.tools.map((tool) => tool.spec), askUserToolSpec()],
         signal: this.aborter.signal,
         maxSteps: this.options.maxSteps ?? MAX_STEPS_PER_RUN,
+        ...(this.options.reasoningEffort
+          ? { reasoningEffort: this.options.reasoningEffort }
+          : {}),
+        ...(this.options.providerSilenceMs === undefined
+          ? {}
+          : { silenceTimeoutMs: this.options.providerSilenceMs }),
         onAssistantMessage: (text) => this.emit({ kind: 'assistant_message', text }),
         onStep: withBudget(this.budget),
         executeToolCall: (call) => this.executeToolCall(call),
@@ -414,6 +464,8 @@ export class WorkAgentSession {
     } catch (err) {
       loopError = err instanceof Error ? err.message : String(err);
       this.emit({ kind: 'error', message: loopError });
+    } finally {
+      clearInterval(ceilings);
     }
 
     this.budget.suspend();
