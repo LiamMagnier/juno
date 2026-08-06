@@ -21,17 +21,41 @@ public enum NativeArtifactKind: String, Codable, CaseIterable, Sendable {
     /// opened in the design editor rather than previewed or executed.
     case design = "DESIGN"
 
+    /// Whether ``NativeArtifactPreview`` can draw this kind, and therefore whether
+    /// a Preview/Source switch over it means anything.
+    ///
+    /// This is a question about *that* view, not about the artifact. Every caller
+    /// uses it for one of two things — picking `NativeArtifactPreview`'s starting
+    /// mode, or deciding whether to offer the two-way switch — so the honest
+    /// reading is "the shared preview renders this", not "this has a visual form".
+    ///
+    /// A design has a visual form and this is still `false`, which reads wrong
+    /// until you see where designs go. They never reach `NativeArtifactPreview`:
+    /// ``isDesignDocument`` diverts them first, on the Mac into
+    /// `DesktopDesignSurface` and on the phone into `JunoMobileArtifactBody`, both
+    /// of which host the bundled editor — a `WKWebView`, a local bundle and a
+    /// validated bridge that this package does not own and should not. What is
+    /// left for this property to answer is only what the *shared* preview can do,
+    /// and it has no design renderer; its `.design` branch is
+    /// `NativeArtifactSandbox.escapedSourceDocument`, an honest JSON dump for a
+    /// surface with nowhere to draw.
+    ///
+    /// So `true` here would not open an editor anywhere. It would put a JSON dump
+    /// through a `WKWebView` instead of a `Text`, and hang a Preview/Source switch
+    /// over both design surfaces that neither of them reads — a control that moves
+    /// and changes nothing. The old comment gave the wrong reason ("the editor *is*
+    /// how it is read", written when neither client had a design surface at all);
+    /// the value it justified happens to be the right one.
     public var supportsRenderedPreview: Bool {
         switch self {
         case .html, .markdown, .svg: true
-        case .react, .code, .mermaid: false
-        // A design document is neither: it has no read-only "preview" distinct
-        // from the editor, because the editor *is* how it is read.
-        case .design: false
+        case .react, .code, .mermaid, .design: false
         }
     }
 
-    /// True when this kind opens in the design editor instead of the preview.
+    /// True when this kind opens in a platform's design surface rather than in
+    /// ``NativeArtifactPreview``. Ask this *before* ``supportsRenderedPreview``:
+    /// it is the branch that decides which renderer the body ever reaches.
     public var isDesignDocument: Bool { self == .design }
 }
 

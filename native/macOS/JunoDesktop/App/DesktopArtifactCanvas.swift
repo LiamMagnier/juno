@@ -420,11 +420,6 @@ struct DesktopArtifactCanvas: View {
     let close: () -> Void
 
     @State private var mode = NativeArtifactDisplayMode.preview
-    /// Created once per design artifact. Held here rather than rebuilt on every
-    /// render, because rebuilding would discard the editor's viewport, selection
-    /// and undo stack on each keystroke elsewhere in the window.
-    @State private var designHost: DesktopDesignEditorHost?
-    @State private var designError: String?
     @State private var pendingDownload: DesktopChatArtifactDownload?
     @State private var downloadError: String?
 
@@ -448,8 +443,6 @@ struct DesktopArtifactCanvas: View {
         // has to say so.
         .onChange(of: artifact.id) { _, _ in
             mode = .preview
-            designHost = nil
-            designError = nil
             downloadError = nil
         }
         .fileExporter(
@@ -633,7 +626,15 @@ struct DesktopArtifactCanvas: View {
     @ViewBuilder
     private var canvasBody: some View {
         if artifact.kind.isDesignDocument {
-            designBody
+            // Read-only, and for the reason this file's header already gives for
+            // refusing Restore and Office export: there is no stored row behind a
+            // transcript-carried artifact, so there is nowhere for an edit to go.
+            // The library's copy of the same document *is* editable — it has a row,
+            // and ``DesktopArtifactsScreen`` routes the editor's transactions into
+            // the same draft-and-Save the other kinds use. An editor that took
+            // edits here and dropped them would be the worse divergence.
+            DesktopDesignSurface(content: artifact.reference.content, readOnly: true)
+                .id(artifact.id)
         } else if mode == .preview, artifact.kind == .markdown {
             // Markdown is prose, and prose is what `NativeArtifactPreview` gets
             // wrong: its markdown branch is `AttributedString(markdown:)`, which
@@ -660,23 +661,101 @@ struct DesktopArtifactCanvas: View {
 
 // MARK: - The design surface
 
-extension DesktopArtifactCanvas {
-    /// The bundled design editor, or an honest reason why it is not showing.
+/// The one place a Juno Design document becomes a design on the Mac.
+///
+/// **Why it is a view of its own.** Two surfaces hold a design — the chat canvas
+/// above, and the artifacts library in ``DesktopArtifactsScreen`` — and until
+/// this view existed only the first of them knew what a design was. The library
+/// sent every artifact through `NativeArtifactPreview`, whose `.design` branch is
+/// `escapedSourceDocument`, so opening a stored design from the library printed
+/// its `DesignDocument` JSON in a monospaced dump while opening the *same*
+/// document from the chat it came out of showed the editor. A design is the same
+/// design wherever it was opened from; one view is how that stays true, and it is
+/// the shape the phone already settled on in `JunoMobileArtifactBody`.
+///
+/// The document is decoded here, natively, before the editor ever sees it: a body
+/// that is not a valid `DesignDocument` — or was written by a newer build of Juno
+/// — is refused with a stated reason rather than handed to a web view that would
+/// render an empty canvas indistinguishable from a document whose contents were
+/// lost. The phone decodes in the same order, for the same reason.
+struct DesktopDesignSurface: View {
+    /// The stored `DesignDocument` JSON.
     ///
-    /// The document is decoded here, natively, before the editor ever sees it: a
-    /// body that is not a valid `DesignDocument` — or was written by a newer
-    /// build of Juno — is refused with a stated reason rather than handed to a
-    /// web view that would render an empty canvas indistinguishable from a
-    /// document whose contents were lost.
+    /// Read once, at the identity this view is given. Later values are ignored on
+    /// purpose: while the editor is open it is the authority on the document, and
+    /// re-reading `content` would fight the very edits it just reported. A caller
+    /// that means "different document" says so with `.id(_:)`.
+    let content: String
+    /// Whether the editor refuses edits. A caller with nowhere to put an edit
+    /// passes `true` rather than accepting one and dropping it.
+    let readOnly: Bool
+    /// Each accepted transaction, re-encoded as the artifact body. Never called
+    /// while `readOnly`.
+    var onEdit: ((String) -> Void)?
+
+    /// Created once per document. Held here rather than rebuilt on every render,
+    /// because rebuilding reloads the bundle and would discard the editor's
+    /// viewport, selection and undo stack on each keystroke elsewhere in the
+    /// window.
+    @State private var host: DesktopDesignEditorHost?
+    @State private var openError: String?
+    /// An edit the editor made and this view could not turn back into an artifact
+    /// body. See ``editWarning`` for why it is a banner and not a replacement.
+    @State private var editError: String?
+
+    var body: some View {
+        surface
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .top) { editWarning }
+            .accessibilityIdentifier("juno.desktop.design-surface")
+    }
+
+    /// An edit that cannot be encoded, said out loud.
+    ///
+    /// `JSONEncoder` refuses a non-conforming float, and a design carries plenty
+    /// of them — x, y, width, opacity, rotation — so a degenerate transform in the
+    /// editor can produce a document that will not serialise. Swallowing that
+    /// would leave the reader dragging shapes around a canvas whose Save button
+    /// never lights and never says why.
+    ///
+    /// It is drawn *over* the editor rather than in place of it, for the same
+    /// reason the host's own failures are: the work is still on screen, and
+    /// replacing the canvas with a notice would be the one action guaranteed to
+    /// lose it.
     @ViewBuilder
-    var designBody: some View {
-        if let designError {
-            JunoEmptyState(title: "This design can\u{2019}t be opened", message: designError, icon: .error)
+    private var editWarning: some View {
+        if let editError {
+            JunoDesktopGlass(spacing: JunoSpace.snug) {
+                HStack(spacing: JunoSpace.snug) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(Color.junoCaution)
+                        .accessibilityHidden(true)
+                    Text("This edit can\u{2019}t be saved: \(editError)")
+                        .junoCaption()
+                        .lineLimit(2)
+                        .frame(maxWidth: 420, alignment: .leading)
+                }
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.vertical, JunoSpace.snug)
+                .junoFloatingChrome()
+            }
+            .padding(.top, JunoSpace.cozy)
+            .accessibilityIdentifier("juno.desktop.design-surface.edit-error")
+        }
+    }
+
+    @ViewBuilder
+    private var surface: some View {
+        if let openError {
+            JunoEmptyState(title: "This design can\u{2019}t be opened", message: openError, icon: .error)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let designHost {
+        } else if let host {
+            // The failure is drawn *over* the web view rather than instead of it:
+            // the host is what reports the failure, so tearing it down to display
+            // the report would also destroy the thing that has more to say.
             ZStack {
-                DesktopDesignEditorView(host: designHost)
-                switch designHost.status {
+                DesktopDesignEditorView(host: host)
+                switch host.status {
                 case .loading:
                     ProgressView().controlSize(.small)
                 case .unavailable(let reason), .failed(let reason):
@@ -687,23 +766,37 @@ extension DesktopArtifactCanvas {
                 }
             }
         } else {
-            Color.clear.onAppear { openDesignDocument() }
+            // One frame, between the first layout pass and the decode landing.
+            Color.clear.onAppear(perform: open)
         }
     }
 
-    private func openDesignDocument() {
+    private func open() {
+        guard host == nil, openError == nil else { return }
         do {
-            let document = try DesignDocumentCodec.load(Data(artifact.reference.content.utf8))
-            let host = DesktopDesignEditorHost(document: document, readOnly: false)
-            // A transcript-carried artifact has no stored row yet (see this file's
-            // header), so edits live in the editor's own copy until the artifact
-            // syncs. Committing them to the server is the next slice; claiming
-            // otherwise would be the dishonest option.
-            host.onTransaction = { _, _, _ in }
-            designHost = host
-            designError = nil
+            let document = try DesignDocumentCodec.load(Data(content.utf8))
+            let editor = DesktopDesignEditorHost(document: document, readOnly: readOnly)
+            if !readOnly, let onEdit {
+                // Re-encoded through the same codec the website writes with —
+                // sorted keys, no escaped slashes — so a document that came back
+                // untouched produces the same bytes it arrived as, and a save of a
+                // design nobody edited cannot manufacture a version whose diff
+                // shows nothing.
+                editor.onTransaction = { document, _, _ in
+                    do {
+                        let data = try DesignDocumentCodec.encode(document)
+                        onEdit(String(decoding: data, as: UTF8.self))
+                        editError = nil
+                    } catch {
+                        editError = error.localizedDescription
+                    }
+                }
+            }
+            host = editor
         } catch {
-            designError = "\(error)"
+            // `DesignDocumentCodec.Failure` writes its own sentence; anything else
+            // is a programming error and reads better raw than paraphrased.
+            openError = (error as? DesignDocumentCodec.Failure)?.description ?? "\(error)"
         }
     }
 }
