@@ -49,6 +49,10 @@ jobs:
   contract:
     name: API contract
     runs-on: ubuntu-latest
+    # Observed max 91s. Caps bound execution only, not time spent queueing for a
+    # runner — they exist so the intermittent Swift hang below cannot burn
+    # GitHub's 360-minute default and starve the 5 macOS slots.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -75,6 +79,10 @@ jobs:
   packages:
     name: Swift packages
     runs-on: macos-26
+    # Observed 54s–2m33s. This is the JunoNativeKit job that hangs
+    # intermittently — seen sitting 45 minutes with no progress, where a plain
+    # re-run of the same commit then passed in about 1m45s.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -110,6 +118,8 @@ jobs:
   macos-app:
     name: macOS app
     runs-on: macos-26
+    # Observed max 17m25s, so 30 would leave under a 2x margin.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -192,6 +202,8 @@ jobs:
   ios-app:
     name: iOS app
     runs-on: macos-26
+    # Observed 6m25s–11m15s.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 

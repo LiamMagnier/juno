@@ -28,6 +28,9 @@ jobs:
   release:
     name: notarized macOS release
     runs-on: macos-26
+    # Same 5-slot macOS contention as native.yml: notarisation waits on Apple,
+    # so this is generous, but it must not sit on a slot for 6 hours.
+    timeout-minutes: 40
     environment: production-release
     steps:
       - name: Check out main

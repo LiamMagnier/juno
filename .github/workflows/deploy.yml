@@ -9,13 +9,32 @@ on:
   pull_request: # gate every PR on the same checks that gate main
   workflow_dispatch: {} # manual "Run workflow" button
 
+# Keyed on "does this run deploy?", not on the ref.
+#
+# `deploy-main` was a string literal, so a push to main, a pull_request on ANY
+# branch and a manual dispatch all shared one repository-wide slot and killed
+# each other — 13 of the last 100 runs died that way, e.g. push run 30656648944
+# cancelled 16s after an unrelated PR run on claude/nice-agnesi-0e4beb. Worse,
+# `cancel-in-progress: true` applied to build-and-deploy too, which rsyncs
+# --delete over the live VM tree and runs `prisma migrate deploy` against
+# production: a superseding run could sever that mid-flight.
+#
+# Deliberately NOT `deploy-${{ github.ref }}`: workflow_dispatch is not branch
+# restricted (build-and-deploy's only guard is the `if` below), so a ref-keyed
+# group would let a dispatch from any branch deploy concurrently with main.
+# Every deploying run therefore shares one serialised slot and queues; only PR
+# gating is per-branch and disposable.
 concurrency:
-  group: deploy-main
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'pull_request' && format('deploy-pr-{0}', github.ref) || 'deploy-vm' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Green runs take about 1m40s. Every job in this workflow is capped because
+    # deploying runs now queue instead of cancelling one another: without a cap,
+    # one hung job holds the single deploy slot for GitHub's 360-minute default.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -121,6 +140,8 @@ jobs:
   # fail is not a gate, it is a green tick.
   migrations:
     runs-on: ubuntu-latest
+    # Green runs take about 1m10s.
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16
@@ -319,6 +340,8 @@ jobs:
   # root tsconfig, so nothing else in CI compiles it.
   runner:
     runs-on: ubuntu-latest
+    # Green runs take about 20s.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -373,9 +396,13 @@ jobs:
 
   build-and-deploy:
     needs: [test, runner, migrations]
-    # Pull requests run the `test` job only — never a deploy.
+    # Pull requests run test, migrations and runner — but never a deploy.
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    # Deploys now queue rather than cancel each other (see `concurrency` above),
+    # so a hung ssh/rsync would otherwise hold the single deploy slot for
+    # GitHub's 360-minute default. Healthy runs finish well inside this.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 

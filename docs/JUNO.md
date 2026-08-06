@@ -1421,16 +1421,28 @@ Swift surface (shared packages, the generated API contract, and both app builds)
 and is documented in `docs/native/TESTING.md` rather than here.
 
 **`deploy.yml` — Deploy to VM** (on push to `main`, on every pull request, and on
-manual dispatch; concurrency group `deploy-main`, cancel-in-progress). Pull requests
-run the `test` job only — `build-and-deploy` is guarded on `github.event_name !=
-'pull_request'`:
+manual dispatch). Concurrency is keyed on whether the run deploys: every deploying
+run (push or dispatch) shares the serialised `deploy-vm` group and **queues**, while
+pull requests get a disposable per-branch `deploy-pr-<ref>` group with
+cancel-in-progress. A superseding run must never sever a deploy midway through its
+`rsync --delete` or `prisma migrate deploy`. Pull requests run the `test`,
+`migrations` and `runner` jobs; only `build-and-deploy` is skipped, guarded on
+`github.event_name != 'pull_request'`:
 
 1. **`test` job** — `npm ci` → `npm run i18n:extract` → `npx tsc --noEmit` →
    `npm test` → `npm run lint`. The catalog step is needed because
    `src/lib/i18n-catalog.generated.ts` is generated rather than tracked. A
    failure here blocks the deploy. (This is the real type-check gate; the production
    `next build` itself ignores type errors so it can finish on the VM's RAM budget.)
-2. **`build-and-deploy` job** — writes the production `.env` from the **`PROD_ENV`**
+   Runs in roughly 90–100 seconds; a "15-minute" run is a job that never got a
+   runner, not a slow suite.
+2. **`migrations` job** — boots a Postgres 16 service container, replays the
+   migrations and diffs the result against `prisma/schema.prisma`, so a migration
+   that does not reproduce the schema fails the build.
+3. **`runner` job** — builds and tests `runner/agent-core`, including the
+   adversarial containment suite, and asserts the Work orchestration sources
+   actually reached the compiled output.
+4. **`build-and-deploy` job** — writes the production `.env` from the **`PROD_ENV`**
    secret (the single source of truth for every prod env var), builds the app *and*
    the voice relay on GitHub's fast, high-RAM runners, then `rsync`s the build to the
    VM over SSH. The rsync uses `--delete` with careful excludes so persistent runtime
