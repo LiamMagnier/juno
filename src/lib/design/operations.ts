@@ -188,6 +188,18 @@ export const designOperationSchema = z.discriminatedUnion("op", [
   }),
   z.object({ op: z.literal("deletePage"), pageId: idSchema }),
   z.object({ op: z.literal("renamePage"), pageId: idSchema, name: z.string().min(1).max(300) }),
+  /**
+   * The document's own name — what an SVG, PNG or handoff export is called.
+   *
+   * `name` mirrors the document schema exactly (`max(300)`, no minimum) rather
+   * than borrowing `renamePage`'s `min(1)`. An operation has to be able to
+   * express every state its target can legally hold, or its inverse is not
+   * total: a stored document whose name is the empty string — the schema takes
+   * one, and a document minted across the design bridge can carry one — would
+   * produce an inverse the schema then refuses, and the undo would throw where
+   * the redo did not.
+   */
+  z.object({ op: z.literal("renameDocument"), name: z.string().max(300) }),
   z.object({ op: z.literal("createAsset"), asset: assetSchema }),
   z.object({ op: z.literal("deleteAsset"), assetId: idSchema }),
   z.object({ op: z.literal("createInteraction"), interaction: interactionSchema }),
@@ -928,6 +940,17 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
       const before = page.name;
       page.name = operation.name;
       return { inverse: [{ op: "renamePage", pageId: page.id, name: before }], summary: `Rename page to ${operation.name}` };
+    }
+
+    case "renameDocument": {
+      // The header's name field used to PATCH the artifact and stop there, so
+      // the artifact was renamed and the document was not — and every export
+      // still carried the authored name, because `doc.name` is what names the
+      // file. Renaming through the operation layer is what puts the two back in
+      // step, and what makes the rename undoable with everything else.
+      const before = doc.name;
+      doc.name = operation.name;
+      return { inverse: [{ op: "renameDocument", name: before }], summary: `Rename design to ${operation.name}` };
     }
 
     // ---------------------------------------------------------------- assets

@@ -133,6 +133,50 @@ test("the last page cannot be deleted", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The document's own name
+// ---------------------------------------------------------------------------
+
+test("renaming the design changes the document, touches no layer, and inverts", () => {
+  const doc = signInDocument();
+  assert.equal(doc.name, "Test document");
+
+  const renamed = run(doc, [{ op: "renameDocument", name: "Onboarding" }]);
+  assert.equal(renamed.document.name, "Onboarding");
+  assert.deepEqual(
+    renamed.touchedNodeIds,
+    [],
+    "a name is not a layer — the artwork is untouched, and the AI review has nothing to highlight"
+  );
+  assert.equal(renamed.document.revision, doc.revision + 1, "it is still a change to the document");
+  // The rename has to survive the round trip through storage, since the name is
+  // what every export is filed under.
+  assert.equal(parseDesignDocument(JSON.parse(JSON.stringify(renamed.document))).name, "Onboarding");
+
+  const undone = applyTransaction(
+    renamed.document,
+    invertTransaction(renamed, transaction([], { baseRevision: doc.revision }), "2026-01-01T00:00:02.000Z")
+  );
+  assert.equal(undone.document.name, "Test document");
+});
+
+test("a rename inverts back to a name a person would not have typed", () => {
+  // `renamePage` requires a non-empty name; this deliberately does not, because
+  // the document schema accepts an empty one and a document that arrives across
+  // the design bridge can carry it. An operation that cannot express the state
+  // it is replacing produces an inverse the schema then refuses — the undo
+  // would throw where the redo did not.
+  const nameless = run(signInDocument(), [{ op: "renameDocument", name: "" }]).document;
+  assert.equal(nameless.name, "");
+
+  const renamed = run(nameless, [{ op: "renameDocument", name: "Poster" }]);
+  const undone = applyTransaction(
+    renamed.document,
+    invertTransaction(renamed, transaction([], { baseRevision: nameless.revision }), "2026-01-01T00:00:02.000Z")
+  );
+  assert.equal(undone.document.name, "", "the inverse has to be able to say what was there");
+});
+
+// ---------------------------------------------------------------------------
 // Images
 // ---------------------------------------------------------------------------
 

@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { AskJunoBar, type AskJunoBarHandle } from "@/components/design/ask-juno-bar";
 import { DesignAdjustments } from "@/components/design/design-adjustments";
 import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
+import type { DesignViewportHandle } from "@/components/design/design-canvas";
 import { toPendingProposal, type DesignEditProposal } from "@/components/design/design-edit-transport";
 import type { DesignAdjustment } from "@/lib/design/ai";
 import type { NodeId } from "@/lib/design/types";
@@ -40,8 +41,10 @@ interface Props {
 export function DesignWorkspace({ artifactId, title, version, content, conversationId }: Props) {
   const editorRef = React.useRef<DesignEditorHandle | null>(null);
   const barRef = React.useRef<AskJunoBarHandle | null>(null);
+  const viewportRef = React.useRef<DesignViewportHandle | null>(null);
 
   const [name, setName] = React.useState(title);
+  const [zoom, setZoom] = React.useState(1);
   const [currentVersion, setCurrentVersion] = React.useState(version);
   const [selection, setSelection] = React.useState<{ ids: NodeId[]; names: string[] }>({ ids: [], names: [] });
   /** Adjustments Juno attached to a proposal nobody has accepted yet. They only
@@ -91,6 +94,16 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
    *  the question gets typed. */
   const onAskJuno = React.useCallback(() => barRef.current?.focus(), []);
 
+  /**
+   * Rename the design — both halves of it.
+   *
+   * The artifact carries the name the library, the Artifacts list and the
+   * conversation show; `DesignDocument.name` carries the one every export is
+   * filed under. This used to PATCH only the first, so a design renamed in the
+   * header still exported as whatever it was called when it was authored.
+   * Renaming the document goes through the operation layer like any other
+   * edit, which is also what makes it undoable.
+   */
   const rename = React.useCallback(
     async (next: string) => {
       const trimmed = next.trim();
@@ -99,6 +112,7 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
         return;
       }
       setName(trimmed);
+      editorRef.current?.apply([{ op: "renameDocument", name: trimmed }], "Rename design");
       const res = await fetch(`/api/artifacts/${artifactId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -106,6 +120,7 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
       }).catch(() => null);
       if (!res?.ok) {
         setName(name);
+        editorRef.current?.apply([{ op: "renameDocument", name }], "Rename design");
         toast.error("Could not rename this design.");
       }
     },
@@ -145,6 +160,9 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
           onSelectionChange={onSelectionChange}
           onAskJuno={onAskJuno}
           onProposalResolved={onProposalResolved}
+          onViewportChange={setZoom}
+          viewportRef={viewportRef}
+          chrome={<ZoomControls zoom={zoom} viewport={viewportRef} hasSelection={selection.ids.length > 0} />}
           canvasDock={
             <>
               {adjustments.length > 0 && (
@@ -170,8 +188,55 @@ function same(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-/** The document name, edited in place. Renames the artifact, which is the name
- *  this design carries in the library, in Artifacts and in its conversation. */
+/**
+ * The zoom control, in the toolbar where a design editor's zoom belongs.
+ *
+ * It reads the magnification the canvas reports and drives the canvas's own
+ * viewport closures, so the number on screen is the number the pointer is
+ * panning rather than a second copy that has to be kept in step. Handing the
+ * canvas a `viewportRef` is also what stops it drawing its own floating
+ * control — one editor, one zoom readout.
+ */
+function ZoomControls({
+  zoom,
+  viewport,
+  hasSelection,
+}: {
+  zoom: number;
+  viewport: React.MutableRefObject<DesignViewportHandle | null>;
+  hasSelection: boolean;
+}) {
+  const button =
+    "pressable rounded-[8px] px-2 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-9 coarse:px-2.5";
+  return (
+    <div className="flex items-center gap-0.5" role="group" aria-label="Zoom">
+      <button type="button" className={button} onClick={() => viewport.current?.zoomBy(1 / 1.25)} aria-label="Zoom out">
+        −
+      </button>
+      <button
+        type="button"
+        className={`${button} min-w-11 tabular-nums`}
+        onClick={() => viewport.current?.zoomTo100()}
+        aria-label="Reset zoom to 100%"
+      >
+        {Math.round(zoom * 100)}%
+      </button>
+      <button type="button" className={button} onClick={() => viewport.current?.zoomBy(1.25)} aria-label="Zoom in">
+        +
+      </button>
+      <button type="button" className={button} onClick={() => viewport.current?.zoomToFit()}>
+        Fit
+      </button>
+      <button type="button" className={button} onClick={() => viewport.current?.zoomToSelection()} disabled={!hasSelection}>
+        Selection
+      </button>
+    </div>
+  );
+}
+
+/** The design's name, edited in place. Commits to both names it has: the
+ *  artifact's, which is what the library, Artifacts and the conversation show,
+ *  and the document's, which is what its exports are called. */
 function NameField({ value, onCommit }: { value: string; onCommit: (next: string) => void }) {
   const [draft, setDraft] = React.useState<string | null>(null);
   return (

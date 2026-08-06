@@ -5,7 +5,10 @@ import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import type { Plan } from "@prisma/client";
 import { PLANS, canUseModel } from "@/lib/plans";
-import { getUserPlan } from "@/lib/usage";
+import { consumeMessage, getUserPlan, refundMessage } from "@/lib/usage";
+import { budgetExceededMessage, checkBudget, recordSpend } from "@/lib/spend";
+import { buildUsage } from "@/lib/chat-usage";
+import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
 import { providerErrorMessage, streamChat } from "@/lib/llm";
 import { isAutoModelId } from "@/lib/auto-model";
 import { DEFAULT_MODEL, getModel, MODEL_LIST, type ModelInfo } from "@/lib/models";
@@ -158,7 +161,40 @@ export async function POST(req: Request, { params }: { params: Promise<{ artifac
     { scoped }
   );
 
+  /**
+   * A design edit is a full-size model call, so it is metered exactly like a
+   * chat turn: the same budget gate, the same monthly message, the same ledger
+   * row from the same helpers. It used to be free of all three — the plan gate
+   * and the 20/minute limiter were the only things between a user and an
+   * unbounded number of them, and none of it reached the spend a plan is
+   * actually bounded by. Both checks sit here rather than at the top of the
+   * route so a request that 404s, 409s or finds no model costs nothing.
+   */
+  const budget = await checkBudget(user.id, plan);
+  if (!budget.allowed) {
+    return NextResponse.json(
+      { error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) },
+      { status: 402 }
+    );
+  }
+
+  const consumed = await consumeMessage(user.id, plan);
+  if (!consumed.allowed) {
+    return NextResponse.json(
+      {
+        error: "You've reached your monthly message limit. Upgrade your plan to keep editing.",
+        code: "QUOTA_EXCEEDED",
+        quota: consumed.quota,
+      },
+      { status: 402 }
+    );
+  }
+
   let raw = "";
+  // Providers stream usage in pieces — input and cache on one event, output on
+  // another — so it is folded with the shared merge rather than overwritten.
+  let tokens: UsageAccumulator = {};
+  let failure: NextResponse | null = null;
   try {
     for await (const event of streamChat({
       model,
@@ -168,11 +204,52 @@ export async function POST(req: Request, { params }: { params: Promise<{ artifac
       signal: req.signal,
     })) {
       if (event.type === "text") raw += event.text;
+      else if (event.type === "usage") tokens = mergeUsage(tokens, event);
     }
   } catch (error) {
-    if (req.signal.aborted) return NextResponse.json({ error: "Cancelled.", code: "aborted" }, { status: 499 });
-    console.error("[design:edit] generation failed", { artifactId, model: model.id, error });
-    return NextResponse.json({ error: providerErrorMessage(error, model.name), code: "provider" }, { status: 502 });
+    if (req.signal.aborted) {
+      failure = NextResponse.json({ error: "Cancelled.", code: "aborted" }, { status: 499 });
+    } else {
+      console.error("[design:edit] generation failed", { artifactId, model: model.id, error });
+      failure = NextResponse.json({ error: providerErrorMessage(error, model.name), code: "provider" }, { status: 502 });
+    }
+  }
+
+  // Billed on every path out of the generation, including the ones that end in
+  // a refusal below: a model that returned an unusable block still burned the
+  // tokens it burned. A call that produced nothing at all is not in the ledger
+  // — the char floors in `recordSpend` would otherwise invent a cost for a
+  // request the provider never ran.
+  const usage = buildUsage(model, {
+    ...tokens,
+    promptChars: system.length + prompt.length,
+    completionChars: raw.length,
+  });
+  if (raw.length > 0 || usage.totalInput > 0 || usage.output > 0) {
+    await recordSpend({
+      userId: user.id,
+      model: model.id,
+      kind: "chat",
+      promptTokens: usage.totalInput || undefined,
+      completionTokens: usage.output || undefined,
+      reasoningTokens: usage.reasoning || undefined,
+      totalTokens: tokens.total || undefined,
+      cacheRead: usage.cacheRead,
+      cacheWrite: usage.cacheWrite,
+      cacheWrite5m: usage.cacheWrite5m,
+      cacheWrite1h: usage.cacheWrite1h,
+      costUsd: usage.cost || undefined,
+      promptChars: system.length + prompt.length,
+      completionChars: raw.length,
+    });
+  }
+
+  if (failure) {
+    // The generation produced nothing to review, so the message goes back —
+    // the same rule the chat route follows when a turn dies before useful
+    // output. A user who cancelled their own request keeps the charge.
+    if (!req.signal.aborted) await refundMessage(user.id, plan).catch(() => {});
+    return failure;
   }
 
   try {
@@ -203,7 +280,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ artifac
     if (error instanceof DesignAiError) {
       // A refusal is the system working: the model wrote something the document
       // model will not accept, and the user is told which, in a sentence they
-      // can act on. 422 rather than 500 — nothing is broken.
+      // can act on. 422 rather than 500 — nothing is broken. The tokens are
+      // already in the ledger above, but there is nothing here for the user to
+      // apply, so the message itself goes back.
+      await refundMessage(user.id, plan).catch(() => {});
       return NextResponse.json({ error: error.message, code: "unusable" }, { status: 422 });
     }
     throw error;

@@ -146,6 +146,26 @@ test("the change review names the fields that actually moved", () => {
   assert.match(preview.changes[0], /opacity 1 → 0\.9/);
 });
 
+test("Juno can rename the design it is editing", () => {
+  const doc = signInDocument();
+  const proposal = parseDesignProposal(
+    block({
+      summary: "Named it for what it is.",
+      baseRevision: 1,
+      operations: [{ op: "renameDocument", name: "Sign in" }],
+    })
+  );
+  const preview = previewProposal(doc, proposal, { transactionId: "t1", now: "2026-01-01T00:00:00.000Z" });
+  assert.equal(preview.result.document.name, "Sign in");
+  assert.deepEqual(preview.changes, [], "no layer changed, so the review card has no before/after to list");
+
+  const reverted = applyTransaction(
+    preview.result.document,
+    invertTransaction(preview.result, preview.transaction, "2026-01-01T00:00:01.000Z")
+  );
+  assert.equal(reverted.document.name, "Test document");
+});
+
 test("adjustments must bind to a validated property", () => {
   assert.throws(
     () =>

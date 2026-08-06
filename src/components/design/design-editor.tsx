@@ -40,7 +40,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { DesignCanvas, type CanvasTool } from "@/components/design/design-canvas";
+import { DesignCanvas, type CanvasTool, type DesignViewportHandle } from "@/components/design/design-canvas";
 import { InspectorPanel } from "@/components/design/inspector-panel";
 import { LayersPanel } from "@/components/design/layers-panel";
 import {
@@ -125,6 +125,9 @@ export function DesignEditor({
   onSelectionChange,
   onProposalResolved,
   canvasDock,
+  chrome,
+  onViewportChange,
+  viewportRef,
   editorRef,
 }: {
   artifactId: string;
@@ -156,6 +159,16 @@ export function DesignEditor({
   /** Chrome docked to the bottom of the canvas, below the proposal review —
    *  the Ask Juno bar and its adjustment controls. */
   canvasDock?: React.ReactNode;
+  /** Controls placed in the toolbar, between the tools and the Export menu.
+   *  The window surface puts its zoom control here; embedded surfaces, which
+   *  are already short of toolbar width, pass nothing and the canvas keeps its
+   *  own floating one. */
+  chrome?: React.ReactNode;
+  /** Forwarded to the canvas, so `chrome` can show the live magnification. */
+  onViewportChange?: (zoom: number) => void;
+  /** Forwarded to the canvas, so `chrome` can drive it. Passing it moves
+   *  responsibility for showing the zoom onto the host — see `DesignCanvas`. */
+  viewportRef?: React.MutableRefObject<DesignViewportHandle | null>;
   editorRef?: React.MutableRefObject<DesignEditorHandle | null>;
 }) {
   const state = useDesignDocument({ artifactId, initialContent: content, transport, readOnly, onCommitted });
@@ -493,6 +506,8 @@ export function DesignEditor({
 
         <div className="flex-1" />
 
+        {chrome}
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -581,6 +596,8 @@ export function DesignEditor({
             onToolUsed={() => setTool("select")}
             readOnly={readOnly || !!state.pending}
             highlightedIds={state.pending?.result.touchedNodeIds}
+            onViewportChange={onViewportChange}
+            viewportRef={viewportRef}
           />
           {/* One bottom-anchored stack rather than two independently positioned
               overlays: the review card and the Ask Juno bar are both docked to

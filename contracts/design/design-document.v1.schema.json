@@ -3717,6 +3717,23 @@
           "properties": {
             "op": {
               "type": "string",
+              "const": "renameDocument"
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 300
+            }
+          },
+          "required": [
+            "op",
+            "name"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
               "const": "createAsset"
             },
             "asset": {
@@ -6082,6 +6099,23 @@
               "required": [
                 "op",
                 "pageId",
+                "name"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "renameDocument"
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 300
+                }
+              },
+              "required": [
+                "op",
                 "name"
               ]
             },
