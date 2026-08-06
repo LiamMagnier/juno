@@ -240,3 +240,45 @@ test("a document survives a JSON round trip through the schema", () => {
   const round = parseDesignDocument(JSON.parse(serializeDesignDocument(doc)));
   assert.equal(serializeDesignDocument(round), serializeDesignDocument(doc));
 });
+
+test("a locked layer can be unlocked, and hidden and shown while locked", () => {
+  // Locking used to be one-way and therefore destructive. `updateNode` refused
+  // every patch to a locked node, including the patch that clears `locked` —
+  // so the flag gated itself, and because the canvas cannot hit-test a locked
+  // layer, nothing could select it either. The layer was gone with no way back.
+  const doc = run(signInDocument(), [
+    { op: "updateNode", nodeId: "button", patch: { locked: true } },
+  ]).document;
+
+  assert.equal(
+    run(doc, [{ op: "updateNode", nodeId: "button", patch: { locked: false } }]).document.nodes
+      .button.locked,
+    false,
+    "the padlock has to be able to come off"
+  );
+  assert.equal(
+    run(doc, [{ op: "updateNode", nodeId: "button", patch: { visible: false } }]).document.nodes
+      .button.visible,
+    false,
+    "visibility is the other field that decides reachability"
+  );
+
+  // The exemption is exactly two fields. Anything else riding along with them
+  // would be a way to move or restyle a layer past its own lock.
+  assert.throws(
+    () => run(doc, [{ op: "updateNode", nodeId: "button", patch: { locked: false, x: 10 } }]),
+    /is locked/
+  );
+});
+
+test("undoing an unlock passes the same gate it did", () => {
+  // The inverse of `{locked:false}` is `{locked:true}`, which names only the
+  // exempt fields — so undo cannot be the thing that gets stuck.
+  const locked = run(signInDocument(), [
+    { op: "updateNode", nodeId: "button", patch: { locked: true } },
+  ]).document;
+  const unlock = run(locked, [{ op: "updateNode", nodeId: "button", patch: { locked: false } }]);
+  assert.deepEqual(unlock.inverse, [{ op: "updateNode", nodeId: "button", patch: { locked: true } }]);
+  const redone = run(unlock.document, unlock.inverse).document;
+  assert.equal(redone.nodes.button.locked, true);
+});

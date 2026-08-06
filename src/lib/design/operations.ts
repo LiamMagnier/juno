@@ -689,7 +689,24 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
 
     // ---------------------------------------------------------------- update
     case "updateNode": {
-      const node = requireUnlocked(doc, operation.nodeId);
+      // Refusing every patch to a locked layer is right for how it looks and
+      // wrong for the two fields that decide whether it can be reached at all.
+      // `locked` gated itself: once set, the only operation that could clear it
+      // was refused for being set — and since the canvas cannot hit-test a
+      // locked or hidden layer, nothing could select it either. Locking a layer
+      // deleted it in every sense that mattered, with no way back.
+      //
+      // A patch naming only these two passes. Its inverse names the same
+      // fields, so undo passes the same gate. A patch mixing them with anything
+      // else is still refused, so nothing can be moved, recoloured or resized
+      // past the lock — which is the property the gate exists for.
+      const patchKeys = Object.keys(operation.patch as Record<string, unknown>);
+      const reachabilityOnly =
+        patchKeys.length > 0 &&
+        patchKeys.every((key) => key === "locked" || key === "visible");
+      const node = reachabilityOnly
+        ? requireNode(doc, operation.nodeId)
+        : requireUnlocked(doc, operation.nodeId);
       const before: Record<string, unknown> = {};
       const record = node as unknown as Record<string, unknown>;
       const patch = operation.patch as Record<string, unknown>;
