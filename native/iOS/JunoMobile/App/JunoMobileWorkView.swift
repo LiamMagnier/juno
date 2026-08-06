@@ -399,6 +399,7 @@ private struct JunoMobileWorkThread: View {
     let sessionID: String
 
     @State private var isAnswering = false
+    @State private var isInstructing = false
     @State private var confirmingStop = false
     @State private var confirmingRetry = false
 
@@ -443,6 +444,9 @@ private struct JunoMobileWorkThread: View {
         }
         .sheet(isPresented: $isAnswering) {
             JunoMobileWorkAnswerSheet(model: model)
+        }
+        .sheet(isPresented: $isInstructing) {
+            JunoMobileWorkInstructionSheet(model: model)
         }
         .confirmationDialog(
             "Stop this task?", isPresented: $confirmingStop, titleVisibility: .visible
@@ -498,8 +502,25 @@ private struct JunoMobileWorkThread: View {
                 if isFollowing, let approval = model.currentApproval {
                     JunoMobileWorkApprovalCard(model: model, approval: approval)
                 }
-                if isFollowing, let question = model.pendingQuestion {
-                    JunoMobileWorkQuestionCard(question: question) { isAnswering = true }
+                // One slot, two cards, and never both. `composerMode` is the
+                // model's single answer to what this task can be told right now
+                // — shared with the Mac, mirroring the web's own rule — so
+                // asking it here rather than re-deriving "is there a question"
+                // locally is what keeps the answer path exactly as it was while
+                // the instruction path appears beside it.
+                //
+                // A `.closed` task draws nothing. The header above already
+                // carries the status sentence, and a second card repeating it
+                // would push the run's actual progress further down the scroll.
+                if isFollowing {
+                    switch model.composerMode {
+                    case .answer(let question):
+                        JunoMobileWorkQuestionCard(question: question) { isAnswering = true }
+                    case .instruction:
+                        JunoMobileWorkInstructionCard(model: model) { isInstructing = true }
+                    case .closed:
+                        EmptyView()
+                    }
                 }
                 currentAction(session)
                 plan
@@ -1160,6 +1181,156 @@ private struct JunoMobileWorkAnswerSheet: View {
         // cannot be answered twice by an impatient second tap.
         dismiss()
         Task { await model.answer(text) }
+    }
+}
+
+/// Saying something to a run that has not asked anything.
+///
+/// The twin of ``JunoMobileWorkQuestionCard``, in the same slot and the same
+/// shape, for the same reason it defers to a sheet: a text field partway down a
+/// scrolling thread fights the keyboard for the words being typed into it.
+///
+/// The line under the button is the server's sentence about the last
+/// instruction, never this screen's. The route writes one for each outcome and
+/// the web shows the same one; a local "Sent" here would mean an instruction
+/// queued at a Mac that is no longer paired read as a success on the phone and
+/// as a warning in the browser, for the identical event.
+private struct JunoMobileWorkInstructionCard: View {
+    let model: NativeWorkModel
+    let compose: () -> Void
+
+    var body: some View {
+        JunoCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Label {
+                    Text("Juno is working. You can add something for it to take into account.")
+                        .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "text.bubble")
+                        .foregroundStyle(Color.junoAccent)
+                }
+
+                Button(action: compose) {
+                    Text("Say something")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 42)
+                        .modifier(JunoAccentGlassCapsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("juno.mobile.work.instruct")
+
+                if let outcome = model.lastInstructionOutcome {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: outcome.delivered
+                            ? "checkmark.circle" : "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(outcome.delivered ? Color.secondary : Color.junoCaution)
+                        Text(outcome.explanation)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityIdentifier("juno.mobile.work.instruct-outcome")
+                }
+            }
+        }
+        .accessibilityIdentifier("juno.mobile.work.instruction")
+    }
+}
+
+/// Typing the instruction, with the keyboard up and nothing else on screen.
+///
+/// Whether the task can still be told anything is read from the model on every
+/// redraw rather than captured when the sheet opens, exactly as the answer sheet
+/// reads the question. A run can stop and ask something while this sheet is
+/// open — from the phone's point of view a question simply arrives on the stream
+/// — and a sheet holding its own copy of "this run is going" would send an
+/// instruction the route refuses, leaving the run stopped and the reader told
+/// nothing useful about why.
+private struct JunoMobileWorkInstructionSheet: View {
+    let model: NativeWorkModel
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    private var isOpen: Bool { model.composerMode == .instruction }
+
+    private var canSend: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isMutating
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if isOpen {
+                    field
+                } else {
+                    ContentUnavailableView {
+                        Label("Juno has stopped", systemImage: "questionmark.bubble")
+                    } description: {
+                        Text(
+                            "This task is waiting on you or has finished, so an instruction has "
+                                + "nowhere to go. Close this to see what it needs."
+                        )
+                    }
+                }
+            }
+            .navigationTitle("Add an instruction")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Send") { send() }
+                        .disabled(!canSend || !isOpen)
+                        .accessibilityIdentifier("juno.mobile.work.instruct-send")
+                }
+            }
+            .junoScreenCanvas()
+        }
+        .presentationDetents([.medium])
+        .tint(Color.junoAccent)
+        .onAppear { focused = true }
+    }
+
+    private var field: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Juno reads this before its next step. It does not undo what it has already done.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            TextField("What should Juno take into account?", text: $draft, axis: .vertical)
+                .lineLimit(3...8)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
+                        .fill(Color.junoMuted)
+                )
+                .focused($focused)
+                .accessibilityIdentifier("juno.mobile.work.instruct-field")
+
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func send() {
+        guard canSend else { return }
+        let text = draft
+        // Dismissed before the round trip rather than after it, so a slow relay
+        // cannot be sent twice by an impatient second tap. The outcome lands on
+        // the card behind this sheet, which is where it stays put long enough to
+        // be read — a sentence shown inside a sheet that is closing is a
+        // sentence nobody reads.
+        dismiss()
+        Task { await model.sendInstruction(text) }
     }
 }
 

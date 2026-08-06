@@ -94,6 +94,28 @@ public struct WorkQuestionPrompt: Equatable, Sendable, Identifiable {
     }
 }
 
+/// What the answer route did with an instruction that answered nothing.
+///
+/// Both halves come off the wire and neither is inferred. `delivered` is not a
+/// property of the run's target — a task on a Mac whose pairing was revoked, or
+/// whose Work switch is off, or whose build is too old to parse `steer`, has an
+/// instruction queued for nobody — and only the server, at the moment it tried
+/// to enqueue, is in a position to know which of those happened.
+///
+/// `explanation` is carried rather than mapped to a sentence of this client's
+/// own. The route writes it for the person reading it, and the whole reason it
+/// exists is that one failure must not acquire two different phrasings depending
+/// on whether it was the web, the Mac or the phone that reported it.
+public struct WorkInstructionOutcome: Equatable, Sendable {
+    public let delivered: Bool
+    public let explanation: String
+
+    public init(delivered: Bool, explanation: String) {
+        self.delivered = delivered
+        self.explanation = explanation
+    }
+}
+
 /// The fields a client may change on a session, each absent unless it is being
 /// changed.
 ///
@@ -129,6 +151,15 @@ public struct NativeWorkClient: Sendable {
     /// are host-plane instructions the relay mints itself, and sending one from
     /// a phone is a request the server will refuse. Refusing it here makes that
     /// a local, immediate failure rather than an opaque 400 after a round trip.
+    ///
+    /// `.steer` is deliberately not here, even though a person reaching for it
+    /// is reaching for the same row of buttons. A control is a verb with no
+    /// body, aimed at `/runs/{id}/control`, and answered with the run; an
+    /// instruction carries the user's own words, goes to the session's answer
+    /// route, and is answered with whether it reached anything. Adding it to
+    /// this set would have made `control` the only caller that had to smuggle a
+    /// payload through a signature with nowhere to put one — see
+    /// ``sendInstruction(sessionID:text:idempotencyKey:for:)``.
     public static let controlKinds: Set<JunoWorkCommandKind> = [.pause, .resume, .stop]
 
     /// The decisions a person can actually make.
@@ -489,6 +520,60 @@ public struct NativeWorkClient: Sendable {
         )
     }
 
+    /// Says something to a run that has not asked anything.
+    ///
+    /// The same route as ``answer(sessionID:questionID:text:for:)`` and
+    /// deliberately a separate method, because the route tells the two apart by
+    /// the mere *presence* of `questionId` — see `parseSubmission` in
+    /// `src/app/api/work/sessions/[id]/answer/route.ts`. One method with an
+    /// optional identifier would leave every caller re-deriving which of two
+    /// requests it was making, and the two have opposite preconditions: an
+    /// answer needs a run that is waiting for one, an instruction needs a run
+    /// that is not. Nothing here may put a `questionId` on the wire, empty or
+    /// otherwise, or a note typed while Juno works would be recorded as the
+    /// reply to whatever it asks next.
+    ///
+    /// The key is required rather than optional, unlike on the web, and the
+    /// reason is the surface rather than the route. A browser tab that loses a
+    /// response is looking at a page it can reload; a phone that loses one is
+    /// usually a phone that lost signal mid-send, and its owner will press Send
+    /// again. Without a key the route has nothing to deduplicate on — it
+    /// deliberately mints none from the text, because two identical sentences a
+    /// minute apart are two deliberate instructions — so the second press would
+    /// queue a second `steer` at the Mac. ``NativeWorkModel`` holds one key
+    /// across exactly that retry and mints a fresh one otherwise.
+    public func sendInstruction(
+        sessionID: String,
+        text: String,
+        idempotencyKey: String,
+        for accountID: AccountID
+    ) async throws -> WorkInstructionOutcome {
+        try validate(sessionID)
+        let body: [String: JunoJSONValue] = [
+            "text": .string(text),
+            "idempotencyKey": .string(idempotencyKey),
+        ]
+        let response = try await send(
+            .post, "/api/work/sessions/\(sessionID)/answer", body: .object(body), for: accountID
+        )
+        // Both fields required, neither defaulted, and this is the one decode in
+        // the file where that is worth arguing for. Defaulting `delivered` to
+        // true would report a delivery nobody made; defaulting it to false would
+        // put a failure on screen for an instruction that landed; and inventing
+        // a sentence for a missing `explanation` would be this client answering
+        // in its own words the one question the route exists to answer in its.
+        // A 200 the client cannot read is `malformedResponse`, whose sentence —
+        // "Juno received Work data it could not read." — is true and carefully
+        // does not claim the instruction was lost, because it was very probably
+        // recorded.
+        guard let root = try decodeObject(response),
+            case .bool(let delivered)? = root["delivered"],
+            case .string(let explanation)? = root["explanation"],
+            !explanation.isEmpty
+        else { throw WorkRemoteError.malformedResponse }
+        return WorkInstructionOutcome(delivered: delivered, explanation: explanation)
+    }
+
     // MARK: - Event stream
 
     /// Follows a session's log from a cursor.
@@ -670,9 +755,20 @@ public struct NativeWorkClient: Sendable {
             return nested
         }()
         let code = detail?["code"]?.stringValue ?? body?["code"]?.stringValue
+        // `message` before `error` on the flat shape, which is the opposite of
+        // what this used to do. Across the whole Work API a flat refusal is
+        // `{ error: <code>, message: <sentence> }` — the answer route's
+        // `answer_expected` and `run_finished`, the dispatch route's
+        // `dispatch_in_flight`, the approval route's `already_decided` — so
+        // preferring `error` handed the reader the identifier instead of the
+        // sentence written for them: a run refusing an instruction because it is
+        // waiting on a question said "answer_expected" and nothing else. `error`
+        // stays as the last resort for the routes that send it alone, where it
+        // is prose rather than a code ("Not found"), so nothing that used to
+        // produce a sentence stops producing one.
         let message = detail?["message"]?.stringValue
-            ?? body?["error"]?.stringValue
             ?? body?["message"]?.stringValue
+            ?? body?["error"]?.stringValue
 
         switch code {
         case "work_host_revoked":

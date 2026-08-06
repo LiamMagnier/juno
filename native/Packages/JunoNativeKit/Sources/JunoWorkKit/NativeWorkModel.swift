@@ -42,6 +42,15 @@ public final class NativeWorkModel {
     public private(set) var pendingApprovals: [WorkApprovalRequest] = []
     public private(set) var isStreaming = false
 
+    /// What the server did with the last instruction sent to the open task.
+    ///
+    /// Kept until the next one is sent or another task is opened, rather than
+    /// shown once and dropped. The sentence it carries is the only account
+    /// anybody gets of whether the words reached the thing doing the work, and a
+    /// note that vanishes on the next redraw is a note the reader will miss
+    /// precisely when it said the instruction went nowhere.
+    public private(set) var lastInstructionOutcome: WorkInstructionOutcome?
+
     /// The highest event sequence this model has applied.
     ///
     /// Public because it is the thing the screen resumes from, and because a
@@ -79,6 +88,12 @@ public final class NativeWorkModel {
     /// backing the poll off because a *decision* was refused would be reacting
     /// to the wrong fact.
     private var lastRefreshReachedNothing = false
+    /// The instruction whose last send failed, and the key it was sent under.
+    ///
+    /// Held for exactly one purpose: making the obvious second press safe. See
+    /// ``sendInstruction(_:)`` for why it is cleared on every success and why it
+    /// is matched on the text.
+    private var retriableInstruction: (text: String, key: String)?
 
     public init(client: NativeWorkClient) {
         self.client = client
@@ -184,6 +199,90 @@ public final class NativeWorkModel {
         return WorkQuestionPrompt(questionID: questionID, text: text)
     }
 
+    /// What the box on the open task is for: a reply, an instruction, or
+    /// nothing.
+    ///
+    /// One value rather than two booleans, because the three states are
+    /// mutually exclusive and a screen that computed "can answer" and "can
+    /// steer" separately would eventually draw both.
+    public enum ComposerMode: Equatable, Sendable {
+        /// The run asked something and has stopped until it is answered.
+        /// Answering is the only thing that restarts it.
+        case answer(WorkQuestionPrompt)
+        /// The run is going and has asked nothing: whatever is typed here is an
+        /// instruction it reads before its next step.
+        case instruction
+        /// There is nowhere for words to go, and the sentence saying why.
+        case closed(String)
+    }
+
+    /// Which of the three the open task is in.
+    ///
+    /// This mirrors `src/app/(app)/work/[id]/page.tsx`, decision for decision
+    /// and in the same order, because the route behind both surfaces refuses
+    /// whichever request does not match the run's state and the refusal is a
+    /// 409 the reader can do nothing with. Diverging here would mean the Mac
+    /// offering a box the web knows the server will turn down.
+    ///
+    /// An open question outranks everything. While one stands, `POST /answer`
+    /// refuses an unprompted instruction on purpose — the run is stopped, so an
+    /// instruction would sit in the log until somebody answered the question,
+    /// and the person who typed it would have been told it was delivered to a
+    /// run that had not moved. The existing answer path is therefore untouched:
+    /// wherever this returns `.answer`, the client sends `questionId` and text
+    /// exactly as it always has.
+    ///
+    /// The status read here is the **reported** one and deliberately not
+    /// ``displayStatus(of:)``. That correction exists to stop a spinner turning
+    /// for a run whose Mac closed its lid, and it is right for that; borrowing
+    /// it here would close the box on a run the server would still accept an
+    /// instruction for, denying the reader the one thing that still works —
+    /// putting it on the task's record — on the strength of a heartbeat that
+    /// may be a single beat stale. Whether a Mac that is gone can be told
+    /// anything is the server's answer to give, and it gives it: `delivered:
+    /// false` with a sentence naming the Mac.
+    public var composerMode: ComposerMode {
+        Self.composerMode(session: openSession, run: openRun, question: pendingQuestion)
+    }
+
+    /// The rule itself, as a function of exactly what decides it.
+    ///
+    /// Pure and static for the same reason ``NativeWorkClient/hostRegistrationBody(identity:policy:counts:)``
+    /// is: it can then be asserted without standing up a model, a stream or a
+    /// server, and this is a rule where every branch is a different sentence
+    /// shown to somebody and a wrong branch is a box that sends a request the
+    /// route refuses.
+    /// `nonisolated` because none of its inputs are the model's: a rule that had
+    /// to be asked on the main actor would be a rule the tests could only reach
+    /// through one.
+    public nonisolated static func composerMode(
+        session: WorkSessionSummary?,
+        run: WorkRunSummary?,
+        question: WorkQuestionPrompt?
+    ) -> ComposerMode {
+        guard let session else { return .closed("No task is open.") }
+        if let question { return .answer(question) }
+        // An unreadable status is `interrupted` — terminal — matching
+        // `displayStatus(of:)` and the server's own fallback. Erring the other
+        // way would offer a box on a task whose state this build cannot name.
+        let reported = JunoWorkStatus(rawValue: session.status) ?? .interrupted
+        if reported.isTerminal {
+            return .closed("This attempt has finished. Start it again to say more.")
+        }
+        // A session with no attempt behind it is a draft. Read from the session
+        // as well as the run because `openRun` is nil for the moment between
+        // opening a task and its detail arriving, and a box that said "this is
+        // still a draft" for that moment would be wrong about every task in the
+        // list.
+        guard run != nil || session.currentRunID != nil else {
+            return .closed(
+                "This is still a draft. Start it, and everything in the goal goes with it — "
+                    + "there is no attempt yet for anything else to join."
+            )
+        }
+        return .instruction
+    }
+
     // MARK: - Lifecycle
 
     public func start(for accountID: AccountID) async {
@@ -237,6 +336,8 @@ public final class NativeWorkModel {
         isStreaming = false
         isMutating = false
         lastErrorDescription = nil
+        lastInstructionOutcome = nil
+        retriableInstruction = nil
         lastRefreshReachedNothing = false
         phase = .idle
     }
@@ -362,6 +463,12 @@ public final class NativeWorkModel {
         events = []
         pendingApprovals = []
         resumeCursor = 0
+        // Both belong to the task being left, not to the one being opened. A
+        // note saying an instruction reached nobody would otherwise appear under
+        // the next task's title, and a held retry key would let a failed send on
+        // one task deduplicate a first send on another.
+        lastInstructionOutcome = nil
+        retriableInstruction = nil
         follow(sessionID: session.sessionID)
     }
 
@@ -372,6 +479,8 @@ public final class NativeWorkModel {
         events = []
         pendingApprovals = []
         resumeCursor = 0
+        lastInstructionOutcome = nil
+        retriableInstruction = nil
     }
 
     public func pauseOpenRun() async { await control(.pause) }
@@ -439,6 +548,62 @@ public final class NativeWorkModel {
         } catch {
             guard self.accountID == accountID else { return }
             record(error)
+        }
+    }
+
+    /// Says something to the open task that answers nothing.
+    ///
+    /// Guarded on ``composerMode`` rather than on the caller having asked
+    /// nicely. Both apps gate their box on the same value, so this second check
+    /// costs a comparison and closes the case they cannot: a question can arrive
+    /// on the stream between the field being typed into and Send being pressed,
+    /// and sending then would put the user's note into the log at a point where
+    /// the route refuses it and the run stays stopped.
+    ///
+    /// The key is reused only when the previous send of the *same text* failed.
+    /// That is narrower than it looks and both halves matter. Keying on the text
+    /// alone would swallow the second of two identical sentences typed a minute
+    /// apart, which the route is explicit are two deliberate instructions;
+    /// minting a fresh key on every press would make a lost response cost a
+    /// duplicate `steer` queued at the Mac. Clearing on success is what closes
+    /// the gap between the two: after a delivery the next press is a new
+    /// instruction, however familiar it looks.
+    @discardableResult
+    public func sendInstruction(_ text: String) async -> WorkInstructionOutcome? {
+        guard let accountID, let session = openSession, composerMode == .instruction else {
+            return nil
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let held = retriableInstruction
+        let key = held?.text == trimmed ? (held?.key ?? UUID().uuidString) : UUID().uuidString
+        retriableInstruction = (text: trimmed, key: key)
+
+        isMutating = true
+        defer { isMutating = false }
+        do {
+            let outcome = try await client.sendInstruction(
+                sessionID: session.sessionID, text: trimmed,
+                idempotencyKey: key, for: accountID
+            )
+            guard self.accountID == accountID else { return nil }
+            // Cleared on any 200, including one that says the instruction
+            // reached nobody. The record was written either way, and pressing
+            // Send again under the same key would replay that write rather than
+            // reaching a Mac that is still not there.
+            retriableInstruction = nil
+            lastInstructionOutcome = outcome
+            lastErrorDescription = nil
+            return outcome
+        } catch {
+            guard self.accountID == accountID else { return nil }
+            // Left on the previous outcome rather than cleared. This send never
+            // got an answer, so it has nothing to say about the last one that
+            // did, and blanking the note would quietly retract a warning that is
+            // still true.
+            record(error)
+            return nil
         }
     }
 

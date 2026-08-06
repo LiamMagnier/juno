@@ -51,6 +51,12 @@ struct DesktopWorkWorkspace: View {
     /// in the thread view so switching tasks and coming back cannot resurrect a
     /// half-typed answer against a different question.
     @State private var answerDraft = ""
+    /// The instruction being typed to a run that asked nothing. Held beside the
+    /// answer, and separate from it, because the two are different requests to
+    /// different preconditions: a run that starts asking a question mid-sentence
+    /// swaps which box is on screen, and one shared string would carry half an
+    /// instruction into the answer field and send it as the reply.
+    @State private var instructionDraft = ""
     @FocusState private var searchFocused: Bool
 
     // MARK: - Selection
@@ -151,10 +157,13 @@ struct DesktopWorkWorkspace: View {
             guard let sessionID else { return }
             selection.wrappedValue = sessionID
         }
-        // A question belongs to the task that asked it. Clearing the draft on
-        // every change of task is what stops an answer typed for one run being
-        // sent to another.
-        .onChange(of: selection.wrappedValue) { _, _ in answerDraft = "" }
+        // A question belongs to the task that asked it, and so does an
+        // instruction. Clearing both on every change of task is what stops
+        // words typed for one run being sent to another.
+        .onChange(of: selection.wrappedValue) { _, _ in
+            answerDraft = ""
+            instructionDraft = ""
+        }
         // Deleting or archiving the selected task leaves the window pointing at
         // nothing. Without this the title stays on a task that no longer exists,
         // which reads as a failure rather than as "that task is gone".
@@ -190,7 +199,8 @@ struct DesktopWorkWorkspace: View {
             DesktopWorkThread(
                 model: model,
                 session: session,
-                answerDraft: $answerDraft
+                answerDraft: $answerDraft,
+                instructionDraft: $instructionDraft
             )
         } else if model.phase == .loading {
             ProgressView()
@@ -558,6 +568,7 @@ private struct DesktopWorkThread: View {
     let model: NativeWorkModel
     let session: WorkSessionSummary
     @Binding var answerDraft: String
+    @Binding var instructionDraft: String
 
     private var status: JunoWorkStatus { model.displayStatus(of: session) }
 
@@ -588,12 +599,31 @@ private struct DesktopWorkThread: View {
                 if isFollowing, let approval = model.currentApproval {
                     DesktopWorkApprovalCard(model: model, approval: approval)
                 }
-                if isFollowing, let question = model.pendingQuestion {
-                    DesktopWorkQuestionCard(
-                        model: model,
-                        question: question,
-                        draft: $answerDraft
-                    )
+                // One slot, two boxes, and never both. `composerMode` is the
+                // model's single answer to what this task can be told right now,
+                // shared with the phone and mirroring the web's own rule; asking
+                // it here rather than re-deriving "is there a question" locally
+                // is what keeps the answer path exactly as it was while the
+                // instruction path appears beside it.
+                //
+                // A `.closed` task draws nothing. The web's box is always
+                // present so it has to render its own reason; this thread's
+                // header already carries the status sentence — "This task has
+                // finished", "Not started" — and a second greyed panel below it
+                // would be the same fact twice in two voices.
+                if isFollowing {
+                    switch model.composerMode {
+                    case .answer(let question):
+                        DesktopWorkQuestionCard(
+                            model: model,
+                            question: question,
+                            draft: $answerDraft
+                        )
+                    case .instruction:
+                        DesktopWorkInstructionCard(model: model, draft: $instructionDraft)
+                    case .closed:
+                        EmptyView()
+                    }
                 }
                 currentAction
                 plan
@@ -1080,6 +1110,79 @@ private struct DesktopWorkQuestionCard: View {
         .padding(JunoSpace.roomy)
         .junoCard()
         .accessibilityIdentifier("juno.work.question")
+    }
+}
+
+/// Saying something to a run that has not asked anything.
+///
+/// It sits in the same place as the question card and looks like it on purpose.
+/// The reader's question is the same either way — "can I say something to this?"
+/// — and the difference between a reply and an unprompted instruction is a
+/// distinction the route cares about, not one worth making somebody learn.
+///
+/// The line under the field is the server's, never this window's. The route
+/// writes one sentence for each outcome and it is the same sentence the web
+/// shows; composing a local "Sent" here would mean a Mac that is switched off
+/// produced a cheerful confirmation on the Mac beside it and an honest warning
+/// in the browser, for the identical event.
+private struct DesktopWorkInstructionCard: View {
+    let model: NativeWorkModel
+    @Binding var draft: String
+
+    private var canSend: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isMutating
+    }
+
+    private func send() {
+        guard canSend else { return }
+        let text = draft
+        // Cleared before the send rather than after it, so a slow round trip
+        // cannot be sent twice by an impatient second press. The model holds the
+        // idempotency key for the retry that a genuine failure invites, which is
+        // why clearing here costs nothing: retyping the same sentence after a
+        // failure lands under the same key.
+        draft = ""
+        Task { await model.sendInstruction(text) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            Label {
+                Text("Add something for Juno to take into account")
+                    .junoBody()
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "text.bubble")
+                    .foregroundStyle(Color.junoAccent)
+            }
+
+            HStack(spacing: JunoSpace.snug) {
+                TextField("Say something to this task", text: $draft, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...4)
+                    .onSubmit(send)
+                    .accessibilityIdentifier("juno.work.instruction.field")
+                Button("Send", action: send)
+                    .disabled(!canSend)
+                    .accessibilityIdentifier("juno.work.instruction.send")
+            }
+
+            if let outcome = model.lastInstructionOutcome {
+                Label {
+                    Text(outcome.explanation)
+                        .junoCaption()
+                        .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: outcome.delivered
+                        ? "checkmark.circle" : "exclamationmark.triangle")
+                        .foregroundStyle(outcome.delivered ? Color.secondary : Color.junoCaution)
+                }
+                .accessibilityIdentifier("juno.work.instruction.outcome")
+            }
+        }
+        .padding(JunoSpace.roomy)
+        .junoCard()
+        .accessibilityIdentifier("juno.work.instruction")
     }
 }
 
