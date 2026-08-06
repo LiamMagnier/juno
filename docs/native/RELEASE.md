@@ -1,7 +1,8 @@
 # Juno Native — Release and Distribution
 
-Status: release plan only. No current Apple artifact satisfies the production
-gates below.
+Status: implementation and unsigned verification are complete for the current
+shared worktree. No current Apple artifact satisfies the signed production gates
+below.
 
 ## Current evidence
 
@@ -13,8 +14,14 @@ gates below.
 - The recovered prototype builds for unsigned macOS Debug and Release and its
   34 macOS unit tests pass. Its iOS Simulator Release build fails at
   `AuthSession.swift:73` because macOS-only device code is compiled for iOS.
-- This machine currently has no valid Apple code-signing identity.
-- GitHub CLI is installed, but its `LiamMagnier` credential is invalid.
+- The active Juno Code path now has the local agent loop, approvals and recovery,
+  MCP, hooks/skills, isolated sub-agents, worktrees, Computer Use, model
+  routing, Cloud/Remote task dispatch, and a real local web preview dock. Current
+  unsigned builds and package/web gates are recorded by the release gate script.
+- This machine has an Apple Development identity, but no Developer ID
+  Application identity or notarization credentials for distribution.
+- GitHub CLI is authenticated for `LiamMagnier` with `repo` and `workflow`
+  scopes; publication still requires the protected release review/tag flow.
 
 These facts are diagnostic evidence, not release approval.
 
@@ -159,25 +166,17 @@ the publication gate.
 - Apple identities, provisioning, App Store Connect, Developer ID and notary
   access are not present in the repository.
 - Production APNs and StoreKit values require the product owner.
-- The two tracked native projects, required features, tests and release jobs do
-  not yet exist; implementation must finish before credentials are requested.
+- The shared development worktree is intentionally dirty, so the final release
+  gate refuses publication until the validated source is committed/tagged. The
+  gate itself must remain enabled in CI.
 
 Continue all unprivileged development and validation before asking the owner for
 proprietary inputs. Never replace a missing release gate with a success claim.
 
 ## Prisma migration — MANDATORY release constraint
 
-`prisma/migrations/20260721120000_backfill_entity_revisions/migration.sql` differs
-between branches and MUST NOT be reconciled by taking this UI branch's copy:
-
-- **This UI branch (`agent/juno-native-claude-continuation`)** still carries the
-  older backfill using bare, untyped `NULL` values.
-- **`origin/main`** carries the production hotfix using explicit `NULL::timestamp`
-  casts.
-
-Bare `NULL` is **not** equivalent to or as safe as the typed `NULL::timestamp`
-cast (Postgres type inference in the multi-branch `INSERT … SELECT UNION` can
-resolve the untyped column differently). During final release integration the
-migration file MUST be taken **verbatim from `origin/main`** — never from this UI
-branch. Do not modify this migration inside any UI unit, and never deploy this
-branch's version.
+`prisma/migrations/20260721120000_backfill_entity_revisions/migration.sql` must
+retain explicit `NULL::timestamp` casts in every union branch. Bare `NULL` is not
+equivalent or as safe because Postgres type inference can resolve the untyped
+column differently. The release gate checks this invariant; do not replace the
+typed migration with an older branch copy.

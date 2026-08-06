@@ -32,6 +32,10 @@ public struct CommandSandboxProfile: Equatable, Sendable {
     /// Off by default. A build that needs to fetch dependencies is a decision
     /// the user makes per session, not something a command grants itself.
     public let allowsNetwork: Bool
+    /// Whether a long-lived local service may bind and connect on loopback.
+    /// This is deliberately separate from arbitrary network access: a preview
+    /// needs localhost, but a command should not gain a path to the Internet.
+    public let allowsLocalhost: Bool
     /// Extra roots a command legitimately needs: caches, toolchains, temp.
     public let additionalWritablePaths: [String]
 
@@ -39,11 +43,13 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         workspaceRoot: URL,
         filesystem: FilesystemAccess = .readWrite,
         allowsNetwork: Bool = false,
+        allowsLocalhost: Bool = false,
         additionalWritablePaths: [String] = CommandSandboxProfile.defaultWritablePaths
     ) {
         self.workspaceRoot = workspaceRoot
         self.filesystem = filesystem
         self.allowsNetwork = allowsNetwork
+        self.allowsLocalhost = allowsLocalhost
         self.additionalWritablePaths = additionalWritablePaths
     }
 
@@ -103,6 +109,15 @@ public struct CommandSandboxProfile: Equatable, Sendable {
         if allowsNetwork {
             lines.append("(allow network-outbound)")
             lines.append("(allow network-inbound)")
+            lines.append("(allow system-socket)")
+        } else if allowsLocalhost {
+            // Seatbelt's localhost filter covers arbitrary loopback ports but
+            // not LAN or Internet addresses. Both address families are named
+            // because modern dev servers may prefer IPv6 when it is available.
+            lines.append("(allow network-inbound (local ip4 \"localhost:*\"))")
+            lines.append("(allow network-inbound (local ip6 \"localhost:*\"))")
+            lines.append("(allow network-outbound (remote ip4 \"localhost:*\"))")
+            lines.append("(allow network-outbound (remote ip6 \"localhost:*\"))")
             lines.append("(allow system-socket)")
         } else {
             // Stated rather than implied by `deny default`, so a reader of the

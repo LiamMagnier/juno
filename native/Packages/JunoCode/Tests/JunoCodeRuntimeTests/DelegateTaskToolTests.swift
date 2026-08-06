@@ -162,7 +162,81 @@ final class DelegateTaskToolTests: XCTestCase {
 
         let children = await store.childSessions(of: parent.id)
         XCTAssertEqual(children.count, 1)
-        XCTAssertEqual(children.first?.configuration.role, .explainer)
+       XCTAssertEqual(children.first?.configuration.role, .explainer)
+   }
+
+    func testAChildMayOverrideTheParentModelAndThinkingDepth() async throws {
+        let parent = try await makeParent()
+        _ = try await run(
+            input: [
+                "task": "Use the review model for this investigation.",
+                "model_id": "review-model",
+                "reasoning_effort": "max",
+            ],
+            parent: parent
+        )
+        let children = await store.childSessions(of: parent.id)
+        let child = try XCTUnwrap(children.first)
+        XCTAssertEqual(child.configuration.modelID, "review-model")
+        XCTAssertEqual(child.configuration.reasoningEffort, .max)
+    }
+
+    func testWriteCapableChildUsesTheHostProvidedIsolatedEnvironment() async throws {
+        let parent = try await makeParent()
+        let tool = DelegateTaskTool(
+            model: OverlappingModelClient(probe: probe),
+            registry: ToolRegistry(tools: []),
+            store: store,
+            workspaceID: WorkspaceID(value: "workspace"),
+            workspaceName: "workspace",
+            modelID: "test-model",
+            reasoningEffort: .medium,
+            parentSystemPrompt: "You are Juno Code.",
+            executionFactory: { request in
+                SubagentExecutionEnvironment(
+                    registry: ToolRegistry(tools: []),
+                    workspaceName: "isolated-worktree",
+                    executionRootPath: "/workspace/.juno/worktrees/agent",
+                    gitBranch: request.branch,
+                    permissionMode: .workspaceWrite
+                )
+            }
+        )
+        let result = try await tool.execute(
+            input: [
+                "task": "Implement the isolated change.",
+                "mode": "workspace_write",
+            ],
+            context: ToolContext(
+                sessionID: parent.id,
+                toolCallID: "call-write",
+                emitOutput: { _, _ in }
+            )
+        )
+
+        XCTAssertFalse(result.isError)
+        let children = await store.childSessions(of: parent.id)
+        let child = try XCTUnwrap(children.first)
+        XCTAssertEqual(child.configuration.permissionMode, .workspaceWrite)
+        XCTAssertEqual(child.executionRootPath, "/workspace/.juno/worktrees/agent")
+        XCTAssertTrue(child.gitBranch?.hasPrefix("juno/agent/") == true)
+        XCTAssertEqual(child.parentSessionID, parent.id)
+    }
+
+    func testWriteRequestFailsClosedWhenNoFactoryIsConfigured() async throws {
+        let parent = try await makeParent()
+        let result = try await run(
+            input: [
+                "task": "Implement the isolated change.",
+                "mode": "workspace_write",
+            ],
+            parent: parent
+        )
+
+        XCTAssertTrue(result.isError)
+        XCTAssertTrue(result.content.contains("isolated worktree factory"))
+        let children = await store.childSessions(of: parent.id)
+        XCTAssertTrue(children.isEmpty)
     }
 
     func testAnEmptyCallIsRefused() async throws {

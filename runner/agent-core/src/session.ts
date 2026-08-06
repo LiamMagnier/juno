@@ -108,7 +108,21 @@ export class SessionStore {
   }
 
   saveMessages(messages: ChatMessage[]): void {
-    fs.writeFileSync(path.join(this.dir, 'messages.json'), JSON.stringify(messages, null, 2));
+    // Screenshots are useful to the current provider request but are sensitive
+    // and potentially enormous. Persist only an explicit marker so a resumed
+    // session never replays pixels or leaks them through the local transcript.
+    const persisted = messages.map((message) => ({
+      ...message,
+      content: message.content.map((content) =>
+        content.type === 'image'
+          ? {
+              type: 'text' as const,
+              text: 'Ephemeral Computer Use screenshot omitted from saved transcript.',
+            }
+          : content,
+      ),
+    }));
+    fs.writeFileSync(path.join(this.dir, 'messages.json'), JSON.stringify(persisted, null, 2));
     this.saveMeta();
   }
 

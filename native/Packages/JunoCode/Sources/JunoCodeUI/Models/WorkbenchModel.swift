@@ -101,15 +101,18 @@ public final class WorkbenchModel {
         public let storageRootURL: URL
         public let modelClient: any AgentModelClient
         public let availableModels: [ModelOption]
+        public let remoteSessionProvider: (any RemoteSessionProviding)?
 
         public init(
             storageRootURL: URL,
             modelClient: any AgentModelClient,
-            availableModels: [ModelOption]
+            availableModels: [ModelOption],
+            remoteSessionProvider: (any RemoteSessionProviding)? = nil
         ) {
             self.storageRootURL = storageRootURL
             self.modelClient = modelClient
             self.availableModels = availableModels
+            self.remoteSessionProvider = remoteSessionProvider
         }
 
         /// Default storage under a one-way account scope in
@@ -124,7 +127,8 @@ public final class WorkbenchModel {
         public static func standard(
             accountID: String,
             modelClient: any AgentModelClient,
-            availableModels: [ModelOption]
+            availableModels: [ModelOption],
+            remoteSessionProvider: (any RemoteSessionProviding)? = nil
         ) -> Dependencies {
             let base = FileManager.default.urls(
                 for: .applicationSupportDirectory,
@@ -136,7 +140,8 @@ public final class WorkbenchModel {
             return Dependencies(
                 storageRootURL: base,
                 modelClient: modelClient,
-                availableModels: availableModels
+                availableModels: availableModels,
+                remoteSessionProvider: remoteSessionProvider
             )
         }
 
@@ -211,6 +216,10 @@ public final class WorkbenchModel {
     }
 
     public let dependencies: Dependencies
+    /// Authenticated Cloud/Remote execution, when the host composed it. The
+    /// Desktop Code Studio and the unified JunoMac Code composer share this
+    /// typed provider without fabricating local sessions for remote work.
+    public private(set) var remoteExecutionModel: RemoteExecutionModel?
     public let sessionStore: CodeSessionStore
     private let workspaceDirectory: WorkspaceDirectory
     private var contexts: [WorkspaceID: WorkspaceContext] = [:]
@@ -225,12 +234,72 @@ public final class WorkbenchModel {
     public init(dependencies: Dependencies) {
         self.dependencies = dependencies
         self.availableModels = dependencies.availableModels
+        self.remoteExecutionModel = dependencies.remoteSessionProvider.map {
+            RemoteExecutionModel(provider: $0)
+        }
         self.sessionStore = CodeSessionStore(
             directoryURL: dependencies.storageRootURL.appendingPathComponent("sessions-store")
         )
         self.workspaceDirectory = WorkspaceDirectory(
             directoryURL: dependencies.storageRootURL
         )
+    }
+
+    // MARK: - Cloud and Remote
+
+    /// Resolves the repositories used by the Cloud target picker.
+    ///
+    /// Remote work is intentionally not represented as a local `CodeSession`:
+    /// the server owns its task lifecycle and the authenticated Code task
+    /// surface is the source of truth. These small forwarding methods keep that
+    /// boundary out of the view while still letting the native JunoMac composer
+    /// use the provider that the host already authenticated.
+    public func loadRemoteRepositories() async -> Result<
+        [RemoteRepositoryReference], RemoteSessionProviderError
+    > {
+        guard let remoteExecutionModel else {
+            return .failure(.unavailable(.integrationNotComposed))
+        }
+        return await remoteExecutionModel.loadRepositories()
+    }
+
+    /// Resolves signed-in remote computers and their registered workspaces.
+    public func loadRemoteDevices() async -> Result<
+        [RemoteDeviceTarget], RemoteSessionProviderError
+    > {
+        guard let remoteExecutionModel else {
+            return .failure(.unavailable(.integrationNotComposed))
+        }
+        return await remoteExecutionModel.loadDevices()
+    }
+
+    /// Starts a real Cloud or Remote task and returns its server-owned handle.
+    ///
+    /// A remote run is not inserted into the local session store. Treating it as
+    /// local would make the transcript, permission state and workspace path lie
+    /// about where the code is executing. The native task list remains the
+    /// durable monitor for these runs.
+    public func startRemoteSession(
+        prompt: String,
+        at location: CodeExecutionLocation
+    ) async -> Result<RemoteSessionHandle, RemoteSessionProviderError> {
+        guard let remoteExecutionModel else {
+            return .failure(.unavailable(.integrationNotComposed))
+        }
+        guard location.isRemote else {
+            return .failure(.unavailable(.localExecutionManagedByWorkbench))
+        }
+        if let handle = await remoteExecutionModel.start(prompt: prompt, at: location) {
+            return .success(handle)
+        }
+        switch remoteExecutionModel.state {
+        case .unavailable(_, let reason):
+            return .failure(.unavailable(reason))
+        case .failed(_, let error):
+            return .failure(error)
+        default:
+            return .failure(.transport("The remote task did not return a task handle."))
+        }
     }
 
     // MARK: - Bootstrap
@@ -412,7 +481,20 @@ public final class WorkbenchModel {
         var context: WorkspaceContext?
         if let workspaceID = session.workspaceID {
             guard let opened = await self.context(for: workspaceID) else { return nil }
-            context = opened
+            if let executionRootPath = session.executionRootPath {
+                // An isolated child must never silently fall back to the parent
+                // checkout if its worktree disappeared or its persisted path
+                // was tampered with. The session is still addressable through
+                // its transcript, but opening it as a live workspace requires
+                // the exact contained checkout to exist.
+                let root = URL(fileURLWithPath: executionRootPath, isDirectory: true)
+                guard let isolated = try? opened.isolatedContext(at: root) else {
+                    return nil
+                }
+                context = isolated
+            } else {
+                context = opened
+            }
         }
         let controller = SessionController(
             session: session,

@@ -535,6 +535,11 @@ public struct CodeSession: Hashable, Codable, Sendable {
     /// store is a JSON file on the reader's own disk; a decode failure here
     /// does not degrade, it empties the whole Code section.
     public let workspaceID: WorkspaceID?
+    /// The concrete checkout this session executes in, when it is an isolated
+    /// worktree. It is optional for ordinary sessions and older records. The
+    /// UI must validate it is still contained by the parent workspace before
+    /// turning it into a filesystem capability; this is metadata, not a grant.
+    public let executionRootPath: String?
     /// The session that delegated this one, when it is a sub-agent rather than a
     /// conversation the reader started.
     ///
@@ -574,6 +579,7 @@ public struct CodeSession: Hashable, Codable, Sendable {
     public init(
         id: CodeSessionID = CodeSessionID(),
         workspaceID: WorkspaceID?,
+        executionRootPath: String? = nil,
         parentSessionID: CodeSessionID? = nil,
         title: String,
         status: SessionStatus = .idle,
@@ -588,6 +594,7 @@ public struct CodeSession: Hashable, Codable, Sendable {
     ) {
         self.id = id
         self.workspaceID = workspaceID
+        self.executionRootPath = executionRootPath
         self.parentSessionID = parentSessionID
         self.title = title
         self.status = status

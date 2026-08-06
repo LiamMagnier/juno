@@ -134,7 +134,30 @@ fi
 echo
 
 # ---------------------------------------------------------------------------
-# 4. Release binaries must not contain the DEBUG preview harness.
+# 4. The active JunoMac Code workbench must expose its local preview, remote
+# task monitor, and composed agent runtime. These source-level checks prevent
+# the package and the active app shell from drifting apart again.
+# ---------------------------------------------------------------------------
+echo "Code workbench wiring"
+if npm run code:preview:check >/dev/null 2>&1; then
+    pass "active JunoMac Code workbench exposes the local preview"
+else
+    fail "active JunoMac Code workbench is missing local preview wiring"
+fi
+if npm run code:remote:check >/dev/null 2>&1; then
+    pass "active JunoMac Code composer exposes Cloud/Remote task dispatch"
+else
+    fail "active JunoMac Code composer is missing Cloud/Remote wiring"
+fi
+if npm run code:runtime:check >/dev/null 2>&1; then
+    pass "MCP, hooks, Computer Use, subagents, terminal, preview, and remote monitoring are composed"
+else
+    fail "active Juno Code runtime is missing a core capability composition"
+fi
+echo
+
+# ---------------------------------------------------------------------------
+# 5. Release binaries must not contain the DEBUG preview harness.
 #
 # Optional: only runs when a built .app is passed. The harness is wrapped in
 # `#if DEBUG` so this should always hold, but a release that shipped a preview

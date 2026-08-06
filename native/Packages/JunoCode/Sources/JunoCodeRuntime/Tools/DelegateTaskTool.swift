@@ -26,6 +26,9 @@ public struct DelegateTaskTool: CodeTool {
     private let modelID: String
     private let reasoningEffort: ReasoningEffort?
     private let parentSystemPrompt: String
+    /// Supplied by a host that can create a real isolated checkout. Without it
+    /// delegation remains read-only, even if the model asks for writes.
+    private let executionFactory: SubagentExecutionFactory?
 
     /// How long one `delegate_task` call may run before its agents are stopped.
     ///
@@ -53,7 +56,8 @@ public struct DelegateTaskTool: CodeTool {
         workspaceName: String,
         modelID: String,
         reasoningEffort: ReasoningEffort?,
-        parentSystemPrompt: String
+        parentSystemPrompt: String,
+        executionFactory: SubagentExecutionFactory? = nil
     ) {
         self.model = model
         self.registry = registry
@@ -63,18 +67,23 @@ public struct DelegateTaskTool: CodeTool {
         self.modelID = modelID
         self.reasoningEffort = reasoningEffort
         self.parentSystemPrompt = parentSystemPrompt
+        self.executionFactory = executionFactory
     }
 
     public let name = "delegate_task"
     public let description = """
-        Delegate bounded read-only investigation to inspectable sub-agents. Use for \
-        codebase exploration, review, or explanation that can proceed independently. \
-        Pass `tasks` with up to \(DelegateTaskTool.maximumPerCall) genuinely independent \
-        investigations to run them concurrently (\(DelegateTaskTool.maximumConcurrent) at a \
-        time) and get every answer back in one call; pass `task` for a single one. Each \
-        sub-agent starts with a fresh context, so its instruction must be self-contained, \
-        and it cannot delegate further.
-        """
+       Delegate bounded, inspectable work to sub-agents. Read-only investigation is \
+       the default; an implementation task may request `workspace_write` only when \
+       the host can provide an isolated Git worktree. The parent checkout is never \
+       used for delegated writes. \
+        Each task may choose a model and thinking depth; omitted values inherit \
+        the parent session. \
+       Pass `tasks` with up to \(DelegateTaskTool.maximumPerCall) genuinely independent \
+       investigations to run them concurrently (\(DelegateTaskTool.maximumConcurrent) at a \
+       time) and get every answer back in one call; pass `task` for a single one. Each \
+       sub-agent starts with a fresh context, so its instruction must be self-contained, \
+       and it cannot delegate further.
+       """
 
     public var inputSchema: JSONValue {
         let taskSchema: JSONValue = [
@@ -84,6 +93,20 @@ public struct DelegateTaskTool: CodeTool {
                 "role": [
                     "type": "string",
                     "enum": ["engineer", "reviewer", "explainer"],
+                ],
+                "model_id": [
+                    "type": "string",
+                    "description": "Optional model id for this sub-agent; defaults to the parent model",
+                ],
+                "reasoning_effort": [
+                    "type": "string",
+                    "enum": .array(ReasoningEffort.allCases.map { .string($0.rawValue) }),
+                    "description": "Optional thinking depth for this sub-agent; defaults to the parent setting",
+                ],
+                "mode": [
+                    "type": "string",
+                    "enum": .array(SubagentExecutionMode.allCases.map { .string($0.rawValue) }),
+                    "description": "read_only (default) or workspace_write in an isolated worktree",
                 ],
                 "title": ["type": "string", "description": "Short imperative title"],
             ],
@@ -96,6 +119,15 @@ public struct DelegateTaskTool: CodeTool {
                 "role": [
                     "type": "string",
                     "enum": ["engineer", "reviewer", "explainer"],
+                ],
+                "model_id": ["type": "string"],
+                "reasoning_effort": [
+                    "type": "string",
+                    "enum": .array(ReasoningEffort.allCases.map { .string($0.rawValue) }),
+                ],
+                "mode": [
+                    "type": "string",
+                    "enum": .array(SubagentExecutionMode.allCases.map { .string($0.rawValue) }),
                 ],
                 "title": ["type": "string"],
                 "tasks": [
@@ -133,6 +165,9 @@ public struct DelegateTaskTool: CodeTool {
         let title: String
         let task: String
         let role: AgentRole
+        let modelID: String?
+        let reasoningEffort: ReasoningEffort?
+        let mode: SubagentExecutionMode
     }
 
     static func specs(from input: JSONValue, toolCallID: String) throws -> [Spec] {
@@ -170,7 +205,15 @@ public struct DelegateTaskTool: CodeTool {
                 agentID: "\(toolCallID)#\(index)",
                 title: String(source.prefix(80)),
                 task: task,
-                role: AgentRole(rawValue: entry["role"]?.stringValue ?? "") ?? .engineer
+                role: AgentRole(rawValue: entry["role"]?.stringValue ?? "") ?? .engineer,
+                modelID: entry["model_id"]?.stringValue.flatMap { raw in
+                    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return trimmed.isEmpty ? nil : trimmed
+                },
+                reasoningEffort: entry["reasoning_effort"]?.stringValue.flatMap(ReasoningEffort.init(rawValue:)),
+                mode: SubagentExecutionMode(
+                    rawValue: entry["mode"]?.stringValue ?? SubagentExecutionMode.readOnly.rawValue
+                ) ?? .readOnly
             )
         }
     }
@@ -270,18 +313,8 @@ public struct DelegateTaskTool: CodeTool {
         parentSessionID: CodeSessionID,
         deadline: ContinuousClock.Instant
     ) async -> Outcome {
-        let configuration = AgentConfiguration(
-            modelID: modelID,
-            // The stored record needs a concrete depth — it is what the panel
-            // shows for the child and what a resume would restore. The *wire*
-            // decision stays optional and is passed to the orchestrator below,
-            // so a model that takes no thinking parameter still gets none.
-            reasoningEffort: reasoningEffort ?? .medium,
-            role: spec.role,
-            permissionMode: .readOnly,
-            location: .local,
-            computerUseEnabled: false
-        )
+        let childModelID = spec.modelID ?? modelID
+        let childReasoningEffort = spec.reasoningEffort ?? reasoningEffort
         await publish(
             spec,
             toolCallID: toolCallID,
@@ -290,14 +323,63 @@ public struct DelegateTaskTool: CodeTool {
             currentActivity: "Opening a session"
         )
 
+        let environment: SubagentExecutionEnvironment
+        do {
+            if spec.mode == .workspaceWrite {
+                guard let executionFactory else {
+                    throw ToolError.denied(
+                        reason: "Write-capable sub-agents are unavailable because no isolated worktree factory is configured."
+                    )
+                }
+                let request = SubagentExecutionRequest(
+                    taskID: spec.agentID,
+                    parentSessionID: parentSessionID,
+                    title: spec.title,
+                    branch: Self.branchName(for: spec),
+                    mode: spec.mode
+                )
+                environment = try await executionFactory(request)
+            } else {
+                environment = .readOnly(
+                    registry: registry,
+                    workspaceName: workspaceName
+                )
+            }
+        } catch {
+            let message = "The sub-agent's execution environment could not be created: \(error)"
+            await publish(
+                spec,
+                toolCallID: toolCallID,
+                parentSessionID: parentSessionID,
+                status: .failed,
+                completedAt: Date(),
+                error: message
+            )
+            return Outcome(index: index, title: spec.title, status: .failed, answer: message)
+        }
+
+        let configuration = AgentConfiguration(
+            modelID: childModelID,
+            // The stored record needs a concrete depth — it is what the panel
+            // shows for the child and what a resume would restore. The *wire*
+            // decision stays optional and is passed to the orchestrator below,
+            // so a model that takes no thinking parameter still gets none.
+            reasoningEffort: childReasoningEffort ?? .medium,
+            role: spec.role,
+            permissionMode: environment.permissionMode,
+            location: .local,
+            computerUseEnabled: false
+        )
+
         let child: CodeSession
         do {
             child = try await store.createSession(
                 workspaceID: workspaceID,
-                workspaceName: workspaceName,
+                executionRootPath: environment.executionRootPath,
+                workspaceName: environment.workspaceName,
                 title: spec.title,
                 configuration: configuration,
-                gitBranch: nil,
+                gitBranch: environment.gitBranch,
                 parentSessionID: parentSessionID
             )
         } catch {
@@ -324,11 +406,21 @@ public struct DelegateTaskTool: CodeTool {
             startedAt: startedAt
         )
 
-        let permissions = PermissionCoordinator(sessionID: child.id, mode: .readOnly)
+        let permissions = PermissionCoordinator(
+            sessionID: child.id,
+            mode: environment.permissionMode
+        )
+        let childInstruction: String
+        switch spec.mode {
+        case .readOnly:
+            childInstruction = "You are a read-only Juno Code sub-agent. Do not modify files, run commands with side effects, commit, or control the computer."
+        case .workspaceWrite:
+            childInstruction = "You are a write-capable Juno Code sub-agent working only in an isolated Git worktree. Implement the delegated task there, run appropriate verification, and do not merge or modify the parent checkout."
+        }
         let orchestrator = AgentOrchestrator(
             sessionID: child.id,
             model: model,
-            registry: registry,
+            registry: environment.registry,
             permissions: permissions,
             store: store,
             configuration: AgentOrchestrator.Configuration(
@@ -336,14 +428,13 @@ public struct DelegateTaskTool: CodeTool {
                 systemPrompt: """
                 \(parentSystemPrompt)
 
-                You are a read-only Juno Code sub-agent. Complete only the
-                delegated investigation. Do not modify files or run commands
-                with side effects. Return a concise result with concrete file
-                references and uncertainties. You cannot delegate further.
+                \(childInstruction) Complete only the delegated task. Return a
+                concise result with concrete file references, verification
+                evidence, and uncertainties. You cannot delegate further.
                 """
             ),
-            modelID: modelID,
-            reasoningEffort: reasoningEffort
+            modelID: childModelID,
+            reasoningEffort: childReasoningEffort
         )
         let usage = UsageTally()
         await orchestrator.observeUsage { input, output in
@@ -399,18 +490,34 @@ public struct DelegateTaskTool: CodeTool {
         }
         await orchestrator.release()
 
+        var finalizationError: String?
+        if let finalize = environment.finalize {
+            do {
+                _ = try await finalize()
+            } catch {
+                // Keep the child result visible even when snapshotting fails;
+                // the parent must not be told that the work is safely
+                // reviewable when the host could not create that snapshot.
+                finalizationError = "The isolated result could not be finalized: \(error)"
+            }
+        }
+
         let events = await store.events(for: child.id)
-        let answer = events.reversed().compactMap { event -> String? in
+        let recordedAnswer = events.reversed().compactMap { event -> String? in
             if case .assistantMessage(let message) = event.payload {
                 return message.text
             }
             return nil
         }.first ?? "The sub-agent completed without a written result."
+        let answer = [recordedAnswer, finalizationError]
+            .compactMap { $0 }
+            .joined(separator: "\n\n")
         // The child's own record decides the outcome, rather than this call
         // assuming success because it returned: a watchdog stop, an iteration
         // cap and a transport failure all end here.
         let childStatus = (try? await store.session(id: child.id).status) ?? .completed
-        let status = Self.status(of: childStatus)
+        let childOutcomeStatus = Self.status(of: childStatus)
+        let status = finalizationError == nil ? childOutcomeStatus : .failed
         let tokens = await usage.snapshot()
         await publish(
             spec,
@@ -423,7 +530,7 @@ public struct DelegateTaskTool: CodeTool {
             inputTokens: tokens.input,
             outputTokens: tokens.output,
             summary: answer,
-            error: status == .completed ? nil : lastError(in: events)
+            error: finalizationError ?? (status == .completed ? nil : lastError(in: events))
         )
         return Outcome(index: index, title: spec.title, status: status, answer: answer)
     }
@@ -454,6 +561,7 @@ public struct DelegateTaskTool: CodeTool {
                     title: spec.title,
                     task: spec.task,
                     role: spec.role,
+                    executionMode: spec.mode,
                     status: status,
                     currentActivity: currentActivity,
                     startedAt: startedAt,
@@ -465,6 +573,19 @@ public struct DelegateTaskTool: CodeTool {
                 )
             )
         )
+    }
+
+    private static func branchName(for spec: Spec) -> String {
+        let title = spec.title
+            .lowercased()
+            .map { character in
+                character.isLetter || character.isNumber || character == "-" || character == "_"
+                    ? character
+                    : "-"
+            }
+        let slug = String(title).trimmingCharacters(in: CharacterSet(charactersIn: "-_."))
+        let digest = Digests.sha256Hex(spec.agentID).prefix(8)
+        return "juno/agent/\(String(slug.prefix(48)))\(slug.isEmpty ? "task" : "")-\(digest)"
     }
 
     /// The child session's terminal status, in the vocabulary both runtimes

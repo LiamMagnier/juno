@@ -37,6 +37,13 @@ public final class NativeCodeModel {
     public private(set) var events: [NativeCodeEvent] = []
     public private(set) var pendingApproval: NativeCodeApproval?
     public private(set) var isStreaming = false
+    /// Number of reconnect attempts for the open task's event stream.
+    ///
+    /// A live run must not become unobservable just because a proxy closed its
+    /// SSE connection or the Mac briefly lost Wi-Fi. The monitor keeps retrying
+    /// until the task is terminal; this value lets the UI say "reconnecting"
+    /// instead of showing a stale spinner as if the stream were healthy.
+    public private(set) var streamReconnectAttempt = 0
 
     /// The composer's target. Persisted so the reader's last choice survives a
     /// relaunch — picking "Cloud" every session because the app forgot is the
@@ -202,12 +209,25 @@ public final class NativeCodeModel {
         events = []
         pendingApproval = nil
         isStreaming = false
+        streamReconnectAttempt = 0
         selectedRepository = nil
         selectedDeviceID = nil
         selectedWorkspaceKey = nil
         lastErrorDescription = nil
         lastRefreshReachedNothing = false
         phase = .idle
+    }
+
+    /// Schedules an account refresh from a synchronous UI callback.
+    ///
+    /// Remote task creation is owned by the unified JunoCode workbench, while
+    /// this model owns the account task ledger. Keeping this bridge here lets a
+    /// successful create update the monitor immediately without making the
+    /// sheet know how the model performs its async transport work.
+    public func refreshSoon() {
+        Task { [weak self] in
+            await self?.refresh()
+        }
     }
 
     public func refresh() async {
@@ -309,6 +329,7 @@ public final class NativeCodeModel {
         openTask = task
         events = []
         pendingApproval = nil
+        streamReconnectAttempt = 0
         follow(taskID: task.id, afterSeq: 0)
     }
 
@@ -317,6 +338,7 @@ public final class NativeCodeModel {
         openTask = nil
         events = []
         pendingApproval = nil
+        streamReconnectAttempt = 0
     }
 
     public func cancelOpenTask() async {
@@ -363,6 +385,7 @@ public final class NativeCodeModel {
     private func follow(taskID: String, afterSeq: Int) {
         guard let accountID else { return }
         isStreaming = true
+        streamReconnectAttempt = 0
         streamTask = Task { [weak self] in
             guard let self else { return }
             var cursor = afterSeq
@@ -380,6 +403,7 @@ public final class NativeCodeModel {
                             .events(let task, let newEvents, let approval):
                             apply(task)
                             append(newEvents)
+                            streamReconnectAttempt = 0
                             cursor = max(cursor, newEvents.last?.seq ?? cursor)
                             if let approval { pendingApproval = approval }
                             // An answered request must clear the card even when
@@ -397,10 +421,15 @@ public final class NativeCodeModel {
                     return
                 } catch {
                     attempt += 1
-                    guard attempt <= 5 else {
+                    // A task can outlive a laptop sleep, a VPN transition, or
+                    // several proxy reconnects. Stopping after five failures
+                    // silently turns a live task into a stale history row. Keep
+                    // the cursor and retry until the task reaches a terminal
+                    // state; the bounded delay prevents a hot loop while the
+                    // service is unavailable.
+                    streamReconnectAttempt = attempt
+                    if attempt >= 3 {
                         lastErrorDescription = NativeFailureMessage.presentable(error)
-                        isStreaming = false
-                        return
                     }
                 }
                 if openTask?.status.isTerminal == true {
@@ -410,9 +439,16 @@ public final class NativeCodeModel {
                 // A short backoff before reconnecting. Zero would spin against a
                 // server that is refusing, and long would make a live run look
                 // stalled.
-                try? await Task.sleep(for: .milliseconds(attempt == 0 ? 200 : 1_200))
+                let delaySeconds: Double
+                if attempt == 0 {
+                    delaySeconds = 0.2
+                } else {
+                    delaySeconds = min(30, 0.5 * pow(2, Double(min(attempt - 1, 6))))
+                }
+                try? await Task.sleep(for: .milliseconds(Int(delaySeconds * 1_000)))
             }
             isStreaming = false
+            streamReconnectAttempt = 0
         }
     }
 

@@ -85,6 +85,34 @@ private struct EphemeralImageTool: CodeTool {
     }
 }
 
+private actor BlockingAgentHooks: AgentLifecycleHooks {
+    private(set) var started = 0
+    private(set) var beforeCalls = 0
+    private(set) var afterCalls = 0
+    private(set) var stopped = 0
+
+    func sessionStarted(sessionID _: CodeSessionID) async {
+        started += 1
+    }
+
+    func beforeTool(_: AgentToolHookInvocation) async -> AgentHookDecision {
+        beforeCalls += 1
+        return .deny(reason: "The test hook blocked this tool.")
+    }
+
+    func afterTool(
+        _: AgentToolHookInvocation,
+        succeeded _: Bool,
+        summary _: String
+    ) async {
+        afterCalls += 1
+    }
+
+    func sessionStopped(sessionID _: CodeSessionID, status _: SessionStatus) async {
+        stopped += 1
+    }
+}
+
 final class AgentOrchestratorTests: XCTestCase {
     private var workspaceURL: URL!
     private var storeURL: URL!
@@ -230,6 +258,56 @@ final class AgentOrchestratorTests: XCTestCase {
             }
             return false
         })
+    }
+
+    func testLifecycleHookCanBlockToolBeforeAuthorization() async throws {
+        let model = ScriptedModelClient(steps: [
+            .toolCalls(
+                [("blocked", "read_file", ["path": "src/main.swift"])],
+                text: ""
+            ),
+            .text("The hook stopped the read.")
+        ])
+        let hooks = BlockingAgentHooks()
+        let permissions = PermissionCoordinator(sessionID: session.id, mode: .fullAccess)
+        let orchestrator = AgentOrchestrator(
+            sessionID: session.id,
+            model: model,
+            registry: registry,
+            permissions: permissions,
+            store: store,
+            configuration: AgentOrchestrator.Configuration(systemPrompt: "You are Juno Code."),
+            modelID: "test-model",
+            reasoningEffort: .medium,
+            lifecycleHooks: hooks
+        )
+
+        try await orchestrator.submit(prompt: "Read the file")
+        await orchestrator.awaitCompletion()
+
+        let events = await payloads()
+        XCTAssertEqual(
+            events.filter {
+                if case .toolStarted = $0 { return true }
+                return false
+            }.count,
+            0
+        )
+        guard case let .toolCompleted(completed)? = events.first(where: {
+            if case .toolCompleted = $0 { return true }
+            return false
+        }) else {
+            return XCTFail("missing hook-blocked tool completion")
+        }
+        XCTAssertEqual(completed.status, .denied)
+        let started = await hooks.started
+        let beforeCalls = await hooks.beforeCalls
+        let afterCalls = await hooks.afterCalls
+        let stopped = await hooks.stopped
+        XCTAssertEqual(started, 1)
+        XCTAssertEqual(beforeCalls, 1)
+        XCTAssertEqual(afterCalls, 0)
+        XCTAssertEqual(stopped, 1)
     }
 
     func testApprovalFlowSuspendsAndResumesLoop() async throws {

@@ -43,4 +43,27 @@ final class CodeContractsTests: XCTestCase {
         }
         XCTAssertEqual(timeline.lastSequence, 20)
     }
+
+    func testRemoteTaskDisplayNeverFallsBackToAHostPath() {
+        let task = NativeCodeTask(
+            id: "task-1",
+            title: "Review",
+            prompt: "Review the project",
+            status: .queued,
+            target: .device,
+            deviceID: "device-1",
+            workspaceName: nil,
+            workspacePath: "/Users/example/PrivateProject",
+            repoOwner: nil,
+            repoName: nil,
+            baseRef: nil,
+            pullRequestURL: nil,
+            lastSeq: 0,
+            createdAt: Date(timeIntervalSince1970: 1),
+            updatedAt: Date(timeIntervalSince1970: 1)
+        )
+
+        XCTAssertEqual(task.whereItRuns, "Remote computer")
+        XCTAssertFalse(task.whereItRuns.contains("PrivateProject"))
+    }
 }

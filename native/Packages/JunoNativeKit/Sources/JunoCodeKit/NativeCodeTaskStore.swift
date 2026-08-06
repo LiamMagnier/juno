@@ -142,7 +142,11 @@ public struct NativeCodeTask: Identifiable, Equatable, Sendable {
             guard let repoOwner, let repoName else { return "" }
             return "\(repoOwner)/\(repoName)"
         case .device:
-            return workspaceName ?? workspacePath ?? ""
+            // The task API still carries the host's path for the device to
+            // execute against, but an owner-facing history label never needs
+            // to reveal it. A mobile-safe projection can omit the field later
+            // without changing the monitor's copy or layout.
+            return workspaceName ?? "Remote computer"
         }
     }
 }

@@ -51,15 +51,20 @@ public struct SessionCreatedEvent: Hashable, Codable, Sendable {
     /// Nil when the session was started without a project. The transcript then
     /// opens on a conversation that has no folder rather than naming one.
     public let workspaceID: WorkspaceID?
+    /// The isolated checkout used by this session, if any. Optional for
+    /// backwards-compatible decoding of ordinary and older sessions.
+    public let executionRootPath: String?
     public let workspaceName: String?
     public let configuration: AgentConfiguration
 
     public init(
         workspaceID: WorkspaceID?,
+        executionRootPath: String? = nil,
         workspaceName: String?,
         configuration: AgentConfiguration
     ) {
         self.workspaceID = workspaceID
+        self.executionRootPath = executionRootPath
         self.workspaceName = workspaceName
         self.configuration = configuration
     }
@@ -318,6 +323,9 @@ public struct SubagentUpdateEvent: Hashable, Codable, Sendable {
     /// The instruction the agent was given, verbatim.
     public let task: String
     public let role: AgentRole
+    /// The execution contract recorded with the lifecycle, so a completed
+    /// write-capable agent can be offered an explicit review/apply path.
+    public let executionMode: SubagentExecutionMode
     public let status: SubagentStatus
     /// A short phrase for what the agent is doing at this moment. Empty when
     /// there is nothing more specific to say than its status.
@@ -337,6 +345,12 @@ public struct SubagentUpdateEvent: Hashable, Codable, Sendable {
 
     public static let maximumSummaryCharacters = 3_000
 
+    private enum CodingKeys: String, CodingKey {
+        case agentID, toolCallID, childSessionID, title, task, role
+        case executionMode, status, currentActivity, startedAt, completedAt
+        case inputTokens, outputTokens, summary, error
+    }
+
     public init(
         agentID: String,
         toolCallID: String,
@@ -344,6 +358,7 @@ public struct SubagentUpdateEvent: Hashable, Codable, Sendable {
         title: String,
         task: String,
         role: AgentRole,
+        executionMode: SubagentExecutionMode = .readOnly,
         status: SubagentStatus,
         currentActivity: String = "",
         startedAt: Date? = nil,
@@ -359,6 +374,7 @@ public struct SubagentUpdateEvent: Hashable, Codable, Sendable {
         self.title = title
         self.task = task
         self.role = role
+        self.executionMode = executionMode
         self.status = status
         self.currentActivity = currentActivity
         self.startedAt = startedAt
@@ -369,6 +385,28 @@ public struct SubagentUpdateEvent: Hashable, Codable, Sendable {
             String($0.prefix(Self.maximumSummaryCharacters))
         }
         self.error = error
+    }
+
+    /// Old transcripts predate the execution mode field. They are read as
+    /// read-only, which is the safe interpretation for a run whose isolation
+    /// contract was never recorded.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        agentID = try values.decode(String.self, forKey: .agentID)
+        toolCallID = try values.decode(String.self, forKey: .toolCallID)
+        childSessionID = try values.decodeIfPresent(CodeSessionID.self, forKey: .childSessionID)
+        title = try values.decode(String.self, forKey: .title)
+        task = try values.decode(String.self, forKey: .task)
+        role = try values.decode(AgentRole.self, forKey: .role)
+        executionMode = try values.decodeIfPresent(SubagentExecutionMode.self, forKey: .executionMode) ?? .readOnly
+        status = try values.decode(SubagentStatus.self, forKey: .status)
+        currentActivity = try values.decodeIfPresent(String.self, forKey: .currentActivity) ?? ""
+        startedAt = try values.decodeIfPresent(Date.self, forKey: .startedAt)
+        completedAt = try values.decodeIfPresent(Date.self, forKey: .completedAt)
+        inputTokens = try values.decodeIfPresent(Int.self, forKey: .inputTokens)
+        outputTokens = try values.decodeIfPresent(Int.self, forKey: .outputTokens)
+        summary = try values.decodeIfPresent(String.self, forKey: .summary)
+        error = try values.decodeIfPresent(String.self, forKey: .error)
     }
 }
 

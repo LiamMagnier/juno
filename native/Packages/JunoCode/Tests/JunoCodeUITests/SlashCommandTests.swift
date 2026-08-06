@@ -1,4 +1,7 @@
+import Foundation
 import Testing
+import JunoCodeCore
+import JunoCodeLocal
 @testable import JunoCodeUI
 
 /// Saved prompts, and the rule for when the menu is allowed to appear.
@@ -253,5 +256,63 @@ struct CodeSlashCommandLibraryTests {
     @Test
     func aQueryThatMatchesNothingReturnsNothing() {
         #expect(CodeSlashCommandLibrary.builtIn.matches("zzzzz").isEmpty)
+    }
+}
+
+struct CodeSkillDiscoveryContractTests {
+    /// Skills use the same prompt parser as command files, so repository
+    /// authors can move a prompt between .claude/skills and .juno/commands
+    /// without changing its visible behavior.
+    @Test
+    func aSkillMarkdownFileHasTheSameExpansionContractAsACommand() {
+       let skill = CodeSlashCommand.parse(
+            name: "ship-check",
+           contents: "---\ndescription: Verify a release\n---\nInspect the release checklist and run the relevant checks.\n$ARGUMENTS",
+            path: ".claude/skills/ship-check/SKILL.md"
+        )
+        #expect(skill?.summary == "Verify a release")
+        #expect(skill?.source == .workspace(".claude/skills/ship-check/SKILL.md"))
+        #expect(
+            skill?.expanded(argument: "for version 2.0")
+                == "Inspect the release checklist and run the relevant checks.\nfor version 2.0"
+        )
+    }
+
+    @Test
+    func workspaceDiscoveryReadsCommandsAndSkillsThroughContainedPaths() async throws {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("juno-slash-discovery-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let commands = root.appendingPathComponent(".claude/commands", isDirectory: true)
+        let skills = root.appendingPathComponent(".juno/skills/release", isDirectory: true)
+        try FileManager.default.createDirectory(at: commands, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: skills, withIntermediateDirectories: true)
+        try "---\ndescription: Review locally\n---\nReview this change. $ARGUMENTS"
+            .write(to: commands.appendingPathComponent("review.md"), atomically: true, encoding: .utf8)
+        try "---\ndescription: Ship safely\n---\nCheck the release. $ARGUMENTS"
+            .write(to: skills.appendingPathComponent("SKILL.md"), atomically: true, encoding: .utf8)
+
+        let id = WorkspaceID()
+        let access = try WorkspaceAccess(workspaceID: id, grantedURL: root)
+        let descriptor = WorkspaceDescriptor(
+            id: id,
+            displayName: root.lastPathComponent,
+            localPathHint: root.path,
+            isGitRepository: false,
+            lastOpenedAt: Date()
+        )
+        let context = WorkspaceContext(
+            record: WorkspaceRecord(
+                descriptor: descriptor,
+                bookmarkData: Data()
+            ),
+            access: access,
+            storageRoot: root.appendingPathComponent("storage", isDirectory: true)
+        )
+
+        let discovered = await context.slashCommands()
+        #expect(discovered.contains { $0.name == "review" })
+        #expect(discovered.contains { $0.name == "release" })
+        #expect(discovered.first { $0.name == "release" }?.prompt.contains("Check the release") == true)
     }
 }

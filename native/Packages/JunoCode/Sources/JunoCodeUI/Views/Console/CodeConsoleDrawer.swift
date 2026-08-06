@@ -11,14 +11,14 @@ import SwiftUI
 /// column's full width, scrolls sideways rather than wrapping, and can be pushed
 /// out of the way without leaving the session.
 ///
-/// It is an output log plus a one-shot command field, and it says so. Nothing
-/// beneath it is a shell: `CommandExecutionService` spawns bounded processes with
-/// a scrubbed environment, `standardInput` bound to `/dev/null`, no PTY and no
-/// ANSI interpretation. Presenting this as a terminal would promise a cursor,
-/// a prompt and interactive input that do not exist.
+/// It separates bounded one-shot output from a real PTY-backed terminal. The
+/// distinction is visible in the segmented control: agent/tool output remains
+/// capped and auditable, while reader-owned long-lived processes get stdin,
+/// resize and process-group cleanup.
 public struct CodeConsoleDrawer: View {
     public enum Segment: String, CaseIterable, Identifiable, Sendable {
         case output
+        case terminal
         case tests
 
         public var id: String { rawValue }
@@ -26,6 +26,7 @@ public struct CodeConsoleDrawer: View {
         var label: String {
             switch self {
             case .output: return "Output"
+            case .terminal: return "Terminal"
             case .tests: return "Tests"
             }
         }
@@ -45,6 +46,7 @@ public struct CodeConsoleDrawer: View {
     /// window they want spent on machine output is part of how they arranged it.
     @SceneStorage("juno.code.console.height") private var height = Self.defaultHeight
     @State private var command = ""
+    @State private var terminalInput = ""
     @State private var dragBaseline: Double?
     @State private var isPushingResizeCursor = false
 
@@ -71,6 +73,7 @@ public struct CodeConsoleDrawer: View {
             Group {
                 switch segment {
                 case .output: outputSegment
+                case .terminal: terminalSegment
                 case .tests: testsSegment
                 }
             }
@@ -142,12 +145,16 @@ public struct CodeConsoleDrawer: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 148)
+            .frame(width: 218)
             .accessibilityIdentifier("juno.code.console.segment")
 
             Spacer(minLength: JunoSpace.snug)
 
-            runState
+            if segment == .terminal {
+                interactiveRunState
+            } else {
+                runState
+            }
 
             Button {
                 copyVisibleOutput()
@@ -214,10 +221,49 @@ public struct CodeConsoleDrawer: View {
         }
     }
 
+    @ViewBuilder
+    private var interactiveRunState: some View {
+        switch controller.interactiveTerminalState {
+        case .starting:
+            HStack(spacing: JunoSpace.tight) {
+                ProgressView().controlSize(.small)
+                Text("Starting terminal").junoCaption()
+            }
+        case let .running(processID):
+            HStack(spacing: JunoSpace.tight) {
+                Circle().fill(Color.junoSuccess).frame(width: 7, height: 7)
+                Text("Terminal · " + String(processID)).junoCaption().monospacedDigit()
+                Button("Stop") { Task { await controller.stopInteractiveTerminal() } }
+                    .controlSize(.small)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Interactive terminal running, process " + String(processID))
+        case let .exited(code):
+            Label(
+                "Exited " + String(code),
+                systemImage: code == 0 ? "checkmark.circle" : "xmark.circle"
+            )
+            .junoCaption()
+            .foregroundStyle(code == 0 ? Color.junoSuccess : Color.junoDanger)
+        case let .failed(reason):
+            Label(reason, systemImage: "exclamationmark.triangle")
+                .junoCaption()
+                .foregroundStyle(Color.junoDanger)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        case .idle:
+            EmptyView()
+        }
+    }
+
     // MARK: - Output
 
     private var visibleLines: [TerminalLine] {
-        segment == .output ? controller.terminal : controller.lastTestRunOutput
+        switch segment {
+        case .output: return controller.terminal
+        case .terminal: return controller.interactiveTerminal
+        case .tests: return controller.lastTestRunOutput
+        }
     }
 
     @ViewBuilder
@@ -323,6 +369,84 @@ public struct CodeConsoleDrawer: View {
         )
     }
 
+    @ViewBuilder
+    private var terminalSegment: some View {
+        if let reason = controller.interactiveTerminalUnavailableReason {
+            unavailable(reason)
+        } else {
+            VStack(spacing: 0) {
+                interactiveOutputLog
+                Divider().overlay(Color.junoSeparator)
+                interactiveCommandField
+            }
+        }
+    }
+
+    private var interactiveOutputLog: some View {
+        ScrollViewReader { proxy in
+            ScrollView([.vertical, .horizontal]) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(controller.interactiveTerminal) { line in
+                        outputRow(line).id(line.id)
+                    }
+                }
+                .padding(.vertical, JunoSpace.tight)
+                .padding(.horizontal, JunoSpace.snug)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.junoTerminal)
+            .overlay {
+                if controller.interactiveTerminal.isEmpty {
+                    Text("Start a persistent shell, watcher, REPL or dev server here.")
+                        .junoCaption()
+                        .multilineTextAlignment(.center)
+                        .padding(JunoSpace.regular)
+                }
+            }
+            .onChange(of: controller.interactiveTerminal.last?.id) { _, newValue in
+                guard let newValue else { return }
+                proxy.scrollTo(newValue, anchor: .bottom)
+            }
+        }
+    }
+
+    private var interactiveCommandField: some View {
+        HStack(spacing: JunoSpace.snug) {
+            Text(controller.interactiveTerminalState.isRunning ? ">" : "$")
+                .junoCodeSmall()
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
+            TextField(
+                controller.interactiveTerminalState.isRunning
+                    ? "Type input and press Return"
+                    : "Start a persistent command, e.g. npm run dev",
+                text: $terminalInput
+            )
+            .textFieldStyle(.plain)
+            .junoCode()
+            .onSubmit(submitInteractiveInput)
+            .accessibilityLabel(
+                controller.interactiveTerminalState.isRunning
+                    ? "Terminal input"
+                    : "Start terminal command"
+            )
+            .accessibilityIdentifier("juno.code.console.terminal")
+            if controller.interactiveTerminalState.isRunning {
+                Button {
+                    Task { await controller.stopInteractiveTerminal() }
+                } label: {
+                    Image(systemName: "stop.fill")
+                }
+                .buttonStyle(.borderless)
+                .help("Stop the terminal process group")
+                .accessibilityLabel("Stop terminal")
+            }
+        }
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.vertical, JunoSpace.snug)
+        .background(Color.junoRaised)
+    }
+
     private var isCommandRunning: Bool {
         controller.consoleRun?.isRunning ?? false
     }
@@ -332,6 +456,17 @@ public struct CodeConsoleDrawer: View {
         guard !pending.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         command = ""
         Task { await controller.runConsoleCommand(pending) }
+    }
+
+    private func submitInteractiveInput() {
+        let pending = terminalInput
+        guard !pending.isEmpty else { return }
+        terminalInput = ""
+        if controller.interactiveTerminalState.isRunning {
+            Task { await controller.writeInteractiveTerminal(pending) }
+        } else {
+            Task { await controller.startInteractiveTerminal(pending) }
+        }
     }
 
     // MARK: - Tests

@@ -7,6 +7,7 @@ import type {
 } from './types.js';
 import type { ProviderAdapter, ReasoningEffort } from './providers/types.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './providers/timeouts.js';
+import { decodeComputerScreenshot } from './computer.js';
 
 /**
  * How long the loop will listen to a stream that is saying nothing.
@@ -48,7 +49,7 @@ export interface AgentLoopOptions {
     id: string;
     name: string;
     input: Record<string, unknown>;
-  }) => Promise<UserContent>;
+  }) => Promise<UserContent | UserContent[]>;
   /** Called after each provider request with that request's usage slice.
    *  Return 'stop' to end the turn (budget enforcement). */
   onStep?: (stepUsage: Usage) => void | 'stop';
@@ -78,6 +79,24 @@ export class ProviderSilenceError extends Error {
     );
     this.name = 'ProviderSilenceError';
   }
+}
+
+function normalizeToolResult(result: UserContent | UserContent[]): UserContent[] {
+  const values = Array.isArray(result) ? result : [result];
+  if (values.length !== 1) return values;
+  const [only] = values;
+  if (only.type !== 'tool_result' || only.isError || !only.content.startsWith('data:image/')) {
+    return values;
+  }
+  const image = decodeComputerScreenshot(only.content);
+  if (!image) return values;
+  return [
+    {
+      ...only,
+      content: 'Screenshot captured. The image is attached as ephemeral vision input.',
+    },
+    image,
+  ];
 }
 
 export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopResult> {
@@ -198,7 +217,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
         });
         continue;
       }
-      results.content.push(await opts.executeToolCall(call));
+      results.content.push(...normalizeToolResult(await opts.executeToolCall(call)));
     }
     opts.messages.push(results);
     opts.onMessagesChanged?.();

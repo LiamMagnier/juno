@@ -68,6 +68,7 @@ public actor CodeSessionStore {
     ///     delete.
     public func createSession(
         workspaceID: WorkspaceID?,
+        executionRootPath: String? = nil,
         workspaceName: String?,
         title: String,
         configuration: AgentConfiguration,
@@ -78,6 +79,7 @@ public actor CodeSessionStore {
         let now = Date()
         let session = CodeSession(
             workspaceID: workspaceID,
+            executionRootPath: executionRootPath,
             parentSessionID: parentSessionID,
             title: title,
             configuration: configuration,
@@ -93,6 +95,7 @@ public actor CodeSessionStore {
             payload: .sessionCreated(
                 SessionCreatedEvent(
                     workspaceID: workspaceID,
+                    executionRootPath: executionRootPath,
                     workspaceName: workspaceName,
                     configuration: configuration
                 )

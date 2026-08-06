@@ -8,6 +8,7 @@ import type {
   ChatMessage,
   PermissionMode,
   Usage,
+  UserContent,
 } from './types.js';
 import type { ProviderAdapter } from './providers/types.js';
 import type { ToolContext, ToolDefinition } from './tools/types.js';
@@ -25,6 +26,7 @@ import {
   orchestrationToolSpecs,
   type SubagentConfig,
 } from './subagents.js';
+import { decodeComputerScreenshot } from './computer.js';
 
 const MAX_STEPS_PER_TURN = 60;
 const MEMORY_FILES = ['JUNO.md', 'AGENTS.md', 'CLAUDE.md'];
@@ -305,7 +307,7 @@ export class AgentSession {
   private async executeToolCall(
     turnIndex: number,
     call: { id: string; name: string; input: Record<string, unknown> },
-  ): Promise<{ type: 'tool_result'; toolCallId: string; content: string; isError?: boolean }> {
+  ): Promise<UserContent | UserContent[]> {
     if (isOrchestrationTool(call.name)) {
       if (!this.subagents) {
         return {
@@ -380,15 +382,27 @@ export class AgentSession {
       output = `Tool crashed: ${err instanceof Error ? err.message : String(err)}`;
       isError = true;
     }
+    const image = !isError && call.name === 'computer_screenshot' ? decodeComputerScreenshot(output) : undefined;
+    const eventOutput = image
+      ? 'Screenshot captured (ephemeral image omitted from the event log).'
+      : output.length > 2000 ? output.slice(0, 2000) + '…' : output;
     this.emit({
       type: 'tool_finished',
       callId: call.id,
       name: call.name,
-      output: output.length > 2000 ? output.slice(0, 2000) + '…' : output,
+      output: eventOutput,
       isError,
       durationMs: Date.now() - started,
     });
-    return { type: 'tool_result', toolCallId: call.id, content: output, isError };
+    const result: UserContent = {
+      type: 'tool_result',
+      toolCallId: call.id,
+      content: image
+        ? 'Screenshot captured. The image is attached as ephemeral vision input.'
+        : output,
+      isError,
+    };
+    return image ? [result, image] : result;
   }
 
   /** Undo everything the previous turn changed on disk. Returns restored paths. */

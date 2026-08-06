@@ -14,12 +14,36 @@ public final class WorkspaceContext: Sendable {
     public let executor: CommandExecutionService
     public let git: GitService
     public let tests: TestRunnerService
+    public let worktrees: WorktreeManager
     public let computerUse: ComputerUseCoordinator
     public let registry: ToolRegistry
+    /// Lazily connected workspace-declared MCP servers. Discovery is local and
+    /// bounded; processes are not started until a Code turn asks for tools.
+    public let mcpRegistry: MCPToolRegistry?
+    public let mcpConfigurationError: String?
+    /// The trust decision lives in Juno's private account storage, never in
+    /// repository-controlled files. Session controllers use it to opt into
+    /// discovered hooks explicitly.
+    public let hookPolicyStore: HookPolicyStore
+    /// Discovered during context construction so hooks are available to the
+    /// first agent turn even when the reader never opens the Repository pane.
+    public let hookDiscoveryResult: HookDiscoveryResult
+    private let storageRoot: URL
 
-    public init(record: WorkspaceRecord, access: WorkspaceAccess, storageRoot: URL) {
+    public init(
+        record: WorkspaceRecord,
+        access: WorkspaceAccess,
+        storageRoot: URL,
+        additionalWritablePaths: [String] = []
+    ) {
         self.record = record
         self.access = access
+        self.storageRoot = storageRoot
+        self.hookPolicyStore = HookPolicyStore(
+            storageRoot: storageRoot,
+            workspaceID: record.id
+        )
+        self.hookDiscoveryResult = HookDiscovery(access: access).discover()
         let checkpoints = CheckpointStore(
             directoryURL: storageRoot
                 .appendingPathComponent("checkpoints")
@@ -37,12 +61,33 @@ public final class WorkspaceContext: Sendable {
         // unconfined developer-mode constructor, and `isContained` reports
         // which one is in force so a surface cannot claim containment it does
         // not have.
-        let executor = CommandExecutionService.contained(workspaceRootURL: access.rootURL)
+        let executor = CommandExecutionService.contained(
+            workspaceRootURL: access.rootURL,
+            additionalWritablePaths: additionalWritablePaths
+        )
         self.executor = executor
         let git = GitService(executor: executor)
         self.git = git
         let tests = TestRunnerService(access: access, executor: executor)
         self.tests = tests
+        self.worktrees = WorktreeManager(
+            executor: executor,
+            workspaceRootURL: access.rootURL,
+            metadataURL: storageRoot
+                .appendingPathComponent("worktrees", isDirectory: true)
+                .appendingPathComponent(record.id.value + ".json", isDirectory: false)
+        )
+        do {
+            let configurations = try MCPConfigurationLoader.load(from: access)
+            self.mcpRegistry = try MCPToolRegistry(
+                workspaceRootURL: access.rootURL,
+                configurations: configurations
+            )
+            self.mcpConfigurationError = nil
+        } catch {
+            self.mcpRegistry = nil
+            self.mcpConfigurationError = error.localizedDescription
+        }
         let computerUse = ComputerUseCoordinator(driver: SystemComputerUseDriver())
         self.computerUse = computerUse
         self.registry = ToolRegistry.standard(
@@ -61,6 +106,56 @@ public final class WorkspaceContext: Sendable {
                 ComputerTypeTool(computer: computerUse),
                 ComputerKeyTool(computer: computerUse),
                 ComputerScrollTool(computer: computerUse),
+            ]
+        )
+    }
+
+    /// Discovers and connects configured MCP servers only when a Code
+    /// orchestrator is actually being built. Each discovered tool still passes
+    /// through Juno's normal approval gate via ``MCPCodeTool``.
+    public func mcpTools() async -> [any CodeTool] {
+        guard let mcpRegistry,
+              let references = try? await mcpRegistry.allTools()
+        else { return [] }
+        return references.map { MCPCodeTool(registry: mcpRegistry, reference: $0) }
+    }
+
+    /// Builds a short-lived context rooted in a Juno-created worktree. The
+    /// worktree path is validated against the original grant before it becomes
+    /// a capability, and Git's shared administrative directory is the only
+    /// extra writable root needed for worktree-aware commands.
+    public func isolatedContext(at rootURL: URL) throws -> WorkspaceContext {
+        let parentRoot = access.rootURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let canonicalRoot = rootURL.resolvingSymlinksInPath().standardizedFileURL.path
+        let prefix = parentRoot.hasSuffix("/") ? parentRoot : parentRoot + "/"
+        guard canonicalRoot.hasPrefix(prefix), canonicalRoot != parentRoot else {
+            throw WorkspaceAccessError.outsideWorkspace(path: rootURL.path)
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: canonicalRoot, isDirectory: &isDirectory),
+              isDirectory.boolValue
+        else {
+            throw WorkspaceAccessError.rootUnavailable
+        }
+
+        let isolatedAccess = try WorkspaceAccess(
+            workspaceID: record.id,
+            grantedURL: URL(fileURLWithPath: canonicalRoot, isDirectory: true)
+        )
+        var descriptor = record.descriptor
+        descriptor.displayName = "\(record.descriptor.displayName) · \(rootURL.lastPathComponent)"
+        descriptor.localPathHint = canonicalRoot
+        descriptor.isGitRepository = isolatedAccess.isGitRepository
+        let isolatedRecord = WorkspaceRecord(
+            descriptor: descriptor,
+            bookmarkData: record.bookmarkData
+        )
+        return WorkspaceContext(
+            record: isolatedRecord,
+            access: isolatedAccess,
+            storageRoot: storageRoot,
+            additionalWritablePaths: [
+                access.rootURL.appendingPathComponent(".git").path,
             ]
         )
     }
@@ -145,6 +240,20 @@ public final class WorkspaceContext: Sendable {
 
         \(repositorySection)
         """
+    }
+
+    /// Makes a reader-owned persistent terminal for this workspace. The
+    /// terminal is intentionally per session rather than stored on the shared
+    /// context: two sessions in the same repository must not type into one
+    /// another's process. It inherits the same kernel boundary as one-shot
+    /// commands and the preview server.
+    public func makeInteractiveTerminal(
+        allowsNetwork: Bool = false
+    ) -> InteractiveTerminalSession {
+        InteractiveTerminalSession.contained(
+            workspaceRootURL: access.rootURL,
+            allowsNetwork: allowsNetwork
+        )
     }
 
     /// Loads repository-authored guidance through the same contained, bounded

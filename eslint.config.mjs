@@ -35,6 +35,9 @@ const config = [
       "tmp-verify/**",
       "next-env.d.ts",
       "src/lib/i18n-catalog.generated.ts",
+      // Bundled design-editor asset generated for the native WebView; lint the
+      // TypeScript source that produces it, not its minified output.
+      "native/macOS/JunoDesktop/Resources/DesignEditor/editor.js",
     ],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),

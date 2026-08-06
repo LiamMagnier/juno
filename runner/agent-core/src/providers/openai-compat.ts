@@ -109,16 +109,28 @@ function toCompatMessages(system: string, messages: ChatMessage[]): OpenAI.Chat.
   for (const m of messages) {
     if (m.role === 'user') {
       const toolResults = m.content.filter((c) => c.type === 'tool_result');
-      const texts = m.content.filter((c) => c.type === 'text');
       for (const r of toolResults) {
         if (r.type === 'tool_result') {
           out.push({ role: 'tool', tool_call_id: r.toolCallId, content: r.content });
         }
       }
-      if (texts.length > 0) {
+      const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
+      for (const part of m.content) {
+        if (part.type === 'text') {
+          content.push({ type: 'text', text: part.text });
+          continue;
+        }
+        if (part.type === 'image') {
+          content.push({
+            type: 'image_url',
+            image_url: { url: `data:${part.mediaType};base64,${part.data}` },
+          });
+        }
+      }
+      if (content.length > 0) {
         out.push({
           role: 'user',
-          content: texts.map((t) => (t.type === 'text' ? t.text : '')).join('\n'),
+          content,
         });
       }
     } else {
