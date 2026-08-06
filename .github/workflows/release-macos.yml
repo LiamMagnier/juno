@@ -1,5 +1,5 @@
 # The only workflow allowed to publish a macOS artifact.  It is deliberately
-# manual and protected by the `production-release` environment: a source push
+# manual and protected by the `Production` environment: a source push
 # must prove the code, while a human-approved release must additionally prove
 # Developer ID signing and notarization.
 
@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version already committed in native/Config/Base.xcconfig (for example 0.10.1)"
+        description: "Version already committed in native/Config/Base.xcconfig (for example 0.10.2)"
         required: true
         type: string
 
@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RELEASE_ENVIRONMENT: production-release
+  RELEASE_ENVIRONMENT: Production
   JUNO_NOTARY_PROFILE: juno-notary
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
     # Same 5-slot macOS contention as native.yml: notarisation waits on Apple,
     # so this is generous, but it must not sit on a slot for 6 hours.
     timeout-minutes: 40
-    environment: production-release
+    environment: Production
     steps:
       - name: Check out main
         uses: actions/checkout@v4

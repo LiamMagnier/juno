@@ -104,7 +104,7 @@ Connect API-key profile for `notarytool`, then invokes
 publish when Developer ID signing or notarization is unavailable and attaches
 the notarized DMG, dSYM archive and `SHA256SUMS.txt` to the immutable release.
 
-Configure these secrets on the protected `production-release` environment before
+Configure these secrets on the protected `Production` environment before
 running it:
 
 - `APPLE_DEVELOPER_ID_P12_BASE64`
@@ -186,7 +186,7 @@ the publication gate.
 
 ## Publication blockers
 
-- The protected `production-release` environment still needs the Apple
+- The protected `Production` environment still needs the Apple
   Developer ID certificate and App Store Connect notary secrets listed above.
 - Production APNs and StoreKit values require the product owner.
 - The current development builds are not production artifacts; the next stable
