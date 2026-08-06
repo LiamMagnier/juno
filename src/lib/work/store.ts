@@ -869,6 +869,97 @@ export async function claimRun(input: ClaimRunInput): Promise<ClaimRunResult> {
 }
 
 // ---------------------------------------------------------------------------
+// Checkpoints and parking
+// ---------------------------------------------------------------------------
+
+export interface SaveRunCheckpointInput {
+  runId: string;
+  userId: string;
+  /** Only the executor holding the lease may advance the snapshot. */
+  executorId: string;
+  checkpoint: Prisma.InputJsonValue;
+}
+
+/**
+ * Stores the latest provider-neutral snapshot without allowing a stale worker
+ * to overwrite a newer executor's state.
+ *
+ * A checkpoint is not a terminal result. It is written while the executor is
+ * still alive and is therefore fenced by `claimedBy`; the conditional update
+ * is the part that makes a late promise from an expired worker harmless.
+ */
+export async function saveRunCheckpoint(input: SaveRunCheckpointInput): Promise<boolean> {
+  const saved = await prisma.workRun.updateMany({
+    where: {
+      id: input.runId,
+      userId: input.userId,
+      claimedBy: input.executorId,
+      status: { in: ["preparing", "running", "waiting_input", "waiting_approval", "paused"] },
+    },
+    data: { checkpoint: input.checkpoint },
+  });
+  return saved.count === 1;
+}
+
+export interface ParkRunInput {
+  runId: string;
+  userId: string;
+  /** The worker that produced the checkpoint and still owns the lease. */
+  executorId: string;
+}
+
+/**
+ * Parks a paused run and releases its lease exactly once.
+ *
+ * The executor can reach this after the user has already pressed Resume. The
+ * lease condition makes that late completion a no-op instead of dragging the
+ * resumed, queued attempt back to `paused`.
+ */
+export async function parkRun(input: ParkRunInput): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    const moved = await tx.workRun.updateMany({
+      where: {
+        id: input.runId,
+        userId: input.userId,
+        claimedBy: input.executorId,
+        status: { in: ["preparing", "running", "waiting_input", "waiting_approval", "paused"] },
+      },
+      data: {
+        status: "paused",
+        claimedBy: null,
+        claimedAt: null,
+        leaseExpiresAt: null,
+      },
+    });
+    if (moved.count !== 1) return false;
+
+    const run = await tx.workRun.findFirst({
+      where: { id: input.runId, userId: input.userId },
+      select: { sessionId: true },
+    });
+    if (run) {
+      // Keep the denormalised session row in the same transaction as the
+      // lease release. The status predicate matters: if Resume wins the race
+      // after the run update, it changes the session to queued and this update
+      // must not put it back into paused attention.
+      await tx.workSession.updateMany({
+        where: {
+          id: run.sessionId,
+          userId: input.userId,
+          status: { in: ["preparing", "running", "waiting_input", "waiting_approval", "paused"] },
+        },
+        data: {
+          status: "paused",
+          needsAttention: true,
+          lastActivityAt: new Date(),
+        },
+      });
+    }
+    return true;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Termination
 // ---------------------------------------------------------------------------
 
@@ -921,8 +1012,14 @@ export async function finishRun(input: FinishRunInput): Promise<FinishRunResult>
         terminalReason: input.reason,
         terminalDetail: input.detail ? input.detail.slice(0, MAX_TERMINAL_DETAIL_CHARS) : null,
         finishedAt: now,
+        // A terminal run must not leave a provider transcript and tool context
+        // resident in the database indefinitely. A paused run never reaches
+        // finishRun; it is parked explicitly above and keeps its checkpoint.
+        checkpoint: Prisma.JsonNull,
         // Released so a sweeper looking for abandoned leases does not find this
         // one and go looking for an executor that has already gone home.
+        claimedBy: null,
+        claimedAt: null,
         leaseExpiresAt: null,
       },
     });

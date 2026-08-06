@@ -1605,6 +1605,12 @@ model WorkRun {
   /// project, schedule and session. The value the executor enforced.
   permissionPolicy Json @default("{}")
 
+  /// The last provider-neutral snapshot of a paused run. It is deliberately
+  /// stored on the attempt rather than the session: a retry is a new attempt,
+  /// while resume must continue the exact transcript, plan and budget this
+  /// attempt already accumulated.
+  checkpoint Json?
+
   // --- budgets --------------------------------------------------------------
   maxCostMicroUsd Int  @default(0)
   maxTokens       Int  @default(0)

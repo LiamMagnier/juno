@@ -37,7 +37,9 @@ import {
   appendEvents,
   claimRun,
   finishRun,
+  parkRun,
   reclaimStalledRuns,
+  saveRunCheckpoint,
   setSessionAttention,
 } from "@/lib/work/store";
 import { verifyApproval } from "@/lib/work/digests";
@@ -434,6 +436,8 @@ type ConnectorToolDescriptor =
 type ConnectorToolDeps = import("../runner/agent-core/src/work/index.js").ConnectorToolDeps;
 type ConnectorAccess = import("../runner/agent-core/src/work/index.js").ConnectorAccess;
 type WorkArtifactRef = import("../runner/agent-core/src/work/index.js").WorkArtifactRef;
+type WorkCheckpoint = import("../runner/agent-core/src/work/index.js").WorkCheckpoint;
+type WorkSessionOptions = import("../runner/agent-core/src/work/index.js").WorkSessionOptions;
 type ProviderSpec = import("../runner/agent-core/src/work/index.js").ProviderSpec;
 type ReasoningEffort = import("../runner/agent-core/src/work/index.js").ReasoningEffort;
 type WorkSession = InstanceType<WorkRuntime["WorkAgentSession"]>;
@@ -449,6 +453,35 @@ type WorkSession = InstanceType<WorkRuntime["WorkAgentSession"]>;
  */
 interface SessionSink {
   session?: WorkSession;
+}
+
+/**
+ * Accept only the checkpoint shape this runtime knows how to restore.
+ *
+ * The column is JSON by design, so this boundary is untyped input even though
+ * it was written by Juno. A deployment can be rolled back or a partial write
+ * can leave an object from a newer runtime; treating that as a fresh run would
+ * replay side effects, which is the one recovery path this code must never
+ * invent. Invalid state therefore fails the attempt and remains visible.
+ */
+function persistedCheckpoint(value: Prisma.JsonValue | null, runId: string): WorkCheckpoint | null {
+  if (value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("The saved Work checkpoint is not compatible with this executor.");
+  }
+  const candidate = value as Record<string, unknown>;
+  if (
+    candidate.version !== 1 ||
+    candidate.runId !== runId ||
+    !Array.isArray(candidate.messages) ||
+    candidate.plan === null ||
+    typeof candidate.plan !== "object" ||
+    candidate.budget === null ||
+    typeof candidate.budget !== "object"
+  ) {
+    throw new Error("The saved Work checkpoint is not compatible with this executor.");
+  }
+  return candidate as unknown as WorkCheckpoint;
 }
 
 /**
@@ -2066,6 +2099,8 @@ interface ExecuteInput {
 interface ExecuteOutcome {
   reason: WorkTerminalReason;
   detail: string;
+  /** The session stopped at a resumable checkpoint rather than terminating. */
+  paused?: boolean;
 }
 
 /**
@@ -2104,6 +2139,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   const runtime = (await import(
     "../runner/agent-core/dist/work/index.js"
   )) as unknown as typeof import("../runner/agent-core/src/work/index.js");
+  const checkpoint = persistedCheckpoint(run.checkpoint, input.runId);
 
   const budget = {
     maxCostMicroUsd: run.maxCostMicroUsd,
@@ -2261,7 +2297,44 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     }
   }
 
-  const session = new runtime.WorkAgentSession({
+  // Checkpoints are provider-neutral and safe to move between executors. Writes
+  // are serialized so a slower database response cannot let an older snapshot
+  // land after a newer one. Every write is lease-fenced in the store as well.
+  let checkpointWrite = Promise.resolve();
+  let lastCheckpointWriteSucceeded = true;
+  const queueCheckpoint = (snapshot: WorkCheckpoint): void => {
+    // The value is only considered safe once the newest queued write has
+    // completed. Parking a run with an unpersisted snapshot would make Resume
+    // restart from an older transcript and could repeat an external side
+    // effect.
+    lastCheckpointWriteSucceeded = false;
+    checkpointWrite = checkpointWrite
+      .then(async () => {
+        const saved = await saveRunCheckpoint({
+          runId: input.runId,
+          userId: input.userId,
+          executorId: EXECUTOR_ID,
+          checkpoint: snapshot as unknown as Prisma.InputJsonValue,
+        });
+        lastCheckpointWriteSucceeded = saved;
+        if (!saved) {
+          log("checkpoint write lost the lease", { runId: input.runId });
+        }
+      })
+      .catch((error: unknown) => {
+        lastCheckpointWriteSucceeded = false;
+        // A checkpoint failure must be visible in logs. A paused run is not
+        // released below unless its newest snapshot was durably written.
+        log("checkpoint write failed", { runId: input.runId, error: String(error) });
+      });
+  };
+
+  const sessionRef: { current: WorkSession | null } = { current: null };
+  const activeSession = (): WorkSession => {
+    if (!sessionRef.current) throw new Error("The Work session was used before it was created.");
+    return sessionRef.current;
+  };
+  const sessionOptions: WorkSessionOptions = {
     runId: input.runId,
     goal,
     provider,
@@ -2317,6 +2390,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           actor: "cloud_runner",
         });
       },
+      onCheckpoint: (snapshot: WorkCheckpoint) => queueCheckpoint(snapshot),
       askQuestion: async (question) => {
         await prisma.workRun.updateMany({
           where: { id: input.runId, userId: input.userId },
@@ -2335,7 +2409,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           // Release rather than block. The run is checkpointed by the runtime's
           // own pause path, and whichever worker is free picks it up once the
           // answer lands.
-          session.pause("Waiting for an answer.");
+          activeSession().pause("Waiting for an answer.");
           throw new Error("paused-waiting-for-answer");
         }
         await prisma.workRun.updateMany({
@@ -2376,7 +2450,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         }, ATTENDED_WAIT_MS);
 
         if (!waited.answered) {
-          session.pause("Waiting for an approval.");
+          activeSession().pause("Waiting for an approval.");
           throw new Error("paused-waiting-for-approval");
         }
 
@@ -2418,7 +2492,16 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         return waited.value.decision === "allowed_always" ? "allowed_always" : "allowed";
       },
     },
-  });
+  };
+
+  // Restoring is the only valid continuation path for a paused attempt. If no
+  // checkpoint exists (old data or a run that was paused before this field was
+  // shipped), starting from the goal is still safer than replaying an unknown
+  // transcript and is the compatibility behavior for those rows.
+  const session = checkpoint
+    ? runtime.WorkAgentSession.restore(checkpoint, sessionOptions)
+    : new runtime.WorkAgentSession(sessionOptions);
+  sessionRef.current = session;
 
   // The tools were built before the session, because its constructor takes
   // them; this is where the two are joined so a citation, an artifact or an
@@ -2467,8 +2550,20 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
 
   try {
     const result = await session.run();
+    if (result.state === "paused") queueCheckpoint(result.checkpoint);
+    await checkpointWrite;
     if (result.state === "paused") {
-      return { reason: "interrupted", detail: "Paused while waiting for the user." };
+      if (!lastCheckpointWriteSucceeded) {
+        return {
+          reason: "failed",
+          detail: "Juno could not safely save this paused run. Please try again.",
+        };
+      }
+      return {
+        reason: "interrupted",
+        detail: "Paused while waiting for the user.",
+        paused: true,
+      };
     }
     return { reason: result.terminalReason, detail: result.detail };
   } catch (error) {
@@ -2484,6 +2579,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     throw error;
   } finally {
     clearInterval(watcher);
+    await checkpointWrite;
     // Revokes every broker handle this run held and closes the MCP sockets.
     // Run on the pause path as well as the terminal ones, which is right: a
     // paused run resumes on whichever worker is free, and that worker mints
