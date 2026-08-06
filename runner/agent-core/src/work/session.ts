@@ -47,7 +47,8 @@ import { candidatesForIntent, evaluateTier, tierPromptSection } from './tier.js'
 import {
   APPROVAL_TTL_MS,
   canonicalJson,
-  requiresExplicitApproval,
+  approvalAsksUnder,
+  type WorkPermissionPolicy,
   type BudgetUsage,
   type WorkActionRecord,
   type WorkApprovalAnswer,
@@ -190,6 +191,17 @@ export interface WorkSessionOptions {
   budgetCheckIntervalMs?: number;
   /** The resolved permission policy; digested so approvals are pinned to it. */
   permissionPolicy?: Record<string, unknown>;
+  /**
+   * The approval mode this run is executed under, already narrowed against any
+   * Mac's advertised floor by the dispatch that started it.
+   *
+   * Separate from `permissionPolicy` above, which is an opaque blob whose only
+   * job is to be hashed: two runs under different modes must not share a
+   * standing approval, and the digest is what stops them. This is the value the
+   * gate reads. Defaults to `conservative` when absent, because a run whose mode
+   * did not survive the wire should ask more, not less.
+   */
+  approvalMode?: WorkPermissionPolicy;
   validate?: WorkValidator;
   env?: NodeJS.ProcessEnv;
 }
@@ -615,7 +627,13 @@ export class WorkAgentSession {
     const risk = tool.riskFor(call.input);
     const provenance = tool.provenanceFor(call.input);
 
-    if (requiresExplicitApproval(action, risk) && !this.grantedAlways.has(action)) {
+    // The mode decides, above the floor. `approvalAsksUnder` checks the floor
+    // first and separately, so Skip cannot reach past it — the four things Juno
+    // cannot take back still ask under every mode.
+    if (
+      approvalAsksUnder(action, risk, this.options.approvalMode ?? 'conservative') &&
+      !this.grantedAlways.has(action)
+    ) {
       const answer = await this.gateApproval(call, tool, action, risk);
       if (answer !== 'allowed' && answer !== 'allowed_always') {
         const reason =

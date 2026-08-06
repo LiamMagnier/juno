@@ -2248,6 +2248,13 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     // `reasoningEffortFor` for the two narrowings between the column and here.
     ...(reasoning === undefined ? {} : { reasoningEffort: reasoning }),
     permissionPolicy: (run.permissionPolicy ?? {}) as Record<string, unknown>,
+    // The mode the gate reads. The blob above is only ever hashed — it is what
+    // pins a standing approval to the policy it was granted under — so the
+    // executor needs the value itself, and without this line all three modes
+    // stopped for exactly the same actions. `conservative` on anything
+    // unreadable: a run whose mode did not survive should ask more, not less.
+    // The narrowing against a Mac's own floor already happened at dispatch.
+    approvalMode: runtime.isWorkPermissionPolicy(policy.policy) ? policy.policy : "conservative",
     callbacks: {
       onEvent: (event) => {
         // Narrowed rather than cast. The runtime and the database share a

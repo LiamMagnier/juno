@@ -123,8 +123,65 @@ export const ALWAYS_CONFIRM_ACTIONS: readonly string[] = [
 
 const ALWAYS_CONFIRM = new Set(ALWAYS_CONFIRM_ACTIONS);
 
+/**
+ * The floor: what asks under every mode, including Skip.
+ *
+ * Deliberately takes no policy. This is the answer no setting in the product
+ * changes, and giving it a policy argument would be the first step towards a
+ * mode that turns it off.
+ */
 export function requiresExplicitApproval(action: string, risk: WorkRiskLevel): boolean {
   return ALWAYS_CONFIRM.has(action) || risk === 'sensitive' || risk === 'irreversible';
+}
+
+/**
+ * The approval modes, mirrored from `src/lib/work/domain.ts`.
+ *
+ * Hand-copied because this package is vendored and built with the repository
+ * absent — the same reason `ALWAYS_CONFIRM_ACTIONS` above is a copy.
+ * `tests/work-security.test.ts` asserts the two do not drift.
+ *
+ * Manual = conservative, Auto = balanced, Skip = permissive. The wire values are
+ * the stored ones and are not renamed: they are written on every existing
+ * session row and hashed into every granted approval.
+ */
+export const WORK_PERMISSION_POLICIES = ['conservative', 'balanced', 'permissive'] as const;
+export type WorkPermissionPolicy = (typeof WORK_PERMISSION_POLICIES)[number];
+
+export function isWorkPermissionPolicy(value: unknown): value is WorkPermissionPolicy {
+  return (WORK_PERMISSION_POLICIES as readonly unknown[]).includes(value);
+}
+
+/**
+ * Whether this action, at this risk, has to be put to the user under this mode.
+ *
+ * The floor is checked first and separately, so no mode can reach past it. Only
+ * once past the floor does the mode get a say, and all it decides is how much of
+ * the *ordinary* work it waves through:
+ *
+ *   Manual  — reading proceeds; changing a file or running anything asks.
+ *   Auto    — changes it can undo proceed; running anything asks.
+ *   Skip    — everything the floor permits proceeds.
+ *
+ * Before this existed the three modes stopped for exactly the same actions:
+ * the gate was `requiresExplicitApproval(action, risk)` with no policy, so the
+ * setting was stored, advertised, narrowed against the Mac's own, hashed into
+ * every approval — and read by nothing that could act on it.
+ */
+export function approvalAsksUnder(
+  action: string,
+  risk: WorkRiskLevel,
+  policy: WorkPermissionPolicy
+): boolean {
+  if (requiresExplicitApproval(action, risk)) return true;
+  switch (policy) {
+    case 'conservative':
+      return risk !== 'safe';
+    case 'balanced':
+      return risk !== 'safe' && risk !== 'edit';
+    case 'permissive':
+      return false;
+  }
 }
 
 export const WORK_TOOL_TIERS = [
