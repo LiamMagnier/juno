@@ -367,8 +367,16 @@ export function useDesignDocument(opts: Options) {
       setDocument(result.document);
       if (result.selection) setSelection(result.selection);
 
-      // A no-op transaction (selection only) is not history.
-      if (result.touchedNodeIds.length > 0) {
+      // A selection-only transaction is not history. Everything else is —
+      // including the transactions that touch no *node* at all. Renaming the
+      // document, adding a page, registering an asset: `touchedNodeIds` is
+      // empty for each, so guarding on it alone silently dropped them, which
+      // is how the header's rename came to update the field and persist
+      // nothing.
+      if (
+        result.touchedNodeIds.length > 0 ||
+        operations.some((operation) => operation.op !== "setSelection")
+      ) {
         const entry: HistoryEntry = {
           id: transaction.id,
           summary: options.summary,

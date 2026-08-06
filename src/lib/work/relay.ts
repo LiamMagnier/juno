@@ -1045,6 +1045,12 @@ export const hostPatchSchema = z
     allowsBackground: z.boolean().optional(),
     approvalPolicy: z.enum(WORK_PERMISSION_POLICIES).optional(),
     revoked: z.literal(false).optional(),
+    // `allowedApps`, `blockedApps` and `allowedDomains` are deliberately absent,
+    // and it is worth saying why so nobody "fixes" it: the Mac sends all three
+    // on every heartbeat through `POST /register`, which writes them. Accepting
+    // them here would let the web save a change that the next heartbeat — at
+    // most thirty seconds later — silently reverted. They are edited on the Mac,
+    // and the hosts screen shows them read-only and says so.
   })
   .refine((patch) => Object.keys(patch).length > 0, { message: "empty patch" });
 
