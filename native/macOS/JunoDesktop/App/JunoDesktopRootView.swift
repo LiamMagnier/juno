@@ -215,7 +215,11 @@ struct JunoDesktopRootView: View {
                         streamer: runtime,
                         accountID: accountID
                     ),
-                    availableModels: initialCodeModels
+                    availableModels: initialCodeModels,
+                    webSearch: BackendCodeWebSearchClient(
+                        sender: runtime,
+                        accountID: accountID
+                    )
                 )
             )
         }

@@ -28,17 +28,22 @@ public final class WorkspaceContext: Sendable {
     /// Discovered during context construction so hooks are available to the
     /// first agent turn even when the reader never opens the Repository pane.
     public let hookDiscoveryResult: HookDiscoveryResult
+    /// Optional authenticated web search, shared with isolated sub-agent
+    /// contexts as a read-only capability.
+    public let webSearch: (any CodeWebSearching)?
     private let storageRoot: URL
 
     public init(
         record: WorkspaceRecord,
         access: WorkspaceAccess,
         storageRoot: URL,
-        additionalWritablePaths: [String] = []
+        additionalWritablePaths: [String] = [],
+        webSearch: (any CodeWebSearching)? = nil
     ) {
         self.record = record
         self.access = access
         self.storageRoot = storageRoot
+        self.webSearch = webSearch
         self.hookPolicyStore = HookPolicyStore(
             storageRoot: storageRoot,
             workspaceID: record.id
@@ -104,6 +109,7 @@ public final class WorkspaceContext: Sendable {
             // are not checkpointed and cannot be undone, so listing them is the
             // only account the transcript can honestly give of them.
             changes: WorkspaceChangeDetector(rootURL: access.rootURL),
+            webSearch: webSearch,
             additionalTools: [
                 ComputerScreenshotTool(computer: computerUse),
                 ComputerClickTool(computer: computerUse),
@@ -160,7 +166,8 @@ public final class WorkspaceContext: Sendable {
             storageRoot: storageRoot,
             additionalWritablePaths: [
                 access.rootURL.appendingPathComponent(".git").path,
-            ]
+            ],
+            webSearch: webSearch
         )
     }
 

@@ -230,6 +230,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "models used"
   },
   {
+    "id": "030c691a4409072f",
+    "source": "Change files"
+  },
+  {
     "id": "031a8f0f659df890",
     "source": "Failed"
   },
@@ -1700,6 +1704,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "21e022b6805c3040",
     "source": "CGU"
+  },
+  {
+    "id": "220e2069b211afb5",
+    "source": "Web search is being used too quickly. Try again in a moment."
   },
   {
     "id": "221ff19c904c30d0",
@@ -5838,6 +5846,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "A folder changes"
   },
   {
+    "id": "7377ca4b5e6eeb96",
+    "source": "Web search is not configured on this Juno deployment."
+  },
+  {
     "id": "73912999faf42cb3",
     "source": "Prev"
   },
@@ -6116,6 +6128,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "79de8888809716c9",
     "source": "Runs a command"
+  },
+  {
+    "id": "79f63f84895d9dfd",
+    "source": "Control your screen"
   },
   {
     "id": "79fff4e68510442d",
@@ -6400,6 +6416,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7f703ce8604424ba",
     "source": "Custom accent color"
+  },
+  {
+    "id": "7f728cebda5d0b6b",
+    "source": "Use your browser"
   },
   {
     "id": "7f85e434fa6bb826",
@@ -7712,6 +7732,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9afbdcdb78d68308",
     "source": "Vote on what matters to you, or request something new. We read every one."
+  },
+  {
+    "id": "9aff152b84d5110f",
+    "source": "Web search is available on a paid Juno plan."
   },
   {
     "id": "9b068269293ae3b3",
@@ -11724,6 +11748,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e8f39fbba89aec1c",
     "source": "Warm and lively"
+  },
+  {
+    "id": "e8fbcc0d83c932d3",
+    "source": "Use an app"
   },
   {
     "id": "e9376a281aac57bb",

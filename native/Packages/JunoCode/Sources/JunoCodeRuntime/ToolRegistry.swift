@@ -10,7 +10,7 @@ public struct ToolRegistry: Sendable {
     /// process. Ask and Plan sessions expose exactly this set.
     public static let inspectionToolNames: Set<String> = [
         "read_file", "list_directory", "find_files", "glob", "grep",
-        "git_status", "git_diff", "git_log",
+        "git_status", "git_diff", "git_log", "web_search",
     ]
 
     public init(tools: [any CodeTool]) {
@@ -30,6 +30,7 @@ public struct ToolRegistry: Sendable {
         tests: any TestRunning,
         goalStore: CodeSessionStore? = nil,
         changes: (any WorkspaceChangeDetecting)? = nil,
+        webSearch: (any CodeWebSearching)? = nil,
         additionalTools: [any CodeTool] = []
     ) -> ToolRegistry {
         var tools: [any CodeTool] = [
@@ -52,6 +53,9 @@ public struct ToolRegistry: Sendable {
         ]
         if let goalStore {
             tools.append(UpdateGoalTool(store: goalStore))
+        }
+        if let webSearch {
+            tools.append(WebSearchTool(service: webSearch))
         }
         tools.append(contentsOf: additionalTools)
         return ToolRegistry(tools: tools)

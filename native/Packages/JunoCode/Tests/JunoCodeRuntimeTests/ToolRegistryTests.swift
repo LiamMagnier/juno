@@ -61,7 +61,7 @@ final class ToolRegistryTests: XCTestCase {
         let inspection = registry.inspectionOnly()
         XCTAssertEqual(
             Set(inspection.allTools.map(\.name)),
-            ToolRegistry.inspectionToolNames
+            ToolRegistry.inspectionToolNames.intersection(Set(registry.allTools.map(\.name)))
         )
         XCTAssertNil(inspection.tool(named: "write_file"))
         XCTAssertNil(inspection.tool(named: "run_command"))

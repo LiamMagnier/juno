@@ -102,17 +102,20 @@ public final class WorkbenchModel {
         public let modelClient: any AgentModelClient
         public let availableModels: [ModelOption]
         public let remoteSessionProvider: (any RemoteSessionProviding)?
+        public let webSearch: (any CodeWebSearching)?
 
         public init(
             storageRootURL: URL,
             modelClient: any AgentModelClient,
             availableModels: [ModelOption],
-            remoteSessionProvider: (any RemoteSessionProviding)? = nil
+            remoteSessionProvider: (any RemoteSessionProviding)? = nil,
+            webSearch: (any CodeWebSearching)? = nil
         ) {
             self.storageRootURL = storageRootURL
             self.modelClient = modelClient
             self.availableModels = availableModels
             self.remoteSessionProvider = remoteSessionProvider
+            self.webSearch = webSearch
         }
 
         /// Default storage under a one-way account scope in
@@ -128,7 +131,8 @@ public final class WorkbenchModel {
             accountID: String,
             modelClient: any AgentModelClient,
             availableModels: [ModelOption],
-            remoteSessionProvider: (any RemoteSessionProviding)? = nil
+            remoteSessionProvider: (any RemoteSessionProviding)? = nil,
+            webSearch: (any CodeWebSearching)? = nil
         ) -> Dependencies {
             let base = FileManager.default.urls(
                 for: .applicationSupportDirectory,
@@ -141,7 +145,8 @@ public final class WorkbenchModel {
                 storageRootURL: base,
                 modelClient: modelClient,
                 availableModels: availableModels,
-                remoteSessionProvider: remoteSessionProvider
+                remoteSessionProvider: remoteSessionProvider,
+                webSearch: webSearch
             )
         }
 
@@ -181,7 +186,8 @@ public final class WorkbenchModel {
             contexts[workspaceID] = WorkspaceContext(
                 record: record,
                 access: access,
-                storageRoot: dependencies.storageRootURL
+                storageRoot: dependencies.storageRootURL,
+                webSearch: dependencies.webSearch
             )
             workspaces = await workspaceDirectory.allWorkspaces()
             workspaceNeedingAccess = nil
@@ -356,7 +362,8 @@ public final class WorkbenchModel {
             contexts[record.id] = WorkspaceContext(
                 record: record,
                 access: access,
-                storageRoot: dependencies.storageRootURL
+                storageRoot: dependencies.storageRootURL,
+                webSearch: dependencies.webSearch
             )
             workspaces = await workspaceDirectory.allWorkspaces()
             lastError = nil
@@ -383,7 +390,8 @@ public final class WorkbenchModel {
             let context = WorkspaceContext(
                 record: record,
                 access: access,
-                storageRoot: dependencies.storageRootURL
+                storageRoot: dependencies.storageRootURL,
+                webSearch: dependencies.webSearch
             )
             contexts[workspaceID] = context
             workspaces = await workspaceDirectory.allWorkspaces()
