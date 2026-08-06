@@ -312,6 +312,24 @@ export function WorkApprovals({
   );
 }
 
+/**
+ * What answering costs, per risk level.
+ *
+ * The line under the buttons is the whole difference between a notification and
+ * a decision. "Juno wants to send an email" tells the reader what is about to
+ * happen; "once it is sent, nothing here can unsend it" tells them why they are
+ * being asked, which is the only reason to stop and read. The wording is by
+ * risk rather than by action, because `WORK_RISK_LEVELS` is what the executor
+ * graded the action with and what decides whether it asks at all.
+ */
+const RISK_CONSEQUENCE: Record<WorkRiskLevel, string> = {
+  safe: "Nothing here changes anything outside this task.",
+  edit: "This writes to a file. Juno can show you what changed afterwards.",
+  command: "This runs a command on the machine this task is on.",
+  sensitive: "This touches something private. Juno asks every time, whatever you have allowed before.",
+  irreversible: "This cannot be undone — not by Juno, and not from this page afterwards.",
+};
+
 function ApprovalCard({
   approval,
   expired,
@@ -332,33 +350,69 @@ function ApprovalCard({
   return (
     <div
       className={cn(
-        "rounded-xl border px-3.5 py-3",
-        answerable ? "border-warning/40 bg-warning/[0.06]" : "border-border/60 bg-card/50"
+        "rounded-xl border",
+        answerable
+          ? // A pending approval is the only thing on this page that stops the
+            // run dead, and it competes with eight other panels for the eye. The
+            // heavier border and the ring are the difference between a card that
+            // is read and one that is scrolled past — which, for the request
+            // that is holding the whole task, is the difference between a
+            // decision and a task that quietly never finishes.
+            "border-warning/60 bg-warning/[0.08] px-3.5 py-3.5 shadow-pop ring-1 ring-warning/20"
+          : "border-border/60 bg-card/50 px-3.5 py-3"
       )}
     >
       <div className="flex flex-wrap items-center gap-2">
         <ShieldAlert
-          className={cn("h-3.5 w-3.5 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
+          className={cn("h-4 w-4 shrink-0", answerable ? "text-warning" : "text-muted-foreground")}
           aria-hidden="true"
         />
+        {answerable && (
+          <span className="font-mono text-[10px] uppercase tracking-wide text-warning-foreground">
+            Your decision
+          </span>
+        )}
         <RiskPill risk={approval.risk} />
         <span className="ml-auto font-mono text-[10px] text-muted-foreground">
           {workTimeAgo(approval.createdAt)}
         </span>
       </div>
 
-      <p className="mt-2 text-sm leading-relaxed text-foreground">{approval.summary}</p>
+      <p
+        className={cn(
+          "mt-2 leading-relaxed text-foreground",
+          answerable ? "text-[15px] font-medium" : "text-sm"
+        )}
+      >
+        {approval.summary}
+      </p>
       <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">{approval.action}</p>
 
+      {/* Exactly what is being authorised, spelled out rather than summarised.
+          The digest the decision travels back with is computed over this action
+          and this detail, so what is printed here IS what the server will check
+          the answer against — a card that showed less than the digest covers
+          would be asking the reader to sign for something they were not shown. */}
       {detailRows.length > 0 && (
-        <dl className="mt-2 space-y-0.5">
+        <dl
+          className={cn(
+            "mt-2.5 space-y-1 rounded-lg px-2.5 py-2",
+            answerable ? "bg-background/60" : "bg-muted/40"
+          )}
+        >
           {detailRows.map(([key, value]) => (
             <div key={key} className="flex gap-2 font-mono text-[10px] leading-relaxed">
-              <dt className="shrink-0 text-muted-foreground/70">{key}</dt>
-              <dd className="min-w-0 break-all text-muted-foreground">{String(value)}</dd>
+              <dt className="w-20 shrink-0 text-muted-foreground/70">{key}</dt>
+              <dd className="min-w-0 break-all text-foreground">{String(value)}</dd>
             </div>
           ))}
         </dl>
+      )}
+
+      {answerable && (
+        <p className="mt-2.5 text-[12.5px] leading-relaxed text-warning-foreground">
+          {RISK_CONSEQUENCE[approval.risk]}
+        </p>
       )}
 
       {answerable && digest === null ? (
@@ -371,34 +425,46 @@ function ApprovalCard({
           web. Decide it in the Juno app on the Mac that raised it.
         </p>
       ) : answerable ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button size="sm" disabled={busy} onClick={() => onDecide(approval, "allowed")} className="h-8">
-            Allow once
-          </Button>
-          {/* "Always" is offered only where it is meaningful: an irreversible
-              action asks every time under every policy, so a standing
-              permission for one would be a promise the executor will not keep. */}
-          {approval.risk !== "irreversible" && (
+        <>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {/* Refuse first and given equal weight. The reader is being asked to
+                stop and think, and a row that leads with a primary-coloured
+                Allow has already answered for them. */}
             <Button
-              variant="outline"
+              variant="destructive-outline"
               size="sm"
               disabled={busy}
-              onClick={() => onDecide(approval, "allowed_always")}
+              onClick={() => onDecide(approval, "denied")}
               className="h-8"
             >
-              Always allow this
+              Don’t do it
             </Button>
+            <Button size="sm" disabled={busy} onClick={() => onDecide(approval, "allowed")} className="h-8">
+              Allow this once
+            </Button>
+          </div>
+          {/* "Always" is offered only where it is meaningful: an irreversible or
+              sensitive action asks every time under every policy, so a standing
+              permission for one would be a promise the executor will not keep.
+              It is also the one control here that outlives this decision, so it
+              sits apart from the two that do not. */}
+          {approval.risk !== "irreversible" && approval.risk !== "sensitive" && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => onDecide(approval, "allowed_always")}
+              className="mt-2 text-[12px] leading-relaxed text-muted-foreground underline underline-offset-2 transition-colors duration-fast hover:text-foreground disabled:opacity-50"
+            >
+              Allow this and stop asking
+            </button>
           )}
-          <Button
-            variant="destructive-outline"
-            size="sm"
-            disabled={busy}
-            onClick={() => onDecide(approval, "denied")}
-            className="h-8"
-          >
-            Refuse
-          </Button>
-        </div>
+          {approval.expiresAt !== null && (
+            <p className="mt-2 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+              <Clock className="h-3 w-3" aria-hidden="true" />
+              Unanswered, this expires and Juno stops rather than acting on it.
+            </p>
+          )}
+        </>
       ) : (
         <p className="mt-2.5 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
           <Clock className="h-3 w-3" aria-hidden="true" />

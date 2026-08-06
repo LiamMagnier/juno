@@ -15,13 +15,18 @@ import type {
 } from "@/lib/work/serializers";
 import {
   WorkActionsPerformed,
-  WorkArtifacts,
   WorkReferences,
   WorkRunSettings,
   deriveArtifacts,
   deriveReferences,
 } from "@/components/work/work-detail-panels";
-import { WorkConversation, deriveTurns } from "@/components/work/work-conversation";
+import { WorkDocuments } from "@/components/work/work-documents";
+import { WorkToolbox } from "@/components/work/work-toolbox";
+import {
+  WorkConversation,
+  deriveTurns,
+  type WorkComposerMode,
+} from "@/components/work/work-conversation";
 import {
   WorkApprovalPrompt,
   WorkApprovals,
@@ -46,6 +51,7 @@ import {
   fetchWorkHosts,
   fetchWorkThread,
   startWorkRun,
+  steerWorkRun,
   subscribeToWorkEvents,
   workIdempotencyKey,
   type WorkApprovalDecisionInput,
@@ -68,12 +74,16 @@ import {
  * phone checking follows reading rather than competing with it. Two independent
  * scroll regions appear only once there is room for both to be worth having.
  *
- * Every panel on the right is a projection of one event list. There is no second
- * server-side view to disagree with — GET /sessions/[id] returns the session and
- * its newest run and nothing else — so the plan, the approvals, the documents
- * and the timeline are all derived here from the same stream the resume cursor
- * replays. A panel and the timeline beside it can therefore never contradict
- * each other about whether something happened.
+ * Most of the right-hand column is a projection of one event list: the plan, the
+ * approvals, the sources and the timeline are all derived here from the same
+ * stream the resume cursor replays, so a panel and the timeline beside it can
+ * never contradict each other about whether something happened.
+ *
+ * Two panels are not, and both earn it. Documents reads /api/work/artifacts,
+ * because the stream says a file was written and only the store knows its size,
+ * its hash and where the bytes are. Skills and apps reads /api/work/skills and
+ * /api/connectors, because what this task may reach for is a fact about the
+ * account and not about this run. Everything else stays derived.
  *
  * The page has no loading state that outlives an answer. A task nothing can
  * execute is refused at dispatch with a sentence, and that sentence is rendered
@@ -255,6 +265,34 @@ export default function WorkThreadPage() {
     [id]
   );
 
+  /**
+   * An instruction that answers nothing.
+   *
+   * The server's own sentence about what it did with it is what gets shown,
+   * rather than a "Sent" of our own: the instruction goes onto the task's
+   * record, and the attempt already running was handed its instructions when it
+   * started. A toast claiming delivery would be this page inventing a promise
+   * the route explicitly declines to make.
+   */
+  const steer = React.useCallback(
+    async (text: string) => {
+      setAnswering(true);
+      const result = await steerWorkRun(id, text);
+      setAnswering(false);
+      if (result.kind === "ok") {
+        toast.success(result.value.explanation);
+        window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
+        return;
+      }
+      toast.error(
+        result.kind === "blocked"
+          ? result.explanation
+          : "Couldn’t add that to the task. Nothing was recorded."
+      );
+    },
+    [id]
+  );
+
   const decide = React.useCallback(
     async (approval: WorkApprovalCard, decision: WorkApprovalDecisionInput) => {
       // Guaranteed non-null by the card, which removes its own buttons when the
@@ -393,19 +431,41 @@ export default function WorkThreadPage() {
     );
   }
 
-  // The one question a typed sentence can currently reach. Work has no
-  // user-message event kind, so an instruction with no open question has nowhere
-  // to go — and saying so is better than accepting text the executor will never
-  // see. The oldest open question is chosen because it is the one blocking.
+  /*
+   * What the box at the bottom is for.
+   *
+   * An open question outranks everything: while one is open, `POST /answer`
+   * refuses an unprompted instruction on purpose — the runner reads the newest
+   * `question_answered` on the run, so an instruction recorded on top of an
+   * answer would leave the run waiting for a reply it had already been given.
+   * The oldest open question is the one chosen, because it is the one blocking.
+   *
+   * With no question open the box takes an instruction instead, which the route
+   * records on the task. A finished task and a task nothing can execute take
+   * neither, and say which.
+   */
   const openQuestion = questions[0] ?? null;
-  const composerDisabledReason =
-    blocked !== null
-      ? "Juno cannot act on this right now, so there is nowhere for a new instruction to go."
-      : isTerminalStatus(session.status)
-        ? "This task has finished. Start it again above, or begin a new one, to say more."
-        : openQuestion === null
-          ? "Juno isn’t waiting on anything from you. It will ask here when it needs something, and you can answer then."
-          : null;
+  const composerMode: WorkComposerMode =
+    openQuestion !== null
+      ? { kind: "answer", question: openQuestion.question }
+      : blocked !== null
+        ? {
+            kind: "closed",
+            reason:
+              "Juno cannot act on this right now, so there is nowhere for a new instruction to go.",
+          }
+        : isTerminalStatus(session.status)
+          ? {
+              kind: "closed",
+              reason: "This task has finished. Start it again above, or begin a new one, to say more.",
+            }
+          : run === null
+            ? {
+                kind: "closed",
+                reason:
+                  "This is still a draft. Start it, and everything in the goal goes with it — there is no attempt yet for anything else to join.",
+              }
+            : { kind: "steer" };
 
   const notStarted = run === null;
 
@@ -551,11 +611,13 @@ export default function WorkThreadPage() {
               session={session}
               turns={turns}
               sending={answering}
-              disabledReason={composerDisabledReason}
-              answeringQuestion={openQuestion?.question ?? null}
+              mode={composerMode}
               onSend={(text) => {
-                if (openQuestion === null) return;
-                void answer(openQuestion.id, text);
+                if (openQuestion !== null) {
+                  void answer(openQuestion.id, text);
+                  return;
+                }
+                void steer(text);
               }}
             />
           </div>
@@ -596,7 +658,11 @@ export default function WorkThreadPage() {
             </Panel>
 
             <Panel title="Documents">
-              <WorkArtifacts artifacts={artifacts} />
+              <WorkDocuments sessionId={session.id} fromEvents={artifacts} />
+            </Panel>
+
+            <Panel title="Skills and apps">
+              <WorkToolbox />
             </Panel>
 
             <Panel title="Actions performed">
