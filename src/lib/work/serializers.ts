@@ -625,9 +625,20 @@ const REMOTE_PAYLOAD_KEYS: Record<WorkCommandKind, readonly string[]> = {
   approve: ["approvalId", "actionDigest"],
   deny: ["approvalId", "actionDigest", "reason"],
   undo: ["batchId"],
-  start: ["runId", "target"],
+  // The goal is the sentence the user typed into the composer and the model is
+  // the one they picked, so both fall under the rule above: a client reading
+  // this back is being shown its own request. They are here because the Mac
+  // needs them — `DesktopWorkRunHost` reads `payload.goal` and refuses with
+  // `noGoal` without it — and the claim endpoint answers with the remote shape
+  // like every other route under /api/work. Widening the allowlist is the way
+  // to do that; reaching for `serializeCommandForHost` in a route is not, and
+  // there is a CI gate that says so, because that shape also passes through
+  // the resolved filesystem path in a `grant_folder` result.
+  start: ["runId", "target", "goal", "model"],
   pause: ["runId"],
-  resume: ["runId"],
+  // Resume carries the whole start payload, not just the id: a Mac relaunched
+  // while a run was parked starts a fresh loop and has no goal to resume from.
+  resume: ["runId", "goal", "model"],
   stop: ["runId", "reason"],
   grant_folder: ["displayName", "accessMode"],
   revoke_grant: ["grantId"],

@@ -189,6 +189,60 @@ test("the host shape keeps the answer intact, because the Mac needs it", () => {
   );
 });
 
+/**
+ * The claim endpoint answers the Mac with the REMOTE shape, like every route
+ * under /api/work — a CI gate forbids a route from reaching for the host shape,
+ * because that one passes a `grant_folder` result's resolved path straight
+ * through. So the remote allowlist is the only thing standing between a start
+ * command and a Mac that can act on it, and when `start` was
+ * `["runId", "target"]` every start arrived with its goal stripped and
+ * `DesktopWorkRunHost` refused it with `noGoal`.
+ *
+ * A build that silently narrows this again produces a Mac that claims work and
+ * then refuses all of it, which looks like a broken Mac rather than a broken
+ * serialiser. Hence a test on the serialised shape rather than on the payload
+ * builder, which was already covered and was never what was wrong.
+ */
+for (const kind of ["start", "resume"] as const) {
+  test(`a ${kind} command reaches the Mac with the goal it is supposed to act on`, () => {
+    const command = {
+      ...(GRANT_COMMAND as unknown as Record<string, unknown>),
+      kind,
+      payload: {
+        runId: "run_1",
+        target: "local",
+        goal: "Sort every PDF in Downloads by year.",
+        model: "anthropic:claude-sonnet-5",
+      },
+      result: null,
+    } as unknown as Parameters<typeof serializeCommandForRemote>[0];
+
+    const remote = serializeCommandForRemote(command);
+    const payload = remote.payload as Record<string, unknown>;
+    assert.equal(payload.goal, "Sort every PDF in Downloads by year.");
+    assert.equal(payload.model, "anthropic:claude-sonnet-5");
+  });
+}
+
+test("widening start did not open the door the grant path is kept out of", () => {
+  const command = {
+    ...(GRANT_COMMAND as unknown as Record<string, unknown>),
+    kind: "start",
+    payload: {
+      runId: "run_1",
+      target: "local",
+      goal: "Tidy Downloads.",
+      // A field nobody put on the allowlist, carrying the shape the grant
+      // redaction exists for. Widening is per-key on purpose.
+      resolvedRealPath: "/Users/liam/Downloads",
+    },
+    result: null,
+  } as unknown as Parameters<typeof serializeCommandForRemote>[0];
+
+  const serialised = JSON.stringify(serializeCommandForRemote(command));
+  assert.doesNotMatch(serialised, /\/Users\//, serialised);
+});
+
 test("a command kind nobody has classified says nothing rather than everything", () => {
   const unclassified = {
     ...(GRANT_COMMAND as unknown as Record<string, unknown>),

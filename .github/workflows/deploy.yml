@@ -288,6 +288,24 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/worktest
           DIRECT_URL: postgresql://postgres:postgres@localhost:5432/worktest
 
+      # Its own database, and its own step, for the reason the step above has
+      # one: these suites seed overlapping fixture rows and share no cleanup, so
+      # run together in one process against one database they fail on each
+      # other rather than on the code. Named explicitly rather than globbed —
+      # a glob here would silently adopt the next DB-backed suite somebody adds
+      # into a database it was not written against.
+      - name: The relay's dispatch claims, against a real database
+        run: |
+          psql "$ADMIN_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE relaytest'
+          npx prisma migrate deploy
+          npx tsx --test tests/work-relay-dispatch.test.ts
+        env:
+          ADMIN_URL: postgresql://postgres:postgres@localhost:5432/shadow
+          NODE_OPTIONS: --conditions=react-server
+          WORK_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/relaytest
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/relaytest
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/relaytest
+
   # The vendored Cloud Code runner drives arbitrary agent-authored bash, so its
   # containment tests are a release gate rather than a nicety: they are what
   # prove a timed-out command cannot leave children running, and that a
