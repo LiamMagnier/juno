@@ -16,7 +16,7 @@
  */
 
 import * as React from "react";
-import { ArrowUp, Loader2, Sparkles, X } from "lucide-react";
+import { ArrowUp, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { requestDesignEdit, DesignEditRequestError, type DesignEditProposal } from "@/components/design/design-edit-transport";
 import type { DesignEditorHandle } from "@/components/design/design-editor";
@@ -121,10 +121,12 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
           event.preventDefault();
           void submit();
         }}
-        className="flex items-center gap-2 rounded-[16px] border border-border/70 bg-popover/95 p-1.5 pl-3 shadow-soft backdrop-blur-xl"
+        className="flex items-center gap-2 rounded-[16px] border border-border/70 bg-popover/95 p-1.5 pl-2.5 shadow-soft backdrop-blur-xl"
       >
-        <Sparkles className="size-4 shrink-0 text-primary" aria-hidden />
-
+        {/* No leading glyph. The sparkle that used to sit here said nothing the
+            placeholder does not already say in words, and it was the one piece
+            of chat iconography on a surface whose whole argument is that this
+            is not a chat. The left padding is the field's own now. */}
         {selection.ids.length > 0 && (
           <button
             type="button"
