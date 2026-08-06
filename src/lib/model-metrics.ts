@@ -106,9 +106,14 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["flash"], metric: metric(0.3, 2.5, 1_048_576, 9, 4) },
     { hints: ["pro"], metric: metric(1.25, 10, 1_048_576, 5, 5) },
   ],
-  // Llama API shut down 2026-07-06 — rules kept only so stragglers resolving
-  // through migration still price correctly. Grades reflect AA/arena standing.
   meta: [
+    // Muse Spark on the Meta Model API. Prices are Meta's published standard
+    // tier; the grades are positioning estimates — Spark 1.2 shipped 2026-08-05
+    // and has no AA/arena coverage yet, so this stays source:"provider" until
+    // the next benchmark sync grounds it.
+    { hints: ["muse-spark"], metric: metric(1.25, 4.25, 1_048_576, 6, 8) },
+    // Llama API shut down 2026-07-06 — rules below kept only so stragglers
+    // resolving through migration still price correctly.
     { hints: ["maverick"], metric: metric(0.35, 0.85, 1_000_000, 7, 2) }, // II 14.3
     { hints: ["scout"], metric: metric(0.17, 0.66, 10_000_000, 7, 1) }, // II 10.0
     { hints: ["llama-3.3"], metric: metric(0.2, 0.2, 128_000, 8, 1) },
@@ -213,7 +218,9 @@ const PROVIDER_DEFAULT: Partial<Record<Provider, ModelMetrics>> = {
   anthropic: metric(3, 15, 200_000, 5, 7),
   openai: metric(2.5, 15, 400_000, 6, 7),
   google: metric(1.5, 9, 1_048_576, 8, 6),
-  meta: metric(0.35, 0.85, 1_000_000, 7, 2),
+  // Anything Meta serves now comes off the Meta Model API, so the default
+  // tracks Muse Spark rather than the retired Llama pricing.
+  meta: metric(1.25, 4.25, 1_048_576, 6, 8),
   zhipu: metric(0.6, 2.2, 200_000, 6, 5),
   moonshot: metric(0.95, 4, 262_144, 4, 6),
   deepseek: metric(0.14, 0.28, 1_000_000, 6, 6),

@@ -37,7 +37,7 @@ picks the model. `src/lib/providers.ts`, 14 entries:
 | OpenAI · GPT | US |
 | Google · Gemini | US |
 | Mistral | EU (France) |
-| Meta · Llama | US |
+| Meta · Muse | US |
 | SpaceXAI · Grok | US |
 | ByteDance · Seedance | PRC-headquartered |
 | Zhipu · GLM | PRC |

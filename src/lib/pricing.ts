@@ -131,7 +131,14 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       if (pm.includes("3.5-flash")) return { input: 1.5, output: 9 };
       if (pm.includes("pro")) return { input: 2, output: 12 };
       return { input: 0.3, output: 2.5 }; // older flash-class
-    case "meta": // Llama API shut down 2026-07-06 — kept for straggler cost display
+    case "meta":
+      // Meta Model API standard tier. The muse-spark-1.2-contributor id is a
+      // 12.5x/21x discount paid for by letting Meta train on the prompts and
+      // completions, which is a data decision, not a pricing one — it is not in
+      // the registry, so it only prices here if somebody deliberately sets it.
+      if (pm.includes("contributor")) return { input: 0.1, output: 0.2 };
+      if (pm.includes("muse-spark")) return { input: 1.25, output: 4.25 };
+      // Llama API shut down 2026-07-06 — kept for straggler cost display.
       if (pm.includes("maverick")) return { input: 0.35, output: 0.85 };
       if (pm.includes("scout")) return { input: 0.17, output: 0.66 };
       return { input: 0.35, output: 0.85 };
