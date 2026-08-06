@@ -179,7 +179,8 @@ private struct JunoDesktopSettingsScene: View {
                     avatarData: configuration.avatarModel?.imageData,
                     syncModel: configuration.syncModel,
                     outbox: configuration.outbox,
-                    codeHostModel: configuration.codeHostModel
+                    codeHostModel: configuration.codeHostModel,
+                    workHostModel: configuration.workHostModel
                     // No `openUsage`: this window has no sidebar to navigate, so
                     // the tile is absent here rather than offering a link that
                     // cannot go anywhere. Usage lives in the main window.

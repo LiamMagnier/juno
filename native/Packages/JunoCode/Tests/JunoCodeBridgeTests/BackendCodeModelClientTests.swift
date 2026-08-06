@@ -62,6 +62,22 @@ private struct DroppingByteStreamer: NativeAuthenticatedByteStreaming {
     }
 }
 
+/// A transport that connects successfully but never produces a byte. This is
+/// the failure mode a provider-side socket timeout must protect the session
+/// from: the HTTP request succeeded, but the model will never finish the turn.
+private struct HangingByteStreamer: NativeAuthenticatedByteStreaming {
+    func stream(
+        _ request: NativeBearerRequest,
+        for accountID: AccountID
+    ) async throws -> HTTPByteStreamResponse {
+        HTTPByteStreamResponse(
+            statusCode: 200,
+            headers: try! HTTPHeaders(["Content-Type": "text/event-stream"]),
+            bytes: AsyncThrowingStream { _ in }
+        )
+    }
+}
+
 final class BackendCodeModelClientTests: XCTestCase {
     private let accountID = try! AccountID("account-1")
 
@@ -347,6 +363,24 @@ final class BackendCodeModelClientTests: XCTestCase {
         guard case AgentModelClientError.transport? = error as? AgentModelClientError else {
             return XCTFail("expected transport failure, got \(String(describing: error))")
         }
+    }
+
+    func testIdleStreamFailsWithinConfiguredDeadline() async {
+        let streamer = HangingByteStreamer()
+        let client = BackendCodeModelClient(
+            streamer: streamer,
+            accountID: accountID,
+            timeouts: .init(
+                connectionSeconds: 1,
+                idleSeconds: 0.02,
+                overallSeconds: 1
+            )
+        )
+        let (_, error) = await collect(client, makeRequest())
+        guard case let AgentModelClientError.transport(message)? = error as? AgentModelClientError else {
+            return XCTFail("expected an idle-stream transport error, got \(String(describing: error))")
+        }
+        XCTAssertEqual(message, "The model stream became idle.")
     }
 
     func testErrorEventThrows() async {

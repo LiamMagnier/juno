@@ -573,7 +573,8 @@ struct DesktopCodeWorkspace: View {
                 // Unlike the ⌘, window, this one has a column to navigate, so the
                 // settings page's Usage tile finally has somewhere to go.
                 openUsage: { selection.wrappedValue = .usage },
-                codeHostModel: configuration.codeHostModel
+                codeHostModel: configuration.codeHostModel,
+                workHostModel: configuration.workHostModel
             )
         } else {
             accountPageUnavailable("Settings", "Account settings could not be loaded.")

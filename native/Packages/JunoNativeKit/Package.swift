@@ -127,7 +127,8 @@ let package = Package(
             name: "JunoPreviewSupport",
             dependencies: [
                 "JunoCore", "JunoAPI", "JunoAuth", "JunoStorage", "JunoSync",
-                "JunoSearch", "JunoChatKit", "JunoCodeKit", "JunoDesignSystem",
+                "JunoSearch", "JunoChatKit", "JunoCodeKit", "JunoWorkKit",
+                "JunoDesignSystem",
             ]
         ),
         .testTarget(

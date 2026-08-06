@@ -124,7 +124,8 @@ struct DesktopDestinationView: View {
                     // Settings links to the real Usage screen instead of drawing
                     // its own meters off a second route. This is the link.
                     openUsage: { destination = .usage },
-                    codeHostModel: configuration.codeHostModel
+                    codeHostModel: configuration.codeHostModel,
+                    workHostModel: configuration.workHostModel
                 )
             } else {
                 unavailable("Settings", "Account settings could not be loaded.")

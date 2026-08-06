@@ -201,6 +201,32 @@ final class SubagentDigestTests: XCTestCase {
         XCTAssertTrue(SubagentDigest.runs(in: events).isEmpty)
     }
 
+    func testInspectorListStatusLabelsStayCompactAndActionable() {
+        let expected: [SubagentStatus: String] = [
+            .queued: "Queued",
+            .preparing: "Starting",
+            .running: "Running",
+            .waitingForApproval: "Needs approval",
+            .completed: "Completed",
+            .failed: "Failed",
+            .cancelled: "Cancelled",
+            .interrupted: "Interrupted",
+        ]
+
+        for status in SubagentStatus.allCases {
+            XCTAssertEqual(
+                SubagentFormatting.listLabel(status),
+                expected[status],
+                "the inspector row needs a short, stateful label for \(status.rawValue)"
+            )
+            XCTAssertLessThanOrEqual(
+                SubagentFormatting.listLabel(status).count,
+                15,
+                "a list label should fit beside the role at the inspector minimum"
+            )
+        }
+    }
+
     // MARK: - Fixtures
 
     private func at(_ offset: TimeInterval) -> Date {

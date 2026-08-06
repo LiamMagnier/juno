@@ -131,21 +131,47 @@ public struct BackendCodeModelClient: AgentModelClient {
     /// `CodeThinkingWire`; this removes the old, app-imposed 8k truncation.
     public static let defaultMaxTokens = 128_000
 
+    /// Provider streams are long-lived, but they must never be unbounded. A
+    /// connection that never completes would otherwise leave the session in a
+    /// running state forever and keep the model picker/composer attached to a
+    /// dead turn. These values are deliberately generous for large code tasks;
+    /// the idle limit only trips when no byte arrives at all.
+    public struct Timeouts: Equatable, Sendable {
+        public let connectionSeconds: TimeInterval
+        public let idleSeconds: TimeInterval
+        public let overallSeconds: TimeInterval
+
+        public init(
+            connectionSeconds: TimeInterval = 30,
+            idleSeconds: TimeInterval = 90,
+            overallSeconds: TimeInterval = 15 * 60
+        ) {
+            self.connectionSeconds = connectionSeconds
+            self.idleSeconds = idleSeconds
+            self.overallSeconds = overallSeconds
+        }
+
+        public static let production = Timeouts()
+    }
+
     private let streamer: any NativeAuthenticatedByteStreaming
     private let accountID: AccountID
     private let resolver: CodeModelProviderResolver
     private let maxTokens: Int
+    private let timeouts: Timeouts
 
     public init(
         streamer: any NativeAuthenticatedByteStreaming,
         accountID: AccountID,
         resolver: CodeModelProviderResolver = .default,
-        maxTokens: Int = BackendCodeModelClient.defaultMaxTokens
+        maxTokens: Int = BackendCodeModelClient.defaultMaxTokens,
+        timeouts: Timeouts = .production
     ) {
         self.streamer = streamer
         self.accountID = accountID
         self.resolver = resolver
         self.maxTokens = maxTokens
+        self.timeouts = timeouts
     }
 
     public func streamTurn(
@@ -156,6 +182,7 @@ public struct BackendCodeModelClient: AgentModelClient {
             let accountID = self.accountID
             let resolver = self.resolver
             let maxTokens = self.maxTokens
+            let timeouts = self.timeouts
             let relay = Task {
                 do {
                     guard let route = resolver.route(for: request.modelID) else {
@@ -218,7 +245,12 @@ public struct BackendCodeModelClient: AgentModelClient {
                         )
                     }
 
-                    let response = try await streamer.stream(bearer, for: accountID)
+                    let response = try await Self.withTimeout(
+                        seconds: timeouts.connectionSeconds,
+                        message: "The model connection timed out."
+                    ) {
+                        try await streamer.stream(bearer, for: accountID)
+                    }
                     guard (200...299).contains(response.statusCode) else {
                         throw AgentModelClientError.transport(
                             message: try await Self.errorMessage(from: response)
@@ -232,28 +264,15 @@ public struct BackendCodeModelClient: AgentModelClient {
                         )
                     }
 
-                    var decoder = ProviderStreamDecoder(protocol: route.wireProtocol)
-                    var sawCompletion = false
-                    for try await byte in response.bytes {
-                        for payload in try decoder.consume(byte) {
-                            for event in try decoder.events(from: payload) {
-                                if case .turnCompleted = event { sawCompletion = true }
-                                continuation.yield(event)
-                            }
-                        }
-                    }
-                    for payload in try decoder.finish() {
-                        for event in try decoder.events(from: payload) {
-                            if case .turnCompleted = event { sawCompletion = true }
-                            continuation.yield(event)
-                        }
-                    }
-                    // A stream that ends without a terminal event is a dropped
-                    // connection, never a completed turn: fail so the loop
-                    // retries or ends cleanly instead of a false success.
-                    guard sawCompletion else {
-                        throw AgentModelClientError.transport(
-                            message: "The model response ended before completing."
+                    try await Self.withTimeout(
+                        seconds: timeouts.overallSeconds,
+                        message: "The model turn exceeded its time limit."
+                    ) {
+                        try await Self.consume(
+                            response: response,
+                            protocol: route.wireProtocol,
+                            idleSeconds: timeouts.idleSeconds,
+                            continuation: continuation
                         )
                     }
                     continuation.finish()
@@ -262,6 +281,96 @@ public struct BackendCodeModelClient: AgentModelClient {
                 }
             }
             continuation.onTermination = { @Sendable _ in relay.cancel() }
+        }
+    }
+
+    /// Races one asynchronous operation against a cancellable deadline. The
+    /// child task is cancelled when the operation wins, and the operation is
+    /// cancelled when the deadline wins; this matters for URLSession-backed
+    /// streams because leaving the losing task alive would leak its socket.
+    private static func withTimeout<T: Sendable>(
+        seconds: TimeInterval,
+        message: String,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        guard seconds > 0 else { return try await operation() }
+        return try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(seconds))
+                throw AgentModelClientError.transport(message: message)
+            }
+            defer { group.cancelAll() }
+            guard let value = try await group.next() else {
+                throw AgentModelClientError.transport(message: message)
+            }
+            return value
+        }
+    }
+
+    /// Decodes and forwards the stream while a second child watches for a
+    /// provider that has gone quiet. Keeping the event forwarding inside the
+    /// winning child preserves token-by-token UI updates instead of buffering a
+    /// whole turn just to make the timeout race possible.
+    private static func consume(
+        response: HTTPByteStreamResponse,
+        protocol wireProtocol: CodeModelWireProtocol,
+        idleSeconds: TimeInterval,
+        continuation: AsyncThrowingStream<ModelStreamEvent, Error>.Continuation
+    ) async throws {
+        let activity = StreamActivity()
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                var decoder = ProviderStreamDecoder(protocol: wireProtocol)
+                var sawCompletion = false
+                for try await byte in response.bytes {
+                    await activity.touch()
+                    for payload in try decoder.consume(byte) {
+                        for event in try decoder.events(from: payload) {
+                            if case .turnCompleted = event { sawCompletion = true }
+                            continuation.yield(event)
+                        }
+                    }
+                }
+                for payload in try decoder.finish() {
+                    for event in try decoder.events(from: payload) {
+                        if case .turnCompleted = event { sawCompletion = true }
+                        continuation.yield(event)
+                    }
+                }
+                // A stream that ends without a terminal event is a dropped
+                // connection, never a completed turn: fail so the loop retries
+                // or ends cleanly instead of a false success.
+                guard sawCompletion else {
+                    throw AgentModelClientError.transport(
+                        message: "The model response ended before completing."
+                    )
+                }
+            }
+            if idleSeconds > 0 {
+                group.addTask {
+                    while true {
+                        try await Task.sleep(for: .seconds(idleSeconds))
+                        if await activity.isIdle(for: idleSeconds) {
+                            throw AgentModelClientError.transport(
+                                message: "The model stream became idle."
+                            )
+                        }
+                    }
+                }
+            }
+            defer { group.cancelAll() }
+            _ = try await group.next()
+        }
+    }
+
+    private actor StreamActivity {
+        private var lastByteAt = Date()
+
+        func touch() { lastByteAt = Date() }
+
+        func isIdle(for seconds: TimeInterval) -> Bool {
+            Date().timeIntervalSince(lastByteAt) >= seconds
         }
     }
 

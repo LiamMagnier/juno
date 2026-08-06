@@ -93,9 +93,12 @@ private struct JunoDesktopPreviewWorkspace: View {
             // a registration from here would put a fake host in the real one's
             // list — visible on the reader's phone.
             codeHostModel: nil,
-            // The preview harness drives fixtures, not a relay: a Work model with
-            // no transport and no host is what the screenshots are of.
-            workModel: nil,
+            workModel: world.workModel,
+            // No host model on purpose. `DesktopWorkHostModel` is this Mac
+            // advertising itself as an executor, and the harness must never put
+            // a fake Mac in the real account's host list — it would show up on
+            // the reader's phone. The Work column degrades to "this Mac is not
+            // hosting", which is a real state and one worth looking at.
             workHostModel: nil,
             libraryModel: world.libraryModel,
             requestSender: sender,
@@ -107,10 +110,19 @@ private struct JunoDesktopPreviewWorkspace: View {
             shareClient: NativeShareClient(sender: sender)
         )
         workbenchModel = WorkbenchModel.preview()
-        _product = State(
-            initialValue: JunoPreviewEnvironment.initialDestination == "code"
-                ? .code : .chat
-        )
+        _product = State(initialValue: Self.requestedProduct)
+    }
+
+    /// The product `--juno-preview-tab` asks for.
+    ///
+    /// "code" and "work" are products rather than destinations; everything else
+    /// is a Chat destination and is resolved by ``requestedDestination`` below.
+    private static var requestedProduct: DesktopProductMode {
+        switch JunoPreviewEnvironment.initialDestination {
+        case "code": .code
+        case "work": .work
+        default: .chat
+        }
     }
 
     var body: some View {
@@ -125,13 +137,13 @@ private struct JunoDesktopPreviewWorkspace: View {
 
     /// The `--juno-preview-tab` value as a sidebar destination.
     ///
-    /// "code" is handled by `product` above and is not a destination; anything
-    /// the enum does not recognise resolves to nil so the harness falls through
-    /// to Chat rather than opening a blank pane.
+    /// "code" and "work" are handled by `product` above and are not
+    /// destinations; anything the enum does not recognise resolves to nil so the
+    /// harness falls through to Chat rather than opening a blank pane.
     private static var requestedDestination: DesktopDestination? {
-        guard let raw = JunoPreviewEnvironment.initialDestination, raw != "code" else {
-            return nil
-        }
+        guard let raw = JunoPreviewEnvironment.initialDestination,
+            raw != "code", raw != "work"
+        else { return nil }
         return DesktopDestination(rawValue: raw)
     }
 }

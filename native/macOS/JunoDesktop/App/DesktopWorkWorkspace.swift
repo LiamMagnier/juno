@@ -1,3 +1,4 @@
+import JunoAuth
 import JunoCore
 import JunoDesignSystem
 import JunoWorkKit
@@ -35,6 +36,11 @@ struct DesktopWorkWorkspace: View {
     /// aimed here would not run — the answer is a setting on this machine, and
     /// the window that shows the task is where somebody discovers the question.
     var hostModel: DesktopWorkHostModel?
+    /// The window's dependencies, for the account block at the bottom of the
+    /// column. Work is the only product that did not pin one; see
+    /// ``leaveForChat(_:)``.
+    let configuration: JunoDesktopConfiguration
+    let session: NativeAuthenticatedSession
     @Binding var product: DesktopProductMode
     /// Starts an ordinary Juno conversation. A task is not a chat: a chat with
     /// nobody to run it is still a chat, so the way back to one crosses the
@@ -133,11 +139,15 @@ struct DesktopWorkWorkspace: View {
             DesktopWorkSidebar(
                 model: model,
                 hostModel: hostModel,
+                configuration: configuration,
+                session: session,
                 sessions: visibleSessions,
                 selection: selection,
                 product: $product,
                 compose: { isComposing = true },
-                openDesign: openDesign
+                openDesign: openDesign,
+                openSettings: { leaveForChat(.settings) },
+                openUsage: { leaveForChat(.usage) }
             )
             .junoSidebarColumn()
         } detail: {
@@ -217,7 +227,19 @@ struct DesktopWorkWorkspace: View {
     /// than opening on whatever it was last showing and then jumping. See
     /// ``storedDestination``.
     private func openDesign() {
-        storedDestination = DesktopDestination.design.rawValue
+        leaveForChat(.design)
+    }
+
+    /// Open Settings or Usage, which are Chat destinations.
+    ///
+    /// Work's column had neither, and no toolbar item for them either — so a
+    /// reader sitting in Work who wanted to change anything about Work had to
+    /// switch product, find Settings in Chat's column, and go looking. Chat and
+    /// Code both pin the account block; the three products are meant to read as
+    /// three faces of one application, and the window's furniture moving when
+    /// you switch tabs is the clearest way to say they are not.
+    private func leaveForChat(_ destination: DesktopDestination) {
+        storedDestination = destination.rawValue
         product = .chat
     }
 
@@ -355,16 +377,28 @@ struct DesktopWorkWorkspace: View {
     ///
     /// Present with a neutral reading when nothing is open, rather than absent:
     /// see the note on ``detailToolbar`` for why nothing here may come and go.
+    ///
+    /// **`.titleAndIcon` is required, not cosmetic.** A bare `Label` in a
+    /// toolbar collapses to its glyph, and `.status` placement centres it — so
+    /// this rendered as a lone unlabelled shield floating in the middle of the
+    /// titlebar, touching nothing, meaning nothing to anyone who had not read
+    /// this file. With the title shown it becomes what it was written to be: the
+    /// answer to "what is this task doing" while the thread is scrolled past its
+    /// own header.
     @ViewBuilder
     private var statusIndicator: some View {
         if let session = openSession {
             let style = DesktopWorkStatusStyle.of(model.displayStatus(of: session))
             Label(style.label, systemImage: style.symbol)
+                .labelStyle(.titleAndIcon)
+                .font(.system(.caption, design: .default, weight: .medium))
                 .foregroundStyle(style.tint)
                 .help(style.sentence)
                 .accessibilityLabel(style.sentence)
         } else {
             Label("No task open", systemImage: "checklist")
+                .labelStyle(.titleAndIcon)
+                .font(.system(.caption, design: .default, weight: .medium))
                 .foregroundStyle(.secondary)
         }
     }
@@ -462,6 +496,8 @@ struct DesktopWorkWorkspace: View {
 private struct DesktopWorkSidebar: View {
     let model: NativeWorkModel
     let hostModel: DesktopWorkHostModel?
+    let configuration: JunoDesktopConfiguration
+    let session: NativeAuthenticatedSession
     let sessions: [WorkSessionSummary]
     @Binding var selection: String?
     /// Which half of the app the window is showing, so the switch at the top of
@@ -473,6 +509,10 @@ private struct DesktopWorkSidebar: View {
     /// ``DesktopWorkWorkspace/openDesign()`` — so the column asks for it rather
     /// than navigating to it.
     let openDesign: () -> Void
+    /// Settings and Usage, for the same reason: both are Chat destinations and
+    /// this window has no route to them of its own.
+    let openSettings: () -> Void
+    let openUsage: () -> Void
 
 
     private var attention: [WorkSessionSummary] {
@@ -511,40 +551,62 @@ private struct DesktopWorkSidebar: View {
         // to the top of its own bounds, where no inset reaches it — pins below
         // the strip instead of over the traffic lights.
         .junoSidebarProductHeader(product: $product)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            // Opaque backing, not just an inset. Without it a scrolled source
-            // list slides its rows under the footer, which is the same defect
-            // Code documents on the other end of this column for the product
-            // switch — an inset reserves space and paints nothing.
+        // `safeAreaBar`, not `safeAreaInset` with `.background(.bar)`.
+        //
+        // Work was the last column in the window still painting an opaque lid
+        // over a vibrant source list — a grey slab on translucency, visible as a
+        // hard-edged bar under the last row, which is the exact defect
+        // `JunoDesktopChrome.junoSidebarScrollEdge()` was written to retire and
+        // which Chat and Code were both migrated off. Switching products changed
+        // the material at the bottom of the same column.
+        .safeAreaBar(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
                 footer
                     .padding(.horizontal, JunoSpace.regular)
                     .padding(.vertical, JunoSpace.snug)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                // Last, because it is the bottom of the column: Chat and Code put
-                // this row directly above their account block, and this column
-                // has no account block for it to sit above.
-                //
-                // It carries its own inset rather than this footer's deeper one.
-                // The row is the same control in all three columns and the point
-                // of it is that a reader finds it in the same place, so it hangs
-                // on Chat's and Code's left edge rather than on the one Work's
-                // status lines use.
                 DesktopSidebarDesignRow(open: openDesign)
-                    .padding(.bottom, JunoSpace.snug)
+                // The account block Work never had. Chat and Code both pin this
+                // exact component, which is what stops the three columns
+                // describing one account — or one waiting update — three ways.
+                DesktopSidebarFooter(
+                    session: session,
+                    avatarModel: configuration.avatarModel,
+                    syncModel: configuration.syncModel,
+                    plan: nil,
+                    openUsage: openUsage,
+                    openSettings: openSettings
+                )
             }
-            .background(.bar)
         }
+        .junoSidebarScrollEdge()
         .accessibilityIdentifier("juno.work.sidebar")
     }
 
+    /// One task in the source list.
+    ///
+    /// **Colour is spent on attention, and on nothing else.** Every row used to
+    /// tint its glyph with the status colour, so a column of ten tasks was a
+    /// column of coral, amber, green and red marks — a rainbow rather than a
+    /// signal, and directly against `JunoDesktopChrome`'s rule that the rail is
+    /// greyscale ("The web's rail is greyscale: the mark rests on
+    /// `--sidebar-foreground` and lifts to `--foreground` with its label"). The
+    /// mark is now the column's own ink like Chat's and Code's, and the only
+    /// rows that carry colour are the ones asking for something: the section is
+    /// already called "Waiting on you", and now it looks like it.
+    ///
+    /// The status word stays in the subtitle, where it was already, because that
+    /// is where the answer is when somebody actually wants it.
     private func row(_ session: WorkSessionSummary) -> some View {
         let style = DesktopWorkStatusStyle.of(model.displayStatus(of: session))
+        let wantsYou = session.needsAttention
         return Label {
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(session.title)
                     .junoRowLabel()
+                    .fontWeight(wantsYou ? .medium : .regular)
                     .lineLimit(1)
+                    .truncationMode(.tail)
                 Text(
                     "\(style.label) · \(session.lastActivityAt.formatted(.relative(presentation: .named)))"
                 )
@@ -553,7 +615,12 @@ private struct DesktopWorkSidebar: View {
             }
         } icon: {
             Image(systemName: style.symbol)
-                .foregroundStyle(style.tint)
+                .junoSidebarMarkInk()
+                // The one exception to the greyscale rail, and the reason the
+                // rail is greyscale: a mark that means "this has stopped and is
+                // waiting for you" can only read as urgent if its neighbours are
+                // not also coloured.
+                .foregroundStyle(wantsYou ? style.tint : Color.junoSidebarForeground)
         }
         .junoSidebarRowInk()
         .tag(session.sessionID)
@@ -948,14 +1015,18 @@ private struct DesktopWorkThread: View {
 
     private var header: some View {
         let style = DesktopWorkStatusStyle.of(status)
-        return VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+        return VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
                 Text(session.title)
                     .font(JunoSerif.pageHeading())
+                    .textSelection(.enabled)
                 Spacer(minLength: JunoSpace.snug)
-                Label(style.label, systemImage: style.symbol)
-                    .junoCodeSmall()
-                    .foregroundStyle(style.tint)
+                DesktopWorkStatusPill(status: status)
+                    // Nudged onto the title's cap height. A capsule aligned on
+                    // its own text baseline sits low beside a serif heading,
+                    // because the pill's padding is part of its box and the
+                    // baseline is not where its centre is.
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 5 }
             }
 
             Text(session.goal)
@@ -963,13 +1034,16 @@ private struct DesktopWorkThread: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
 
-            Text(style.sentence)
+            // One metadata line, not three stacked ones.
+            //
+            // The status sentence, where it runs and which model answered were
+            // three separate `Text`s at three different styles — one of them
+            // monospaced — which is why the header read as a form rather than as
+            // a heading. They are one interpuncted line now: the same facts, one
+            // reading order, one style.
+            Text(metadataLine(style: style))
                 .junoCaption()
                 .fixedSize(horizontal: false, vertical: true)
-
-            Text(runningWhere)
-                .junoCodeSmall()
-                .foregroundStyle(.secondary)
 
             // Every reason the run is not what was asked for, in the server's
             // own words. A degradation the client cannot name shows the user
@@ -1000,6 +1074,21 @@ private struct DesktopWorkThread: View {
         }
     }
 
+    /// The header's single line of provenance: what the status means, where the
+    /// task runs, and which model answered.
+    ///
+    /// Interpuncted rather than stacked because these are three facts of equal
+    /// weight about one task, and three lines gave them three weights. The model
+    /// is included only once a run has chosen one — naming a model on a task that
+    /// has never run would be an invention.
+    private func metadataLine(style: DesktopWorkStatusStyle) -> String {
+        var parts = [style.sentence, runningWhere]
+        if let model = run?.effectiveModel, !model.isEmpty {
+            parts.append("Answered by \(model)")
+        }
+        return parts.joined(separator: "  ·  ")
+    }
+
     /// Where the task ran, named from the run rather than from the request.
     ///
     /// The requested target is a *request*: the server picks the effective one
@@ -1007,18 +1096,10 @@ private struct DesktopWorkThread: View {
     /// request would tell somebody their task ran on their Mac, with their
     /// files, when it ran in the cloud without them.
     private var runningWhere: String {
-        let effective = run?.effectiveTarget ?? session.effectiveTarget
-        guard let effective, let target = JunoWorkTarget(rawValue: effective) else {
-            return "Not started — Juno has not chosen where this runs yet."
-        }
-        switch target {
-        case .cloud: return "Runs in the cloud"
-        case .local: return "Runs on \(session.hostDisplayName ?? "a Mac of yours")"
-        // `automatic` is a request and never an outcome; something has to
-        // choose. Reaching this means the server sent one, which is worth
-        // saying rather than rendering as a confident wrong answer.
-        case .automatic: return "Where this runs has not been decided"
-        }
+        DesktopWorkVocabulary.target(
+            run?.effectiveTarget ?? session.effectiveTarget,
+            hostName: session.hostDisplayName
+        )
     }
 
     /// Pause, resume, stop and try again — always all four.
@@ -1028,19 +1109,60 @@ private struct DesktopWorkThread: View {
     /// appear and disappear underneath the pointer get mis-clicked.
     private var controls: some View {
         HStack(spacing: JunoSpace.snug) {
-            Button("Pause") { Task { await model.pauseOpenRun() } }
-                .disabled(status.isTerminal || status == .paused || status == .draft)
-            Button("Resume") { Task { await model.resumeOpenRun() } }
-                .disabled(status != .paused)
-            Button("Stop", role: .destructive) { Task { await model.stopOpenRun() } }
-                .disabled(status.isTerminal || status == .draft)
+            // Pause and Resume are one control, not two.
+            //
+            // They are mutually exclusive by construction — `canPause` and
+            // `canResume` can never both be true — so drawing both always left
+            // one greyed slab beside one live button, and the eye had to read
+            // two labels to find the one verb available. Swapping the label on a
+            // single button keeps the target in the same place (which is the
+            // reason the old row gave for disabling rather than hiding) without
+            // spending a control on a state that cannot happen.
+            Button {
+                Task {
+                    if status == .paused {
+                        await model.resumeOpenRun()
+                    } else {
+                        await model.pauseOpenRun()
+                    }
+                }
+            } label: {
+                Label(
+                    status == .paused ? "Resume" : "Pause",
+                    systemImage: status == .paused ? "play.fill" : "pause.fill"
+                )
+            }
+            .disabled(status.isTerminal || status == .draft)
+
+            Button(role: .destructive) {
+                Task { await model.stopOpenRun() }
+            } label: {
+                Label("Stop", systemImage: "stop.fill")
+            }
+            .disabled(status.isTerminal || status == .draft)
+
             Spacer(minLength: JunoSpace.snug)
+
+            // The live indicator, with a word beside it.
+            //
+            // This was a bare `ProgressView` floating at the end of the row: a
+            // spinner with no label, which reads as something loading rather
+            // than as a stream being followed. It is the only thing in the
+            // header that says the page is live, so it says it.
             if isFollowing, model.isStreaming {
-                ProgressView()
-                    .controlSize(.small)
-                    .accessibilityLabel("Following this task live")
+                HStack(spacing: JunoSpace.tight) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Live")
+                        .junoCaption()
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Following this task live")
             }
         }
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
+        .labelStyle(.titleAndIcon)
         // `isFollowing` gates the whole row for the same reason it gates the
         // approval card: these three verbs address the model's open run, not
         // this view's session.
@@ -1053,24 +1175,31 @@ private struct DesktopWorkThread: View {
     @ViewBuilder
     private var currentAction: some View {
         if let action = DesktopWorkLog.currentAction(in: events) {
-            HStack(alignment: .top, spacing: JunoSpace.snug) {
+            HStack(alignment: .center, spacing: JunoSpace.cozy) {
                 ProgressView()
                     .controlSize(.small)
-                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text(action.title)
                         .junoRowLabel()
                         .fontWeight(.medium)
+                        .fixedSize(horizontal: false, vertical: true)
                     if let detail = action.detail {
                         Text(detail)
-                            .junoCodeSmall()
-                            .foregroundStyle(.secondary)
+                            .junoCaption()
                             .lineLimit(1)
+                            .truncationMode(.middle)
                     }
                 }
                 Spacer(minLength: 0)
             }
-            .padding(JunoSpace.cozy)
-            .junoPanel()
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.cozy)
+            // A card on the canvas, like every other block in the thread.
+            // `junoPanel` is reserved for fills nested inside an already-raised
+            // surface (`JunoDesktopChrome`), and this sits directly on the
+            // canvas beside siblings that are cards — so it was the one block
+            // drawn at the wrong elevation for where it is.
+            .junoCard()
             .accessibilityIdentifier("juno.work.current-action")
         }
     }
@@ -1132,9 +1261,9 @@ private struct DesktopWorkThread: View {
                                 .truncationMode(.middle)
                             if let detail = reference.detail {
                                 Text(detail)
-                                    .junoCodeSmall()
-                                    .foregroundStyle(.secondary)
+                                    .junoCaption()
                                     .lineLimit(1)
+                                    .truncationMode(.middle)
                             }
                         }
                     } icon: {
@@ -1174,18 +1303,26 @@ private struct DesktopWorkThread: View {
                 .fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(produced) { artifact in
-                    HStack(spacing: JunoSpace.snug) {
-                        Text(artifact.kind.fileExtension)
-                            .junoCodeSmall()
-                            .foregroundStyle(.secondary)
-                            .frame(width: 34, alignment: .leading)
-                        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                    HStack(spacing: JunoSpace.cozy) {
+                        // A glyph, not a bare file extension in a 34pt slot.
+                        // A column of "xlsx" / "docx" / "pdf" set in monospace
+                        // is a directory listing; this section is meant to read
+                        // as the things Juno made for you.
+                        Image(systemName: DesktopWorkVocabulary.artifactSymbol(artifact.kind))
+                            .font(.system(size: 15))
+                            .foregroundStyle(Color.junoAccent)
+                            .frame(width: 22, alignment: .center)
+                        VStack(alignment: .leading, spacing: 1) {
                             Text(artifact.title)
                                 .junoRowLabel()
                                 .lineLimit(1)
-                            Text(artifact.subtitle)
-                                .junoCodeSmall()
-                                .foregroundStyle(.secondary)
+                                .truncationMode(.middle)
+                            Text(
+                                "\(DesktopWorkVocabulary.artifactKind(artifact.kind))  ·  "
+                                    + artifact.subtitle
+                            )
+                            .junoCaption()
+                            .lineLimit(1)
                         }
                         Spacer(minLength: 0)
                     }
@@ -1215,7 +1352,7 @@ private struct DesktopWorkThread: View {
                         Text(
                             "\(spent.formatted(.currency(code: "USD"))) of \(ceiling.formatted(.currency(code: "USD")))"
                         )
-                        .junoCodeSmall()
+                        .junoCaption()
                         .monospacedDigit()
                     }
                     .tint(Color.junoAccent)
@@ -1227,17 +1364,13 @@ private struct DesktopWorkThread: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                // The model that ran, not the one that was asked for. A
-                // substitution the reader is not told about is one they
-                // discover in the output instead.
-                if let answeredBy = run.effectiveModel {
-                    Text("Answered by \(answeredBy)")
-                        .junoCodeSmall()
-                        .foregroundStyle(.secondary)
-                }
+                // Which attempt this is. The model that answered used to be
+                // repeated here too; it is in the header's metadata line now,
+                // and a fact stated twice on one page is a fact the reader has
+                // to check against itself.
                 Text("Attempt \(run.attempt)")
-                    .junoCodeSmall()
-                    .foregroundStyle(.secondary)
+                    .junoCaption()
+                    .monospacedDigit()
             } else {
                 Text(
                     "This task has not been started, so there is nothing to describe yet — no target, no model, no budget spent."
@@ -1251,8 +1384,8 @@ private struct DesktopWorkThread: View {
     // MARK: Activity
 
     private var activity: some View {
-        DesktopWorkSection("Activity") {
-            let entries = DesktopWorkLog.entries(in: events)
+        let entries = DesktopWorkLog.entries(in: events)
+        return DesktopWorkSection("Activity", count: entries.count) {
             if entries.isEmpty {
                 Text(
                     "Nothing has happened yet. Every step Juno takes appears here as it takes it."
@@ -1260,24 +1393,46 @@ private struct DesktopWorkThread: View {
                 .junoCaption()
                 .fixedSize(horizontal: false, vertical: true)
             } else {
-                ForEach(entries) { entry in
-                    Label {
-                        VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                            Text(entry.title)
-                                .junoRowLabel()
+                // A timed, gutter-aligned log rather than a list of labels.
+                //
+                // Three things were wrong with the `Label` version: there was no
+                // time on any row, so a finished run could not be read for how
+                // long anything took; the icon and the text were laid out by
+                // `Label`, which puts the glyph on the first line's baseline and
+                // leaves multi-line rows hanging; and the whole entry was tinted
+                // by tone, so a warning row set its *body* in amber. Tone now
+                // colours the glyph only, and the row's own text stays readable.
+                VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                    ForEach(entries) { entry in
+                        HStack(alignment: .top, spacing: JunoSpace.cozy) {
+                            Image(systemName: entry.symbol)
+                                .font(.system(size: 12))
                                 .foregroundStyle(entry.tint)
-                                .fixedSize(horizontal: false, vertical: true)
-                            if let detail = entry.detail {
-                                Text(detail)
-                                    .junoCaption()
+                                .frame(width: 16, height: 16, alignment: .center)
+                                // Sits on the title's cap height rather than
+                                // floating at the top of a two-line row.
+                                .padding(.top, 2)
+
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(entry.title)
+                                    .junoRowLabel()
                                     .fixedSize(horizontal: false, vertical: true)
+                                if let detail = entry.detail {
+                                    Text(detail)
+                                        .junoCaption()
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                             }
+
+                            Spacer(minLength: JunoSpace.cozy)
+
+                            Text(entry.at.formatted(date: .omitted, time: .shortened))
+                                .junoCaption()
+                                .monospacedDigit()
+                                .padding(.top, 1)
                         }
-                    } icon: {
-                        Image(systemName: entry.symbol)
-                            .foregroundStyle(entry.tint)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
@@ -1299,78 +1454,107 @@ private struct DesktopWorkApprovalCard: View {
 
     private var risk: JunoWorkRiskLevel? { JunoWorkRiskLevel(rawValue: approval.risk) }
 
+    /// The colour the card is edged and headed in. Irreversible actions are the
+    /// only ones that get danger; everything else that reaches a person is
+    /// caution. See ``DesktopWorkVocabulary/riskTint(_:)``.
+    private var tint: Color { DesktopWorkVocabulary.riskTint(approval.risk) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            Label {
-                Text("Juno is waiting for you")
-                    .junoRowLabel()
-                    .fontWeight(.medium)
-            } icon: {
-                Image(systemName: "shield.lefthalf.filled")
-                    .foregroundStyle(Color.junoCaution)
-            }
-
-            // The stored sentence, verbatim. It is what an audit can prove was
-            // on screen, and re-describing the action from its identifier would
-            // show the reader something the record does not contain.
-            Text(approval.summary)
-                .junoBody()
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-
+        VStack(alignment: .leading, spacing: 0) {
+            // A tinted header band rather than a tinted hairline.
+            //
+            // The card used to be a plain `junoCard()` with a second 1pt stroke
+            // laid over the border it already draws, at the same radius — two
+            // concentric hairlines that read as one muddy 2pt edge rather than
+            // as a cautioned card. A band states the same thing with one edge:
+            // it gives the card a head, it carries the risk colour at a size
+            // that can actually be seen, and it puts the risk label and the
+            // expiry on a ground of their own instead of loose under the prose.
             HStack(spacing: JunoSpace.snug) {
-                if let risk {
-                    Text(Self.riskLabel(risk))
-                        .junoCodeSmall()
-                        .foregroundStyle(risk.alwaysRequiresApproval ? Color.junoDanger : .secondary)
-                }
-                Text(approval.action)
-                    .junoCodeSmall()
-                    .foregroundStyle(.secondary)
+                Image(systemName: risk?.alwaysRequiresApproval == true
+                    ? "exclamationmark.shield.fill" : "shield.lefthalf.filled")
+                    .foregroundStyle(tint)
+                Text(DesktopWorkVocabulary.risk(approval.risk))
+                    .font(.system(.caption, design: .default, weight: .semibold))
+                    .foregroundStyle(tint)
+                Text(DesktopWorkVocabulary.action(approval.action))
+                    .junoCaption()
                     .lineLimit(1)
-                    .truncationMode(.middle)
                 Spacer(minLength: JunoSpace.snug)
                 // Stated rather than counted down. A live countdown would need a
                 // timer running behind every thread, and the honest failure —
                 // pressing Allow after the window closed — is already reported
                 // by the client as a sentence saying the approval expired.
-                Text("expires \(approval.expiresAt.formatted(.relative(presentation: .named)))")
-                    .junoCodeSmall()
-                    .foregroundStyle(.secondary)
+                Text("Expires \(approval.expiresAt.formatted(.relative(presentation: .named)))")
+                    .junoCaption()
             }
+            .padding(.horizontal, JunoSpace.roomy)
+            .padding(.vertical, JunoSpace.cozy)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(tint.opacity(0.10))
 
-            HStack(spacing: JunoSpace.snug) {
-                Button("Allow once") { decide(.allowed) }
-                    .accessibilityIdentifier("juno.work.approval.allow")
-                Button("Allow for this task") { decide(.allowedAlways) }
-                    .accessibilityIdentifier("juno.work.approval.allow-always")
-                Spacer(minLength: JunoSpace.snug)
-                Button("Refuse", role: .destructive) { decide(.denied) }
-                    .accessibilityIdentifier("juno.work.approval.deny")
+            VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                Text("Juno needs your decision")
+                    .junoRowLabel()
+                    .fontWeight(.semibold)
+
+                // The stored sentence, verbatim. It is what an audit can prove
+                // was on screen, and re-describing the action from its
+                // identifier would show the reader something the record does not
+                // contain.
+                Text(approval.summary)
+                    .junoBody()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+
+                // Refuse is separated from the two allows by a spacer, and it is
+                // the plain button while allowing is the bordered one.
+                //
+                // The old row had all three as identical bordered slabs, with
+                // the *escalating* option ("Allow for this task", which grants a
+                // standing permission) sitting immediately beside the one-time
+                // one and looking exactly like it. Weight now matches
+                // consequence: one prominent action, one ordinary one, and a
+                // refusal that is easy to hit and impossible to hit by accident.
+                HStack(spacing: JunoSpace.snug) {
+                    Button("Allow once") { decide(.allowed) }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.junoAccent)
+                        .keyboardShortcut(.defaultAction)
+                        .accessibilityIdentifier("juno.work.approval.allow")
+                    Button("Always allow this") { decide(.allowedAlways) }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("juno.work.approval.allow-always")
+                    Spacer(minLength: JunoSpace.regular)
+                    Button("Refuse", role: .destructive) { decide(.denied) }
+                        .buttonStyle(.bordered)
+                        .keyboardShortcut(.cancelAction)
+                        .accessibilityIdentifier("juno.work.approval.deny")
+                }
+                .controlSize(.regular)
+                .disabled(model.isMutating)
             }
-            .disabled(model.isMutating)
+            .padding(JunoSpace.roomy)
         }
-        .padding(JunoSpace.roomy)
-        .junoCard()
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                .fill(Color.junoRaised)
+                .shadow(
+                    color: .junoCardShadow,
+                    radius: JunoElevation.cardBlur,
+                    y: JunoElevation.cardOffsetY
+                )
+        )
         .overlay(
             RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
-                .strokeBorder(Color.junoCaution.opacity(0.35), lineWidth: 1)
+                .strokeBorder(tint.opacity(0.45), lineWidth: 1)
         )
+        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
         .accessibilityIdentifier("juno.work.approval")
     }
 
     private func decide(_ decision: JunoWorkApprovalDecision) {
         Task { await model.decide(approval, decision) }
-    }
-
-    private static func riskLabel(_ risk: JunoWorkRiskLevel) -> String {
-        switch risk {
-        case .safe: "Changes nothing"
-        case .edit: "Juno can undo this"
-        case .command: "Runs a program"
-        case .sensitive: "Touches private data"
-        case .irreversible: "Cannot be undone"
-        }
     }
 }
 
@@ -1598,28 +1782,63 @@ private struct DesktopWorkComposer: View {
 
 // MARK: - Section
 
-/// A titled block in the thread.
+/// A titled block in the thread: a sentence-case heading over a raised card.
 ///
-/// A quiet monospaced eyebrow over its content, matching the settings tile's
-/// eyebrow, so the thread's sections and the rest of the app agree about what a
-/// section heading looks like.
+/// **Two things changed here, and both were documented failures.**
+///
+/// The heading was `junoCodeSmall()` in `.textCase(.uppercase)`, and its own
+/// comment claimed that matched the settings tile's eyebrow —
+/// `JunoSettingsTile` sets `.textCase(nil)`, so the one place the file said it
+/// was following the shared component was the place it did the opposite. Five
+/// UPPERCASE MONOSPACED headings ran down a thread whose every sibling surface
+/// uses sentence case. It is now ``SwiftUI/View/junoSidebarSection()``, which is
+/// the app's actual section-heading style.
+///
+/// The content sat *directly on the canvas*. `JunoSurfaces` states the rule it
+/// was breaking by name: "the Mac app painted content straight onto the warm
+/// canvas, so the whole window read as one flat cream field… Anything a reader
+/// actually reads sits on `junoRaised` above it." Plan, Read and written, Made,
+/// Budget and Activity are the largest reading surface in the product and were
+/// the largest violation of it — nine blocks at one elevation, separated by one
+/// gap, reading as a single undifferentiated column. They are cards now, which
+/// is also what gives the eye somewhere to stop between them.
+///
+/// `count` is drawn on the heading's trailing edge rather than in the body,
+/// because "how many" is the question a collapsed reader asks of a section and
+/// answering it in the header means not having to open it.
 private struct DesktopWorkSection<Content: View>: View {
     private let title: LocalizedStringKey
+    private let count: Int?
     private let content: Content
 
-    init(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) {
+    init(_ title: LocalizedStringKey, count: Int? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.count = count
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            Text(title)
-                .junoCodeSmall()
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .accessibilityAddTraits(.isHeader)
-            content
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                Text(title)
+                    .junoSidebarSection()
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: JunoSpace.snug)
+                if let count, count > 0 {
+                    Text(count.formatted())
+                        .font(.system(.caption, design: .default, weight: .medium))
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, JunoSpace.hairline)
+
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(JunoSpace.regular)
+            .junoCard()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1957,10 +2176,15 @@ enum DesktopWorkLog {
         return current
     }
 
+    /// What a tool call is doing, in English.
+    ///
+    /// This was `tool.replacingOccurrences(of: "_", with: " ")`, which put
+    /// "apply changes" and "screen control" in the largest line of the window —
+    /// the live action banner — and made the most-looked-at text in Juno Work
+    /// read as a log. ``DesktopWorkVocabulary`` names the tools the executors
+    /// actually register and sentence-cases anything it has not met.
     private static func describeTool(_ tool: String?) -> String {
-        guard let tool else { return "Working" }
-        return tool.replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: ".", with: " ")
+        DesktopWorkVocabulary.toolPresent(tool)
     }
 
     // MARK: References
@@ -2019,8 +2243,13 @@ enum DesktopWorkLog {
                         id: "\(event.seq)-\(index)",
                         direction: .written,
                         label: label,
+                        // The change verb sentence-cased, not the raw `created`
+                        // / `moved` / `renamed` token the executor writes. It
+                        // sits under a filename in the reader's own list of what
+                        // Juno touched, which is prose, not a field value.
                         detail: bytes.map { "\($0.formatted(.byteCount(style: .file)))" }
                             ?? string(record, "change", "action")
+                                .map(DesktopWorkVocabulary.sentenceCased)
                     )
                 }
 
@@ -2118,6 +2347,13 @@ enum DesktopWorkLog {
         let detail: String?
         let symbol: String
         let tone: Tone
+        /// When it happened.
+        ///
+        /// The log carried no time at all, which meant a finished run could not
+        /// be read for how long anything took, and a live one gave no sense of
+        /// pace. `WorkEvent.createdAt` was already on every event and was only
+        /// being used for artifact subtitles.
+        let at: Date
 
         enum Tone: Equatable, Sendable {
             case quiet
@@ -2163,7 +2399,15 @@ enum DesktopWorkLog {
         let payload = WorkEventPayload.fields(of: event)
         switch kind {
         case .runStarted:
-            return entry(event, "Started", string(payload, "target"), "play.circle", .quiet)
+            // The target as a phrase, not the raw `local` / `cloud` token the
+            // payload carries.
+            return entry(
+                event, "Started",
+                string(payload, "target").map {
+                    DesktopWorkVocabulary.target($0, hostName: nil)
+                },
+                "play.circle", .quiet
+            )
         case .planCreated:
             return entry(event, "Wrote a plan", nil, "sparkles", .quiet)
         case .planUpdated:
@@ -2189,13 +2433,19 @@ enum DesktopWorkLog {
                 string(payload, "target", "detail"), "wrench.and.screwdriver", .normal
             )
         case .toolFinished:
+            // Past tense here, present tense on `toolStarted`. One vocabulary
+            // read two ways, because a log that says "Reading a file" under a
+            // finished run is describing something that is not happening.
             return entry(
-                event, string(payload, "summary") ?? describeTool(string(payload, "tool", "name")),
+                event,
+                string(payload, "summary")
+                    ?? DesktopWorkVocabulary.toolPast(string(payload, "tool", "name")),
                 string(payload, "result", "detail"), "checkmark", .quiet
             )
         case .toolDenied:
             return entry(
-                event, "Refused: \(describeTool(string(payload, "tool", "name")))",
+                event,
+                "Refused: \(DesktopWorkVocabulary.action(string(payload, "tool", "name")))",
                 string(payload, "reason", "explanation"), "hand.raised", .warning
             )
         case .questionAsked:
@@ -2218,24 +2468,27 @@ enum DesktopWorkLog {
         case .approvalRequested:
             return entry(
                 event, string(payload, "summary") ?? "Asked for approval",
-                string(payload, "action"), "shield.lefthalf.filled", .warning
+                string(payload, "action").map(DesktopWorkVocabulary.action),
+                "shield.lefthalf.filled", .warning
             )
         case .approvalResolved:
             return entry(
                 event,
                 string(payload, "decision") == "denied"
                     ? "You refused an action" : "You allowed an action",
-                string(payload, "summary", "action"), "shield.lefthalf.filled", .quiet
+                string(payload, "summary")
+                    ?? string(payload, "action").map(DesktopWorkVocabulary.action),
+                "shield.lefthalf.filled", .quiet
             )
         case .artifactCreated:
             return entry(
                 event, "Created \(string(payload, "title") ?? "a file")",
-                string(payload, "kind"), "doc.badge.plus", .good
+                artifactKindPhrase(payload), "doc.badge.plus", .good
             )
         case .artifactUpdated:
             return entry(
                 event, "Updated \(string(payload, "title") ?? "a file")",
-                string(payload, "kind"), "doc", .quiet
+                artifactKindPhrase(payload), "doc", .quiet
             )
         case .sourceCited:
             return entry(
@@ -2272,8 +2525,10 @@ enum DesktopWorkLog {
                 string(payload, "summary"), "arrow.uturn.backward", .quiet
             )
         case .subagentUpdate:
+            // Never the bare `agentId`. An identifier in the title slot is the
+            // one row in the log that is unreadable to the person it is for.
             return entry(
-                event, string(payload, "title", "agentId") ?? "A sub-agent reported in",
+                event, string(payload, "title") ?? "A sub-agent reported in",
                 string(payload, "status", "summary"), "sparkles", .quiet
             )
         case .degraded:
@@ -2309,9 +2564,15 @@ enum DesktopWorkLog {
                 passed ? .quiet : .warning
             )
         case .runFinished:
+            // "Finished — completed" was the status said twice, and "Finished —
+            // truncated" was a wire token in the middle of a sentence.
+            // ``DesktopWorkVocabulary/terminalReason(_:)`` returns nil where the
+            // reason adds nothing, so a clean finish is just "Finished".
             let reason = string(payload, "reason")
+            let because = DesktopWorkVocabulary.terminalReason(reason)
             return entry(
-                event, "Finished — \(reason ?? "no reason recorded")", string(payload, "detail"),
+                event, because.map { "Finished because \($0)" } ?? "Finished",
+                string(payload, "detail", "summary"),
                 "flag.checkered", reason == "completed" ? .good : .warning
             )
         case .error:
@@ -2329,6 +2590,16 @@ enum DesktopWorkLog {
         _ symbol: String,
         _ tone: Entry.Tone
     ) -> Entry {
-        Entry(id: event.seq, title: title, detail: detail, symbol: symbol, tone: tone)
+        Entry(
+            id: event.seq, title: title, detail: detail, symbol: symbol, tone: tone,
+            at: event.createdAt
+        )
+    }
+
+    /// An artifact event's kind as a noun, never the raw `spreadsheet` token.
+    private static func artifactKindPhrase(_ payload: [String: JunoJSONValue]) -> String? {
+        string(payload, "kind")
+            .flatMap(JunoWorkArtifactKind.init(rawValue:))
+            .map(DesktopWorkVocabulary.artifactKind)
     }
 }

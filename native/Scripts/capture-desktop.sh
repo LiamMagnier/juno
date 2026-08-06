@@ -48,9 +48,10 @@ SIZE="${JUNO_CAPTURE_SIZE:-1440x900}"
 mkdir -p "$OUT"
 echo "Capturing $(basename "$APP") at ${SIZE} into $OUT"
 
-# Each surface a reviewer needs to see. `chat` is the draft/greeting state; the
-# rest are the destinations reachable from the navigation column.
-SURFACES="chat library artifacts projects connections tasks usage search settings"
+# Each surface a reviewer needs to see. `chat` is the draft/greeting state, and
+# `code` and `work` are the other two products rather than destinations within
+# Chat; the rest are the destinations reachable from the navigation column.
+SURFACES="${JUNO_CAPTURE_SURFACES:-chat work code library artifacts projects connections tasks usage search settings}"
 
 capture() {
     local surface="$1" appearance="$2"
@@ -88,6 +89,41 @@ capture() {
 
     osascript -e 'tell application "System Events" to set frontmost of first process whose name contains "JunoDesktop" to true' >/dev/null 2>&1 || true
     sleep 1.5
+
+    # Refuse to capture unless Juno is actually the frontmost app.
+    #
+    # `screencapture -R` grabs a *screen region*, not a window: it returns
+    # whatever pixels are on the display inside that rectangle. So when the app
+    # has a window but cannot come forward — the usual cause is the modal
+    # Keychain prompt described at the top of this file, which belongs to
+    # SecurityAgent and steals activation — the rectangle is still valid and the
+    # capture silently succeeds with a picture of whatever the person at this
+    # Mac happens to have open behind it. That has happened: a run of this
+    # script produced a "screenshot of Juno" that was in fact the user's browser.
+    #
+    # A screenshot tool that can photograph the operator's private screen when
+    # the thing it is aimed at fails to appear is worse than one that fails, so
+    # this fails.
+    local front="" checks=0
+    while [ $checks -lt 10 ]; do
+        front=$(osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>/dev/null || true)
+        case "$front" in
+            *JunoDesktop*) break ;;
+        esac
+        checks=$((checks + 1))
+        sleep 0.5
+    done
+
+    case "$front" in
+        *JunoDesktop*) ;;
+        *)
+            echo "  FAIL ${surface}/${appearance}: JunoDesktop never came forward (frontmost was '${front:-unknown}')." >&2
+            echo "         Refusing to capture — the region would show whatever is behind it." >&2
+            echo "         Usual cause: a modal Keychain prompt. See the notes at the top of this script." >&2
+            pkill -f "$(basename "$APP")" 2>/dev/null || true
+            return 1
+            ;;
+    esac
 
     # `-R` takes a rectangle in points — the same units System Events reports —
     # and resolves the display's backing scale itself. Capturing the whole screen

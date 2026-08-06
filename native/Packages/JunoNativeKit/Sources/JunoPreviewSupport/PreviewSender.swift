@@ -12,11 +12,17 @@ import JunoSync
 /// against local fixtures. It holds no URLSession, no token, and no transport.
 public actor PreviewSender: NativeChatRequestSending {
     private let fails: Bool
+    /// Whether the account has no content. Work's fixtures are served from here
+    /// rather than seeded into the repository, because Work is a relay-backed
+    /// product with no local store — so "empty" has to be answered by the
+    /// transport the same way the server would answer it.
+    private let empty: Bool
     private(set) public var sentRequestCount = 0
     private(set) public var streamRequestCount = 0
 
-    public init(networkFails: Bool) {
+    public init(networkFails: Bool, empty: Bool = false) {
         self.fails = networkFails
+        self.empty = empty
     }
 
     public func send(
@@ -38,19 +44,58 @@ public actor PreviewSender: NativeChatRequestSending {
     ) async throws -> HTTPByteStreamResponse {
         streamRequestCount += 1
         if fails { throw URLError(.notConnectedToInternet) }
-        // The harness never triggers a live chat/change stream; hand back an
-        // immediately-finished stream so nothing hangs.
-        let bytes = AsyncThrowingStream<UInt8, any Error> { $0.finish() }
         return HTTPByteStreamResponse(
             statusCode: 200,
             headers: try HTTPHeaders(["content-type": "text/event-stream"]),
-            bytes: bytes
+            bytes: streamBytes(for: request.path)
         )
+    }
+
+    /// The bytes a stream request gets.
+    ///
+    /// Everything except a live Work task hands back an immediately-finished
+    /// stream, which is what the harness has always done and what keeps a chat
+    /// or change stream from hanging.
+    ///
+    /// A Work task that is *not* terminal is the exception, and it has to be:
+    /// `NativeWorkModel.follow` reconnects as soon as a stream ends and only
+    /// stops when the task reaches a terminal status. Finishing the stream for a
+    /// running task therefore puts the model into a 200ms reconnect loop that
+    /// burns a core for as long as the window is open — during which every
+    /// screenshot is taken against a view that is being rebuilt underneath it.
+    /// Holding the stream open is also the more faithful fixture: a running task
+    /// really does have a stream that has not ended.
+    private nonisolated func streamBytes(for path: String) -> AsyncThrowingStream<UInt8, any Error> {
+        guard path.hasPrefix("/api/work/sessions/"), path.hasSuffix("/events"),
+            PreviewWorkFixtures.liveSessionIDs.contains(Self.workSessionID(in: path) ?? "")
+        else {
+            return AsyncThrowingStream { $0.finish() }
+        }
+        // Deliberately never finished. The consuming task is cancelled when the
+        // model closes the stream, which terminates this one with it.
+        return AsyncThrowingStream { _ in }
+    }
+
+    /// `wk-invoices` out of `/api/work/sessions/wk-invoices/events`.
+    private nonisolated static func workSessionID(in path: String) -> String? {
+        let parts = path.split(separator: "/")
+        guard parts.count >= 4, parts[0] == "api", parts[1] == "work", parts[2] == "sessions"
+        else { return nil }
+        return String(parts[3])
     }
 
     /// Minimal, valid canned bodies keyed by path so any incidental call from a
     /// real code path decodes cleanly. Never fetched from a server.
     private func cannedBody(for path: String) -> Data {
+        if path.hasPrefix("/api/work/hosts") {
+            return PreviewWorkFixtures.hostsBody(empty: empty)
+        }
+        if path.hasPrefix("/api/work/sessions") {
+            if let sessionID = Self.workSessionID(in: path) {
+                return PreviewWorkFixtures.sessionBody(id: sessionID, empty: empty)
+            }
+            return PreviewWorkFixtures.sessionsBody(empty: empty)
+        }
         if path.contains("/memory") {
             return Data(#"{"memories":[],"summary":null}"#.utf8)
         }

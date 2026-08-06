@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 import JunoCodeCore
 @testable import JunoCodeUI
@@ -533,5 +534,102 @@ final class CodePreviewHarnessTests: XCTestCase {
         XCTAssertEqual(PathDisplay.fileCount(0), "0 files")
         XCTAssertEqual(PathDisplay.fileCount(1), "1 file")
         XCTAssertEqual(PathDisplay.fileCount(2), "2 files")
+    }
+
+    // MARK: - Live preview discovery
+
+    /// A repository can keep its browser app below `apps/` or `packages/` while
+    /// the root package only owns orchestration scripts. The preview must offer
+    /// the nested server and run it from the package that owns the script.
+    func testPreviewDiscoveryFindsNestedServerAndKeepsRootPackageManager() async throws {
+        let root = try makeTemporaryPreviewWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try writePackage(
+            at: root,
+            scripts: ["lint": "eslint ."]
+        )
+        try Data("lockfileVersion: '9.0'\n".utf8)
+            .write(to: root.appendingPathComponent("pnpm-lock.yaml"))
+
+        let webRoot = root.appendingPathComponent("apps/web", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: webRoot,
+            withIntermediateDirectories: true
+        )
+        try writePackage(
+            at: webRoot,
+            scripts: ["dev": "vite --host 0.0.0.0"]
+        )
+
+        // A dependency package must never appear as a user-selectable project.
+        let dependencyRoot = root.appendingPathComponent("node_modules/fake-app", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: dependencyRoot,
+            withIntermediateDirectories: true
+        )
+        try writePackage(at: dependencyRoot, scripts: ["dev": "vite"])
+
+        let result = await CodePreviewProjectDiscovery.scan(workspaceRoot: root)
+        let webCommand = try XCTUnwrap(
+            result.commands.first {
+                $0.workspaceDisplayName == "apps/web" && $0.name == "dev"
+            }
+        )
+
+        XCTAssertEqual(webCommand.commandLine, "pnpm run dev")
+        XCTAssertEqual(webCommand.workspaceDisplayName, "apps/web")
+        XCTAssertEqual(result.suggested?.id, webCommand.id)
+        XCTAssertFalse(
+            result.commands.contains { $0.workspaceRoot.path.contains("node_modules") },
+            "dependency manifests must not become preview targets"
+        )
+    }
+
+    /// Two packages can expose the same script name. Their stable IDs and menu
+    /// labels must remain distinct so selecting one never starts the other.
+    func testPreviewDiscoveryDisambiguatesMultipleNestedServers() async throws {
+        let root = try makeTemporaryPreviewWorkspace()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let webRoot = root.appendingPathComponent("apps/web", isDirectory: true)
+        let docsRoot = root.appendingPathComponent("packages/docs", isDirectory: true)
+        for packageRoot in [webRoot, docsRoot] {
+            try FileManager.default.createDirectory(
+                at: packageRoot,
+                withIntermediateDirectories: true
+            )
+            try writePackage(at: packageRoot, scripts: ["dev": "vite"])
+        }
+
+        let result = await CodePreviewProjectDiscovery.scan(workspaceRoot: root)
+        let devCommands = result.commands.filter { $0.name == "dev" }
+
+        XCTAssertEqual(devCommands.count, 2)
+        XCTAssertEqual(
+            Set(devCommands.map(\.id)).count,
+            2,
+            "same-named scripts in different packages need different selections"
+        )
+        XCTAssertEqual(
+            Set(devCommands.map(\.workspaceDisplayName)),
+            ["apps/web", "packages/docs"]
+        )
+    }
+
+    private func makeTemporaryPreviewWorkspace() throws -> URL {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("juno-code-preview-project-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        return root
+    }
+
+    private func writePackage(at root: URL, scripts: [String: String]) throws {
+        let object: [String: Any] = ["scripts": scripts]
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        try data.write(to: root.appendingPathComponent("package.json"))
     }
 }

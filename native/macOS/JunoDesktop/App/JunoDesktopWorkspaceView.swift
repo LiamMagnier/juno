@@ -138,6 +138,8 @@ struct JunoDesktopWorkspaceView: View {
                 DesktopWorkWorkspace(
                     model: workModel,
                     hostModel: configuration.workHostModel,
+                    configuration: configuration,
+                    session: session,
                     product: $product,
                     newChat: {
                         unscopedChatRequestID = UUID()

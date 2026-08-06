@@ -121,8 +121,8 @@ public struct InspectorView: View {
             ViewThatFits(in: .horizontal) {
                 // The inspector can be as narrow as 260pt. Giving the
                 // segmented control an honest minimum makes ViewThatFits pick
-                // the readable menu below instead of squeezing five tabs into
-                // clipped labels.
+                // the readable compact control below instead of squeezing five
+                // tabs into clipped labels.
                 Picker("Inspector pane", selection: pane) {
                     ForEach(CodeInspectorPane.allCases) { candidate in
                         Text(candidate.segmentLabel)
@@ -133,6 +133,24 @@ public struct InspectorView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(minWidth: 390, maxWidth: .infinity)
+
+                // Keep the panes one click away at the normal 348pt rail width.
+                // A menu is technically usable there, but hides the fact that
+                // Changes, Activity and Agents are separate live surfaces. Five
+                // system symbols fit comfortably at the 260pt minimum and keep
+                // the inspector scannable without forcing the column wider.
+                Picker("Inspector pane", selection: pane) {
+                    ForEach(CodeInspectorPane.allCases) { candidate in
+                        Label(candidate.label, systemImage: candidate.symbol)
+                            .labelStyle(.iconOnly)
+                            .help(candidate.purpose)
+                            .accessibilityLabel(candidate.label)
+                            .tag(candidate)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(minWidth: 238, maxWidth: .infinity)
 
                 Picker("Inspector pane", selection: pane) {
                     ForEach(CodeInspectorPane.allCases) { candidate in

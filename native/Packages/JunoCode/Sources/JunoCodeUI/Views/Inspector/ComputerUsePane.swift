@@ -5,6 +5,27 @@ import JunoCodeCore
 import JunoCodeLocal
 import JunoDesignSystem
 
+/// A visible operation state for controls that cross into TCC, ScreenCaptureKit
+/// or the coordinator actor. Without this, a slow permission prompt or capture
+/// makes the button look idle and invites duplicate requests.
+private enum ComputerUsePendingOperation: Equatable {
+    case permission
+    case start
+    case stop
+    case recheck
+    case capture
+
+    var progressLabel: String {
+        switch self {
+        case .permission: "Saving…"
+        case .start: "Starting…"
+        case .stop: "Stopping…"
+        case .recheck: "Checking…"
+        case .capture: "Capturing…"
+        }
+    }
+}
+
 /// Computer Use: what Juno is allowed to do to this Mac, what it has already
 /// done, and the control that ends it.
 ///
@@ -34,6 +55,12 @@ import JunoDesignSystem
 struct ComputerUseSections: View {
     let controller: SessionController
 
+    /// Controls are intentionally serialized in the pane. The coordinator is
+    /// safe against duplicate actions, but making the pending state visible
+    /// avoids needless TCC prompts, rate-limit journal failures, and a button
+    /// that appears broken while ScreenCaptureKit is responding.
+    @State private var pendingOperation: ComputerUsePendingOperation?
+
     /// The thumbnail's ceiling.
     ///
     /// Bounded rather than left to `scaledToFit`, because an unbounded ideal
@@ -57,11 +84,17 @@ struct ComputerUseSections: View {
     private var consentSection: some View {
         Section {
             Toggle("Allow screen control", isOn: enabledBinding)
-                .disabled(unavailableReason != nil)
+                .disabled(unavailableReason != nil || pendingOperation != nil)
                 .help(
                     "Lets this session capture the display and drive the pointer and keyboard. Turning it off stops capture immediately."
                 )
                 .accessibilityIdentifier("juno.code.inspector.computer-use.enabled")
+
+            if pendingOperation == .permission {
+                ProgressView(pendingOperation?.progressLabel ?? "Saving…")
+                    .controlSize(.small)
+                    .junoCaption()
+            }
 
             LabeledContent("State") { stateChip }
 
@@ -70,19 +103,25 @@ struct ComputerUseSections: View {
             // to re-find at the moment it is needed.
             HStack(spacing: JunoSpace.snug) {
                 Spacer(minLength: 0)
-                Button("Start") {
-                    Task { await controller.activateComputerUse() }
+                Button {
+                    run(.start) { await controller.activateComputerUse() }
+                } label: {
+                    operationLabel(.start, title: "Start")
                 }
                 .controlSize(.small)
-                .disabled(!canStart)
+                .disabled(!canStart || pendingOperation != nil)
                 .help(startHelp)
                 .accessibilityIdentifier("juno.code.inspector.computer-use.start")
 
-                Button("Stop", role: .destructive) {
-                    Task { await controller.stopComputerUse() }
+                Button(role: .destructive) {
+                    run(.stop, allowWhileBusy: true) { await controller.stopComputerUse() }
+                } label: {
+                    operationLabel(.stop, title: "Stop")
                 }
                 .controlSize(.small)
-                .disabled(!controller.computerUseActive)
+                // Keep Stop available while a capture/re-check is in flight;
+                // the emergency stop must remain the fastest action in the UI.
+                .disabled(!controller.computerUseActive || pendingOperation == .stop)
                 .help("Immediately end screen capture and input control")
                 .accessibilityIdentifier("juno.code.inspector.computer-use.stop")
             }
@@ -127,10 +166,13 @@ struct ComputerUseSections: View {
             )
             HStack(spacing: JunoSpace.snug) {
                 Spacer(minLength: 0)
-                Button("Re-check") {
-                    Task { await controller.refreshComputerUse() }
+                Button {
+                    run(.recheck) { await controller.refreshComputerUse() }
+                } label: {
+                    operationLabel(.recheck, title: "Re-check")
                 }
                 .controlSize(.small)
+                .disabled(pendingOperation != nil)
                 .help("Ask macOS for both grants again")
                 .accessibilityIdentifier("juno.code.inspector.computer-use.recheck")
             }
@@ -204,11 +246,13 @@ struct ComputerUseSections: View {
     private var captureSection: some View {
         Section {
             HStack(spacing: JunoSpace.snug) {
-                Button("Capture now") {
-                    Task { await controller.captureComputerUseScreenshot() }
+                Button {
+                    run(.capture) { await controller.captureComputerUseScreenshot() }
+                } label: {
+                    operationLabel(.capture, title: "Capture now")
                 }
                 .controlSize(.small)
-                .disabled(!controller.computerUseActive)
+                .disabled(!controller.computerUseActive || pendingOperation != nil)
                 .help(
                     controller.computerUseActive
                         ? "Take one screenshot through the same rate-limited, journaled path the agent uses"
@@ -355,9 +399,43 @@ struct ComputerUseSections: View {
         Binding(
             get: { controller.session.configuration.computerUseEnabled },
             set: { enabled in
-                Task { await controller.setComputerUseEnabled(enabled) }
+                run(.permission) { await controller.setComputerUseEnabled(enabled) }
             }
         )
+    }
+
+    /// Shows progress in the button itself and clears only the operation that
+    /// owns the state. This matters when the reader hits Stop while a capture
+    /// is still unwinding: the capture cannot clear Stop's busy state.
+    @ViewBuilder
+    private func operationLabel(
+        _ operation: ComputerUsePendingOperation,
+        title: String
+    ) -> some View {
+        HStack(spacing: JunoSpace.tight) {
+            if pendingOperation == operation {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            Text(pendingOperation == operation ? operation.progressLabel : title)
+        }
+    }
+
+    private func run(
+        _ operation: ComputerUsePendingOperation,
+        allowWhileBusy: Bool = false,
+        action: @escaping () async -> Void
+    ) {
+        guard pendingOperation == nil
+            || (allowWhileBusy && pendingOperation != .stop)
+        else { return }
+        pendingOperation = operation
+        Task { @MainActor in
+            await action()
+            if pendingOperation == operation {
+                pendingOperation = nil
+            }
+        }
     }
 
     private var emptyJournalMessage: String {
@@ -438,6 +516,8 @@ struct ComputerUseSections: View {
 struct ComputerUseStopBar: View {
     let controller: SessionController
 
+    @State private var isStopping = false
+
     var body: some View {
         if controller.computerUseActive {
             VStack(spacing: 0) {
@@ -452,12 +532,26 @@ struct ComputerUseStopBar: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                     Spacer(minLength: JunoSpace.tight)
-                    Button("Stop") {
-                        Task { await controller.stopComputerUse() }
+                    Button {
+                        guard !isStopping else { return }
+                        isStopping = true
+                        Task { @MainActor in
+                            await controller.stopComputerUse()
+                            isStopping = false
+                        }
+                    } label: {
+                        HStack(spacing: JunoSpace.tight) {
+                            if isStopping {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                            Text(isStopping ? "Stopping…" : "Stop")
+                        }
                     }
                     .controlSize(.small)
                     .buttonStyle(.borderedProminent)
                     .tint(Color.junoDanger)
+                    .disabled(isStopping)
                     .help("Immediately end screen capture and input control")
                     .accessibilityIdentifier("juno.code.inspector.computer-use.stop-bar")
                 }

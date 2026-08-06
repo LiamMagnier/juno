@@ -72,6 +72,40 @@ final class PreviewWorldTests: XCTestCase {
         XCTAssertNotNil(world.memorySettingsModel.settings)
     }
 
+    func testWorkPreviewUsesTheRealRelayModelsAndOpensTheDenseTaskFixture() async throws {
+        let world = try PreviewWorld(scenario: .normal)
+        await world.activate()
+
+        XCTAssertEqual(world.workModel.phase, .ready)
+        XCTAssertFalse(world.workModel.sessions.isEmpty)
+        XCTAssertFalse(world.workModel.hosts.isEmpty)
+        XCTAssertEqual(
+            world.workModel.openSession?.sessionID,
+            PreviewWorkFixtures.openSessionID
+        )
+
+        // `open(_:)` starts the same asynchronous detail/stream path the app
+        // uses. Give the no-network fixture a brief scheduling window so this
+        // assertion proves the detail decoder, not only the list decoder.
+        for _ in 0..<20 where world.workModel.openRun == nil {
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(world.workModel.openRun?.status, "waiting_approval")
+        XCTAssertFalse(world.workModel.events.isEmpty)
+        XCTAssertNotNil(world.workModel.currentApproval)
+    }
+
+    func testEmptyWorkPreviewDoesNotInventHostsOrTasks() async throws {
+        let world = try PreviewWorld(scenario: .empty)
+        await world.activate()
+
+        XCTAssertTrue(world.workModel.sessions.isEmpty)
+        XCTAssertTrue(world.workModel.hosts.isEmpty)
+        XCTAssertNil(world.workModel.openSession)
+        XCTAssertNil(world.workModel.currentApproval)
+    }
+
     /// Regression guard for the Library and Artifacts destinations: both must
     /// seed real, navigable content so their screens render instead of crashing
     /// or falling back to an empty/unavailable state.

@@ -80,10 +80,6 @@ struct SubagentPane: View {
                         activity: activity(for: run),
                         open: { focused = run.agentID }
                     )
-                    // Opaque and raised, not glass: this is content a reader
-                    // studies, and the section reads as one panel of divided
-                    // rows rather than as loose text on the inspector.
-                    .listRowBackground(Color.junoRaised)
                 }
             } header: {
                 HStack(spacing: JunoSpace.tight) {
@@ -124,32 +120,43 @@ private struct SubagentListRow: View {
                 SubagentStatusGlyph(status: run.status)
                     .frame(width: JunoSpace.regular, alignment: .center)
                 VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                    Text(run.title)
-                        .junoRowLabel()
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                    HStack(spacing: JunoSpace.tight) {
-                        if let role = run.role {
-                            SubagentRoleChip(role: role)
-                        }
-                        Text(activity.isEmpty ? SubagentFormatting.label(run.status) : activity)
-                            .junoCaption()
-                            .foregroundStyle(
-                                activity.isEmpty
-                                    ? SubagentFormatting.tint(run.status)
-                                    : Color.secondary
-                            )
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer(minLength: 0)
+                    HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
+                        Text(run.title)
+                            .junoRowLabel()
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .layoutPriority(1)
+                        Spacer(minLength: JunoSpace.tight)
                         SubagentElapsed(run: run)
+                        Image(systemName: "chevron.right")
+                            .imageScale(.small)
+                            .foregroundStyle(.tertiary)
+                    }
+                    HStack(spacing: JunoSpace.tight) {
+                        Text(SubagentFormatting.listLabel(run.status))
+                            .junoCaption()
+                            .foregroundStyle(SubagentFormatting.tint(run.status))
+                            .lineLimit(1)
+                        if let role = run.role {
+                            Text("·")
+                                .junoCaption()
+                                .foregroundStyle(.tertiary)
+                            Text(role.rawValue.capitalized)
+                                .junoCaption()
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    if !activity.isEmpty {
+                        Text(activity)
+                            .junoCaption()
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                Image(systemName: "chevron.right")
-                    .imageScale(.small)
-                    .foregroundStyle(.tertiary)
             }
-            .padding(.vertical, JunoSpace.hairline)
+            .padding(.vertical, JunoSpace.tight)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -252,7 +259,11 @@ private struct SubagentDetailPane: View {
             isPresented: $confirmApply,
             titleVisibility: .visible
         ) {
-            Button("Apply Changes", role: .destructive) {
+            // Applying is an explicit merge into the parent, but it is not a
+            // destructive action. Reserve the destructive treatment for the
+            // separate discard confirmation below so the two choices are not
+            // visually conflated.
+            Button("Apply Changes") {
                 applyWorktree()
             }
             Button("Cancel", role: .cancel) {}
@@ -610,37 +621,6 @@ private struct SubagentLoadKey: Equatable {
     let status: SubagentStatus
 }
 
-// MARK: - Role
-
-/// The role the delegation asked for.
-///
-/// Absent when a legacy call named none — `SubagentRun.role` is optional for
-/// exactly that case — and then nothing is drawn. The tool's own fallback is a
-/// runtime detail, and a chip claiming a role the caller never wrote would be
-/// inventing the record.
-private struct SubagentRoleChip: View {
-    let role: AgentRole
-
-    var body: some View {
-        Label(role.rawValue.capitalized, systemImage: symbol)
-            .font(.caption)
-            .imageScale(.small)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, JunoSpace.tight)
-            .padding(.vertical, JunoSpace.hairline)
-            .background(Capsule().fill(Color.junoRowSelected))
-            .accessibilityLabel("\(role.rawValue.capitalized) role")
-    }
-
-    private var symbol: String {
-        switch role {
-        case .engineer: "hammer"
-        case .reviewer: "checkmark.seal"
-        case .explainer: "text.book.closed"
-        }
-    }
-}
-
 // MARK: - Formatting
 
 /// Presentation for recorded sub-agent values. Kept in one place so the
@@ -663,6 +643,22 @@ enum SubagentFormatting {
         case .preparing: "Starting"
         case .running: "Running"
         case .waitingForApproval: "Waiting for approval"
+        case .completed: "Completed"
+        case .failed: "Failed"
+        case .cancelled: "Cancelled"
+        case .interrupted: "Interrupted"
+        }
+    }
+
+    /// The one-line status used in the inspector list. The detail header keeps
+    /// the full wording; list rows need a compact label so status, role and a
+    /// live activity sentence remain readable at the 260pt minimum.
+    static func listLabel(_ status: SubagentStatus) -> String {
+        switch status {
+        case .queued: "Queued"
+        case .preparing: "Starting"
+        case .running: "Running"
+        case .waitingForApproval: "Needs approval"
         case .completed: "Completed"
         case .failed: "Failed"
         case .cancelled: "Cancelled"

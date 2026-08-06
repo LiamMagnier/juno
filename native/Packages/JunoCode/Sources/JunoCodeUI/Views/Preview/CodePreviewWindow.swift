@@ -77,6 +77,222 @@ public struct CodePreviewTarget: Hashable, Codable, Sendable {
     }
 }
 
+/// A startable script together with the package that owns it.
+///
+/// ``DevServerCommandDiscovery`` intentionally scans one package at a time. A
+/// preview, however, is opened for a repository, and the package that serves a
+/// page is often `apps/web` or `packages/site` rather than the repository root.
+/// Keeping the owning directory on the command prevents the UI from finding a
+/// useful script and then starting it from the wrong working directory.
+struct CodePreviewDiscoveredCommand: Identifiable, Hashable, Sendable {
+    let command: DevServerCommand
+    let workspaceRoot: URL
+    let workspaceDisplayName: String
+
+    var id: String { "\(workspaceRoot.path)#\(command.id)" }
+    var name: String { command.name }
+    var commandLine: String { command.commandLine }
+    var script: String { command.script }
+    var startsAServer: Bool { command.startsAServer }
+}
+
+struct CodePreviewCommandSet: Hashable, Sendable {
+    let commands: [CodePreviewDiscoveredCommand]
+    let unavailableReason: String?
+
+    var suggested: CodePreviewDiscoveredCommand? {
+        commands.first { $0.startsAServer } ?? commands.first
+    }
+}
+
+/// Finds preview scripts in the repository root and in shallow nested packages.
+///
+/// This is deliberately a preview concern rather than a general-purpose
+/// workspace index. It is bounded, skips generated/dependency trees, and keeps
+/// the existing ``DevServerCommandDiscovery`` as the source of truth for script
+/// ranking and package-manager detection. The common `apps/*` and `packages/*`
+/// monorepo layouts are covered without walking an entire checkout.
+enum CodePreviewProjectDiscovery {
+    private static let maximumPackageDepth = 3
+    private static let maximumPackageCount = 48
+    private static let ignoredDirectoryNames: Set<String> = [
+        ".git", ".hg", ".svn", ".next", ".nuxt", ".turbo", ".cache",
+        "node_modules", "vendor", "Pods", "DerivedData", "build", "dist",
+        "coverage", ".venv",
+    ]
+
+    static func scan(workspaceRoot: URL) async -> CodePreviewCommandSet {
+        // /var is a symlink on macOS. FileManager enumerates the real path,
+        // so normalize both sides before producing relative package labels or
+        // comparing the selected package with the repository root.
+        let repositoryRoot = workspaceRoot
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        let packageRoots = packageRoots(in: repositoryRoot)
+        guard !packageRoots.isEmpty else {
+            return CodePreviewCommandSet(
+                commands: [],
+                unavailableReason:
+                    "No package.json was found in \(repositoryRoot.lastPathComponent) or its nested packages. Start your server yourself and type its address above."
+            )
+        }
+
+        var discovered: [CodePreviewDiscoveredCommand] = []
+        var rootPackageManager = packageManager(in: repositoryRoot)
+        let hasRootPackage = packageRoots.contains { $0.path == repositoryRoot.path }
+        var scanReasons: [String] = []
+
+        for packageRoot in packageRoots {
+            let result = await DevServerCommandDiscovery.scan(workspaceRoot: packageRoot)
+            if hasRootPackage && packageRoot.path == repositoryRoot.path {
+                rootPackageManager = result.packageManager ?? rootPackageManager
+            }
+            if let reason = result.unavailableReason {
+                scanReasons.append(reason)
+            }
+
+            for command in result.commands {
+                // A package in a pnpm/yarn/bun monorepo usually inherits the
+                // root lockfile. Re-spell its command with that manager so a
+                // nested `dev` script can still resolve hoisted workspace bins.
+                let effectiveManager = packageRoot.path == repositoryRoot.path
+                    ? result.packageManager
+                    : rootPackageManager ?? result.packageManager
+                discovered.append(
+                    CodePreviewDiscoveredCommand(
+                        command: command.withPackageManager(effectiveManager),
+                        workspaceRoot: packageRoot,
+                        workspaceDisplayName: displayName(
+                            for: packageRoot,
+                            relativeTo: repositoryRoot
+                        )
+                    )
+                )
+            }
+        }
+
+        // Preserve each package's existing script order, but make a real server
+        // the default even when the root only contains lint/build scripts.
+        let serverCommands = discovered.filter(\.startsAServer)
+        let otherCommands = discovered.filter { !$0.startsAServer }
+        let commands = serverCommands + otherCommands
+
+        let reason: String?
+        if commands.isEmpty {
+            reason = packageRoots.count > 1
+                ? "No startable scripts were found in \(repositoryRoot.lastPathComponent) or its nested packages."
+                : scanReasons.first ?? "No development server script was found."
+        } else {
+            reason = nil
+        }
+
+        return CodePreviewCommandSet(commands: commands, unavailableReason: reason)
+    }
+
+    private static func packageManager(in root: URL) -> String? {
+        let lockfiles: [(String, String)] = [
+            ("pnpm-lock.yaml", "pnpm"),
+            ("yarn.lock", "yarn"),
+            ("bun.lockb", "bun"),
+            ("bun.lock", "bun"),
+            ("package-lock.json", "npm"),
+        ]
+        return lockfiles.first {
+            FileManager.default.fileExists(atPath: root.appendingPathComponent($0.0).path)
+        }?.1
+    }
+
+    private static func displayName(for packageRoot: URL, relativeTo repositoryRoot: URL) -> String {
+        let packageComponents = packageRoot.standardizedFileURL.pathComponents
+            .filter { $0 != "/" }
+        let repositoryComponents = repositoryRoot.standardizedFileURL.pathComponents
+            .filter { $0 != "/" }
+
+        if packageComponents == repositoryComponents {
+            return repositoryRoot.lastPathComponent.isEmpty ? "Workspace" : repositoryRoot.lastPathComponent
+        }
+
+        // FileManager can expose a symlink-resolved child (`/private/var/...`)
+        // while the caller supplied `/var/...`. Find the repository path as a
+        // contiguous component sequence instead of comparing raw strings.
+        if packageComponents.count >= repositoryComponents.count,
+           let start = packageComponents.indices.first(where: { index in
+               let end = index + repositoryComponents.count
+               guard end <= packageComponents.count else { return false }
+               return Array(packageComponents[index..<end]) == repositoryComponents
+           })
+        {
+            let tail = packageComponents.dropFirst(start + repositoryComponents.count)
+            if !tail.isEmpty { return tail.joined(separator: "/") }
+        }
+
+        return packageRoot.lastPathComponent.isEmpty ? "Workspace" : packageRoot.lastPathComponent
+    }
+
+    private static func packageRoots(in workspaceRoot: URL) -> [URL] {
+        var roots: [URL] = []
+        let rootManifest = workspaceRoot.appendingPathComponent("package.json")
+        if FileManager.default.fileExists(atPath: rootManifest.path) {
+            roots.append(workspaceRoot)
+        }
+
+        guard let enumerator = FileManager.default.enumerator(
+            at: workspaceRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else {
+            return roots
+        }
+
+        while let candidate = enumerator.nextObject() as? URL {
+            let name = candidate.lastPathComponent
+            if ignoredDirectoryNames.contains(name) {
+                enumerator.skipDescendants()
+                continue
+            }
+
+            let depth = candidate.pathComponents.count - workspaceRoot.pathComponents.count
+            if depth > maximumPackageDepth + 1 {
+                enumerator.skipDescendants()
+                continue
+            }
+
+            guard name == "package.json",
+                  candidate.deletingLastPathComponent() != workspaceRoot
+            else { continue }
+
+            roots.append(candidate.deletingLastPathComponent())
+            if roots.count >= maximumPackageCount {
+                break
+            }
+        }
+
+        return roots.sorted { left, right in
+            if left == workspaceRoot { return true }
+            if right == workspaceRoot { return false }
+            return left.path.localizedStandardCompare(right.path) == .orderedAscending
+        }
+    }
+}
+
+private extension DevServerCommand {
+    /// Rebuilds only the invocation spelling; the discovered script and its
+    /// server ranking remain unchanged.
+    func withPackageManager(_ manager: String?) -> DevServerCommand {
+        guard let manager else { return self }
+        let invocation = manager == "yarn"
+            ? "yarn \(name)"
+            : "\(manager) run \(name)"
+        guard invocation != commandLine else { return self }
+        return DevServerCommand(
+            name: name,
+            commandLine: invocation,
+            script: script,
+            startsAServer: startsAServer
+        )
+    }
+}
+
 /// Everything the preview window knows, and the only place it is decided.
 ///
 /// The server's state comes from ``DevServerService`` — a real child process with
@@ -95,7 +311,7 @@ final class CodePreviewModel {
     /// How many lines fell out of the buffer, so the pane can say it is not the
     /// whole story rather than silently starting mid-sentence.
     private(set) var discardedLineCount = 0
-    private(set) var commandSet: DevServerCommandSet?
+    private(set) var commandSet: CodePreviewCommandSet?
     private(set) var runningCommand: String?
     private(set) var startedAt: Date?
 
@@ -177,10 +393,10 @@ final class CodePreviewModel {
     /// Reads the workspace's `package.json`. Nothing is started as a result.
     func discover() async {
         guard let workspaceRoot else { return }
-        commandSet = await DevServerCommandDiscovery.scan(workspaceRoot: workspaceRoot)
+        commandSet = await CodePreviewProjectDiscovery.scan(workspaceRoot: workspaceRoot)
     }
 
-    var selectedCommand: DevServerCommand? {
+    var selectedCommand: CodePreviewDiscoveredCommand? {
         guard let commandSet else { return nil }
         if let chosenCommandID,
            let match = commandSet.commands.first(where: { $0.id == chosenCommandID })
@@ -224,7 +440,7 @@ final class CodePreviewModel {
     }
 
     func start() {
-        guard let workspaceRoot, let command = selectedCommand else { return }
+        guard let command = selectedCommand else { return }
         pump?.cancel()
         reconnect?.cancel()
         reconnectAttempt = 0
@@ -241,7 +457,10 @@ final class CodePreviewModel {
         addressValidationMessage = nil
         loadState = .idle
 
-        let events = service.start(command: command.commandLine, workspaceRoot: workspaceRoot)
+        let events = service.start(
+            command: command.commandLine,
+            workspaceRoot: command.workspaceRoot
+        )
         pump = Task { [weak self] in
             for await event in events {
                 guard let self else { return }
@@ -549,7 +768,7 @@ public struct CodePreviewWindowView: View {
                         model.chosenCommandID = command.id
                     } label: {
                         Text(command.commandLine)
-                        Text(command.script)
+                        Text("\(command.workspaceDisplayName) · \(command.script)")
                     }
                 }
             }
@@ -638,7 +857,7 @@ public struct CodePreviewWindowView: View {
                 JunoEmptyState(
                     title: "Start the development server",
                     message:
-                        "Juno runs \(command.commandLine) in \(model.workspaceRoot?.lastPathComponent ?? "the workspace") and opens the address it prints.",
+                        "Juno runs \(command.commandLine) in \(command.workspaceDisplayName) and opens the address it prints.",
                     symbol: "macwindow",
                     actionLabel: "Start",
                     action: { model.start() }
@@ -1132,7 +1351,7 @@ public struct CodePreviewDock: View {
                         model.chosenCommandID = command.id
                     } label: {
                         Text(command.commandLine)
-                        Text(command.script)
+                        Text("\(command.workspaceDisplayName) · \(command.script)")
                     }
                 }
             }

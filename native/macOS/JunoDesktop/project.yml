@@ -24,7 +24,18 @@ targets:
     type: application
     platform: macOS
     sources:
+      # Finder-duplicate copies ("DesktopCodeStudio 2.swift" and friends) are
+      # dead files that must never be compiled: each one redeclares every type
+      # in its original, so a build that includes both fails with dozens of
+      # "is ambiguous for type lookup" errors. The checked-in project predates
+      # them and lists them nowhere, which hid the problem — but it meant
+      # `Scripts/generate-projects.sh`, the documented way to regenerate, has
+      # been producing a project that cannot build. Excluded here rather than
+      # deleted because the copies are shared with the other targets and
+      # removing 30-odd files is a separate change.
       - path: App
+        excludes:
+          - "* 2.swift"
       - path: Resources
         excludes:
           - Info.plist
@@ -124,6 +135,8 @@ targets:
     platform: macOS
     sources:
       - path: Tests
+        excludes:
+          - "* 2.swift"
     dependencies:
       - target: JunoDesktop
     configFiles:
@@ -139,6 +152,8 @@ targets:
     platform: macOS
     sources:
       - path: UITests
+        excludes:
+          - "* 2.swift"
     dependencies:
       - target: JunoDesktop
     configFiles:

@@ -6,6 +6,7 @@ import JunoChatKit
 import JunoCore
 import JunoStorage
 import JunoSync
+import JunoWorkKit
 import Observation
 
 /// Builds the **real** production models over an isolated, in-memory-only
@@ -47,6 +48,15 @@ public final class PreviewWorld {
     /// renders in preview.
     public let syncModel: NativeSyncModel<SQLiteAccountRepository>
 
+    /// Juno Work, over the same no-network sender.
+    ///
+    /// Work has no local store — it is a relay-backed product — so unlike every
+    /// model above it is not seeded from the repository. Its fixtures are served
+    /// by ``PreviewSender`` in the wire shape, which means the harness exercises
+    /// `NativeWorkClient`'s real decoders and a screenshot is also evidence the
+    /// decode path works.
+    public let workModel: NativeWorkModel
+
     private let repository: SQLiteAccountRepository
     private let outbox: InMemoryMutationOutbox
     private let sender: PreviewSender
@@ -79,8 +89,9 @@ public final class PreviewWorld {
             databaseURL: url,
             cipher: try AESGCMAccountDataCipher(keyData: Self.developmentKey)
         )
-        sender = PreviewSender(networkFails: scenario.networkFails)
+        sender = PreviewSender(networkFails: scenario.networkFails, empty: scenario == .empty)
         chatTransport = sender
+        workModel = NativeWorkModel(client: NativeWorkClient(sender: sender, streamer: sender))
         attachmentModel = NativeComposerAttachmentModel(
             client: NativeAttachmentAPIClient(sender: sender)
         )
@@ -156,6 +167,18 @@ public final class PreviewWorld {
         searchModel.start(for: accountID)
         privateChatModel.start(for: accountID)
         libraryModel.start(for: accountID)
+        await workModel.start(for: accountID)
+
+        // Open the task the Work screenshots are of. Without this the thread is
+        // the "no task selected" placeholder, which is a state worth capturing
+        // but not the one anybody reaching for `--juno-preview-tab work` is
+        // after. The view's own scene storage still wins if a previous launch
+        // left a selection behind.
+        if let session = workModel.sessions.first(where: {
+            $0.sessionID == PreviewWorkFixtures.openSessionID
+        }) {
+            workModel.open(session)
+        }
 
         // Select a conversation so the chat destination shows a real transcript
         // rather than the empty state during QA.
