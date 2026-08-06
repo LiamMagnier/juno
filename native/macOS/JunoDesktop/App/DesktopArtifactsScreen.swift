@@ -82,6 +82,15 @@ struct DesktopArtifactsScreen: View {
     @State private var pendingFile: DesktopArtifactFile?
     @State private var localErrorDescription: String?
     @State private var previewReloadID = UUID()
+    /// Bumped to re-open the design editor from stored content.
+    ///
+    /// ``DesktopDesignSurface`` reads its body once and then treats the editor as
+    /// the authority on the document, which is what keeps a save from throwing away
+    /// the reader's viewport. The cost is that "Discard Changes" has to say so out
+    /// loud: without this the draft would clear, the subtitle would stop saying
+    /// "Unsaved changes", and the canvas would carry on drawing the very edit that
+    /// was just discarded.
+    @State private var designReloadToken = UUID()
     /// Artifacts always enter through their visual library. Opening a card flips
     /// this to the document; Back returns without losing the selected artifact.
     @State private var libraryVisible = true
@@ -505,12 +514,21 @@ struct DesktopArtifactsScreen: View {
         .accessibilityIdentifier("juno.artifact-card.\(artifact.id)")
     }
 
+    /// A card's thumbnail: the artifact as itself, inert.
+    ///
+    /// A design gets its mark instead of its body. Drawing one would mean a whole
+    /// bundled editor per card — a `WKWebView` and a JavaScript boot for every
+    /// design in a grid that exists to be scrolled — and the alternative the grid
+    /// used to take is worse than nothing: `NativeArtifactPreview` has no design
+    /// renderer, so a design card was a postage stamp of `DesignDocument` JSON,
+    /// which tells a reader less about which design it is than the word "Design"
+    /// does. The card is a way in; the editor is behind it.
     @ViewBuilder
     private func artifactCardPreview(_ artifact: NativeArtifact) -> some View {
         Color.clear
             .aspectRatio(4 / 3, contentMode: .fit)
             .overlay {
-                if let content = artifact.currentContent {
+                if let content = artifact.currentContent, !artifact.kind.isDesignDocument {
                     NativeArtifactPreview(
                         kind: artifact.kind,
                         content: content,
@@ -692,6 +710,13 @@ struct DesktopArtifactsScreen: View {
                 baseVersion: baseVersion,
                 targetVersion: version
             )
+        } else if artifact.kind.isDesignDocument {
+            // Ahead of `mode`, because a design has no Preview/Source pair to
+            // choose between — the same call the chat canvas makes, and the same
+            // call the phone makes in `JunoMobileArtifactBody`. Behind
+            // `showingChanges`, because ⇧⌘D is an explicit request to compare two
+            // versions and a design document diffs as text like any other body.
+            designSurface(artifact)
         } else if mode == .preview, artifact.kind == .markdown {
             // Markdown is prose, and prose is the whole reason this page was
             // unreadable: `NativeArtifactPreview` renders it through
@@ -802,6 +827,41 @@ struct DesktopArtifactsScreen: View {
         .id(previewReloadID)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("juno.artifact-preview")
+    }
+
+    /// A stored design, in the design editor — the same ``DesktopDesignSurface``
+    /// the chat canvas opens, because a design opened from the library is the same
+    /// document as one opened from the conversation it came out of.
+    ///
+    /// Before this, the library was the only surface on the Mac that did not know
+    /// what a design was: `renderedPreview` was skipped (`supportsRenderedPreview`
+    /// is false for `.design`), the version was the latest, and so the reader got
+    /// `sourceEditor` — a `TextEditor` full of `DesignDocument` JSON. That is what
+    /// "the library shows raw JSON" was.
+    ///
+    /// **Editable here, unlike the chat canvas, and that difference is the point.**
+    /// The library has a stored row behind the document, so an edit has somewhere
+    /// to go: each accepted transaction is re-encoded into `draft`, which lights
+    /// the Save button, puts "Unsaved changes" in the subtitle, and commits through
+    /// exactly the same `saveArtifact` path every other kind uses — no second write
+    /// path, and no version manufactured per drag. The chat canvas has no row and
+    /// therefore opens read-only rather than accepting edits it would have to drop.
+    /// Older versions are read-only for the reason the whole page is: a version the
+    /// reader is only looking at cannot be saved over, and Restore is the way back.
+    ///
+    /// The identity deliberately keys on `selectedVersion` rather than on the
+    /// resolved version number. Saving leaves `selectedVersion` at `nil` while
+    /// bumping `artifact.currentVersion`, so keying on the number would reload the
+    /// bundle after every ⌘S and throw away the reader's pan, zoom and selection.
+    /// Choosing a version from history *does* move `selectedVersion`, which is
+    /// exactly when a reload is what was asked for.
+    private func designSurface(_ artifact: NativeArtifact) -> some View {
+        DesktopDesignSurface(
+            content: displayedContent,
+            readOnly: !isLatest,
+            onEdit: isLatest ? { draft = $0 } : nil
+        )
+        .id("\(artifact.id)#\(selectedVersion.map(String.init) ?? "latest")#\(designReloadToken)")
     }
 
     /// The editor is deliberately not inside ``JunoDetailPage``: a `TextEditor`
@@ -1032,20 +1092,7 @@ struct DesktopArtifactsScreen: View {
 
             Spacer(minLength: JunoSpace.cozy)
 
-            Picker("View", selection: $mode) {
-                Text("Preview").tag(NativeArtifactDisplayMode.preview)
-                Text("Source").tag(NativeArtifactDisplayMode.source)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 148)
-            .disabled(!canPreview || showingChanges)
-            .help(
-                canPreview
-                    ? "Switch between the rendered artifact and its source"
-                    : "This artifact kind has no native renderer — its source is shown"
-            )
-            .accessibilityIdentifier("juno.artifact-view-mode")
+            viewSwitch
 
             Toggle(isOn: $showingChanges) {
                 Label("Changes", systemImage: "plus.forwardslash.minus")
@@ -1100,8 +1147,11 @@ struct DesktopArtifactsScreen: View {
                 }
                 .disabled(artifact == nil || model.isMutating)
 
-                Button("Discard Changes") { draft = nil }
-                    .disabled(!isDirty)
+                Button("Discard Changes") {
+                    draft = nil
+                    designReloadToken = UUID()
+                }
+                .disabled(!isDirty)
 
                 Divider()
 
@@ -1160,6 +1210,42 @@ struct DesktopArtifactsScreen: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("juno.artifact-command-bar")
+    }
+
+    /// Preview against Source — or, for a design, the name of the one view there
+    /// is.
+    ///
+    /// A design gets a label rather than a dimmed pair, which is the same call the
+    /// chat canvas's `viewBar` makes. Leaving the segmented control in place looked
+    /// right until it was looked at: `mode` starts at `.source` whenever
+    /// `canPreview` is false, so a design opened in the editor sat under a switch
+    /// whose selected half read "Source" — a control describing a view the reader
+    /// was demonstrably not in, greyed out so they could not correct it either.
+    @ViewBuilder
+    private var viewSwitch: some View {
+        if artifact?.kind.isDesignDocument == true {
+            Text("Design")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.junoMutedForeground)
+                .frame(width: 148)
+                .help("A design opens in the design editor — there is no separate source view to switch to")
+                .accessibilityIdentifier("juno.artifact-view-mode")
+        } else {
+            Picker("View", selection: $mode) {
+                Text("Preview").tag(NativeArtifactDisplayMode.preview)
+                Text("Source").tag(NativeArtifactDisplayMode.source)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 148)
+            .disabled(!canPreview || showingChanges)
+            .help(
+                canPreview
+                    ? "Switch between the rendered artifact and its source"
+                    : "This artifact kind has no native renderer — its source is shown"
+            )
+            .accessibilityIdentifier("juno.artifact-view-mode")
+        }
     }
 
     /// An explicit frame, deliberately: a self-sizing popover over a split view is
@@ -1745,7 +1831,14 @@ private struct DesktopArtifactWindowContent: View {
 
     var body: some View {
         Group {
-            if mode == .preview, kind == .markdown {
+            if kind.isDesignDocument {
+                // Read-only, which is what "immutable snapshot of one version"
+                // means once the thing on screen can be dragged: this window has no
+                // Save, no draft and no route back to the model, so an editor that
+                // accepted edits here would be collecting work it could only throw
+                // away when the window closed.
+                DesktopDesignSurface(content: content, readOnly: true)
+            } else if mode == .preview, kind == .markdown {
                 // Same renderer and same page as the main canvas, so a document
                 // torn off into its own window is the document the reader was
                 // just looking at rather than a second, worse rendering of it.
