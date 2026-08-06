@@ -325,7 +325,8 @@ final class WorkbenchModelTests: XCTestCase {
 
         // The signed-in manifest can gain detail after a controller already
         // exists. The next turn must rebuild its tool contract even though the
-        // routing model ID did not change.
+        // routing model ID did not change. Vision is necessary but not
+        // sufficient: Computer Use is a separate, explicit per-session grant.
         await workbench.setAvailableModels([ModelOption(catalog: visionDescriptor)])
         XCTAssertTrue(controller.currentModelSupportsVision)
         XCTAssertNil(controller.computerUseUnavailableReason)
@@ -337,10 +338,11 @@ final class WorkbenchModelTests: XCTestCase {
             }
             try await Task.sleep(for: .milliseconds(10))
         }
-        XCTAssertTrue(
+        XCTAssertFalse(
             try XCTUnwrap(client.requests.last).tools.contains {
-                $0.name == "computer_screenshot"
-            }
+                $0.name.hasPrefix("computer_")
+            },
+            "vision must not expose screen-control tools before the user starts the grant"
         )
 
         await controller.setComputerUseEnabled(true)

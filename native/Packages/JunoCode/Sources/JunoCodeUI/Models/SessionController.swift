@@ -269,6 +269,12 @@ public final class SessionController {
         /// Capability changes arrive with the signed-in model manifest and must
         /// rebuild the tool contract even when the routing model ID is stable.
         let supportsVision: Bool
+        /// Screen control is a live, per-session grant. A vision-capable model
+        /// may understand screenshots, but it must not be shown input tools
+        /// until the reader has explicitly started Computer Use for this
+        /// session. This also makes a stopped grant take effect on the next
+        /// turn instead of leaving a stale tool contract behind.
+        let computerUseActive: Bool
         /// Rebuilds the system prompt after a durable goal transition.
         let goalUpdatedAt: Date?
         /// Rebuilds the orchestrator when the user enables or disables
@@ -515,6 +521,7 @@ public final class SessionController {
                 ? session.configuration.reasoningEffort
                 : nil,
             supportsVision: live.modelSupportsVision(session.configuration.modelID),
+            computerUseActive: computerUseActive,
             goalUpdatedAt: session.goal?.updatedAt,
             hookPolicyFingerprint: Self.hookPolicyFingerprint(hookPolicy)
         )
@@ -565,7 +572,7 @@ public final class SessionController {
         var tools = contract.behavior == .code
             ? context.registry.allTools
             : context.registry.inspectionOnly().allTools
-        if !contract.supportsVision {
+        if !contract.supportsVision || !contract.computerUseActive {
             tools.removeAll { $0.name.hasPrefix("computer_") }
         }
         if contract.behavior == .code {
@@ -2120,7 +2127,11 @@ public final class SessionController {
             return
         }
 
-        let service = context.makeInteractiveTerminal()
+        // `run_command` has just passed the same runtime permission gate used
+        // by one-shot commands. Keep the PTY's kernel profile aligned with
+        // that decision so approved installs, dev servers, and Git operations
+        // do not fail because the interactive path silently denied network.
+        let service = context.makeInteractiveTerminal(allowsNetwork: true)
         interactiveTerminalService = service
         let stream = service.start(command: trimmed)
         let task = Task { @MainActor [weak self] in

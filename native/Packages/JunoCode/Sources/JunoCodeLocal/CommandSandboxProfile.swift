@@ -29,8 +29,10 @@ public struct CommandSandboxProfile: Equatable, Sendable {
 
     public let workspaceRoot: URL
     public let filesystem: FilesystemAccess
-    /// Off by default. A build that needs to fetch dependencies is a decision
-    /// the user makes per session, not something a command grants itself.
+    /// Off by default on the profile initializer. The normal Code workspace
+    /// passes `true` only after its runtime permission gate authorizes the
+    /// command; callers such as the preview server keep this false or allow
+    /// localhost explicitly. A command never grants this capability itself.
     public let allowsNetwork: Bool
     /// Whether a long-lived local service may bind and connect on loopback.
     /// This is deliberately separate from arbitrary network access: a preview

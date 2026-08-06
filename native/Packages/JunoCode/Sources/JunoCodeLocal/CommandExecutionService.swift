@@ -23,7 +23,8 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
         self.sandbox = sandbox
     }
 
-    /// The contained executor: writes confined to the workspace, network off.
+    /// Creates a contained executor: writes confined to the workspace, with
+    /// network and localhost reachability selected explicitly by the caller.
     ///
     /// Falls back to unconfined execution when `sandbox-exec` is unavailable,
     /// and says so through `isContained` rather than pretending — a caller

@@ -55,14 +55,18 @@ public final class WorkspaceContext: Sendable {
         self.files = files
         let index = WorkspaceIndexService(access: access)
         self.index = index
-        // Contained by default: writes confined to the granted folder and no
-        // network, enforced by the kernel rather than by inspecting the text of
-        // the command. `CommandExecutionService(workspaceRootURL:)` remains the
-        // unconfined developer-mode constructor, and `isContained` reports
-        // which one is in force so a surface cannot claim containment it does
-        // not have.
+        // Contained by default: writes stay inside the granted folder. The
+        // permission-controlled Code executor has outbound network enabled so
+        // an approved install, dev server, or Git push can actually work in
+        // full-access mode; the preview server below keeps a separate
+        // localhost-only profile. ToolRegistry is the authorization boundary
+        // before this executor is reached.
+        // `CommandExecutionService(workspaceRootURL:)` remains the unconfined
+        // developer-mode constructor, and `isContained` reports which one is
+        // in force so a surface cannot claim containment it does not have.
         let executor = CommandExecutionService.contained(
             workspaceRootURL: access.rootURL,
+            allowsNetwork: true,
             additionalWritablePaths: additionalWritablePaths
         )
         self.executor = executor
@@ -245,8 +249,10 @@ public final class WorkspaceContext: Sendable {
     /// Makes a reader-owned persistent terminal for this workspace. The
     /// terminal is intentionally per session rather than stored on the shared
     /// context: two sessions in the same repository must not type into one
-    /// another's process. It inherits the same kernel boundary as one-shot
-    /// commands and the preview server.
+    /// another's process. The caller must authorize the session before
+    /// starting it; it then uses the same contained workspace and network
+    /// policy as one-shot commands. The preview server uses its own
+    /// localhost-only profile.
     public func makeInteractiveTerminal(
         allowsNetwork: Bool = false
     ) -> InteractiveTerminalSession {
