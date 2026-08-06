@@ -1377,8 +1377,10 @@ Juno runs on hosted **PostgreSQL** — the reference deployment uses **Supabase*
     that makes every later deploy refuse to run.
   - **P1002 lock timeouts** — Prisma's migrate advisory lock doesn't survive a pooled
     connection, so a canceled deploy orphans the lock and later migrations hang. The
-    deploy therefore also sets `PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1` (safe here
-    because the GitHub Actions concurrency group already serializes deploys).
+    deploy therefore also sets `PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1` — safe only
+    because the GitHub Actions concurrency group puts every *deploying* run in one
+    group. Re-keying that group per-ref would let two deploys migrate prod at once
+    and the lock would have to come back.
 
 On Supabase, **both** strings should be the Supavisor **session** pooler (port
 5432): the *transaction* pooler (6543) multiplexes connections and cannot keep the
@@ -1421,9 +1423,19 @@ Swift surface (shared packages, the generated API contract, and both app builds)
 and is documented in `docs/native/TESTING.md` rather than here.
 
 **`deploy.yml` — Deploy to VM** (on push to `main`, on every pull request, and on
-manual dispatch; concurrency group `deploy-main`, cancel-in-progress). Pull requests
-run the `test` job only — `build-and-deploy` is guarded on `github.event_name !=
-'pull_request'`:
+manual dispatch).
+
+The concurrency group is keyed on *whether the run deploys*, not on the ref:
+`deploy-production` for every non-PR event, `deploy-<ref>` per pull request, both
+cancel-in-progress. It was once the constant `deploy-main` for all three events,
+which meant a PR run cancelled in-flight production deploys — on 2026-07-31 a push
+to `main` was killed 15s in by a PR opened right after it, so `main` advanced while
+production stayed on the old build. Keying by ref alone would have swapped that bug
+for a worse one: `workflow_dispatch` can target any ref, so a dispatch on a feature
+branch would deploy in its own group and migrate prod alongside a `main` deploy.
+
+Pull requests run the `test` job only — `build-and-deploy` is guarded on
+`github.event_name != 'pull_request'`:
 
 1. **`test` job** — `npm ci` → `npm run i18n:extract` → `npx tsc --noEmit` →
    `npm test` → `npm run lint`. The catalog step is needed because

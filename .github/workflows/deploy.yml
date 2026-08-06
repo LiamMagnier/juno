@@ -10,7 +10,20 @@ on:
   workflow_dispatch: {} # manual "Run workflow" button
 
 concurrency:
-  group: deploy-main
+  # This group MUST separate PR validation from production deploys, and MUST keep
+  # every deploying run in one group. It was the constant `deploy-main` for all
+  # three events, so any PR run cancelled an in-flight deploy of main: on
+  # 2026-07-31 run 30656648944 (push, main) began shipping 47 commits, run
+  # 30656665277 (a PR) started 15s later, and the deploy died mid-flight — main
+  # advanced while production stayed on the old build.
+  #
+  # Keying by `github.ref` alone would fix that but break the other half:
+  # `build-and-deploy` runs for every non-pull_request event and workflow_dispatch
+  # can target ANY ref, so a manual dispatch on a feature branch would land in its
+  # own group and run `prisma migrate deploy` against prod concurrently with a
+  # main deploy. Keying on *whether the run deploys* keeps all of them serialized
+  # (push to main + dispatch on any ref) while giving each PR its own group.
+  group: deploy-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
   cancel-in-progress: true
 
 jobs:
@@ -548,6 +561,12 @@ jobs:
           # every later migrate times out with P1002. Deploys are already
           # serialized by this workflow's concurrency group, so the lock adds no
           # safety here — only that failure mode.
+          #
+          # That "already serialized" claim is load-bearing: disabling the lock is
+          # only safe while EVERY run that reaches this step shares one concurrency
+          # group. If the group at the top of this file is ever re-keyed per-ref (or
+          # `build-and-deploy` is opened to more events), two deploys can migrate
+          # prod at once and the lock has to come back.
           export PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1
           # Schema operations route through DIRECT_URL (see prisma/schema.prisma
           # `directUrl`) rather than the runtime pooler, because the pooled
