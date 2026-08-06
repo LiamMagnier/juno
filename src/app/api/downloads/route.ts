@@ -75,10 +75,10 @@ async function latestRelease(
     // serve the previous stable version until its full TTL elapsed. Using the
     // `/latest` endpoint also makes the cache key change with this fix, so the
     // already-published 0.11.0 becomes visible immediately after deployment.
-    const latestResponse = await fetch(
-      `https://api.github.com/repos/${repo}/releases/${includePrerelease ? "?per_page=100" : "latest"}`,
-      { headers, ...cache },
-    );
+    const endpoint = includePrerelease
+      ? `https://api.github.com/repos/${repo}/releases?per_page=100`
+      : `https://api.github.com/repos/${repo}/releases/latest`;
+    const latestResponse = await fetch(endpoint, { headers, ...cache });
     if (!latestResponse.ok) return null;
     const payload = (await latestResponse.json()) as GitHubRelease | GitHubRelease[];
     const releases = Array.isArray(payload) ? payload : [payload];
