@@ -168,10 +168,37 @@ public enum ShadowKind: String, Codable, Hashable, Sendable {
 public struct Blur: Codable, Hashable, Sendable {
     public var type: BlurKind
     public var radius: Double
+    /// Saturation multiplier applied with the blur; nil and 1 both mean
+    /// "unchanged". Optional here for the same reason it is optional in the
+    /// TypeScript model: a stored blur that never mentions it is not making a
+    /// claim about saturation.
+    public var saturation: Double?
 }
 
 public enum BlurKind: String, Codable, Hashable, Sendable {
     case layer, background
+}
+
+/// Film grain, as the four numbers `feTurbulence` takes.
+///
+/// Mirrored field for field rather than summarised, because this type exists to
+/// survive a round trip. `Codable` drops keys it does not know on the way in and
+/// omits them on the way out, so a property missing from this struct is a
+/// property the Mac silently deletes from anybody's document the first time it
+/// re-encodes one — which is what happened to `Blur.saturation` and to this
+/// whole type before they were added.
+public struct Noise: Codable, Hashable, Sendable {
+    public var opacity: Double
+    public var density: Double
+    public var seed: Double
+    public var monochrome: Bool
+    public var blend: NoiseBlend
+    public var visible: Bool?
+}
+
+public enum NoiseBlend: String, Codable, Hashable, Sendable {
+    case normal, multiply, screen, overlay
+    case softLight = "soft-light"
 }
 
 public enum BlendMode: String, Codable, Hashable, Sendable {
@@ -356,6 +383,7 @@ public struct DesignNode: Codable, Hashable, Sendable {
     public var cornerRadius: CornerRadius
     public var shadows: [Shadow]
     public var blur: Blur?
+    public var noise: Noise?
     public var constraints: Constraints
     public var widthMode: SizingMode
     public var heightMode: SizingMode
@@ -387,7 +415,7 @@ public struct DesignNode: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, type, name, parentId, x, y, width, height, rotation, opacity, visible, locked
-        case blendMode, fills, strokes, cornerRadius, shadows, blur, constraints
+        case blendMode, fills, strokes, cornerRadius, shadows, blur, noise, constraints
         case widthMode, heightMode, limits, layoutChild, boundVariables
         case children, clipsContent, layout
         case componentId, variantProperties, overrides
@@ -416,6 +444,7 @@ public struct DesignNode: Codable, Hashable, Sendable {
         cornerRadius = try c.decode(CornerRadius.self, forKey: .cornerRadius)
         shadows = try c.decode([Shadow].self, forKey: .shadows)
         blur = try c.decodeIfPresent(Blur.self, forKey: .blur)
+        noise = try c.decodeIfPresent(Noise.self, forKey: .noise)
         constraints = try c.decode(Constraints.self, forKey: .constraints)
         widthMode = try c.decode(SizingMode.self, forKey: .widthMode)
         heightMode = try c.decode(SizingMode.self, forKey: .heightMode)
@@ -481,6 +510,7 @@ public struct DesignNode: Codable, Hashable, Sendable {
         try c.encode(cornerRadius, forKey: .cornerRadius)
         try c.encode(shadows, forKey: .shadows)
         try c.encode(blur, forKey: .blur)
+        try c.encode(noise, forKey: .noise)
         try c.encode(constraints, forKey: .constraints)
         try c.encode(widthMode, forKey: .widthMode)
         try c.encode(heightMode, forKey: .heightMode)
