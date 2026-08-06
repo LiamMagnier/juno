@@ -134,15 +134,9 @@ module.exports = {
       // twice. Keeping them apart is what lets the executor be scaled without
       // anybody having to remember that.
       //
-      // Invoked through npx rather than `npm run` because package.json has no
-      // `work:scheduler` script and this change may not add one. The two lines
-      // it would replace are exactly what `work:runner` does, so the moment
-      // that script exists this entry should become `npm run work:scheduler`
-      // and drop the NODE_OPTIONS below — the react-server condition is what
-      // lets `server-only` resolve, and every worker needs it.
       name: "juno-work-scheduler",
-      script: "npx",
-      args: "tsx scripts/work-scheduler.ts",
+      script: "npm",
+      args: "run work:scheduler",
       watch: false,
       max_memory_restart: "400M",
       env: {

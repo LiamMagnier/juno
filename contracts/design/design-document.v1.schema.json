@@ -3650,6 +3650,136 @@
           "properties": {
             "op": {
               "type": "string",
+              "const": "createPage"
+            },
+            "pageId": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 200
+            },
+            "backgroundColor": {
+              "$ref": "#/$defs/__schema3"
+            }
+          },
+          "required": [
+            "op",
+            "name"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "deletePage"
+            },
+            "pageId": {
+              "$ref": "#/$defs/__schema0"
+            }
+          },
+          "required": [
+            "op",
+            "pageId"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "renamePage"
+            },
+            "pageId": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          },
+          "required": [
+            "op",
+            "pageId",
+            "name"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "createAsset"
+            },
+            "asset": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "$ref": "#/$defs/__schema6"
+                },
+                "kind": {
+                  "type": "string",
+                  "const": "image"
+                },
+                "url": {
+                  "type": "string",
+                  "maxLength": 5000000
+                },
+                "width": {
+                  "$ref": "#/$defs/__schema16"
+                },
+                "height": {
+                  "$ref": "#/$defs/__schema16"
+                },
+                "mimeType": {
+                  "type": "string",
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "url",
+                "width",
+                "height",
+                "mimeType"
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "asset"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "const": "deleteAsset"
+            },
+            "assetId": {
+              "$ref": "#/$defs/__schema0"
+            }
+          },
+          "required": [
+            "op",
+            "assetId"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
               "const": "createInteraction"
             },
             "interaction": {
@@ -5886,6 +6016,136 @@
                 "op",
                 "collectionId",
                 "modeId"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "createPage"
+                },
+                "pageId": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "index": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 200
+                },
+                "backgroundColor": {
+                  "$ref": "#/$defs/__schema4"
+                }
+              },
+              "required": [
+                "op",
+                "name"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "deletePage"
+                },
+                "pageId": {
+                  "$ref": "#/$defs/__schema0"
+                }
+              },
+              "required": [
+                "op",
+                "pageId"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "renamePage"
+                },
+                "pageId": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                }
+              },
+              "required": [
+                "op",
+                "pageId",
+                "name"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "createAsset"
+                },
+                "asset": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/__schema7"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "const": "image"
+                    },
+                    "url": {
+                      "type": "string",
+                      "maxLength": 5000000
+                    },
+                    "width": {
+                      "$ref": "#/$defs/__schema17"
+                    },
+                    "height": {
+                      "$ref": "#/$defs/__schema17"
+                    },
+                    "mimeType": {
+                      "type": "string",
+                      "maxLength": 120
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "url",
+                    "width",
+                    "height",
+                    "mimeType"
+                  ]
+                }
+              },
+              "required": [
+                "op",
+                "asset"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "const": "deleteAsset"
+                },
+                "assetId": {
+                  "$ref": "#/$defs/__schema0"
+                }
+              },
+              "required": [
+                "op",
+                "assetId"
               ]
             },
             {

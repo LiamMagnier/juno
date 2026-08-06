@@ -308,7 +308,12 @@ export function DesignEditor({
       // Never steal a keystroke aimed at a text field — including the chat
       // composer, which shares the page with this editor.
       if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
-      if (!rootRef.current?.contains(document.activeElement) && !rootRef.current?.matches(":hover")) return;
+      // Focus, not hover. Scoping on `:hover` meant Delete and ⌘Z fired at
+      // whatever the mouse happened to be resting over — so typing in the chat
+      // beside an embedded editor, with the pointer parked on the canvas, sent
+      // the keystroke to the design. The canvas takes focus on pointer-down
+      // now, which is what makes focus a sufficient test.
+      if (!rootRef.current?.contains(document.activeElement)) return;
 
       const mod = event.metaKey || event.ctrlKey;
       const step = event.shiftKey ? NUDGE_LARGE : NUDGE_SMALL;
