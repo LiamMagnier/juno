@@ -1788,6 +1788,14 @@ enum DesktopWorkLog {
             return entry(
                 event, "You answered", string(payload, "text", "answer"), "text.bubble", .quiet
             )
+        // Said without being asked, which is why it does not read as an answer.
+        // The payload keeps `question_answered`'s field names so a row written
+        // by an older build — where a steer had to ride that kind — renders
+        // through the same accessor.
+        case .userMessage:
+            return entry(
+                event, "You added an instruction", string(payload, "text"), "text.bubble", .quiet
+            )
         case .approvalRequested:
             return entry(
                 event, string(payload, "summary") ?? "Asked for approval",
