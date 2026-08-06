@@ -434,8 +434,66 @@ export function describeCapability(capability: string): string {
 // Permissions, risk and approvals
 // ---------------------------------------------------------------------------
 
+/**
+ * The three approval modes, narrowest first.
+ *
+ * The wire values are what every layer already stores and what the Swift
+ * `WorkPermissionPolicy` decodes, so they stay exactly as they are. The words a
+ * person is offered — Manual, Auto, Skip — are in `WORK_APPROVAL_MODE_LABEL`
+ * below, deliberately separate: renaming the values would silently reclassify
+ * every stored session, every host advertisement and every approval already
+ * granted under one of them.
+ */
 export const WORK_PERMISSION_POLICIES = ["conservative", "balanced", "permissive"] as const;
 export type WorkPermissionPolicy = (typeof WORK_PERMISSION_POLICIES)[number];
+
+/**
+ * The mode a task is composed with when nobody chose.
+ *
+ * `balanced` and not `conservative`, which is a real decision and not a
+ * convenience. Manual asks before every file it writes, and a run that stops
+ * eleven times to be told yes is a run whose owner learns to press Allow
+ * without reading — which is precisely the habit that makes the twelfth
+ * request, the one that sends an email, dangerous. Auto spends the user's
+ * attention only on what it cannot take back, so the prompts that do arrive are
+ * worth reading.
+ *
+ * It is also the value `createWorkSession` has always defaulted the column to,
+ * so naming it here changes nothing about existing rows; it makes the default
+ * a stated policy rather than an argument default nobody can find.
+ */
+export const DEFAULT_WORK_PERMISSION_POLICY: WorkPermissionPolicy = "balanced";
+
+/**
+ * What each mode is called where a person picks it.
+ *
+ * One word each, because the control is a segmented three-way and a phrase in a
+ * segment wraps. The sentence underneath is `WORK_APPROVAL_MODE_SUMMARY`, and
+ * the two are written together: neither is much use alone.
+ */
+export const WORK_APPROVAL_MODE_LABEL: Record<WorkPermissionPolicy, string> = {
+  conservative: "Manual",
+  balanced: "Auto",
+  permissive: "Skip",
+};
+
+/**
+ * The sentence under the control, per mode.
+ *
+ * Skip's says what it does NOT skip, in the same breath as what it does. That
+ * placement is the point: a mode called "Skip approval" that still stops four
+ * times is a mode that looks broken unless the reader was told, and finding out
+ * from a prompt you were promised would not come is how a person concludes the
+ * setting does nothing. The four exceptions are named again beneath the control
+ * — see `ALWAYS_CONFIRM_ACTIONS` — because they apply to all three modes and
+ * folding them into Skip's line alone would read as a caveat on one option.
+ */
+export const WORK_APPROVAL_MODE_SUMMARY: Record<WorkPermissionPolicy, string> = {
+  conservative: "Juno asks before it changes a file or runs anything. Reading and research go ahead.",
+  balanced: "Juno makes changes it can undo, and asks before running anything or touching anything private.",
+  permissive:
+    "Juno gets on with the work without asking — except for the four things it cannot take back.",
+};
 
 /**
  * Policy strength, for narrowing.
@@ -510,8 +568,236 @@ export const ALWAYS_CONFIRM_ACTIONS: readonly string[] = [
 
 const ALWAYS_CONFIRM = new Set(ALWAYS_CONFIRM_ACTIONS);
 
+/**
+ * The floor: what asks under every mode, including Skip.
+ *
+ * Deliberately takes no policy. This is the answer that no setting anywhere in
+ * the product changes, and giving it a policy argument would be the first step
+ * towards a call site that passes one and gets `false` for a permanent delete.
+ * `approvalRuling` below is the policy-aware question, and it is defined in
+ * terms of this one: `approvalRuling(..., "permissive").ask` and this function
+ * agree for every action and risk, which is what "Skip cannot go below the
+ * floor" means as an executable statement rather than a comment.
+ */
 export function requiresExplicitApproval(action: string, risk: WorkRiskLevel): boolean {
   return ALWAYS_CONFIRM.has(action) || risk === "sensitive" || risk === "irreversible";
+}
+
+/**
+ * Whether "always allow" may ever cover this action.
+ *
+ * Two ceilings, and both are needed. The risk ceiling is `command`: above it the
+ * user is being told something they would want to know each time, and an answer
+ * given once last Tuesday is not that. The action ceiling is the always-confirm
+ * list, and it is the one that was missing — a standing allowance is keyed on
+ * the action name, so a tool that graded `work.connector.publish` as `command`
+ * rather than `irreversible` could have its first publish approved with "always"
+ * and every publish after it go out in silence. The classifier is exactly the
+ * thing the enumerated list exists not to trust, so it is checked here too.
+ *
+ * Mirrors `WorkRisk.mayBeCoveredByStandingAllowance` in
+ * native/Packages/JunoWork/Sources/JunoWorkCore/WorkRisk.swift, which enforces
+ * the risk half structurally by making `WorkAlwaysAllowance.init?` fail.
+ */
+export function mayBeCoveredByStandingAllowance(action: string, risk: WorkRiskLevel): boolean {
+  if (ALWAYS_CONFIRM.has(action)) return false;
+  return risk === "safe" || risk === "edit" || risk === "command";
+}
+
+/**
+ * Risk strength, for comparing a standing allowance against the action in hand.
+ *
+ * Unexported, and not declared beside `WORK_RISK_LEVELS`. It is not a fact about
+ * the vocabulary — it is the one place an ordering over risk is needed, and a
+ * rank sitting next to the list is a rank somebody eventually sorts a UI by,
+ * which is how "highest risk first" becomes a claim the executor never made.
+ */
+const RISK_RANK: Record<WorkRiskLevel, number> = {
+  safe: 0,
+  edit: 1,
+  command: 2,
+  sensitive: 3,
+  irreversible: 4,
+};
+
+/**
+ * Why a ruling came out the way it did.
+ *
+ * Reported rather than left for the caller to reconstruct, because the reasons
+ * are not interchangeable: `never_silent` is the one shown to somebody who
+ * explicitly chose Skip and is being asked anyway, and a client that could not
+ * tell it apart from `mode` would have to tell them their setting was ignored
+ * when in fact it was honoured everywhere it is allowed to apply.
+ */
+export type WorkApprovalRulingReason =
+  /** On `ALWAYS_CONFIRM_ACTIONS`. Asks under every mode, including Skip. */
+  | "never_silent"
+  /** Graded `irreversible`. Asks under every mode. */
+  | "irreversible"
+  /** Graded `sensitive`. Asks under every mode. */
+  | "sensitive"
+  /** Reversible, but this mode asks about it. Manual and Auto only. */
+  | "mode"
+  /** Covered by a standing "always allow" granted earlier in this run. */
+  | "standing_allowance"
+  /** Nothing about it needs a person under this mode. */
+  | "nothing_to_decide";
+
+export interface WorkApprovalRuling {
+  ask: boolean;
+  reason: WorkApprovalRulingReason;
+  /** One sentence, addressed to the user, for the card or the transcript. */
+  explanation: string;
+}
+
+/**
+ * Whether one action stops for a person, under one mode.
+ *
+ * This is the function the three modes differ in, and until it existed they did
+ * not differ at all: the executor gated on `requiresExplicitApproval(action,
+ * risk)` alone, which takes no policy, so a task set to Manual and a task set to
+ * Skip asked about exactly the same things. The setting was real, stored,
+ * narrowed correctly against the host and enforced nowhere.
+ *
+ * The order of the tests is the substance. The three never-silent checks come
+ * first, above the mode ladder and above the standing allowance, so that no
+ * combination of settings can reach past them — the same shape as
+ * `WorkRisk.ruling` in WorkRisk.swift, and the same shape as `ActionRisk`
+ * in Juno Code's permission policy. Below them the ladder is:
+ *
+ *   Manual  — reads go ahead; a file change or a command asks.
+ *   Auto    — reads and reversible changes go ahead; a command asks.
+ *   Skip    — everything the floor permits goes ahead.
+ *
+ * `command` is where Auto stops, and that is the interesting choice. Running a
+ * program is not classified irreversible because Juno cannot know what the
+ * program does — which is the argument for asking, not against it. "Reversible
+ * actions proceed" is a promise about actions whose effects Juno can describe,
+ * and a shell command is the one case where it cannot.
+ */
+export function approvalRuling(input: {
+  action: string;
+  risk: WorkRiskLevel;
+  policy: WorkPermissionPolicy;
+  /**
+   * The highest risk a standing "always allow" already covers for this exact
+   * action in this run, or null for none. Never consulted for anything the
+   * floor catches — see `mayBeCoveredByStandingAllowance`.
+   */
+  standingAllowance?: WorkRiskLevel | null;
+}): WorkApprovalRuling {
+  if (ALWAYS_CONFIRM.has(input.action)) {
+    return {
+      ask: true,
+      reason: "never_silent",
+      explanation:
+        "Juno cannot take this one back, so it asks whichever approval mode you picked. There is no setting that turns this off.",
+    };
+  }
+  if (input.risk === "irreversible") {
+    return {
+      ask: true,
+      reason: "irreversible",
+      explanation: "This cannot be undone — not by Juno, and not from this page afterwards.",
+    };
+  }
+  if (input.risk === "sensitive") {
+    return {
+      ask: true,
+      reason: "sensitive",
+      explanation:
+        "This reaches beyond what the task was given, or removes something from where you left it.",
+    };
+  }
+
+  if (
+    input.standingAllowance &&
+    mayBeCoveredByStandingAllowance(input.action, input.risk) &&
+    RISK_RANK[input.risk] <= RISK_RANK[input.standingAllowance]
+  ) {
+    return {
+      ask: false,
+      reason: "standing_allowance",
+      explanation: "You allowed this kind of step for the rest of this task.",
+    };
+  }
+
+  switch (input.policy) {
+    case "conservative":
+      if (input.risk === "safe") break;
+      return {
+        ask: true,
+        reason: "mode",
+        explanation:
+          input.risk === "edit"
+            ? "This task is set to Manual, so Juno asks before it changes anything."
+            : "This task is set to Manual, so Juno asks before it runs anything.",
+      };
+    case "balanced":
+      if (input.risk === "safe" || input.risk === "edit") break;
+      return {
+        ask: true,
+        reason: "mode",
+        explanation:
+          "Running a program can do more than Juno can predict, so Auto asks first even though nothing here is marked dangerous.",
+      };
+    case "permissive":
+      break;
+  }
+
+  return {
+    ask: false,
+    reason: "nothing_to_decide",
+    explanation: "Nothing about this needs a decision from you.",
+  };
+}
+
+/**
+ * The mode a run will actually be executed under, and why.
+ *
+ * The narrowing is a security property and not a preference: an owner may pick
+ * any mode at least as strict as the one the Mac advertised, and `narrowestPolicy`
+ * is the meet, so a task set to Skip that lands on a Mac pinned to Manual runs
+ * Manual. That is what makes the toggle on the Mac mean anything — the Mac is
+ * the machine with the files on it, and the person sitting at it is entitled to
+ * a floor that a phone cannot raise.
+ *
+ * The explanation is returned rather than composed at each call site because
+ * there are three of them (dispatch, run settings, the scheduler's own copy of
+ * this reasoning) and a reader who is told a different story by two of them
+ * stops believing either.
+ */
+export interface ResolvedApprovalMode {
+  /** What the executor enforces. Never wider than any layer that declared one. */
+  policy: WorkPermissionPolicy;
+  /** What the task asked for. */
+  requested: WorkPermissionPolicy;
+  /** What the Mac advertised, or null when no Mac is involved. */
+  host: WorkPermissionPolicy | null;
+  /** True when the Mac is stricter than the task asked for. */
+  narrowedByHost: boolean;
+  /** One sentence for the composer and for Run settings. */
+  explanation: string;
+}
+
+export function resolveApprovalMode(input: {
+  requested: WorkPermissionPolicy;
+  host?: WorkPermissionPolicy | null;
+  /** The Mac's name, so the sentence can say which machine narrowed it. */
+  hostName?: string | null;
+}): ResolvedApprovalMode {
+  const host = input.host ?? null;
+  const policy = narrowestPolicy(input.requested, host);
+  const narrowedByHost = policy !== input.requested;
+  return {
+    policy,
+    requested: input.requested,
+    host,
+    narrowedByHost,
+    explanation: narrowedByHost
+      ? `${input.hostName ?? "That Mac"} is set to ${WORK_APPROVAL_MODE_LABEL[policy]}, and a task cannot ask less often than the Mac it runs on — so this one runs in ${WORK_APPROVAL_MODE_LABEL[policy]}, not the ${WORK_APPROVAL_MODE_LABEL[input.requested]} you picked.`
+      : WORK_APPROVAL_MODE_SUMMARY[policy],
+  };
 }
 
 /**

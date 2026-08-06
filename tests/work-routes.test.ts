@@ -318,6 +318,8 @@ test("cloud work is refused when the cloud is not accepting it", () => {
 // ---------------------------------------------------------------------------
 
 const ACTION = "work.file.batch_move";
+/** On `ALWAYS_CONFIRM_ACTIONS`: the card no standing allowance may ever cover. */
+const SEND = "work.connector.send_message";
 const DETAIL = { from: "Downloads", to: "Archive", count: 14 };
 const POLICY = { policy: "balanced", session: "balanced", host: "conservative" };
 const EXPIRES = new Date(NOW.getTime() + 60_000);
@@ -329,6 +331,9 @@ function decisionInput(overrides: Partial<ApprovalDecisionInput> = {}): Approval
     approval: {
       action: ACTION,
       detail: DETAIL,
+      // A batch move: reversible, off the always-confirm list, and therefore the
+      // one shape of card a standing "always allow" may legitimately cover.
+      risk: "edit",
       actionDigest: actionDigest(ACTION, DETAIL),
       policyDigest: policyDigest(POLICY),
       decision: "pending",
@@ -351,6 +356,53 @@ test("an answer to the card that was shown is recorded", () => {
     outcome: "record",
     decision: "allowed_always",
   });
+});
+
+test("\"always allow\" is refused for a send, and the plain yes on the same card is not", () => {
+  // The one answer that authorises actions the user has not seen yet. A UI that
+  // offers the button on a send is a UI bug; a server that records it is a
+  // standing permission to send every future message, which is the exact thing
+  // `ALWAYS_CONFIRM_ACTIONS` exists to make impossible. The card still works —
+  // this refuses the standing half of the answer, not the answer.
+  const always = classifyApprovalDecision(
+    decisionInput({
+      submittedDecision: "allowed_always",
+      submittedDigest: actionDigest(SEND, DETAIL),
+      approval: {
+        ...decisionInput().approval,
+        action: SEND,
+        risk: "irreversible",
+        actionDigest: actionDigest(SEND, DETAIL),
+      },
+    })
+  );
+  assert.deepEqual(always, { outcome: "refuse", reason: "not_standing_allowable" });
+
+  const once = classifyApprovalDecision(
+    decisionInput({
+      submittedDigest: actionDigest(SEND, DETAIL),
+      approval: {
+        ...decisionInput().approval,
+        action: SEND,
+        risk: "irreversible",
+        actionDigest: actionDigest(SEND, DETAIL),
+      },
+    })
+  );
+  assert.deepEqual(once, { outcome: "record", decision: "allowed" });
+});
+
+test("\"always allow\" is refused on risk alone, even for an action nobody listed", () => {
+  // The action allowlist is not the only ceiling, because it cannot be: a tool
+  // added next quarter that touches somebody's inbox will not be on it. A
+  // `sensitive` grade is enough on its own.
+  const outcome = classifyApprovalDecision(
+    decisionInput({
+      submittedDecision: "allowed_always",
+      approval: { ...decisionInput().approval, risk: "sensitive" },
+    })
+  );
+  assert.deepEqual(outcome, { outcome: "refuse", reason: "not_standing_allowable" });
 });
 
 test("an answer carrying another action's digest is refused as a mismatch", () => {
@@ -458,6 +510,16 @@ test("every refusal reason the branch table can produce has a name", () => {
     decisionInput({ policy: { policy: "conservative" } }),
     decisionInput({ now: new Date(EXPIRES.getTime() + 1) }),
     decisionInput({ approval: { ...decisionInput().approval, decision: "denied" } }),
+    decisionInput({
+      submittedDecision: "allowed_always",
+      submittedDigest: actionDigest(SEND, DETAIL),
+      approval: {
+        ...decisionInput().approval,
+        action: SEND,
+        risk: "irreversible",
+        actionDigest: actionDigest(SEND, DETAIL),
+      },
+    }),
   ];
   for (const input of inputs) {
     const outcome = classifyApprovalDecision(input);
