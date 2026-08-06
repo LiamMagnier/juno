@@ -87,6 +87,28 @@ export const shadowSchema = z.object({
 export const blurSchema = z.object({
   type: z.enum(["layer", "background"]),
   radius: finite.min(0).max(10_000),
+  /** 0 drains the colour, 1 leaves it, >1 pushes it up — the range every
+   *  `saturate()` filter takes. Capped well below the point where the result is
+   *  pure clipped primaries. */
+  saturation: finite.min(0).max(10).optional(),
+});
+
+/**
+ * Grain. Every bound here is an `feTurbulence` bound, not a taste one.
+ *
+ * `density` is a base frequency: below ~0.05 the "grain" is a smear of blobs
+ * and above ~2 it aliases into a flat grey at any sane zoom, so the useful band
+ * is narrow and stated. `seed` is an integer because `feTurbulence` truncates
+ * it anyway, and a fractional seed that renders identically to its floor is a
+ * value the document can hold but nobody can see.
+ */
+export const noiseSchema = z.object({
+  opacity: unit,
+  density: finite.min(0.001).max(4),
+  seed: z.number().int().min(0).max(65_535),
+  monochrome: z.boolean(),
+  blend: z.enum(["normal", "multiply", "screen", "overlay", "soft-light"]),
+  visible: z.boolean().optional(),
 });
 
 export const blendModeSchema = z.enum([
@@ -184,6 +206,14 @@ const baseNodeShape = {
   cornerRadius: cornerRadiusSchema,
   shadows: z.array(shadowSchema).max(32),
   blur: blurSchema.nullable(),
+  // `.default(null)` rather than `.optional()`: the *wire* form tolerates a
+  // missing key, because every document written before grain existed is missing
+  // it and the migration table is empty at v1 — but the *decoded* form never
+  // is, so `types.ts` can keep declaring it required and the renderer never has
+  // to invent a default mid-frame. A migration would have been the other way to
+  // get here; it would also have refused every stored v1 document on any build
+  // that had not yet run it.
+  noise: noiseSchema.nullable().default(null),
   constraints: constraintsSchema,
   widthMode: sizingModeSchema,
   heightMode: sizingModeSchema,
@@ -542,6 +572,7 @@ export function baseNodeDefaults(): Omit<DesignNode, "id" | "type" | "name"> & R
     cornerRadius: 0,
     shadows: [],
     blur: null,
+    noise: null,
     constraints: { horizontal: "min", vertical: "min" },
     widthMode: "fixed",
     heightMode: "fixed",
