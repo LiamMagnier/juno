@@ -36,6 +36,7 @@ import {
   layoutChildSchema,
   motionTrackSchema,
   nodeSchema,
+  noiseSchema,
   paintSchema,
   rgbaSchema,
   shadowSchema,
@@ -47,7 +48,15 @@ import {
   DesignValidationError,
 } from "@/lib/design/schema";
 import { cloneDocument, isAncestorOf, subtreeIds } from "@/lib/design/document";
-import { isContainer, type DesignDocument, type DesignNode, type NodeId } from "@/lib/design/types";
+import {
+  isContainer,
+  type Blur,
+  type DesignDocument,
+  type DesignNode,
+  type NodeId,
+  type Noise,
+  type Shadow,
+} from "@/lib/design/types";
 
 // ---------------------------------------------------------------------------
 // Operation schemas
@@ -86,6 +95,7 @@ export const nodePatchSchema = z
     cornerRadius: cornerRadiusSchema,
     shadows: z.array(shadowSchema).max(32),
     blur: blurSchema.nullable(),
+    noise: noiseSchema.nullable(),
     constraints: constraintsSchema,
     widthMode: sizingModeSchema,
     heightMode: sizingModeSchema,
@@ -143,6 +153,28 @@ export const designOperationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("ungroupNodes"), nodeIds: idList }),
   z.object({ op: z.literal("setSelection"), nodeIds: z.array(idSchema).max(2_000) }),
   z.object({ op: z.literal("setConstraints"), nodeIds: idList, constraints: constraintsSchema }),
+  /**
+   * Shadows, blur and grain across a selection, in one operation.
+   *
+   * `updateNode` can already write `shadows` and `blur`, and this does not
+   * replace it — it is the multi-node form, exactly as `setConstraints` is the
+   * multi-node form of the `constraints` field. The difference matters here for
+   * a reason it does not there: an effect edit is nearly always a list edit
+   * ("add a second shadow", "turn the inner one off"), and building one
+   * `updateNode` per selected layer from each layer's own list is how the
+   * inspector used to carry the first layer's shadows onto the rest.
+   *
+   * A field that is absent is not written. That is what lets the blur slider
+   * move without restating the shadow list, and what makes the inverse exact:
+   * it restores the previous value of precisely the fields this operation named.
+   */
+  z.object({
+    op: z.literal("setEffects"),
+    nodeIds: idList,
+    shadows: z.array(shadowSchema).max(32).optional(),
+    blur: blurSchema.nullable().optional(),
+    noise: noiseSchema.nullable().optional(),
+  }),
   z.object({ op: z.literal("setAutoLayout"), nodeId: idSchema, layout: autoLayoutSchema.nullable() }),
   z.object({
     op: z.literal("createComponent"),
@@ -345,6 +377,11 @@ export function invertTransaction(
  * be assumed to leave the node's fields alone: a delete, a reparent or a group
  * in between makes the intermediate state load-bearing again.
  *
+ * `setEffects` folds by the same rule and for the same reason: dragging the
+ * blur radius, the grain density or a shadow's Y offset emits one operation per
+ * pointer move, all of them assigning the same whole field to the same layers,
+ * and only the last one survives the drag.
+ *
  * The result applies to the same base revision and produces the same document
  * as the input; it is a smaller way of saying the same thing, not a different
  * change.
@@ -354,14 +391,31 @@ export function coalesceOperations(operations: DesignOperation[]): DesignOperati
 
   for (let i = operations.length - 1; i >= 0; i--) {
     const later = kept[i];
-    if (!later || later.op !== "updateNode") continue;
-    const laterKeys = Object.keys(later.patch);
-    for (let j = i - 1; j >= 0; j--) {
-      const earlier = kept[j];
-      if (!earlier) continue;
-      if (earlier.op !== "updateNode") break;
-      if (earlier.nodeId !== later.nodeId) continue;
-      if (Object.keys(earlier.patch).every((key) => laterKeys.includes(key))) kept[j] = null;
+    if (!later) continue;
+    if (later.op === "updateNode") {
+      const laterKeys = Object.keys(later.patch);
+      for (let j = i - 1; j >= 0; j--) {
+        const earlier = kept[j];
+        if (!earlier) continue;
+        if (earlier.op !== "updateNode") break;
+        if (earlier.nodeId !== later.nodeId) continue;
+        if (Object.keys(earlier.patch).every((key) => laterKeys.includes(key))) kept[j] = null;
+      }
+      continue;
+    }
+    if (later.op === "setEffects") {
+      const laterFields = EFFECT_FIELDS.filter((field) => later[field] !== undefined);
+      const laterTargets = new Set(later.nodeIds);
+      for (let j = i - 1; j >= 0; j--) {
+        const earlier = kept[j];
+        if (!earlier) continue;
+        if (earlier.op !== "setEffects") break;
+        // Same layers *and* nothing written that the later one leaves alone.
+        // A narrower earlier target set would leave a layer un-restyled.
+        if (earlier.nodeIds.length !== laterTargets.size) continue;
+        if (!earlier.nodeIds.every((id) => laterTargets.has(id))) continue;
+        if (EFFECT_FIELDS.every((field) => earlier[field] === undefined || laterFields.includes(field))) kept[j] = null;
+      }
     }
   }
 
@@ -542,6 +596,7 @@ function nodeDefaultsFor(type: DesignNode["type"]): Record<string, unknown> {
     cornerRadius: 0,
     shadows: [],
     blur: null,
+    noise: null,
     constraints: { horizontal: "min", vertical: "min" },
     widthMode: "fixed",
     heightMode: "fixed",
@@ -998,6 +1053,36 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
       return { inverse, summary: "Set constraints" };
     }
 
+    // --------------------------------------------------------------- effects
+    case "setEffects": {
+      const fields = EFFECT_FIELDS.filter((field) => operation[field] !== undefined);
+      if (fields.length === 0) {
+        throw new DesignOperationError("invalid", "setEffects must name at least one of shadows, blur or noise.");
+      }
+      const inverse: DesignOperation[] = [];
+      for (const id of operation.nodeIds) {
+        const node = requireUnlocked(doc, id);
+        const record = node as unknown as Record<string, unknown>;
+        // Cloned, not aliased: the inverse outlives the node object it was read
+        // from, and a shadow array handed back by reference would follow every
+        // later edit to the live node and undo to whatever it had become.
+        const before: DesignOperation = { op: "setEffects", nodeIds: [id] };
+        const next: Record<string, unknown> = { ...record };
+        for (const field of fields) {
+          (before as Record<string, unknown>)[field] = cloneEffect(record[field]);
+          next[field] = cloneEffect(operation[field]);
+        }
+        const parsed = nodeSchema.safeParse(next);
+        if (!parsed.success) {
+          throw new DesignOperationError("invalid", `Effects on “${node.name}” are not valid: ${parsed.error.issues[0]?.message ?? ""}`);
+        }
+        doc.nodes[id] = parsed.data;
+        ctx.touched.add(id);
+        inverse.push(before);
+      }
+      return { inverse, summary: `Set ${describeEffectFields(fields)}` };
+    }
+
     case "setAutoLayout": {
       const node = requireUnlocked(doc, operation.nodeId);
       if (!isContainer(node)) throw new DesignOperationError("invalid", `“${node.name}” cannot have auto layout.`);
@@ -1263,6 +1348,21 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** The fields `setEffects` may write, in the order the summary reads them. */
+const EFFECT_FIELDS = ["shadows", "blur", "noise"] as const;
+
+type EffectField = (typeof EFFECT_FIELDS)[number];
+
+function cloneEffect(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  return typeof structuredClone === "function" ? structuredClone(value) : JSON.parse(JSON.stringify(value));
+}
+
+function describeEffectFields(fields: EffectField[]): string {
+  const words = fields.map((field) => (field === "noise" ? "grain" : field === "shadows" ? "shadows" : "blur"));
+  return words.length === 1 ? words[0] : `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+}
+
 function cloneNodeShallow(node: DesignNode): DesignNode {
   return (typeof structuredClone === "function" ? structuredClone(node) : JSON.parse(JSON.stringify(node))) as DesignNode;
 }
@@ -1310,6 +1410,10 @@ export function describePatch(patch: NodePatch): string {
         return "fill";
       case "strokes":
         return "stroke";
+      case "shadows":
+        return "shadows";
+      case "noise":
+        return "grain";
       case "x":
       case "y":
         return "position";
@@ -1322,6 +1426,82 @@ export function describePatch(patch: NodePatch): string {
   });
   const unique = [...new Set(words)];
   return unique.length === 1 ? `Set ${unique[0]}` : `Set ${unique.slice(0, -1).join(", ")} and ${unique[unique.length - 1]}`;
+}
+
+// ---------------------------------------------------------------------------
+// Effect presets
+// ---------------------------------------------------------------------------
+
+/**
+ * Named effect recipes. There is exactly one today; the union exists so a
+ * second one cannot arrive as a magic string in a component.
+ */
+export type EffectPreset = "liquid-glass";
+
+/**
+ * What "liquid glass" is, spelled out.
+ *
+ * It is deliberately NOT a node flag, an effect type, or anything else the
+ * scene model knows the name of. Juno would render such a thing beautifully and
+ * every one of the eight exporters would either drop it or invent its own
+ * approximation of it — which is the failure this whole module exists to
+ * prevent. So the preset is a pure function from a node to ordinary operations,
+ * and what lands in the document is four primitives that already export:
+ *
+ *  - a **background blur** with a saturation lift, because a blur alone samples
+ *    the muddy average of what is behind it and reads as fog rather than glass;
+ *  - a faint **top-to-bottom white gradient** as the tint, which is the sheen
+ *    that tells the eye the surface is curved rather than flat;
+ *  - a bright **inner shadow** at the top edge for the rim light, and a soft
+ *    dark **drop shadow** to lift the panel off what it is floating over;
+ *  - barely-there **grain**, which is what keeps a large blurred field from
+ *    banding into visible steps.
+ *
+ * Applied in one transaction, so it is one undo — and afterwards it is just
+ * those four controls in the Effects panel, each independently editable. There
+ * is nothing to "un-glass"; there is a blur to change and a gradient to retint.
+ *
+ * The corner radius is deliberately left alone: it is the caller's shape, and a
+ * preset that silently rounded a full-bleed background would be a preset that
+ * damaged the layer it was meant to decorate.
+ */
+export function effectPresetOperations(nodeIds: NodeId[], preset: EffectPreset): DesignOperation[] {
+  if (nodeIds.length === 0) return [];
+  const white = (a: number) => ({ r: 1, g: 1, b: 1, a });
+
+  switch (preset) {
+    case "liquid-glass": {
+      const shadows: Shadow[] = [
+        // Rim light first: index 0 is the frontmost effect, matching the order
+        // the Effects panel lists them in.
+        { type: "inner", color: white(0.55), offsetX: 0, offsetY: 1, blur: 1, spread: 0 },
+        { type: "inner", color: { r: 0, g: 0, b: 0, a: 0.12 }, offsetX: 0, offsetY: -1, blur: 2, spread: 0 },
+        { type: "drop", color: { r: 0.05, g: 0.05, b: 0.09, a: 0.18 }, offsetX: 0, offsetY: 8, blur: 24, spread: -4 },
+      ];
+      const blur: Blur = { type: "background", radius: 24, saturation: 1.8 };
+      const noise: Noise = { opacity: 0.045, density: 0.9, seed: 7, monochrome: true, blend: "overlay" };
+      return [
+        { op: "setEffects", nodeIds: [...nodeIds], shadows, blur, noise },
+        ...nodeIds.map((nodeId) => ({
+          op: "updateNode" as const,
+          nodeId,
+          patch: {
+            fills: [
+              {
+                type: "linear-gradient" as const,
+                stops: [
+                  { position: 0, color: white(0.22) },
+                  { position: 1, color: white(0.08) },
+                ],
+                from: { x: 0, y: 0 },
+                to: { x: 0, y: 1 },
+              },
+            ],
+          },
+        })),
+      ];
+    }
+  }
 }
 
 export function canonicalVariantKey(properties: Record<string, string>): string {

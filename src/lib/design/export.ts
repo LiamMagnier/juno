@@ -22,7 +22,7 @@
 import { layoutPage, layoutSubtree, lineHeightPx, type LayoutBox, type LayoutMap } from "@/lib/design/layout";
 import { renderNodeSvg, renderPageSvg, escapeXml } from "@/lib/design/render";
 import { applyBoundVariables, exportTokens, rgbaToCss, rgbaToHex, type TokenExport } from "@/lib/design/variables";
-import { isContainer, type DesignDocument, type DesignNode, type NodeId, type PageId, type Paint } from "@/lib/design/types";
+import { isContainer, type DesignDocument, type DesignNode, type NodeId, type Noise, type PageId, type Paint } from "@/lib/design/types";
 
 export type DesignExportFormat = "svg" | "png" | "pdf" | "html" | "react" | "swiftui" | "json" | "tokens";
 
@@ -89,7 +89,9 @@ export function pngRequest(doc: DesignDocument, pageId: PageId, nodeId?: NodeId,
  * operators from the same layout boxes the renderer uses. This covers the
  * rectangle/ellipse/line/text/frame vocabulary the first production slice
  * supports; gradients, images and vector paths fall back to their flat fill,
- * which is stated in `unsupported` rather than silently dropped.
+ * and shadows, blur and grain do not appear at all. Every one of those is
+ * stated in `unsupported` rather than silently dropped — a PDF that quietly
+ * lost the shadow on every card is a PDF nobody can trust as a proof.
  */
 export function exportPdf(doc: DesignDocument, pageId: PageId): ExportResult & { unsupported: string[] } {
   const boxes = layoutPage(doc, pageId);
@@ -126,6 +128,13 @@ export function exportPdf(doc: DesignDocument, pageId: PageId): ExportResult & {
 
     if (fill && fill.type !== "solid") unsupported.push(`${resolved.name}: ${fill.type} fill flattened`);
     if (resolved.rotation % 360 !== 0) unsupported.push(`${resolved.name}: rotation not applied`);
+    // A PDF *can* carry a blurred shadow — as a soft mask over a smooth shading,
+    // or as a rasterised image. Both mean building a second rasteriser inside
+    // this module, which is the thing `pngRequest` exists not to do. So the
+    // geometry exports and the effects are named as missing.
+    if (resolved.shadows.some((s) => s.visible !== false)) unsupported.push(`${resolved.name}: shadows are not drawn in PDF`);
+    if (resolved.blur) unsupported.push(`${resolved.name}: ${resolved.blur.type} blur is not drawn in PDF`);
+    if (resolved.noise && resolved.noise.visible !== false) unsupported.push(`${resolved.name}: grain is not drawn in PDF`);
 
     const solid = fill?.type === "solid" ? fill.color : null;
     switch (resolved.type) {
@@ -298,22 +307,67 @@ export function symbolName(node: DesignNode, taken: Set<string>): string {
   return candidate;
 }
 
+/**
+ * A paint as CSS.
+ *
+ * Stop positions and the gradient axis are carried, not discarded. They used to
+ * be: a three-stop gradient with a 20%/80% ramp along a diagonal came out of
+ * here as evenly spaced stops running top to bottom, which is a different
+ * picture with the same colours in it. CSS measures a linear gradient's angle
+ * clockwise from "pointing up", so the axis is converted rather than copied.
+ */
 function paintToCss(paint: Paint | undefined): string | null {
   if (!paint || paint.visible === false) return null;
+  const stops = (list: { position: number; color: Parameters<typeof rgbaToCss>[0] }[]) =>
+    list.map((s) => `${rgbaToCss(s.color)} ${round(s.position * 100)}%`).join(", ");
   switch (paint.type) {
     case "solid":
       return rgbaToCss(paint.color);
-    case "linear-gradient":
-      return `linear-gradient(${paint.stops.map((s) => rgbaToCss(s.color)).join(", ")})`;
+    case "linear-gradient": {
+      const dx = paint.to.x - paint.from.x;
+      const dy = paint.to.y - paint.from.y;
+      const angle = dx === 0 && dy === 0 ? 180 : (Math.atan2(dx, -dy) * 180) / Math.PI;
+      return `linear-gradient(${round((angle + 360) % 360)}deg, ${stops(paint.stops)})`;
+    }
     case "radial-gradient":
-      return `radial-gradient(${paint.stops.map((s) => rgbaToCss(s.color)).join(", ")})`;
+      return `radial-gradient(circle at ${round(paint.center.x * 100)}% ${round(paint.center.y * 100)}%, ${stops(paint.stops)})`;
     case "image":
       return null;
   }
 }
 
-/** CSS for one node, from its resolved properties and its laid-out box. */
-function cssFor(doc: DesignDocument, node: DesignNode, box: LayoutBox, parent: LayoutBox | null): Record<string, string> {
+/**
+ * Grain as a CSS background layer.
+ *
+ * The same `feTurbulence` the canvas draws, embedded as a data-URI SVG and
+ * tiled — which is not a workaround but the way CSS has always expressed this,
+ * and the reason the model stores turbulence parameters instead of a picture.
+ * The generated markup therefore shows the identical grain the editor did, from
+ * the identical four numbers.
+ */
+function noiseToCss(noise: Noise): string {
+  const grey = noise.monochrome ? "<feColorMatrix type='saturate' values='0'/>" : "";
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'>` +
+    `<filter id='n'><feTurbulence type='fractalNoise' baseFrequency='${round(noise.density)}' numOctaves='3' stitchTiles='stitch' seed='${noise.seed}'/>${grey}</filter>` +
+    `<rect width='100%' height='100%' filter='url(#n)' opacity='${round(noise.opacity)}'/>` +
+    `</svg>`;
+  // Only the characters that cannot appear raw in a `url()` are escaped, so the
+  // value stays legible in the generated source instead of becoming base64.
+  const encoded = svg.replace(/[<>#%"{}|\\^`\s]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`);
+  return `url("data:image/svg+xml,${encoded}")`;
+}
+
+/** CSS for one node, from its resolved properties and its laid-out box.
+ *  `unsupported` collects anything CSS genuinely cannot say, so it reaches the
+ *  handoff bundle instead of vanishing between here and the browser. */
+function cssFor(
+  doc: DesignDocument,
+  node: DesignNode,
+  box: LayoutBox,
+  parent: LayoutBox | null,
+  unsupported: string[]
+): Record<string, string> {
   const resolved = applyBoundVariables(doc, node);
   const style: Record<string, string> = {};
 
@@ -331,7 +385,23 @@ function cssFor(doc: DesignDocument, node: DesignNode, box: LayoutBox, parent: L
   style.height = `${round(box.height)}px`;
 
   const fill = paintToCss(resolved.fills[0]);
-  if (fill) style[resolved.type === "text" ? "color" : "background"] = fill;
+  const noise = resolved.noise && resolved.noise.visible !== false && resolved.noise.opacity > 0 ? resolved.noise : null;
+  if (fill && resolved.type === "text") {
+    style.color = fill;
+    // `background-blend-mode` composites background layers with each other, and
+    // glyphs are not a background layer — grain behind text would sit under the
+    // letters rather than across them.
+    if (noise) unsupported.push(`${resolved.name}: grain on a text layer is not expressible in CSS`);
+  } else if (noise) {
+    // Grain is the topmost background layer; the fill sits under it and blends
+    // with it in the mode the document asked for.
+    const layers = [noiseToCss(noise), ...(fill && resolved.fills[0]?.type !== "solid" ? [fill] : [])];
+    style.backgroundImage = layers.join(", ");
+    style.backgroundBlendMode = [noise.blend, ...layers.slice(1).map(() => "normal")].join(", ");
+    if (fill && resolved.fills[0]?.type === "solid") style.backgroundColor = fill;
+  } else if (fill) {
+    style.background = fill;
+  }
   if (resolved.opacity < 1) style.opacity = String(resolved.opacity);
   if (resolved.rotation % 360 !== 0) style.transform = `rotate(${round(resolved.rotation)}deg)`;
 
@@ -341,11 +411,47 @@ function cssFor(doc: DesignDocument, node: DesignNode, box: LayoutBox, parent: L
   const stroke = resolved.strokes[0];
   if (stroke?.paint.type === "solid") style.border = `${stroke.weight}px solid ${rgbaToCss(stroke.paint.color)}`;
 
-  const shadow = resolved.shadows.find((s) => s.visible !== false && s.type === "drop");
-  if (shadow) {
-    style.boxShadow = `${shadow.offsetX}px ${shadow.offsetY}px ${shadow.blur}px ${shadow.spread}px ${rgbaToCss(shadow.color)}`;
+  // Every visible shadow, in order, not just the first drop one — and inner
+  // shadows as `inset`, which is the whole reason `box-shadow` takes a keyword.
+  // A rim light was previously dropped here and on the canvas both, so a glass
+  // panel exported as a flat tinted rectangle.
+  const shadows = resolved.shadows.filter((s) => s.visible !== false);
+  if (shadows.length > 0) {
+    const css = shadows
+      .map(
+        (s) =>
+          `${s.type === "inner" ? "inset " : ""}${round(s.offsetX)}px ${round(s.offsetY)}px ${round(s.blur)}px ${round(s.spread)}px ${rgbaToCss(s.color)}`
+      )
+      .join(", ");
+    if (resolved.type === "text") {
+      // `text-shadow` has neither spread nor inset; only a drop shadow's
+      // offset, blur and colour survive, and the rest is stated.
+      const drops = shadows.filter((s) => s.type === "drop");
+      if (drops.length > 0) {
+        style.textShadow = drops.map((s) => `${round(s.offsetX)}px ${round(s.offsetY)}px ${round(s.blur)}px ${rgbaToCss(s.color)}`).join(", ");
+      }
+      if (shadows.some((s) => s.type === "inner")) unsupported.push(`${resolved.name}: inner shadow on a text layer has no CSS form`);
+      if (drops.some((s) => s.spread !== 0)) unsupported.push(`${resolved.name}: text-shadow has no spread; it was dropped`);
+    } else {
+      style.boxShadow = css;
+    }
   }
-  if (resolved.blur) style.filter = `blur(${resolved.blur.radius}px)`;
+
+  if (resolved.blur) {
+    const saturation = resolved.blur.saturation ?? 1;
+    const chain = `blur(${round(resolved.blur.radius)}px)${saturation !== 1 ? ` saturate(${round(saturation * 100)}%)` : ""}`;
+    // A layer blur blurs the layer; a background blur blurs what is behind it.
+    // They are different declarations, and using `filter` for both — which is
+    // what this did — turned every glass panel into a smeared one.
+    if (resolved.blur.type === "background") {
+      // Safari carried `backdrop-filter` behind the prefix for years, and the
+      // generated prototype is a file people open locally in whatever they have.
+      style.WebkitBackdropFilter = chain;
+      style.backdropFilter = chain;
+    } else {
+      style.filter = chain;
+    }
+  }
   if ("clipsContent" in resolved && resolved.clipsContent) style.overflow = "hidden";
 
   if (resolved.type === "text") {
@@ -396,7 +502,7 @@ export function exportHtmlPrototype(doc: DesignDocument, pageId: PageId): Genera
     if (!box || !node.visible) return;
     const resolved = applyBoundVariables(doc, node);
     const indent = "  ".repeat(depth);
-    const style = styleString(cssFor(doc, node, box, parent));
+    const style = styleString(cssFor(doc, node, box, parent, unsupported));
     const interactions = Object.values(doc.interactions).filter((i) => i.sourceNodeId === node.id);
     const attrs = [
       `id="${escapeXml(node.id)}"`,
@@ -513,7 +619,7 @@ export function exportReact(doc: DesignDocument, pageId: PageId): GeneratedCode 
     if (!box || !node.visible) return [];
     const resolved = applyBoundVariables(doc, node);
     const indent = "  ".repeat(depth + 1);
-    const style = cssFor(doc, node, box, parent);
+    const style = cssFor(doc, node, box, parent, unsupported);
     const styleLiteral = `{{ ${Object.entries(style)
       .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
       .join(", ")} }}`;
@@ -606,10 +712,31 @@ export function exportSwiftUI(doc: DesignDocument, pageId: PageId): GeneratedCod
   lines.push("import SwiftUI");
   lines.push("");
 
-  const swiftColor = (paint: Paint | undefined): string | null => {
-    if (!paint || paint.type !== "solid") return null;
-    const c = paint.color;
-    return `Color(.sRGB, red: ${round(c.r)}, green: ${round(c.g)}, blue: ${round(c.b)}, opacity: ${round(c.a)})`;
+  const swiftColorLiteral = (c: { r: number; g: number; b: number; a: number }) =>
+    `Color(.sRGB, red: ${round(c.r)}, green: ${round(c.g)}, blue: ${round(c.b)}, opacity: ${round(c.a)})`;
+
+  /**
+   * A paint as a SwiftUI `ShapeStyle`.
+   *
+   * Gradients are real gradients here, not their first stop: `Gradient.Stop`
+   * takes exactly the position the document stores, and `startPoint`/`endPoint`
+   * take exactly the normalised axis, so a SwiftUI build of a design gets the
+   * same ramp as the canvas rather than a flat approximation of it.
+   */
+  const swiftPaint = (paint: Paint | undefined): string | null => {
+    if (!paint || paint.visible === false) return null;
+    const stops = (list: { position: number; color: { r: number; g: number; b: number; a: number } }[]) =>
+      list.map((s) => `.init(color: ${swiftColorLiteral(s.color)}, location: ${round(s.position)})`).join(", ");
+    switch (paint.type) {
+      case "solid":
+        return swiftColorLiteral(paint.color);
+      case "linear-gradient":
+        return `LinearGradient(stops: [${stops(paint.stops)}], startPoint: UnitPoint(x: ${round(paint.from.x)}, y: ${round(paint.from.y)}), endPoint: UnitPoint(x: ${round(paint.to.x)}, y: ${round(paint.to.y)}))`;
+      case "radial-gradient":
+        return `RadialGradient(stops: [${stops(paint.stops)}], center: UnitPoint(x: ${round(paint.center.x)}, y: ${round(paint.center.y)}), startRadius: 0, endRadius: ${round(paint.radius)})`;
+      case "image":
+        return null;
+    }
   };
 
   const emit = (node: DesignNode, parent: LayoutBox | null, depth: number): string[] => {
@@ -643,7 +770,16 @@ export function exportSwiftUI(doc: DesignDocument, pageId: PageId): GeneratedCod
       out.push(`${indent}${body}`);
     }
 
-    const fill = swiftColor(resolved.fills[0]);
+    // A background blur is a material, and a material goes *under* the tint —
+    // so it is emitted before the fill, in the order SwiftUI composes them.
+    if (resolved.blur?.type === "background") {
+      out.push(`${indent}    .background(${swiftMaterial(resolved.blur.radius)})`);
+      unsupported.push(
+        `${resolved.name}: background blur exported as ${swiftMaterial(resolved.blur.radius)} — SwiftUI materials are not radius-parameterised (design asks for ${round(resolved.blur.radius)}pt${resolved.blur.saturation && resolved.blur.saturation !== 1 ? `, saturation ${round(resolved.blur.saturation)}` : ""})`
+      );
+    }
+
+    const fill = swiftPaint(resolved.fills[0]);
     if (fill && resolved.type === "text") out.push(`${indent}    .foregroundStyle(${fill})`);
     else if (fill && children.length === 0) out.push(`${indent}    .foregroundStyle(${fill})`);
     else if (fill) out.push(`${indent}    .background(${fill})`);
@@ -653,6 +789,31 @@ export function exportSwiftUI(doc: DesignDocument, pageId: PageId): GeneratedCod
     }
     const radius = typeof resolved.cornerRadius === "number" ? resolved.cornerRadius : Math.max(...resolved.cornerRadius);
     if (radius > 0) out.push(`${indent}    .clipShape(RoundedRectangle(cornerRadius: ${round(radius)}, style: .continuous))`);
+
+    // Effects come after the clip so a shadow is cast by the rounded silhouette
+    // rather than by the square frame behind it.
+    if (resolved.blur?.type === "layer") out.push(`${indent}    .blur(radius: ${round(resolved.blur.radius)})`);
+    for (const shadow of resolved.shadows) {
+      if (shadow.visible === false) continue;
+      if (shadow.type === "inner") {
+        // `ShapeStyle.shadow(.inner(…))` exists, but it is a property of the
+        // *style* a shape is filled with, not a modifier on an assembled view,
+        // and this generator emits assembled views. Saying so in the file beats
+        // emitting something that does not compile.
+        out.push(`${indent}    // Juno: inner shadow (${round(shadow.offsetX)}, ${round(shadow.offsetY)}, blur ${round(shadow.blur)}) has no view modifier — fill the shape with .shadow(.inner(…)) to restore it.`);
+        unsupported.push(`${resolved.name}: inner shadow needs a ShapeStyle fill; emitted as a comment`);
+        continue;
+      }
+      out.push(
+        `${indent}    .shadow(color: ${swiftColorLiteral(shadow.color)}, radius: ${round(shadow.blur / 2)}, x: ${round(shadow.offsetX)}, y: ${round(shadow.offsetY)})`
+      );
+      if (shadow.spread !== 0) unsupported.push(`${resolved.name}: shadow spread ${round(shadow.spread)} has no SwiftUI equivalent`);
+    }
+    if (resolved.noise && resolved.noise.visible !== false) {
+      out.push(`${indent}    // Juno: ${round(resolved.noise.opacity * 100)}% grain — overlay a Canvas or a tiled noise Image to restore it.`);
+      unsupported.push(`${resolved.name}: grain has no SwiftUI primitive; emitted as a comment`);
+    }
+
     out.push(`${indent}    .frame(width: ${round(box.width)}, height: ${round(box.height)}, alignment: .topLeading)`);
     if (resolved.opacity < 1) out.push(`${indent}    .opacity(${round(resolved.opacity)})`);
     if (resolved.rotation % 360 !== 0) out.push(`${indent}    .rotationEffect(.degrees(${round(resolved.rotation)}))`);
@@ -709,6 +870,23 @@ export function exportSwiftUI(doc: DesignDocument, pageId: PageId): GeneratedCod
   }
 
   return { format: "swiftui", fileName: file, mimeType: "text/plain", content: lines.join("\n"), mappings, unsupported };
+}
+
+/**
+ * The material closest to a blur radius.
+ *
+ * SwiftUI's materials are named thicknesses, not radii, so this is a bucketing
+ * and not a conversion — which is exactly why every use of it also files an
+ * `unsupported` note carrying the radius the designer actually asked for. The
+ * thresholds follow Apple's own published blur radii for the four system
+ * materials closely enough that a 24pt glass panel lands on `.ultraThinMaterial`,
+ * which is what the platform calls the same effect.
+ */
+function swiftMaterial(radius: number): string {
+  if (radius >= 60) return ".thickMaterial";
+  if (radius >= 40) return ".regularMaterial";
+  if (radius >= 20) return ".thinMaterial";
+  return ".ultraThinMaterial";
 }
 
 function swiftWeight(weight: number): string {

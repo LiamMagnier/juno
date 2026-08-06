@@ -210,6 +210,7 @@ const REPORTED_FIELDS = [
   "strokes",
   "shadows",
   "blur",
+  "noise",
   "characters",
   "typography",
   "layout",
@@ -260,6 +261,7 @@ export const DESIGN_TOOLS = [
   { name: "render_design_preview", kind: "read", describe: "A cropped rendered image of the selection." },
   { name: "create_design_nodes", kind: "write", describe: "createNode operations." },
   { name: "apply_design_operations", kind: "write", describe: "Any validated operation from the vocabulary below." },
+  { name: "set_design_effects", kind: "write", describe: "setEffects — shadows, blur and grain across a selection." },
   { name: "create_component", kind: "write", describe: "createComponent / createInstance." },
   { name: "create_variant_set", kind: "write", describe: "createVariant / setComponentProperty." },
   { name: "bind_design_variable", kind: "write", describe: "createVariable / bindVariable / setVariableMode." },
@@ -278,6 +280,7 @@ const OPERATION_VOCABULARY = [
   `{"op":"groupNodes","nodeIds":["<id>",…],"name":"<optional>"}  /  {"op":"ungroupNodes","nodeIds":["<groupId>"]}`,
   `{"op":"setSelection","nodeIds":["<id>",…]}`,
   `{"op":"setConstraints","nodeIds":["<id>"],"constraints":{"horizontal":"min|max|center|stretch|scale","vertical":…}}`,
+  `{"op":"setEffects","nodeIds":["<id>"],"shadows":[{"type":"drop|inner","color":{…},"offsetX":0,"offsetY":8,"blur":24,"spread":-4,"visible":true}],"blur":{"type":"layer|background","radius":24,"saturation":1.8}|null,"noise":{"opacity":0.05,"density":0.9,"seed":7,"monochrome":true,"blend":"overlay"}|null}  — omit a field to leave it alone; index 0 of \`shadows\` is the frontmost`,
   `{"op":"setAutoLayout","nodeId":"<id>","layout":{"direction":"horizontal|vertical|grid","padding":{"top":n,"right":n,"bottom":n,"left":n},"gap":n,"align":"start|center|end|baseline","justify":"start|center|end|space-between|space-around|space-evenly","wrap":false}|null}`,
   `{"op":"createComponent","nodeId":"<id>","name":"<name>"}  /  {"op":"createInstance","componentId":"<id>","parentId":<id|null>,"pageId":"<pageId>"}`,
   `{"op":"createVariant","componentId":"<id>","nodeId":"<id>","variantProperties":{"Size":"Large"}}`,
@@ -296,6 +299,20 @@ const OPERATION_VOCABULARY = [
 /** Colours are objects with 0..1 components, so the model never has to guess a
  *  colour space — and the schema rejects anything else. */
 const COLOR_NOTE = `Colours are {"r":0..1,"g":0..1,"b":0..1,"a":0..1}. Prefer binding an existing variable over a literal colour when one matches.`;
+
+/**
+ * What the model needs to know to author effects without inventing anything.
+ *
+ * The last paragraph is the load-bearing one. "Liquid glass" has no
+ * representation in this document — it is a composition of four primitives that
+ * every export target can draw — and a model told only the vocabulary would
+ * reach for a `blur` alone and produce fog. Spelling the recipe out here is how
+ * a request for glass produces the same four primitives the inspector's preset
+ * writes, which is also the only version of it that survives to SwiftUI.
+ */
+const EFFECTS_NOTE = `Effects: \`shadows\` holds drop AND inner shadows, frontmost first. \`blur.type\` is "layer" (blurs this layer) or "background" (blurs what is behind it — pair it with a low-alpha fill or it looks like fog). \`noise\` is film grain: density is an feTurbulence base frequency, roughly 0.4 coarse to 1.5 fine.
+Gradient fills are ordinary fills: {"type":"linear-gradient","stops":[{"position":0,"color":{…}},{"position":1,"color":{…}}],"from":{"x":0,"y":0},"to":{"x":0,"y":1}} — the axis is in normalised layer space — or {"type":"radial-gradient","stops":[…],"center":{"x":0.5,"y":0.5},"radius":0.5}.
+"Liquid glass" / "frosted" is NOT a primitive. Build it: a background blur around radius 24 with saturation ~1.8, a white linear-gradient fill from about 22% to 8% alpha down the layer, an inner shadow of white ~55% at y +1 blur 1 for the rim, a drop shadow of near-black ~18% at y +8 blur 24 spread -4, and grain at ~5% opacity. All of that in ONE transaction so it is one undo, and every part stays separately editable afterwards.`;
 
 export interface DesignPromptTarget {
   identifier: string;
@@ -342,6 +359,8 @@ Optional \`adjustments\` offer the user a live control for a value worth tuning.
 
 Operation vocabulary:
 ${OPERATION_VOCABULARY.map((line) => `- ${line}`).join("\n")}
+
+${EFFECTS_NOTE}
 
 DOCUMENT SUMMARY:
 ${JSON.stringify(summary)}

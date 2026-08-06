@@ -93,6 +93,47 @@ export interface Shadow {
 export interface Blur {
   type: "layer" | "background";
   radius: number;
+  /**
+   * Saturation multiplier applied together with the blur; 1 leaves colour alone.
+   *
+   * It lives on the blur rather than on the node because saturation is only ever
+   * meaningful *with* one: a "liquid glass" panel is a blurred sample of what is
+   * behind it with its colour pushed back up, and every target expresses the
+   * pair as a single operation — `backdrop-filter: blur() saturate()` in CSS,
+   * `feGaussianBlur` + `feColorMatrix type="saturate"` in SVG, and the
+   * saturation SwiftUI's materials already bake in. Splitting them would let a
+   * document express a saturation nothing could render.
+   *
+   * Optional, with 1 as the identity, for the same reason `Paint.opacity` is:
+   * a stored blur that never mentions it means "unchanged".
+   */
+  saturation?: number;
+}
+
+/**
+ * Film grain over a layer.
+ *
+ * This is `feTurbulence` and nothing more — deliberately. Noise is the one
+ * effect with no natural declarative form, and the temptation is to invent a
+ * "Juno grain" that only Juno can draw. Instead the model carries exactly the
+ * four numbers an SVG turbulence node takes, so the canvas, the SVG/PNG exports
+ * and the CSS targets (which embed the same turbulence as a data-URI
+ * background) all draw the identical grain from the identical parameters.
+ */
+export interface Noise {
+  /** 0..1 — how strongly the grain is mixed over the layer. */
+  opacity: number;
+  /** `feTurbulence` base frequency, in cycles per point. Higher is finer. */
+  density: number;
+  /** `feTurbulence` seed. Explicit and persisted: a grain that reshuffles on
+   *  every render is a grain that makes two exports of one document differ. */
+  seed: number;
+  /** Grey grain (film) rather than per-channel colour speckle. */
+  monochrome: boolean;
+  /** How the grain mixes with the layer beneath it. Restricted to the modes
+   *  `feBlend`, CSS `mix-blend-mode` and Core Graphics all agree on. */
+  blend: "normal" | "multiply" | "screen" | "overlay" | "soft-light";
+  visible?: boolean;
 }
 
 export type BlendMode =
@@ -221,6 +262,10 @@ export interface BaseNode {
   cornerRadius: CornerRadius;
   shadows: Shadow[];
   blur: Blur | null;
+  /** Grain over this layer. Required (never absent) on a decoded node: the
+   *  schema defaults a missing key to `null`, so a v1 document written before
+   *  grain existed still decodes to a total node. */
+  noise: Noise | null;
   constraints: Constraints;
   widthMode: SizingMode;
   heightMode: SizingMode;
