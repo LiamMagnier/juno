@@ -31,7 +31,12 @@ import {
   str,
   type Payload,
 } from "@/components/work/work-payload";
-import { formatDuration } from "@/components/work/work-vocabulary";
+import {
+  actionLabel,
+  formatDuration,
+  toolPastLabel,
+  toolPresentLabel,
+} from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
 
 /*
@@ -217,7 +222,7 @@ export function deriveCurrentAction(events: readonly ClientWorkEvent[]): Current
     switch (event.kind) {
       case "tool_started":
         tool = {
-          title: str(payload, "summary", "title") ?? humanize(str(payload, "tool", "name") ?? "Tool"),
+          title: str(payload, "summary", "title") ?? toolPresentLabel(str(payload, "tool", "name")),
           detail: toolPurpose(payload),
           since: event.createdAt,
         };
@@ -236,7 +241,7 @@ export function deriveCurrentAction(events: readonly ClientWorkEvent[]): Current
         if (progress !== null) {
           tool = {
             title: progress,
-            detail: humanizeOrNull(str(payload, "tool", "name")),
+            detail: toolPresentLabel(str(payload, "tool", "name")),
             since: event.createdAt,
           };
         }
@@ -440,7 +445,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
         callId,
         tool: str(payload, "tool", "name"),
         step,
-        title: str(payload, "summary", "title") ?? humanize(str(payload, "tool", "name") ?? "Tool"),
+        title: str(payload, "summary", "title") ?? toolPresentLabel(str(payload, "tool", "name")),
         detail: toolPurpose(payload),
         tone: "normal",
         icon: Wrench,
@@ -596,7 +601,7 @@ function toolOutcome(payload: Payload, kind: WorkEventKind): string | null {
 function toolFacts(payload: Payload): ActivityFact[] {
   const facts: ActivityFact[] = [];
   const tool = str(payload, "tool", "name");
-  if (tool !== null) facts.push({ label: "Tool", value: tool });
+  if (tool !== null) facts.push({ label: "Tool", value: toolPresentLabel(tool) });
   const intent = str(payload, "intent");
   if (intent !== null) facts.push({ label: "Intent", value: intent });
   const tier = str(payload, "tier");
@@ -621,7 +626,7 @@ function toolFacts(payload: Payload): ActivityFact[] {
 
 function resultFacts(payload: Payload): ActivityFact[] {
   const action = str(payload, "action");
-  return action === null ? [] : [{ label: "Action", value: action }];
+  return action === null ? [] : [{ label: "Action", value: actionLabel(action) }];
 }
 
 /**
@@ -902,7 +907,7 @@ export function derivePerformedActions(events: readonly ClientWorkEvent[]): Perf
         if (callId === null) break;
         const risk = str(payload, "risk");
         started.set(callId, {
-          title: str(payload, "summary") ?? humanize(str(payload, "tool", "name") ?? "Tool"),
+          title: str(payload, "summary") ?? toolPresentLabel(str(payload, "tool", "name")),
           mutating: bool(payload, "mutating") ?? (risk === null ? null : risk !== "safe"),
           action: str(payload, "action"),
         });
@@ -938,7 +943,7 @@ export function derivePerformedActions(events: readonly ClientWorkEvent[]): Perf
           summary:
             str(payload, "summary") ??
             start?.title ??
-            humanize(str(payload, "tool", "name") ?? "Tool"),
+            toolPastLabel(str(payload, "tool", "name")),
           at: event.createdAt,
           approved: action !== null && approvedActions.has(action),
         });
@@ -1017,21 +1022,21 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
       };
     case "tool_started":
       return {
-        title: str(payload, "summary") ?? humanize(str(payload, "tool", "name") ?? "Tool"),
+        title: str(payload, "summary") ?? toolPresentLabel(str(payload, "tool", "name")),
         detail: toolPurpose(payload),
         tone: "normal",
         icon: Wrench,
       };
     case "tool_finished":
       return {
-        title: str(payload, "summary") ?? humanize(str(payload, "tool", "name") ?? "Tool"),
+        title: str(payload, "summary") ?? toolPastLabel(str(payload, "tool", "name")),
         detail: null,
         tone: bool(payload, "isError") === true ? "bad" : "quiet",
         icon: bool(payload, "isError") === true ? AlertTriangle : Check,
       };
     case "tool_denied":
       return {
-        title: `Refused: ${humanize(str(payload, "tool", "name") ?? "a tool")}`,
+        title: `Refused: ${actionLabel(str(payload, "tool", "name"))}`,
         detail: str(payload, "reason", "explanation"),
         tone: "warning",
         icon: Ban,

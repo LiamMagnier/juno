@@ -13,7 +13,7 @@ import {
 import type { ClientWorkEvent } from "@/lib/work/serializers";
 import type { WorkApprovalDecisionInput } from "@/components/work/work-transport";
 import { nested, readEvent, str, strings, type Payload } from "@/components/work/work-payload";
-import { RiskPill, WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
+import { actionLabel, RiskPill, WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
 
 /*
@@ -369,12 +369,10 @@ function ApprovalCard({
           aria-hidden="true"
         />
         {answerable && (
-          <span className="font-mono text-[10px] uppercase tracking-wide text-warning-foreground">
-            Your decision
-          </span>
+          <span className="text-xs font-semibold text-warning-foreground">Your decision</span>
         )}
         <RiskPill risk={approval.risk} />
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+        <span className="ml-auto text-xs text-muted-foreground">
           {workTimeAgo(approval.createdAt)}
         </span>
       </div>
@@ -387,7 +385,12 @@ function ApprovalCard({
       >
         {approval.summary}
       </p>
-      <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">{approval.action}</p>
+      {/* The action named, not its wire token. `approval.action` is the
+          executor's `WorkTool.name` — printing it put "apply_changes" under the
+          sentence a person is being asked to authorise, in 10px monospace with
+          `break-all`, which is the most consequential place in the product to
+          show somebody a symbol instead of a phrase. */}
+      <p className="mt-1 text-xs text-muted-foreground">{actionLabel(approval.action)}</p>
 
       {/* Exactly what is being authorised, spelled out rather than summarised.
           The digest the decision travels back with is computed over this action

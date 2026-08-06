@@ -249,9 +249,9 @@ private struct JunoMobileWorkHostCard: View {
         JunoCard(padding: 14) {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Your Macs")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .textCase(.uppercase)
+                    .font(.system(.footnote, design: .default, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(nil)
                     .accessibilityAddTraits(.isHeader)
 
                 if hosts.isEmpty {
@@ -289,7 +289,7 @@ private struct JunoMobileWorkHostCard: View {
                 Text(
                     "Last heard from \(host.lastSeenAt.formatted(.relative(presentation: .named)))"
                 )
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.caption)
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
             }
@@ -346,7 +346,7 @@ private struct JunoMobileWorkSessionCard: View {
                         .multilineTextAlignment(.leading)
 
                     Text(subtitle)
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .font(.caption)
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
@@ -561,7 +561,7 @@ private struct JunoMobileWorkThread: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(runningWhere(session))
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.caption)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -736,7 +736,7 @@ private struct JunoMobileWorkThread: View {
                         .fixedSize(horizontal: false, vertical: true)
                     if let detail = action.detail {
                         Text(detail)
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -816,7 +816,7 @@ private struct JunoMobileWorkThread: View {
                                 .truncationMode(.middle)
                             if let detail = reference.detail {
                                 Text(detail)
-                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
@@ -849,18 +849,27 @@ private struct JunoMobileWorkThread: View {
                 )
             } else {
                 ForEach(produced) { artifact in
-                    HStack(alignment: .top, spacing: 10) {
-                        Text(artifact.kind.fileExtension)
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 34, alignment: .leading)
-                        VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .center, spacing: 10) {
+                        // A glyph, not the bare file extension in a 34pt slot —
+                        // the same change the Mac's list needed. A column of
+                        // "xlsx" / "docx" reads as a directory listing; this
+                        // section is the things Juno made for you.
+                        Image(systemName: JunoWorkVocabulary.artifactSymbol(artifact.kind))
+                            .font(.system(size: 15))
+                            .foregroundStyle(Color.junoAccent)
+                            .frame(width: 22, alignment: .center)
+                        VStack(alignment: .leading, spacing: 1) {
                             Text(artifact.title)
                                 .font(.callout)
                                 .lineLimit(1)
-                            Text(artifact.subtitle)
-                                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                .foregroundStyle(.secondary)
+                                .truncationMode(.middle)
+                            Text(
+                                "\(JunoWorkVocabulary.artifactKind(artifact.kind))  ·  "
+                                    + artifact.subtitle
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                         }
                         Spacer(minLength: 0)
                     }
@@ -970,15 +979,28 @@ private struct JunoMobileWorkApprovalCard: View {
 
     private var risk: JunoWorkRiskLevel? { JunoWorkRiskLevel(rawValue: approval.risk) }
 
+    private var tint: Color { JunoWorkVocabulary.riskTint(approval.risk) }
+
     var body: some View {
         JunoCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Label {
-                    Text("Juno is waiting for you")
-                        .font(.system(size: 15, weight: .semibold))
-                } icon: {
-                    Image(systemName: "shield.lefthalf.filled")
-                        .foregroundStyle(Color.junoCaution)
+            VStack(alignment: .leading, spacing: 14) {
+                // Risk, what is being asked for, and when the window closes —
+                // one line, in prose, above the sentence they qualify. All three
+                // were 11pt monospaced captions before, and the middle one was
+                // the raw tool token (`apply_changes`) printed verbatim.
+                HStack(spacing: 6) {
+                    Image(systemName: risk?.alwaysRequiresApproval == true
+                        ? "exclamationmark.shield.fill" : "shield.lefthalf.filled")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(tint)
+                    Text(JunoWorkVocabulary.risk(approval.risk))
+                        .font(.system(.caption, design: .default, weight: .semibold))
+                        .foregroundStyle(tint)
+                    Text(JunoWorkVocabulary.action(approval.action))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
                 }
 
                 // The stored sentence, verbatim. It is what an audit can prove
@@ -990,55 +1012,69 @@ private struct JunoMobileWorkApprovalCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
 
-                HStack(spacing: 8) {
-                    if let risk {
-                        Text(Self.riskLabel(risk))
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(
-                                risk.alwaysRequiresApproval ? Color.junoDanger : Color.secondary
-                            )
-                    }
-                    Spacer(minLength: 4)
-                    // Stated rather than counted down. A live countdown would
-                    // need a timer running behind every thread, and the honest
-                    // failure — pressing Allow after the window closed — is
-                    // already reported by the client as a sentence saying the
-                    // approval expired.
-                    Text("expires \(approval.expiresAt.formatted(.relative(presentation: .named)))")
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.tertiary)
-                }
-
-                Text(approval.action)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                // Stated rather than counted down. A live countdown would need a
+                // timer running behind every thread, and the honest failure —
+                // pressing Allow after the window closed — is already reported
+                // by the client as a sentence saying the approval expired.
+                Text("Expires \(approval.expiresAt.formatted(.relative(presentation: .named)))")
+                    .font(.caption)
                     .foregroundStyle(.tertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
 
+                // **Weight follows consequence, and it did not before.**
+                //
+                // "Allow for this task" grants a *standing* permission — the
+                // most consequential of the three — and it was drawn in
+                // `Color.junoAccent`, the colour this app uses to invite the
+                // next step. "Refuse", the option that can never cost anything,
+                // was drawn in `Color.junoDanger`. So on the one card in the
+                // product where a person authorises an agent to act on their
+                // behalf, the escalation looked recommended and the safe answer
+                // looked destructive. Both were 14pt bare text either side of a
+                // Spacer, well under the 44pt minimum target.
+                //
+                // Now: one accented primary for the narrow grant, a neutral
+                // bordered control for the standing one, and a refusal that is
+                // full-width, unmistakable and quiet.
                 VStack(spacing: 8) {
                     Button { decide(.allowed) } label: {
                         Text("Allow once")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.junoOnAccent)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 42)
+                            .frame(height: 44)
                             .modifier(JunoAccentGlassCapsule())
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("juno.mobile.work.approval.allow")
 
                     HStack(spacing: 8) {
-                        Button("Allow for this task") { decide(.allowedAlways) }
-                            .font(.system(size: 14, weight: .medium))
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Color.junoAccent)
-                            .accessibilityIdentifier("juno.mobile.work.approval.allow-always")
-                        Spacer(minLength: 8)
-                        Button("Refuse") { decide(.denied) }
-                            .font(.system(size: 14, weight: .medium))
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Color.junoDanger)
-                            .accessibilityIdentifier("juno.mobile.work.approval.deny")
+                        Button { decide(.allowedAlways) } label: {
+                            Text("Always allow this")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(Color.primary)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 44)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .strokeBorder(Color.junoBorder, lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("juno.mobile.work.approval.allow-always")
+
+                        Button { decide(.denied) } label: {
+                            Text("Refuse")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(Color.primary)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 44)
+                                .background(
+                                    Capsule(style: .continuous)
+                                        .strokeBorder(Color.junoBorder, lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("juno.mobile.work.approval.deny")
                     }
                 }
                 .disabled(model.isMutating)
@@ -1046,7 +1082,7 @@ private struct JunoMobileWorkApprovalCard: View {
         }
         .overlay(
             RoundedRectangle(cornerRadius: JunoCornerRadius.card, style: .continuous)
-                .strokeBorder(Color.junoCaution.opacity(0.35), lineWidth: 1)
+                .strokeBorder(tint.opacity(0.45), lineWidth: 1)
         )
         .accessibilityIdentifier("juno.mobile.work.approval")
     }
@@ -1055,15 +1091,6 @@ private struct JunoMobileWorkApprovalCard: View {
         Task { await model.decide(approval, decision) }
     }
 
-    private static func riskLabel(_ risk: JunoWorkRiskLevel) -> String {
-        switch risk {
-        case .safe: "Changes nothing"
-        case .edit: "Juno can undo this"
-        case .command: "Runs a program"
-        case .sensitive: "Touches private data"
-        case .irreversible: "Cannot be undone"
-        }
-    }
 }
 
 /// The question the run stopped to ask. The reply is typed in a sheet rather
@@ -1444,8 +1471,14 @@ private struct JunoMobileWorkComposer: View {
 
 // MARK: - Section
 
-/// A titled block in the thread: a quiet monospaced eyebrow over its content,
-/// matching the eyebrow the settings tiles use.
+/// A titled block in the thread: a sentence-case heading over its content.
+///
+/// The heading was an UPPERCASE MONOSPACED eyebrow, and its comment claimed that
+/// matched the settings tiles — those set `.textCase(nil)` in a sans face, so it
+/// matched nothing. Monospace is reserved for machine output on both platforms
+/// (`JunoStatus.swift`: "terminal output, gutters, hashes"), and a column of
+/// monospaced capitals down a thread of plain-English prose is what made the one
+/// screen that explains an agent's work to a person read like a log viewer.
 private struct JunoMobileWorkSection<Content: View>: View {
     private let title: String
     private let content: Content
@@ -1458,9 +1491,9 @@ private struct JunoMobileWorkSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(.tertiary)
-                .textCase(.uppercase)
+                .font(.system(.footnote, design: .default, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .textCase(nil)
                 .accessibilityAddTraits(.isHeader)
             content
         }
@@ -1872,10 +1905,15 @@ private enum JunoMobileWorkLog {
         return current
     }
 
+    /// What a tool call is doing, in English.
+    ///
+    /// The phone had its own copy of the Mac's underscore-stripping fallback, so
+    /// both surfaces rendered "apply changes" and "screen control" — the same
+    /// wrong answer, arrived at twice. ``JunoWorkVocabulary`` is the one table
+    /// both read, which is the same rule the status vocabulary and the generated
+    /// contract already follow.
     private static func describeTool(_ tool: String?) -> String {
-        guard let tool else { return "Working" }
-        return tool.replacingOccurrences(of: "_", with: " ")
-            .replacingOccurrences(of: ".", with: " ")
+        JunoWorkVocabulary.toolPresent(tool)
     }
 
     // MARK: References
@@ -2076,7 +2114,11 @@ private enum JunoMobileWorkLog {
         let payload = WorkEventPayload.fields(of: event)
         switch kind {
         case .runStarted:
-            return entry(event, "Started", string(payload, "target"), "play.circle", .quiet)
+            return entry(
+                event, "Started",
+                string(payload, "target").map { JunoWorkVocabulary.target($0, hostName: nil) },
+                "play.circle", .quiet
+            )
         case .planCreated:
             return entry(event, "Wrote a plan", nil, "sparkles", .quiet)
         case .planUpdated:
@@ -2103,12 +2145,15 @@ private enum JunoMobileWorkLog {
             )
         case .toolFinished:
             return entry(
-                event, string(payload, "summary") ?? describeTool(string(payload, "tool", "name")),
+                event,
+                string(payload, "summary")
+                    ?? JunoWorkVocabulary.toolPast(string(payload, "tool", "name")),
                 string(payload, "result", "detail"), "checkmark", .quiet
             )
         case .toolDenied:
             return entry(
-                event, "Refused: \(describeTool(string(payload, "tool", "name")))",
+                event,
+                "Refused: \(JunoWorkVocabulary.action(string(payload, "tool", "name")))",
                 string(payload, "reason", "explanation"), "hand.raised", .warning
             )
         case .questionAsked:
@@ -2143,12 +2188,12 @@ private enum JunoMobileWorkLog {
         case .artifactCreated:
             return entry(
                 event, "Created \(string(payload, "title") ?? "a file")",
-                string(payload, "kind"), "doc.badge.plus", .good
+                artifactKindPhrase(payload), "doc.badge.plus", .good
             )
         case .artifactUpdated:
             return entry(
                 event, "Updated \(string(payload, "title") ?? "a file")",
-                string(payload, "kind"), "doc", .quiet
+                artifactKindPhrase(payload), "doc", .quiet
             )
         case .sourceCited:
             return entry(
@@ -2185,7 +2230,7 @@ private enum JunoMobileWorkLog {
             )
         case .subagentUpdate:
             return entry(
-                event, string(payload, "title", "agentId") ?? "A sub-agent reported in",
+                event, string(payload, "title") ?? "A sub-agent reported in",
                 string(payload, "status", "summary"), "sparkles", .quiet
             )
         case .degraded:
@@ -2223,7 +2268,10 @@ private enum JunoMobileWorkLog {
         case .runFinished:
             let reason = string(payload, "reason")
             return entry(
-                event, "Finished — \(reason ?? "no reason recorded")", string(payload, "detail"),
+                event,
+                JunoWorkVocabulary.terminalReason(reason).map { "Finished because \($0)" }
+                    ?? "Finished",
+                string(payload, "detail", "summary"),
                 "flag.checkered", reason == "completed" ? .good : .warning
             )
         case .error:
@@ -2242,5 +2290,12 @@ private enum JunoMobileWorkLog {
         _ tone: Entry.Tone
     ) -> Entry {
         Entry(id: event.seq, title: title, detail: detail, symbol: symbol, tone: tone)
+    }
+
+    /// An artifact event's kind as a noun, never the raw `spreadsheet` token.
+    private static func artifactKindPhrase(_ payload: [String: JunoJSONValue]) -> String? {
+        string(payload, "kind")
+            .flatMap(JunoWorkArtifactKind.init(rawValue:))
+            .map(JunoWorkVocabulary.artifactKind)
     }
 }

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { AlertTriangle, Ban, Cloud, Info, Laptop, ShieldAlert } from "lucide-react";
 import { describeCapability, type WorkCapability, type WorkDegradation, type WorkRiskLevel, type WorkStatus } from "@/lib/work/domain";
+import { humanize } from "@/components/work/work-payload";
 import { cn } from "@/lib/utils";
 
 /*
@@ -205,6 +206,79 @@ export function CapabilityChip({
       {describeCapability(capability)}
     </span>
   );
+}
+
+/*
+ * What the executors' tools are called, in English.
+ *
+ * The names are the `WorkTool.name` values registered in `JunoWorkRuntime` —
+ * the same strings the relay stores as an approval's `action` — and this table
+ * is the mirror of `JunoWorkVocabulary` in `native/Packages/JunoNativeKit`.
+ * Keep the two in step: a tool the Mac calls "Making changes to your files" and
+ * the web calls "Apply changes" is one action with two names, which is the
+ * drift this whole directory's shared-vocabulary rule exists to prevent.
+ *
+ * `humanize` in `work-payload.ts` remains the floor for a token no build knows
+ * — it sentence-cases rather than printing a symbol — but a *named* tool should
+ * never reach it.
+ */
+const TOOL_PRESENT: Record<string, string> = {
+  list_folder: "Looking through a folder",
+  read_file: "Reading a file",
+  search_files: "Searching your files",
+  file_details: "Checking a file",
+  apply_changes: "Making changes to your files",
+  permanently_delete: "Deleting files for good",
+  browser_control: "Using your browser",
+  app_control: "Using an app on your Mac",
+  screen_control: "Working on your screen",
+  web_search: "Searching the web",
+  web_research: "Searching the web",
+  fetch_page: "Reading a web page",
+  read_page: "Reading a web page",
+};
+
+const TOOL_PAST: Record<string, string> = {
+  list_folder: "Looked through a folder",
+  read_file: "Read a file",
+  search_files: "Searched your files",
+  file_details: "Checked a file",
+  apply_changes: "Changed your files",
+  permanently_delete: "Deleted files for good",
+  browser_control: "Used your browser",
+  app_control: "Used an app on your Mac",
+  screen_control: "Worked on your screen",
+  web_search: "Searched the web",
+  web_research: "Searched the web",
+  fetch_page: "Read a web page",
+  read_page: "Read a web page",
+};
+
+/** The name of the thing an approval would authorise. */
+const ACTION_LABEL: Record<string, string> = {
+  apply_changes: "Change files",
+  permanently_delete: "Delete permanently",
+  browser_control: "Use your browser",
+  app_control: "Use an app",
+  screen_control: "Control your screen",
+};
+
+/** What a tool call is doing, as a phrase completing "Juno is …". */
+export function toolPresentLabel(name: string | null | undefined): string {
+  if (!name) return "Working";
+  return TOOL_PRESENT[name] ?? humanize(name);
+}
+
+/** The same tool as a completed act, for a past-tense log row. */
+export function toolPastLabel(name: string | null | undefined): string {
+  if (!name) return "Did something";
+  return TOOL_PAST[name] ?? humanize(name);
+}
+
+/** What an approval would authorise, never the raw tool token. */
+export function actionLabel(name: string | null | undefined): string {
+  if (!name) return "An action";
+  return ACTION_LABEL[name] ?? humanize(name);
 }
 
 const RISK_LABEL: Record<WorkRiskLevel, string> = {
