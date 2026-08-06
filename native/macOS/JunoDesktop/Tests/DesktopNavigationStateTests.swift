@@ -228,6 +228,7 @@ struct DesktopNavigationStateTests {
             .connections,
             .usage,
             .settings,
+            .design,
             .repository(WorkspaceID(value: "ws-1")),
             .session(CodeSessionID(value: "sess-1")),
             .task("task-1"),
@@ -257,7 +258,8 @@ struct DesktopNavigationStateTests {
     @Test
     func accountLevelPagesSurviveValidationAgainstAnEmptyWorkspace() {
         for page in [
-            DesktopCodeSidebarItem.pulls, .connections, .usage, .settings, .draft, .allProjects,
+            DesktopCodeSidebarItem.pulls, .connections, .usage, .settings, .design, .draft,
+            .allProjects,
         ] {
             #expect(
                 DesktopCodeNavigationState.validate(

@@ -474,6 +474,9 @@ struct DesktopCodeWorkspace: View {
         case .settings:
             settingsPage
 
+        case .design:
+            designPage
+
         case .repository(let id):
             // A repository that is no longer granted is exactly the state a
             // projectless conversation serves: the reader still has something
@@ -552,6 +555,29 @@ struct DesktopCodeWorkspace: View {
             )
         } else {
             accountPageUnavailable("Settings", "Account settings could not be loaded.")
+        }
+    }
+
+    /// Juno Design, the same one screen Chat's window shows.
+    ///
+    /// Rendered here rather than navigated to, exactly as Usage and Settings
+    /// above are, and for the reason stated at the top of this section: one split
+    /// view is alive at a time, so crossing to Chat to show a page is not
+    /// something this window can do. A design is also the most natural thing in
+    /// the app to want *while* looking at code — it is what the reader is about
+    /// to ask Juno Code to build — so bouncing them out of the product to see it
+    /// would be the wrong answer even if it were available.
+    @ViewBuilder
+    private var designPage: some View {
+        if let session, let configuration, let model = configuration.artifactModel {
+            DesktopDesignScreen(
+                model: model,
+                accountID: session.profile.id,
+                requestSender: configuration.requestSender,
+                syncModel: configuration.syncModel
+            )
+        } else {
+            accountPageUnavailable("Design", "The synchronized artifact store is unavailable.")
         }
     }
 

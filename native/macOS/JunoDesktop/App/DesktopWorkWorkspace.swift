@@ -43,6 +43,22 @@ struct DesktopWorkWorkspace: View {
 
     @SceneStorage("juno.desktop.work.selection") private var storedSessionID = ""
     @SceneStorage("juno.desktop.work.columns") private var storedColumnVisibility = ""
+    /// Chat's destination, which this window writes and never reads.
+    ///
+    /// The one thing Work's column can do that its window cannot serve is open
+    /// Design. Chat and Code render that page in their own detail column, but
+    /// this workspace is handed a Work transport and nothing else — no artifact
+    /// store to list designs from, no request sender to start one with — so the
+    /// footer row has to cross the product boundary, exactly as New Task's
+    /// sibling ``newChat`` already does. The scene keeps one value per key, and
+    /// ``DesktopChatWorkspace`` reads this same key on the way in, so setting it
+    /// before the swap is what decides where Chat lands.
+    ///
+    /// This is also what the website does. `/design` is not a code route, so
+    /// opening it from anywhere puts the shell back on Home — leaving the
+    /// product you were in is the behaviour, not a compromise around it.
+    @SceneStorage("juno.desktop.destination") private var storedDestination =
+        DesktopDestination.chat.rawValue
 
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var isComposing = false
@@ -120,7 +136,8 @@ struct DesktopWorkWorkspace: View {
                 sessions: visibleSessions,
                 selection: selection,
                 product: $product,
-                compose: { isComposing = true }
+                compose: { isComposing = true },
+                openDesign: openDesign
             )
             .junoSidebarColumn()
         } detail: {
@@ -189,6 +206,19 @@ struct DesktopWorkWorkspace: View {
         // rest of the session. The poll continues either way, which is what
         // keeps the attention count honest while Work is closed.
         .onDisappear { model.closeOpenSession() }
+    }
+
+    // MARK: - Leaving for Design
+
+    /// Open Juno Design, which lives in Chat's window.
+    ///
+    /// The destination is written *before* the product changes, so the Chat
+    /// workspace this swap builds reads "design" on its first evaluation rather
+    /// than opening on whatever it was last showing and then jumping. See
+    /// ``storedDestination``.
+    private func openDesign() {
+        storedDestination = DesktopDestination.design.rawValue
+        product = .chat
     }
 
     // MARK: - Detail column
@@ -427,6 +457,10 @@ private struct DesktopWorkSidebar: View {
     /// the header something to write through, exactly as Chat's and Code's do.
     @Binding var product: DesktopProductMode
     let compose: () -> Void
+    /// Opens Juno Design. It is not a page this window can draw — see
+    /// ``DesktopWorkWorkspace/openDesign()`` — so the column asks for it rather
+    /// than navigating to it.
+    let openDesign: () -> Void
 
 
     private var attention: [WorkSessionSummary] {
@@ -470,11 +504,24 @@ private struct DesktopWorkSidebar: View {
             // list slides its rows under the footer, which is the same defect
             // Code documents on the other end of this column for the product
             // switch — an inset reserves space and paints nothing.
-            footer
-                .padding(.horizontal, JunoSpace.regular)
-                .padding(.vertical, JunoSpace.snug)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.bar)
+            VStack(spacing: 0) {
+                footer
+                    .padding(.horizontal, JunoSpace.regular)
+                    .padding(.vertical, JunoSpace.snug)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Last, because it is the bottom of the column: Chat and Code put
+                // this row directly above their account block, and this column
+                // has no account block for it to sit above.
+                //
+                // It carries its own inset rather than this footer's deeper one.
+                // The row is the same control in all three columns and the point
+                // of it is that a reader finds it in the same place, so it hangs
+                // on Chat's and Code's left edge rather than on the one Work's
+                // status lines use.
+                DesktopSidebarDesignRow(open: openDesign)
+                    .padding(.bottom, JunoSpace.snug)
+            }
+            .background(.bar)
         }
         .accessibilityIdentifier("juno.work.sidebar")
     }

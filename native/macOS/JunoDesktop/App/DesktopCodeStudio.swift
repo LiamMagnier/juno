@@ -79,6 +79,15 @@ enum DesktopCodeSidebarItem: Hashable {
     /// copies of them.
     case usage
     case settings
+    /// Juno Design, rendered in this window rather than reached through it —
+    /// the same call the two account pages above make, and for the same reason:
+    /// there is no such thing as "navigate to Chat's Design page" when only one
+    /// `NavigationSplitView` is ever alive.
+    ///
+    /// It is not in the column's list either. Design is a destination in the
+    /// footer, beside the account row, exactly where the website puts it — see
+    /// ``DesktopSidebarDesignRow``.
+    case design
     case repository(WorkspaceID)
     case session(CodeSessionID)
     case task(String)
@@ -158,6 +167,7 @@ enum DesktopCodeNavigationState {
         case .connections: "connections"
         case .usage: "usage"
         case .settings: "settings"
+        case .design: "design"
         case .repository(let id): "repository\(unitSeparator)\(id.value)"
         case .session(let id): "session\(unitSeparator)\(id.value)"
         case .task(let id): "task\(unitSeparator)\(id)"
@@ -175,6 +185,7 @@ enum DesktopCodeNavigationState {
         case ("connections", 1): return .connections
         case ("usage", 1): return .usage
         case ("settings", 1): return .settings
+        case ("design", 1): return .design
         case ("repository", 2): return .repository(WorkspaceID(value: fields[1]))
         case ("session", 2): return .session(CodeSessionID(value: fields[1]))
         case ("task", 2): return .task(fields[1])
@@ -203,9 +214,10 @@ enum DesktopCodeNavigationState {
         // Always valid: it names the collection, not a member of it.
         case .allProjects: return item
         // Always valid: a draft names nothing that can go missing, and the pull
-        // request list, the connected services, the usage ledger and the settings
-        // page are account-level pages rather than local records.
-        case .draft, .pulls, .connections, .usage, .settings: return item
+        // request list, the connected services, the usage ledger, the settings
+        // page and the design launcher are account-level pages rather than local
+        // records.
+        case .draft, .pulls, .connections, .usage, .settings, .design: return item
         case .remote, .none: return item
         }
     }
@@ -999,7 +1011,8 @@ struct DesktopCodeSidebar: View {
             return workbench.sessions.first { $0.id == id }?.workspaceID == workspaceID
         // The index belongs to no single project, so deleting one never leaves the
         // reader stranded on it.
-        case .allProjects, .draft, .pulls, .connections, .usage, .settings, .task, .remote, nil:
+        case .allProjects, .draft, .pulls, .connections, .usage, .settings, .design, .task,
+            .remote, nil:
             return false
         }
     }
@@ -1083,10 +1096,10 @@ struct DesktopCodeSidebar: View {
                 Task { await remote.stopGeneration(deviceID: deviceID, sessionID: sessionID) }
             }
             .disabled(!run.status.isActive || remote.isSendingCommand)
-        case .allProjects, .draft, .pulls, .connections, .usage, .settings, .repository:
+        case .allProjects, .draft, .pulls, .connections, .usage, .settings, .design, .repository:
             // None reaches this row builder: repositories carry their own menu,
-            // and neither the index, the composer nor the pull request list is a
-            // run.
+            // and neither the index, the composer, the pull request list nor the
+            // design launcher is a run.
             EmptyView()
         }
     }
@@ -1135,16 +1148,27 @@ struct DesktopCodeSidebar: View {
 
     // MARK: Footer
 
-    /// What the column pins under the list: a transient workspace notice, and
-    /// then the account.
+    /// What the column pins under the list: a transient workspace notice, the
+    /// door to Design, and then the account.
     ///
-    /// In that order because the notice is news and the account row is furniture
-    /// — a "choose the folder again" prompt that appeared *below* the reader's
-    /// own name would be reporting an emergency in the quietest place on screen.
+    /// The notice is first because it is news and the account row is furniture —
+    /// a "choose the folder again" prompt that appeared *below* the reader's own
+    /// name would be reporting an emergency in the quietest place on screen.
+    /// Design sits between them for the reason the website puts it there: it is a
+    /// destination, so it belongs with the destinations at the bottom rather than
+    /// among the runs above, and it is not part of the account block it precedes.
+    ///
+    /// It is drawn whether or not there is a session, unlike the account rows: the
+    /// page it opens reads this Mac's own artifact store, which does not depend on
+    /// the four account facts ``DesktopSidebarFooter`` needs to draw anything
+    /// coherent.
     @ViewBuilder
     private var footer: some View {
         VStack(spacing: 0) {
             workspaceStatus
+            DesktopSidebarDesignRow(isActive: selection == .design) {
+                selection = .design
+            }
             if let session {
                 DesktopSidebarFooter(
                     session: session,
