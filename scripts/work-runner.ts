@@ -44,8 +44,10 @@ import { verifyApproval } from "@/lib/work/digests";
 import { recordWorkAudit } from "@/lib/work/audit";
 import {
   RUN_LEASE_MS,
+  WORK_STEERING_EVENT_KIND,
   defaultVisibilityFor,
   isWorkEventKind,
+  steeringInstruction,
   type WorkEventKind,
   type WorkTerminalReason,
 } from "@/lib/work/domain";
@@ -57,6 +59,7 @@ import { isWebSearchConfigured, webSearch } from "@/lib/web-search";
 import {
   admitConnectorResult,
   summarizeConnectors,
+  type WorkConnectorAllowlist,
   type WorkConnectorAvailability,
   type WorkConnectorCandidate,
   type WorkConnectorDataScope,
@@ -207,6 +210,147 @@ async function pollAnswer(runId: string, questionId: string): Promise<string | n
   if (!payload || payload.questionId !== questionId) return null;
   if (typeof payload.text === "string") return payload.text;
   return typeof payload.answer === "string" ? payload.answer : null;
+}
+
+// ---------------------------------------------------------------------------
+// Steering
+// ---------------------------------------------------------------------------
+
+/**
+ * The kinds an instruction can arrive under.
+ *
+ * Two, because the log has both in it. `user_message` is what
+ * `/api/work/sessions/[id]/answer` writes now; `question_answered` carrying a
+ * `steering` marker is what it wrote before the vocabulary had a kind of its own
+ * and what a Mac or a phone on an older build still writes. `steeringInstruction`
+ * decides which rows of either kind are actually instructions — in particular it
+ * refuses anything carrying a `questionId`, which is `pollAnswer`'s territory.
+ */
+const STEERING_EVENT_KINDS: readonly string[] = [WORK_STEERING_EVENT_KIND, "question_answered"];
+
+/**
+ * What the user has said since the last time anyone looked.
+ *
+ * A cursor rather than a flag on the row: WorkEvent is append-only and has no
+ * "consumed" column to set, and inventing one would mean the transcript a client
+ * replays and the queue an executor drains were the same table pretending to be
+ * two things. `seq` is monotonic per run and already the cursor every other
+ * reader uses, so "everything above the last seq I read" is the whole state.
+ *
+ * The cursor starts at zero and lives as long as the execution. A run is never
+ * resumed in place — `execute` builds a fresh session from the goal each time it
+ * is claimed — so there is no second executor to hand it to and no way for an
+ * instruction to be delivered twice within one attempt.
+ */
+interface Steering {
+  /** Everything that arrived since the previous call, oldest first. */
+  drain(): Promise<string[]>;
+}
+
+function openSteering(runId: string, userId: string): Steering {
+  let consumed = 0;
+  return {
+    async drain() {
+      // The guarded client, unlike `pollAnswer` above, which has only a run id
+      // to work with. This one is opened from `execute`, where the owner is
+      // already known, and a query that can name the account should.
+      const rows = await prisma.workEvent.findMany({
+        where: { runId, userId, seq: { gt: consumed }, kind: { in: [...STEERING_EVENT_KINDS] } },
+        orderBy: { seq: "asc" },
+        select: { seq: true, kind: true, payload: true },
+      });
+      if (rows.length === 0) return [];
+      // The cursor moves past everything read, including the answer rows this
+      // query also matched. Those belong to `pollAnswer` and re-reading them on
+      // the next turn would only be work; what must never be skipped is a row
+      // with a higher seq, and seq only ever grows.
+      consumed = rows[rows.length - 1].seq;
+      return rows.flatMap((row) => {
+        const instruction = steeringInstruction(row);
+        return instruction === null ? [] : [instruction];
+      });
+    },
+  };
+}
+
+/**
+ * How an instruction reaches the model.
+ *
+ * Framed rather than pasted in bare. The transcript at this point is a goal, a
+ * plan and a run of tool results, and an unlabelled sentence dropped into it
+ * reads as one more tool result — or, worse, as the goal being restated. Saying
+ * when it arrived and how it ranks is what makes it a steer rather than a
+ * suggestion, and the last clause is the part users actually want: they are
+ * correcting the course, not asking for the work so far to be thrown away.
+ *
+ * "After the task started" rather than "while you were working", because both
+ * are read by the same prompt: an instruction added while a run sat queued is
+ * delivered on its first turn, and telling the model it interrupted work that
+ * had not begun is the sort of small false note it then reasons from.
+ */
+function framedInstruction(instruction: string): string {
+  return [
+    "The user added this after the task started. It comes after the goal and wins where the two",
+    "disagree. Carry on from where you are rather than starting again.",
+    "",
+    instruction,
+  ].join("\n");
+}
+
+type WorkProvider = Awaited<ReturnType<typeof resolveProvider>>;
+
+/**
+ * The provider, with whatever the user has said folded into the transcript
+ * first.
+ *
+ * This is the seam, and it is the only one that does not cost the run anything.
+ * `runAgentLoop` calls `provider.stream` once per turn with the live `messages`
+ * array — the same array `WorkAgentSession` holds and checkpoints — so a wrapper
+ * that appends before delegating is appending between turns by construction, at
+ * the one moment the transcript is guaranteed well-formed. The alternative was
+ * to abort the run and restore it from a checkpoint with the instruction added,
+ * which reaches the model no sooner and throws away every tool call that was in
+ * flight when the user pressed Enter.
+ *
+ * The text is appended to the trailing user message rather than pushed as a new
+ * one. That message is the tool results for the turn just finished, and every
+ * adapter is written for a transcript that alternates: `toCompatMessages` emits
+ * the tool results as `tool` messages and the text as the user message after
+ * them, and Anthropic takes the blocks in order with `tool_result` first, which
+ * is the order appending produces.
+ *
+ * Delegation is written out rather than spread, because `createProvider` returns
+ * a class instance and spreading one leaves its methods behind on the prototype.
+ */
+function steerable(provider: WorkProvider, steering: Steering, runId: string): WorkProvider {
+  return {
+    id: provider.id,
+    name: provider.name,
+    defaultModel: provider.defaultModel,
+    models: () => provider.models(),
+    capabilities: (model: string) => provider.capabilities(model),
+    async *stream(request) {
+      let instructions: string[] = [];
+      try {
+        instructions = await steering.drain();
+      } catch (error) {
+        // A failed read must not end the turn. The instruction stays unconsumed
+        // because the cursor only moves on a successful query, so the next turn
+        // picks it up; ending the run here would lose the work instead.
+        log("could not read steering", { runId, error: String(error) });
+      }
+      for (const instruction of instructions) {
+        const last = request.messages[request.messages.length - 1];
+        const framed = { type: "text" as const, text: framedInstruction(instruction) };
+        if (last?.role === "user") last.content.push(framed);
+        else request.messages.push({ role: "user", content: [framed] });
+      }
+      if (instructions.length > 0) {
+        log("delivered steering", { runId, count: instructions.length });
+      }
+      yield* provider.stream(request);
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -589,6 +733,21 @@ const UNKNOWN_CONNECTOR_SCOPE: WorkConnectorDataScope = {
   egress: "third_party",
 };
 
+/**
+ * Whether an unavailable connector is something to tell the user about.
+ *
+ * Everything except the one they chose. A connector that was linked and could
+ * not be reached is a run doing less than was asked and belongs in the
+ * degradation list and in the report; a connector the reader deliberately left
+ * switched off for this task is the run doing exactly what was asked, and
+ * announcing it as a shortfall on every run is how a list of real warnings stops
+ * being read. The refusal is still recorded — `evaluateConnector` returns a
+ * `policy_narrowed` audit row for it, and that is written either way.
+ */
+function worthReporting(entry: WorkConnectorAvailability): boolean {
+  return !entry.available && entry.reason !== "not_selected_for_task";
+}
+
 /** The two prefixes `openMcpToolset` uses for a call that did not succeed. */
 const MCP_FAILURE_PREFIXES = ["Tool error:", "Connector ", "Unknown tool:"];
 
@@ -654,6 +813,27 @@ async function openConnectors(input: {
   });
   if (rows.length === 0) return EMPTY_CONNECTOR_SURFACE;
 
+  // What this one task was given, which is not what the account has. A reader
+  // composing a task is shown their linked apps with every switch off and turns
+  // on what it may reach; that answer is stored on the session and this is where
+  // it becomes true. Without it the toggle would be a preference the executor
+  // never read — a control that looks like permission and grants nothing.
+  //
+  // `connectorsChosen` is what separates the two empty cases. False is a session
+  // nothing ever asked — a native client, a schedule, anything older than the
+  // control — and passes null, leaving the account's own rules as the only
+  // narrowing. True with no rows is a reader who switched everything off, and
+  // passes `[]`, which admits nothing.
+  const session = await prisma.workSession.findFirst({
+    where: { id: input.sessionId, userId: input.userId },
+    select: { connectorsChosen: true, connectors: { select: { connectorId: true } } },
+  });
+  const allowlist: WorkConnectorAllowlist = {
+    taskAllowed: session?.connectorsChosen
+      ? session.connectors.map((row) => row.connectorId)
+      : null,
+  };
+
   const knownIds = new Set(listConnectors().map((def) => def.id as string));
   const providers = [...new Set(rows.map((row) => row.provider))];
   // Resolves credentials and hands back only the connectors that are actually
@@ -683,11 +863,11 @@ async function openConnectors(input: {
     };
   });
 
-  const availability = summarizeConnectors(candidates);
+  const availability = summarizeConnectors(candidates, allowlist);
   const connectionIdByProvider = new Map(rows.map((row) => [row.provider, row.id]));
 
   for (const entry of availability) {
-    if (entry.available) continue;
+    if (!worthReporting(entry)) continue;
     // The user is owed the sentence, not the field name. `degraded` is the
     // event kind the clients already render as "this run will do less than you
     // asked", and a connector that was linked and could not be reached is
@@ -1700,7 +1880,15 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     { id: "verify", title: "Check the result against the request" },
   ]);
 
-  const provider = await resolveProvider(run.effectiveModel ?? run.requestedModel ?? "");
+  // Wrapped before the session ever sees it, so every turn this run takes — the
+  // first one included — goes through the reader. A run that was steered while
+  // it sat queued has that instruction in the log before it starts, and the
+  // first turn is where it belongs.
+  const provider = steerable(
+    await resolveProvider(run.effectiveModel ?? run.requestedModel ?? ""),
+    openSteering(input.runId, input.userId),
+    input.runId
+  );
 
   // The project and the attached files go in front of the goal, not after it.
   // The goal is the last thing the model reads and the thing it acts on; a
@@ -1949,7 +2137,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // seen by whoever is watching; an uncertainty is in the report, which is what
   // is left when nobody was.
   for (const entry of connectors.availability) {
-    if (!entry.available) session.recordUncertainty(entry.explanation);
+    if (worthReporting(entry)) session.recordUncertainty(entry.explanation);
   }
 
   // A Stop button that does not stop anything.

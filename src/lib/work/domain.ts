@@ -600,6 +600,8 @@ export const WORK_EVENT_KINDS = [
   "tool_denied",
   "question_asked",
   "question_answered",
+  /** The user said something to a run that had not asked anything. */
+  "user_message",
   "approval_requested",
   "approval_resolved",
   "artifact_created",
@@ -648,6 +650,7 @@ const EVENT_VISIBILITY: Partial<Record<WorkEventKind, "user" | "operator" | "int
   tool_denied: "user",
   question_asked: "user",
   question_answered: "user",
+  user_message: "user",
   approval_requested: "user",
   approval_resolved: "user",
   artifact_created: "user",
@@ -671,6 +674,68 @@ const EVENT_VISIBILITY: Partial<Record<WorkEventKind, "user" | "operator" | "int
 
 export function defaultVisibilityFor(kind: string): "user" | "operator" | "internal" {
   return EVENT_VISIBILITY[kind as WorkEventKind] ?? "internal";
+}
+
+// ---------------------------------------------------------------------------
+// Steering
+// ---------------------------------------------------------------------------
+
+/**
+ * The kind an instruction the run did not ask for is written as.
+ *
+ * Named rather than spelled out at each call site because three places have to
+ * agree on it and they cannot see each other: the route that writes the row,
+ * the executor that reads it between turns, and the clients that render it.
+ */
+export const WORK_STEERING_EVENT_KIND: WorkEventKind = "user_message";
+
+/**
+ * The payload a steering event carries.
+ *
+ * `answeredVia` and `steering` are the field names the old shape used, kept
+ * exactly. Until this kind existed a steer rode a `question_answered` row with
+ * `steering: true` and no `questionId`, because a route could not add a member
+ * to a vocabulary the Mac and the phone share; those rows are in the log, and a
+ * build that renamed the fields on the way to a new kind would have made the
+ * ones already written unreadable as well as the ones an older client writes.
+ */
+export interface WorkSteeringPayload {
+  text: string;
+  /** web | macos | ios — the client the user typed it on. */
+  answeredVia: string;
+  steering: true;
+}
+
+export function workSteeringPayload(text: string, via: string): WorkSteeringPayload {
+  return { text, answeredVia: via, steering: true };
+}
+
+/**
+ * The instruction inside an event, or null if the event is not one.
+ *
+ * Reads both shapes, and it must: `user_message` is what is written now, and
+ * `question_answered` with a `steering` marker and no `questionId` is what is
+ * already in the log and what a Mac or a phone on an older build still writes.
+ * A reader that knew only the new kind would silently stop delivering the
+ * instructions those clients send, which is the failure this whole path exists
+ * to fix, arriving from a different direction.
+ *
+ * The `questionId` test is what keeps a real answer out. `pollAnswer` in
+ * scripts/work-runner.ts matches on that id; anything carrying one is an answer
+ * to a question and belongs to that path alone, never to this one.
+ */
+export function steeringInstruction(event: { kind: string; payload: unknown }): string | null {
+  if (event.kind !== WORK_STEERING_EVENT_KIND && event.kind !== "question_answered") return null;
+  if (event.payload === null || typeof event.payload !== "object") return null;
+  const payload = event.payload as { text?: unknown; steering?: unknown; questionId?: unknown };
+  if (typeof payload.questionId === "string" && payload.questionId.length > 0) return null;
+  // A `question_answered` row without the marker and without an id is a
+  // malformed answer rather than an instruction, and feeding it to the model as
+  // one would put words in the user's mouth.
+  if (event.kind === "question_answered" && payload.steering !== true) return null;
+  if (typeof payload.text !== "string") return null;
+  const text = payload.text.trim();
+  return text.length > 0 ? text : null;
 }
 
 // ---------------------------------------------------------------------------

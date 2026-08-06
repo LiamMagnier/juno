@@ -252,11 +252,20 @@ export function connectorSetSensitivity(
 /**
  * Who is allowed to use what.
  *
- * Two independent layers, and the admin layer is never widened by the user
- * layer. An allowlist is null when that layer has not been configured, which is
+ * Three independent layers, and a wider one is never opened by a narrower one.
+ * An allowlist is null when that layer has not been configured, which is
  * different from an empty one: an empty admin allowlist means "no connector may
  * be used", and a deployment that confused the two would either open everything
  * or close everything, both silently.
+ *
+ * The task layer is the same distinction one level down, and the reason it is a
+ * list rather than a boolean pair. `[]` is a reader who was shown their linked
+ * apps and turned none of them on, which is a real answer and the default one —
+ * the composer starts every switch off, so a task reaches nothing it was not
+ * handed. `null` is a task created by something that has never heard of the
+ * control: a native client, a schedule, or any session that predates it. Reading
+ * those two the same way would either strip every existing task of its
+ * connectors or quietly grant the whole account's to a reader who chose none.
  */
 export interface WorkConnectorAllowlist {
   /** When non-null, the only connectors this account may use at all. */
@@ -265,6 +274,8 @@ export interface WorkConnectorAllowlist {
   /** The user's own narrowing, applied inside whatever the admin permits. */
   userAllowed?: readonly string[] | null;
   userBlocked?: readonly string[];
+  /** What this one task was given, inside whatever the account permits. */
+  taskAllowed?: readonly string[] | null;
 }
 
 export const WORK_CONNECTOR_UNAVAILABLE_REASONS = [
@@ -272,6 +283,7 @@ export const WORK_CONNECTOR_UNAVAILABLE_REASONS = [
   "not_on_admin_allowlist",
   "blocked_by_user",
   "not_on_user_allowlist",
+  "not_selected_for_task",
   "not_configured",
   "not_linked",
   "credential_unusable",
@@ -287,6 +299,7 @@ const POLICY_REASONS = new Set<WorkConnectorUnavailableReason>([
   "not_on_admin_allowlist",
   "blocked_by_user",
   "not_on_user_allowlist",
+  "not_selected_for_task",
 ]);
 
 /** What the connector's backing state is right now, as the caller resolved it. */
@@ -331,6 +344,12 @@ function policyReason(
   if (allowlist.adminAllowed && !allowlist.adminAllowed.includes(id)) return "not_on_admin_allowlist";
   if (allowlist.userBlocked?.includes(id)) return "blocked_by_user";
   if (allowlist.userAllowed && !allowlist.userAllowed.includes(id)) return "not_on_user_allowlist";
+  // Last, because it is the narrowest and because the sentence it produces is
+  // the least alarming of the four: a connector the reader simply did not switch
+  // on for this task should not be reported as blocked by an administrator, and
+  // an administrator's block should not be reported as something the reader can
+  // fix by ticking a box.
+  if (allowlist.taskAllowed && !allowlist.taskAllowed.includes(id)) return "not_selected_for_task";
   return null;
 }
 
@@ -349,6 +368,8 @@ function explain(
       return `${descriptor.label} is turned off for Work in your settings.`;
     case "not_on_user_allowlist":
       return `${descriptor.label} is not one of the connectors you have allowed Work to use.`;
+    case "not_selected_for_task":
+      return `${descriptor.label} was not switched on for this task, so it is not available to it.`;
     case "not_configured":
       return `${descriptor.label} is not set up on this Juno deployment, so it cannot be connected.`;
     case "not_linked":

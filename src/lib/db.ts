@@ -106,6 +106,7 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // src/lib/work/relay.ts) rather than being waived here — the whole point of
   // the guard is that a cross-user query has to say so.
   ["WorkSession", "userId"],
+  ["WorkSessionConnector", "userId"],
   ["WorkRun", "userId"],
   ["WorkEvent", "userId"],
   ["WorkApproval", "userId"],

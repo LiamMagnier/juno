@@ -89,6 +89,7 @@ model User {
   chatFirstSubmissionReceipts ChatFirstSubmissionReceipt[]
   toolInvocations          ToolInvocation[]
   workSessions             WorkSession[]
+  workSessionConnectors    WorkSessionConnector[]
   workRuns                 WorkRun[]
   workEvents               WorkEvent[]
   workApprovals            WorkApproval[]
@@ -1449,6 +1450,18 @@ model WorkSession {
   /// project policy allows — it can only narrow.
   permissionPolicy String @default("balanced")
 
+  /// True when the user was asked which connected apps this task may reach and
+  /// answered. The join table is then the answer, empty included.
+  ///
+  /// A boolean beside a list, because the list alone cannot say it. No rows
+  /// means either "the reader turned everything off" or "nothing ever asked" —
+  /// a native client, a schedule, or any session created before the control
+  /// existed — and reading those the same way either strips every older task of
+  /// its connectors or hands the account's connectors to a reader who chose
+  /// none. `WorkConnectorAllowlist.taskAllowed` in src/lib/work/connectors.ts
+  /// takes null for the second case and `[]` for the first.
+  connectorsChosen Boolean @default(false)
+
   pinned   Boolean   @default(false)
   archived Boolean   @default(false)
   lastActivityAt DateTime @default(now())
@@ -1462,6 +1475,7 @@ model WorkSession {
   runs     WorkRun[]
   artifacts WorkArtifact[]
   grants   WorkFileGrant[]
+  connectors WorkSessionConnector[]
   commands WorkCommand[]
   schedules WorkSchedule[]
   audit    WorkAuditEvent[]
@@ -1471,6 +1485,49 @@ model WorkSession {
   @@index([userId, needsAttention, lastActivityAt])
   @@index([projectId, lastActivityAt])
   @@index([conversationId])
+}
+
+/// One connected app a single task is allowed to reach.
+///
+/// A row per grant rather than a `String[]` on WorkSession, which is the shape
+/// every other permission in this schema already takes: WorkFileGrant is a row
+/// per folder, not an array of paths on the session, because a grant has to be
+/// countable, indexable and individually revocable, and because an array column
+/// cannot carry when it was made. The same reasons apply here — this is the row
+/// that answers "was this task ever allowed to touch Gmail", and it survives as
+/// long as the session does.
+///
+/// `connectorId` is the provider id — "github", "apple-mail" — not a Connection
+/// row id, and deliberately so. A user who disconnects and reconnects an app
+/// gets a new Connection; the task's permission is about the app rather than
+/// about that particular linkage, and keying on the row id would silently drop
+/// the grant on every reconnect. The Connection is checked at creation time (the
+/// account must have linked the app for a task to be given it) and again by the
+/// executor, which resolves credentials by provider.
+///
+/// A grant is not availability. Being on this list means the task MAY use the
+/// app; whether it can is `evaluateConnector` in src/lib/work/connectors.ts,
+/// which still has to find it configured, linked and holding a usable
+/// credential.
+model WorkSessionConnector {
+  id        String @id @default(cuid())
+  sessionId String
+  userId    String
+
+  /// The connector's provider id, as `listConnectors()` in
+  /// src/lib/connectors.ts names it.
+  connectorId String
+
+  createdAt DateTime @default(now())
+
+  session WorkSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// One row per app per task. A repeated create is the same grant arriving
+  /// twice — a retried POST, a replayed idempotency key — and must not become
+  /// two rows that a later revoke then has to find both of.
+  @@unique([sessionId, connectorId])
+  @@index([userId, createdAt])
 }
 
 /// One execution attempt of a WorkSession.

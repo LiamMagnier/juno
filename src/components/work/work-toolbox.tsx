@@ -11,21 +11,23 @@ import { fetchWorkSkills } from "@/components/work/work-transport";
 import { cn } from "@/lib/utils";
 
 /*
- * What this task can reach for: the skills Juno may apply, and the apps it is
- * linked to.
+ * What this task can reach for: the skills Juno may apply, and the apps the
+ * account is linked to.
  *
  * Both halves are facts about the account rather than about this one task, and
- * the panel says so rather than pretending otherwise. There is no per-task
- * connector grant to render: `WorkSession` has no connector column, no route
- * accepts one, and a switch here would persist a preference in this browser
- * that no executor ever reads — a control that looks like permission and grants
- * nothing is worse than no control, because the reader would stop checking.
+ * the panel says so rather than pretending otherwise. The per-task narrowing is
+ * real now — a session carries the apps the reader switched on for it, and the
+ * executor refuses the rest — but it is chosen in the composer, before the task
+ * exists, and it is not editable from here. Rendering a switch on this panel
+ * would be the mistake this comment used to describe from the other side: a
+ * control that looks like permission while the run it belongs to has already
+ * resolved its connectors and started.
  *
  * What is true and worth stating is the shape of the rule. A run can only use an
- * app that is linked to the account, so the list below is the ceiling; and a
- * skill is only ever picked up unasked when it has been trusted, which is a
- * decision made on the skill itself. Both are one link away, and both are read
- * from the endpoints that own them rather than restated here.
+ * app that is linked to the account, so the list below is the ceiling rather
+ * than the grant; and a skill is only ever picked up unasked when it has been
+ * trusted, which is a decision made on the skill itself. Both are one link away,
+ * and both are read from the endpoints that own them rather than restated here.
  */
 
 interface ConnectorsResponse {
@@ -163,11 +165,13 @@ export function WorkToolbox() {
                 />
               ))}
             </ul>
-            {/* The ceiling, stated once. A task cannot reach an app that is not
-                on this list, and nothing it does can add one. */}
+            {/* The ceiling, stated once, and the fact that a task may sit below
+                it. Saying only the first would read as a promise that every app
+                here is available to this task, which is exactly what the
+                composer's switches decide. */}
             <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
-              A task can only reach an app that is linked here. Anything else is simply not available
-              to it.
+              A task can only reach an app that is linked here, and only the ones it was given when
+              it was written. Anything else is simply not available to it.
             </p>
           </>
         )}

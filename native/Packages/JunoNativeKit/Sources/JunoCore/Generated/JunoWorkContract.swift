@@ -8,9 +8,9 @@ import Foundation
 
 public enum JunoWorkContract {
     /// Bumped whenever a value is added or its meaning changes.
-    public static let version = 1
+    public static let version = 2
     /// SHA-256 of the contract this was generated from.
-    public static let digest = "752c6aaaf1e2d52cf31137ef9aab4991c1850cde3e29ae157a28dedc44bae906"
+    public static let digest = "c2810b915633348903b9252e858382e551fd3da14ee1644993cd132693b39789"
 }
 
 /// Every state a Work session or run can be in.
@@ -393,6 +393,8 @@ public enum JunoWorkEventKind: String, CaseIterable, Codable, Sendable {
     case questionAsked = "question_asked"
     /// The user answered.
     case questionAnswered = "question_answered"
+    /// The user said something to a run that had not asked anything: an instruction added while it works, which the executor reads before its next turn.
+    case userMessage = "user_message"
     /// Permission to act was asked for, with the risk and the exact action.
     case approvalRequested = "approval_requested"
     /// The request was allowed, denied, expired or superseded.
@@ -446,6 +448,7 @@ public enum JunoWorkEventKind: String, CaseIterable, Codable, Sendable {
         case .toolDenied: return "user"
         case .questionAsked: return "user"
         case .questionAnswered: return "user"
+        case .userMessage: return "user"
         case .approvalRequested: return "user"
         case .approvalResolved: return "user"
         case .artifactCreated: return "user"
