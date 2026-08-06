@@ -265,10 +265,18 @@ const CURATED: ModelInfo[] = [
   // only Gemini model the old caps marked canDisable:true, i.e. Juno's sole
   // advertised Gemini "Instant" was on an unreachable model. See RETIRED_MODELS.
 
-  // —— Meta · Llama —— (provider decommissioned)
-  // Meta shut down the entire Llama API (llama.developer.meta.com) on
-  // 2026-07-06 with no successor developer surface — its new Muse models are
-  // consumer-only, no API. All Llama entries moved to RETIRED_MODELS below.
+  // —— Meta · Muse —— (provider recommissioned 2026-08-06)
+  // The Llama API (llama.developer.meta.com) is still gone as of 2026-07-06 and
+  // every Llama id stays retired below. What changed is the "no successor
+  // developer surface" part: Muse turned out not to be consumer-only after all.
+  // Meta opened the Meta Model API (api.meta.ai) with Muse Spark 1.1 on
+  // 2026-07-09 and shipped 1.2 on 2026-08-05.
+  //
+  // NOT verified live — the repo has no working Meta credential, so unlike the
+  // Anthropic/OpenAI/Google entries this one is curated from Meta's own launch
+  // material and OpenRouter's listing, not from a 200 on our own key. Confirm
+  // the id, base URL and modalities against a real key before relying on it.
+  def({ provider: "meta", id: "muse-spark-1.2", name: "Muse Spark 1.2", family: "muse-spark", status: "current", released: "2026-08", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_048_576, description: "Meta's agentic reasoner — coding-tuned, 1M context, with image, video and PDF input." }),
 
   // —— Zhipu / Z.AI ——
   def({ provider: "zhipu", id: "glm-5.2", name: "GLM-5.2", family: "glm", status: "current", released: "2026-05", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "Z.AI's flagship — frontier reasoning and 1M-token context." }),
@@ -511,14 +519,16 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "google:gemini-2.5-flash": "google:gemini-3.5-flash",
   "google:veo-3.0-generate-001": "google:veo-3.1-generate-preview", // shut down 2026-06-30
   "google:veo-2.0": "google:veo-3.1-generate-preview", // wrong id + shut down 2026-06-30
-  // Meta — the Llama API shut down entirely on 2026-07-06 (Meta's Muse line is
-  // consumer-only, no API), so every Meta id migrates to the default model.
-  "meta:muse-max": "anthropic:claude-sonnet-5",
-  "meta:muse-spark": "anthropic:claude-sonnet-5",
-  "meta:muse-flash": "anthropic:claude-sonnet-5",
-  "meta:Llama-4-Maverick-17B-128E-Instruct-FP8": "anthropic:claude-sonnet-5",
-  "meta:Llama-4-Scout-17B-16E-Instruct-FP8": "anthropic:claude-sonnet-5",
-  "meta:Llama-3.3-70B-Instruct": "anthropic:claude-sonnet-5",
+  // Meta — the Llama ids are still retired (the Meta Model API does not serve
+  // them), but they no longer leave the provider. Migrating a Meta selection to
+  // Anthropic was a stopgap for the window when Meta had no API at all; now that
+  // it does, a stored Meta id stays on Meta. Nothing here crosses vendors.
+  "meta:muse-max": "meta:muse-spark-1.2",
+  "meta:muse-spark": "meta:muse-spark-1.2",
+  "meta:muse-flash": "meta:muse-spark-1.2",
+  "meta:Llama-4-Maverick-17B-128E-Instruct-FP8": "meta:muse-spark-1.2",
+  "meta:Llama-4-Scout-17B-16E-Instruct-FP8": "meta:muse-spark-1.2",
+  "meta:Llama-3.3-70B-Instruct": "meta:muse-spark-1.2",
   // Zhipu
   "zhipu:glm-4-plus": "zhipu:glm-5.2", // absent from all current Z.AI/bigmodel listings
   // 400 code 1211 "模型不存在" on both /images/generations and /chat/completions,

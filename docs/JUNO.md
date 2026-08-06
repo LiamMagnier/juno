@@ -623,7 +623,7 @@ others are OpenAI-compatible** with a per-provider base URL and share
 | qwen | Alibaba · Qwen | `DASHSCOPE_API_KEY` | active |
 | seedance | ByteDance · Seedance | `SEEDANCE_API_KEY` | active (video only) |
 | longcat | Meituan · LongCat | `LONGCAT_API_KEY` | active (only model is `comingSoon`) |
-| meta | Meta · Llama | `LLAMA_API_KEY` | **decommissioned** — API shut down 2026-07-06; def kept only so straggler ids resolve; every `meta:*` id migrates to `claude-sonnet-5` |
+| meta | Meta · Muse | `META_API_KEY` (alias `LLAMA_API_KEY`) | active — recommissioned 2026-08-06 on the Meta Model API (`api.meta.ai`) after the Llama API's 2026-07-06 shutdown. Serves Muse Spark 1.2; the `meta:Llama-*` ids stay retired and still migrate to `claude-sonnet-5` |
 
 **Current selectable chat models** (as of this writing — the registry is the live
 truth): Anthropic Fable 5, Opus 4.8, **Sonnet 5** (default, FREE-eligible), Haiku 4.5;
