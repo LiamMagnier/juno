@@ -21,7 +21,9 @@ below.
 - This machine has an Apple Development identity, but no Developer ID
   Application identity or notarization credentials for distribution.
 - GitHub CLI is authenticated for `LiamMagnier` with `repo` and `workflow`
-  scopes; publication still requires the protected release review/tag flow.
+  scopes. The public `v0.10.0` artifact is retained as a development
+  prerelease; it is intentionally excluded from `/api/downloads` because
+  Gatekeeper rejects it.
 
 These facts are diagnostic evidence, not release approval.
 
@@ -91,6 +93,28 @@ downgrade. The client validates signature, version/build ordering, checksum,
 size, HTTPS origin and signing Team ID before offering installation. The old
 artifact remains available for rollback, but the feed never points backward
 without an explicit security rollback procedure.
+
+### Automated publication path
+
+The protected manual workflow `.github/workflows/release-macos.yml` is the
+canonical production path. It checks out `main`, runs the web, contract and
+native release gates, imports the Developer ID certificate, stores an App Store
+Connect API-key profile for `notarytool`, then invokes
+`native/Scripts/release-macos.sh <version> --publish`. The script refuses to
+publish when Developer ID signing or notarization is unavailable and attaches
+the notarized DMG, dSYM archive and `SHA256SUMS.txt` to the immutable release.
+
+Configure these secrets on the protected `production-release` environment before
+running it:
+
+- `APPLE_DEVELOPER_ID_P12_BASE64`
+- `APPLE_DEVELOPER_ID_P12_PASSWORD`
+- `APPLE_NOTARY_KEY_BASE64`
+- `APPLE_NOTARY_KEY_ID`
+- `APPLE_NOTARY_ISSUER`
+
+The version must already be committed in `native/Config/Base.xcconfig`; the
+workflow does not modify source during publication.
 
 ## iOS/iPadOS release
 
@@ -162,13 +186,11 @@ the publication gate.
 
 ## Publication blockers
 
-- GitHub authentication must be repaired with `gh auth login -h github.com`.
-- Apple identities, provisioning, App Store Connect, Developer ID and notary
-  access are not present in the repository.
+- The protected `production-release` environment still needs the Apple
+  Developer ID certificate and App Store Connect notary secrets listed above.
 - Production APNs and StoreKit values require the product owner.
-- The shared development worktree is intentionally dirty, so the final release
-  gate refuses publication until the validated source is committed/tagged. The
-  gate itself must remain enabled in CI.
+- The current development prerelease is not a production artifact; the first
+  stable replacement must be produced by the protected workflow.
 
 Continue all unprivileged development and validation before asking the owner for
 proprietary inputs. Never replace a missing release gate with a success claim.

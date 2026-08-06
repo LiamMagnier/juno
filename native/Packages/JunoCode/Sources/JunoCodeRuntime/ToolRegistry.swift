@@ -71,6 +71,17 @@ public struct ToolRegistry: Sendable {
         })
     }
 
+    /// Adds the tools advertised by configured MCP servers to this registry.
+    /// Discovery is explicit and asynchronous because it may start a server;
+    /// the returned registry still uses the normal validation and Juno
+    /// permission path for every invocation.
+    public func includingMCPTools(from mcpRegistry: MCPToolRegistry) async throws -> ToolRegistry {
+        let mcpTools = try await mcpRegistry.allTools().map {
+            MCPCodeTool(registry: mcpRegistry, reference: $0)
+        }
+        return ToolRegistry(tools: allTools + mcpTools)
+    }
+
     /// Validates input shape; returns a message when invalid.
     public func validateInput(toolName: String, input: JSONValue) -> String? {
         guard let tool = tools[toolName] else {

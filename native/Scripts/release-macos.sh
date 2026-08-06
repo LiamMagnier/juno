@@ -33,6 +33,10 @@ step() { printf '\n▸ %s\n' "$1"; }
 
 [ -n "$VERSION" ] || die "Usage: native/Scripts/release-macos.sh <version> [--publish]"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Version must be MAJOR.MINOR.PATCH, got '$VERSION'."
+case "$PUBLISH" in
+  ""|--publish) ;;
+  *) die "The second argument must be --publish when publishing, got '$PUBLISH'." ;;
+esac
 
 # ── Preflight ──────────────────────────────────────────────────────────────
 # Every one of these is something that fails late and expensively otherwise: a
@@ -43,6 +47,11 @@ step "Preflight"
 
 command -v xcodebuild >/dev/null || die "xcodebuild is not on PATH."
 command -v gh >/dev/null || die "The GitHub CLI is required to publish."
+
+if [ "$PUBLISH" = "--publish" ]; then
+  gh auth status --hostname github.com >/dev/null 2>&1 || die \
+    "The GitHub CLI is not authenticated for github.com. Authenticate before publishing."
+fi
 
 CONFIGURED_TEAM="$(awk -F'= *' '/^DEVELOPMENT_TEAM/{print $2}' native/Config/Base.xcconfig | tr -d ' ')"
 [ -n "$CONFIGURED_TEAM" ] || die "native/Config/Base.xcconfig sets no DEVELOPMENT_TEAM."
@@ -89,6 +98,14 @@ fi
 printf '  identity      %s\n' "$IDENTITY"
 printf '  team          %s\n' "$CONFIGURED_TEAM"
 printf '  notarize      %s\n' "$([ "$NOTARIZE" = 1 ] && echo yes || echo 'no (development build)')"
+
+# A development artifact is useful for local installation and verification, but
+# it is not a release. Publishing it would make /api/downloads expose a file
+# that Gatekeeper rejects, so the irreversible path fails closed until the real
+# distribution inputs are installed.
+if [ "$PUBLISH" = "--publish" ] && [ "$NOTARIZE" != 1 ]; then
+  die "Refusing to publish a development-signed artifact. Install a Developer ID Application certificate and notarization credentials first."
+fi
 
 if [ "$NOTARIZE" = 1 ]; then
   xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1 || die \
@@ -206,6 +223,18 @@ if [ "$NOTARIZE" = 1 ]; then
   xcrun stapler validate "$DMG"
 fi
 
+step "Release symbols and checksums"
+DSYM_SOURCE="$BUILD_DIR/archive.xcarchive/dSYMs/Juno.app.dSYM"
+[ -d "$DSYM_SOURCE" ] || die "The archive contains no Juno.app.dSYM. Refusing to publish without symbols."
+DSYM="$BUILD_DIR/Juno-$VERSION.dSYM.zip"
+rm -f "$DSYM"
+ditto -c -k --sequesterRsrc --keepParent "$DSYM_SOURCE" "$DSYM"
+CHECKSUMS="$BUILD_DIR/SHA256SUMS.txt"
+(
+  cd "$BUILD_DIR"
+  shasum -a 256 "$(basename "$DMG")" "$(basename "$DSYM")" > "$(basename "$CHECKSUMS")"
+)
+
 step "Gatekeeper"
 # The app inside the image has to pass on a machine that has never seen it,
 # which is what `spctl --assess` answers.
@@ -243,7 +272,7 @@ SIZE="$(stat -f%z "$DMG")"
 printf '\n  artifact   %s\n  sha256     %s\n  bytes      %s\n' "$DMG" "$SHA" "$SIZE"
 
 if [ "$PUBLISH" != "--publish" ]; then
-  printf '\n  Verified and NOT published. Re-run with --publish to create the release.\n\n'
+  printf '\n  Verified and NOT published. A development artifact is local-only until Developer ID signing and notarization are available.\n\n'
   exit 0
 fi
 
@@ -251,16 +280,20 @@ fi
 # Everything above this line is reversible. Nothing below it is.
 
 step "Publish v$VERSION to $REPO"
-git tag -a "v$VERSION" -m "Juno for Mac $VERSION" 2>/dev/null || true
+[ -z "$(git tag --list "v$VERSION")" ] || die "Tag v$VERSION already exists. Choose a new version; releases are immutable."
+git tag -a "v$VERSION" -m "Juno for Mac $VERSION"
 git push origin "v$VERSION"
 gh release create "v$VERSION" "$DMG" \
+  "$DSYM" \
+  "$CHECKSUMS" \
   --repo "$REPO" \
   --title "Juno for Mac $VERSION" \
   --notes "$(cat <<NOTES
-SHA-256 \`$SHA\` · $SIZE bytes
+Source commit \`$(git rev-parse HEAD)\`
+DMG SHA-256 \`$SHA\` · $SIZE bytes
+Symbols and \`SHA256SUMS.txt\` are attached for crash diagnosis and independent verification.
 
 Installs by drag-and-drop. Existing installs update themselves within ten minutes, or immediately from Juno → Install Update and Relaunch.
-$([ "$NOTARIZE" = 1 ] || printf '\n**This build is not notarized.** macOS Gatekeeper will refuse to open it after download. Until a Developer ID release is published, install by building from source.\n')
 NOTES
 )"
 

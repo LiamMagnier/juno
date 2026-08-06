@@ -90,7 +90,9 @@ public actor MCPClient {
             currentState = .ready
         } catch {
             await transport.close()
-            currentState = .failed(reason: error.localizedDescription)
+            currentState = error is CancellationError
+                ? .closed
+                : .failed(reason: error.localizedDescription)
             throw error
         }
     }
@@ -104,27 +106,32 @@ public actor MCPClient {
 
     public func listTools() async throws -> [MCPToolDefinition] {
         try requireReady()
-        var tools: [MCPToolDefinition] = []
-        var cursor: String?
-        var seenCursors: Set<String> = []
+        do {
+            var tools: [MCPToolDefinition] = []
+            var cursor: String?
+            var seenCursors: Set<String> = []
 
-        repeat {
-            var params: JSONValue?
-            if let cursor {
-                params = .object(["cursor": .string(cursor)])
-            }
-            let result = try await request(method: "tools/list", params: params)
-            let page = try MCPToolListPage(json: result)
-            tools.append(contentsOf: page.tools)
-            cursor = page.nextCursor
-            if let cursor {
-                guard seenCursors.insert(cursor).inserted else {
-                    throw MCPError.invalidProtocol("tools/list returned a repeated cursor")
+            repeat {
+                var params: JSONValue?
+                if let cursor {
+                    params = .object(["cursor": .string(cursor)])
                 }
-            }
-        } while cursor != nil
+                let result = try await request(method: "tools/list", params: params)
+                let page = try MCPToolListPage(json: result)
+                tools.append(contentsOf: page.tools)
+                cursor = page.nextCursor
+                if let cursor {
+                    guard seenCursors.insert(cursor).inserted else {
+                        throw MCPError.invalidProtocol("tools/list returned a repeated cursor")
+                    }
+                }
+            } while cursor != nil
 
-        return tools
+            return tools
+        } catch {
+            await closeAfterMalformedPayload(error)
+            throw error
+        }
     }
 
     public func callTool(name: String, arguments: JSONValue = .object([:])) async throws -> MCPToolResult {
@@ -135,14 +142,19 @@ public actor MCPClient {
         guard arguments.objectValue != nil else {
             throw MCPError.invalidProtocol("MCP tool arguments must be an object")
         }
-        let result = try await request(
-            method: "tools/call",
-            params: .object([
-                "name": .string(name),
-                "arguments": arguments,
-            ])
-        )
-        return try MCPToolResult(json: result)
+        do {
+            let result = try await request(
+                method: "tools/call",
+                params: .object([
+                    "name": .string(name),
+                    "arguments": arguments,
+                ])
+            )
+            return try MCPToolResult(json: result)
+        } catch {
+            await closeAfterMalformedPayload(error)
+            throw error
+        }
     }
 
     private func request(method: String, params: JSONValue?) async throws -> JSONValue {
@@ -217,6 +229,18 @@ public actor MCPClient {
 
     private func requireReady() throws {
         guard currentState == .ready else { throw MCPError.notConnected }
+    }
+
+    private func closeAfterMalformedPayload(_ error: Error) async {
+        guard let error = error as? MCPError else { return }
+        switch error {
+        case .malformedMessage, .invalidProtocol, .invalidToolResult:
+            break
+        default:
+            return
+        }
+        await transport.close()
+        currentState = .failed(reason: error.localizedDescription)
     }
 
     private func shouldClose(after error: Error) -> Bool {

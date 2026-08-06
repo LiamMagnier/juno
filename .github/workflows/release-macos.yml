@@ -1,0 +1,108 @@
+# The only workflow allowed to publish a macOS artifact.  It is deliberately
+# manual and protected by the `production-release` environment: a source push
+# must prove the code, while a human-approved release must additionally prove
+# Developer ID signing and notarization.
+
+name: macOS production release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version already committed in native/Config/Base.xcconfig (for example 0.10.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-production-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_ENVIRONMENT: production-release
+  JUNO_NOTARY_PROFILE: juno-notary
+
+jobs:
+  release:
+    name: notarized macOS release
+    runs-on: macos-26
+    environment: production-release
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Select the newest installed Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          newest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$newest/Contents/Developer"
+          xcodebuild -version
+
+      - name: Run native package tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift test --package-path native/Packages/JunoCode -Xswiftc -warnings-as-errors
+          swift test --package-path native/Packages/JunoNativeKit -Xswiftc -warnings-as-errors
+          swift test --package-path native/Packages/JunoWork -Xswiftc -warnings-as-errors
+
+      - name: Install Node dependencies
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Web and contract release gates
+        run: |
+          npm test
+          npm run lint
+          npm run build
+          JUNO_CHECK_LIVE_CONTRACT=1 ./scripts/release-gates.sh
+
+      - name: Import Developer ID certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          p12-password: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+
+      - name: Store App Store Connect notarization credentials
+        shell: bash
+        env:
+          NOTARY_KEY_BASE64: ${{ secrets.APPLE_NOTARY_KEY_BASE64 }}
+          NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/AuthKey_${NOTARY_KEY_ID}.p8"
+          printf '%s' "$NOTARY_KEY_BASE64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          xcrun notarytool store-credentials "$JUNO_NOTARY_PROFILE" \
+            --key "$key" \
+            --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER"
+          rm -f "$key"
+
+      - name: Build, notarize, verify, and publish
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          native/Scripts/release-macos.sh "$VERSION" --publish
+
+      - name: Upload release logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-diagnostics
+          path: |
+            /private/tmp/juno-release
+            ~/Library/Developer/Xcode/DerivedData/**/Logs
+          if-no-files-found: ignore

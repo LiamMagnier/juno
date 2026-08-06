@@ -30,6 +30,7 @@ let package = Package(
                 "DevServerCommandDiscovery 2.swift",
                 "DevServerService 2.swift",
                 "DevServerURLDetector 2.swift",
+                "WorktreeManager 2.swift",
             ]
         ),
         // Depends on Core only, for SecretRedactor — build logs routinely carry

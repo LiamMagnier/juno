@@ -157,6 +157,23 @@ fi
 echo
 
 # ---------------------------------------------------------------------------
+# 4b. The irreversible macOS publication path must fail closed when the runner
+# only has an Apple Development identity. This is a source gate in addition to
+# the protected workflow: a local release-script change must not silently turn
+# a development DMG into a public Stable download.
+# ---------------------------------------------------------------------------
+echo "macOS publication safety"
+if bash -n native/Scripts/release-macos.sh \
+    && grep -q 'Refusing to publish a development-signed artifact' native/Scripts/release-macos.sh \
+    && grep -q 'apple-actions/import-codesign-certs' .github/workflows/release-macos.yml \
+    && grep -q 'JUNO_NOTARY_PROFILE' .github/workflows/release-macos.yml; then
+    pass "macOS publication requires notarization and has a protected workflow"
+else
+    fail "macOS publication safety gate is incomplete"
+fi
+echo
+
+# ---------------------------------------------------------------------------
 # 5. Release binaries must not contain the DEBUG preview harness.
 #
 # Optional: only runs when a built .app is passed. The harness is wrapped in

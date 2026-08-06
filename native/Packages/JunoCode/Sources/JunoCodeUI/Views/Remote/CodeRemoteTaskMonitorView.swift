@@ -214,6 +214,7 @@ public struct CodeRemoteTaskMonitorView: View {
 private struct CodeRemoteTaskDetailView: View {
     @Bindable var model: NativeCodeModel
     let taskID: String
+    @State private var approvalActionInFlight = false
 
     private static let measure: CGFloat = 760
 
@@ -244,7 +245,7 @@ private struct CodeRemoteTaskDetailView: View {
                                     Text("Reconnecting to this run…")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
-                                    Text("attempt (model.streamReconnectAttempt)")
+                                    Text("attempt \(model.streamReconnectAttempt)")
                                         .font(.caption2)
                                         .foregroundStyle(.tertiary)
                                         .monospacedDigit()
@@ -363,13 +364,20 @@ private struct CodeRemoteTaskDetailView: View {
                     }
                     HStack {
                         Button("Deny", role: .destructive) {
-                            Task { await model.respondToApproval(approve: false) }
+                            respondToApproval(approve: false)
                         }
+                        .disabled(approvalActionInFlight)
                         Button("Approve") {
-                            Task { await model.respondToApproval(approve: true) }
+                            respondToApproval(approve: true)
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(Color.junoAccent)
+                        .disabled(approvalActionInFlight)
+                        if approvalActionInFlight {
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityLabel("Sending approval response")
+                        }
                     }
                 }
                 .padding(JunoSpace.cozy)
@@ -388,7 +396,7 @@ private struct CodeRemoteTaskDetailView: View {
                 }
                 Spacer(minLength: 0)
                 if task.status.isActive {
-                    Button("Stop task", role: .destructive) {
+                    Button(model.isMutating ? "Stopping…" : "Stop task", role: .destructive) {
                         Task { await model.cancelOpenTask() }
                     }
                     .disabled(model.isMutating)
@@ -399,6 +407,15 @@ private struct CodeRemoteTaskDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, JunoSpace.region)
         .padding(.bottom, JunoSpace.regular)
+    }
+
+    private func respondToApproval(approve: Bool) {
+        guard !approvalActionInFlight else { return }
+        approvalActionInFlight = true
+        Task {
+            await model.respondToApproval(approve: approve)
+            approvalActionInFlight = false
+        }
     }
 }
 

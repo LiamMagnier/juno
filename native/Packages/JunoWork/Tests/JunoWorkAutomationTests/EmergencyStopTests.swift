@@ -48,7 +48,7 @@ final class EmergencyStopTests: XCTestCase {
     func testObserversSeeTheCurrentStateImmediatelyAndOnEveryChange() async throws {
         let stop = EmergencyStop()
         let seen = Recorder()
-        await stop.addObserver { use in Task { await seen.append(use?.runID) } }
+        await stop.addObserver { use in seen.append(use?.runID) }
 
         let token = try await stop.begin(runID: "run-1", activity: activity)
         await stop.end(token)
@@ -57,7 +57,7 @@ final class EmergencyStopTests: XCTestCase {
         // The observer is called synchronously inside the actor but forwards to
         // its own; give those forwards a chance to land before asserting.
         try await Task.sleep(for: .milliseconds(50))
-        let states = await seen.values
+        let states = seen.values
         XCTAssertEqual(states.first, .some(nil), "An observer should learn the state it joined at.")
         XCTAssertTrue(states.contains(.some("run-1")))
     }
@@ -191,9 +191,17 @@ final class EmergencyStopTests: XCTestCase {
 // MARK: - Helpers
 
 /// Collects observer callbacks off the actor that produced them.
-private actor Recorder {
-    private(set) var values: [String?] = []
-    func append(_ value: String?) { values.append(value) }
+private final class Recorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValues: [String?] = []
+
+    var values: [String?] {
+        lock.withLock { storedValues }
+    }
+
+    func append(_ value: String?) {
+        lock.withLock { storedValues.append(value) }
+    }
 }
 
 /// A driver that suspends until a test lets it finish, so the window in which a

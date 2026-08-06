@@ -133,6 +133,74 @@ final class MCPFoundationTests: XCTestCase {
         } catch {
             XCTFail("unexpected cancellation error: \(error)")
         }
+
+        let state = await client.state
+        XCTAssertEqual(state, .closed)
+    }
+
+    func testClientStartFailureLeavesAClosedTransportAndFailedState() async throws {
+        let transport = FailingStartTransport()
+        let client = MCPClient(transport: transport)
+
+        do {
+            try await client.connect()
+            XCTFail("expected startup failure")
+        } catch let error as MCPError {
+            XCTAssertEqual(error, .transportFailure("startup failed"))
+        }
+
+        let closeCount = await transport.closeCount
+        XCTAssertEqual(closeCount, 1)
+        let state = await client.state
+        guard case .failed = state else {
+            return XCTFail("startup failure should be terminal")
+        }
+    }
+
+    func testMalformedToolListResultClosesTheClient() async throws {
+        let transport = QueuedLineTransport(lines: [
+            response(id: 1, result: initializeResult()),
+            response(id: 2, result: .array([.string("not an object")])),
+        ])
+        let client = MCPClient(transport: transport)
+
+        try await client.connect()
+        do {
+            _ = try await client.listTools()
+            XCTFail("expected malformed tools/list result")
+        } catch let error as MCPError {
+            guard case .malformedMessage = error else {
+                return XCTFail("unexpected MCP error: \(error)")
+            }
+        }
+        let state = await client.state
+        guard case .failed = state else {
+            return XCTFail("malformed tools/list should fail the client")
+        }
+    }
+
+    func testMalformedToolCallResultClosesTheClient() async throws {
+        let transport = QueuedLineTransport(lines: [
+            response(id: 1, result: initializeResult()),
+            response(id: 2, result: toolListResult()),
+            response(id: 3, result: ["content": ["bad"]]),
+        ])
+        let client = MCPClient(transport: transport)
+
+        try await client.connect()
+        _ = try await client.listTools()
+        do {
+            _ = try await client.callTool(name: "search", arguments: ["query": "Juno"])
+            XCTFail("expected malformed tools/call result")
+        } catch let error as MCPError {
+            guard case .invalidToolResult = error else {
+                return XCTFail("unexpected MCP error: \(error)")
+            }
+        }
+        let state = await client.state
+        guard case .failed = state else {
+            return XCTFail("malformed tools/call should fail the client")
+        }
     }
 
     func testStdioTransportReadsARealProcessLine() async throws {
@@ -233,6 +301,78 @@ final class MCPFoundationTests: XCTestCase {
         XCTAssertEqual(recorded?.definition.name, "search")
     }
 
+    func testToolRegistryCompositionPreservesJunoApprovalForMCPTools() async throws {
+        try writeJSON(
+            ["mcpServers": ["search": ["command": "fake-server"]]],
+            to: workspaceURL.appendingPathComponent(".mcp.json")
+        )
+        let mcpRegistry = try MCPToolRegistry(
+            workspaceRootURL: workspaceURL,
+            transportFactory: { _, _ in
+                QueuedLineTransport(lines: [
+                    response(id: 1, result: initializeResult()),
+                    response(id: 2, result: toolListResult()),
+                    response(id: 3, result: toolCallResult()),
+                ])
+            }
+        )
+        let baseRegistry = ToolRegistry(tools: [])
+        let activeRegistry = try await baseRegistry.includingMCPTools(from: mcpRegistry)
+        let tool = try XCTUnwrap(activeRegistry.tool(named: "mcp__search__search"))
+        XCTAssertEqual(tool.approvalPolicy, .alwaysRequiresApproval)
+
+        let sessionID = CodeSessionID()
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+        let observerID = await permissions.addObserver { update in
+            guard case let .requested(request) = update else { return }
+            Task {
+                await permissions.resolve(
+                    approvalID: request.id,
+                    decision: .approved
+                )
+            }
+        }
+        let context = ToolContext(
+            sessionID: sessionID,
+            toolCallID: "mcp-call",
+            emitOutput: { _, _ in }
+        )
+        let result = try await activeRegistry.invoke(
+            toolName: "mcp__search__search",
+            input: ["query": "Juno"],
+            context: context,
+            permissions: permissions
+        )
+        await permissions.removeObserver(observerID)
+
+        XCTAssertEqual(result.content, "Found Juno")
+        XCTAssertFalse(result.isError)
+    }
+
+    func testRegistryShutdownClosesClientsAndDropsCachedTools() async throws {
+        let configuration = try MCPServerConfiguration(name: "search", command: "fake-server")
+        let registry = try MCPToolRegistry(
+            workspaceRootURL: workspaceURL,
+            configurations: [configuration],
+            transportFactory: { _, _ in
+                QueuedLineTransport(lines: [
+                    response(id: 1, result: initializeResult()),
+                    response(id: 2, result: toolListResult()),
+                ])
+            }
+        )
+
+        _ = try await registry.tools(for: "search")
+        try await registry.disconnect(serverID: "search")
+
+        let disconnectedState = try await registry.state(for: "search")
+        XCTAssertEqual(disconnectedState, .closed)
+        await registry.disconnectAll()
+
+        let cached = try await registry.cachedTools(for: "search")
+        XCTAssertTrue(cached.isEmpty)
+    }
+
     func testRegistryDoesNotCallAuthorizerForUnknownTool() async throws {
         let configuration = try MCPServerConfiguration(name: "search", command: "fake-server")
         let registry = try MCPToolRegistry(
@@ -309,6 +449,24 @@ private actor QueuedLineTransport: MCPLineTransport {
     func close() async {}
 
     func sentLines() -> [String] { sent }
+}
+
+private actor FailingStartTransport: MCPLineTransport {
+    private(set) var closeCount = 0
+
+    func start() async throws {
+        throw MCPError.transportFailure("startup failed")
+    }
+
+    func send(line _: String) async throws {
+        throw MCPError.transportFailure("unexpected send")
+    }
+
+    func receiveLine() async throws -> String? { nil }
+
+    func close() async {
+        closeCount += 1
+    }
 }
 
 private actor AuthorizationRecorder {

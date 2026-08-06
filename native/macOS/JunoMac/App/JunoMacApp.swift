@@ -28,7 +28,6 @@ struct JunoMacApp: App {
     @State private var artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     @State private var memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     @State private var searchModel: NativeSearchModel<SQLiteAccountRepository>?
-    private let localStore: SQLiteAccountRepository?
     private let outbox: (any MutationOutboxRepository)?
     private let chatTransport: (any NativeChatRequestSending)?
     /// Owned here, not by `JunoMacCodeView`, so switching modes does not
@@ -36,6 +35,10 @@ struct JunoMacApp: App {
     /// Built once on the first entry into Code, so a reader who never opens
     /// Code never pays for it.
     @State private var codeWorkbenchModel: WorkbenchModel?
+    /// The workbench store is account-scoped. Keep the identity beside the
+    /// model so an auth transition cannot briefly render the previous
+    /// account's local sessions while the new model is being composed.
+    @State private var codeWorkbenchAccountID: AccountID?
     /// Account-scoped Cloud/Remote task history, kept alive independently from
     /// the local workbench so switching between Chat and Code does not stop the
     /// server-owned run monitor.
@@ -61,7 +64,6 @@ struct JunoMacApp: App {
                 JunoMacCodeView<EmptyView>.makeRemoteTaskModel(transport: $0)
             }
         )
-        localStore = configuration.localStore
         outbox = configuration.outbox
         chatTransport = configuration.chatTransport
     }
@@ -95,6 +97,7 @@ struct JunoMacApp: App {
                         selection: $selectedSection,
                         productMode: $previewProductMode,
                         codeWorkbenchModel: $codeWorkbenchModel,
+                        codeWorkbenchAccountID: $codeWorkbenchAccountID,
                         codeTaskModel: $codeTaskModel,
                         authModel: Self.previewAuthModel,
                         syncModel: world.syncModel,
@@ -159,6 +162,7 @@ struct JunoMacApp: App {
             selection: $selectedSection,
             productMode: productMode,
             codeWorkbenchModel: $codeWorkbenchModel,
+            codeWorkbenchAccountID: $codeWorkbenchAccountID,
             codeTaskModel: $codeTaskModel,
             authModel: authModel,
             syncModel: syncModel,
@@ -263,7 +267,6 @@ struct JunoMacApp: App {
             )
             return JunoMacConfiguration(
                 authModel: authModel,
-                localStore: localStore,
                 syncModel: syncModel,
                 conversationModel: NativeConversationModel(
                     repository: localStore,
@@ -312,7 +315,6 @@ private enum JunoMacAppConfigurationError: Error, LocalizedError {
 
 private struct JunoMacConfiguration {
     let authModel: NativeAuthModel
-    let localStore: SQLiteAccountRepository?
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
@@ -329,7 +331,6 @@ private struct JunoMacConfiguration {
     static func inert(describing reason: String) -> JunoMacConfiguration {
         JunoMacConfiguration(
             authModel: NativeAuthModel(configurationErrorDescription: reason),
-            localStore: nil,
             syncModel: nil,
             conversationModel: nil,
             projectModel: nil,

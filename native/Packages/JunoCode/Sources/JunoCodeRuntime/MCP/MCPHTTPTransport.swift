@@ -144,13 +144,23 @@ private actor MCPHTTPLineInbox {
     func next() async throws -> String? {
         if !bufferedLines.isEmpty { return bufferedLines.removeFirst() }
         if isFinished { return nil }
-        return try await withCheckedThrowingContinuation { continuation in
-            if isFinished {
-                continuation.resume(returning: nil)
-            } else {
-                waiters.append(continuation)
+        return try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { continuation in
+                if isFinished {
+                    continuation.resume(returning: nil)
+                } else {
+                    waiters.append(continuation)
+                }
             }
-        }
+        }, onCancel: {
+            Task { await self.cancelNextWaiter() }
+        })
+    }
+
+    private func cancelNextWaiter() {
+        guard !waiters.isEmpty else { return }
+        let waiter = waiters.removeFirst()
+        waiter.resume(throwing: CancellationError())
     }
 
     func finish() {

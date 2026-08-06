@@ -16,6 +16,10 @@ struct JunoMacRootView: View {
     /// Built on first entry into Code and then kept alive by the app, so
     /// switching modes preserves the workspace list and session selection.
     @Binding var codeWorkbenchModel: WorkbenchModel?
+    /// The local Code store's account scope. This is explicit rather than
+    /// inferred from the model so a direct auth-account transition cannot reuse
+    /// the previous account's workspace bookmarks or transcripts.
+    @Binding var codeWorkbenchAccountID: AccountID?
     /// Account-scoped Cloud/Remote task history, kept alive by the app so
     /// server-owned runs can be followed after switching back to Chat.
     @Binding var codeTaskModel: NativeCodeModel?
@@ -61,6 +65,10 @@ struct JunoMacRootView: View {
             if previewSession != nil { return }
             #endif
             if case .signedIn(let session) = phase {
+                if codeWorkbenchAccountID != session.profile.id {
+                    codeWorkbenchModel = nil
+                    codeWorkbenchAccountID = nil
+                }
                 syncModel?.start(for: session.profile.id)
                 Task { await codeTaskModel?.start(for: session.profile.id) }
                 Task { await conversationModel?.start(for: session.profile.id) }
@@ -74,6 +82,7 @@ struct JunoMacRootView: View {
                 productMode = .chat
                 selection = .chat
                 codeWorkbenchModel = nil
+                codeWorkbenchAccountID = nil
                 codeTaskModel?.stop()
                 syncModel?.stop()
                 conversationModel?.stop()
@@ -133,33 +142,42 @@ struct JunoMacRootView: View {
     @ViewBuilder
     private func codeShell(session: NativeAuthenticatedSession) -> some View {
         if let chatTransport {
-            JunoMacCodeView(
-                transport: chatTransport,
-                accountID: session.profile.id,
-                model: workbenchModel(transport: chatTransport, session: session),
-                remoteTaskModel: codeTaskModel,
-                sidebarHeader: { JunoMacSidebarHeader(mode: $productMode) }
-            )
+            if let codeWorkbenchModel,
+                codeWorkbenchAccountID == session.profile.id
+            {
+                JunoMacCodeView(
+                    transport: chatTransport,
+                    accountID: session.profile.id,
+                    model: codeWorkbenchModel,
+                    remoteTaskModel: codeTaskModel,
+                    sidebarHeader: { JunoMacSidebarHeader(mode: $productMode) }
+                )
+            } else {
+                ProgressView("Preparing Code…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .task(id: session.profile.id) {
+                        prepareWorkbench(transport: chatTransport, session: session)
+                    }
+            }
         } else {
             unavailableShell
         }
     }
 
-    /// Creates the workbench model on first use and hands back the existing one
-    /// afterwards. Writing to the binding during `body` is deliberate and safe:
-    /// it happens at most once per launch, and the alternative — an `onAppear`
-    /// hop — renders one empty frame first.
-    private func workbenchModel(
+    /// Creates the workbench only after the signed-in account is known. The
+    /// hashed account scope is owned by `WorkbenchModel.Dependencies.standard`,
+    /// while this guard prevents the old account's instance from being shown
+    /// during an auth transition.
+    private func prepareWorkbench(
         transport: any NativeChatRequestSending,
         session: NativeAuthenticatedSession
-    ) -> WorkbenchModel {
-        if let existing = codeWorkbenchModel { return existing }
-        let created = JunoMacCodeView<EmptyView>.makeModel(
+    ) {
+        guard codeWorkbenchAccountID != session.profile.id else { return }
+        codeWorkbenchModel = JunoMacCodeView<EmptyView>.makeModel(
             transport: transport,
             accountID: session.profile.id
         )
-        Task { @MainActor in codeWorkbenchModel = created }
-        return created
+        codeWorkbenchAccountID = session.profile.id
     }
 
     private var unavailableShell: some View {
