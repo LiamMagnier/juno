@@ -5,12 +5,18 @@ import { PROVIDERS, providerApiKey, providerBaseUrl, type Provider } from "@/lib
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget, budgetExceededMessage } from "@/lib/spend";
+import {
+  createUpstreamAbort,
+  isUpstreamTimeout,
+  readLimitedRequestBody,
+} from "@/lib/agent-proxy";
 
 // Streaming needs the Node runtime and a generous ceiling.
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const ANTHROPIC_BASE = "https://api.anthropic.com";
+const UPSTREAM_TIMEOUT_MS = 240_000;
 
 // Only the chat/messages endpoints may be proxied — never arbitrary provider paths.
 // "responses" is OpenAI-proper only: the pro/Codex Responses-only models live
@@ -100,7 +106,21 @@ export async function POST(
   const target = `${base.replace(/\/+$/, "")}/${forwardPath}`;
 
   // Forward the app's provider-native body verbatim, swapping in the real key.
-  const body = await req.text();
+  // Read it with a limit: req.text() otherwise buffers an unbounded request in
+  // the Node worker before the provider ever sees it.
+  const bodyResult = await readLimitedRequestBody(req);
+  if (!bodyResult.ok) {
+    return NextResponse.json(
+      {
+        error:
+          bodyResult.reason === "too_large"
+            ? "Agent request body is too large."
+            : "Agent request body could not be read.",
+      },
+      { status: bodyResult.reason === "too_large" ? 413 : 400 },
+    );
+  }
+  const body = bodyResult.body;
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (def.kind === "anthropic") {
     headers["x-api-key"] = key;
@@ -111,10 +131,23 @@ export async function POST(
     headers["authorization"] = `Bearer ${key}`;
   }
 
+  const upstreamAbort = createUpstreamAbort(req.signal, UPSTREAM_TIMEOUT_MS);
   let upstream: Response;
   try {
-    upstream = await fetch(target, { method: "POST", headers, body });
+    upstream = await fetch(target, {
+      method: "POST",
+      headers,
+      body,
+      signal: upstreamAbort.signal,
+    });
   } catch {
+    upstreamAbort.cancel();
+    if (isUpstreamTimeout(upstreamAbort.signal)) {
+      return NextResponse.json({ error: "Upstream provider request timed out." }, { status: 504 });
+    }
+    if (req.signal.aborted) {
+      return new Response(null, { status: 499 });
+    }
     return NextResponse.json({ error: "Upstream provider request failed." }, { status: 502 });
   }
 
@@ -123,5 +156,36 @@ export async function POST(
   const ct = upstream.headers.get("content-type");
   if (ct) respHeaders.set("content-type", ct);
   respHeaders.set("cache-control", "no-store");
-  return new Response(upstream.body, { status: upstream.status, headers: respHeaders });
+  // The timeout must remain armed while a streaming provider response is being
+  // consumed, but it should not leave a timer behind after a normal response.
+  // A tiny pass-through stream lets us clear it on close/error/cancel.
+  const bodyStream = upstream.body
+    ? new ReadableStream<Uint8Array>({
+        async start(controller) {
+          const reader = upstream.body!.getReader();
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (value) controller.enqueue(value);
+            }
+            controller.close();
+          } catch (error) {
+            controller.error(error);
+          } finally {
+            upstreamAbort.cancel();
+            reader.releaseLock();
+          }
+        },
+        async cancel(reason) {
+          upstreamAbort.cancel();
+          await upstream.body?.cancel(reason).catch(() => undefined);
+        },
+      })
+    : null;
+  // A bodyless upstream response has no stream to clear the timeout from, so
+  // disarm it here — otherwise the timer and the `req.signal` listener stay
+  // alive for the full ceiling after the request has already been answered.
+  if (!bodyStream) upstreamAbort.cancel();
+  return new Response(bodyStream, { status: upstream.status, headers: respHeaders });
 }

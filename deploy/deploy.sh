@@ -100,24 +100,33 @@ echo -e "${YELLOW}🎙️ Building voice relay...${NC}"
 npm ci --prefix relay
 npm run build --prefix relay
 
-# Restart/Reload PM2 process
-echo -e "${YELLOW}🔄 Reloading PM2 process...${NC}"
-if pm2 describe juno-backend > /dev/null 2>&1; then
-    pm2 reload juno-backend
-    echo -e "${GREEN}✅ PM2 process 'juno-backend' reloaded successfully!${NC}"
-else
-    pm2 start npm --name "juno-backend" -- start
-    echo -e "${GREEN}✅ PM2 process 'juno-backend' started successfully!${NC}"
-fi
+# Reload every production process from the single ecosystem definition. The
+# old script reloaded only backend, voice and the scheduled-task worker, leaving
+# Work and Code sweeper changes dormant until someone manually restarted them.
+echo -e "${YELLOW}🔄 Reloading the complete PM2 ecosystem...${NC}"
+pm2 startOrReload deploy/ecosystem.config.js --update-env
+pm2 save
+echo -e "${GREEN}✅ Backend, Work, Code sweeper, scheduler and voice relay are active!${NC}"
 
-# Start/Reload the voice relay via the ecosystem file (re-reads relay env from .env)
-echo -e "${YELLOW}🔄 Reloading voice relay...${NC}"
-pm2 startOrReload deploy/ecosystem.config.js --only juno-voice-relay --update-env
-echo -e "${GREEN}✅ PM2 process 'juno-voice-relay' active!${NC}"
+# Do not report success merely because PM2 accepted the reload. Wait for the
+# public app to answer with the build that was just pulled. This catches a
+# crash-loop, missing migration, or stale process before the deploy script
+# hands control back to its caller.
+APP_URL="$(grep -m1 '^NEXT_PUBLIC_APP_URL=' .env | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '\r' || true)"
+APP_URL="${APP_URL%/}"
+[ -n "$APP_URL" ] || APP_URL="https://chat.liams.dev"
+for attempt in $(seq 1 30); do
+    if body=$(curl --silent --show-error --max-time 12 "$APP_URL/api/health" 2>/dev/null); then
+        if printf '%s' "$body" | grep -Fq '"ok":true'; then
+            echo -e "${GREEN}✅ $APP_URL is healthy (attempt $attempt).${NC}"
+            echo -e "${GREEN}🎉 Juno Backend successfully deployed and active!${NC}"
+            exit 0
+        fi
+    fi
+    echo -e "${YELLOW}⏳ Waiting for $APP_URL/api/health (attempt $attempt/30)...${NC}"
+    sleep 5
+done
 
-# Start/Reload the scheduled-task runner (executes users' scheduled prompts)
-echo -e "${YELLOW}🔄 Reloading task scheduler...${NC}"
-pm2 startOrReload deploy/ecosystem.config.js --only juno-scheduler --update-env
-echo -e "${GREEN}✅ PM2 process 'juno-scheduler' active!${NC}"
-
-echo -e "${GREEN}🎉 Juno Backend successfully deployed and active!${NC}"
+echo -e "${RED}❌ Deployment did not become healthy. Inspect PM2 and ~/juno-previous before retrying.${NC}"
+pm2 status || true
+exit 1

@@ -5,7 +5,13 @@ import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { serializeMessage } from "@/lib/serializers";
-import { requireUser, serializeTask, TASK_STATUSES } from "@/lib/code-remote";
+import {
+  appendTaskEvents,
+  persistCodeTaskOutcome,
+  requireUser,
+  serializeTask,
+  TASK_STATUSES,
+} from "@/lib/code-remote";
 import { dispatchCloudRunner } from "@/lib/cloud-code";
 import { rateLimit } from "@/lib/rate-limit";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
@@ -193,7 +199,39 @@ export async function POST(req: Request) {
   // The USER message stores the raw composer text so the transcript stays clean.
   const agentPrompt = await enrichPromptWithAttachments(prompt, attachmentIds, user.id);
 
+  // Persist a linked prompt as one transaction with its attachment claims and
+  // session timestamp. Cloud tasks call this BEFORE dispatching a runner, so a
+  // live task can never exist without the user turn that explains it. Device
+  // tasks use the same helper below, keeping both paths identical.
+  const persistLinkedPrompt = async () => {
+    if (!conversationId) return null;
+    const created = await prisma.$transaction(async (tx) => {
+      const message = await tx.message.create({
+        data: { conversationId, role: "USER", content: encryptMessageText(prompt) },
+      });
+      if (attachmentIds.length > 0) {
+        // A race that claims an attachment between the pre-check and this
+        // transaction is harmless: the agent already has the enriched prompt;
+        // the attachment simply remains unlinked rather than being stolen.
+        await tx.attachment.updateMany({
+          where: { id: { in: attachmentIds }, userId: user.id, messageId: null },
+          data: { messageId: message.id, conversationId },
+        });
+      }
+      await tx.conversation.updateMany({
+        where: { id: conversationId, userId: user.id },
+        data: { lastMessageAt: new Date(), ...(sessionTitleUpdate ? { title: sessionTitleUpdate } : {}) },
+      });
+      return tx.message.findUniqueOrThrow({
+        where: { id: message.id },
+        include: { attachments: true },
+      });
+    });
+    return serializeMessage(created);
+  };
+
   let task;
+  let userMessage = null;
   if (isCloud) {
     if (!repo) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     // A cloud run clones + opens a PR as the user, so it needs a linked GitHub
@@ -279,12 +317,23 @@ export async function POST(req: Request) {
       throw err;
     }
 
-    // Dispatch BEFORE persisting the user message (below), so a dispatch failure
-    // leaves nothing orphaned — no half-created session turn to reconcile, and a
-    // retry starts clean. NO credential rides the dispatch inputs: the runner
+    // Persist the user turn before dispatch. This ordering is load-bearing: a
+    // runner can start as soon as GitHub accepts the dispatch, so writing the
+    // transcript afterward creates a race where a live task has no user prompt.
+    // NO credential rides the dispatch inputs: the runner
     // authenticates runner-context with a GitHub Actions OIDC token it fetches at
     // runtime (audience "juno-cloud-code"), which is never logged. The taskId
     // binding is safe because only this server can dispatch the workflow.
+    try {
+      userMessage = await persistLinkedPrompt();
+    } catch (err) {
+      console.error("[cloud-code] failed to persist linked prompt before dispatch", err);
+      await prisma.codeTask.deleteMany({ where: { id: task.id, userId: user.id } }).catch((delErr) => {
+        console.error("[cloud-code] failed to roll back task after prompt persistence failure", delErr);
+      });
+      throw err;
+    }
+
     try {
       await dispatchCloudRunner({
         taskId: task.id,
@@ -294,12 +343,28 @@ export async function POST(req: Request) {
         callbackBase: env.appUrl.replace(/\/$/, ""),
       });
     } catch (err) {
-      // Honest failure with NO orphan: drop the task we just created (no user
-      // message was written yet) so a client retry can't accumulate duplicates.
+      // The prompt is already in the transcript, so retain the task and mark it
+      // failed rather than deleting the evidence of a submitted turn. The
+      // deterministic assistant outcome makes the failure visible in the same
+      // Code conversation, and an idempotent retry can inspect this task.
       console.error("[cloud-code] workflow_dispatch failed", err);
-      await prisma.codeTask.deleteMany({ where: { id: task.id, userId: user.id } }).catch((delErr) => {
-        console.error("[cloud-code] failed to roll back task after dispatch failure", delErr);
-      });
+      try {
+        await appendTaskEvents(
+          task.id,
+          [{
+            kind: "error",
+            payload: { message: "The cloud runner could not be started. Try again." },
+            key: `dispatch:${task.id}`,
+          }],
+          { status: "failed", fromStatus: "queued" },
+        );
+        const failedTask = await prisma.codeTask.findUnique({ where: { id: task.id } });
+        if (failedTask) await persistCodeTaskOutcome(failedTask);
+      } catch (reconcileErr) {
+        // The sweeper will reconcile a task left queued, but retain the original
+        // dispatch error as the request-level response.
+        console.error("[cloud-code] failed to reconcile dispatch failure", reconcileErr);
+      }
       return NextResponse.json({ error: "cloud_dispatch_failed" }, { status: 502 });
     }
   } else {
@@ -365,37 +430,9 @@ export async function POST(req: Request) {
     }
   }
 
-  // Linked sessions persist the prompt as a normal USER message. For device
-  // tasks this makes the session durable even if the run never starts (Mac
-  // offline). For cloud tasks we are PAST a successful dispatch here, so persist
-  // only now — a failed dispatch returned above without ever writing a message,
-  // leaving nothing to reconcile on a retry.
-  let userMessage = null;
-  if (conversationId) {
-    const created = await prisma.$transaction(async (tx) => {
-      const message = await tx.message.create({
-        data: { conversationId, role: "USER", content: encryptMessageText(prompt) },
-      });
-      if (attachmentIds.length > 0) {
-        // Best-effort claim after pre-validation above. A race that steals an
-        // id between those two moments still lets the run proceed (agent already
-        // has the enriched prompt); the transcript just misses the orphaned chip.
-        await tx.attachment.updateMany({
-          where: { id: { in: attachmentIds }, userId: user.id, messageId: null },
-          data: { messageId: message.id, conversationId },
-        });
-      }
-      return tx.message.findUniqueOrThrow({
-        where: { id: message.id },
-        include: { attachments: true },
-      });
-    });
-    userMessage = await serializeMessage(created);
-    await prisma.conversation.updateMany({
-      where: { id: conversationId, userId: user.id },
-      data: { lastMessageAt: new Date(), ...(sessionTitleUpdate ? { title: sessionTitleUpdate } : {}) },
-    });
-  }
+  // Device tasks persist after creation because there is no external dispatch
+  // race. Cloud tasks already persisted above, before workflow_dispatch.
+  if (!userMessage) userMessage = await persistLinkedPrompt();
 
   return NextResponse.json(
     { task: serializeTask(task), ...(userMessage ? { userMessage } : {}) },

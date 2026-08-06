@@ -13,6 +13,7 @@ export const CLOUD_RUNNER_REPO = "LiamMagnier/juno";
 export const CLOUD_RUNNER_WORKFLOW = "code-runner.yml";
 /** Default branch the workflow file is read from. */
 export const CLOUD_RUNNER_REF = "main";
+const GITHUB_DISPATCH_TIMEOUT_MS = 15_000;
 
 export interface CloudDispatchInputs {
   taskId: string;
@@ -38,28 +39,41 @@ export async function dispatchCloudRunner(inputs: CloudDispatchInputs): Promise<
   if (!token) throw new Error("GITHUB_DISPATCH_TOKEN is not configured");
 
   const url = `https://api.github.com/repos/${CLOUD_RUNNER_REPO}/actions/workflows/${CLOUD_RUNNER_WORKFLOW}/dispatches`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "Content-Type": "application/json",
-      "User-Agent": "Juno",
-    },
-    // GitHub requires every dispatch input to be a string.
-    body: JSON.stringify({
-      ref: CLOUD_RUNNER_REF,
-      inputs: {
-        taskId: inputs.taskId,
-        repoOwner: inputs.repoOwner,
-        repoName: inputs.repoName,
-        baseRef: inputs.baseRef,
-        callbackBase: inputs.callbackBase,
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("github_dispatch_timeout"), GITHUB_DISPATCH_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json",
+        "User-Agent": "Juno",
       },
-    }),
-    cache: "no-store",
-  });
+      // GitHub requires every dispatch input to be a string.
+      body: JSON.stringify({
+        ref: CLOUD_RUNNER_REF,
+        inputs: {
+          taskId: inputs.taskId,
+          repoOwner: inputs.repoOwner,
+          repoName: inputs.repoName,
+          baseRef: inputs.baseRef,
+          callbackBase: inputs.callbackBase,
+        },
+      }),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (controller.signal.reason === "github_dispatch_timeout") {
+      throw new Error("workflow_dispatch timed out");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 
   // A successful workflow_dispatch returns 204 No Content.
   if (res.status !== 204) {

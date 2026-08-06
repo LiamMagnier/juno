@@ -650,3 +650,34 @@ jobs:
           pm2 save
           echo "Deploy complete."
           REMOTE
+
+      - name: Verify production health and version
+        env:
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new \
+            "$VM_USER@$VM_HOST" "EXPECTED_SHA='$EXPECTED_SHA' bash -s" <<'REMOTE'
+          set -e
+          # Read the public origin from the same runtime env the app uses. Keep
+          # a safe production default for older VMs that predate this key.
+          APP_URL="$(grep -m1 '^NEXT_PUBLIC_APP_URL=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
+          APP_URL="${APP_URL%/}"
+          [ -n "$APP_URL" ] || APP_URL="https://chat.liams.dev"
+
+          for attempt in $(seq 1 30); do
+            body="$(curl --silent --show-error --max-time 12 "$APP_URL/api/health" 2>/dev/null || true)"
+            if printf '%s' "$body" | grep -Fq '"ok":true' && \
+              printf '%s' "$body" | grep -Fq "\"version\":\"$EXPECTED_SHA\""; then
+              echo "Production is healthy on $EXPECTED_SHA (attempt $attempt)."
+              exit 0
+            fi
+            echo "Waiting for $APP_URL/api/health to report $EXPECTED_SHA (attempt $attempt/30): ${body:-no response}"
+            sleep 5
+          done
+
+          echo "::error::Production did not become healthy on $EXPECTED_SHA. The previous build is preserved in ~/juno-previous for rollback."
+          pm2 status || true
+          exit 1
+          REMOTE
