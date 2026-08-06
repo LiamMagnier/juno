@@ -3,6 +3,7 @@ import {
   DOWNLOAD_REPOS,
   PLATFORM_LABELS,
   assetSha256,
+  isStableRelease,
   pickAsset,
   type AppDownload,
   type DownloadPlatform,
@@ -41,7 +42,7 @@ async function latestRelease(repo: string): Promise<GitHubRelease | null> {
     });
     if (!res.ok) return null;
     const release = (await res.json()) as GitHubRelease;
-    return release.draft ? null : release;
+    return isStableRelease(release) ? release : null;
   } catch {
     return null;
   }

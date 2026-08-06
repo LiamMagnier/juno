@@ -40,6 +40,18 @@ export const DOWNLOAD_REPOS = {
   windows: "LiamMagnier/juno-windows",
 } as const;
 
+export interface ReleaseVisibility {
+  draft?: boolean;
+  prerelease?: boolean;
+}
+
+/** Only a public, stable release is safe to put in the production download menu. */
+export function isStableRelease(
+  release: ReleaseVisibility | null | undefined,
+): boolean {
+  return Boolean(release && !release.draft && !release.prerelease);
+}
+
 export const PLATFORM_LABELS: Record<DownloadPlatform, string> = {
   macos: "macOS",
   windows: "Windows",
