@@ -156,6 +156,53 @@ final class DesktopWorkHostModel {
     /// cannot leak one.
     private(set) var grants: [WorkGrantSummary] = []
 
+    // MARK: - Approvals raised on this Mac
+
+    /// What a run executing *here* has stopped to ask, oldest first.
+    ///
+    /// Separate from `NativeWorkModel.pendingApprovals`, and it has to be: that
+    /// list comes from `WorkApproval` rows, which only the cloud runner writes.
+    /// A run on this Mac suspends inside `WorkApprovalCoordinator` in this
+    /// process and creates no row anywhere, so before this existed the one class
+    /// of run that reaches somebody's own files was also the one class whose
+    /// permission prompt could never be displayed.
+    ///
+    /// Ordered oldest-first to match `NativeWorkModel.currentApproval`: a run
+    /// asks in the order it needs answers.
+    private(set) var localApprovals: [WorkApprovalRequest] = []
+
+    /// The local approvals belonging to one run, for the thread showing it.
+    func localApprovals(forRun runID: String?) -> [WorkApprovalRequest] {
+        guard let runID else { return [] }
+        return localApprovals.filter { $0.runID == runID }
+    }
+
+    func localApprovalRaised(_ request: WorkApprovalRequest) {
+        guard !localApprovals.contains(where: { $0.id == request.id }) else { return }
+        localApprovals.append(request)
+        // By expiry, which orders by request time: the wire shape carries no
+        // `requestedAt`, and every approval is minted with the same
+        // `WorkApprovalCoordinator.approvalTimeToLive`, so the one that expires
+        // first is the one that was asked first.
+        localApprovals.sort { $0.expiresAt < $1.expiresAt }
+    }
+
+    func localApprovalResolved(_ id: String) {
+        localApprovals.removeAll { $0.id == id }
+    }
+
+    /// Answers one, through the runtime that raised it.
+    ///
+    /// Assigned by ``DesktopWorkLocalRuntime`` for the same reason
+    /// ``executorProvider`` is: the runtime is built after this model and owns
+    /// the coordinator, and a model that reached into it directly would put the
+    /// local execution graph inside the type the settings screen observes.
+    /// Called with the approval id, the decision, its digest, and its risk. The
+    /// risk travels because a standing grant is only constructible for some
+    /// levels — see `DesktopWorkLocalRuntime.decideLocalApproval`.
+    var localApprovalDecider:
+        (@MainActor (String, JunoWorkApprovalDecision, String, String) -> Void)?
+
     // MARK: - The switches
 
     /// The master switch. Off means every capability below is off, whatever

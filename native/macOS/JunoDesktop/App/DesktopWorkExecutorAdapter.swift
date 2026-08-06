@@ -97,6 +97,135 @@ final class DesktopWorkLocalRuntime {
         self.approvals = WorkApprovalCoordinator(
             policy: Self.permissionPolicy(host.approvalPolicy)
         )
+        observeApprovals()
+    }
+
+    /// Publishes this Mac's own pending approvals to the window.
+    ///
+    /// **Why a local run needs its own path.** A cloud run's approval is a
+    /// `WorkApproval` row: the runner writes it, the relay serves it, and every
+    /// client sees it. A run executing *here* never touches that table —
+    /// `WorkApprovalCoordinator` suspends the tool in-process and waits on a
+    /// continuation held in this app. So for exactly the runs that reach
+    /// somebody's own documents, `NativeWorkModel.pendingApprovals` is empty by
+    /// construction and the approval card cannot appear no matter what the
+    /// server does.
+    ///
+    /// The coordinator already publishes `.requested` and `.resolved`; nothing
+    /// was listening. This forwards them to ``DesktopWorkHostModel``, which the
+    /// Work window already receives, so the decision is drawn from whichever
+    /// side raised it.
+    ///
+    /// The observer is never removed. This object lives as long as the signed-in
+    /// session and the coordinator lives inside it, so a token to cancel with
+    /// would be a token nobody could ever be in a position to use.
+    private func observeApprovals() {
+        let coordinator = approvals
+        guard let host else { return }
+        Task { [weak host] in
+            // The observer hops back to the main actor. The coordinator is an
+            // actor and its updates cross isolation, while the host model is
+            // main-actor isolated and weakly captured so sign-out can release
+            // the window graph.
+            _ = await coordinator.addObserver { [weak host] update in
+                Task { @MainActor [weak host] in
+                    guard let host else { return }
+                    switch update {
+                    case .requested(let request):
+                        host.localApprovalRaised(Self.bridge(request))
+                    case .resolved(let id, _):
+                        host.localApprovalResolved(id)
+                    }
+                }
+            }
+            // Registration is asynchronous, so a very fast local run can ask
+            // before the observer is attached. Reconcile the actor's current
+            // state after registering; the model de-duplicates requests, and a
+            // request that arrives between these two awaits is therefore safe
+            // in either order.
+            let pending = await coordinator.pendingApprovals
+            await MainActor.run { [weak host] in
+                for request in pending {
+                    host?.localApprovalRaised(Self.bridge(request))
+                }
+            }
+        }
+    }
+
+    /// The in-process request, in the shape the window's other approvals arrive
+    /// in.
+    ///
+    /// `JunoWorkRuntime.WorkApprovalRequest` and `JunoWorkKit.WorkApprovalRequest`
+    /// are the same idea either side of the dependency edge this file exists to
+    /// bridge — the runtime may not see the relay's wire types, for the reason
+    /// stated at the top of this file. Translating here means the thread has one
+    /// approval type to render rather than a branch per executor.
+    ///
+    /// `detail` is deliberately empty. The relay's copy carries a structured
+    /// breakdown the server assembled; the local coordinator holds only the
+    /// sentence it was constructed with, and inventing a breakdown from the
+    /// action name would put something on the consent card that nobody wrote.
+    /// `decision` is `pending` because an approval that has been decided is
+    /// removed from the coordinator rather than kept with an answer on it.
+    private static func bridge(
+        _ request: JunoWorkRuntime.WorkApprovalRequest
+    ) -> JunoWorkKit.WorkApprovalRequest {
+        JunoWorkKit.WorkApprovalRequest(
+            approvalID: request.id,
+            runID: request.runID,
+            action: request.action,
+            risk: request.risk.rawValue,
+            summary: request.summary,
+            detail: [:],
+            actionDigest: request.actionDigest,
+            expiresAt: request.expiresAt,
+            decision: JunoWorkApprovalDecision.pending.rawValue
+        )
+    }
+
+    /// Answers a question this Mac asked, from this Mac's own window.
+    ///
+    /// The digest travels with the answer for the same reason it does on the
+    /// relay path: `WorkApprovalCoordinator.resolve` refuses an answer whose
+    /// digest names a different action than the one it is holding, so a card
+    /// left on screen while the run moved on cannot authorise what replaced it.
+    ///
+    /// **"Always allow" is a second, separate act.** The coordinator's
+    /// `resolve` only knows approved and denied; a standing grant is
+    /// `setAllowance`, and `WorkAlwaysAllowance` has a failable initialiser that
+    /// refuses anything above `command` — so a sensitive or irreversible action
+    /// *cannot* be turned into a standing yes, by construction. The allowance is
+    /// set before the answer so the run's next question is already covered by
+    /// it, and a risk the allowance refuses falls back to a one-time approval
+    /// rather than silently granting less than the button promised. The window
+    /// does not offer the button in that case — see
+    /// `DesktopWorkApprovalCard.allowsStandingGrant` — so this is the belt to
+    /// that surface's braces.
+    func decideLocalApproval(
+        id: String,
+        decision: JunoWorkApprovalDecision,
+        actionDigest: String,
+        risk: String
+    ) {
+        Task { [approvals] in
+            // Resolve first. `WorkApprovalCoordinator` invalidates a receipt
+            // when authority narrows; changing the standing allowance before
+            // resolving would make the approval that the user just accepted
+            // fail its revision check. The current action must succeed, and
+            // the standing allowance then applies to subsequent equivalent
+            // actions.
+            await approvals.resolve(
+                approvalID: id,
+                decision: decision == .denied ? .denied : .approved,
+                actionDigest: actionDigest
+            )
+            if decision == .allowedAlways,
+                let level = WorkRiskLevel(rawValue: risk),
+                let allowance = WorkAlwaysAllowance(upTo: level)
+            {
+                await approvals.setAllowance(allowance)
+            }
+        }
     }
 
     /// Narrows the local approval gate to match the switches.

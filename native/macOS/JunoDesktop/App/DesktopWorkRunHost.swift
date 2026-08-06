@@ -90,6 +90,14 @@ actor DesktopWorkRunHost: WorkRunHosting {
     /// and keeping it per run is what makes "unpin exactly the run that ended"
     /// expressible rather than assumed.
     private var gates: [String: WorkApprovalCoordinator] = [:]
+    /// Whether this host has already attached its transcript observer to the
+    /// shared approval coordinator. See ``observeApprovals(on:)``.
+    private var isObservingApprovals = false
+    /// The run id for every approval this host has observed. The coordinator's
+    /// resolved update intentionally carries only the approval id, and it
+    /// removes the request before notifying observers, so looking in its
+    /// pending list at resolution time cannot reliably recover the owner.
+    private var approvalRunIDs: [String: String] = [:]
 
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
@@ -218,6 +226,7 @@ actor DesktopWorkRunHost: WorkRunHosting {
         )
         gates[request.runID] = request.approvals
         outboxes[request.runID] = Outbox()
+        await observeApprovals(on: request.approvals)
         let task = Task { [weak self] in
             guard let self else { return }
             await self.drive(request, goal: goal, bindings: bindings)
@@ -504,6 +513,73 @@ actor DesktopWorkRunHost: WorkRunHosting {
         var nextSeq = 1
         var acceptedThrough = 0
         var buffered: [WorkRunEvent] = []
+    }
+
+    /// Writes this Mac's own approval questions into the run's transcript.
+    ///
+    /// **What was missing.** `WorkApprovalCoordinator` suspends a tool and waits
+    /// for a person, and it publishes `.requested` and `.resolved` to anyone who
+    /// asks. Nothing asked. So a run executing here would stop dead, and its
+    /// log — the only account the relay, the website and the phone ever see —
+    /// recorded nothing at all between the tool that ran before it and the tool
+    /// that ran after. `approval_requested` and `approval_resolved` are two of
+    /// the twenty kinds this host never emitted, and they are the two that
+    /// explain a stopped run.
+    ///
+    /// Registered once per coordinator, not once per run: the coordinator is
+    /// shared across every run this Mac hosts, and a second observer would write
+    /// each question into the transcript twice. The request carries its own
+    /// `runID`, so one observer routes correctly.
+    private func observeApprovals(on coordinator: WorkApprovalCoordinator) async {
+        guard !isObservingApprovals else { return }
+        isObservingApprovals = true
+        _ = await coordinator.addObserver { [weak self] update in
+            Task { [weak self] in
+                guard let self else { return }
+                switch update {
+                case .requested(let request):
+                    await self.rememberApproval(request)
+                    await self.emit(
+                        request.runID,
+                        "approval_requested",
+                        [
+                            "approvalId": .string(request.id),
+                            "action": .string(request.action),
+                            "actionDigest": .string(request.actionDigest),
+                            "risk": .string(request.risk.rawValue),
+                            "summary": .string(request.summary),
+                            "expiresAt": .string(
+                                ISO8601DateFormatter().string(from: request.expiresAt)
+                            ),
+                        ]
+                    )
+                case .resolved(let id, let decision):
+                    guard let runID = await self.runID(forApproval: id) else { return }
+                    await self.emit(
+                        runID,
+                        "approval_resolved",
+                        [
+                            "approvalId": .string(id),
+                            "decision": .string(decision.rawValue),
+                        ]
+                    )
+                    await self.forgetApproval(id)
+                }
+            }
+        }
+    }
+
+    private func rememberApproval(_ request: JunoWorkRuntime.WorkApprovalRequest) {
+        approvalRunIDs[request.id] = request.runID
+    }
+
+    /// Which run raised an approval, from the coordinators this host holds.
+    private func runID(forApproval id: String) -> String? {
+        approvalRunIDs[id]
+    }
+
+    private func forgetApproval(_ id: String) {
+        approvalRunIDs.removeValue(forKey: id)
     }
 
     private func emit(

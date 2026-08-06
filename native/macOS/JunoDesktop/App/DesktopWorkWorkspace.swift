@@ -250,6 +250,7 @@ struct DesktopWorkWorkspace: View {
         if let session = openSession {
             DesktopWorkThread(
                 model: model,
+                hostModel: hostModel,
                 session: session,
                 answerDraft: $answerDraft,
                 instructionDraft: $instructionDraft
@@ -942,6 +943,8 @@ struct DesktopWorkStartPath: View {
 /// reader has to scroll to find is a run that stays stopped.
 private struct DesktopWorkThread: View {
     let model: NativeWorkModel
+    /// This Mac's hosting model, for approvals raised by a run executing here.
+    var hostModel: DesktopWorkHostModel?
     let session: WorkSessionSummary
     @Binding var answerDraft: String
     @Binding var instructionDraft: String
@@ -960,6 +963,27 @@ private struct DesktopWorkThread: View {
     private var run: WorkRunSummary? { isFollowing ? model.openRun : nil }
     private var events: [WorkEvent] { isFollowing ? model.events : [] }
 
+    /// The decision this thread is blocked on, from whichever side raised it.
+    ///
+    /// Two sources, because there are two executors and only one of them writes
+    /// a `WorkApproval` row. A cloud run's question arrives through the relay in
+    /// `model.pendingApprovals`; a run executing on this Mac suspends inside
+    /// `WorkApprovalCoordinator` in this process and reaches the window through
+    /// ``DesktopWorkHostModel/localApprovals``. Reading only the first is why
+    /// the approval card never appeared for the runs that touch local files.
+    ///
+    /// The local one wins a tie. If both somehow name a question for this run,
+    /// the local coordinator is the one actually holding a suspended tool, and
+    /// answering the relay's copy would leave it suspended.
+    private var blockingApproval: (request: WorkApprovalRequest, isLocal: Bool)? {
+        guard isFollowing else { return nil }
+        if let local = hostModel?.localApprovals(forRun: run?.runID ?? session.currentRunID).first {
+            return (local, true)
+        }
+        if let remote = model.currentApproval { return (remote, false) }
+        return nil
+    }
+
     var body: some View {
         // `JunoDetailPage` and never a bare `ScrollView`: this page is the
         // longest surface in the app, and a detail column that reports its
@@ -972,8 +996,22 @@ private struct DesktopWorkThread: View {
                 // only while that is this one. An Allow button rendered under
                 // one task's title and wired to another's approval is the worst
                 // thing this window could do.
-                if isFollowing, let approval = model.currentApproval {
-                    DesktopWorkApprovalCard(model: model, approval: approval)
+                if let blocking = blockingApproval {
+                    DesktopWorkApprovalCard(
+                        model: model,
+                        approval: blocking.request,
+                        decideLocally: blocking.isLocal
+                            ? { [hostModel] decision in
+                                hostModel?.localApprovalDecider?(
+                                    blocking.request.id,
+                                    decision,
+                                    blocking.request.actionDigest,
+                                    blocking.request.risk
+                                )
+                            }
+                            : nil
+                    )
+                    .id(blocking.request.id)
                 }
                 // One slot, two boxes, and never both. `composerMode` is the
                 // model's single answer to what this task can be told right now,
@@ -1002,6 +1040,7 @@ private struct DesktopWorkThread: View {
                     }
                 }
                 currentAction
+                result
                 plan
                 changes
                 artifacts
@@ -1201,6 +1240,54 @@ private struct DesktopWorkThread: View {
             // drawn at the wrong elevation for where it is.
             .junoCard()
             .accessibilityIdentifier("juno.work.current-action")
+        }
+    }
+
+    // MARK: Result
+
+    /// What the run actually said — the answer, not the account of the work.
+    ///
+    /// **This is the thing the thread did not have.** The agent's prose reply
+    /// arrives as an `assistant_message` event, and the only place it was
+    /// rendered was as a *timeline row title*: one line of `junoRowLabel` beside
+    /// a speech-bubble glyph, unformatted, unselectable as a unit, at the bottom
+    /// of the Activity list — which is itself the last of six sections. So "pull
+    /// the report together" produced a report the reader had to scroll past
+    /// Plan, Read and written, Made and Budget to find, wedged into a log.
+    /// `JunoMarkdownText` has been in the design system the whole time and this
+    /// surface never used it.
+    ///
+    /// Placed directly under the blocking cards and above the plan, because the
+    /// order of this page is the order somebody catching up asks in — and once a
+    /// run has answered, "what did I get" is the first question, ahead of "how
+    /// did it go about it".
+    ///
+    /// Only the **last** message is shown. A long run narrates as it goes, and
+    /// every intermediate remark is still in Activity; promoting all of them
+    /// would rebuild the log in a second place. The last one is the conclusion.
+    @ViewBuilder
+    private var result: some View {
+        if let answer = DesktopWorkLog.finalAnswer(in: events) {
+            DesktopWorkSection("Result") {
+                JunoMarkdownText(answer)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Copy is the one action this block owes the reader. The text is
+                // selectable, but a reader who wants the whole answer wants it
+                // whole, and dragging across a scrolling page to get it is the
+                // reason "copy" exists as a button everywhere else in the app.
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(answer, forType: .string)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityIdentifier("juno.work.result.copy")
+            }
+            .accessibilityIdentifier("juno.work.result")
         }
     }
 
@@ -1451,6 +1538,11 @@ private struct DesktopWorkThread: View {
 private struct DesktopWorkApprovalCard: View {
     let model: NativeWorkModel
     let approval: WorkApprovalRequest
+    /// Set when the question was raised by a run executing on this Mac, in which
+    /// case the answer goes to the in-process coordinator holding the suspended
+    /// tool rather than to the relay — there is no `WorkApproval` row for the
+    /// relay to update. Nil for a cloud run, which takes the relay path.
+    var decideLocally: ((JunoWorkApprovalDecision) -> Void)?
 
     private var risk: JunoWorkRiskLevel? { JunoWorkRiskLevel(rawValue: approval.risk) }
 
@@ -1458,6 +1550,12 @@ private struct DesktopWorkApprovalCard: View {
     /// only ones that get danger; everything else that reaches a person is
     /// caution. See ``DesktopWorkVocabulary/riskTint(_:)``.
     private var tint: Color { DesktopWorkVocabulary.riskTint(approval.risk) }
+
+    /// Whether this action could be covered by a standing "always allow".
+    /// See ``DesktopWorkApprovalRules/allowsStandingGrant(_:)``.
+    private var allowsStandingGrant: Bool {
+        DesktopWorkApprovalRules.allowsStandingGrant(risk)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1522,9 +1620,23 @@ private struct DesktopWorkApprovalCard: View {
                         .tint(Color.junoAccent)
                         .keyboardShortcut(.defaultAction)
                         .accessibilityIdentifier("juno.work.approval.allow")
-                    Button("Always allow this") { decide(.allowedAlways) }
-                        .buttonStyle(.bordered)
-                        .accessibilityIdentifier("juno.work.approval.allow-always")
+                    // Offered only where a standing yes is actually possible.
+                    //
+                    // `WorkAlwaysAllowance` has a failable initialiser that
+                    // refuses anything above `command`, and decoding re-applies
+                    // the rule — so a sensitive or irreversible action can never
+                    // be covered by one. The button was drawn regardless, which
+                    // promised a permission the model is built to refuse: the
+                    // reader would press it, get a one-time approval, and be
+                    // asked again on the next identical action with no
+                    // explanation. Hiding it is how that guarantee becomes
+                    // something a person can see rather than something the
+                    // codebase merely honours.
+                    if allowsStandingGrant {
+                        Button("Always allow this") { decide(.allowedAlways) }
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("juno.work.approval.allow-always")
+                    }
                     Spacer(minLength: JunoSpace.regular)
                     Button("Refuse", role: .destructive) { decide(.denied) }
                         .buttonStyle(.bordered)
@@ -1554,6 +1666,10 @@ private struct DesktopWorkApprovalCard: View {
     }
 
     private func decide(_ decision: JunoWorkApprovalDecision) {
+        if let decideLocally {
+            decideLocally(decision)
+            return
+        }
         Task { await model.decide(approval, decision) }
     }
 }
@@ -2136,6 +2252,28 @@ enum DesktopWorkLog {
         // has none — a plan whose steps reorder themselves between frames is
         // unreadable.
         return steps.compactMap { byID[$0.id] }
+    }
+
+    // MARK: The answer
+
+    /// The last thing the run said in prose, for the Result section.
+    ///
+    /// The last rather than all of them: a run narrates as it works, and the
+    /// concluding message is the one that answers the goal. The earlier ones
+    /// stay in the timeline, where a running commentary belongs.
+    ///
+    /// Read through ``WorkEventPayload/fields(of:)`` for the same reason every
+    /// other reader here is — the cloud runner nests its facts one level down
+    /// and this Mac's run host writes them flat, and a reader that knew only one
+    /// shape would find no answer at all for half the runs in the product.
+    static func finalAnswer(in events: [WorkEvent]) -> String? {
+        var answer: String?
+        for (event, kind) in visible(events) where kind == .assistantMessage {
+            let payload = WorkEventPayload.fields(of: event)
+            guard let text = string(payload, "text", "message") else { continue }
+            answer = text
+        }
+        return answer
     }
 
     // MARK: Current action

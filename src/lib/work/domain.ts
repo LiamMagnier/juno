@@ -1371,3 +1371,28 @@ export function narrowestBudget(...budgets: readonly (WorkBudget | undefined | n
     maxRuntimeMs: pick((b) => b.maxRuntimeMs),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Which approvals a reader is offered
+// ---------------------------------------------------------------------------
+
+export const PENDING_APPROVAL_LIMIT = 50;
+
+/**
+ * The query that decides which approvals a reader is offered.
+ *
+ * Split out as a value so it can be asserted without a database. The three
+ * conditions are each load-bearing and each fails silently if dropped: without
+ * `userId` one account's approvals reach another's window; without
+ * `decision: "pending"` an already-answered card comes back and can be answered
+ * twice; without the expiry bound the card that arrives is one the decision
+ * route will refuse. `tests/work-routes.test.ts` pins all three.
+ */
+export function pendingApprovalWhere(runId: string, userId: string, now: Date) {
+  return {
+    runId,
+    userId,
+    decision: "pending" as const,
+    expiresAt: { gt: now },
+  };
+}

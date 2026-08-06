@@ -179,6 +179,13 @@ struct JunoDesktopConfiguration {
                 },
                 policyObserver: { policy in workLocalRuntime.apply(policy) }
             )
+            // How a question raised by a run on this Mac gets answered from
+            // this Mac's window. See `DesktopWorkLocalRuntime.observeApprovals`.
+            workHostModel.localApprovalDecider = { id, decision, digest, risk in
+                workLocalRuntime.decideLocalApproval(
+                    id: id, decision: decision, actionDigest: digest, risk: risk
+                )
+            }
             workHostModel.systemPermissions = { .current }
             workHostModel.grantActions = .over(workGrantStore)
             // The host model hears about grants from here, and not only from the

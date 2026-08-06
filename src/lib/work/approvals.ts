@@ -2,6 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/prisma";
 import { serializeApproval, type ClientWorkApproval } from "@/lib/work/serializers";
+import { PENDING_APPROVAL_LIMIT, pendingApprovalWhere } from "@/lib/work/domain";
 
 /**
  * The approvals a run is actually blocked on, for the surfaces a person reads.
@@ -34,17 +35,12 @@ export async function pendingApprovalsForRun(
 ): Promise<ClientWorkApproval[]> {
   if (!runId) return [];
   const rows = await prisma.workApproval.findMany({
-    where: {
-      runId,
-      userId,
-      decision: "pending",
-      expiresAt: { gt: now },
-    },
+    where: pendingApprovalWhere(runId, userId, now),
     // Oldest first: a run asks in the order it needs answers, and
     // `NativeWorkModel.currentApproval` takes the head of this list. Newest
     // first would make somebody answer their run's questions backwards.
     orderBy: { createdAt: "asc" },
-    take: 50,
+    take: PENDING_APPROVAL_LIMIT,
   });
   return rows.map(serializeApproval);
 }
