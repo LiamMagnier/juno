@@ -1,6 +1,6 @@
 import "server-only";
 import { Prisma } from "@prisma/client";
-import type { WorkRun, WorkSession } from "@prisma/client";
+import type { WorkCommand, WorkRun, WorkSession } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/db";
 import type { EventVisibility } from "@/lib/event-envelope";
 import {
@@ -12,6 +12,7 @@ import {
   statusNeedsAttention,
   type WorkBudget,
   type WorkCapability,
+  type WorkCommandKind,
   type WorkDegradation,
   type WorkEffectiveTarget,
   type WorkEventKind,
@@ -21,6 +22,12 @@ import {
   type WorkTerminalReason,
   type WorkTerminalStatus,
 } from "@/lib/work/domain";
+import {
+  commandExpiresAt,
+  planRunCommand,
+  runCommandKey,
+  type WorkRelayRefusal,
+} from "@/lib/work/relay";
 
 /**
  * The session and run lifecycle: create, append, claim, finish.
@@ -213,6 +220,31 @@ export interface CreateRunInput {
   budget?: WorkBudget;
   /** A schedule firing twice resolves to the same run rather than a second one. */
   idempotencyKey?: string | null;
+  /**
+   * The instruction that drives this run on a Mac, written in the same
+   * transaction as the run itself.
+   *
+   * Omitted for a cloud run, which has no host to instruct — the cloud executor
+   * finds its work by polling for `queued` runs. Present for a local one, and
+   * present *here* rather than in a second statement after the dispatch,
+   * because the two writes are one fact. Sequentially, either half can be the
+   * one that lands: a run with no command is a task the Mac is never told about
+   * and the user watches spin until its lease is swept, and a command with no
+   * run is an instruction naming a row that does not exist, which the Mac
+   * claims and fails.
+   *
+   * It carries no idempotency key. The only key that makes a `start` exactly
+   * once is derived from the run id, and the run id does not exist until the
+   * statement above this one has run.
+   */
+  command?: RunDrivingCommand;
+}
+
+/** The instruction `createRun` writes alongside the run it drives. */
+export interface RunDrivingCommand {
+  hostId: string;
+  kind: WorkCommandKind;
+  payload: Record<string, unknown>;
 }
 
 export interface CreateRunResult {
@@ -264,6 +296,10 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
   for (let tries = 0; tries < ATTEMPT_ALLOCATION_TRIES; tries++) {
     try {
       const run = await prisma.$transaction(async (tx) => {
+        // Read once per attempt rather than per statement, so the command's TTL
+        // is measured from the moment the run was made and not from whenever
+        // the insert after it happened to execute.
+        const now = new Date();
         const latest = await tx.workRun.findFirst({
           where: { sessionId: input.sessionId, userId: input.userId },
           orderBy: { attempt: "desc" },
@@ -292,6 +328,27 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
             idempotencyKey,
           },
         });
+
+        if (input.command) {
+          await tx.workCommand.create({
+            data: {
+              userId: input.userId,
+              hostId: input.command.hostId,
+              sessionId: input.sessionId,
+              runId: created.id,
+              kind: input.command.kind,
+              payload: input.command.payload as Prisma.InputJsonObject,
+              // Derived from the run this transaction just made, which is what
+              // makes it exactly-once without a second mechanism: a retried
+              // dispatch carrying the same run idempotency key never reaches
+              // here at all — it is answered from the existing run above — and
+              // an attempt-number collision rolls this insert back with it.
+              idempotencyKey: runCommandKey(created.id, input.command.kind),
+              expiresAt: commandExpiresAt(now),
+            },
+          });
+        }
+
         // Queueing a run is what makes the session live again, and it clears
         // `needsAttention`: whatever the user was being asked about, they have
         // now answered it by starting another attempt.
@@ -330,6 +387,95 @@ function uniqueConflict(err: unknown): string[] | null {
   const target = (err.meta as { target?: unknown } | undefined)?.target;
   if (Array.isArray(target)) return target.filter((entry): entry is string => typeof entry === "string");
   return typeof target === "string" ? [target] : [];
+}
+
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
+
+export interface DispatchRunCommandInput {
+  userId: string;
+  sessionId: string;
+  /** Null only for a command about a session rather than one of its runs. */
+  runId: string | null;
+  /** The run's own `hostId`, which is the only Mac allowed to be told. */
+  hostId: string | null;
+  /** The run's `effectiveTarget`. Anything but `local` has no Mac to tell. */
+  effectiveTarget: string | null;
+  kind: WorkCommandKind;
+  payload?: Record<string, unknown>;
+  /** Derived, never random. See `runCommandKey`. */
+  idempotencyKey: string;
+  now?: Date;
+}
+
+export type DispatchRunCommandResult =
+  | { status: "queued"; command: WorkCommand }
+  /** Nothing to send and nothing wrong: this run is not on a Mac. */
+  | { status: "skipped"; why: "not_local" | "no_host" }
+  /** The Mac is revoked, switched off, or too old to parse this instruction. */
+  | { status: "refused"; refusal: WorkRelayRefusal };
+
+/**
+ * Tells the Mac executing a run what its owner just decided.
+ *
+ * Every control surface needs this and none of them should be reimplementing
+ * it: pause, resume, cancel, an answer and an approval decision are all a row
+ * moving on this side and an instruction that has to reach the machine actually
+ * doing the work. Until this existed they were only the first half, so a pause
+ * pressed on a phone marked the run paused in Postgres while the Mac carried on
+ * moving files.
+ *
+ * The host is re-read here rather than taken from the caller, and it is read
+ * scoped to the account. A run's `hostId` is a column that was written at
+ * dispatch and the Mac behind it can have been revoked since; asking now is
+ * what makes revocation take effect on the next instruction rather than at the
+ * next registration.
+ *
+ * Upserted with `update: {}`, the same contract as
+ * `POST /api/work/hosts/[id]/commands`: the key names one logical instruction,
+ * and a retry must resolve to the command that already exists rather than
+ * rewrite one the Mac may already have claimed and be executing.
+ *
+ * Deliberately NOT the writer of any run state. A cancel still goes through
+ * `finishRun`, an approval is still recorded by its own route; this only ever
+ * adds the instruction that makes the Mac agree with what they wrote.
+ */
+export async function dispatchRunCommand(
+  input: DispatchRunCommandInput
+): Promise<DispatchRunCommandResult> {
+  const host = input.hostId
+    ? await prisma.workHost.findFirst({
+        where: { id: input.hostId, userId: input.userId },
+        select: { id: true, enabled: true, revokedAt: true, protocolVersion: true },
+      })
+    : null;
+
+  const plan = planRunCommand({
+    effectiveTarget: input.effectiveTarget,
+    host,
+    kind: input.kind,
+  });
+  if (plan.plan === "skip") return { status: "skipped", why: plan.why };
+  if (plan.plan === "refuse") return { status: "refused", refusal: plan.refusal };
+
+  const now = input.now ?? new Date();
+  const command = await prisma.workCommand.upsert({
+    where: { userId_idempotencyKey: { userId: input.userId, idempotencyKey: input.idempotencyKey } },
+    create: {
+      userId: input.userId,
+      hostId: plan.hostId,
+      sessionId: input.sessionId,
+      runId: input.runId,
+      kind: input.kind,
+      payload: (input.payload ?? {}) as Prisma.InputJsonObject,
+      idempotencyKey: input.idempotencyKey,
+      expiresAt: commandExpiresAt(now),
+    },
+    update: {},
+  });
+
+  return { status: "queued", command };
 }
 
 // ---------------------------------------------------------------------------

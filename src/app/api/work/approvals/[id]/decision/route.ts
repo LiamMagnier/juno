@@ -3,8 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { isWorkStatus } from "@/lib/work/domain";
 import { recordWorkAudit } from "@/lib/work/audit";
-import { appendEvents, setSessionAttention } from "@/lib/work/store";
-import { serializeApproval } from "@/lib/work/serializers";
+import { appendEvents, dispatchRunCommand, setSessionAttention } from "@/lib/work/store";
+import { approvalCommandKey } from "@/lib/work/relay";
+import { serializeApproval, serializeCommand } from "@/lib/work/serializers";
 import {
   approvalDecisionSchema,
   classifyApprovalDecision,
@@ -45,7 +46,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       // granted while the session was permissive must not still authorise the
       // action after the user narrowed the session to conservative, because
       // narrowing it was aimed at exactly that action.
-      run: { select: { id: true, sessionId: true, status: true, permissionPolicy: true } },
+      // `hostId` and `effectiveTarget` are here for the dispatch at the end: a
+      // decision that only lands in Postgres leaves the Mac holding the tool
+      // call waiting on an answer it will never be handed.
+      run: {
+        select: {
+          id: true,
+          sessionId: true,
+          status: true,
+          permissionPolicy: true,
+          hostId: true,
+          effectiveTarget: true,
+        },
+      },
     },
   });
   if (!approval) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -158,8 +171,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     },
   });
 
-  // The executor learns the answer from the run's own event stream, keyed on
-  // the approval so a retry of this request cannot append it twice.
+  // The cloud executor learns the answer from the run's own event stream, keyed
+  // on the approval so a retry of this request cannot append it twice.
   await appendEvents({
     runId: approval.runId,
     userId: user.id,
@@ -177,6 +190,59 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     ],
   });
 
+  // A Mac does not read the event stream — it is the producer of it — so a
+  // local run needs the answer as an instruction. `WorkApprovalCoordinator` is
+  // holding the tool call open behind `approvals.resolve`, and without this the
+  // person taps Allow on their phone and the Mac carries on waiting until the
+  // approval's own TTL denies it.
+  //
+  // The digest travels with the decision because `LocalWorkExecutor` demands it
+  // and refuses without one: it is what makes this an answer about an action
+  // rather than about a sentence somebody read, so a decision that echoes a
+  // different digest is refused by the coordinator instead of applied to
+  // whatever happens to be waiting under that identifier.
+  //
+  // A refusal is not allowed to fail the request. The decision is already
+  // written and audited above; reporting an error now would tell the client
+  // their answer was not recorded when it was.
+  const dispatched = await dispatchRunCommand({
+    userId: user.id,
+    sessionId: approval.run.sessionId,
+    runId: approval.runId,
+    hostId: approval.run.hostId,
+    effectiveTarget: approval.run.effectiveTarget,
+    // `allowed_always` sends `approve`, not a third kind. The difference
+    // between "yes" and "yes, and stop asking" is a fact about this account's
+    // future approvals and is remembered on this side; to the Mac holding one
+    // tool call open, both are the same answer to the same question.
+    kind: outcome.decision === "denied" ? "deny" : "approve",
+    payload: {
+      approvalId: approval.id,
+      actionDigest: approval.actionDigest,
+      ...(reason ? { reason } : {}),
+    },
+    // Keyed on the approval and the answer, not on the run: an approval is
+    // decided once — `decision: "pending"` in the WHERE above sees to that — so
+    // a retry that got this far resolves to the command already queued.
+    idempotencyKey: approvalCommandKey(approval.id, outcome.decision),
+  });
+  if (dispatched.status === "refused") {
+    await recordWorkAudit({
+      userId: user.id,
+      kind: dispatched.refusal.audit,
+      severity: dispatched.refusal.severity,
+      actor: "web",
+      hostId: approval.run.hostId,
+      sessionId: approval.run.sessionId,
+      runId: approval.runId,
+      detail: {
+        approvalId: approval.id,
+        commandKind: outcome.decision === "denied" ? "deny" : "approve",
+        reason: dispatched.refusal.code,
+      },
+    });
+  }
+
   // The question has been answered, so the session stops asking. The status
   // itself belongs to the executor — it moves the run off `waiting_approval`
   // when it picks the decision up — and a status this build cannot read is left
@@ -192,5 +258,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const updated = await prisma.workApproval.findFirst({ where: { id: approval.id, userId: user.id } });
-  return NextResponse.json({ approval: updated ? serializeApproval(updated) : stored });
+  return NextResponse.json({
+    approval: updated ? serializeApproval(updated) : stored,
+    // Null for a cloud run, which has no Mac to instruct, and for the Mac that
+    // could not be told. Stated either way rather than omitted, so a client can
+    // distinguish "recorded and delivered" from "recorded".
+    command: dispatched.status === "queued" ? serializeCommand(dispatched.command) : null,
+  });
 }

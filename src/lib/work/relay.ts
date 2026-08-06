@@ -28,12 +28,14 @@ import {
   WORK_COMMAND_KINDS,
   WORK_EVENT_KINDS,
   WORK_PERMISSION_POLICIES,
+  WORK_TERMINAL_REASONS,
   narrowestPolicy,
   type WorkAuditKind,
   type WorkAuditSeverity,
   type WorkCapability,
   type WorkCommandKind,
   type WorkPermissionPolicy,
+  type WorkTerminalReason,
 } from "@/lib/work/domain";
 
 // ---------------------------------------------------------------------------
@@ -392,6 +394,135 @@ export function refusalBody(refusal: WorkRelayRefusal): {
 export const HOST_NOT_FOUND = { error: "Not found" } as const;
 
 // ---------------------------------------------------------------------------
+// Dispatch: the instruction that drives a local run
+// ---------------------------------------------------------------------------
+
+/**
+ * The command payload a Mac needs to start or restart a run.
+ *
+ * The two keys are the contract `DesktopWorkRunHost` is already written
+ * against: it reads the goal from `payload.goal` (falling back to
+ * `payload.prompt`) and the model from `payload.model`, and throws
+ * `DesktopWorkRunError.noGoal` when neither goal key is there — a `start` that
+ * omits the goal is a command the Mac claims, refuses, and acknowledges as
+ * failed, which presents to the user as a task that started and immediately
+ * broke for no stated reason.
+ *
+ * Only `goal` is written, never `prompt`. The fallback exists for older hosts
+ * and writing both would be two places for the same sentence to differ.
+ *
+ * The goal is passed through whole. Truncating it to fit some notional payload
+ * bound would silently change what the run was asked to do, and the ceiling
+ * that matters — what a model will read — belongs to the run, not the wire.
+ *
+ * `model` is omitted rather than sent as null when the run has no concrete id,
+ * because the Mac's `??` fallback to its own default only fires on a missing
+ * key; a null would decode as a value and leave it driving a model called
+ * nothing.
+ */
+export function startCommandPayload(input: {
+  goal: string;
+  model?: string | null;
+}): Record<string, unknown> {
+  const model = typeof input.model === "string" && input.model.length > 0 ? input.model : null;
+  return { goal: input.goal, ...(model === null ? {} : { model }) };
+}
+
+/**
+ * The idempotency key for a command about one run.
+ *
+ * Derived rather than random, because `(userId, idempotencyKey)` is the unique
+ * index the whole enqueue path rests on and a random key makes every retry a
+ * second instruction. `start` and `stop` take no discriminator: a run is
+ * started once and finished once — `finishRun` sees to the second — so the run
+ * id alone names the instruction for all time. `pause`, `resume` and `answer`
+ * can legitimately happen more than once for one run, so each carries the thing
+ * that makes this occurrence distinct: the sequence of the transcript event
+ * that recorded the transition, or the id of the question being answered.
+ *
+ * The `work:` prefix keeps these out of the way of the keys clients mint for
+ * themselves, which are opaque strings from a phone and have no structure to
+ * collide with.
+ */
+export function runCommandKey(
+  runId: string,
+  kind: WorkCommandKind,
+  discriminator?: string | number
+): string {
+  return discriminator === undefined
+    ? `work:run:${runId}:${kind}`
+    : `work:run:${runId}:${kind}:${discriminator}`;
+}
+
+/**
+ * The idempotency key for the command that carries an approval decision.
+ *
+ * Keyed on the approval and the answer rather than on the run: a decision is
+ * written once — `decision: "pending"` in the route's WHERE sees to that — so a
+ * retry of the same answer must reach the same command row, and the two answers
+ * are different instructions that must never share one.
+ */
+export function approvalCommandKey(approvalId: string, decision: string): string {
+  return `work:approval:${approvalId}:${decision}`;
+}
+
+/** The host columns a dispatch decision reads, and no others. */
+export interface CommandHostView extends HostGateView {
+  id: string;
+  /** The generation the host registered with. Never one a client asserted. */
+  protocolVersion: number;
+}
+
+export type RunCommandPlan =
+  /** Queue it, at this Mac. */
+  | { plan: "enqueue"; hostId: string }
+  /**
+   * Nothing to send, and nothing wrong. Cloud runs have no Mac to instruct, and
+   * saying so explicitly is what stops a caller reading "no command" as an
+   * error and refusing a dispatch that is going perfectly well.
+   */
+  | { plan: "skip"; why: "not_local" | "no_host" }
+  | { plan: "refuse"; refusal: WorkRelayRefusal };
+
+/**
+ * Whether an owner's intent becomes an instruction on a Mac, and which.
+ *
+ * The whole of Juno Work on a Mac hangs off this being called: a run dispatched
+ * to a local host used to reach `queued` and stop there, because
+ * `POST /api/work/hosts/[id]/commands` was the only writer of the command queue
+ * and no dispatch path ever called it. The Mac polled correctly, forever, for a
+ * command nobody had written.
+ *
+ * The protocol check is `refuseEnqueue` rather than a second copy of the same
+ * comparison. That matters more than it looks: `COMMAND_KIND_PROTOCOL` is the
+ * single table saying which generation can parse what, and a duplicate test
+ * here would be the one that goes stale when a kind is added — leaving a Mac
+ * handed an instruction it cannot read, which it refuses once per re-lease
+ * until the command expires.
+ *
+ * The registered generation is used, never a declared one. A declaration is
+ * evidence from a host that is currently polling; enqueue happens on behalf of
+ * a phone or a browser, which is in no position to say what that Mac can parse.
+ */
+export function planRunCommand(input: {
+  /** The run's `effectiveTarget`. `local` is the only one with a Mac to tell. */
+  effectiveTarget: string | null;
+  host: CommandHostView | null;
+  kind: WorkCommandKind;
+}): RunCommandPlan {
+  if (input.effectiveTarget !== "local") return { plan: "skip", why: "not_local" };
+  // A local run whose host row has gone — revoked and deleted, or an account
+  // whose Mac was removed between selection and dispatch. There is nothing to
+  // instruct and nothing to refuse: the run's own lease sweep is what ends it.
+  if (input.host === null) return { plan: "skip", why: "no_host" };
+
+  const refusal = refuseEnqueue(input.host, input.kind, input.host.protocolVersion);
+  if (refusal) return { plan: "refuse", refusal };
+
+  return { plan: "enqueue", hostId: input.host.id };
+}
+
+// ---------------------------------------------------------------------------
 // Host advertisements
 // ---------------------------------------------------------------------------
 
@@ -702,6 +833,113 @@ export function planHostOutbox<E extends IncomingHostEvent>(
   }
 
   return { accepted, duplicates, acceptedThrough: expected - 1, firstGap };
+}
+
+// ---------------------------------------------------------------------------
+// The end of a run, as a host reports it
+// ---------------------------------------------------------------------------
+
+/** Terminal detail is prose about the ending, never the model's own text. */
+const MAX_HOST_TERMINAL_DETAIL_CHARS = 4_000;
+
+const TERMINAL_REASONS: ReadonlySet<string> = new Set(WORK_TERMINAL_REASONS);
+
+/**
+ * The `outcome` vocabulary a Mac reports, mapped onto the reason column.
+ *
+ * `DesktopWorkRunHost.finish` emits four: `succeeded` when the model stopped
+ * with nothing left to call, `failed` when a turn threw, `stopped` when a
+ * `stop` command was carried out, and `truncated` when the run hit the host's
+ * ceiling on turns.
+ *
+ * `truncated` maps to `failed` and not to `budget_exceeded`, following
+ * `WorkSession.terminalOutcome` in the cloud runtime, which makes the same call
+ * for the same reason: nothing was over an account ceiling, and reporting one
+ * sends the reader to raise a limit that was never the problem. It does not map
+ * to `completed` either — a run that stopped at step sixty-four has not
+ * answered the goal, and a green tick over it is the one outcome nobody can
+ * act on.
+ */
+const HOST_OUTCOME_REASONS: Record<string, WorkTerminalReason> = {
+  succeeded: "completed",
+  completed: "completed",
+  failed: "failed",
+  stopped: "cancelled",
+  cancelled: "cancelled",
+  truncated: "failed",
+};
+
+export interface HostTerminalReport {
+  reason: WorkTerminalReason;
+  /** Operator-facing prose behind the reason, or null when the host gave none. */
+  detail: string | null;
+}
+
+function stringField(payload: unknown, key: string): string | null {
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const value = (payload as Record<string, unknown>)[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/** One event, as much of it as a terminal reading needs. */
+export interface TerminalEventView {
+  kind: string;
+  payload?: unknown;
+}
+
+/**
+ * The run's ending, out of a batch a host drained — or null if it holds none.
+ *
+ * `run_finished` is the only kind that ends a run. `error` is deliberately not
+ * terminal: both the Mac and the cloud runtime emit one mid-run and carry on,
+ * and a relay that ended a run on the first error would stop a task over a tool
+ * call that recovered.
+ *
+ * The FIRST `run_finished` wins, matching `finishRun`, whose WHERE excludes
+ * every terminal status so that the first writer to commit decides why the run
+ * ended. Reading the last one here and the first one there would be two rules
+ * for one question.
+ *
+ * Three producers write this payload and they do not agree on a key, so all
+ * three are read in order of how specific they are. `agent-core` sends
+ * `terminalReason`, already in this vocabulary. `scripts/work-runner.ts` sends
+ * `reason`, also in this vocabulary. The Mac sends `outcome` plus a `reason`
+ * that is a sentence for a person — which is why `reason` is only taken as a
+ * verdict when it actually is one, and otherwise becomes the detail. Guessing
+ * the other way would file every local run under a terminal reason called
+ * "Finished.".
+ *
+ * An ending this build cannot name is `failed`, not `completed`. The run is
+ * over either way — that is what the event says — and of the two mislabels,
+ * "we cannot say this worked" is the one a reader can act on.
+ */
+export function hostTerminalReport(
+  events: readonly TerminalEventView[]
+): HostTerminalReport | null {
+  const finished = events.find((event) => event.kind === "run_finished");
+  if (!finished) return null;
+
+  const payload = finished.payload;
+  const declared = stringField(payload, "terminalReason");
+  const named = stringField(payload, "reason");
+  const outcome = stringField(payload, "outcome");
+
+  const reason: WorkTerminalReason =
+    declared !== null && TERMINAL_REASONS.has(declared)
+      ? (declared as WorkTerminalReason)
+      : named !== null && TERMINAL_REASONS.has(named)
+        ? (named as WorkTerminalReason)
+        : outcome !== null && HOST_OUTCOME_REASONS[outcome] !== undefined
+          ? HOST_OUTCOME_REASONS[outcome]
+          : "failed";
+
+  // The detail is whichever prose the producer offered: `detail` when it has
+  // one, otherwise the sentence in `reason` — which is only prose when it was
+  // not itself the verdict.
+  const prose =
+    stringField(payload, "detail") ?? (named !== null && !TERMINAL_REASONS.has(named) ? named : null);
+
+  return { reason, detail: prose === null ? null : prose.slice(0, MAX_HOST_TERMINAL_DETAIL_CHARS) };
 }
 
 // ---------------------------------------------------------------------------

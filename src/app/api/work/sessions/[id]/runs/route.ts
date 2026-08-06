@@ -29,7 +29,13 @@ import {
   isWorkCapableModel,
   isWorkModelAllowed,
 } from "@/lib/work/models";
-import { createRun, recordRunInputsFromGrants, type CreateRunResult } from "@/lib/work/store";
+import {
+  createRun,
+  recordRunInputsFromGrants,
+  type CreateRunResult,
+  type RunDrivingCommand,
+} from "@/lib/work/store";
+import { planRunCommand, refusalBody, startCommandPayload } from "@/lib/work/relay";
 import { serializeRun } from "@/lib/work/serializers";
 import { effectiveHostState, refusalForSelection, startRunSchema } from "@/app/api/work/protocol";
 
@@ -408,6 +414,43 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     host: host ? policyOf(host.approvalPolicy) : null,
   };
 
+  // The instruction that will actually drive this run, decided before anything
+  // is written.
+  //
+  // A run dispatched to a Mac used to reach `queued` and stop there for ever.
+  // `POST /api/work/hosts/[id]/commands` was the only writer of the command
+  // queue and nothing here called it, so the Mac long-polled correctly and
+  // indefinitely for a `start` that was never enqueued — which is a spinner
+  // that never resolves, arriving one layer below the one `selectTarget`
+  // exists to prevent.
+  //
+  // Planned here rather than inside the transaction so that a refusal costs
+  // nothing: `selectTarget` has already excluded a Mac that is disabled or
+  // revoked, but it read the fleet a few statements ago, and a revocation that
+  // landed in between must stop the dispatch rather than leave a run behind
+  // with no instruction. Creating the run first and refusing afterwards would
+  // be exactly the orphan this whole change exists to make impossible.
+  const dispatch = planRunCommand({
+    effectiveTarget: selection.target,
+    host: host ?? null,
+    kind: "start",
+  });
+  if (dispatch.plan === "refuse") {
+    return NextResponse.json(refusalBody(dispatch.refusal), { status: dispatch.refusal.status });
+  }
+  const command: RunDrivingCommand | undefined =
+    dispatch.plan === "enqueue"
+      ? {
+          hostId: dispatch.hostId,
+          kind: "start",
+          // The goal comes off the session, which is where the user's own words
+          // live; the model is the concrete id resolved above, never the Auto
+          // sentinel, because the Mac splits it into a provider and a name and
+          // has no catalogue to resolve a sentinel against.
+          payload: startCommandPayload({ goal: session.goal, model: model.effective }),
+        }
+      : undefined;
+
   let created: CreateRunResult;
   try {
     created = await prisma.$transaction(async (tx) => {
@@ -477,6 +520,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // the run as it was started, not as the defaults happen to be today.
         budget: DEFAULT_RUN_BUDGET,
         idempotencyKey: body.idempotencyKey ?? null,
+        // Written in the run's own transaction, so this attempt cannot exist
+        // without the instruction that drives it, nor the instruction without
+        // the run it names.
+        command,
       });
     });
   } catch (err) {
