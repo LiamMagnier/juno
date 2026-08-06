@@ -423,7 +423,12 @@ function describeEvent(event: ClientWorkEvent): EventDescription {
       };
     case "question_answered":
       return {
-        title: "You answered",
+        // The same kind carries two things — an answer, and an instruction the
+        // user volunteered — because the shared event vocabulary has no
+        // user-message kind and `/answer` records both under this one. "You
+        // answered" over a sentence that answered nothing is a small lie the
+        // reader will notice, so the marker is read rather than assumed.
+        title: payload.steering === true ? "You added an instruction" : "You answered",
         detail: str(payload, "text", "answer"),
         tone: "quiet",
         icon: MessageSquare,

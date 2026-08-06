@@ -4,7 +4,6 @@ import * as React from "react";
 import type { Prisma } from "@prisma/client";
 import { ExternalLink, FileText, Link2, ShieldCheck } from "lucide-react";
 import {
-  ARTIFACT_EXTENSION,
   WORK_ARTIFACT_KINDS,
   budgetExceeded,
   type WorkArtifactKind,
@@ -33,10 +32,17 @@ import { cn, formatBytes, formatTokens } from "@/lib/utils";
  * overwhelmingly a path, and a path in a screenshot is a path in a support
  * ticket. The count still tells the truth about how much changed.
  *
- * Everything here is derived from the event stream. There is no artifacts or
- * references endpoint to read instead, and there should not be one: the stream
- * is what the resume cursor replays, so a panel built from it can never disagree
- * with the timeline beside it about whether something happened.
+ * Everything here is derived from the event stream, and for the panels in this
+ * file that is the only source there is: the stream is what the resume cursor
+ * replays, so a panel built from it can never disagree with the timeline beside
+ * it about whether something happened.
+ *
+ * The one exception is documents, and the exception is instructive. The stream
+ * says a file was written; it does not hold the bytes, their size, their hash or
+ * what they were made from, and there is a route that does. So `deriveArtifacts`
+ * stays here — it is what tells the panel a new document exists — while the
+ * panel itself lives in `work-documents.tsx` and reads /api/work/artifacts for
+ * the facts only the store has.
  */
 
 type Payload = Record<string, unknown>;
@@ -271,49 +277,14 @@ export function deriveArtifacts(events: readonly ClientWorkEvent[]): WorkProduce
   return [...artifacts.values()];
 }
 
-export function WorkArtifacts({ artifacts }: { artifacts: readonly WorkProducedArtifact[] }) {
-  if (artifacts.length === 0) {
-    return (
-      <p className="text-[13px] leading-relaxed text-muted-foreground">
-        No documents yet. Anything Juno produces — a workbook, a report, a deck — is listed here as
-        it is written.
-      </p>
-    );
-  }
-  return (
-    <div className="space-y-2">
-      <ul className="space-y-2">
-        {artifacts.map((artifact) => (
-          <li
-            key={artifact.id}
-            className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-card/50 px-3 py-2.5"
-          >
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-muted font-mono text-[9px] text-muted-foreground">
-              {ARTIFACT_EXTENSION[artifact.kind]}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] font-medium text-foreground">
-                {artifact.title}
-              </span>
-              <span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">
-                {artifact.version === null ? "written" : `v${artifact.version}`} ·{" "}
-                {workTimeAgo(artifact.updatedAt)}
-              </span>
-            </span>
-          </li>
-        ))}
-      </ul>
-      {/* There is no download route under /api/work yet. A button linking to one
-          would 404 on click, which is a worse answer than this sentence: the
-          document genuinely exists, and saying where it does not yet reach is
-          the only honest thing this panel can offer. */}
-      <p className="text-[12px] leading-relaxed text-muted-foreground">
-        Downloading these from the web isn’t available yet. They are attached to the task and
-        reachable from the Juno app.
-      </p>
-    </div>
-  );
-}
+/*
+ * The panel that renders these lives in `work-documents.tsx`.
+ *
+ * It reads `/api/work/artifacts` for the real rows and their download links,
+ * and takes the list above as the signal that there is something new to read
+ * and as the fallback when that request fails. The derivation stays here,
+ * beside the other projections of the same stream.
+ */
 
 // ---------------------------------------------------------------------------
 // Run settings and budget

@@ -38,15 +38,25 @@ interface Turn {
   id: string;
   role: "you" | "juno";
   text: string;
+  /** True for a turn the user volunteered rather than one that answered a question. */
+  unprompted: boolean;
 }
 
 /**
  * The readable conversation, pulled out of the event stream.
  *
  * Only three kinds carry prose a person addressed to another: what Juno said,
- * what it asked, and what the user answered. Everything else in the stream is
+ * what it asked, and what the user typed. Everything else in the stream is
  * machinery and belongs in the timeline, where it can be skimmed rather than
  * read.
+ *
+ * The last of those three carries two different things. `question_answered`
+ * with a `questionId` is an answer; the same kind with `steering: true` and no
+ * id is an instruction the user offered unprompted, which
+ * `/api/work/sessions/[id]/answer` records under that kind because
+ * `WORK_EVENT_KINDS` has none of its own and the vocabulary is shared with the
+ * Mac and the phone. Both are the user's words and both belong in this column;
+ * only the label differs.
  */
 export function deriveTurns(events: readonly ClientWorkEvent[]): Turn[] {
   const turns: Turn[] = [];
@@ -55,44 +65,49 @@ export function deriveTurns(events: readonly ClientWorkEvent[]): Turn[] {
     const payload = payloadOf(event.payload);
     if (event.kind === "assistant_message") {
       const text = str(payload, "text", "message");
-      if (text) turns.push({ id: event.id, role: "juno", text });
+      if (text) turns.push({ id: event.id, role: "juno", text, unprompted: false });
     }
     if (event.kind === "question_asked") {
       const text = str(payload, "question", "text");
-      if (text) turns.push({ id: event.id, role: "juno", text });
+      if (text) turns.push({ id: event.id, role: "juno", text, unprompted: false });
     }
     if (event.kind === "question_answered") {
       const text = str(payload, "text", "answer");
-      if (text) turns.push({ id: event.id, role: "you", text });
+      if (text) {
+        turns.push({ id: event.id, role: "you", text, unprompted: payload.steering === true });
+      }
     }
   }
   return turns;
 }
 
+/**
+ * What the box at the bottom is for right now.
+ *
+ * Three states rather than a boolean and a reason, because the three do
+ * genuinely different things: one answers a specific question and is checked
+ * against its id, one records an instruction nobody asked for, and one is not a
+ * box at all. Collapsing them left the composer permanently disabled whenever
+ * Juno had not asked anything, which was every ordinary minute of every run.
+ */
+export type WorkComposerMode =
+  | { kind: "answer"; question: string }
+  | { kind: "steer" }
+  /** No box, and the sentence that says why — never a greyed-out field. */
+  | { kind: "closed"; reason: string };
+
 export function WorkConversation({
   session,
   turns,
   sending,
-  disabledReason,
-  answeringQuestion,
+  mode,
   onSend,
 }: {
   session: ClientWorkSession;
   turns: readonly Turn[];
   sending: boolean;
-  /** Non-null disables the composer and says why, rather than greying it out. */
-  disabledReason: string | null;
-  /**
-   * The question this box would answer, when there is one.
-   *
-   * Work has no user-message event kind — `POST /answer` is the only way a
-   * sentence from the user reaches a run, and it requires the id of the question
-   * being answered. So the box is not a general chat input and must not look
-   * like one: when a question is open it says which, and when none is open the
-   * caller disables it with the reason. Accepting text that goes nowhere would
-   * be the worst version of this surface.
-   */
-  answeringQuestion: string | null;
+  /** What the box does right now, and whether there is one at all. */
+  mode: WorkComposerMode;
   onSend: (text: string) => void;
 }) {
   const [draft, setDraft] = React.useState("");
@@ -110,7 +125,7 @@ export function WorkConversation({
 
   const send = () => {
     const text = draft.trim();
-    if (!text || sending || disabledReason !== null || answeringQuestion === null) return;
+    if (!text || sending || mode.kind === "closed") return;
     setDraft("");
     onSend(text);
   };
@@ -129,7 +144,12 @@ export function WorkConversation({
 
         {turns.map((turn) =>
           turn.role === "you" ? (
-            <div key={turn.id} className="flex justify-end">
+            <div key={turn.id} className="flex flex-col items-end">
+              {turn.unprompted && (
+                <p className="mb-1 pr-1 font-mono text-[10px] text-muted-foreground/70">
+                  You added this
+                </p>
+              )}
               <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-secondary px-3.5 py-2.5 text-[14px] leading-relaxed text-secondary-foreground">
                 {turn.text}
               </p>
@@ -142,15 +162,20 @@ export function WorkConversation({
       </div>
 
       <div className="sticky bottom-0 mt-6 pt-2">
-        {disabledReason !== null || answeringQuestion === null ? (
+        {mode.kind === "closed" ? (
           <p className="rounded-xl border border-dashed border-border/70 bg-background/80 px-3.5 py-3 text-[13px] leading-relaxed text-muted-foreground backdrop-blur">
-            {disabledReason ??
-              "Juno isn’t waiting on anything from you right now."}
+            {mode.reason}
           </p>
         ) : (
           <div className="composer-surface flex flex-col gap-1 rounded-[20px] border border-border/65 bg-card/95 p-1.5 backdrop-blur transition-[border-color] duration-base ease-spring focus-within:border-foreground/15">
             <p className="truncate px-2.5 pt-1 font-mono text-[10px] text-muted-foreground">
-              Answering: {answeringQuestion}
+              {mode.kind === "answer"
+                ? `Answering: ${mode.question}`
+                : // Said before the box rather than after the send, because the
+                  // difference matters: this goes on the task's record, and the
+                  // attempt already running was handed its instructions when it
+                  // started.
+                  "Not an answer to anything — this is kept on the task"}
             </p>
             <div className="flex items-end gap-1.5">
               <textarea
@@ -165,8 +190,10 @@ export function WorkConversation({
                 }}
                 rows={1}
                 disabled={sending}
-                placeholder="Answer in your own words"
-                aria-label={`Answer: ${answeringQuestion}`}
+                placeholder={
+                  mode.kind === "answer" ? "Answer in your own words" : "Add context or an instruction"
+                }
+                aria-label={mode.kind === "answer" ? `Answer: ${mode.question}` : "Add an instruction"}
                 className="max-h-[180px] min-h-[38px] w-full resize-none bg-transparent px-2.5 py-2 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground/70 disabled:opacity-70"
               />
               <Button
@@ -174,7 +201,7 @@ export function WorkConversation({
                 size="icon-sm"
                 onClick={send}
                 disabled={sending || draft.trim().length === 0}
-                aria-label="Send answer"
+                aria-label={mode.kind === "answer" ? "Send answer" : "Add this to the task"}
                 className={cn("composer-primary-action h-8 w-8 shrink-0 rounded-[11px]")}
               >
                 {sending ? (
