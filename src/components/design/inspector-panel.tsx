@@ -14,15 +14,29 @@
  * one's, and every write is built per layer, so setting a stroke's weight
  * cannot carry the first layer's colour onto the rest — which is exactly what
  * reading from `nodes[0]` and writing to all of them used to do.
+ *
+ * Fill and Effects live in `effects-panel.tsx`. They are big enough to earn a
+ * file, and they are the two sections that are direct manipulation rather than
+ * fields — a gradient axis and a stop ramp are dragged, not typed. That file
+ * also owns the field primitives this one is built from, because it is the leaf
+ * of the pair and a cycle between them would ship inside the Mac bundle.
  */
 
 import * as React from "react";
 import { toast } from "sonner";
+import {
+  ColorField,
+  EffectsSection,
+  FillControl,
+  NumberField,
+  Section,
+  SelectField,
+  TextField,
+} from "@/components/design/effects-panel";
 import { readImageAsset } from "@/components/design/use-design-document";
 import { hexToRgba, rgbaToHex } from "@/lib/design/variables";
 import { isContainer, type AutoLayout, type DesignDocument, type DesignNode, type ImageNode, type NodeId } from "@/lib/design/types";
 import type { DesignOperation, NodePatch } from "@/lib/design/operations";
-import { cn } from "@/lib/utils";
 
 interface Props {
   document: DesignDocument;
@@ -91,7 +105,6 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
   const horizontal = shared(nodes, (n) => n.constraints.horizontal);
   const vertical = shared(nodes, (n) => n.constraints.vertical);
   const radius = shared(nodes, (n) => (typeof n.cornerRadius === "number" ? n.cornerRadius : n.cornerRadius[0]));
-  const fill = shared(nodes, (n) => (n.fills[0]?.type === "solid" ? rgbaToHex(n.fills[0].color) : ""));
   const strokeColor = shared(nodes, (n) => (n.strokes[0]?.paint.type === "solid" ? rgbaToHex(n.strokes[0].paint.color) : ""));
   const strokeWeight = shared(nodes, (n) => n.strokes[0]?.weight ?? 0);
   const hasStroke = nodes.some((n) => n.strokes.length > 0);
@@ -219,17 +232,6 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
             disabled={readOnly}
             onCommit={(v) => patchAll({ cornerRadius: v }, "Set corner radius")}
           />
-          <ColorField
-            label="Fill"
-            value={fill.value}
-            mixed={fill.mixed}
-            disabled={readOnly}
-            onCommit={(hex) => {
-              const color = hexToRgba(hex);
-              if (color) patchAll({ fills: [{ type: "solid", color }] }, "Set fill");
-            }}
-            onClear={nodes.some((n) => n.fills.length > 0) ? () => patchAll({ fills: [] }, "Remove fill") : undefined}
-          />
           <div className="grid grid-cols-2 gap-1.5">
             <ColorField
               label="Stroke"
@@ -263,6 +265,13 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
           </div>
         </Section>
       )}
+
+      {/* A line is drawn from its stroke and has no interior, so a fill control
+          on one is a control that does nothing. Effects are a different matter:
+          a line casts a shadow like anything else. */}
+      {first.type !== "line" && <FillControl nodes={nodes} editable={editable} onApply={onApply} readOnly={readOnly} />}
+
+      <EffectsSection nodes={nodes} editable={editable} onApply={onApply} readOnly={readOnly} />
 
       {single?.type === "image" && <ImageSection node={single} document={doc} onApply={onApply} readOnly={readOnly} />}
 
@@ -573,216 +582,4 @@ function isAssetUsedElsewhere(doc: DesignDocument, assetId: string, exceptNodeId
     if (node.type === "image" && node.assetId === assetId) return true;
     return node.fills.some((paint) => paint.type === "image" && paint.assetId === assetId);
   });
-}
-
-// ---------------------------------------------------------------------------
-// Fields
-// ---------------------------------------------------------------------------
-
-function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <h3 className="truncate font-mono text-[10px] text-muted-foreground">{title}</h3>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-const fieldClass =
-  "w-full rounded-[8px] border border-border/60 bg-background px-2 py-1 text-xs tabular-nums outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-50 coarse:min-h-9";
-
-function NumberField({
-  label,
-  value,
-  mixed,
-  min,
-  max,
-  step = 1,
-  suffix,
-  disabled,
-  onCommit,
-}: {
-  label: string;
-  value: number;
-  /** The selected layers disagree: show nothing rather than the first one's. */
-  mixed?: boolean;
-  min?: number;
-  max?: number;
-  step?: number;
-  suffix?: string;
-  disabled?: boolean;
-  onCommit: (value: number) => void;
-}) {
-  // Uncontrolled while focused so typing "12" does not fight a re-render at "1".
-  const [draft, setDraft] = React.useState<string | null>(null);
-  const shown = draft ?? (mixed ? "" : String(Math.round(value * 100) / 100));
-  return (
-    <label className="block">
-      <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">
-        {label}
-        {suffix ? ` (${suffix})` : ""}
-      </span>
-      <input
-        type="number"
-        className={fieldClass}
-        value={shown}
-        placeholder={mixed ? "Mixed" : undefined}
-        min={min}
-        max={max}
-        step={step}
-        disabled={disabled}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => {
-          if (draft !== null) {
-            const parsed = Number.parseFloat(draft);
-            if (Number.isFinite(parsed)) onCommit(parsed);
-          }
-          setDraft(null);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          if (e.key === "Escape") {
-            setDraft(null);
-            (e.target as HTMLInputElement).blur();
-          }
-          e.stopPropagation(); // canvas shortcuts must not fire while typing
-        }}
-      />
-    </label>
-  );
-}
-
-function TextField({
-  label,
-  value,
-  multiline,
-  disabled,
-  onCommit,
-}: {
-  label: string;
-  value: string;
-  multiline?: boolean;
-  disabled?: boolean;
-  onCommit: (value: string) => void;
-}) {
-  const [draft, setDraft] = React.useState<string | null>(null);
-  const shown = draft ?? value;
-  const shared = {
-    className: fieldClass,
-    value: shown,
-    disabled,
-    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(e.target.value),
-    onBlur: () => {
-      if (draft !== null) onCommit(draft);
-      setDraft(null);
-    },
-    onKeyDown: (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" && !multiline) (e.target as HTMLElement).blur();
-      if (e.key === "Escape") {
-        setDraft(null);
-        (e.target as HTMLElement).blur();
-      }
-      e.stopPropagation();
-    },
-  };
-  return (
-    <label className="block">
-      <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">{label}</span>
-      {multiline ? <textarea rows={3} {...shared} className={cn(fieldClass, "resize-y")} /> : <input type="text" {...shared} />}
-    </label>
-  );
-}
-
-/** Sentinel for the "Mixed" row. Not the empty string: some of these selects
- *  use "" for a real choice ("None"). */
-const MIXED_OPTION = "\u0000mixed";
-
-function SelectField({
-  label,
-  value,
-  mixed,
-  options,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  mixed?: boolean;
-  options: { value: string; label: string }[];
-  disabled?: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="block">
-      <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">{label}</span>
-      <select
-        className={fieldClass}
-        value={mixed ? MIXED_OPTION : value}
-        disabled={disabled}
-        onChange={(e) => e.target.value !== MIXED_OPTION && onChange(e.target.value)}
-      >
-        {mixed && <option value={MIXED_OPTION}>Mixed</option>}
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function ColorField({
-  label,
-  value,
-  mixed,
-  disabled,
-  onCommit,
-  onClear,
-}: {
-  label: string;
-  value: string;
-  mixed?: boolean;
-  disabled?: boolean;
-  onCommit: (hex: string) => void;
-  onClear?: () => void;
-}) {
-  return (
-    <label className="block">
-      <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-1.5">
-        <input
-          type="color"
-          value={!mixed && value ? value.slice(0, 7) : "#000000"}
-          disabled={disabled}
-          onChange={(e) => onCommit(e.target.value)}
-          className="size-7 shrink-0 cursor-pointer rounded-[6px] border border-border/60 bg-transparent p-0.5 disabled:opacity-50"
-          aria-label={`${label} colour`}
-        />
-        <input
-          type="text"
-          className={fieldClass}
-          value={mixed ? "" : value}
-          placeholder={mixed ? "Mixed" : "none"}
-          disabled={disabled}
-          onChange={(e) => onCommit(e.target.value)}
-          onKeyDown={(e) => e.stopPropagation()}
-        />
-        {onClear && (
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={onClear}
-            aria-label={`Remove ${label.toLowerCase()}`}
-            className="pressable shrink-0 rounded px-1 font-mono text-[10px] text-muted-foreground hover:text-destructive"
-          >
-            ×
-          </button>
-        )}
-      </div>
-    </label>
-  );
 }

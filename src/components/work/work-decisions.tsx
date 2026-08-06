@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import type { Prisma } from "@prisma/client";
 import { Clock, Send, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +12,7 @@ import {
 } from "@/lib/work/domain";
 import type { ClientWorkEvent } from "@/lib/work/serializers";
 import type { WorkApprovalDecisionInput } from "@/components/work/work-transport";
+import { nested, readEvent, str, strings, type Payload } from "@/components/work/work-payload";
 import { RiskPill, WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
 
@@ -27,25 +27,16 @@ import { cn } from "@/lib/utils";
  * Both are also derived from the event stream rather than from a list endpoint,
  * because there is no list endpoint: `approval_requested` and `approval_resolved`
  * are what the executor writes and what the stream replays from a cursor. That
- * is the right source anyway — the timeline and the cards can then never
- * disagree about whether something was asked.
+ * is the right source anyway — the feed and the cards can then never disagree
+ * about whether something was asked.
+ *
+ * Which makes the payload reader here load-bearing rather than incidental. Both
+ * derivations key on an id, and the cloud runner writes that id one level down —
+ * `{ kind: "question_asked", question: { id, question, why, options } }`. Read
+ * flat, as this file used to read it, the id came back null, the card was never
+ * built, and a cloud run that stopped to ask something sat there unanswerable
+ * with a spinner on it. `readEvent` is what lifts the envelope.
  */
-
-type Payload = Record<string, unknown>;
-
-function payloadOf(value: Prisma.JsonValue): Payload {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Payload)
-    : {};
-}
-
-function str(payload: Payload, ...keys: string[]): string | null {
-  for (const key of keys) {
-    const value = payload[key];
-    if (typeof value === "string" && value.trim().length > 0) return value;
-  }
-  return null;
-}
 
 // ---------------------------------------------------------------------------
 // Questions
@@ -54,6 +45,8 @@ function str(payload: Payload, ...keys: string[]): string | null {
 export interface OpenQuestion {
   id: string;
   question: string;
+  /** Why the run cannot proceed without an answer. Null if it did not say. */
+  why: string | null;
   /** Suggested answers, when the agent offered any. */
   options: string[];
   askedAt: string;
@@ -69,19 +62,20 @@ export interface OpenQuestion {
 export function deriveOpenQuestions(events: readonly ClientWorkEvent[]): OpenQuestion[] {
   const open = new Map<string, OpenQuestion>();
   for (const event of events) {
-    const payload = payloadOf(event.payload);
+    const payload = readEvent(event);
     const id = str(payload, "questionId", "id");
     if (id === null) continue;
     if (event.kind === "question_asked") {
       const question = str(payload, "question", "text", "prompt");
       if (question === null) continue;
-      const raw = payload.options;
       open.set(id, {
         id,
         question,
-        options: Array.isArray(raw)
-          ? raw.filter((entry): entry is string => typeof entry === "string")
-          : [],
+        // The runtime states a `why` beside every question, and it is the half
+        // that makes the question answerable: "which folder?" and "which folder,
+        // because two of them are called Invoices" are different questions.
+        why: str(payload, "why", "reason"),
+        options: strings(payload, "options", "choices"),
         askedAt: event.createdAt,
       });
     }
@@ -113,6 +107,9 @@ export function WorkQuestionCard({
         Waiting on you · asked {workTimeAgo(question.askedAt)}
       </p>
       <p className="mt-1.5 text-sm leading-relaxed text-foreground">{question.question}</p>
+      {question.why !== null && (
+        <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{question.why}</p>
+      )}
       {question.options.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1.5">
           {question.options.map((option) => (
@@ -206,8 +203,12 @@ export function deriveApprovals(events: readonly ClientWorkEvent[]): WorkApprova
 
   for (const event of events) {
     if (event.visibility !== "user") continue;
-    const payload = payloadOf(event.payload);
-    const id = str(payload, "approvalId", "id");
+    const payload = readEvent(event);
+    // `requestId` is what the runtime calls it on the resolution and
+    // `approvalId` is what the route that records a web decision writes. Both
+    // name the same row, and matching on only one of them leaves cards that can
+    // never be closed by a decision made on another device.
+    const id = str(payload, "approvalId", "requestId", "id");
     if (id === null) continue;
 
     if (event.kind === "approval_requested") {
@@ -217,7 +218,7 @@ export function deriveApprovals(events: readonly ClientWorkEvent[]): WorkApprova
         action: str(payload, "action") ?? "an action",
         risk: riskOf(str(payload, "risk")),
         summary: str(payload, "summary", "description") ?? "Juno wants to do something.",
-        detail: payloadOf((payload.detail ?? null) as Prisma.JsonValue),
+        detail: nested(payload, "detail"),
         actionDigest: digest !== null && DIGEST_PATTERN.test(digest) ? digest : null,
         decision: "pending",
         decidedAt: null,

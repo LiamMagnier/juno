@@ -43,6 +43,22 @@ struct DesktopWorkWorkspace: View {
 
     @SceneStorage("juno.desktop.work.selection") private var storedSessionID = ""
     @SceneStorage("juno.desktop.work.columns") private var storedColumnVisibility = ""
+    /// Chat's destination, which this window writes and never reads.
+    ///
+    /// The one thing Work's column can do that its window cannot serve is open
+    /// Design. Chat and Code render that page in their own detail column, but
+    /// this workspace is handed a Work transport and nothing else — no artifact
+    /// store to list designs from, no request sender to start one with — so the
+    /// footer row has to cross the product boundary, exactly as New Task's
+    /// sibling ``newChat`` already does. The scene keeps one value per key, and
+    /// ``DesktopChatWorkspace`` reads this same key on the way in, so setting it
+    /// before the swap is what decides where Chat lands.
+    ///
+    /// This is also what the website does. `/design` is not a code route, so
+    /// opening it from anywhere puts the shell back on Home — leaving the
+    /// product you were in is the behaviour, not a compromise around it.
+    @SceneStorage("juno.desktop.destination") private var storedDestination =
+        DesktopDestination.chat.rawValue
 
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var isComposing = false
@@ -120,7 +136,8 @@ struct DesktopWorkWorkspace: View {
                 sessions: visibleSessions,
                 selection: selection,
                 product: $product,
-                compose: { isComposing = true }
+                compose: { isComposing = true },
+                openDesign: openDesign
             )
             .junoSidebarColumn()
         } detail: {
@@ -191,6 +208,19 @@ struct DesktopWorkWorkspace: View {
         .onDisappear { model.closeOpenSession() }
     }
 
+    // MARK: - Leaving for Design
+
+    /// Open Juno Design, which lives in Chat's window.
+    ///
+    /// The destination is written *before* the product changes, so the Chat
+    /// workspace this swap builds reads "design" on its first evaluation rather
+    /// than opening on whatever it was last showing and then jumping. See
+    /// ``storedDestination``.
+    private func openDesign() {
+        storedDestination = DesktopDestination.design.rawValue
+        product = .chat
+    }
+
     // MARK: - Detail column
 
     @ViewBuilder
@@ -206,6 +236,18 @@ struct DesktopWorkWorkspace: View {
             ProgressView()
                 .controlSize(.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let hostModel, let blocker = hostModel.blocker, model.sessions.isEmpty {
+            // Before "No tasks yet", and only while there are none. Somebody
+            // opening Juno Work on a Mac that cannot serve it has two things to
+            // learn, and they are not equally urgent: a task started here would
+            // go nowhere, and there are no tasks yet. Offering "New Task" first
+            // is offering the second answer to the first question.
+            //
+            // Once tasks exist the panel steps aside for them — a Mac that hosts
+            // nothing still runs work in the cloud, and a setup screen in front
+            // of a list of real tasks would be a wall between somebody and the
+            // thing they came back for. The sidebar keeps saying so quietly.
+            DesktopWorkStartPath(host: hostModel, blocker: blocker, compose: { isComposing = true })
         } else if model.sessions.isEmpty {
             JunoEmptyState(
                 title: "No tasks yet",
@@ -427,6 +469,10 @@ private struct DesktopWorkSidebar: View {
     /// the header something to write through, exactly as Chat's and Code's do.
     @Binding var product: DesktopProductMode
     let compose: () -> Void
+    /// Opens Juno Design. It is not a page this window can draw — see
+    /// ``DesktopWorkWorkspace/openDesign()`` — so the column asks for it rather
+    /// than navigating to it.
+    let openDesign: () -> Void
 
 
     private var attention: [WorkSessionSummary] {
@@ -470,11 +516,24 @@ private struct DesktopWorkSidebar: View {
             // list slides its rows under the footer, which is the same defect
             // Code documents on the other end of this column for the product
             // switch — an inset reserves space and paints nothing.
-            footer
-                .padding(.horizontal, JunoSpace.regular)
-                .padding(.vertical, JunoSpace.snug)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.bar)
+            VStack(spacing: 0) {
+                footer
+                    .padding(.horizontal, JunoSpace.regular)
+                    .padding(.vertical, JunoSpace.snug)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Last, because it is the bottom of the column: Chat and Code put
+                // this row directly above their account block, and this column
+                // has no account block for it to sit above.
+                //
+                // It carries its own inset rather than this footer's deeper one.
+                // The row is the same control in all three columns and the point
+                // of it is that a reader finds it in the same place, so it hangs
+                // on Chat's and Code's left edge rather than on the one Work's
+                // status lines use.
+                DesktopSidebarDesignRow(open: openDesign)
+                    .padding(.bottom, JunoSpace.snug)
+            }
+            .background(.bar)
         }
         .accessibilityIdentifier("juno.work.sidebar")
     }
@@ -513,26 +572,21 @@ private struct DesktopWorkSidebar: View {
         .accessibilityLabel("\(session.title). \(style.sentence)")
     }
 
-    /// One line about this Mac, and the way to start something.
+    /// One line about this Mac, the way to answer it, and the way to start
+    /// something.
     ///
-    /// The host's own sentence is printed verbatim when it has one. A task
-    /// dispatched to a Mac that will not serve it sits queued and looks like a
-    /// slow start, and the sentence explaining that is a setting on this
-    /// machine — so the column that lists the tasks is where it has to appear.
+    /// The host's own sentence is printed verbatim when it has one, and the
+    /// control that clears it sits underneath. A task dispatched to a Mac that
+    /// will not serve it sits queued and looks like a slow start, and the
+    /// sentence explaining that is a setting on this machine — so the column that
+    /// lists the tasks is where it has to appear, *and* where the fix has to be
+    /// reachable. Printing the sentence alone is what left somebody reading
+    /// "Juno Work is switched off on this Mac." with nowhere to go.
     @ViewBuilder
     private var footer: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            if let reason = hostModel?.unavailabilityReason {
-                Label {
-                    Text(reason)
-                        .junoCaption()
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
-                } icon: {
-                    Image(systemName: "laptopcomputer.slash")
-                        .foregroundStyle(Color.junoCaution)
-                }
-                .accessibilityIdentifier("juno.work.host-reason")
+            if let hostModel {
+                DesktopWorkBlockerRow(host: hostModel)
             }
 
             if let error = model.lastErrorDescription {
@@ -552,6 +606,261 @@ private struct DesktopWorkSidebar: View {
         }
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, JunoSpace.snug)
+    }
+}
+
+// MARK: - This Mac
+
+/// The one sentence about this Mac, with the control that answers it.
+///
+/// Lives here rather than with the settings card because it belongs to the
+/// window somebody is actually looking at when they discover the problem — but
+/// the settings card draws the identical row, from the identical model, so the
+/// two surfaces cannot come to describe one state in two vocabularies. That had
+/// already started: settings printed the sentence under a caution mark and the
+/// task column printed it under a different one.
+///
+/// When the host has nothing to report the row draws the ready line instead. A
+/// row that vanishes on success is a row whose absence has to be interpreted,
+/// and "did it work?" is exactly the question somebody has after pressing the
+/// button above it.
+struct DesktopWorkBlockerRow: View {
+    let host: DesktopWorkHostModel
+    /// Whether to draw the ready line when there is no blocker. The task column
+    /// says nothing when all is well — its job is the list — while the settings
+    /// card, which exists to be read, confirms it.
+    var confirmsReady = false
+    /// The accessibility namespace of the surface drawing this. Passed in rather
+    /// than fixed, because the two callers live in namespaces that already exist
+    /// and the identifiers under them are what a UI test addresses.
+    var identifier = "juno.work.host"
+
+    var body: some View {
+        if let blocker = host.blocker {
+            VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                Label {
+                    Text(blocker.sentence)
+                        .junoCaption()
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                } icon: {
+                    // A spinner for what is settling by itself, a caution mark
+                    // only for what is waiting on the reader. A Mac finishing
+                    // pairing under a warning triangle sends somebody looking for
+                    // a fault that will be gone before they find it.
+                    if blocker.isSettling {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: blocker.symbol)
+                            .foregroundStyle(Color.junoCaution)
+                    }
+                }
+
+                if let title = blocker.actionTitle, host.canTake(blocker) {
+                    Button(title) { host.take(blocker) }
+                        .junoProminentGlassButton()
+                        .accessibilityIdentifier("\(identifier)-action")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .animation(JunoMotion.standard, value: blocker)
+            .accessibilityIdentifier("\(identifier)-reason")
+        } else if confirmsReady {
+            Label {
+                Text("A task sent to this Mac now would run here.")
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "checkmark.circle")
+                    .foregroundStyle(Color.junoSuccess)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("\(identifier)-ready")
+        }
+    }
+}
+
+/// The path from "Juno Work is switched off on this Mac" to a Mac that serves.
+///
+/// Three rows, in the order they have to happen, all of them visible from the
+/// first: hand over the machine, hand over something on it, and then the Mac is
+/// ready. Showing the whole path rather than only the current step is the point.
+/// The sentence on its own answered "why can nothing run here" and left "what
+/// would it take" unanswered, and the honest answer to the second is two
+/// decisions and no more — which is worth knowing *before* making the first one.
+///
+/// What it is not: a wizard. Nothing here advances on its own, nothing is
+/// skippable-with-consequences, and the reader can close the window at any row
+/// and have changed exactly what they pressed.
+struct DesktopWorkStartPath: View {
+    let host: DesktopWorkHostModel
+    let blocker: DesktopWorkBlocker
+    /// The way past this panel. A Mac that will not host work can still dispatch
+    /// it to the cloud, so refusing to offer a new task here would be refusing
+    /// the product to somebody who has simply decided not to lend their machine.
+    let compose: () -> Void
+
+    /// The reading width. The same measure the rest of the window's centred
+    /// content uses; a card that grows with a 1600pt window is a card whose
+    /// third line the eye cannot find its way back to.
+    private static let measure: CGFloat = 460
+
+    var body: some View {
+        VStack(spacing: JunoSpace.roomy) {
+            Spacer(minLength: JunoSpace.section)
+
+            JunoDesktopGlass(spacing: JunoSpace.snug) {
+                VStack(alignment: .leading, spacing: JunoSpace.roomy) {
+                    heading
+                    VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                        step(
+                            1,
+                            title: "Allow Juno Work on this Mac",
+                            detail: DesktopWorkBlocker.switchedOff.actionDetail ?? "",
+                            isDone: host.allowWorkOnThisMac,
+                            blocker: .switchedOff
+                        )
+                        step(
+                            2,
+                            title: "Give it something to work with",
+                            detail: DesktopWorkBlocker.nothingAllowed.actionDetail ?? "",
+                            isDone: !host.policy.advertisedCapabilities.isEmpty,
+                            blocker: .nothingAllowed
+                        )
+                        readyStep
+                    }
+                }
+                .padding(JunoSpace.roomy)
+                .frame(maxWidth: Self.measure, alignment: .leading)
+                .junoGlass(
+                    in: RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                )
+            }
+
+            Button("New Task", action: compose)
+                .junoGlassButton()
+                .accessibilityIdentifier("juno.work.start-path.new-task")
+
+            Spacer(minLength: JunoSpace.section)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, JunoSpace.region)
+        .animation(JunoMotion.standard, value: blocker)
+        .accessibilityIdentifier("juno.work.start-path")
+    }
+
+    private var heading: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Image(systemName: "laptopcomputer.and.arrow.down")
+                .font(.system(size: 24, weight: .regular))
+                .foregroundStyle(Color.junoAccent)
+                .accessibilityHidden(true)
+            Text("Set up Juno Work on this Mac")
+                .junoEmptyTitle()
+            Text(
+                "Juno Work runs tasks in the cloud already. Two decisions let it run them "
+                    + "here, where your files and your signed-in apps are."
+            )
+            .junoCaption()
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// One consent: what it is, what it costs, and the button that gives it.
+    ///
+    /// The button is drawn only on the step that is actually next. Both consents
+    /// on screen at once would let somebody grant a folder to a Mac that is not
+    /// hosting anything — which succeeds, changes nothing they can see, and
+    /// teaches them the panel is decorative.
+    @ViewBuilder
+    private func step(
+        _ number: Int,
+        title: String,
+        detail: String,
+        isDone: Bool,
+        blocker stepBlocker: DesktopWorkBlocker
+    ) -> some View {
+        let isCurrent = self.blocker == stepBlocker
+        HStack(alignment: .top, spacing: JunoSpace.cozy) {
+            marker(number: number, isDone: isDone, isCurrent: isCurrent)
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                Text(title)
+                    .junoRowLabel()
+                    .foregroundStyle(isDone || isCurrent ? .primary : .secondary)
+                Text(detail)
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if isCurrent, let actionTitle = stepBlocker.actionTitle, host.canTake(stepBlocker) {
+                    Button(actionTitle) { host.take(stepBlocker) }
+                        .junoProminentGlassButton()
+                        .padding(.top, JunoSpace.tight)
+                        .accessibilityIdentifier(
+                            "juno.work.start-path.step-\(number)-action"
+                        )
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The third row is the outcome, not a third thing to do.
+    ///
+    /// It carries whichever of the states nobody at this Mac can press their way
+    /// out of — signed out, pairing, starting — so that a reader who has done
+    /// both their parts is told what is now being waited on rather than left in
+    /// front of two ticks and no result.
+    private var readyStep: some View {
+        let isReady = host.willServeDispatchedWork
+        return HStack(alignment: .top, spacing: JunoSpace.cozy) {
+            marker(number: 3, isDone: isReady, isCurrent: blocker.isSettling)
+            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                Text(isReady ? "This Mac is serving Juno Work" : "This Mac starts serving")
+                    .junoRowLabel()
+                    .foregroundStyle(isReady ? .primary : .secondary)
+                Text(
+                    isReady
+                        ? "A task sent here now runs on this Mac."
+                        : blocker.isSettling || blocker == .signedOut
+                            ? blocker.sentence
+                            : "Once both are done, tasks sent here run on this Mac."
+                )
+                .junoCaption()
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The step's own mark: done, in progress, or still ahead.
+    ///
+    /// A fixed 22pt square in every state. The three marks are different glyphs
+    /// with different intrinsic widths, and letting them size themselves put the
+    /// three titles at three different x positions — the ragged left edge this
+    /// repo has a recorded incident about, one column over.
+    @ViewBuilder
+    private func marker(number: Int, isDone: Bool, isCurrent: Bool) -> some View {
+        Group {
+            if isDone {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(Color.junoSuccess)
+            } else if isCurrent, blocker.isSettling {
+                ProgressView().controlSize(.small)
+            } else {
+                Text("\(number)")
+                    .junoCodeSmall()
+                    .foregroundStyle(isCurrent ? Color.junoAccent : Color.junoMutedForeground)
+                    .frame(width: 20, height: 20)
+                    .overlay(
+                        Circle().strokeBorder(
+                            isCurrent ? Color.junoAccent : Color.junoBorder,
+                            lineWidth: 1
+                        )
+                    )
+            }
+        }
+        .frame(width: 22, height: 22)
+        .accessibilityHidden(true)
     }
 }
 
@@ -1844,7 +2153,14 @@ enum DesktopWorkLog {
     /// contract and forgotten here is a compile error rather than a blank row in
     /// somebody's thread.
     private static func describe(_ event: WorkEvent, _ kind: JunoWorkEventKind) -> Entry {
-        let payload = event.payload
+        // Lifted, not read raw. The cloud runner wraps each kind's facts in one
+        // sub-object — an approval's summary and action live under `request`,
+        // a question's text under `question` — so every accessor below returned
+        // nil for a cloud run and the thread filled with bare verbs: "Asked for
+        // approval" with nothing saying what for. `WorkEventPayload.fields`
+        // flattens the envelope this Mac's own run host does not write, which
+        // makes one reader correct for both executors.
+        let payload = WorkEventPayload.fields(of: event)
         switch kind {
         case .runStarted:
             return entry(event, "Started", string(payload, "target"), "play.circle", .quiet)

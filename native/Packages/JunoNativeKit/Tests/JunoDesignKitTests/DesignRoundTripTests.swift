@@ -51,7 +51,15 @@ final class DesignRoundTripTests: XCTestCase {
         }
         XCTAssertEqual(stops.count, 2)
         XCTAssertEqual(card.strokes.first?.dash, [4, 2])
-        XCTAssertEqual(card.shadows.first?.blur, 24)
+        // The effect stack replaced `shadows`/`blur`/`noise`. Reaching for the
+        // drop shadow by case rather than by index is the point of the change:
+        // order is the designer's, so "the first effect" is not a synonym for
+        // "the shadow".
+        let shadow = card.effects.compactMap { effect -> DropShadowEffect? in
+            if case .dropShadow(let s) = effect { return s }
+            return nil
+        }.first
+        XCTAssertEqual(shadow?.blur, 24)
 
         XCTAssertEqual(document.components["cmp-primary"]?.properties.first?.name, "Label")
         XCTAssertEqual(document.collections["col1"]?.modes.map(\.name), ["Light", "Dark"])

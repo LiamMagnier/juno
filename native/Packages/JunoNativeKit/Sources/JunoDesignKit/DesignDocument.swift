@@ -151,8 +151,70 @@ public enum StrokeAlign: String, Codable, Hashable, Sendable {
     case inside, center, outside
 }
 
-public struct Shadow: Codable, Hashable, Sendable {
-    public var type: ShadowKind
+/// One entry in a layer's effect stack.
+///
+/// Mirrors the `Effect` union in `src/lib/design/types.ts` field for field. It
+/// replaced three separate node properties — `shadows`, `blur` and `noise` —
+/// because that shape hard-coded the relative order of a blur, a grain and a
+/// shadow into the model, and the order is the designer's to choose: grain under
+/// a blur is a smear, grain over it is film.
+///
+/// Mirrored exhaustively rather than summarised, because this type exists to
+/// survive a round trip. `Codable` drops keys it does not know on the way in and
+/// omits them on the way out, so a field missing here is a field the Mac
+/// silently deletes from somebody's document the first time it re-encodes one.
+/// `DesignRoundTripTests` is what keeps that honest.
+///
+/// Shader is absent on purpose, as it is in the TypeScript model: a shader is a
+/// program, and a document holding one can only be drawn by something that runs
+/// it — which the eight exporters cannot.
+public enum Effect: Codable, Hashable, Sendable {
+    case dropShadow(DropShadowEffect)
+    case innerShadow(InnerShadowEffect)
+    case layerBlur(BlurEffect)
+    case backgroundBlur(BlurEffect)
+    case noise(NoiseEffect)
+    case texture(TextureEffect)
+    case glass(GlassEffect)
+
+    private enum TypeKey: String, CodingKey { case type }
+
+    public init(from decoder: Decoder) throws {
+        let tag = try decoder.container(keyedBy: TypeKey.self).decode(String.self, forKey: .type)
+        switch tag {
+        case "drop-shadow": self = .dropShadow(try DropShadowEffect(from: decoder))
+        case "inner-shadow": self = .innerShadow(try InnerShadowEffect(from: decoder))
+        case "layer-blur": self = .layerBlur(try BlurEffect(from: decoder))
+        case "background-blur": self = .backgroundBlur(try BlurEffect(from: decoder))
+        case "noise": self = .noise(try NoiseEffect(from: decoder))
+        case "texture": self = .texture(try TextureEffect(from: decoder))
+        case "glass": self = .glass(try GlassEffect(from: decoder))
+        default:
+            throw DecodingError.dataCorruptedError(
+                forKey: TypeKey.type,
+                in: try decoder.container(keyedBy: TypeKey.self),
+                debugDescription: "Unknown effect type \u{201C}\(tag)\u{201D}"
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        // Each payload writes its own `type`, so the tag survives without this
+        // enum having to re-state it and risk the two disagreeing.
+        switch self {
+        case .dropShadow(let e): try e.encode(to: encoder)
+        case .innerShadow(let e): try e.encode(to: encoder)
+        case .layerBlur(let e): try e.encode(to: encoder)
+        case .backgroundBlur(let e): try e.encode(to: encoder)
+        case .noise(let e): try e.encode(to: encoder)
+        case .texture(let e): try e.encode(to: encoder)
+        case .glass(let e): try e.encode(to: encoder)
+        }
+    }
+}
+
+public struct DropShadowEffect: Codable, Hashable, Sendable {
+    public var type = "drop-shadow"
     public var color: Rgba
     public var offsetX: Double
     public var offsetY: Double
@@ -161,17 +223,94 @@ public struct Shadow: Codable, Hashable, Sendable {
     public var visible: Bool?
 }
 
-public enum ShadowKind: String, Codable, Hashable, Sendable {
-    case drop, inner
+public struct InnerShadowEffect: Codable, Hashable, Sendable {
+    public var type = "inner-shadow"
+    public var color: Rgba
+    public var offsetX: Double
+    public var offsetY: Double
+    public var blur: Double
+    public var spread: Double
+    public var visible: Bool?
 }
 
-public struct Blur: Codable, Hashable, Sendable {
-    public var type: BlurKind
+/// `layer-blur` and `background-blur` carry identical fields and differ only in
+/// what they sample, so they share one payload and are told apart by the case.
+public struct BlurEffect: Codable, Hashable, Sendable {
+    public var type: String
     public var radius: Double
+    /// nil and 1 both mean "leave the colour alone".
+    public var saturation: Double?
+    public var visible: Bool?
 }
 
-public enum BlurKind: String, Codable, Hashable, Sendable {
-    case layer, background
+public struct NoiseEffect: Codable, Hashable, Sendable {
+    public var type = "noise"
+    public var opacity: Double
+    public var density: Double
+    public var seed: Double
+    public var monochrome: Bool
+    public var blend: EffectBlendMode
+    public var visible: Bool?
+}
+
+public struct TextureEffect: Codable, Hashable, Sendable {
+    public var type = "texture"
+    public var scale: Double
+    public var depth: Double
+    public var roughness: Double
+    public var seed: Double
+    public var color: Rgba
+    public var opacity: Double
+    public var blend: EffectBlendMode
+    public var visible: Bool?
+}
+
+public struct GlassEffect: Codable, Hashable, Sendable {
+    public var type = "glass"
+    public var blur: Double
+    public var saturation: Double
+    public var refraction: Double
+    public var depth: Double
+    public var tint: Rgba
+    public var tintOpacity: Double
+    public var lightIntensity: Double
+    /// Degrees clockwise from 12 o'clock.
+    public var lightAngle: Double
+    public var visible: Bool?
+}
+
+/// The three pre-`effects` node properties, read only so they can be folded.
+/// Never encoded — this build writes `effects` and nothing else.
+struct LegacyShadow: Decodable {
+    enum Kind: String, Decodable { case drop, inner }
+    var type: Kind
+    var color: Rgba
+    var offsetX: Double
+    var offsetY: Double
+    var blur: Double
+    var spread: Double
+    var visible: Bool?
+}
+
+struct LegacyBlur: Decodable {
+    enum Kind: String, Decodable { case layer, background }
+    var type: Kind
+    var radius: Double
+    var saturation: Double?
+}
+
+struct LegacyNoise: Decodable {
+    var opacity: Double
+    var density: Double
+    var seed: Double
+    var monochrome: Bool
+    var blend: EffectBlendMode
+    var visible: Bool?
+}
+
+public enum EffectBlendMode: String, Codable, Hashable, Sendable {
+    case normal, multiply, screen, overlay
+    case softLight = "soft-light"
 }
 
 public enum BlendMode: String, Codable, Hashable, Sendable {
@@ -354,8 +493,7 @@ public struct DesignNode: Codable, Hashable, Sendable {
     public var fills: [Paint]
     public var strokes: [Stroke]
     public var cornerRadius: CornerRadius
-    public var shadows: [Shadow]
-    public var blur: Blur?
+    public var effects: [Effect]
     public var constraints: Constraints
     public var widthMode: SizingMode
     public var heightMode: SizingMode
@@ -387,7 +525,9 @@ public struct DesignNode: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, type, name, parentId, x, y, width, height, rotation, opacity, visible, locked
-        case blendMode, fills, strokes, cornerRadius, shadows, blur, constraints
+        case blendMode, fills, strokes, cornerRadius, effects, constraints
+        // Read on the way in only, to fold a pre-`effects` document. Never written.
+        case shadows, blur, noise
         case widthMode, heightMode, limits, layoutChild, boundVariables
         case children, clipsContent, layout
         case componentId, variantProperties, overrides
@@ -414,8 +554,49 @@ public struct DesignNode: Codable, Hashable, Sendable {
         fills = try c.decode([Paint].self, forKey: .fills)
         strokes = try c.decode([Stroke].self, forKey: .strokes)
         cornerRadius = try c.decode(CornerRadius.self, forKey: .cornerRadius)
-        shadows = try c.decode([Shadow].self, forKey: .shadows)
-        blur = try c.decodeIfPresent(Blur.self, forKey: .blur)
+        // The effect stack replaced `shadows`, `blur` and `noise`, and documents
+        // written before that are on disk in people's accounts. The website
+        // folds them on the way in (`foldLegacyEffects` in schema.ts); so does
+        // this, in the same order the old renderer applied them — backdrop or
+        // layer blur, then grain, then the shadows in their stored order — so a
+        // folded document draws what it always drew rather than being quietly
+        // rearranged. Without this the Mac opens every pre-existing design with
+        // its shadows and blurs silently dropped, which is data loss that looks
+        // like a rendering bug.
+        if let stored = try c.decodeIfPresent([Effect].self, forKey: .effects) {
+            effects = stored
+        } else {
+            var folded: [Effect] = []
+            if let blur = try c.decodeIfPresent(LegacyBlur.self, forKey: .blur) {
+                let payload = BlurEffect(
+                    type: blur.type == .layer ? "layer-blur" : "background-blur",
+                    radius: blur.radius,
+                    saturation: blur.saturation,
+                    visible: nil
+                )
+                folded.append(blur.type == .layer ? .layerBlur(payload) : .backgroundBlur(payload))
+            }
+            if let noise = try c.decodeIfPresent(LegacyNoise.self, forKey: .noise) {
+                folded.append(.noise(NoiseEffect(
+                    opacity: noise.opacity, density: noise.density, seed: noise.seed,
+                    monochrome: noise.monochrome, blend: noise.blend, visible: noise.visible
+                )))
+            }
+            for shadow in try c.decodeIfPresent([LegacyShadow].self, forKey: .shadows) ?? [] {
+                if shadow.type == .drop {
+                    folded.append(.dropShadow(DropShadowEffect(
+                        color: shadow.color, offsetX: shadow.offsetX, offsetY: shadow.offsetY,
+                        blur: shadow.blur, spread: shadow.spread, visible: shadow.visible
+                    )))
+                } else {
+                    folded.append(.innerShadow(InnerShadowEffect(
+                        color: shadow.color, offsetX: shadow.offsetX, offsetY: shadow.offsetY,
+                        blur: shadow.blur, spread: shadow.spread, visible: shadow.visible
+                    )))
+                }
+            }
+            effects = folded
+        }
         constraints = try c.decode(Constraints.self, forKey: .constraints)
         widthMode = try c.decode(SizingMode.self, forKey: .widthMode)
         heightMode = try c.decode(SizingMode.self, forKey: .heightMode)
@@ -479,8 +660,7 @@ public struct DesignNode: Codable, Hashable, Sendable {
         try c.encode(fills, forKey: .fills)
         try c.encode(strokes, forKey: .strokes)
         try c.encode(cornerRadius, forKey: .cornerRadius)
-        try c.encode(shadows, forKey: .shadows)
-        try c.encode(blur, forKey: .blur)
+        try c.encode(effects, forKey: .effects)
         try c.encode(constraints, forKey: .constraints)
         try c.encode(widthMode, forKey: .widthMode)
         try c.encode(heightMode, forKey: .heightMode)

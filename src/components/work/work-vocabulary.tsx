@@ -351,6 +351,10 @@ export function workTimeAgo(iso: string): string {
 /** A duration in the units a person would use out loud. */
 export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms) || ms <= 0) return "0s";
+  // Sub-second is a real answer here, not noise. Whole-second rounding renders a
+  // 240ms tool call and a 900ms one identically as "0s", on the one surface
+  // whose job is to say how long things took.
+  if (ms < 1000) return `${Math.round(ms)}ms`;
   const seconds = Math.round(ms / 1000);
   if (seconds < 60) return `${seconds}s`;
   const minutes = Math.floor(seconds / 60);

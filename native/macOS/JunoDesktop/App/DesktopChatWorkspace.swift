@@ -526,24 +526,36 @@ private struct DesktopChatSidebar: View {
         }
     }
 
-    /// A staged update and then the account row, pinned to the bottom of the
-    /// column by `safeAreaBar` rather than by being the last child of a
-    /// `VStack`, so the list scrolls underneath them and they stay reachable.
+    /// The door to Design, a staged update, and then the account row — pinned to
+    /// the bottom of the column by `safeAreaBar` rather than by being the last
+    /// child of a `VStack`, so the list scrolls underneath them and they stay
+    /// reachable.
     ///
     /// ``DesktopSidebarFooter`` is the same component Code's column pins, which
     /// is what stops the two from describing the same account — or the same
     /// waiting update — differently. No plan is passed: the quota meter needs a
     /// plan model this column does not read, and a meter drawn from nothing is a
     /// claim about spend that nobody made.
+    ///
+    /// Design sits *above* that block rather than inside it, which is the
+    /// website's own arrangement: `app-sidebar.tsx` gives the row its own
+    /// container and then a bordered block for the account. The footer component
+    /// is about the account — who is signed in, what they have spent, what is
+    /// waiting to install — and a navigation row is not one of those things.
     private var accountFooter: some View {
-        DesktopSidebarFooter(
-            session: session,
-            avatarModel: avatarModel,
-            syncModel: syncModel,
-            plan: nil,
-            openUsage: { destination = .usage },
-            openSettings: { destination = .settings }
-        )
+        VStack(spacing: 0) {
+            DesktopSidebarDesignRow(isActive: destination == .design) {
+                destination = .design
+            }
+            DesktopSidebarFooter(
+                session: session,
+                avatarModel: avatarModel,
+                syncModel: syncModel,
+                plan: nil,
+                openUsage: { destination = .usage },
+                openSettings: { destination = .settings }
+            )
+        }
     }
 }
 
@@ -555,6 +567,16 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     case artifacts
     case connections
     case tasks
+    /// Juno Design — the canvas, and the list of what has been drawn on it.
+    ///
+    /// A destination and deliberately **not** a fourth ``DesktopProductMode``. A
+    /// product owns the whole window: its own source list, its own toolbar, its
+    /// own `NavigationSplitView`. Design has none of those, and the website
+    /// learned this the expensive way — as a fourth segment it only routed away
+    /// and left Home's sidebar standing, which is why `app-sidebar.tsx` now draws
+    /// it as a row in the footer. It is also absent from ``sidebarCases`` for the
+    /// same reason it is absent from the web's rail: the footer is where it goes.
+    case design
     case usage
     case settings
 
@@ -573,6 +595,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .artifacts: "Artifacts"
         case .connections: "Connections"
         case .tasks: "Tasks"
+        case .design: "Design"
         case .usage: "Usage"
         case .settings: "Settings"
         }
@@ -587,6 +610,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .artifacts: "square.stack.3d.up"
         case .connections: "link"
         case .tasks: "clock"
+        case .design: "pencil.tip"
         case .usage: "chart.line.uptrend.xyaxis"
         case .settings: "gearshape"
         }
@@ -608,6 +632,12 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         // drift, so this keeps the SF fallback until the signature earns a place
         // in the rail.
         case .usage: nil
+        // Design's mark exists on the web — `AppIcons.design` is Lucide's
+        // `pen-tool` — but `scripts/generate-native-icons.mjs` has never been
+        // asked for it, so there is no `nav-design` asset to name here. Same
+        // answer as Usage above, and for the same reason: the SF fallback until
+        // the real mark is generated, rather than a near-miss from another set.
+        case .design: nil
         }
     }
 }

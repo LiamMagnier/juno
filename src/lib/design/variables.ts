@@ -115,7 +115,12 @@ function writePath(target: Record<string, unknown>, path: string, value: unknown
 export function bindablePaths(type: DesignVariable["type"]): string[] {
   switch (type) {
     case "color":
-      return ["fills.0.color", "fills.1.color", "strokes.0.paint.color", "shadows.0.color"];
+      // `shadows.0.color` was here until shadows became entries in the effect
+      // stack. `writePath` creates nothing for a path that names no field, so
+      // leaving it listed would offer the model a binding that silently did
+      // nothing — worse than not offering it, because the document would record
+      // a variable that never reaches the drawing.
+      return ["fills.0.color", "fills.1.color", "strokes.0.paint.color", "effects.0.color"];
     case "number":
       return ["cornerRadius", "opacity", "width", "height", "x", "y", "rotation", "typography.fontSize", "typography.letterSpacing", "strokes.0.weight"];
     case "string":

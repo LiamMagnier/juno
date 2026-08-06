@@ -172,19 +172,39 @@ public final class NativeWorkModel {
     /// Derived rather than stored because the log is the only authority: an
     /// answer given on another device arrives as a `question_answered` event,
     /// and a model holding its own copy would keep the prompt on screen after
-    /// the run had already moved on. The payload keys match the `answer`
-    /// command's in `serializers.ts`, which is the shape the reply must take.
+    /// the run had already moved on. The identifier is the one the `answer`
+    /// command echoes back in `serializers.ts`, which is the shape the reply
+    /// must take.
+    ///
+    /// Read through ``WorkEventPayload/fields(of:)`` and under several names,
+    /// which is the whole of the fix here. This read `payload["questionId"]`
+    /// and `payload["text"]` flat, and flat is only the shape this Mac's own
+    /// run host writes; the cloud runner writes the runtime's nested union, so
+    /// a cloud run's question had no id, produced no prompt, and left the phone
+    /// showing a task that appeared to be working while it waited for an answer
+    /// nobody was being asked for. The web carried the same bug until
+    /// `work-payload.ts` was written, and this is the same lift.
     public var pendingQuestion: WorkQuestionPrompt? {
         var asked: [String: String] = [:]
         var order: [String] = []
         for event in events {
             guard let kind = JunoWorkEventKind(rawValue: event.kind) else { continue }
-            guard let questionID = event.payload["questionId"]?.stringValue else { continue }
+            let payload = WorkEventPayload.fields(of: event)
+            // `id` is what the runtime calls it inside the envelope and
+            // `questionId` is what this Mac writes flat. Both name the same
+            // question, and knowing only one of them means never closing a card
+            // the other executor opened.
+            guard let questionID = WorkEventPayload.string(payload, "questionId", "id") else {
+                continue
+            }
             switch kind {
             case .questionAsked:
-                if asked.updateValue(
-                    event.payload["text"]?.stringValue ?? "", forKey: questionID
-                ) == nil {
+                // `question` is the runtime's key for the sentence and `text` is
+                // this Mac's. Empty stands for "asked, but this build could not
+                // read what" — the prompt is still tracked so the composer opens
+                // in answer mode rather than offering to steer a stopped run.
+                let text = WorkEventPayload.string(payload, "question", "text", "prompt") ?? ""
+                if asked.updateValue(text, forKey: questionID) == nil {
                     order.append(questionID)
                 }
             case .questionAnswered:

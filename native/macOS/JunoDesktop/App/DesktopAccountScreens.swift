@@ -87,6 +87,22 @@ struct DesktopDestinationView: View {
             } else {
                 unavailable("Tasks", "The scheduled-task service is unavailable.")
             }
+        case .design:
+            // The artifact store is the hard dependency, not the transport: the
+            // page lists the designs this account already has, and those are
+            // projected from the encrypted database. A request sender is what
+            // *starting* one needs, and its absence disables the presets with a
+            // reason rather than emptying the page.
+            if let model = configuration.artifactModel {
+                DesktopDesignScreen(
+                    model: model,
+                    accountID: session.profile.id,
+                    requestSender: configuration.requestSender,
+                    syncModel: configuration.syncModel
+                )
+            } else {
+                unavailable("Design", "The synchronized artifact store is unavailable.")
+            }
         case .usage:
             DesktopUsageScreen(
                 session: session,

@@ -61,6 +61,77 @@ export function listProviders(): ProviderListing[] {
   return listings;
 }
 
+/**
+ * A provider described by the caller instead of by the table above.
+ *
+ * The table in `COMPAT_PROVIDERS` knows two labs. The website knows fourteen,
+ * and its picker offers all of them — so every model outside those two failed
+ * its run with `Unknown provider: <id>` at the moment the adapter was resolved,
+ * before a single token. Widening the vendored table would have fixed it for a
+ * day and then drifted, because the catalog it has to agree with lives in
+ * `src/lib/providers.ts` and `src/lib/models.ts`, and this package is built with
+ * the repository absent and cannot read either.
+ *
+ * So the same seam the Work tools already use: the shape lives here, the
+ * catalog is injected by the caller that can see it. `scripts/work-runner.ts`
+ * builds one of these per run out of the website's own provider and model
+ * tables, which makes "the picker and the executor agree" a property of there
+ * being one table rather than a rule somebody has to remember.
+ *
+ * The key is passed in rather than resolved from the environment: a caller that
+ * has already read the key has also already decided the provider is configured,
+ * and a second resolution here could disagree with the first.
+ */
+export interface ProviderSpec {
+  id: string;
+  name: string;
+  /** `anthropic` selects the native SDK; `openai` the shared compat adapter. */
+  kind: 'anthropic' | 'openai';
+  apiKey: string;
+  /** Required for `openai`. On `anthropic` it means "go through a proxy". */
+  baseUrl?: string;
+  defaultModel: string;
+  models: Record<string, { label: string; capabilities: ModelCapabilities }>;
+  /** Only for labs whose API defines OpenAI's top-level `reasoning_effort`. */
+  reasoningEffortParam?: boolean;
+  timeoutMs?: number;
+}
+
+export function createProviderFromSpec(spec: ProviderSpec): ProviderAdapter {
+  if (!spec.apiKey) {
+    throw new Error(`${spec.name} has no API key configured.`);
+  }
+  if (spec.kind === 'anthropic') {
+    return new AnthropicAdapter(spec.apiKey, {
+      id: spec.id,
+      name: spec.name,
+      defaultModel: spec.defaultModel,
+      models: Object.fromEntries(
+        Object.entries(spec.models).map(([id, model]) => [id, model.capabilities]),
+      ),
+      ...(spec.baseUrl ? { baseURL: spec.baseUrl } : {}),
+      ...(spec.timeoutMs === undefined ? {} : { timeoutMs: spec.timeoutMs }),
+    });
+  }
+  if (!spec.baseUrl) {
+    throw new Error(`${spec.name} is an OpenAI-compatible provider with no base URL.`);
+  }
+  return new OpenAICompatAdapter(
+    {
+      id: spec.id,
+      name: spec.name,
+      baseUrl: spec.baseUrl,
+      // Only consulted when no explicit key is passed, and one always is.
+      envVar: '',
+      defaultModel: spec.defaultModel,
+      models: spec.models,
+      ...(spec.reasoningEffortParam ? { reasoningEffortParam: true } : {}),
+      ...(spec.timeoutMs === undefined ? {} : { timeoutMs: spec.timeoutMs }),
+    },
+    { apiKey: spec.apiKey },
+  );
+}
+
 /** Instantiate an adapter, throwing a clear error when it can't work. */
 export function createProvider(id: string): ProviderAdapter {
   if (id === 'anthropic') {

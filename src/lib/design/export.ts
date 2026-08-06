@@ -22,7 +22,20 @@
 import { layoutPage, layoutSubtree, lineHeightPx, type LayoutBox, type LayoutMap } from "@/lib/design/layout";
 import { renderNodeSvg, renderPageSvg, escapeXml } from "@/lib/design/render";
 import { applyBoundVariables, exportTokens, rgbaToCss, rgbaToHex, type TokenExport } from "@/lib/design/variables";
-import { isContainer, type DesignDocument, type DesignNode, type NodeId, type PageId, type Paint } from "@/lib/design/types";
+import { effectLabel } from "@/lib/design/operations";
+import {
+  isContainer,
+  type DesignDocument,
+  type DesignNode,
+  type DropShadowEffect,
+  type GlassEffect,
+  type InnerShadowEffect,
+  type NodeId,
+  type NoiseEffect,
+  type PageId,
+  type Paint,
+  type TextureEffect,
+} from "@/lib/design/types";
 
 export type DesignExportFormat = "svg" | "png" | "pdf" | "html" | "react" | "swiftui" | "json" | "tokens";
 
@@ -89,7 +102,9 @@ export function pngRequest(doc: DesignDocument, pageId: PageId, nodeId?: NodeId,
  * operators from the same layout boxes the renderer uses. This covers the
  * rectangle/ellipse/line/text/frame vocabulary the first production slice
  * supports; gradients, images and vector paths fall back to their flat fill,
- * which is stated in `unsupported` rather than silently dropped.
+ * and shadows, blur and grain do not appear at all. Every one of those is
+ * stated in `unsupported` rather than silently dropped — a PDF that quietly
+ * lost the shadow on every card is a PDF nobody can trust as a proof.
  */
 export function exportPdf(doc: DesignDocument, pageId: PageId): ExportResult & { unsupported: string[] } {
   const boxes = layoutPage(doc, pageId);
@@ -125,7 +140,16 @@ export function exportPdf(doc: DesignDocument, pageId: PageId): ExportResult & {
     const fill = resolved.fills[0];
 
     if (fill && fill.type !== "solid") unsupported.push(`${resolved.name}: ${fill.type} fill flattened`);
+    if (resolved.fills.length > 1) unsupported.push(`${resolved.name}: only the base fill is drawn in PDF; ${resolved.fills.length - 1} stacked fill(s) were dropped`);
     if (resolved.rotation % 360 !== 0) unsupported.push(`${resolved.name}: rotation not applied`);
+    // A PDF *can* carry a blurred shadow — as a soft mask over a smooth shading,
+    // or as a rasterised image. Both mean building a second rasteriser inside
+    // this module, which is the thing `pngRequest` exists not to do. So the
+    // geometry exports and the effects are named as missing.
+    for (const effect of resolved.effects) {
+      if (effect.visible === false) continue;
+      unsupported.push(`${resolved.name}: ${effectLabel(effect.type)} is not drawn in PDF`);
+    }
 
     const solid = fill?.type === "solid" ? fill.color : null;
     switch (resolved.type) {
@@ -298,22 +322,109 @@ export function symbolName(node: DesignNode, taken: Set<string>): string {
   return candidate;
 }
 
+/**
+ * A paint as CSS.
+ *
+ * Stop positions and the gradient axis are carried, not discarded. They used to
+ * be: a three-stop gradient with a 20%/80% ramp along a diagonal came out of
+ * here as evenly spaced stops running top to bottom, which is a different
+ * picture with the same colours in it. CSS measures a linear gradient's angle
+ * clockwise from "pointing up", so the axis is converted rather than copied.
+ */
 function paintToCss(paint: Paint | undefined): string | null {
   if (!paint || paint.visible === false) return null;
+  const stops = (list: { position: number; color: Parameters<typeof rgbaToCss>[0] }[]) =>
+    list.map((s) => `${rgbaToCss(s.color)} ${round(s.position * 100)}%`).join(", ");
   switch (paint.type) {
     case "solid":
       return rgbaToCss(paint.color);
-    case "linear-gradient":
-      return `linear-gradient(${paint.stops.map((s) => rgbaToCss(s.color)).join(", ")})`;
+    case "linear-gradient": {
+      const dx = paint.to.x - paint.from.x;
+      const dy = paint.to.y - paint.from.y;
+      const angle = dx === 0 && dy === 0 ? 180 : (Math.atan2(dx, -dy) * 180) / Math.PI;
+      return `linear-gradient(${round((angle + 360) % 360)}deg, ${stops(paint.stops)})`;
+    }
     case "radial-gradient":
-      return `radial-gradient(${paint.stops.map((s) => rgbaToCss(s.color)).join(", ")})`;
+      return `radial-gradient(circle at ${round(paint.center.x * 100)}% ${round(paint.center.y * 100)}%, ${stops(paint.stops)})`;
     case "image":
       return null;
   }
 }
 
-/** CSS for one node, from its resolved properties and its laid-out box. */
-function cssFor(doc: DesignDocument, node: DesignNode, box: LayoutBox, parent: LayoutBox | null): Record<string, string> {
+/**
+ * A turbulence-derived effect as a CSS background layer.
+ *
+ * The same `feTurbulence` the canvas draws, embedded as a data-URI SVG and
+ * tiled — which is not a workaround but the way CSS has always expressed this,
+ * and the reason the model stores turbulence parameters instead of a picture.
+ * The generated markup therefore shows the identical grain (or the identical
+ * lit relief) the editor did, from the identical handful of numbers.
+ */
+function turbulenceLayerCss(filterBody: string, opacity: number): string {
+  const svg =
+    `<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'>` +
+    `<filter id='n'>${filterBody}</filter>` +
+    `<rect width='100%' height='100%' filter='url(#n)' opacity='${round(opacity)}'/>` +
+    `</svg>`;
+  // Only the characters that cannot appear raw in a `url()` are escaped, so the
+  // value stays legible in the generated source instead of becoming base64.
+  const encoded = svg.replace(/[<>#%"{}|\\^`\s]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`);
+  return `url("data:image/svg+xml,${encoded}")`;
+}
+
+function noiseToCss(noise: NoiseEffect): string {
+  const grey = noise.monochrome ? "<feColorMatrix type='saturate' values='0'/>" : "";
+  return turbulenceLayerCss(
+    `<feTurbulence type='fractalNoise' baseFrequency='${round(noise.density)}' numOctaves='3' stitchTiles='stitch' seed='${noise.seed}'/>${grey}`,
+    noise.opacity
+  );
+}
+
+function textureToCss(texture: TextureEffect): string {
+  return turbulenceLayerCss(
+    `<feTurbulence type='fractalNoise' baseFrequency='${round(texture.scale)}' numOctaves='${texture.roughness}' stitchTiles='stitch' seed='${texture.seed}'/>` +
+      `<feDiffuseLighting surfaceScale='${round(texture.depth)}' diffuseConstant='1' lighting-color='${rgbaToCss(texture.color)}'><feDistantLight azimuth='225' elevation='55'/></feDiffuseLighting>`,
+    texture.opacity
+  );
+}
+
+/** The light direction as a CSS offset, in pixels — the same vector the SVG
+ *  renderer builds its rim gradient from, so the highlight lands on the same
+ *  edge in the browser as on the canvas. */
+function lightOffset(angle: number): { x: number; y: number } {
+  const radians = ((angle % 360) * Math.PI) / 180;
+  return { x: Math.sin(radians), y: -Math.cos(radians) };
+}
+
+/**
+ * The paintable half of glass as CSS background layers, topmost first.
+ *
+ * `linear-gradient`'s angle is already degrees clockwise from "to top", which is
+ * exactly how `lightAngle` is stored, so the sheen needs no conversion — the
+ * browser puts the highlight on the same edge the canvas does.
+ */
+function glassSurfaceCss(effect: GlassEffect): string[] {
+  const layers: string[] = [];
+  if (effect.lightIntensity > 0) {
+    layers.push(
+      `linear-gradient(${round(effect.lightAngle)}deg, rgba(255,255,255,0) 0%, rgba(255,255,255,${round(effect.lightIntensity * 0.28)}) 100%)`
+    );
+  }
+  const tint = rgbaToCss({ ...effect.tint, a: effect.tint.a * effect.tintOpacity });
+  if (effect.tint.a * effect.tintOpacity > 0) layers.push(`linear-gradient(${tint}, ${tint})`);
+  return layers;
+}
+
+/** CSS for one node, from its resolved properties and its laid-out box.
+ *  `unsupported` collects anything CSS genuinely cannot say, so it reaches the
+ *  handoff bundle instead of vanishing between here and the browser. */
+function cssFor(
+  doc: DesignDocument,
+  node: DesignNode,
+  box: LayoutBox,
+  parent: LayoutBox | null,
+  unsupported: string[]
+): Record<string, string> {
   const resolved = applyBoundVariables(doc, node);
   const style: Record<string, string> = {};
 
@@ -331,7 +442,47 @@ function cssFor(doc: DesignDocument, node: DesignNode, box: LayoutBox, parent: L
   style.height = `${round(box.height)}px`;
 
   const fill = paintToCss(resolved.fills[0]);
-  if (fill) style[resolved.type === "text" ? "color" : "background"] = fill;
+  const effects = resolved.effects.filter((effect) => effect.visible !== false);
+
+  // Background layers, topmost first — which is the *reverse* of the effect
+  // stack, because CSS paints the first layer of `background-image` on top and
+  // the model applies index 0 closest to the layer.
+  const overlays: { css: string; blend: string }[] = [];
+  for (const effect of [...effects].reverse()) {
+    if (effect.type === "noise" && effect.opacity > 0) overlays.push({ css: noiseToCss(effect), blend: effect.blend });
+    else if (effect.type === "texture" && effect.opacity > 0) overlays.push({ css: textureToCss(effect), blend: effect.blend });
+    else if (effect.type === "glass") for (const layer of glassSurfaceCss(effect)) overlays.push({ css: layer, blend: "normal" });
+  }
+
+  // Fills past the first, as background layers under the effect overlays. The
+  // model stacks them back to front and CSS paints its first layer on top, so
+  // they go in reversed — the same rule the overlays follow, for the same reason.
+  for (const paint of [...resolved.fills.slice(1)].reverse()) {
+    if (paint.visible === false) continue;
+    const css = paintToCss(paint);
+    if (!css) continue;
+    // A solid is a colour, not an image; CSS only stacks images, so it becomes
+    // the degenerate gradient that has always been how you say "a flat layer".
+    overlays.push({ css: paint.type === "solid" ? `linear-gradient(${css}, ${css})` : css, blend: "normal" });
+  }
+
+  if (fill && resolved.type === "text") {
+    style.color = fill;
+    // `background-blend-mode` composites background layers with each other, and
+    // glyphs are not a background layer — grain behind text would sit under the
+    // letters rather than across them.
+    if (overlays.length > 0) unsupported.push(`${resolved.name}: grain, texture and glass on a text layer are not expressible in CSS`);
+    if (resolved.fills.length > 1) unsupported.push(`${resolved.name}: a text layer has one colour; ${resolved.fills.length - 1} extra fill(s) were dropped`);
+  } else if (overlays.length > 0) {
+    // The effect overlays are the topmost background layers; the fill sits under
+    // them and blends with them in the mode the document asked for.
+    const under = fill && resolved.fills[0]?.type !== "solid" ? [fill] : [];
+    style.backgroundImage = [...overlays.map((o) => o.css), ...under].join(", ");
+    style.backgroundBlendMode = [...overlays.map((o) => o.blend), ...under.map(() => "normal")].join(", ");
+    if (fill && resolved.fills[0]?.type === "solid") style.backgroundColor = fill;
+  } else if (fill) {
+    style.background = fill;
+  }
   if (resolved.opacity < 1) style.opacity = String(resolved.opacity);
   if (resolved.rotation % 360 !== 0) style.transform = `rotate(${round(resolved.rotation)}deg)`;
 
@@ -341,11 +492,87 @@ function cssFor(doc: DesignDocument, node: DesignNode, box: LayoutBox, parent: L
   const stroke = resolved.strokes[0];
   if (stroke?.paint.type === "solid") style.border = `${stroke.weight}px solid ${rgbaToCss(stroke.paint.color)}`;
 
-  const shadow = resolved.shadows.find((s) => s.visible !== false && s.type === "drop");
-  if (shadow) {
-    style.boxShadow = `${shadow.offsetX}px ${shadow.offsetY}px ${shadow.blur}px ${shadow.spread}px ${rgbaToCss(shadow.color)}`;
+  // Every visible shadow, in order, not just the first drop one — and inner
+  // shadows as `inset`, which is the whole reason `box-shadow` takes a keyword.
+  // A rim light was previously dropped here and on the canvas both, so a glass
+  // panel exported as a flat tinted rectangle. `box-shadow` paints its first
+  // entry on top, so the stack is reversed on the way out for the same reason
+  // the background layers are.
+  const shadows = effects.filter(
+    (effect): effect is DropShadowEffect | InnerShadowEffect => effect.type === "drop-shadow" || effect.type === "inner-shadow"
+  );
+  const boxShadows = [...shadows]
+    .reverse()
+    .map(
+      (s) =>
+        `${s.type === "inner-shadow" ? "inset " : ""}${round(s.offsetX)}px ${round(s.offsetY)}px ${round(s.blur)}px ${round(s.spread)}px ${rgbaToCss(s.color)}`
+    );
+  // The glass rim light is an inset highlight on the lit edge and an inset
+  // shade opposite it — the same two-sided rim the canvas strokes, said in the
+  // one CSS property that can say it.
+  for (const effect of [...effects].reverse()) {
+    if (effect.type !== "glass" || effect.lightIntensity <= 0) continue;
+    const light = lightOffset(effect.lightAngle);
+    boxShadows.unshift(
+      `inset ${round(-light.x)}px ${round(-light.y)}px 0 rgba(255,255,255,${round(effect.lightIntensity)})`,
+      `inset ${round(light.x)}px ${round(light.y)}px 0 rgba(0,0,0,${round(effect.lightIntensity * 0.35)})`
+    );
   }
-  if (resolved.blur) style.filter = `blur(${resolved.blur.radius}px)`;
+
+  if (boxShadows.length > 0) {
+    if (resolved.type === "text") {
+      // `text-shadow` has neither spread nor inset; only a drop shadow's
+      // offset, blur and colour survive, and the rest is stated.
+      const drops = shadows.filter((s) => s.type === "drop-shadow");
+      if (drops.length > 0) {
+        style.textShadow = [...drops]
+          .reverse()
+          .map((s) => `${round(s.offsetX)}px ${round(s.offsetY)}px ${round(s.blur)}px ${rgbaToCss(s.color)}`)
+          .join(", ");
+      }
+      if (shadows.some((s) => s.type === "inner-shadow")) unsupported.push(`${resolved.name}: inner shadow on a text layer has no CSS form`);
+      if (drops.some((s) => s.spread !== 0)) unsupported.push(`${resolved.name}: text-shadow has no spread; it was dropped`);
+    } else {
+      style.boxShadow = boxShadows.join(", ");
+    }
+  }
+
+  // A layer blur blurs the layer; a background blur blurs what is behind it.
+  // They are different declarations, and using `filter` for both — which is what
+  // this once did — turned every glass panel into a smeared one.
+  const blurChain = (radius: number, saturation: number) =>
+    `blur(${round(radius)}px)${saturation !== 1 ? ` saturate(${round(saturation * 100)}%)` : ""}`;
+
+  const layerBlurs = effects.filter((effect) => effect.type === "layer-blur");
+  if (layerBlurs.length > 0) {
+    style.filter = layerBlurs.map((effect) => blurChain(effect.radius, effect.saturation ?? 1)).join(" ");
+  }
+
+  const backdrops = effects.map((effect) =>
+    effect.type === "background-blur"
+      ? blurChain(effect.radius, effect.saturation ?? 1)
+      : effect.type === "glass"
+        ? blurChain(effect.blur, effect.saturation)
+        : null
+  );
+  const backdropChain = backdrops.filter((chain): chain is string => chain !== null).join(" ");
+  if (backdropChain) {
+    // Safari carried `backdrop-filter` behind the prefix for years, and the
+    // generated prototype is a file people open locally in whatever they have.
+    style.WebkitBackdropFilter = backdropChain;
+    style.backdropFilter = backdropChain;
+  }
+
+  for (const effect of effects) {
+    if (effect.type !== "glass" || effect.refraction <= 0) continue;
+    // The one part of glass CSS has no way to say. `backdrop-filter` filters the
+    // backdrop in place; it cannot magnify or displace it, and there is no
+    // property that can. Naming it beats shipping a panel that is subtly flatter
+    // in the browser than it was on the canvas and letting someone find out.
+    unsupported.push(
+      `${resolved.name}: glass refraction ${round(effect.refraction)} has no CSS equivalent — the rim renders as flat frosting`
+    );
+  }
   if ("clipsContent" in resolved && resolved.clipsContent) style.overflow = "hidden";
 
   if (resolved.type === "text") {
@@ -396,7 +623,7 @@ export function exportHtmlPrototype(doc: DesignDocument, pageId: PageId): Genera
     if (!box || !node.visible) return;
     const resolved = applyBoundVariables(doc, node);
     const indent = "  ".repeat(depth);
-    const style = styleString(cssFor(doc, node, box, parent));
+    const style = styleString(cssFor(doc, node, box, parent, unsupported));
     const interactions = Object.values(doc.interactions).filter((i) => i.sourceNodeId === node.id);
     const attrs = [
       `id="${escapeXml(node.id)}"`,
@@ -513,7 +740,7 @@ export function exportReact(doc: DesignDocument, pageId: PageId): GeneratedCode 
     if (!box || !node.visible) return [];
     const resolved = applyBoundVariables(doc, node);
     const indent = "  ".repeat(depth + 1);
-    const style = cssFor(doc, node, box, parent);
+    const style = cssFor(doc, node, box, parent, unsupported);
     const styleLiteral = `{{ ${Object.entries(style)
       .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
       .join(", ")} }}`;
@@ -606,10 +833,31 @@ export function exportSwiftUI(doc: DesignDocument, pageId: PageId): GeneratedCod
   lines.push("import SwiftUI");
   lines.push("");
 
-  const swiftColor = (paint: Paint | undefined): string | null => {
-    if (!paint || paint.type !== "solid") return null;
-    const c = paint.color;
-    return `Color(.sRGB, red: ${round(c.r)}, green: ${round(c.g)}, blue: ${round(c.b)}, opacity: ${round(c.a)})`;
+  const swiftColorLiteral = (c: { r: number; g: number; b: number; a: number }) =>
+    `Color(.sRGB, red: ${round(c.r)}, green: ${round(c.g)}, blue: ${round(c.b)}, opacity: ${round(c.a)})`;
+
+  /**
+   * A paint as a SwiftUI `ShapeStyle`.
+   *
+   * Gradients are real gradients here, not their first stop: `Gradient.Stop`
+   * takes exactly the position the document stores, and `startPoint`/`endPoint`
+   * take exactly the normalised axis, so a SwiftUI build of a design gets the
+   * same ramp as the canvas rather than a flat approximation of it.
+   */
+  const swiftPaint = (paint: Paint | undefined): string | null => {
+    if (!paint || paint.visible === false) return null;
+    const stops = (list: { position: number; color: { r: number; g: number; b: number; a: number } }[]) =>
+      list.map((s) => `.init(color: ${swiftColorLiteral(s.color)}, location: ${round(s.position)})`).join(", ");
+    switch (paint.type) {
+      case "solid":
+        return swiftColorLiteral(paint.color);
+      case "linear-gradient":
+        return `LinearGradient(stops: [${stops(paint.stops)}], startPoint: UnitPoint(x: ${round(paint.from.x)}, y: ${round(paint.from.y)}), endPoint: UnitPoint(x: ${round(paint.to.x)}, y: ${round(paint.to.y)}))`;
+      case "radial-gradient":
+        return `RadialGradient(stops: [${stops(paint.stops)}], center: UnitPoint(x: ${round(paint.center.x)}, y: ${round(paint.center.y)}), startRadius: 0, endRadius: ${round(paint.radius)})`;
+      case "image":
+        return null;
+    }
   };
 
   const emit = (node: DesignNode, parent: LayoutBox | null, depth: number): string[] => {
@@ -643,16 +891,116 @@ export function exportSwiftUI(doc: DesignDocument, pageId: PageId): GeneratedCod
       out.push(`${indent}${body}`);
     }
 
-    const fill = swiftColor(resolved.fills[0]);
+    const effects = resolved.effects.filter((effect) => effect.visible !== false);
+
+    // A backdrop is a material, and a material goes *under* the tint — so it is
+    // emitted before the fill, in the order SwiftUI composes them.
+    for (const effect of effects) {
+      if (effect.type !== "background-blur" && effect.type !== "glass") continue;
+      const radius = effect.type === "glass" ? effect.blur : effect.radius;
+      const saturation = effect.type === "glass" ? effect.saturation : effect.saturation ?? 1;
+      out.push(`${indent}    .background(${swiftMaterial(radius)})`);
+      unsupported.push(
+        `${resolved.name}: ${effectLabel(effect.type)} exported as ${swiftMaterial(radius)} — SwiftUI materials are not radius-parameterised (design asks for ${round(radius)}pt${saturation !== 1 ? `, saturation ${round(saturation)}` : ""})`
+      );
+      if (effect.type !== "glass") continue;
+      // The rest of glass is a tint and a rim, and SwiftUI has both — but the
+      // rim wants the same rounded silhouette the clip below applies, and that
+      // shape is not known until the corner radius is read. So the tint goes on
+      // here and the rim goes on after the clip, with the shape it belongs to.
+      if (effect.tint.a * effect.tintOpacity > 0) {
+        out.push(`${indent}    .overlay(${swiftColorLiteral(effect.tint)}.opacity(${round(effect.tintOpacity)}))`);
+      }
+      if (effect.refraction > 0) {
+        unsupported.push(
+          `${resolved.name}: glass refraction ${round(effect.refraction)} has no SwiftUI equivalent — a material does not displace what is behind it`
+        );
+      }
+    }
+
+    const fill = swiftPaint(resolved.fills[0]);
     if (fill && resolved.type === "text") out.push(`${indent}    .foregroundStyle(${fill})`);
     else if (fill && children.length === 0) out.push(`${indent}    .foregroundStyle(${fill})`);
     else if (fill) out.push(`${indent}    .background(${fill})`);
+
+    // Fills past the first are overlays, in the order the model stacks them.
+    // A text layer gets one colour and says so rather than emitting a second
+    // `.foregroundStyle` that would silently win.
+    for (const paint of resolved.fills.slice(1)) {
+      if (paint.visible === false) continue;
+      const extra = swiftPaint(paint);
+      if (!extra) continue;
+      if (resolved.type === "text") {
+        unsupported.push(`${resolved.name}: a SwiftUI Text has one foreground style; an extra fill was dropped`);
+        continue;
+      }
+      out.push(`${indent}    .overlay(${extra}${paint.opacity !== undefined && paint.opacity < 1 ? `.opacity(${round(paint.opacity)})` : ""})`);
+    }
 
     if (resolved.type === "text") {
       out.push(`${indent}    .font(.system(size: ${round(resolved.typography.fontSize)}, weight: ${swiftWeight(resolved.typography.fontWeight)}))`);
     }
     const radius = typeof resolved.cornerRadius === "number" ? resolved.cornerRadius : Math.max(...resolved.cornerRadius);
     if (radius > 0) out.push(`${indent}    .clipShape(RoundedRectangle(cornerRadius: ${round(radius)}, style: .continuous))`);
+
+    // Effects come after the clip so a shadow is cast by the rounded silhouette
+    // rather than by the square frame behind it — and they are emitted in list
+    // order, because SwiftUI modifiers compose in the order they are written and
+    // that is the same claim the model's ordering makes.
+    const swiftShape = radius > 0 ? `RoundedRectangle(cornerRadius: ${round(radius)}, style: .continuous)` : "Rectangle()";
+    for (const effect of effects) {
+      switch (effect.type) {
+        case "layer-blur":
+          out.push(`${indent}    .blur(radius: ${round(effect.radius)})`);
+          if (effect.saturation !== undefined && effect.saturation !== 1) {
+            out.push(`${indent}    .saturation(${round(effect.saturation)})`);
+          }
+          break;
+        case "drop-shadow":
+          out.push(
+            `${indent}    .shadow(color: ${swiftColorLiteral(effect.color)}, radius: ${round(effect.blur / 2)}, x: ${round(effect.offsetX)}, y: ${round(effect.offsetY)})`
+          );
+          if (effect.spread !== 0) unsupported.push(`${resolved.name}: shadow spread ${round(effect.spread)} has no SwiftUI equivalent`);
+          break;
+        case "inner-shadow":
+          // `ShapeStyle.shadow(.inner(…))` exists, but it is a property of the
+          // *style* a shape is filled with, not a modifier on an assembled view,
+          // and this generator emits assembled views. Saying so in the file beats
+          // emitting something that does not compile.
+          out.push(
+            `${indent}    // Juno: inner shadow (${round(effect.offsetX)}, ${round(effect.offsetY)}, blur ${round(effect.blur)}) has no view modifier — fill the shape with .shadow(.inner(…)) to restore it.`
+          );
+          unsupported.push(`${resolved.name}: inner shadow needs a ShapeStyle fill; emitted as a comment`);
+          break;
+        case "noise":
+          out.push(`${indent}    // Juno: ${round(effect.opacity * 100)}% grain — overlay a Canvas or a tiled noise Image to restore it.`);
+          unsupported.push(`${resolved.name}: grain has no SwiftUI primitive; emitted as a comment`);
+          break;
+        case "texture":
+          out.push(
+            `${indent}    // Juno: texture (scale ${round(effect.scale)}, depth ${round(effect.depth)}) — SwiftUI has no turbulence; overlay a tiled texture Image to restore it.`
+          );
+          unsupported.push(`${resolved.name}: texture has no SwiftUI primitive; emitted as a comment`);
+          break;
+        case "glass":
+          // The material and the tint already went on above; this is the rim,
+          // which needs the clipped silhouette to be stroked around.
+          if (effect.lightIntensity > 0) {
+            out.push(
+              `${indent}    .overlay(${swiftShape}.strokeBorder(LinearGradient(colors: [Color.white.opacity(${round(effect.lightIntensity)}), Color.black.opacity(${round(effect.lightIntensity * 0.35)})], startPoint: .top, endPoint: .bottom), lineWidth: 1))`
+            );
+            if (effect.lightAngle % 360 !== 0) {
+              unsupported.push(
+                `${resolved.name}: glass light angle ${round(effect.lightAngle)}° emitted as a top-to-bottom rim; SwiftUI gradients take unit points, not an angle`
+              );
+            }
+          }
+          break;
+        case "background-blur":
+          break;
+      }
+    }
+
     out.push(`${indent}    .frame(width: ${round(box.width)}, height: ${round(box.height)}, alignment: .topLeading)`);
     if (resolved.opacity < 1) out.push(`${indent}    .opacity(${round(resolved.opacity)})`);
     if (resolved.rotation % 360 !== 0) out.push(`${indent}    .rotationEffect(.degrees(${round(resolved.rotation)}))`);
@@ -709,6 +1057,23 @@ export function exportSwiftUI(doc: DesignDocument, pageId: PageId): GeneratedCod
   }
 
   return { format: "swiftui", fileName: file, mimeType: "text/plain", content: lines.join("\n"), mappings, unsupported };
+}
+
+/**
+ * The material closest to a blur radius.
+ *
+ * SwiftUI's materials are named thicknesses, not radii, so this is a bucketing
+ * and not a conversion — which is exactly why every use of it also files an
+ * `unsupported` note carrying the radius the designer actually asked for. The
+ * thresholds follow Apple's own published blur radii for the four system
+ * materials closely enough that a 24pt glass panel lands on `.ultraThinMaterial`,
+ * which is what the platform calls the same effect.
+ */
+function swiftMaterial(radius: number): string {
+  if (radius >= 60) return ".thickMaterial";
+  if (radius >= 40) return ".regularMaterial";
+  if (radius >= 20) return ".thinMaterial";
+  return ".ultraThinMaterial";
 }
 
 function swiftWeight(weight: number): string {

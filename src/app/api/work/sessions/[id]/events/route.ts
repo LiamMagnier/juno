@@ -27,8 +27,38 @@ export const maxDuration = 300;
 // no longer current is ignored and the client gets a fresh snapshot, because
 // replaying attempt 2 from attempt 1's sequence would silently skip whatever
 // the new attempt has already done.
-const POLL_INTERVAL_MS = 1_200;
+/*
+ * Two poll intervals, and why there are two.
+ *
+ * A single 1.2s poll costs the run's whole transcript up to 1.2s of latency per
+ * line, and a burst of quick tool calls arrives as one clump rather than as
+ * things happening — which is the difference between a page that shows what the
+ * agent is doing and a page that shows what it did a moment ago. Simply lowering
+ * the interval is the wrong trade: an idle session is the common case, most
+ * sessions are idle most of the time, and every one of them would query Postgres
+ * four times as often for nothing.
+ *
+ * So the interval follows the run. A poll that found something schedules the
+ * next few quickly, because a run that just emitted is overwhelmingly likely to
+ * emit again; a poll that found nothing decays back to the idle rate within a
+ * few seconds. The floor is 300ms and there is always a sleep, so this is a
+ * slower loop under load, never a busy one — the steady-state cost of a session
+ * nobody is working on is exactly what it was.
+ */
+const IDLE_POLL_MS = 1_200;
+const ACTIVE_POLL_MS = 300;
+/** ~3.6s of fast polling after each sign of life, then back to idle. */
+const ACTIVE_POLL_BUDGET = 12;
 const HEARTBEAT_MS = 15_000;
+/**
+ * How long one connection lasts before the client is asked to reconnect.
+ *
+ * Comfortably inside the 300s `maxDuration` above, so the close is ours and
+ * lands between frames, rather than the platform's and landing mid-frame.
+ * `subscribeToWorkEvents` treats a clean end of body as the normal path and
+ * reconnects immediately from its cursor without counting it against the
+ * backoff, which is what makes a window this short invisible.
+ */
 const STREAM_WINDOW_MS = 4 * 60_000;
 const EVENT_PAGE = 500;
 
@@ -62,6 +92,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       let cursor = 0;
       let currentRunId: string | null = null;
       let currentStatus = "";
+      let currentUsage = "";
 
       const currentRun = () =>
         prisma.workRun.findFirst({
@@ -89,6 +120,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         return rows.filter((row) => row.visibility === "user").map(serializeEvent);
       };
 
+      /**
+       * What the run has spent, as one comparable string.
+       *
+       * The three usage columns move without any event being written — the
+       * executor bills a turn, the row changes, and nothing in the transcript
+       * says so. Without this the cost and token readouts froze for the whole
+       * of a long tool call and then jumped, which reads as a stalled page
+       * rather than as a quiet minute.
+       */
+      const usageOf = (run: WorkRun | null) =>
+        run === null ? "" : `${run.costMicroUsd}:${run.inputTokens}:${run.outputTokens}`;
+
       const frame = (type: string, current: WorkSession, run: WorkRun | null, events: unknown[]) =>
         send({
           type,
@@ -111,14 +154,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         if (run) {
           currentRunId = run.id;
           currentStatus = run.status;
+          currentUsage = usageOf(run);
           cursor = resumeRunId === run.id ? resumeAfter : 0;
         }
         frame("snapshot", live, run, run ? deliver(await readEvents(run.id)) : []);
 
         const deadline = Date.now() + STREAM_WINDOW_MS;
         let lastBeat = Date.now();
+        // A run that is still going when the page attaches gets the fast rate
+        // straight away. This is the moment the user has just pressed Start and
+        // is watching an empty panel, and it is the one moment where a second of
+        // silence is read as "nothing happened" rather than as latency.
+        let activePolls = run !== null && !isTerminalStatus(run.status) ? ACTIVE_POLL_BUDGET : 0;
+
         while (!aborted && Date.now() < deadline) {
-          await sleep(POLL_INTERVAL_MS);
+          await sleep(activePolls > 0 ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+          if (activePolls > 0) activePolls -= 1;
           if (aborted) break;
 
           const [fresh, freshRun] = await Promise.all([
@@ -137,18 +188,27 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
             // events whose seq it has already seen from another run.
             currentRunId = freshRun.id;
             currentStatus = freshRun.status;
+            currentUsage = usageOf(freshRun);
             cursor = 0;
             frame("snapshot", live, freshRun, deliver(await readEvents(freshRun.id)));
             lastBeat = Date.now();
+            activePolls = ACTIVE_POLL_BUDGET;
             continue;
           }
 
           const events = freshRun ? deliver(await readEvents(freshRun.id)) : [];
           const statusMoved = (freshRun?.status ?? "") !== currentStatus;
+          const usage = usageOf(freshRun);
+          const spent = usage !== currentUsage;
           currentStatus = freshRun?.status ?? "";
-          if (events.length > 0 || statusMoved) {
+          currentUsage = usage;
+          if (events.length > 0 || statusMoved || spent) {
             frame("events", live, freshRun, events);
             lastBeat = Date.now();
+            // Any sign of life buys the next few seconds at the fast rate. A run
+            // mid-turn emits in bursts, and the poll that catches the first line
+            // of a burst is the one best placed to catch the rest of it.
+            activePolls = ACTIVE_POLL_BUDGET;
           }
 
           if (freshRun && isTerminalStatus(freshRun.status)) {

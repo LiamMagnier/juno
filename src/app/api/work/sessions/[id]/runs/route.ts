@@ -12,7 +12,7 @@ import {
   WORK_LIVE_STATUSES,
   WORK_PERMISSION_POLICIES,
   WORK_TARGETS,
-  narrowestPolicy,
+  resolveApprovalMode,
   selectTarget,
   type HostCapabilityView,
   type WorkBudget,
@@ -401,17 +401,37 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const host = selection.hostId ? hosts.find((candidate) => candidate.id === selection.hostId) : undefined;
-  // The policy the executor will enforce, after narrowing. `narrowestPolicy` is
-  // a `min`, so no layer can widen another: a host pinned to `conservative`
-  // stays conservative under a `permissive` session, which is what makes the
-  // toggle on the Mac mean anything at all. Stored with its inputs because the
-  // approval digests are taken over this exact blob, and an approval granted
-  // under one policy must be provably distinguishable from the same approval
-  // under another.
-  const permissionPolicy: Prisma.InputJsonValue = {
-    policy: narrowestPolicy(policyOf(session.permissionPolicy), host ? policyOf(host.approvalPolicy) : null),
-    session: policyOf(session.permissionPolicy),
+  // The approval mode this attempt runs under, after narrowing.
+  //
+  // `resolveApprovalMode` is a `min` over the request and the Mac, so no layer
+  // can widen another: a host pinned to Manual stays Manual under a session set
+  // to Skip, which is what makes the toggle on the Mac mean anything at all. The
+  // body may name a mode for this attempt alone — "it stopped to ask me nine
+  // times, run it again and stop asking" — and it goes through the same
+  // intersection, so the widest a client can reach is the Mac's own setting.
+  //
+  // Stored with its inputs because the approval digests are taken over this
+  // exact blob, and an approval granted under one mode must be provably
+  // distinguishable from the same approval under another.
+  const requestedPolicy = body.permissionPolicy ?? policyOf(session.permissionPolicy);
+  const mode = resolveApprovalMode({
+    requested: requestedPolicy,
     host: host ? policyOf(host.approvalPolicy) : null,
+    hostName: host?.displayName ?? null,
+  });
+  const permissionPolicy: Prisma.InputJsonValue = {
+    policy: mode.policy,
+    // Each key names the layer it came from, so `session` stays the session's
+    // own stored mode even when the body overrode it for this attempt; the
+    // override goes in `requested`, and only when there was one. A run
+    // dispatched without the new control therefore canonicalises byte-for-byte
+    // to what this route has always written. That matters: `policyDigest` is
+    // taken over this blob, and adding a key unconditionally would have refused
+    // every approval in flight across the deploy with `policy_changed` —
+    // failing closed, but closed on a question nobody had changed the answer to.
+    session: policyOf(session.permissionPolicy),
+    host: mode.host,
+    ...(body.permissionPolicy ? { requested: body.permissionPolicy } : {}),
   };
 
   // The instruction that will actually drive this run, decided before anything
@@ -446,8 +466,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           // The goal comes off the session, which is where the user's own words
           // live; the model is the concrete id resolved above, never the Auto
           // sentinel, because the Mac splits it into a provider and a name and
-          // has no catalogue to resolve a sentinel against.
-          payload: startCommandPayload({ goal: session.goal, model: model.effective }),
+          // has no catalogue to resolve a sentinel against. The mode is the
+          // already-narrowed one — the same value written onto the run and
+          // digested into every approval — so the Mac enforces what this task
+          // was dispatched under rather than its own standing setting.
+          payload: startCommandPayload({
+            goal: session.goal,
+            model: model.effective,
+            permissionPolicy: mode.policy,
+          }),
         }
       : undefined;
 
@@ -589,6 +616,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         explanation: selection.explanation,
         missing: selection.missing,
         degradation: selection.degradation,
+      },
+      // The mode this attempt will actually run under, answered at the moment
+      // it is decided. The composer needs it because the one thing it must not
+      // do is show Skip on a task that is about to run Manual — a person who
+      // chose Skip and then watches it stop to ask has been lied to by a
+      // control, and the honest version of that is a sentence naming the Mac
+      // that narrowed it. `explanation` is that sentence, already addressed to
+      // the reader.
+      //
+      // Only the resolved shape goes out, never the stored blob: that blob is
+      // what the executor enforces and what the approval digests are taken over,
+      // and a client that renders it is one refactor away from a client that
+      // submits it.
+      approvalMode: {
+        policy: mode.policy,
+        requested: mode.requested,
+        narrowedByHost: mode.narrowedByHost,
+        explanation: mode.explanation,
       },
       ...(created.replay ? { replay: true } : {}),
     },

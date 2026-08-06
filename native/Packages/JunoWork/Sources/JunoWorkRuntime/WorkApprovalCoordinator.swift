@@ -162,6 +162,9 @@ public actor WorkApprovalCoordinator {
     }
 
     private var policy: WorkPermissionPolicy
+    /// The mode one dispatched run was told to enforce, narrower than or equal
+    /// to ``policy``. See ``setRunPolicy(_:for:)``.
+    private var runPolicies: [String: WorkPermissionPolicy] = [:]
     private var allowance: WorkAlwaysAllowance?
     private var unattended: WorkRisk.UnattendedPolicy?
     /// Bumped whenever the authority a pending question was asked under shrinks.
@@ -217,6 +220,58 @@ public actor WorkApprovalCoordinator {
         guard newPolicy < previous else { return }
         authorityRevision &+= 1
         denyAll(reason: "Juno's permissions on this Mac changed before that could run.")
+    }
+
+    /// The mode this Mac will enforce for one dispatched run.
+    ///
+    /// One coordinator serves every run on this Mac, and until this existed the
+    /// only authority it had was ``policy`` — the switch in this Mac's own
+    /// settings. So a task composed as Manual and a task composed as Skip were
+    /// gated identically the moment they landed here: the narrowing was
+    /// computed by the dispatch route, written onto the run and digested into
+    /// every approval, and then had nowhere to be applied.
+    ///
+    /// Only ever narrowing. The effective mode is the `min` of this and the
+    /// Mac's own, so a task cannot buy itself more licence than the person
+    /// sitting at the machine granted — the run says how *little* it wants to
+    /// be trusted, never how much. `resolveApprovalMode` on the server has
+    /// already intersected the two, and doing it again here is the point rather
+    /// than duplication: this side must not depend on the sender having done it.
+    ///
+    /// Narrowing revokes that run's unanswered questions, for the reason
+    /// ``setPolicy(_:)`` gives — a decision is made inside the envelope that
+    /// existed when it was asked for. Only that run's, though: another run's
+    /// pending question was asked under an authority nothing here has touched,
+    /// and denying it would be this run's setting reaching into a task it has
+    /// nothing to do with.
+    public func setRunPolicy(_ newPolicy: WorkPermissionPolicy, for runID: String) {
+        let previous = effectivePolicy(forRun: runID)
+        runPolicies[runID] = newPolicy
+        guard effectivePolicy(forRun: runID) < previous else { return }
+        denyPending(
+            forRun: runID,
+            reason: "This task's approval mode changed before that could run."
+        )
+    }
+
+    /// Forgets a finished run's mode.
+    ///
+    /// Widening by construction — it can only ever return that run to the Mac's
+    /// own policy — so nothing pending is revoked. Called when the run retires,
+    /// because a map keyed by run id on a process that stays open for weeks is
+    /// otherwise a map that only grows.
+    public func clearRunPolicy(for runID: String) {
+        runPolicies.removeValue(forKey: runID)
+    }
+
+    /// The mode one run is actually gated on: the stricter of its own and this
+    /// Mac's.
+    public func permissionPolicy(forRun runID: String) -> WorkPermissionPolicy {
+        effectivePolicy(forRun: runID)
+    }
+
+    private func effectivePolicy(forRun runID: String) -> WorkPermissionPolicy {
+        WorkPermissionPolicy.narrowest([policy, runPolicies[runID]])
     }
 
     /// Replaces the standing "always allow" answer.
@@ -288,7 +343,7 @@ public actor WorkApprovalCoordinator {
         mode: WorkAccessMode,
         summary: String
     ) async -> WorkAuthorizationOutcome {
-        switch ruling(risk: risk, mode: mode) {
+        switch ruling(risk: risk, mode: mode, runID: runID) {
         case .allow:
             return .allowed
         case .deny(let reason):
@@ -334,7 +389,7 @@ public actor WorkApprovalCoordinator {
         // the question was asked. `denyAll` covers the narrowing this process
         // saw; this covers a policy that was replaced wholesale, and costs one
         // comparison.
-        if case .deny(let reason) = ruling(risk: risk, mode: mode) {
+        if case .deny(let reason) = ruling(risk: risk, mode: mode, runID: runID) {
             return .denied(reason: reason)
         }
         let receipt = WorkApprovalReceipt(request: request, decidedAt: now())
@@ -348,18 +403,26 @@ public actor WorkApprovalCoordinator {
         return .approved(receipt)
     }
 
-    /// The ruling for a risk under the current authority.
+    /// The ruling for a risk under the current authority, for one run.
     ///
     /// `nonisolated` is deliberately *not* used here — unlike the host loop's
     /// refusal check this reads mutable state — but the mode gate is kept ahead
     /// of ``WorkRisk/ruling(policy:risk:allowance:)`` for the same reason that
     /// function puts irreversible above the policy ladder: a rule that can be
     /// reached by a prompt is a rule one tap can undo.
-    private func ruling(risk: WorkRiskLevel, mode: WorkAccessMode) -> WorkApprovalRuling {
+    ///
+    /// The policy passed down is ``effectivePolicy(forRun:)`` and never
+    /// ``policy`` alone, which is what makes a task's own mode mean something
+    /// on this Mac. It is a `min`, so this can only ever ask about more.
+    private func ruling(
+        risk: WorkRiskLevel, mode: WorkAccessMode, runID: String
+    ) -> WorkApprovalRuling {
         guard risk == .safe || mode.allowsWrite else {
             return .deny(reason: "This folder was shared with Juno for reading only.")
         }
-        let base = WorkRisk.ruling(policy: policy, risk: risk, allowance: allowance)
+        let base = WorkRisk.ruling(
+            policy: effectivePolicy(forRun: runID), risk: risk, allowance: allowance
+        )
         guard let unattended else { return base }
         return WorkRisk.unattendedRuling(base, policy: unattended)
     }

@@ -27,6 +27,8 @@ const REFUSAL_MESSAGES: Record<ApprovalDecisionRefusal, string> = {
   policy_changed: "The permissions changed after you were asked. Juno will ask again.",
   expired: "This request expired before it was answered.",
   already_decided: "This request has already been answered.",
+  not_standing_allowable:
+    "Juno will not stop asking about this one. Allow it this time if you want it to happen.",
 };
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -76,6 +78,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     approval: {
       action: approval.action,
       detail: approval.detail,
+      // Through the serialiser, so a risk column this build cannot read narrows
+      // to `irreversible` — which is the fail-closed direction for the standing
+      // allowance: an ungradeable action is one nothing may ever cover.
+      risk: stored.risk,
       actionDigest: approval.actionDigest,
       policyDigest: approval.policyDigest,
       decision: stored.decision,

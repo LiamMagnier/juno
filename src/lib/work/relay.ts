@@ -426,13 +426,36 @@ export const HOST_NOT_FOUND = { error: "Not found" } as const;
  * because the Mac's `??` fallback to its own default only fires on a missing
  * key; a null would decode as a value and leave it driving a model called
  * nothing.
+ *
+ * `permissionPolicy` is the third key and the newest. Until it existed a Mac
+ * gated every approval on its own `host.approvalPolicy` and never learned what
+ * the task had asked for, so a task composed as Manual that landed on a Mac set
+ * to Skip ran as Skip: the narrowing was computed correctly in the dispatch
+ * route, written onto the run, digested into every approval — and then not sent
+ * to the one machine that enforces it. Sending the already-narrowed value is
+ * what closes that, and it can only ever be at least as strict as the Mac's own
+ * setting because `resolveApprovalMode` intersected the two before it got here.
+ *
+ * Omitted, not nulled, when the caller has nothing to say, for the same reason
+ * as `model`: a null would decode as a value. What a Mac does with the silence
+ * is the Mac's decision and it is the strict one — `DesktopWorkRunHost` narrows
+ * an instruction that names no mode to Manual rather than to the host's own
+ * standing policy. So omission is never a way to get a wider run; it is a way
+ * to get the narrowest one, which is the only safe meaning for "this build did
+ * not say".
  */
 export function startCommandPayload(input: {
   goal: string;
   model?: string | null;
+  permissionPolicy?: WorkPermissionPolicy | null;
 }): Record<string, unknown> {
   const model = typeof input.model === "string" && input.model.length > 0 ? input.model : null;
-  return { goal: input.goal, ...(model === null ? {} : { model }) };
+  const policy = isPermissionPolicy(input.permissionPolicy) ? input.permissionPolicy : null;
+  return {
+    goal: input.goal,
+    ...(model === null ? {} : { model }),
+    ...(policy === null ? {} : { permissionPolicy: policy }),
+  };
 }
 
 /**

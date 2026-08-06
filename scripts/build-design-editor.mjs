@@ -18,7 +18,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,18 +34,48 @@ const entry = join(root, "src/components/design/host/main.tsx");
  *  there and nowhere else, so a fix to it left the stamped version identical and
  *  `--check` called a stale bundle up to date. A version that cannot change when
  *  the mount changes is not a version. */
+/**
+ * Every source the bundle is built from, hashed.
+ *
+ * This was a hand-written list of seven files, and the list is the whole
+ * mechanism: `design:editor:check` does nothing but confirm the hash it
+ * computes appears in the built `index.html`, so a file missing from the list
+ * is a file whose changes leave a stale bundle looking up to date. The
+ * inspector, the effects panel, the motion panel, the canvas and the Ask Juno
+ * bar were all absent — i.e. most of the editor could change without the Mac
+ * and iPhone ever being told to rebuild.
+ *
+ * That is not hypothetical here. The Mac's design pane rendered nothing for as
+ * long as it existed because a fix lived in a file the hash could not see, and
+ * the check called the old bundle current.
+ *
+ * So it walks the directories instead of naming files. A new panel is picked up
+ * by existing, which is the only version of this that stays true.
+ */
+function editorSources() {
+  const roots = ["src/lib/design", "src/components/design"];
+  const found = [];
+  const walk = (relative) => {
+    for (const entry of readdirSync(join(root, relative), { withFileTypes: true }).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    )) {
+      const next = `${relative}/${entry.name}`;
+      if (entry.isDirectory()) walk(next);
+      else if (/\.(ts|tsx|css)$/.test(entry.name)) found.push(next);
+    }
+  };
+  for (const relative of roots) walk(relative);
+  return found;
+}
+
 function editorVersion() {
-  const sources = [
-    "src/lib/design/schema.ts",
-    "src/lib/design/operations.ts",
-    "src/lib/design/layout.ts",
-    "src/lib/design/render.ts",
-    "src/components/design/design-editor.tsx",
-    "src/components/design/host/bridge.ts",
-    "src/components/design/host/main.tsx",
-  ];
   const hash = createHash("sha256");
-  for (const relative of sources) hash.update(readFileSync(join(root, relative)));
+  // Sorted, and the path goes in with the bytes: two files swapping contents
+  // is a change, and a concatenation without separators would not notice.
+  for (const relative of editorSources()) {
+    hash.update(relative);
+    hash.update(readFileSync(join(root, relative)));
+  }
   return `1.0.0+${hash.digest("hex").slice(0, 12)}`;
 }
 

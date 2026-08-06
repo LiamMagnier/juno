@@ -10,6 +10,7 @@ import {
   type SessionAttachmentGrant,
 } from "@/lib/work/store";
 import { isWorkModelAllowed } from "@/lib/work/models";
+import { DEFAULT_WORK_PERMISSION_POLICY } from "@/lib/work/domain";
 import { getUserPlan } from "@/lib/usage";
 import { createSessionSchema, parseSessionListQuery } from "@/app/api/work/protocol";
 
@@ -203,6 +204,7 @@ export async function POST(req: Request) {
     projectId,
     model,
     reasoningEffort,
+    permissionPolicy,
     attachmentIds,
     connectorIds,
     idempotencyKey,
@@ -344,6 +346,18 @@ export async function POST(req: Request) {
       preferredHostId: preferredHostId ?? null,
       requestedModel: model ?? null,
       reasoningEffort: reasoningEffort ?? null,
+      // The approval mode this task was composed with. Absent means the client
+      // has no control for it — the native composer, and every browser build
+      // before the segmented control shipped — and those tasks get
+      // `DEFAULT_WORK_PERMISSION_POLICY`, which is the value the column already
+      // defaulted to. Nothing about an existing client's behaviour changes.
+      //
+      // Not checked against anything here, and it does not need to be: the
+      // session's mode is a request, and `resolveApprovalMode` intersects it
+      // with the Mac's advertised policy at dispatch. A session composed as Skip
+      // that only ever lands on a Mac pinned to Manual runs Manual every time,
+      // and the run says so.
+      permissionPolicy: permissionPolicy ?? DEFAULT_WORK_PERMISSION_POLICY,
       // Written in the same transaction as the session rather than by a second
       // call after it, so a session never comes back as created while the files
       // the reader attached to it are missing. See `createWorkSession`.

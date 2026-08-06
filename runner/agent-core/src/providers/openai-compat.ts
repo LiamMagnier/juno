@@ -4,9 +4,11 @@ import type {
   ProviderAdapter,
   ProviderRequest,
   ProviderStreamEvent,
+  ReasoningEffort,
 } from './types.js';
 import type { ChatMessage } from '../types.js';
 import { resolveKey } from './credentials.js';
+import { DEFAULT_REQUEST_TIMEOUT_MS } from './timeouts.js';
 
 /**
  * One adapter for every OpenAI-compatible lab. Each configured provider gets
@@ -20,6 +22,44 @@ export interface CompatProviderConfig {
   envVar: string;
   defaultModel: string;
   models: Record<string, { label: string; capabilities: ModelCapabilities }>;
+  /**
+   * True only for labs whose API actually defines OpenAI's top-level
+   * `reasoning_effort`.
+   *
+   * Opt-in rather than opt-out, and a flag rather than a guess from the id,
+   * because the two failure modes are not symmetrical. A lab that ignores an
+   * unknown field costs nothing; a lab that validates its body — several do —
+   * answers 400 and the run dies before its first token over a preference the
+   * user could have lived without. Every other dialect (`thinking:{type}`,
+   * `enable_thinking`) is deliberately absent: the request carries the user's
+   * tier, and a provider with no way to receive it drops it.
+   */
+  reasoningEffortParam?: boolean;
+  /** Wall-clock ceiling for one request. See timeouts.ts for why it is set. */
+  timeoutMs?: number;
+}
+
+/**
+ * The user's tier, on the wire, unchanged.
+ *
+ * Deliberately not clamped here, and that is a correction rather than an
+ * omission: an earlier version of this adapter mapped `xhigh` and `max` down to
+ * `high`, and a Work run that asked `gpt-5.6-luna` for `xhigh` — a tier that
+ * model does accept — was observed sending `high` instead. Which tiers a
+ * particular model takes is per-model, live-probed knowledge, and it already
+ * exists in exactly one place: `reasoningCaps`/`clampReasoningEffort` in
+ * src/lib/model-metrics.ts, which the caller consults before handing the tier
+ * over. A second, cruder clamp here can only disagree with the first, and when
+ * it does the user's choice is the thing that loses.
+ *
+ * The cast is the seam between two vocabularies that happen to coincide: Juno's
+ * six tiers are a subset of the enum the SDK types accept, and this is where
+ * that is asserted once instead of at the call site.
+ */
+function toOpenAIEffort(
+  effort: ReasoningEffort,
+): NonNullable<OpenAI.Chat.Completions.ChatCompletionCreateParams['reasoning_effort']> {
+  return effort;
 }
 
 function caps(overrides: Partial<ModelCapabilities> = {}): ModelCapabilities {
@@ -52,6 +92,7 @@ export const COMPAT_PROVIDERS: Record<string, CompatProviderConfig> = {
     name: 'OpenAI · GPT',
     baseUrl: 'https://api.openai.com/v1',
     envVar: 'OPENAI_API_KEY',
+    reasoningEffortParam: true,
     defaultModel: 'gpt-5.5',
     models: {
       'gpt-5.5': { label: 'GPT-5.5', capabilities: caps({ maxContext: 1_050_000 }) },
@@ -147,6 +188,10 @@ export class OpenAICompatAdapter implements ProviderAdapter {
       baseURL: config.baseUrl,
       defaultHeaders: options.headers,
       maxRetries: 2,
+      // The SDK's own default is ten minutes, and with two retries on top a
+      // lab that accepts the connection and answers nothing costs half an hour
+      // of a run that looks alive. See timeouts.ts.
+      timeout: config.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
     });
   }
 
@@ -171,6 +216,9 @@ export class OpenAICompatAdapter implements ProviderAdapter {
         stream: true,
         stream_options: { include_usage: true },
         ...(isOpenAI ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
+        ...(req.reasoningEffort && this.config.reasoningEffortParam
+          ? { reasoning_effort: toOpenAIEffort(req.reasoningEffort) }
+          : {}),
         tools: req.tools.length
           ? req.tools.map((t) => ({
               type: 'function' as const,

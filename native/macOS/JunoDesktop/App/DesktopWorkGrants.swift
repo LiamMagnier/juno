@@ -301,7 +301,15 @@ final class DesktopWorkGrantStore {
 /// the only thing the settings surface is handed — can carry them without
 /// learning what a `WorkGrantRuntime` is.
 struct DesktopWorkGrantActions {
-    let addFolder: @MainActor (WorkAccessMode) -> Void
+    /// Puts the folder chooser up and answers with the folder's display name, or
+    /// nil when the person closed it.
+    ///
+    /// The answer is load-bearing rather than a convenience. The onboarding path
+    /// in ``DesktopWorkHostModel/take(_:)`` turns file work on *after* a folder
+    /// comes back, so that closing the panel — which is how somebody says no —
+    /// leaves this Mac exactly as they found it instead of switching a capability
+    /// on behind a refusal.
+    let addFolder: @MainActor (WorkAccessMode) -> String?
     let setMode: @MainActor (WorkAccessMode, WorkGrantID) -> Void
     let revoke: @MainActor (WorkGrantID) -> Void
 

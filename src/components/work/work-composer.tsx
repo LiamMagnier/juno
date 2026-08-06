@@ -26,19 +26,35 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollFade } from "@/components/ui/scroll-fade";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { ModelSelector } from "@/components/chat/model-selector";
+import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { AppIcons } from "@/lib/app-icons";
 import { requiresViewerCredentials } from "@/lib/image-source";
-import { clampReasoningEffort, type ReasoningEffort } from "@/lib/model-metrics";
+import {
+  clampReasoningEffort,
+  defaultReasoning,
+  reasoningOptions,
+  type ReasoningEffort,
+} from "@/lib/model-metrics";
 import { resolveModel, type ModelId } from "@/lib/models";
 import { DOC_MIME } from "@/lib/uploads";
-import { describeCapability, type HostCapabilityView } from "@/lib/work/domain";
+import {
+  DEFAULT_WORK_PERMISSION_POLICY,
+  WORK_APPROVAL_MODE_LABEL,
+  WORK_APPROVAL_MODE_SUMMARY,
+  WORK_PERMISSION_POLICIES,
+  describeCapability,
+  type HostCapabilityView,
+  type WorkPermissionPolicy,
+} from "@/lib/work/domain";
 import { describeInference, inferCapabilities, selectForInferred } from "@/lib/work/inference";
 import {
   AUTO_MODEL_ID,
@@ -79,6 +95,14 @@ import { cn, formatBytes } from "@/lib/utils";
  * is also a control that does something: the selection is stored on the session
  * and `scripts/work-runner.ts` narrows the run's connector set by it, which is
  * the bar a permission control has to clear before it is worth drawing.
+ *
+ * The approval mode below the surface — Manual, Auto, Skip — is here on the
+ * same terms and is the second control to clear that bar. `approvalRuling` in
+ * src/lib/work/domain.ts is what the three modes differ in, the session stores
+ * the choice, dispatch narrows it against any Mac's advertised floor, and both
+ * executors gate on the result. It is drawn now for exactly that reason and
+ * would not have been drawn a week ago, when the three modes were the same
+ * mode wearing three names.
  *
  * What survived the deletion is the honesty architecture that surrounded them,
  * because it is the point of this surface. `selectForInferred`
@@ -265,7 +289,7 @@ export function WorkComposer({
   onRetryHosts: () => void;
 }) {
   const router = useRouter();
-  const { features, composerPrefs } = useApp();
+  const { features, composerPrefs, setComposerPrefs } = useApp();
   const [goal, setGoal] = React.useState("");
   const [projectId, setProjectId] = React.useState<string | null>(null);
   /**
@@ -297,13 +321,24 @@ export function WorkComposer({
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } =
     useUploads(null);
 
-  // Thinking effort is still read, still stored and still sent, and there is
-  // deliberately nothing on screen for it. The account-wide preference is the
-  // one chat and /code/new write to, so a Work task inherits whatever the reader
-  // last chose there rather than inventing a second answer — but the Work
-  // executor has nowhere to put it, so this composer offers no way to change it
-  // here. See the note beside ``ModelSelector`` below.
+  // Thinking effort, read from the same account-wide preference chat and
+  // /code/new write to, so a Work task opens on whatever the reader last chose
+  // rather than inventing a second answer to the same question.
+  //
+  // It is now editable here, and that is a change of fact rather than of taste.
+  // This composer showed no effort control for as long as the Work executor
+  // could not carry one: `WorkSessionOptions` had no field for a thinking
+  // budget and no provider adapter could send one, so a dial here would have
+  // been a promise the run ignored. Both ends exist now —
+  // `ProviderRequest.reasoningEffort` reaches the Anthropic adapter as
+  // `thinking` + `output_config` and the OpenAI-compatible ones as
+  // `reasoning_effort`, and `reasoningEffortFor` in scripts/work-runner.ts
+  // resolves what this composer sends — so the control is drawn.
   const reasoningEffort = composerPrefs.reasoningEffort;
+  const setReasoningEffort = React.useCallback(
+    (next: ReasoningEffort) => setComposerPrefs({ reasoningEffort: next }),
+    [setComposerPrefs]
+  );
   const resolved = resolveModel(model);
   /**
    * The effort this model would honour, not the one the preference happens to
@@ -317,6 +352,34 @@ export function WorkComposer({
   const effort: ReasoningEffort = React.useMemo(
     () => (resolved ? clampReasoningEffort(resolved, reasoningEffort) : reasoningEffort),
     [resolved, reasoningEffort]
+  );
+  /**
+   * The tiers this model offers, and the gate on whether a control is drawn.
+   *
+   * Empty for Auto, because Auto picks the depth with the model and a dial over
+   * a routing decision would be a setting the router is entitled to ignore —
+   * the chat composer says the same thing in the same place. Empty too for a
+   * model that exposes no tiers at all, where a one-stop slider is a question
+   * with one answer.
+   */
+  const effortOptions = React.useMemo(
+    () => (isAutoModelId(model) || !resolved ? [] : reasoningOptions(resolved)),
+    [model, resolved]
+  );
+
+  /**
+   * How often this task stops to ask, before it starts.
+   *
+   * Auto by default, which is `DEFAULT_WORK_PERMISSION_POLICY` and the value
+   * the column has always held — so the control changes what a reader can see
+   * and decide, not what an unattended default does. Local state rather than a
+   * remembered preference: unlike the model, the right answer here is a
+   * property of the errand rather than a habit, and a Skip carried forward from
+   * "tidy my Downloads" onto "reply to these six emails" would be the composer
+   * granting one task's licence to another.
+   */
+  const [approvalMode, setApprovalMode] = React.useState<WorkPermissionPolicy>(
+    DEFAULT_WORK_PERMISSION_POLICY
   );
 
   React.useEffect(() => {
@@ -338,22 +401,34 @@ export function WorkComposer({
     }
   }, []);
 
-  // Deliberately not the chat and Code composers' `changeModel`, which also
-  // rewrites the shared effort preference when the new model cannot do the tier
-  // it holds. That write belongs to a composer whose effort the reader can see
-  // and whose run will honour it; doing it here would let a Work task silently
-  // lower the thinking tier of the next chat turn, from a control this surface
-  // does not even show. `effort` is clamped for the wire instead, which fixes
-  // the same mismatch without reaching into a preference this composer has no
-  // business editing.
-  const changeModel = React.useCallback((next: ModelId) => {
-    setModel(next);
-    try {
-      localStorage.setItem(MODEL_KEY, next);
-    } catch {
-      // Not being able to remember the choice does not stop them making it.
-    }
-  }, []);
+  // The same guard the chat and Code composers apply, and it belongs here now
+  // that the effort is on screen: switching to a model that does not offer the
+  // tier the shared preference holds drops it to that model's default rather
+  // than leaving a label naming a depth the picker below it does not list. This
+  // file used to refuse the write on the grounds that a Work task must not
+  // silently lower the thinking tier of the next chat turn from a control
+  // nobody could see — the control is visible, so the objection has gone with
+  // it. `effort` is still clamped for the wire, which covers the case no model
+  // change ever happens: a preference set to Max in chat and brought straight
+  // here on a model that stops at High.
+  const changeModel = React.useCallback(
+    (next: ModelId) => {
+      setModel(next);
+      const info = resolveModel(next);
+      if (info) {
+        const options = reasoningOptions(info);
+        if (!options.some((option) => option.value === reasoningEffort)) {
+          setReasoningEffort(defaultReasoning(info));
+        }
+      }
+      try {
+        localStorage.setItem(MODEL_KEY, next);
+      } catch {
+        // Not being able to remember the choice does not stop them making it.
+      }
+    },
+    [reasoningEffort, setReasoningEffort]
+  );
 
   const autoresize = React.useCallback(() => {
     const element = textareaRef.current;
@@ -396,11 +471,15 @@ export function WorkComposer({
    * The connector selection is in here for the same reason a file is: switching
    * an app off between two presses is a narrowing that has to reach the server,
    * and an attempt that reused its key would send the first press's permissions
-   * under the second press's button.
+   * under the second press's button. The approval mode is the same argument
+   * again and the sharpest instance of it — a reader who is refused, moves the
+   * task from Skip to Manual and presses again is asking for a different thing
+   * to happen, and a replayed draft would run it under the mode they just
+   * changed their mind about.
    */
   const inputsKey = React.useMemo(
-    () => JSON.stringify([goal.trim(), projectId, attachmentIds, connectorIds]),
-    [goal, projectId, attachmentIds, connectorIds]
+    () => JSON.stringify([goal.trim(), projectId, attachmentIds, connectorIds, approvalMode]),
+    [goal, projectId, attachmentIds, connectorIds, approvalMode]
   );
 
   /*
@@ -498,6 +577,11 @@ export function WorkComposer({
         projectId,
         model,
         reasoningEffort: effort,
+        // Sent on every create, including when it is the default. A session
+        // records what its owner was shown and chose; "they left it on Auto"
+        // and "this client never asked" are different facts and the route
+        // reads the silence as the second.
+        permissionPolicy: approvalMode,
         attachmentIds,
         connectorIds,
         idempotencyKey: attempt.sessionKey,
@@ -541,6 +625,10 @@ export function WorkComposer({
       // forward would be the composer granting an app to a task nobody has
       // written yet, on the strength of a decision made about a different one.
       setConnectorIds([]);
+      // Back to Auto for the same reason, and it is the stronger case: a Skip
+      // chosen for one errand is a licence granted to that errand, not a
+      // setting the reader turned on.
+      setApprovalMode(DEFAULT_WORK_PERMISSION_POLICY);
       setDraft(null);
       attemptRef.current = null;
       window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
@@ -573,6 +661,7 @@ export function WorkComposer({
     projectId,
     model,
     effort,
+    approvalMode,
     attachmentIds,
     connectorIds,
     inputsKey,
@@ -755,23 +844,112 @@ export function WorkComposer({
               className={cn("min-w-0 flex-1 sm:flex-none", submitting && "pointer-events-none opacity-60")}
             >
               {/* Only the models the Work runner can actually drive. Plan-locked
-                  ones stay, wearing their lock — see the prop's own note. */}
-              {/* No effort control, here or inside the picker. The dial was
-                  built, wired to a column and sent over the wire before anyone
-                  checked the other end: `WorkSessionOptions` has no field for a
-                  thinking budget and no provider adapter could send one, so the
-                  reader would have been setting something the run ignores. The
-                  column and the wire field stay — they cost nothing and they are
-                  where this lands the day the runtime can take it — but nothing
-                  on screen claims they do something today. */}
+                  ones stay, wearing their lock — see the prop's own note.
+
+                  `showReasoning` is on now that the executor carries an effort,
+                  so the picker's own slider and the button beside it are the
+                  same control seen twice rather than two ideas — which is the
+                  arrangement chat has always had. */}
               <ModelSelector
                 value={model}
                 onChange={changeModel}
+                reasoningEffort={reasoningEffort}
+                onReasoningChange={setReasoningEffort}
                 filter={isWorkCapableModel}
-                showReasoning={false}
               />
             </div>
 
+            {/* Thinking effort, presented exactly as chat and /code/new present
+                it: a fixed-width button naming the current tier, opening onto
+                the same slider. Same component, same widths, same wording — a
+                reader who has set this once anywhere in the product has set it
+                everywhere, and a third arrangement of the same choice would be
+                a second thing to learn for no new fact. */}
+            {isAutoModelId(model) ? (
+              <>
+                <span
+                  className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block"
+                  aria-hidden="true"
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="inline-flex h-8 shrink-0 items-center gap-1 rounded-[10px] px-2 font-mono text-[12px] text-muted-foreground min-[480px]:text-[13px]"
+                      aria-label="Thinking effort: Auto — chosen with the model"
+                    >
+                      <span className="truncate">Auto</span>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>Thinking depth is chosen automatically with the model</TooltipContent>
+                </Tooltip>
+              </>
+            ) : (
+              effortOptions.length > 0 &&
+              (() => {
+                // Matched against the clamped value, never the raw preference.
+                // The two disagree whenever a tier chosen elsewhere is wider
+                // than this model offers, and matching the raw one falls
+                // through to `effortOptions[0]` — the LOWEST tier — while the
+                // run goes out at the highest tier at or below it. The label
+                // would read "Instant" for a task that thought hard.
+                const current =
+                  effortOptions.find((option) => option.value === effort) ?? effortOptions[0];
+                const compact = current.label === "Extra high" ? "X-high" : current.label;
+                const atTopTier =
+                  effortOptions.length > 1 &&
+                  current.value === effortOptions[effortOptions.length - 1].value;
+                return (
+                  <>
+                    <span
+                      className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block"
+                      aria-hidden="true"
+                    />
+                    <Tooltip>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={submitting}
+                              aria-label={`Thinking effort: ${current.label}`}
+                              className={cn(
+                                "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-[10px] px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
+                                atTopTier ? "text-ultra" : "text-foreground/80"
+                              )}
+                            >
+                              <span className="min-w-0 flex-1 truncate text-center min-[480px]:hidden">
+                                {compact}
+                              </span>
+                              <span className="hidden min-w-0 flex-1 truncate text-center min-[480px]:inline">
+                                {current.label}
+                              </span>
+                              <ChevronDown className="h-3 w-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
+                            </Button>
+                          </TooltipTrigger>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" sideOffset={10} className="w-[264px] origin-popper p-3">
+                          {/* No Flash-mode switch, unlike chat's. That toggle
+                              swaps the transport for a lower-latency one the
+                              Work runner does not use, so offering it would be
+                              a control with nothing behind it — the exact
+                              mistake this whole surface was carrying until the
+                              executor learned to carry an effort. */}
+                          <ReasoningSlider
+                            options={effortOptions}
+                            value={effort}
+                            onChange={setReasoningEffort}
+                            disabled={submitting}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <TooltipContent>Thinking effort</TooltipContent>
+                    </Tooltip>
+                  </>
+                );
+              })()
+            )}
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -823,6 +1001,46 @@ export function WorkComposer({
             existingCount={uploads.length}
           />
         )}
+      </div>
+
+      {/*
+       * How often this task stops to ask.
+       *
+       * Below the surface rather than in the toolbar, and with its sentence
+       * under it, because it is the one control here whose options are not
+       * self-explanatory from their names. "Skip" alone reads as a promise
+       * never to be interrupted, which is false in four cases and would be
+       * discovered as a prompt somebody was told would not come; the sentence
+       * is what makes the three legible before the task starts rather than
+       * after it has done something.
+       *
+       * Only the mode is offered, never a per-action list. The four things
+       * that ask under every mode are the floor — `ALWAYS_CONFIRM_ACTIONS` —
+       * and a control that appeared to negotiate them would be a control
+       * promising something `approvalRuling` refuses to deliver.
+       */}
+      <div className="mt-3 px-1.5">
+        <SegmentedControl
+          value={approvalMode}
+          onChange={setApprovalMode}
+          options={WORK_PERMISSION_POLICIES.map((policy) => ({
+            value: policy,
+            label: WORK_APPROVAL_MODE_LABEL[policy],
+          }))}
+          ariaLabel="How often this task asks before it acts"
+          className="w-full max-w-[19rem]"
+          optionClassName="h-8 coarse:h-10"
+        />
+        <p
+          // Announced when it changes: the segments are the control and this is
+          // the only place their difference is stated, so a reader moving
+          // between them with a screen reader would otherwise hear three words
+          // and no meaning.
+          aria-live="polite"
+          className="mt-2 text-caption leading-relaxed text-muted-foreground"
+        >
+          {WORK_APPROVAL_MODE_SUMMARY[approvalMode]}
+        </p>
       </div>
 
       {(inferenceLine !== null || runLine !== null) && (

@@ -53,6 +53,15 @@ import {
 } from "@/lib/work/domain";
 import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
 import { isComposioConfigured } from "@/lib/env";
+import { MODEL_LIST, parseModelRef, resolveModel, type ModelInfo } from "@/lib/models";
+import { clampReasoningEffort } from "@/lib/model-metrics";
+import {
+  PROVIDERS,
+  providerApiKey,
+  providerBaseUrl,
+  type Provider,
+} from "@/lib/providers";
+import { workModelOptions } from "@/lib/work/models";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { getObjectBytes, putObject } from "@/lib/storage";
 import { isWebSearchConfigured, webSearch } from "@/lib/web-search";
@@ -181,6 +190,48 @@ async function waitFor<T>(
 }
 
 /**
+ * How long the run will spend opening its connectors before giving up on them.
+ *
+ * `openMcpToolset` awaits `client.connect` and `client.listTools` with no
+ * timeout and no signal (src/lib/mcp.ts), and `getActiveConnectors` may refresh
+ * an OAuth token over the network on the way in. Neither has a ceiling of its
+ * own, and both run before the session exists — before the plan is created,
+ * before the control poller that reads the Stop button is started, before a
+ * single event other than `run_started` has been written. A connector whose
+ * endpoint accepts the connection and then says nothing therefore froze the run
+ * at exactly what the user reported: Running, no plan, zero tokens, and a lease
+ * this worker kept renewing so the stalled-run sweep would never reach it.
+ *
+ * Forty-five seconds is generous for a handshake and a tool list — the same
+ * work in a chat turn happens while somebody is watching a spinner — and short
+ * enough that a run does it, says what it lost, and gets on with the task.
+ */
+const CONNECTOR_OPEN_TIMEOUT_MS = 45_000;
+
+/**
+ * Awaits something that has no timeout of its own, and stops waiting.
+ *
+ * Note what this does NOT do: it does not cancel the underlying work, because
+ * the thing it is used on takes no signal. What it buys is that the run stops
+ * being held hostage — the caller keeps the original promise and is responsible
+ * for tidying up whatever it eventually produces.
+ */
+async function withDeadline<T>(work: Promise<T>, ms: number, whenLate: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(whenLate)), ms);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * The answer to a question the run asked.
  *
  * Read from the event stream rather than a dedicated column, because the answer
@@ -297,7 +348,7 @@ function framedInstruction(instruction: string): string {
   ].join("\n");
 }
 
-type WorkProvider = Awaited<ReturnType<typeof resolveProvider>>;
+type WorkProvider = import("../runner/agent-core/src/work/index.js").ProviderAdapter;
 
 /**
  * The provider, with whatever the user has said folded into the transcript
@@ -383,6 +434,8 @@ type ConnectorToolDescriptor =
 type ConnectorToolDeps = import("../runner/agent-core/src/work/index.js").ConnectorToolDeps;
 type ConnectorAccess = import("../runner/agent-core/src/work/index.js").ConnectorAccess;
 type WorkArtifactRef = import("../runner/agent-core/src/work/index.js").WorkArtifactRef;
+type ProviderSpec = import("../runner/agent-core/src/work/index.js").ProviderSpec;
+type ReasoningEffort = import("../runner/agent-core/src/work/index.js").ReasoningEffort;
 type WorkSession = InstanceType<WorkRuntime["WorkAgentSession"]>;
 
 /**
@@ -1725,33 +1778,183 @@ async function tick(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolves the model adapter for a run.
+ * Raised when a run names a model this executor cannot drive.
  *
- * A canonical model id here is "provider:model", the same shape the rest of
- * Juno uses, so the provider half selects the adapter and the model half is
- * handed to it.
- *
- * NOT YET WIRED: the backend-proxied path. In production a cloud run should
- * reach models through the Juno proxy with a per-run scoped token, exactly as
- * scripts/cloud-code-runner.mjs does — it exchanges a dispatch code for runner
- * context, fetches the model catalog, and builds `createProxyProvider` from it,
- * which is what keeps provider credentials out of the executor entirely. That
- * handshake needs a per-run token this queue does not yet mint, so today this
- * resolves a directly-configured provider from the environment instead. The
- * consequence is real and worth stating plainly: this worker holds a provider
- * key, where the Code runner does not.
+ * Its own class because the answer differs from every other failure: the run is
+ * over before it starts, the sentence has to name the model the user picked,
+ * and the fix is a different model rather than a retry. `drive` turns it into
+ * an `error` event and a terminal `failed` within a second of the claim.
  */
-async function resolveProvider(canonicalModelId: string) {
-  const [providerId] = canonicalModelId.split(":");
-  if (!providerId) {
-    throw new Error(
-      `The run has no model. Set one on the session, or a default for the account.`
+class UnrunnableModelError extends Error {}
+
+/**
+ * Which labs a Work run will send OpenAI's top-level `reasoning_effort` to.
+ *
+ * One, and the shortness is the point. `streamOpenAICompat` in
+ * src/lib/openai-compat.ts sends it to seven, but it earns that list with
+ * `clampReasoningEffort` and a per-model table of live-probed enums, and the
+ * enums genuinely differ: Mistral's Medium/Small take `[high, none]` and
+ * nothing else. Sending `medium` to `mistral-small-latest` from this executor
+ * answered `400 status code (no body)` and killed the run before its first
+ * token — measured on 2026-08-06 against the live API, which is why the wider
+ * list was pulled back rather than shipped hopefully.
+ *
+ * So the tier is clamped against the model's own caps below AND gated to the
+ * lab whose enum the runtime's adapter is written for. Every other lab's
+ * dialect — `thinking:{type}` on zhipu, minimax, moonshot, mimo and longcat,
+ * `enable_thinking` on qwen — is a separate change with its own probing behind
+ * it, and until then a run on one of them ignores the tier rather than failing
+ * on it. That is exactly what `ProviderRequest.reasoningEffort` promises.
+ */
+const REASONING_EFFORT_PROVIDERS: ReadonlySet<Provider> = new Set<Provider>(["openai"]);
+
+/**
+ * The website's own catalog, in the shape the agent runtime takes.
+ *
+ * This is the fix for a run that could not start at all. The composer's picker
+ * is drawn from `src/lib/providers.ts` and `src/lib/models.ts` — fourteen labs —
+ * and the executor resolved its adapter from `COMPAT_PROVIDERS` in the vendored
+ * core, which knows two of them plus Anthropic. Every other choice threw
+ * `Unknown provider: <id>` at the moment the adapter was built, so a model the
+ * picker offered was a run that died before its first token. Mistral was the
+ * one the user hit; twelve of the fourteen behaved identically.
+ *
+ * Widening the vendored table would have fixed it until the next model landed.
+ * The runtime is built with this repository absent — that is the whole point of
+ * `runner/agent-core/VENDORED.md` — so it cannot read the catalog, and any copy
+ * of the catalog inside it is a copy that drifts. So the seam is the one the
+ * Work tools already use: the shape lives in the runtime, the effects are
+ * injected from here. `createProviderFromSpec` takes what this function builds,
+ * which means the picker and the executor now disagree only if the catalog
+ * disagrees with itself.
+ *
+ * NOT YET WIRED, and unchanged by this: the backend-proxied path. In production
+ * a cloud run should reach models through the Juno proxy with a per-run scoped
+ * token, exactly as scripts/cloud-code-runner.mjs does — it exchanges a
+ * dispatch code for runner context, fetches the model catalog, and builds
+ * `createProxyProvider` from it, which is what keeps provider credentials out
+ * of the executor entirely. That handshake needs a per-run token this queue
+ * does not yet mint, so this resolves a directly-configured provider from the
+ * environment instead. The consequence is real and worth stating plainly: this
+ * worker holds a provider key, where the Code runner does not.
+ */
+function providerSpecFor(provider: Provider, runtime: WorkRuntime): ProviderSpec {
+  const def = PROVIDERS[provider];
+  const apiKey = providerApiKey(provider);
+  if (!apiKey) {
+    throw new UnrunnableModelError(
+      `${def.label} is not set up on this deployment, so nothing could run this task. Set ${def.apiKeyEnv}, or pick a model from a provider that is configured.`
     );
   }
-  const { createProvider } = (await import(
-    "../runner/agent-core/dist/providers/registry.js"
-  )) as unknown as typeof import("../runner/agent-core/src/providers/registry.js");
-  return createProvider(providerId);
+
+  // Only the models the picker would actually offer for Work. A model this
+  // runtime cannot drive — an image model, a Responses-only entry — must not be
+  // in the adapter's table, because `capabilities()` falling back to a generic
+  // answer for it is how a surface comes to promise something that then 400s.
+  const models = workModelOptions(MODEL_LIST, { providers: null }).filter(
+    (model) => model.provider === provider
+  );
+
+  const baseUrl = providerBaseUrl(provider);
+  return {
+    id: provider,
+    name: def.label,
+    kind: def.kind,
+    apiKey,
+    ...(baseUrl ? { baseUrl } : {}),
+    // The catalog's own first entry for this lab, which is the newest one it
+    // lists. Only consulted when a caller asks the adapter for a default, which
+    // a Work run never does — the run always carries its own model.
+    defaultModel: models[0]?.providerModel ?? "",
+    models: Object.fromEntries(
+      models.map((model) => [
+        model.providerModel,
+        {
+          label: model.name,
+          capabilities: {
+            tools: true,
+            vision: model.vision,
+            computerUse: false,
+            // What the model could be asked for, from the catalog rather than
+            // guessed: a surface greying out a control needs a reason, and
+            // "this model does not think" is one.
+            reasoningLevels: model.reasoning ? [...runtime.REASONING_EFFORTS] : [],
+            maxContext: model.contextWindow ?? 200_000,
+            streaming: true,
+            mcp: false,
+          },
+        },
+      ])
+    ),
+    ...(REASONING_EFFORT_PROVIDERS.has(provider) ? { reasoningEffortParam: true } : {}),
+  };
+}
+
+/** The provider half and the model half of a run's canonical model id. */
+interface RunModelChoice {
+  provider: Provider;
+  /** The id the provider's API expects, from the catalog rather than a split. */
+  providerModel: string;
+  /** The catalog entry, when this build carries one. */
+  info: ModelInfo | null;
+}
+
+/**
+ * The thinking tier this run may actually ask for.
+ *
+ * Two narrowings, and both are needed. `clampReasoningEffort` is the website's
+ * own per-model authority — a table of enums probed against the live APIs — and
+ * it is what stops a tier the user chose from being sent to a model that
+ * answers 400 for it. The provider gate above is what stops it being sent in a
+ * dialect the runtime's adapter does not speak. A model this build has never
+ * heard of has no caps to clamp against, so it gets nothing: guessing at an
+ * enum is the failure this whole function exists to avoid.
+ */
+function reasoningEffortFor(
+  choice: RunModelChoice,
+  requested: string | null,
+  runtime: WorkRuntime
+): ReasoningEffort | undefined {
+  if (!runtime.isReasoningEffort(requested)) return undefined;
+  if (choice.provider !== "anthropic" && !REASONING_EFFORT_PROVIDERS.has(choice.provider)) {
+    return undefined;
+  }
+  if (!choice.info) return undefined;
+  const clamped = clampReasoningEffort(choice.info, requested);
+  return runtime.isReasoningEffort(clamped) ? clamped : undefined;
+}
+
+/**
+ * Reads a run's model id into something the runtime can be handed.
+ *
+ * The id is resolved through the catalog rather than split on the colon.
+ * Splitting is right often enough to look correct and wrong exactly where it
+ * costs most: `resolveModel` migrates a retired id to its replacement, so a
+ * session saved months ago names a model the provider no longer serves, and a
+ * bare split hands that dead id straight to the API.
+ */
+function runModelChoice(canonicalModelId: string): RunModelChoice {
+  const id = canonicalModelId.trim();
+  if (!id) {
+    throw new UnrunnableModelError(
+      "This task has no model, so there was nothing to run it on. Choose one on the task, or set a default for the account."
+    );
+  }
+
+  const info = resolveModel(id);
+  if (info) return { provider: info.provider, providerModel: info.providerModel, info };
+
+  // Not in the catalog. The id still has a shape, and honouring it is what lets
+  // a rolling deploy run a model this build has not heard of yet — the dispatch
+  // route says as much where it declines to validate the id. What it cannot
+  // survive is a provider nothing here can reach.
+  const ref = parseModelRef(id);
+  if (!ref) {
+    throw new UnrunnableModelError(
+      `"${id}" is not a model Juno knows how to run. Pick another one on the task.`
+    );
+  }
+  return { provider: ref.provider, providerModel: ref.providerModel, info: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -1880,12 +2083,24 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     { id: "verify", title: "Check the result against the request" },
   ]);
 
+  // The model, before anything expensive is opened.
+  //
+  // First on purpose. Everything below this line costs something a failure then
+  // has to unwind — connector handles minted through the broker, MCP sockets,
+  // a skill's audit row — and a run whose model cannot be reached is over
+  // whatever else it managed to set up. Failing here means the transcript says
+  // so within a second of the claim, which is the whole of requirement C: a run
+  // that cannot start must say so in words, not sit at zero tokens.
+  const choice = runModelChoice(run.effectiveModel ?? run.requestedModel ?? "");
+  const spec = providerSpecFor(choice.provider, runtime);
+  const reasoning = reasoningEffortFor(choice, run.session.reasoningEffort, runtime);
+
   // Wrapped before the session ever sees it, so every turn this run takes — the
   // first one included — goes through the reader. A run that was steered while
   // it sat queued has that instruction in the log before it starts, and the
   // first turn is where it belongs.
   const provider = steerable(
-    await resolveProvider(run.effectiveModel ?? run.requestedModel ?? ""),
+    runtime.createProviderFromSpec(spec),
     openSteering(input.runId, input.userId),
     input.runId
   );
@@ -1906,13 +2121,42 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // which ones answered: the toolset includes their tools, and the skill
   // resolver intersects its request against the connectors this run actually
   // has rather than the ones the account owns.
-  const connectors = await openConnectors({
+  //
+  // Under a deadline, and the run continues without them when it expires. A
+  // task that cannot reach Gmail is a task that does less and says so; a task
+  // that waits for Gmail for ever is a task that does nothing and says nothing,
+  // which is strictly worse and is what used to happen. The degradation below
+  // is the same sentence any other unreachable connector produces, because from
+  // where the reader sits it is the same fact.
+  const opening = openConnectors({
     runId: input.runId,
     userId: input.userId,
     sessionId: run.sessionId,
     runtime,
     sink,
     emit: input.emit,
+  });
+  const connectors = await withDeadline(
+    opening,
+    CONNECTOR_OPEN_TIMEOUT_MS,
+    "connector-open-timed-out"
+  ).catch(async (error: unknown) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    log("connectors did not open", { runId: input.runId, error: detail });
+    // The abandoned attempt is still tidied up if it ever finishes. It cannot
+    // be cancelled — `openMcpToolset` takes no signal — but it can be told to
+    // close on arrival, and it must be: a late surface holds live broker
+    // handles and open MCP sockets that nothing else has a reference to.
+    void opening.then(
+      (late) => late.close(),
+      () => {}
+    );
+    await input.emit("degraded", {
+      kind: "connector_unavailable",
+      subject: "connectors",
+      explanation: `Your connected apps did not answer within ${Math.round(CONNECTOR_OPEN_TIMEOUT_MS / 1000)}s, so this task ran without them.`,
+    });
+    return EMPTY_CONNECTOR_SURFACE;
   });
 
   const tools = buildTools({
@@ -1985,20 +2229,32 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     runId: input.runId,
     goal,
     provider,
-    // The adapter was selected by the provider half; it wants the model half.
-    model: (run.effectiveModel ?? run.requestedModel ?? "").split(":").slice(1).join(":"),
+    // The adapter was selected by the provider half, and this is the id that
+    // lab's API expects — from the catalog, not from splitting the string, so a
+    // stored id that has since been retired arrives as its replacement.
+    model: choice.providerModel,
     cwd: process.cwd(),
     tools: effectiveTools,
     plan,
     budget,
     ...(skill ? { systemSuffix: skill.systemSuffix } : {}),
-    // `session.reasoningEffort` is deliberately absent: there is nowhere to put
-    // it. `WorkSessionOptions` has no field for it and `ProviderRequest` carries
-    // no thinking budget, so no adapter could send one even if this line
-    // existed. The column, and what it would take to make the control mean
-    // something, are written up on `CreateWorkSessionInput` in
-    // src/lib/work/store.ts.
+    // The thinking tier the reader chose, on every request this run makes.
+    //
+    // It used to stop at the column. `WorkSessionOptions` had no field for it
+    // and `ProviderRequest` carried no thinking budget, so the six-tier control
+    // in the composer was a preference that looked saved and did nothing. Both
+    // now carry it, the Anthropic and OpenAI adapters put it on the wire, and a
+    // lab with no such parameter drops it rather than refusing the request. See
+    // `reasoningEffortFor` for the two narrowings between the column and here.
+    ...(reasoning === undefined ? {} : { reasoningEffort: reasoning }),
     permissionPolicy: (run.permissionPolicy ?? {}) as Record<string, unknown>,
+    // The mode the gate reads. The blob above is only ever hashed — it is what
+    // pins a standing approval to the policy it was granted under — so the
+    // executor needs the value itself, and without this line all three modes
+    // stopped for exactly the same actions. `conservative` on anything
+    // unreadable: a run whose mode did not survive should ask more, not less.
+    // The narrowing against a Mac's own floor already happened at dispatch.
+    approvalMode: runtime.isWorkPermissionPolicy(policy.policy) ? policy.policy : "conservative",
     callbacks: {
       onEvent: (event) => {
         // Narrowed rather than cast. The runtime and the database share a

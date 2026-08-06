@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { resolveKey } from './credentials.js';
+import { anthropicThinkingBits } from './thinking.js';
+import { DEFAULT_REQUEST_TIMEOUT_MS } from './timeouts.js';
 import type {
   ModelCapabilities,
   ProviderAdapter,
@@ -82,6 +84,8 @@ export interface AnthropicOverride {
   headers?: Record<string, string>;
   models?: Record<string, ModelCapabilities>;
   defaultModel?: string;
+  /** Wall-clock ceiling for one request. See timeouts.ts for why it is set. */
+  timeoutMs?: number;
 }
 
 export class AnthropicAdapter implements ProviderAdapter {
@@ -97,6 +101,9 @@ export class AnthropicAdapter implements ProviderAdapter {
       apiKey: override?.baseURL ? (apiKey ?? 'proxy') : resolveAnthropicKey(apiKey),
       baseURL: override?.baseURL,
       defaultHeaders: override?.headers,
+      // The SDK's own default is ten minutes, which is ten minutes of a run
+      // looking alive and doing nothing when a host stops answering.
+      timeout: override?.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
     });
     if (override?.id) this.id = override.id;
     if (override?.name) this.name = override.name;
@@ -113,10 +120,15 @@ export class AnthropicAdapter implements ProviderAdapter {
   }
 
   async *stream(req: ProviderRequest): AsyncGenerator<ProviderStreamEvent> {
+    // `max_tokens` comes back out of the matrix rather than going straight
+    // through: extended thinking is billed against the same ceiling as the
+    // answer, so a budget granted without headroom is a model that thinks its
+    // whole allowance and returns an empty message.
+    const bits = anthropicThinkingBits(req.model, req.maxTokens ?? 8192, req.reasoningEffort);
     const stream = this.client.messages.stream(
       {
         model: req.model,
-        max_tokens: req.maxTokens ?? 8192,
+        max_tokens: bits.maxTokens,
         system: req.system,
         messages: toAnthropicMessages(req.messages),
         tools: req.tools.map((t) => ({
@@ -124,7 +136,12 @@ export class AnthropicAdapter implements ProviderAdapter {
           description: t.description,
           input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
         })),
-      },
+        ...(bits.thinking ? { thinking: bits.thinking as Anthropic.ThinkingConfigParam } : {}),
+        // `output_config` rides alongside adaptive thinking and is not in the
+        // SDK's typed params on every version, so it goes through the same
+        // untyped door the website's own client uses.
+        ...(bits.outputConfig ? { output_config: bits.outputConfig } : {}),
+      } as Anthropic.MessageStreamParams,
       { signal: req.signal },
     );
 

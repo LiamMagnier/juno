@@ -17,6 +17,7 @@ import {
   AlignCenterVertical,
   Check,
   Circle,
+  Film,
   Frame,
   History,
   Image as ImageIcon,
@@ -26,10 +27,12 @@ import {
   Redo2,
   Share2,
   Slash,
+  SlidersHorizontal,
   Square,
   Type,
   Undo2,
   X,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -42,7 +45,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DesignCanvas, type CanvasTool, type DesignViewportHandle } from "@/components/design/design-canvas";
 import { InspectorPanel } from "@/components/design/inspector-panel";
+import { InteractionsPanel } from "@/components/design/interactions-panel";
 import { LayersPanel } from "@/components/design/layers-panel";
+import { MotionPanel, type MotionPreview } from "@/components/design/motion-panel";
+import { derivePreviewDocument } from "@/components/design/motion-model";
 import {
   useDesignDocument,
   type DesignEditorState,
@@ -174,9 +180,46 @@ export function DesignEditor({
   const state = useDesignDocument({ artifactId, initialContent: content, transport, readOnly, onCommitted });
   const [tool, setTool] = React.useState<CanvasTool>("select");
   const [panel, setPanel] = React.useState<"layers" | "history">("layers");
+  const [rightPanel, setRightPanel] = React.useState<"design" | "prototype">("design");
+  const [motionOpen, setMotionOpen] = React.useState(false);
+  /** Where the timeline's playhead is, when it is driving the canvas. Null the
+   *  rest of the time — the dock being open is not on its own a reason to show
+   *  anything other than the document. */
+  const [motionPreview, setMotionPreview] = React.useState<MotionPreview | null>(null);
   const rootRef = React.useRef<HTMLDivElement>(null);
 
   const { document: doc, visibleDocument, pageId, selection, selectNodes, apply } = state;
+
+  /**
+   * The document the canvas draws while the playhead is engaged.
+   *
+   * Derived per frame and never committed: `derivePreviewDocument` copies only
+   * the layers a track names, and the result goes to the canvas and nowhere
+   * else. The inspector and the layers panel keep reading the committed
+   * document deliberately — pointed at an interpolated value, the inspector
+   * would happily let someone save a number the playhead invented.
+   */
+  const previewDocument = React.useMemo(() => {
+    if (!motionPreview || !visibleDocument) return null;
+    const animation = visibleDocument.animations[motionPreview.animationId];
+    return animation ? derivePreviewDocument(visibleDocument, animation, motionPreview.timeMs) : null;
+  }, [motionPreview, visibleDocument]);
+
+  /** Layers the motion model already has something to say about, so the layers
+   *  panel can point at capability that is otherwise invisible until you go
+   *  looking for it. */
+  const animatedNodeIds = React.useMemo(
+    () => new Set(Object.values(doc?.animations ?? {}).flatMap((animation) => animation.tracks.map((track) => track.nodeId))),
+    [doc?.animations]
+  );
+  const interactiveNodeIds = React.useMemo(
+    () => new Set(Object.values(doc?.interactions ?? {}).map((interaction) => interaction.sourceNodeId)),
+    [doc?.interactions]
+  );
+
+  // Stable, because the timeline reports the playhead from an effect: an
+  // identity that changed every render would re-run it every render.
+  const handleMotionPreview = React.useCallback((preview: MotionPreview | null) => setMotionPreview(preview), []);
 
   const selectionContext = React.useCallback(() => {
     if (!doc || selection.length === 0) return null;
@@ -508,6 +551,26 @@ export function DesignEditor({
 
         {chrome}
 
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Motion timeline"
+              aria-pressed={motionOpen}
+              onClick={() => setMotionOpen((open) => !open)}
+              className={cn(
+                "h-7 gap-1.5 rounded-[10px] px-2 text-xs text-muted-foreground hover:text-foreground",
+                motionOpen && "bg-primary/10 text-primary hover:text-primary"
+              )}
+            >
+              <Film className="size-3.5" aria-hidden />
+              Motion
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Animations, tracks and keyframes</TooltipContent>
+        </Tooltip>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -579,42 +642,92 @@ export function DesignEditor({
               onSelect={selectNodes}
               onApply={(operations, summary) => apply(operations, summary)}
               readOnly={readOnly}
+              animatedNodeIds={animatedNodeIds}
+              interactiveNodeIds={interactiveNodeIds}
+              onShowMotion={(id) => {
+                selectNodes([id]);
+                setMotionOpen(true);
+              }}
+              onShowInteractions={(id) => {
+                selectNodes([id]);
+                setRightPanel("prototype");
+              }}
             />
           ) : (
             <HistoryList state={state} onSelect={selectNodes} />
           )}
         </aside>
 
-        <div className="relative min-w-0 flex-1">
-          <DesignCanvas
-            document={visibleDocument}
-            pageId={pageId}
-            selection={selection}
-            onSelect={selectNodes}
-            onApply={(operations, summary) => apply(operations, summary)}
-            tool={tool}
-            onToolUsed={() => setTool("select")}
-            readOnly={readOnly || !!state.pending}
-            highlightedIds={state.pending?.result.touchedNodeIds}
-            onViewportChange={onViewportChange}
-            viewportRef={viewportRef}
-          />
-          {/* One bottom-anchored stack rather than two independently positioned
-              overlays: the review card and the Ask Juno bar are both docked to
-              the canvas, and stacking them is what keeps the bar reachable while
-              a proposal is on screen instead of buried under it. The column is
-              click-through so the canvas underneath still takes a drag between
-              them. */}
-          {(state.pending || canvasDock) && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 p-3">
-              {state.pending && <ProposalReview state={state} onResolved={onProposalResolved} />}
-              {canvasDock}
-            </div>
+        {/* The canvas column. The timeline docks under it rather than floating
+            over it: a time axis needs the full width, and a keyframe you have to
+            drag out from under a canvas overlay is not one you can place. */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="relative min-h-0 flex-1">
+            <DesignCanvas
+              document={previewDocument ?? visibleDocument}
+              pageId={pageId}
+              selection={selection}
+              onSelect={selectNodes}
+              onApply={(operations, summary) => apply(operations, summary)}
+              tool={tool}
+              onToolUsed={() => setTool("select")}
+              // A preview is interpolated, not authored. Dragging a layer whose
+              // position came from a playhead would commit the tween's numbers
+              // as if someone had chosen them.
+              readOnly={readOnly || !!state.pending || !!previewDocument}
+              highlightedIds={state.pending?.result.touchedNodeIds}
+              onViewportChange={onViewportChange}
+              viewportRef={viewportRef}
+            />
+            {/* One bottom-anchored stack rather than two independently positioned
+                overlays: the review card and the Ask Juno bar are both docked to
+                the canvas, and stacking them is what keeps the bar reachable while
+                a proposal is on screen instead of buried under it. The column is
+                click-through so the canvas underneath still takes a drag between
+                them. */}
+            {(state.pending || canvasDock) && (
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 p-3">
+                {state.pending && <ProposalReview state={state} onResolved={onProposalResolved} />}
+                {canvasDock}
+              </div>
+            )}
+          </div>
+          {motionOpen && (
+            <MotionPanel
+              document={visibleDocument}
+              selection={selection}
+              onSelect={selectNodes}
+              onApply={(operations, summary) => apply(operations, summary)}
+              onPreview={handleMotionPreview}
+              onClose={() => setMotionOpen(false)}
+              readOnly={readOnly || !!state.pending}
+            />
           )}
         </div>
 
         <aside className={cn("w-64 shrink-0 flex-col border-l border-border/60", surface === "window" ? "flex" : "hidden lg:flex")}>
-          <InspectorPanel document={visibleDocument} selection={selection} onApply={(operations, summary) => apply(operations, summary)} readOnly={readOnly || !!state.pending} />
+          <div className="flex border-b border-border/60">
+            {(["design", "prototype"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setRightPanel(value)}
+                aria-pressed={rightPanel === value}
+                className={cn(
+                  "flex flex-1 items-center justify-center gap-1 py-1.5 font-mono text-[10px] transition-colors coarse:min-h-9",
+                  rightPanel === value ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {value === "design" ? <SlidersHorizontal className="size-3" aria-hidden /> : <Zap className="size-3" aria-hidden />}
+                {value === "design" ? "Design" : "Prototype"}
+              </button>
+            ))}
+          </div>
+          {rightPanel === "design" ? (
+            <InspectorPanel document={visibleDocument} selection={selection} onApply={(operations, summary) => apply(operations, summary)} readOnly={readOnly || !!state.pending} />
+          ) : (
+            <InteractionsPanel document={visibleDocument} selection={selection} onApply={(operations, summary) => apply(operations, summary)} readOnly={readOnly || !!state.pending} />
+          )}
         </aside>
       </div>
     </div>

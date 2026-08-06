@@ -208,8 +208,7 @@ const REPORTED_FIELDS = [
   "cornerRadius",
   "fills",
   "strokes",
-  "shadows",
-  "blur",
+  "effects",
   "characters",
   "typography",
   "layout",
@@ -260,6 +259,7 @@ export const DESIGN_TOOLS = [
   { name: "render_design_preview", kind: "read", describe: "A cropped rendered image of the selection." },
   { name: "create_design_nodes", kind: "write", describe: "createNode operations." },
   { name: "apply_design_operations", kind: "write", describe: "Any validated operation from the vocabulary below." },
+  { name: "set_design_effects", kind: "write", describe: "setEffects / addEffect — the layer effect stack across a selection." },
   { name: "create_component", kind: "write", describe: "createComponent / createInstance." },
   { name: "create_variant_set", kind: "write", describe: "createVariant / setComponentProperty." },
   { name: "bind_design_variable", kind: "write", describe: "createVariable / bindVariable / setVariableMode." },
@@ -278,6 +278,8 @@ const OPERATION_VOCABULARY = [
   `{"op":"groupNodes","nodeIds":["<id>",…],"name":"<optional>"}  /  {"op":"ungroupNodes","nodeIds":["<groupId>"]}`,
   `{"op":"setSelection","nodeIds":["<id>",…]}`,
   `{"op":"setConstraints","nodeIds":["<id>"],"constraints":{"horizontal":"min|max|center|stretch|scale","vertical":…}}`,
+  `{"op":"setEffects","nodeIds":["<id>"],"effects":[…]}  — assigns the WHOLE stack to every named layer, so read the current one first unless you mean to replace it`,
+  `{"op":"addEffect","nodeIds":["<id>",…],"effect":{…},"index":<n?>}  — appends to each layer's own stack; this is the one to use for "add a shadow to these", which setEffects would flatten`,
   `{"op":"setAutoLayout","nodeId":"<id>","layout":{"direction":"horizontal|vertical|grid","padding":{"top":n,"right":n,"bottom":n,"left":n},"gap":n,"align":"start|center|end|baseline","justify":"start|center|end|space-between|space-around|space-evenly","wrap":false}|null}`,
   `{"op":"createComponent","nodeId":"<id>","name":"<name>"}  /  {"op":"createInstance","componentId":"<id>","parentId":<id|null>,"pageId":"<pageId>"}`,
   `{"op":"createVariant","componentId":"<id>","nodeId":"<id>","variantProperties":{"Size":"Large"}}`,
@@ -296,6 +298,27 @@ const OPERATION_VOCABULARY = [
 /** Colours are objects with 0..1 components, so the model never has to guess a
  *  colour space — and the schema rejects anything else. */
 const COLOR_NOTE = `Colours are {"r":0..1,"g":0..1,"b":0..1,"a":0..1}. Prefer binding an existing variable over a literal colour when one matches.`;
+
+/**
+ * What the model needs to know to author effects without inventing anything.
+ *
+ * The last paragraph is the load-bearing one, and it says the opposite of what
+ * it used to. Glass was a composition the model had to be talked through
+ * primitive by primitive, and a model told only the vocabulary reached for a
+ * blur alone and produced fog. It is now one effect with its own fields, so the
+ * note's job is no longer to dictate a recipe but to stop the model rebuilding
+ * one by hand out of a blur and four shadows — which still renders, and is still
+ * five things the user then has to adjust individually.
+ */
+const EFFECTS_NOTE = `Effects: every layer has ONE ordered \`effects\` list. Index 0 is applied first (closest to the layer) and later entries composite over it, so "grain then blur" and "blur then grain" are different and the order is yours to choose. Every entry takes an optional "visible":false.
+  {"type":"drop-shadow"|"inner-shadow","color":{…},"offsetX":0,"offsetY":8,"blur":24,"spread":-4}
+  {"type":"layer-blur"|"background-blur","radius":24,"saturation":1.8}  — layer-blur blurs THIS layer; background-blur blurs what is behind it (pair it with a low-alpha fill or it looks like fog)
+  {"type":"noise","opacity":0.05,"density":0.9,"seed":7,"monochrome":true,"blend":"overlay"}  — density is an feTurbulence base frequency, roughly 0.4 coarse to 1.5 fine
+  {"type":"texture","scale":0.35,"depth":3,"roughness":2,"seed":1,"color":{…},"opacity":0.35,"blend":"soft-light"}  — the same turbulence lit as a relief
+  {"type":"glass","blur":24,"saturation":1.8,"refraction":0.45,"depth":12,"tint":{…},"tintOpacity":0.14,"lightIntensity":0.55,"lightAngle":0}
+Backdrop entries (background-blur, glass) are always drawn beneath the layer wherever they sit in the list; their order relative to the other entries has no visual effect.
+Gradient fills are ordinary fills, not effects: {"type":"linear-gradient","stops":[{"position":0,"color":{…}},{"position":1,"color":{…}}],"from":{"x":0,"y":0},"to":{"x":0,"y":1}} — the axis is in normalised layer space — or {"type":"radial-gradient","stops":[…],"center":{"x":0.5,"y":0.5},"radius":0.5}. Fills are a LIST: several stack, each with its own "opacity" and "visible".
+"Liquid glass" / "frosted" IS a primitive now: add one {"type":"glass"} effect. Do NOT rebuild it out of a background blur, a gradient fill, two inner shadows and grain — that renders about the same and leaves the user five separate rows to adjust instead of one. There is no shader effect and there will not be one: a shader is a program, and eight export targets cannot run one.`;
 
 export interface DesignPromptTarget {
   identifier: string;
@@ -342,6 +365,8 @@ Optional \`adjustments\` offer the user a live control for a value worth tuning.
 
 Operation vocabulary:
 ${OPERATION_VOCABULARY.map((line) => `- ${line}`).join("\n")}
+
+${EFFECTS_NOTE}
 
 DOCUMENT SUMMARY:
 ${JSON.stringify(summary)}

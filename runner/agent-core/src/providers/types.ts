@@ -15,6 +15,31 @@ export interface ModelCapabilities {
   mcp: boolean;
 }
 
+/**
+ * How much thinking the user asked for, in the surfaces' own vocabulary.
+ *
+ * Six tiers rather than a provider's enum, because the control the user turns
+ * is one control and every lab spells it differently: Anthropic takes a
+ * `thinking` block, OpenAI a top-level `reasoning_effort`, and most labs take
+ * nothing at all. `ReasoningLevels` on `ModelCapabilities` says what a model
+ * could be asked for; this says what it was asked for. Absent means Instant —
+ * no thinking requested — and is not the same as `minimal`.
+ */
+export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+export const REASONING_EFFORTS: readonly ReasoningEffort[] = [
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+];
+
+export function isReasoningEffort(value: unknown): value is ReasoningEffort {
+  return typeof value === 'string' && (REASONING_EFFORTS as readonly string[]).includes(value);
+}
+
 export type ProviderStreamEvent =
   | { type: 'text_delta'; text: string }
   | { type: 'thinking_delta'; text: string }
@@ -28,6 +53,15 @@ export interface ProviderRequest {
   tools: ToolSpec[];
   maxTokens?: number;
   signal?: AbortSignal;
+  /**
+   * How hard to think about this request, when the model can be asked.
+   *
+   * Carried on every request rather than fixed on the adapter because it is a
+   * per-run choice, and an adapter is shared. An adapter whose lab has no such
+   * concept must drop it silently: the alternative — refusing the request — turns
+   * a preference the user expressed once into a run that cannot start at all.
+   */
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface ProviderAdapter {

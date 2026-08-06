@@ -20,7 +20,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { readImageAsset } from "@/components/design/use-design-document";
-import { layoutPage, lineHeightPx, resizeWithConstraints, wrapText, type LayoutBox } from "@/lib/design/layout";
+import { layoutPage, lineHeightPx, resizeWithConstraints, wrapText, type LayoutBox, type LayoutMap } from "@/lib/design/layout";
 import { renderPageSvg } from "@/lib/design/render";
 import { rgbaToCss } from "@/lib/design/variables";
 import { isContainer, type DesignDocument, type NodeId, type TextNode } from "@/lib/design/types";
@@ -36,8 +36,36 @@ const SNAP_THRESHOLD = 6;
 const MIN_DRAWN_IMAGE = 16;
 /** Longest edge, in points, a click-placed picture is scaled down to. */
 const PLACED_IMAGE_MAX = 400;
+/** Points per line for a wheel that reports `DOM_DELTA_LINE` — Firefox and
+ *  most non-Apple mice. Chrome's own default for the same conversion. */
+const WHEEL_LINE_HEIGHT = 16;
+/** How far, in screen pixels, a press may wander and still count as a click
+ *  rather than a drag. Measured in client space rather than canvas points on
+ *  purpose: it is about the hand holding the mouse, so it must not grow or
+ *  shrink with the zoom. */
+const CLICK_SLOP = 3;
 
 export type CanvasTool = "select" | "frame" | "rectangle" | "ellipse" | "line" | "text" | "image";
+
+/**
+ * The right-click menu, loaded the first time someone right-clicks.
+ *
+ * Two reasons that point the same way. It is chrome nobody needs until they ask
+ * for it, and asking for it pulls in the whole menu primitive — popper, focus
+ * scope, dismissable layer — that a canvas otherwise never touches. And keeping
+ * it out of this module's static graph is what lets the press rules at the
+ * bottom of this file be imported and checked by the node suite, which runs
+ * under the `react-server` condition: there `react` has no `createContext`, so
+ * any module that reaches a Radix primitive throws the moment it is loaded.
+ *
+ * It gets a boundary to itself. The rename field the menu opens lives in this
+ * module and is *not* lazy: sharing one boundary with the menu meant that the
+ * moment the field appeared the boundary fell back — taking the menu, which was
+ * still closing, down with it — and the canvas was left with no menu at all.
+ */
+const DesignContextMenu = React.lazy(() =>
+  import("@/components/design/design-context-menu").then((module) => ({ default: module.DesignContextMenu }))
+);
 
 interface Viewport {
   x: number;
@@ -128,6 +156,11 @@ export function DesignCanvas({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   /** Where the picture being chosen will land, held across the file dialog. */
   const placementRef = React.useRef<{ x: number; y: number; width: number; height: number; parentId: NodeId | null } | null>(null);
+  /** A press that could still turn out to be a click into the selection rather
+   *  than a drag of it. Set on pointer-down, thrown away by movement, spent on
+   *  pointer-up. A ref because nothing on screen depends on it — making it
+   *  state would re-render the canvas on every press. */
+  const descentRef = React.useRef<{ path: NodeId[]; originClient: { x: number; y: number } } | null>(null);
 
   const boxes = React.useMemo(() => layoutPage(doc, pageId), [doc, pageId]);
   const rendered = React.useMemo(() => renderPageSvg(doc, pageId, { includeNodeIds: true }), [doc, pageId]);
@@ -257,37 +290,18 @@ export function DesignCanvas({
 
   // ---------------------------------------------------------------- hit test
 
-  /** Topmost node under a point. Clicking selects the outermost non-locked
-   *  ancestor; a double-click (or ⌘/Ctrl-click) selects the deepest — the
-   *  standard "deep select through containers" behaviour. */
-  const hitTest = React.useCallback(
-    (point: { x: number; y: number }, deep: boolean): NodeId | null => {
-      const page = doc.pages.find((p) => p.id === pageId);
-      if (!page) return null;
-
-      const inside = (id: NodeId) => {
-        const box = boxes.get(id);
-        return !!box && point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height;
-      };
-
-      const search = (ids: NodeId[], ancestors: NodeId[]): NodeId | null => {
-        // Back-to-front array means the last match is the topmost.
-        for (let i = ids.length - 1; i >= 0; i--) {
-          const id = ids[i];
-          const node = doc.nodes[id];
-          if (!node || !node.visible || node.locked) continue;
-          if (!inside(id)) continue;
-          if (isContainer(node) && node.children.length > 0) {
-            const child = search(node.children, [...ancestors, id]);
-            if (child) return deep ? child : ancestors[0] ?? id;
-          }
-          return deep ? id : ancestors[0] ?? id;
-        }
-        return null;
-      };
-      return search(page.children, []);
-    },
+  const pathAt = React.useCallback(
+    (point: { x: number; y: number }) => hitPath(point, doc, pageId, boxes),
     [boxes, doc, pageId]
+  );
+
+  /** Topmost node under a point. Clicking selects the outermost non-locked
+   *  ancestor; a ⌘/Ctrl-click selects the deepest — the standard "deep select
+   *  through containers" behaviour. Both are ends of the same chain, so both
+   *  come from one walk. */
+  const hitTest = React.useCallback(
+    (point: { x: number; y: number }, deep: boolean): NodeId | null => pathHit(pathAt(point), deep),
+    [pathAt]
   );
 
   // ------------------------------------------------------------------ guides
@@ -324,11 +338,21 @@ export function DesignCanvas({
 
   // ----------------------------------------------------------------- gestures
 
+  /**
+   * Start a gesture.
+   *
+   * `nodeIds` exists because the selection this drag is about is decided in the
+   * same handler that starts it, and the `selection` prop will not carry it
+   * until the next render. Reading the prop here meant a press that re-picked a
+   * layer dragged the *previous* selection: the outline you watched move and
+   * the layer that actually moved on release were two different layers.
+   */
   const beginDrag = React.useCallback(
-    (event: React.PointerEvent, kind: DragState["kind"], handle?: Handle) => {
+    (event: React.PointerEvent, kind: DragState["kind"], options?: { handle?: Handle; nodeIds?: readonly NodeId[] }) => {
+      const handle = options?.handle;
       const scene = toScene(event.clientX, event.clientY);
       const startBoxes = new Map<NodeId, LayoutBox>();
-      for (const id of selection) {
+      for (const id of options?.nodeIds ?? selection) {
         const box = boxes.get(id);
         if (box) startBoxes.set(id, box);
       }
@@ -348,6 +372,12 @@ export function DesignCanvas({
   );
 
   const onPointerDown = (event: React.PointerEvent) => {
+    // Cleared before any of the early exits below, not after them: a pan, a
+    // right-click or a draw that started while a descent candidate was still
+    // held would otherwise spend it on its own release and reselect a layer
+    // nobody clicked.
+    descentRef.current = null;
+
     if (event.button === 1 || (event.button === 0 && event.altKey && tool === "select")) {
       beginDrag(event, "pan");
       return;
@@ -360,21 +390,49 @@ export function DesignCanvas({
     }
 
     const scene = toScene(event.clientX, event.clientY);
-    const hit = hitTest(scene, event.metaKey || event.ctrlKey);
-    if (!hit) {
-      if (!event.shiftKey) onSelect([]);
+    const deepSelect = event.metaKey || event.ctrlKey;
+    const path = pathAt(scene);
+    const press = canvasPress({
+      hit: pathHit(path, deepSelect),
+      selection,
+      insideSelection: pressLandsInSelection(scene, selection, boxes, doc),
+      shiftKey: event.shiftKey,
+      deepSelect,
+    });
+
+    // A press inside the current selection is still a drag — that rule is what
+    // stopped the canvas moving the layer on top instead of the one you chose.
+    // Descending has to be told apart from dragging without weakening it, and
+    // Figma's answer is the release: a press that neither moved nor dragged
+    // descends on mouse-up. So the candidate is remembered here and spent
+    // there, and any movement past the slop throws it away.
+    descentRef.current =
+      press.kind === "move" && press.select === null && !event.shiftKey && !deepSelect
+        ? { path, originClient: { x: event.clientX, y: event.clientY } }
+        : null;
+
+    if (press.kind === "marquee") {
+      if (press.clear) onSelect([]);
       beginDrag(event, "marquee");
       return;
     }
-    if (event.shiftKey) {
-      onSelect([hit], "toggle");
+    if (press.kind === "toggle") {
+      onSelect([press.nodeId], "toggle");
       return;
     }
-    if (!selection.includes(hit)) onSelect([hit]);
-    if (!readOnly) beginDrag(event, "move");
+    if (press.select) onSelect(press.select);
+    if (!readOnly) beginDrag(event, "move", { nodeIds: press.select ?? selection });
   };
 
   const onPointerMove = (event: React.PointerEvent) => {
+    const descent = descentRef.current;
+    if (
+      descent &&
+      Math.hypot(event.clientX - descent.originClient.x, event.clientY - descent.originClient.y) > CLICK_SLOP
+    ) {
+      descentRef.current = null;
+    }
+
     if (!drag) {
       if (tool === "select") {
         const scene = toScene(event.clientX, event.clientY);
@@ -577,9 +635,21 @@ export function DesignCanvas({
   );
 
   const onPointerUp = (event: React.PointerEvent) => {
-    if (!drag) return;
-    commitDrag(drag, event.shiftKey);
-    setDrag(null);
+    const descent = descentRef.current;
+    descentRef.current = null;
+
+    if (drag) {
+      // Within the slop this was a click, not a move: committing the drag would
+      // nudge the layer by the pixel or two the pointer wandered while the
+      // button was down, and a click in Figma never moves anything.
+      if (!descent) commitDrag(drag, event.shiftKey);
+      setDrag(null);
+    }
+
+    if (descent) {
+      const next = descendSelection({ path: descent.path, selection });
+      if (next !== null) onSelect([next]);
+    }
   };
 
   /** Place the chosen picture, sized to the box that was drawn or — for a plain
@@ -660,33 +730,107 @@ export function DesignCanvas({
     [doc, editingId, onApply]
   );
 
-  /** Double-click edits a text layer and deep-selects anything else. */
+  /** The two clicks that make up a double-click have already walked two levels
+   *  down the tree between them. All that is left for the gesture itself is the
+   *  thing a second click cannot do: put a caret in a text layer. */
   const onDoubleClick = (event: React.MouseEvent) => {
-    const hit = hitTest(toScene(event.clientX, event.clientY), true);
+    const hit = doubleClickTarget({ path: pathAt(toScene(event.clientX, event.clientY)), selection });
     if (!hit) return;
     const node = doc.nodes[hit];
-    onSelect([hit]);
     setEditingId(!readOnly && node?.type === "text" && !node.locked ? hit : null);
   };
 
-  const onWheel = (event: React.WheelEvent) => {
-    const rect = hostRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    if (event.ctrlKey || event.metaKey) {
-      const factor = Math.exp(-event.deltaY / 200);
-      const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, viewport.zoom * factor));
-      // Keep the point under the cursor fixed while zooming.
-      const px = (event.clientX - rect.left) / viewport.zoom + viewport.x;
-      const py = (event.clientY - rect.top) / viewport.zoom + viewport.y;
-      setViewport({
-        zoom: nextZoom,
-        x: px - (event.clientX - rect.left) / nextZoom,
-        y: py - (event.clientY - rect.top) / nextZoom,
+  /**
+   * Pan and zoom, on a native listener rather than React's `onWheel`.
+   *
+   * React registers `wheel` (with `touchstart` and `touchmove`) as a *passive*
+   * listener on the root container, so `preventDefault` inside a synthetic
+   * handler is discarded — see `addTrappedEventListener` in react-dom. The
+   * effect people reported was the whole page scrolling and ⌘-wheel zooming the
+   * browser while the artwork sat still underneath. Claiming the gesture needs
+   * `{ passive: false }`, which only a listener attached by hand can ask for.
+   *
+   * Every read of the viewport is inside the updater, so the listener never
+   * needs re-attaching and can never act on a viewport from an earlier frame.
+   */
+  React.useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const rect = host.getBoundingClientRect();
+      const localX = event.clientX - rect.left;
+      const localY = event.clientY - rect.top;
+      // A mouse wheel reports lines, a trackpad reports pixels. Without this a
+      // notch of a real wheel moved the canvas about three points.
+      const scale = event.deltaMode === 1 ? WHEEL_LINE_HEIGHT : event.deltaMode === 2 ? host.clientHeight : 1;
+      const deltaX = event.deltaX * scale;
+      const deltaY = event.deltaY * scale;
+
+      setViewport((v) => {
+        if (event.ctrlKey || event.metaKey) {
+          const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.zoom * Math.exp(-deltaY / 200)));
+          // Keep the point under the cursor fixed while zooming.
+          const px = localX / v.zoom + v.x;
+          const py = localY / v.zoom + v.y;
+          return { zoom, x: px - localX / zoom, y: py - localY / zoom };
+        }
+        return { ...v, x: v.x + deltaX / v.zoom, y: v.y + deltaY / v.zoom };
       });
-      return;
-    }
-    setViewport((v) => ({ ...v, x: v.x + event.deltaX / v.zoom, y: v.y + event.deltaY / v.zoom }));
+    };
+
+    host.addEventListener("wheel", onWheel, { passive: false });
+    return () => host.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // ------------------------------------------------------------ context menu
+
+  const [menu, setMenu] = React.useState<{ at: { x: number; y: number }; scene: { x: number; y: number }; nodeIds: NodeId[] } | null>(null);
+  const [renamingId, setRenamingId] = React.useState<NodeId | null>(null);
+  /** Set when a menu item asked for the rename field. Closing the menu normally
+   *  puts focus back on the canvas, and that focus lands *after* the field has
+   *  taken it — measured, not assumed: without this the field appeared with the
+   *  name selected and the caret somewhere else entirely. */
+  const renameRequested = React.useRef(false);
+
+  const onContextMenu = (event: React.MouseEvent) => {
+    // The text caret is a real textarea and the rename field a real input:
+    // right-clicking inside either has to keep the system's own editing menu.
+    // What is being suppressed is the browser menu *over the artwork*, not the
+    // browser menu everywhere in the app.
+    if ((event.target as HTMLElement | null)?.closest("input, textarea")) return;
+    event.preventDefault();
+
+    const scene = toScene(event.clientX, event.clientY);
+    // ⌘ deep-selects here as it does on a left press. Ctrl deliberately does
+    // not: on a Mac, Ctrl-click *is* the right-click, so honouring it would
+    // make every Mac right-click a deep select.
+    const hit = hitTest(scene, event.metaKey);
+    // The same rule a left press follows — a right-click inside the selection
+    // is about the selection, not about whatever happens to be topmost.
+    const inside = pressLandsInSelection(scene, selection, boxes, doc);
+    const nodeIds = inside ? selection : hit ? [hit] : [];
+    if (!inside) onSelect(nodeIds);
+    setMenu({ at: { x: event.clientX, y: event.clientY }, scene, nodeIds });
   };
+
+  // A layer that is deleted, or undone out of existence, takes its rename field
+  // with it rather than leaving a field editing nothing.
+  React.useEffect(() => {
+    if (renamingId && !doc.nodes[renamingId]) setRenamingId(null);
+  }, [doc, renamingId]);
+
+  const commitRename = React.useCallback(
+    (id: NodeId, next: string) => {
+      setRenamingId(null);
+      const node = doc.nodes[id];
+      const name = next.trim();
+      if (!node || readOnly || !name || name === node.name) return;
+      onApply([{ op: "updateNode", nodeId: id, patch: { name } }], "Rename layer");
+    },
+    [doc, onApply, readOnly]
+  );
 
   // ------------------------------------------------------------------ render
 
@@ -710,6 +854,20 @@ export function DesignCanvas({
   const viewBox = `${viewport.x} ${viewport.y} ${size.width / viewport.zoom} ${size.height / viewport.zoom}`;
   const strokeWidth = 1 / viewport.zoom;
 
+  // The rename field sits just above the layer, like a name badge, rather than
+  // over it — you are naming that rectangle, so you have to be able to see it.
+  // Clamped into the canvas so renaming a layer scrolled to the very top does
+  // not put the field off the edge of the editor.
+  const renameField = (() => {
+    const node = renamingId ? doc.nodes[renamingId] : undefined;
+    const box = renamingId ? boxes.get(renamingId) : undefined;
+    if (!node || !box) return null;
+    const width = Math.min(240, Math.max(140, box.width * viewport.zoom));
+    const left = Math.min(Math.max(4, (box.x - viewport.x) * viewport.zoom), Math.max(4, size.width - width - 4));
+    const top = Math.max(4, (box.y - viewport.y) * viewport.zoom - 28);
+    return { name: node.name, left, top, width };
+  })();
+
   return (
     <div
       ref={hostRef}
@@ -726,7 +884,7 @@ export function DesignCanvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
-      onWheel={onWheel}
+      onContextMenu={onContextMenu}
       onDoubleClick={onDoubleClick}
       role="application"
       aria-label="Design canvas"
@@ -801,7 +959,7 @@ export function DesignCanvas({
                     style={{ cursor: `${handle}-resize` }}
                     onPointerDown={(event) => {
                       event.stopPropagation();
-                      beginDrag(event, "resize", handle);
+                      beginDrag(event, "resize", { handle });
                     }}
                   />
                 );
@@ -835,6 +993,49 @@ export function DesignCanvas({
         />
       )}
 
+      {renamingId && renameField && (
+        <LayerRenameField
+          key={renamingId}
+          name={renameField.name}
+          left={renameField.left}
+          top={renameField.top}
+          width={renameField.width}
+          onCommit={(next) => commitRename(renamingId, next)}
+          onCancel={() => setRenamingId(null)}
+        />
+      )}
+
+      <React.Suspense fallback={null}>
+        {menu && (
+          <DesignContextMenu
+            at={menu.at}
+            scene={menu.scene}
+            document={doc}
+            pageId={pageId}
+            boxes={boxes}
+            nodeIds={menu.nodeIds}
+            readOnly={readOnly}
+            onApply={onApply}
+            onSelect={onSelect}
+            onZoomToFit={zoomToFit}
+            onRename={(id) => {
+              renameRequested.current = true;
+              setRenamingId(id);
+            }}
+            onClose={() => setMenu(null)}
+            onClosed={() => {
+              if (renameRequested.current) {
+                renameRequested.current = false;
+                return;
+              }
+              // The editor scopes its shortcuts to focus, so a menu that closed
+              // leaving focus on <body> would quietly switch ⌘Z off.
+              hostRef.current?.focus({ preventScroll: true });
+            }}
+          />
+        )}
+      </React.Suspense>
+
       <input
         ref={fileInputRef}
         type="file"
@@ -862,6 +1063,176 @@ export function DesignCanvas({
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * The chain of layers under a point, outermost first and deepest last.
+ *
+ * One walk answers every question the canvas asks about a press: the outermost
+ * frame a plain click selects is the first entry, the layer a ⌘/Ctrl-click
+ * selects is the last, and the layer a *second* click descends to is the one
+ * after whatever is selected now. Answering with the chain rather than with a
+ * single id is what makes descending possible at all — "one level down towards
+ * the cursor" is not a question you can ask a function that replies with one
+ * node, which is why the canvas could only ever offer the outermost frame or
+ * the deepest child and nothing in between.
+ *
+ * Locked and hidden layers are skipped, and skipping one skips its children: a
+ * locked frame is not a lid you can reach through.
+ */
+export function hitPath(
+  point: { x: number; y: number },
+  doc: DesignDocument,
+  pageId: string,
+  boxes: LayoutMap
+): NodeId[] {
+  const page = doc.pages.find((p) => p.id === pageId);
+  if (!page) return [];
+
+  const inside = (id: NodeId) => {
+    const box = boxes.get(id);
+    return !!box && point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height;
+  };
+
+  const search = (ids: readonly NodeId[], prefix: NodeId[]): NodeId[] | null => {
+    // Back-to-front array means the last match is the topmost.
+    for (let i = ids.length - 1; i >= 0; i--) {
+      const id = ids[i];
+      const node = doc.nodes[id];
+      if (!node || !node.visible || node.locked) continue;
+      if (!inside(id)) continue;
+      const here = [...prefix, id];
+      if (isContainer(node) && node.children.length > 0) {
+        const deeper = search(node.children, here);
+        if (deeper) return deeper;
+      }
+      return here;
+    }
+    return null;
+  };
+  return search(page.children, []) ?? [];
+}
+
+/** The end of a hit path a press acts on: the deepest layer when ⌘/Ctrl is
+ *  held, the outermost frame otherwise. */
+export function pathHit(path: readonly NodeId[], deep: boolean): NodeId | null {
+  return (deep ? path[path.length - 1] : path[0]) ?? null;
+}
+
+/**
+ * Where a repeated click goes.
+ *
+ * Figma's rule, and the one people mean by "clicking again should go deeper":
+ * the first click on a frame selects the frame, and clicking **again** on
+ * something inside the current selection descends one level towards the layer
+ * under the cursor. Repeated clicks walk down the tree; clicking another branch
+ * or bare canvas selects normally and starts again at the top, because no
+ * selected layer is under the pointer and there is nothing to descend from.
+ *
+ * The descent starts from the *deepest* selected layer the click landed inside,
+ * so each click advances exactly one level however many ancestors happen to be
+ * selected at once.
+ *
+ * Returning null means "this was not a repeat click, pick normally".
+ */
+export function descendSelection(input: { path: readonly NodeId[]; selection: readonly NodeId[] }): NodeId | null {
+  const { path, selection } = input;
+  let from = -1;
+  for (let i = 0; i < path.length; i++) {
+    if (selection.includes(path[i])) from = i;
+  }
+  if (from < 0) return null;
+  return path[from + 1] ?? null;
+}
+
+/**
+ * The layer a double-click acts on.
+ *
+ * A double-click *is* two clicks, and each of them has already descended a
+ * level on its own release — so by the time the `dblclick` arrives the gesture
+ * has walked two levels down and the layer it landed on is simply the deepest
+ * selected one under the cursor. This reads that answer rather than descending
+ * again: doing both would move three levels for one double-click.
+ *
+ * It replaces a jump straight to the deepest layer under the cursor, which on a
+ * real screen is a label four frames down that you then have no way of telling
+ * apart from any other label. The everyday case is unchanged — a text layer
+ * sitting in a frame is two clicks away, which is what a double-click is.
+ */
+export function doubleClickTarget(input: { path: readonly NodeId[]; selection: readonly NodeId[] }): NodeId | null {
+  const { path, selection } = input;
+  for (let i = path.length - 1; i >= 0; i--) {
+    if (selection.includes(path[i])) return path[i];
+  }
+  return null;
+}
+
+/** What a press on the canvas turns out to mean. `select: null` on a move is
+ *  the important case: keep the selection exactly as it is and drag it. */
+export type CanvasPress =
+  | { kind: "marquee"; clear: boolean }
+  | { kind: "toggle"; nodeId: NodeId }
+  | { kind: "move"; select: NodeId[] | null };
+
+/**
+ * Is the press inside something that is already selected?
+ *
+ * Boxes, because boxes are what the canvas hit-tests, outlines and drags; a
+ * different notion of "inside" here would mean the selection rectangle you can
+ * see and the region that responds to a press were not the same rectangle.
+ * Locked and hidden layers are excluded for the same reason `hitTest` skips
+ * them — you cannot press one, so you cannot be pressing inside one.
+ */
+export function pressLandsInSelection(
+  point: { x: number; y: number },
+  selection: readonly NodeId[],
+  boxes: LayoutMap,
+  doc: DesignDocument
+): boolean {
+  return selection.some((id) => {
+    const node = doc.nodes[id];
+    const box = boxes.get(id);
+    if (!node || !box || !node.visible || node.locked) return false;
+    return point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height;
+  });
+}
+
+/**
+ * The selection rule for a press on the artwork.
+ *
+ * `hitTest` returns the *topmost* layer under the point, and the canvas used to
+ * hand that straight to `onSelect` whenever it was not already selected. So with
+ * a layer selected and another one overlapping on top of it, pressing inside
+ * your own selection re-picked the layer on top and dragged that instead —
+ * which is what people meant by "it moves the wrong thing".
+ *
+ * Figma's rule, and now this one: **a press inside the current selection drags
+ * the current selection.** Re-picking only happens outside it. ⌘/Ctrl is the
+ * explicit override — that modifier means "the layer actually under the
+ * cursor, however deep", so it re-picks even inside the selection, which is the
+ * only way to reach a child of something you already have selected.
+ */
+export function canvasPress(input: {
+  hit: NodeId | null;
+  selection: readonly NodeId[];
+  insideSelection: boolean;
+  shiftKey: boolean;
+  deepSelect: boolean;
+}): CanvasPress {
+  const { hit, selection, insideSelection, shiftKey, deepSelect } = input;
+
+  // Shift extends the selection rather than replacing it, and on bare canvas it
+  // starts a marquee that adds to what is already there.
+  if (shiftKey) return hit === null ? { kind: "marquee", clear: false } : { kind: "toggle", nodeId: hit };
+
+  if (deepSelect && hit !== null) {
+    return { kind: "move", select: selection.includes(hit) ? null : [hit] };
+  }
+
+  if (insideSelection) return { kind: "move", select: null };
+
+  if (hit === null) return { kind: "marquee", clear: true };
+  return { kind: "move", select: [hit] };
+}
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
@@ -1033,6 +1404,94 @@ function TextEditorOverlay({
         textAlign: typography.textAlign,
         color: fill?.type === "solid" ? rgbaToCss(fill.color) : undefined,
       }}
+    />
+  );
+}
+
+/**
+ * Renaming a layer where the layer is.
+ *
+ * The layers panel renames pages in place and the header renames the design in
+ * place; a layer had nowhere at all to be renamed from the canvas. This is the
+ * same field, floated just above the layer's top-left in screen space — it
+ * commits on Enter and on blur and abandons on Escape, which is what every other
+ * name field in the editor does, and it stops keystrokes reaching the window
+ * shortcuts so typing "Delete row" does not delete a row.
+ */
+function LayerRenameField({
+  name,
+  left,
+  top,
+  width,
+  onCommit,
+  onCancel,
+}: {
+  name: string;
+  /** Screen-space placement, computed by the canvas from the layer's box. */
+  left: number;
+  top: number;
+  width: number;
+  onCommit: (next: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = React.useState(name);
+  const ref = React.useRef<HTMLInputElement>(null);
+  // Enter commits and then blurs, and the blur would commit a second time —
+  // harmlessly on the name, but as a second history entry saying "Rename layer"
+  // with nothing in it.
+  const done = React.useRef(false);
+  const everFocused = React.useRef(false);
+
+  // Focused on the next frame rather than with `autoFocus`.
+  //
+  // This field is opened from the context menu, and in the commit that mounts
+  // it the menu is still dismantling its focus trap. An `autoFocus` landed
+  // inside that teardown and was taken straight back off again — the field
+  // appeared, lost focus, committed on the blur and vanished before a single
+  // key could reach it. A frame later the menu is gone and the focus sticks;
+  // the blur is ignored until the field has actually held focus once, so the
+  // same race cannot close it silently.
+  React.useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    element.focus();
+    // Selected, not just focused: renaming a layer nearly always means
+    // replacing the name rather than appending to it.
+    element.select();
+  }, []);
+
+  const commit = (value: string) => {
+    if (done.current) return;
+    done.current = true;
+    onCommit(value);
+  };
+
+  return (
+    <input
+      ref={ref}
+      type="text"
+      value={draft}
+      spellCheck={false}
+      aria-label={`Rename ${name}`}
+      onChange={(event) => setDraft(event.target.value)}
+      onFocus={() => {
+        everFocused.current = true;
+      }}
+      onBlur={() => everFocused.current && commit(draft)}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commit(draft);
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          done.current = true;
+          onCancel();
+        }
+      }}
+      className="absolute z-10 rounded-[8px] border border-primary/60 bg-popover px-1.5 py-0.5 text-xs shadow-soft outline-none ring-2 ring-primary/20"
+      style={{ left, top, width }}
     />
   );
 }

@@ -2066,7 +2066,14 @@ private enum JunoMobileWorkLog {
     /// contract and forgotten here is a compile error rather than a blank row in
     /// somebody's thread.
     private static func describe(_ event: WorkEvent, _ kind: JunoWorkEventKind) -> Entry {
-        let payload = event.payload
+        // Lifted, not read raw. The cloud runner wraps each kind's facts in one
+        // sub-object — an approval's summary and action live under `request`,
+        // a question's text under `question` — so every accessor below returned
+        // nil for a cloud run and the thread filled with bare verbs: "Asked for
+        // approval" with nothing saying what for. `WorkEventPayload.fields`
+        // flattens the envelope this Mac's own run host does not write, which
+        // makes one reader correct for both executors.
+        let payload = WorkEventPayload.fields(of: event)
         switch kind {
         case .runStarted:
             return entry(event, "Started", string(payload, "target"), "play.circle", .quiet)

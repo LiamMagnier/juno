@@ -26,19 +26,18 @@ import {
   assetSchema,
   autoLayoutSchema,
   animationSchema,
-  blurSchema,
   blendModeSchema,
   collectionSchema,
   componentPropertySchema,
   constraintsSchema,
   cornerRadiusSchema,
+  effectSchema,
   interactionSchema,
   layoutChildSchema,
   motionTrackSchema,
   nodeSchema,
   paintSchema,
   rgbaSchema,
-  shadowSchema,
   sizeLimitsSchema,
   sizingModeSchema,
   strokeSchema,
@@ -47,7 +46,13 @@ import {
   DesignValidationError,
 } from "@/lib/design/schema";
 import { cloneDocument, isAncestorOf, subtreeIds } from "@/lib/design/document";
-import { isContainer, type DesignDocument, type DesignNode, type NodeId } from "@/lib/design/types";
+import {
+  isContainer,
+  type DesignDocument,
+  type DesignNode,
+  type Effect,
+  type NodeId,
+} from "@/lib/design/types";
 
 // ---------------------------------------------------------------------------
 // Operation schemas
@@ -84,8 +89,7 @@ export const nodePatchSchema = z
     fills: z.array(paintSchema).max(32),
     strokes: z.array(strokeSchema).max(32),
     cornerRadius: cornerRadiusSchema,
-    shadows: z.array(shadowSchema).max(32),
-    blur: blurSchema.nullable(),
+    effects: z.array(effectSchema).max(64),
     constraints: constraintsSchema,
     widthMode: sizingModeSchema,
     heightMode: sizingModeSchema,
@@ -143,6 +147,49 @@ export const designOperationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("ungroupNodes"), nodeIds: idList }),
   z.object({ op: z.literal("setSelection"), nodeIds: z.array(idSchema).max(2_000) }),
   z.object({ op: z.literal("setConstraints"), nodeIds: idList, constraints: constraintsSchema }),
+  /**
+   * Assign a whole effect stack across a selection.
+   *
+   * `updateNode` can already write `effects`, and this does not replace it — it
+   * is the multi-node form, exactly as `setConstraints` is the multi-node form
+   * of the `constraints` field. The difference matters here for a reason it does
+   * not there: an effect edit is nearly always a *list* edit ("turn the inner
+   * shadow off", "move the grain above the blur"), and building one `updateNode`
+   * per selected layer from each layer's own list is how the inspector used to
+   * carry the first layer's shadows onto the rest.
+   *
+   * It assigns the *whole* list, which is what makes the inverse exact: the
+   * previous list, per node, restored verbatim. Everything the panel does to a
+   * single row — retype it, retune it, hide it, reorder it, delete it — is this
+   * one operation with a list computed from the row that changed, so there is no
+   * family of near-identical row operations to keep in step with each other.
+   */
+  z.object({
+    op: z.literal("setEffects"),
+    nodeIds: idList,
+    effects: z.array(effectSchema).max(64),
+  }),
+  /**
+   * Append one effect to each named layer, keeping each layer's own stack.
+   *
+   * The one list edit `setEffects` genuinely cannot express. "Add a drop shadow
+   * to these three layers" is not "give these three layers this list": two of
+   * them already have effects of their own, and assigning an absolute list would
+   * delete them. That is precisely the bug the multi-node form exists to
+   * prevent, so the relative form is its own operation rather than something the
+   * caller is trusted to hand-roll per node.
+   *
+   * The inverse is a per-node `setEffects` carrying that node's previous stack —
+   * not "remove the effect at index n", which would be wrong the moment two
+   * layers had different list lengths.
+   */
+  z.object({
+    op: z.literal("addEffect"),
+    nodeIds: idList,
+    effect: effectSchema,
+    /** Where it lands in each layer's stack; appended when absent. */
+    index: z.number().int().min(0).max(64).optional(),
+  }),
   z.object({ op: z.literal("setAutoLayout"), nodeId: idSchema, layout: autoLayoutSchema.nullable() }),
   z.object({
     op: z.literal("createComponent"),
@@ -345,6 +392,11 @@ export function invertTransaction(
  * be assumed to leave the node's fields alone: a delete, a reparent or a group
  * in between makes the intermediate state load-bearing again.
  *
+ * `setEffects` folds by the same rule and for the same reason: dragging the
+ * blur radius, the grain density or a shadow's Y offset emits one operation per
+ * pointer move, all of them assigning the same whole field to the same layers,
+ * and only the last one survives the drag.
+ *
  * The result applies to the same base revision and produces the same document
  * as the input; it is a smaller way of saying the same thing, not a different
  * change.
@@ -354,14 +406,32 @@ export function coalesceOperations(operations: DesignOperation[]): DesignOperati
 
   for (let i = operations.length - 1; i >= 0; i--) {
     const later = kept[i];
-    if (!later || later.op !== "updateNode") continue;
-    const laterKeys = Object.keys(later.patch);
-    for (let j = i - 1; j >= 0; j--) {
-      const earlier = kept[j];
-      if (!earlier) continue;
-      if (earlier.op !== "updateNode") break;
-      if (earlier.nodeId !== later.nodeId) continue;
-      if (Object.keys(earlier.patch).every((key) => laterKeys.includes(key))) kept[j] = null;
+    if (!later) continue;
+    if (later.op === "updateNode") {
+      const laterKeys = Object.keys(later.patch);
+      for (let j = i - 1; j >= 0; j--) {
+        const earlier = kept[j];
+        if (!earlier) continue;
+        if (earlier.op !== "updateNode") break;
+        if (earlier.nodeId !== later.nodeId) continue;
+        if (Object.keys(earlier.patch).every((key) => laterKeys.includes(key))) kept[j] = null;
+      }
+      continue;
+    }
+    if (later.op === "setEffects") {
+      const laterTargets = new Set(later.nodeIds);
+      for (let j = i - 1; j >= 0; j--) {
+        const earlier = kept[j];
+        if (!earlier) continue;
+        // Only `setEffects` folds. An `addEffect` in between is relative to the
+        // stack it lands on, so dropping the assignment before it would move the
+        // added effect to a different index — or onto a different stack entirely.
+        if (earlier.op !== "setEffects") break;
+        // Same layers. A narrower earlier target set would leave a layer
+        // un-restyled, because the later assignment never reaches it.
+        if (earlier.nodeIds.length !== laterTargets.size) continue;
+        if (earlier.nodeIds.every((id) => laterTargets.has(id))) kept[j] = null;
+      }
     }
   }
 
@@ -540,8 +610,7 @@ function nodeDefaultsFor(type: DesignNode["type"]): Record<string, unknown> {
     fills: [],
     strokes: [],
     cornerRadius: 0,
-    shadows: [],
-    blur: null,
+    effects: [],
     constraints: { horizontal: "min", vertical: "min" },
     widthMode: "fixed",
     heightMode: "fixed",
@@ -620,7 +689,24 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
 
     // ---------------------------------------------------------------- update
     case "updateNode": {
-      const node = requireUnlocked(doc, operation.nodeId);
+      // Refusing every patch to a locked layer is right for how it looks and
+      // wrong for the two fields that decide whether it can be reached at all.
+      // `locked` gated itself: once set, the only operation that could clear it
+      // was refused for being set — and since the canvas cannot hit-test a
+      // locked or hidden layer, nothing could select it either. Locking a layer
+      // deleted it in every sense that mattered, with no way back.
+      //
+      // A patch naming only these two passes. Its inverse names the same
+      // fields, so undo passes the same gate. A patch mixing them with anything
+      // else is still refused, so nothing can be moved, recoloured or resized
+      // past the lock — which is the property the gate exists for.
+      const patchKeys = Object.keys(operation.patch as Record<string, unknown>);
+      const reachabilityOnly =
+        patchKeys.length > 0 &&
+        patchKeys.every((key) => key === "locked" || key === "visible");
+      const node = reachabilityOnly
+        ? requireNode(doc, operation.nodeId)
+        : requireUnlocked(doc, operation.nodeId);
       const before: Record<string, unknown> = {};
       const record = node as unknown as Record<string, unknown>;
       const patch = operation.patch as Record<string, unknown>;
@@ -998,6 +1084,34 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
       return { inverse, summary: "Set constraints" };
     }
 
+    // --------------------------------------------------------------- effects
+    case "setEffects":
+    case "addEffect": {
+      const inverse: DesignOperation[] = [];
+      for (const id of operation.nodeIds) {
+        const node = requireUnlocked(doc, id);
+        // Cloned, not aliased: the inverse outlives the node object it was read
+        // from, and a list handed back by reference would follow every later
+        // edit to the live node and undo to whatever it had become.
+        const before = cloneEffects(node.effects);
+        const next =
+          operation.op === "setEffects"
+            ? cloneEffects(operation.effects)
+            : insertEffect(before, cloneEffects([operation.effect])[0], operation.index);
+        const parsed = nodeSchema.safeParse({ ...(node as unknown as Record<string, unknown>), effects: next });
+        if (!parsed.success) {
+          throw new DesignOperationError("invalid", `Effects on “${node.name}” are not valid: ${parsed.error.issues[0]?.message ?? ""}`);
+        }
+        doc.nodes[id] = parsed.data;
+        ctx.touched.add(id);
+        inverse.push({ op: "setEffects", nodeIds: [id], effects: before });
+      }
+      return {
+        inverse,
+        summary: operation.op === "addEffect" ? `Add ${effectLabel(operation.effect.type)}` : "Set effects",
+      };
+    }
+
     case "setAutoLayout": {
       const node = requireUnlocked(doc, operation.nodeId);
       if (!isContainer(node)) throw new DesignOperationError("invalid", `“${node.name}” cannot have auto layout.`);
@@ -1263,6 +1377,38 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
 // Helpers
 // ---------------------------------------------------------------------------
 
+function cloneEffects(effects: readonly Effect[]): Effect[] {
+  return (typeof structuredClone === "function" ? structuredClone(effects as Effect[]) : JSON.parse(JSON.stringify(effects))) as Effect[];
+}
+
+function insertEffect(effects: Effect[], effect: Effect, index?: number): Effect[] {
+  const next = [...effects];
+  next.splice(index === undefined ? next.length : Math.max(0, Math.min(index, next.length)), 0, effect);
+  return next;
+}
+
+/** How an effect is named in a history entry and in the panel's row header. One
+ *  table, so "Add drop shadow" in the undo list and "Drop shadow" in the
+ *  inspector cannot drift apart. */
+export function effectLabel(type: Effect["type"]): string {
+  switch (type) {
+    case "drop-shadow":
+      return "drop shadow";
+    case "inner-shadow":
+      return "inner shadow";
+    case "layer-blur":
+      return "layer blur";
+    case "background-blur":
+      return "background blur";
+    case "noise":
+      return "noise";
+    case "texture":
+      return "texture";
+    case "glass":
+      return "glass";
+  }
+}
+
 function cloneNodeShallow(node: DesignNode): DesignNode {
   return (typeof structuredClone === "function" ? structuredClone(node) : JSON.parse(JSON.stringify(node))) as DesignNode;
 }
@@ -1310,6 +1456,8 @@ export function describePatch(patch: NodePatch): string {
         return "fill";
       case "strokes":
         return "stroke";
+      case "effects":
+        return "effects";
       case "x":
       case "y":
         return "position";

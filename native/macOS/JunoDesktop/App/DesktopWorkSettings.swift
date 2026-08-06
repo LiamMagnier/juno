@@ -32,19 +32,19 @@ import SwiftUI
 struct DesktopWorkHostTile: View {
     let host: DesktopWorkHostModel
 
-    /// Bumped after every write to one of the model's switches, and read at the
-    /// top of `body`.
+    /// Bumped when the *macOS* permissions are re-read, and read at the top of
+    /// `body`.
     ///
-    /// This is not defensive bookkeeping; without it the card does not work.
-    /// ``DesktopWorkHostModel``'s switches are hand-written computed properties
-    /// over `UserDefaults`, so `@Observable` has no stored property to
-    /// instrument and setting one notifies SwiftUI of nothing. The model's own
-    /// `onPolicyChanged` happens to touch observed state *when a relay is
-    /// attached* — which is exactly the case that does not apply to a Mac that
-    /// has never been paired, i.e. every Mac the first time somebody opens this
-    /// card. Measured symptom: the "Allow Juno Work on this Mac" switch travels
-    /// under the pointer, the preference is written, and the switch snaps back
-    /// to off on the next frame because nothing re-read it.
+    /// It used to be bumped after every write to one of the model's switches
+    /// too, because those are computed properties over `UserDefaults` that
+    /// `@Observable` could not instrument: the switch travelled under the
+    /// pointer, the preference was written, and the row snapped back to off on
+    /// the next frame because nothing had re-read it. The model publishes them
+    /// itself now — see ``DesktopWorkHostModel/flag(_:)`` — which is what let the
+    /// Work window's own surfaces react to a switch this card owns. What is left
+    /// here is the one input no model can publish: TCC. Accessibility is granted
+    /// in *System Settings*, so the reader leaves, grants it, and comes back to a
+    /// card that has to sample it again.
     @State private var switchGeneration = 0
 
     /// The bundle identifier being typed into the allow or block field.
@@ -95,7 +95,6 @@ struct DesktopWorkHostTile: View {
         .alert("Revoke this Mac?", isPresented: $isConfirmingRevocation) {
             Button("Revoke", role: .destructive) {
                 host.detach(reason: "Revoked on this Mac.")
-                switchGeneration &+= 1
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -124,39 +123,27 @@ struct DesktopWorkHostTile: View {
         .accessibilityIdentifier("juno.desktop.settings.work-host-enabled")
     }
 
-    /// Why a task sent here would be refused, in the model's own words.
+    /// Why a task sent here would be refused, in the model's own words, and the
+    /// control that answers it.
     ///
     /// Printed verbatim and selectable. The sentence distinguishes between
     /// problems with completely different fixes — "Juno Work is switched off",
     /// "this Mac has not finished pairing", "nothing has been allowed yet" — and
     /// collapsing them into a grey control is how somebody ends up checking
     /// their network while the answer was a switch on this card.
-    @ViewBuilder
+    ///
+    /// The identical row the Work window draws, from the identical model, so this
+    /// card and the task column cannot drift into two descriptions of one state.
+    /// The control it carries is not redundant with the switches below it even
+    /// here: "nothing has been allowed yet" is answered by a folder chooser that
+    /// is otherwise four rows further down, behind a switch that has to be on
+    /// before the menu offering it is enabled.
     private var reasonRow: some View {
-        if let reason = host.unavailabilityReason {
-            Label {
-                Text(reason)
-                    .junoCaption()
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-            } icon: {
-                Image(systemName: "exclamationmark.circle")
-                    .foregroundStyle(Color.junoCaution)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("juno.desktop.settings.work-host-reason")
-        } else {
-            Label {
-                Text("A task sent to this Mac now would run here.")
-                    .junoCaption()
-                    .fixedSize(horizontal: false, vertical: true)
-            } icon: {
-                Image(systemName: "checkmark.circle")
-                    .foregroundStyle(Color.junoSuccess)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("juno.desktop.settings.work-host-ready")
-        }
+        DesktopWorkBlockerRow(
+            host: host,
+            confirmsReady: true,
+            identifier: "juno.desktop.settings.work-host"
+        )
     }
 
     // MARK: - Capabilities
@@ -247,10 +234,7 @@ struct DesktopWorkHostTile: View {
                     detail: LocalizedStringKey(Self.approvalDetail(policy)),
                     isSelected: host.approvalPolicy == policy,
                     isEnabled: host.allowWorkOnThisMac,
-                    select: {
-                        host.approvalPolicy = policy
-                        switchGeneration &+= 1
-                    }
+                    select: { host.approvalPolicy = policy }
                 )
             }
             .accessibilityIdentifier("juno.desktop.settings.work-host-approval")
@@ -297,8 +281,7 @@ struct DesktopWorkHostTile: View {
                     Menu("Add folder…") {
                         ForEach(Self.grantableModes, id: \.self) { mode in
                             Button(Self.accessLabel(mode.rawValue)) {
-                                actions.addFolder(mode)
-                                switchGeneration &+= 1
+                                _ = actions.addFolder(mode)
                             }
                         }
                     }
@@ -351,7 +334,6 @@ struct DesktopWorkHostTile: View {
                     ForEach(Self.grantableModes, id: \.self) { mode in
                         Button(Self.accessLabel(mode.rawValue)) {
                             actions.setMode(mode, WorkGrantID(value: grant.grantID))
-                            switchGeneration &+= 1
                         }
                         .disabled(grant.accessMode == mode.rawValue)
                     }
@@ -367,7 +349,6 @@ struct DesktopWorkHostTile: View {
                 // had changed their mind.
                 Button {
                     actions.revoke(WorkGrantID(value: grant.grantID))
-                    switchGeneration &+= 1
                 } label: {
                     Image(systemName: "minus.circle")
                 }
@@ -454,11 +435,9 @@ struct DesktopWorkHostTile: View {
                 accessibilityPrefix: "juno.desktop.settings.work-host-allowed-apps",
                 add: { identifier in
                     host.allowedApps = Self.adding(identifier, to: host.allowedApps)
-                    switchGeneration &+= 1
                 },
                 remove: { identifier in
                     host.allowedApps = host.allowedApps.filter { $0 != identifier }
-                    switchGeneration &+= 1
                 }
             )
             // Granting is meaningless with both switches off, and it is *not*
@@ -495,11 +474,9 @@ struct DesktopWorkHostTile: View {
                 accessibilityPrefix: "juno.desktop.settings.work-host-blocked-apps",
                 add: { identifier in
                     host.blockedApps = Self.adding(identifier, to: host.blockedApps)
-                    switchGeneration &+= 1
                 },
                 remove: { identifier in
                     host.blockedApps = host.blockedApps.filter { $0 != identifier }
-                    switchGeneration &+= 1
                 }
             )
             // Refusing is not. Somebody who has not yet turned screen control on
@@ -566,7 +543,6 @@ struct DesktopWorkHostTile: View {
             if host.allowWorkOnThisMac {
                 Button(role: .destructive) {
                     host.stopServingWork()
-                    switchGeneration &+= 1
                 } label: {
                     Text("Stop serving Juno Work now")
                         .frame(maxWidth: .infinity)
@@ -615,10 +591,12 @@ struct DesktopWorkHostTile: View {
 
     /// A switch bound to one of the model's `UserDefaults`-backed properties.
     ///
-    /// The bump in the setter is the point — see ``switchGeneration``. Written
-    /// as one helper so no row can be added that writes the model and forgets to
-    /// tell the view, which would leave exactly one switch on this card that
-    /// does not move.
+    /// It no longer bumps ``switchGeneration``: the model publishes its own
+    /// switches, so the row that wrote one redraws from the write itself. The
+    /// helper stays because of the isolation note below, which is a compiler
+    /// constraint rather than a style, and because one construction shared by
+    /// every row is one place for that note to live.
+    ///
     /// `@MainActor` on both closures, not an incidental annotation.
     ///
     /// `Binding`'s accessors are `@Sendable` in the macOS 26 SDK. A plain
@@ -638,13 +616,7 @@ struct DesktopWorkHostTile: View {
         // no diagnostic at all, just a failed compile command, which is how
         // this reached CI green locally and red there. JunoMobileTasksView
         // carries the same note beside the same construction.
-        Binding(
-            get: { get() },
-            set: { value in
-                set(value)
-                switchGeneration &+= 1
-            }
-        )
+        Binding(get: { get() }, set: { value in set(value) })
     }
 
     /// Appends a trimmed identifier, refusing blanks and duplicates.

@@ -181,6 +181,20 @@ struct JunoDesktopConfiguration {
             )
             workHostModel.systemPermissions = { .current }
             workHostModel.grantActions = .over(workGrantStore)
+            // The host model hears about grants from here, and not only from the
+            // executor it builds once registration lands.
+            //
+            // That was the whole wiring until now, and it made the first grant
+            // invisible: somebody who shared a folder before this Mac had paired
+            // — which is exactly what the setup path in the Work window invites
+            // them to do — watched the panel close and the settings card go on
+            // saying no folders had been granted. The store is the source of
+            // truth from the moment it is constructed, so this listens from then.
+            // `setGrants` ignores an unchanged set, so the executor's own
+            // observer arriving later costs nothing.
+            workGrantStore.observe { [weak workHostModel] _, summaries in
+                workHostModel?.setGrants(summaries)
+            }
 
             return Self(
                 authModel: NativeAuthModel(

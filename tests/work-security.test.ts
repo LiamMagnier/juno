@@ -21,6 +21,8 @@ import {
   ARTIFACT_EXTENSION,
   WORK_APPROVAL_DECISIONS,
   WORK_RISK_LEVELS,
+  WORK_PERMISSION_POLICIES,
+  approvalRuling,
   WORK_TERMINAL_REASONS,
   WORK_TOOL_TIERS,
   allowsScreenshotRelay,
@@ -35,6 +37,8 @@ import {
   WORK_TERMINAL_REASONS as RUNNER_TERMINAL_REASONS,
   WORK_TOOL_TIERS as RUNNER_TOOL_TIERS,
   requiresExplicitApproval,
+  approvalAsksUnder,
+  WORK_PERMISSION_POLICIES as RUNNER_PERMISSION_POLICIES,
 } from "../runner/agent-core/src/work/types.js";
 import { evaluateTier } from "../runner/agent-core/src/work/tier.js";
 
@@ -941,4 +945,54 @@ test("a title cannot escape the filename or the header it is interpolated into",
   const cyrillic = attachmentDisposition("Отчёт", "q3-report", "document");
   assert.match(cyrillic, /filename="deliverable\.docx"/);
   assert.match(cyrillic, /filename\*=UTF-8''(?:%[0-9A-F]{2})+\.docx$/);
+});
+
+// ---------------------------------------------------------------------------
+// The approval modes, where they are actually enforced
+// ---------------------------------------------------------------------------
+
+test("the runner's approval lattice matches the one the server explains", () => {
+  // Same drift argument as the vocabularies above, and worse here: this pair
+  // decides whether a step is put to the user at all. The server's
+  // `approvalRuling` is what the composer and the approval card describe; the
+  // runner's `approvalAsksUnder` is what actually stops the run. A disagreement
+  // is a product that says one thing and does another.
+  assert.deepEqual([...RUNNER_PERMISSION_POLICIES], [...WORK_PERMISSION_POLICIES]);
+  for (const policy of WORK_PERMISSION_POLICIES) {
+    for (const risk of WORK_RISK_LEVELS) {
+      for (const action of ["work.file.write", ...ALWAYS_CONFIRM_ACTIONS]) {
+        assert.equal(
+          approvalAsksUnder(action, risk, policy),
+          approvalRuling({ action, risk, policy }).ask,
+          `${policy}/${risk}/${action} is decided differently by the two halves`
+        );
+      }
+    }
+  }
+});
+
+test("the modes differ, which is the whole reason the setting exists", () => {
+  // Before the gate read a policy, all three of these were `true`: the executor
+  // asked `requiresExplicitApproval(action, risk)`, which takes no mode.
+  const write = "work.file.write";
+  assert.equal(approvalAsksUnder(write, "edit", "conservative"), true, "Manual asks before it changes a file");
+  assert.equal(approvalAsksUnder(write, "edit", "balanced"), false, "Auto makes changes it can undo");
+  assert.equal(approvalAsksUnder(write, "command", "balanced"), true, "Auto still asks before running anything");
+  assert.equal(approvalAsksUnder(write, "command", "permissive"), false, "Skip gets on with it");
+  assert.equal(approvalAsksUnder(write, "safe", "conservative"), false, "reading is never a decision");
+});
+
+test("Skip cannot reach past the floor", () => {
+  // The four things Juno says it can never take back. If any of these ever
+  // answers false under permissive, the product's own approval copy — "Juno
+  // always asks before anything it cannot undo" — becomes a lie.
+  for (const action of ALWAYS_CONFIRM_ACTIONS) {
+    assert.equal(
+      approvalAsksUnder(action, "safe", "permissive"),
+      true,
+      `${action} must ask under Skip, whatever its risk says`
+    );
+  }
+  assert.equal(approvalAsksUnder("work.file.write", "irreversible", "permissive"), true);
+  assert.equal(approvalAsksUnder("work.file.write", "sensitive", "permissive"), true);
 });
