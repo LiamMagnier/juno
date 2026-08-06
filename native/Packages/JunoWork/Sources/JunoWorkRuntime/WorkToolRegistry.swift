@@ -2,6 +2,27 @@ import Foundation
 import JunoWorkCore
 import JunoWorkLocal
 
+/// A tool a caller is offering, together with the question that decides whether
+/// this Mac may advertise it right now.
+///
+/// Two fields rather than a protocol requirement on ``WorkTool``, because
+/// readiness is not a property of a tool: it is a property of the machine
+/// underneath one. A file tool over a granted folder is ready by construction;
+/// a control over somebody's screen is ready only while a macOS permission it
+/// does not own is held. Keeping the question beside the tool lets the registry
+/// ask it without JunoWorkRuntime having to know what a driver or a TCC grant
+/// is — which it must not, since the controls live one layer above it.
+public struct WorkToolOffer: Sendable {
+    public let tool: any WorkTool
+    /// Whether the thing underneath this tool can act at this moment.
+    public let isReady: @Sendable () async -> Bool
+
+    public init(tool: any WorkTool, isReady: @escaping @Sendable () async -> Bool) {
+        self.tool = tool
+        self.isReady = isReady
+    }
+}
+
 /// The tools one run may call inside one granted folder, with argument
 /// validation and the approval gate applied before anything executes.
 ///
@@ -77,6 +98,33 @@ public struct WorkToolRegistry: Sendable {
     /// the risk ladder that actually governs them got to decide.
     public static func automation(tools: [any WorkTool]) -> WorkToolRegistry {
         WorkToolRegistry(tools: tools, mode: .readWrite)
+    }
+
+    /// The automation registry, built from offers so that a control whose driver
+    /// cannot act is never advertised.
+    ///
+    /// This is the form to build from. ``automation(tools:)`` above takes a list
+    /// that has already been decided; this one takes the *question* alongside
+    /// each tool and asks it, at the moment the registry is built, immediately
+    /// before the run that will use it.
+    ///
+    /// The distinction is the whole reason this exists. A tool in front of the
+    /// model that cannot act is worse than no tool at all: the model spends a
+    /// turn calling it, gets a refusal it cannot fix, and — because a refusal
+    /// reads to it as the person's answer — reports back that it was not allowed
+    /// to do something nobody refused. Screen control with no Screen Recording
+    /// permission and browser control with no browser running are both exactly
+    /// that, and both are ordinary states rather than misconfigurations.
+    ///
+    /// Asked afresh every time, never cached: a person can revoke Accessibility
+    /// in System Settings between two runs, and quitting a browser between them
+    /// is not even unusual.
+    public static func automation(offers: [WorkToolOffer]) async -> WorkToolRegistry {
+        var ready: [any WorkTool] = []
+        for offer in offers where await offer.isReady() {
+            ready.append(offer.tool)
+        }
+        return WorkToolRegistry(tools: ready, mode: .readWrite)
     }
 
     public var allTools: [any WorkTool] {

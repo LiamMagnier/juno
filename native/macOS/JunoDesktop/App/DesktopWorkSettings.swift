@@ -1,6 +1,7 @@
 import AppKit
 import JunoCore
 import JunoDesignSystem
+import JunoWorkAutomation
 import JunoWorkCore
 import JunoWorkKit
 import SwiftUI
@@ -446,7 +447,7 @@ struct DesktopWorkHostTile: View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             DesktopWorkBundleList(
                 title: "Apps Juno Work may drive",
-                emptyMessage: "No apps allowed, so Juno Work cannot drive any of them.",
+                emptyMessage: "No apps allowed, so Juno Work cannot drive any of them — a browser included.",
                 identifiers: host.allowedApps,
                 draft: $appToAllow,
                 addPrompt: "com.apple.Notes",
@@ -460,9 +461,30 @@ struct DesktopWorkHostTile: View {
                     switchGeneration &+= 1
                 }
             )
-            // Granting is meaningless with screen control off, so the allow list
-            // follows that switch.
-            .disabled(!host.allowsComputerUse)
+            // Granting is meaningless with both switches off, and it is *not*
+            // meaningless with only the browser one on. Driving Safari or Chrome
+            // means sending Apple events to an application, so the browser's own
+            // bundle identifier has to be on this list before anything happens —
+            // and while this row followed screen control alone, somebody who had
+            // turned on only the browser had no way to allow one, so browser
+            // control drove nothing and said nothing about why.
+            .disabled(!host.allowsComputerUse && !host.allowsBrowser)
+
+            // Named only when it is the thing standing in the way: the browser
+            // is switched on and nothing on the list is a browser Juno can
+            // drive. A standing note about bundle identifiers on a card nobody
+            // has turned browser control on for is a note they learn to skip.
+            if host.allowsBrowser, !Self.listsADriveableBrowser(host.allowedApps) {
+                Label(
+                    "Driving a browser needs its own identifier here: "
+                        + Self.driveableBrowserIdentifiers,
+                    systemImage: "info.circle"
+                )
+                .junoCaption()
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .accessibilityIdentifier("juno.desktop.settings.work-host-browser-identifier")
+            }
 
             DesktopWorkBundleList(
                 title: "Apps Juno Work may never drive",
@@ -640,6 +662,20 @@ struct DesktopWorkHostTile: View {
     private static func permanentlyRefused(in allowed: [String]) -> String? {
         allowed.first { WorkHostPolicy.restrictedCategories.contains($0) }
     }
+
+    /// Whether anything on the allowed list is a browser Juno has a driver for.
+    ///
+    /// Asked of ``AutomatableBrowser`` rather than by comparing strings here, so
+    /// the card and the driver agree on both the list and the case it is
+    /// compared in — the same case-folding `SystemBrowserDriver` uses, for the
+    /// reason commit e0bb1e8 records.
+    private static func listsADriveableBrowser(_ allowed: [String]) -> Bool {
+        allowed.contains { AutomatableBrowser.named(bundleIdentifier: $0) != nil }
+    }
+
+    private static let driveableBrowserIdentifiers = AutomatableBrowser.allCases
+        .map(\.bundleIdentifier)
+        .joined(separator: " or ")
 
     private static func approvalTitle(_ policy: WorkHostPolicy.ApprovalPolicy) -> String {
         switch policy {
