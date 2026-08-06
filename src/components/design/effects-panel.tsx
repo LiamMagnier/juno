@@ -892,6 +892,90 @@ function Segmented({
   );
 }
 
+/**
+ * How long a run of changes has to fall quiet before it becomes a transaction.
+ *
+ * A held stepper arrow repeats about thirty times a second, and the system
+ * colour picker streams a value per frame while the cursor moves across it.
+ * Committing each one puts a hundred entries on the undo stack for one gesture
+ * and a hundred operations in the outgoing queue. The canvas already avoids
+ * that by applying a drag once, on release — a field has no release, so a pause
+ * stands in for one. 200 ms is far longer than key repeat and far shorter than
+ * the gap between two deliberate clicks, so holding a key is one undo step and
+ * clicking twice is two.
+ */
+const COMMIT_QUIET_MS = 200;
+
+/**
+ * Commit at most once per burst of changes.
+ *
+ * The commit function is captured when the value is queued rather than when it
+ * fires. These fields are re-rendered with a fresh `onCommit` closure whenever
+ * the selection changes, and a commit that resolved late would otherwise write
+ * the value stepped on one layer onto whichever layer had just been clicked.
+ */
+function useCoalescedCommit<T>() {
+  const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queued = React.useRef<{ value: T; commit: (value: T) => void } | null>(null);
+
+  const flush = React.useCallback(() => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+    const pending = queued.current;
+    queued.current = null;
+    pending?.commit(pending.value);
+  }, []);
+
+  const cancel = React.useCallback(() => {
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
+    queued.current = null;
+  }, []);
+
+  const schedule = React.useCallback(
+    (value: T, commit: (value: T) => void) => {
+      queued.current = { value, commit };
+      if (timer.current !== null) clearTimeout(timer.current);
+      timer.current = setTimeout(flush, COMMIT_QUIET_MS);
+    },
+    [flush]
+  );
+
+  // A field can leave the tree without ever blurring — switching the inspector
+  // to the Prototype tab does exactly that — and a step still waiting out its
+  // quiet period would simply be lost.
+  React.useEffect(() => () => flush(), [flush]);
+
+  return { schedule, flush, cancel };
+}
+
+/** Whether an `input` event came from the user editing the text.
+ *
+ *  Measured in Chromium rather than assumed: typing arrives as an `InputEvent`
+ *  carrying `inputType: "insertText"`, while a value the browser computed for
+ *  us — a stepper arrow, an arrow key, the scroll wheel — arrives as a plain
+ *  `Event` with no `inputType` at all. That difference is the whole basis for
+ *  committing one immediately and making the other wait. */
+function isTypedInput(event: React.ChangeEvent<HTMLElement>): boolean {
+  return typeof (event.nativeEvent as Partial<InputEvent>).inputType === "string";
+}
+
+/**
+ * A number the inspector edits.
+ *
+ * There are three ways into this control and all three have to reach the
+ * document: typing, the stepper arrows it draws, and the arrow keys. Committing
+ * only in `onBlur` meant the two that do not involve typing changed the number
+ * on screen and nothing else — which is what "you can't change the opacity of a
+ * rectangle" was. Measured before the fix: forty presses of ArrowDown walked the
+ * field from 100 to 60 while the layer's `opacity` never left 1, and only the
+ * blur moved it, in one jump.
+ *
+ * So a change the browser computed commits as it happens, coalesced, and typing
+ * still waits for Enter or blur. The draft has to stay for typing: committing
+ * per keystroke turns "120" into a commit at 1, at 12 and at 120, and the
+ * re-render at "1" fights the second keystroke.
+ */
 export function NumberField({
   label,
   value,
@@ -916,7 +1000,14 @@ export function NumberField({
 }) {
   // Uncontrolled while focused so typing "12" does not fight a re-render at "1".
   const [draft, setDraft] = React.useState<string | null>(null);
+  const { schedule, cancel } = useCoalescedCommit<number>();
   const shown = draft ?? (mixed ? "" : String(Math.round(value * 100) / 100));
+
+  /** A number worth sending. `mixed` has no single current value, so any number
+   *  is a change; otherwise repeating what the layer already says would put an
+   *  empty entry on the undo stack for a click in and out of the field. */
+  const changed = (parsed: number) => Number.isFinite(parsed) && (mixed === true || parsed !== value);
+
   return (
     <label className="block">
       <span className="block truncate pb-0.5 font-mono text-[9px] text-muted-foreground">
@@ -932,17 +1023,30 @@ export function NumberField({
         max={max}
         step={step}
         disabled={disabled}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(event) => {
+          const next = event.target.value;
+          setDraft(next);
+          if (isTypedInput(event)) return;
+          const parsed = Number.parseFloat(next);
+          if (changed(parsed)) schedule(parsed, onCommit);
+        }}
         onBlur={() => {
+          // The draft holds the latest value whatever produced it, so this one
+          // commit covers both a typed value and a step whose quiet period had
+          // not run out yet.
+          cancel();
           if (draft !== null) {
             const parsed = Number.parseFloat(draft);
-            if (Number.isFinite(parsed)) onCommit(parsed);
+            if (changed(parsed)) onCommit(parsed);
           }
           setDraft(null);
         }}
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
           if (e.key === "Escape") {
+            // Only the draft is abandoned. A step that already committed is a
+            // real edit and belongs to ⌘Z, not to this field.
+            cancel();
             setDraft(null);
             (e.target as HTMLInputElement).blur();
           }
@@ -974,7 +1078,10 @@ export function TextField({
     disabled,
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(e.target.value),
     onBlur: () => {
-      if (draft !== null) onCommit(draft);
+      // Unchanged text is not an edit. Focusing a name field and leaving it
+      // alone used to write the name back over itself and take a slot on the
+      // undo stack for it.
+      if (draft !== null && draft !== value) onCommit(draft);
       setDraft(null);
     },
     onKeyDown: (e: React.KeyboardEvent) => {
@@ -1033,6 +1140,22 @@ export function SelectField({
   );
 }
 
+/**
+ * A colour, as a swatch and as text.
+ *
+ * Both halves had the fault `NumberField` had, from the other direction: they
+ * committed on every change, and the hex box had no draft at all.
+ *
+ * Half of "#22cc88" is "#22c", which `hexToRgba` accepts as shorthand — so
+ * typing a hex code set the layer to two wrong colours on the way to the right
+ * one, and the re-render each of those caused replaced the text mid-word.
+ * Measured before the fix: selecting "#22cc88" and typing "f0a" over it left
+ * the field reading "#22cc88" with the keystrokes gone. A hex code could not be
+ * typed into this field at all.
+ *
+ * The swatch is the same problem at sixty hertz: the system picker streams a
+ * value per frame while the cursor moves across it.
+ */
 export function ColorField({
   label,
   value,
@@ -1048,6 +1171,9 @@ export function ColorField({
   onCommit: (hex: string) => void;
   onClear?: () => void;
 }) {
+  const [draft, setDraft] = React.useState<string | null>(null);
+  const { schedule, flush } = useCoalescedCommit<string>();
+  const shown = draft ?? (mixed ? "" : value);
   return (
     <label className="block">
       <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">{label}</span>
@@ -1056,18 +1182,33 @@ export function ColorField({
           type="color"
           value={!mixed && value ? value.slice(0, 7) : "#000000"}
           disabled={disabled}
-          onChange={(e) => onCommit(e.target.value)}
+          // Coalesced, not dropped: a pause anywhere in the sweep commits, so
+          // the canvas still follows the picker — a few times a second instead
+          // of a transaction per frame.
+          onChange={(e) => schedule(e.target.value, onCommit)}
+          onBlur={flush}
           className="size-7 shrink-0 cursor-pointer rounded-[6px] border border-border/60 bg-transparent p-0.5 disabled:opacity-50"
           aria-label={`${label} colour`}
         />
         <input
           type="text"
           className={fieldClass}
-          value={mixed ? "" : value}
+          value={shown}
           placeholder={mixed ? "Mixed" : "none"}
           disabled={disabled}
-          onChange={(e) => onCommit(e.target.value)}
-          onKeyDown={(e) => e.stopPropagation()}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => {
+            if (draft !== null && draft !== value) onCommit(draft);
+            setDraft(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            if (e.key === "Escape") {
+              setDraft(null);
+              (e.target as HTMLInputElement).blur();
+            }
+            e.stopPropagation();
+          }}
         />
         {onClear && (
           <button
