@@ -1,0 +1,465 @@
+"use client";
+
+import * as React from "react";
+import { useParams, useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { History, Loader2, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  trustPermitsAutoSelection,
+  type ClientWorkSkill,
+  type ClientWorkSkillVersion,
+} from "@/lib/work/skills";
+import { WorkPageFrame } from "@/components/work/work-nav";
+import { trustLabel } from "@/components/work/work-skill-row";
+import {
+  deleteWorkSkill,
+  fetchWorkSkill,
+  fetchWorkSkillVersions,
+  mintWorkSkillVersion,
+  patchWorkSkill,
+  type PatchWorkSkillInput,
+} from "@/components/work/work-transport";
+import { WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
+
+/**
+ * One skill: what it says, what it is allowed to be, and everything it used to
+ * say.
+ *
+ * Editing the instructions mints a version rather than overwriting one, because
+ * the history is append-only on purpose: a run from last month recorded the
+ * version it followed, and "what was this skill doing on the 3rd" has to keep
+ * its answer after somebody rewrites it on the 4th. A restore is a new version
+ * carrying the old content for exactly the same reason — moving the pointer
+ * backwards would make the restore itself invisible.
+ *
+ * Trust and automatic selection are edited as a pair because the server stores
+ * them as one: withdrawing trust switches off the automatic selection that trust
+ * was what permitted, in the same write, and a form that let them drift would
+ * show a state the row can never hold.
+ */
+export default function WorkSkillPage() {
+  const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+
+  const [skill, setSkill] = React.useState<ClientWorkSkill | null>(null);
+  const [version, setVersion] = React.useState<ClientWorkSkillVersion | null>(null);
+  const [versions, setVersions] = React.useState<ClientWorkSkillVersion[] | null>(null);
+  const [missing, setMissing] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
+
+  const [name, setName] = React.useState("");
+  const [description, setDescription] = React.useState("");
+  const [instructions, setInstructions] = React.useState("");
+
+  const load = React.useCallback(async () => {
+    setFailed(false);
+    const result = await fetchWorkSkill(id);
+    if (result.kind === "ok") {
+      setSkill(result.value.skill);
+      setVersion(result.value.version);
+      setName(result.value.skill.name);
+      setDescription(result.value.skill.description);
+      // Empty rather than a substitute when `currentVersion` names a row that is
+      // not there. Seeding the box with the newest version instead would put
+      // instructions the user did not choose under the heading of the one they
+      // did, and the next save would mint them as the current text.
+      setInstructions(result.value.version?.instructions ?? "");
+      return;
+    }
+    if (result.kind === "failed" && result.cause === "not_found") {
+      setMissing(true);
+      return;
+    }
+    setFailed(true);
+  }, [id]);
+
+  const loadVersions = React.useCallback(async () => {
+    const result = await fetchWorkSkillVersions(id);
+    if (result.kind === "ok") setVersions(result.value);
+  }, [id]);
+
+  React.useEffect(() => {
+    void load();
+    void loadVersions();
+  }, [load, loadVersions]);
+
+  const applyPatch = async (patch: PatchWorkSkillInput, failure: string) => {
+    setBusy(true);
+    const result = await patchWorkSkill(id, patch);
+    setBusy(false);
+    if (result.kind === "ok") {
+      setSkill(result.value);
+      setName(result.value.name);
+      setDescription(result.value.description);
+      return;
+    }
+    toast.error(result.kind === "blocked" ? result.explanation : failure);
+  };
+
+  const saveInstructions = async () => {
+    const text = instructions.trim();
+    if (text.length === 0 || skill === null) return;
+    setBusy(true);
+    const result = await mintWorkSkillVersion(id, { instructions: text });
+    setBusy(false);
+    if (result.kind === "ok") {
+      setVersion(result.value);
+      setSkill({ ...skill, currentVersion: result.value.version });
+      void loadVersions();
+      toast.success(`Saved as v${result.value.version}. The previous version is still readable.`);
+      return;
+    }
+    toast.error(
+      result.kind === "blocked"
+        ? "Someone else saved this skill at the same moment. Reload and try again."
+        : "Couldn’t save these instructions. The version that was current still is."
+    );
+  };
+
+  const restore = async (restoreVersion: number) => {
+    if (skill === null) return;
+    setBusy(true);
+    const result = await mintWorkSkillVersion(id, { restoreVersion });
+    setBusy(false);
+    if (result.kind === "ok") {
+      setVersion(result.value);
+      setInstructions(result.value.instructions);
+      setSkill({ ...skill, currentVersion: result.value.version });
+      void loadVersions();
+      toast.success(`v${restoreVersion} is back, saved as v${result.value.version}.`);
+      return;
+    }
+    toast.error(
+      result.kind === "blocked"
+        ? "Someone else saved this skill at the same moment. Reload and try again."
+        : "Couldn’t restore that version. Nothing changed."
+    );
+  };
+
+  const destroy = async () => {
+    setBusy(true);
+    const result = await deleteWorkSkill(id);
+    setBusy(false);
+    setConfirmingDelete(false);
+    if (result.kind === "ok") {
+      router.push("/work/skills");
+      return;
+    }
+    toast.error("Couldn’t delete this skill. It is exactly as it was.");
+  };
+
+  if (missing) {
+    return (
+      <WorkPageFrame title="Skill not found" back={{ href: "/work/skills", label: "Back to skills" }}>
+        <WorkStateNote tone="error">
+          This skill no longer exists. It may have been deleted from another device.
+        </WorkStateNote>
+      </WorkPageFrame>
+    );
+  }
+
+  if (failed) {
+    return (
+      <WorkPageFrame title="Skill" back={{ href: "/work/skills", label: "Back to skills" }}>
+        <WorkStateNote
+          tone="error"
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void load()}
+              className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
+            </Button>
+          }
+        >
+          Couldn’t load this skill. Nothing has been changed by the attempt.
+        </WorkStateNote>
+      </WorkPageFrame>
+    );
+  }
+
+  if (skill === null) {
+    return (
+      <WorkPageFrame title="Skill" back={{ href: "/work/skills", label: "Back to skills" }}>
+        <div className="space-y-3">
+          {[...Array(3)].map((_, index) => (
+            <Skeleton
+              key={index}
+              className="h-20 w-full rounded-xl"
+              style={{ animationDelay: `${index * 70}ms` }}
+            />
+          ))}
+        </div>
+      </WorkPageFrame>
+    );
+  }
+
+  const trusted = trustPermitsAutoSelection(skill.trust);
+  // `verified` means Juno reviewed the skill, and no client may set it. A
+  // control offering it would turn the strongest claim in the vocabulary into
+  // the cheapest one, so a verified skill gets a sentence here instead of a
+  // switch that would silently downgrade it. Held as the narrowed value rather
+  // than as a boolean, so the control below cannot be handed a trust level the
+  // route would refuse.
+  const settableTrust =
+    skill.trust === "untrusted" || skill.trust === "user_authored" ? skill.trust : null;
+  const instructionsChanged = version !== null && instructions.trim() !== version.instructions.trim();
+
+  return (
+    <WorkPageFrame
+      title={skill.name}
+      description={`Typed as /${skill.slug} · v${skill.currentVersion} · ${trustLabel(skill.trust)}`}
+      back={{ href: "/work/skills", label: "Back to skills" }}
+      action={
+        <Button
+          variant="destructive-outline"
+          size="sm"
+          disabled={busy}
+          onClick={() => setConfirmingDelete(true)}
+          className="gap-1.5"
+        >
+          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" /> Delete
+        </Button>
+      }
+    >
+      <div className="space-y-7">
+        <section className="space-y-3">
+          <div>
+            <Label htmlFor="skill-name">Name</Label>
+            <Input
+              id="skill-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              onBlur={() => {
+                const next = name.trim();
+                if (next.length === 0 || next === skill.name) {
+                  setName(skill.name);
+                  return;
+                }
+                void applyPatch({ name: next }, "Couldn’t rename this skill.");
+              }}
+              disabled={busy}
+              className="mt-1"
+            />
+            <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+              The slash name stays /{skill.slug}. It is what older tasks already refer to, so it is
+              chosen once and never rewritten.
+            </p>
+          </div>
+          <div>
+            <Label htmlFor="skill-description">What it is for</Label>
+            <Input
+              id="skill-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              onBlur={() => {
+                const next = description.trim();
+                if (next === skill.description) return;
+                void applyPatch({ description: next }, "Couldn’t save that description.");
+              }}
+              disabled={busy}
+              className="mt-1"
+            />
+          </div>
+        </section>
+
+        <section className="space-y-2.5">
+          <h2 className="font-mono text-label text-muted-foreground">How Juno may use it</h2>
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-border/50 px-3.5 py-2.5">
+            <span className="min-w-0">
+              <span className="block text-[13px] font-medium text-foreground">Available</span>
+              <span className="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+                Switched off, it cannot be used at all — not by name, not by Juno.
+              </span>
+            </span>
+            <Switch
+              checked={skill.enabled}
+              disabled={busy}
+              onCheckedChange={(enabled) =>
+                void applyPatch({ enabled }, "Couldn’t change that. The skill is as it was.")
+              }
+              aria-label="Skill available"
+            />
+          </label>
+
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-border/50 px-3.5 py-2.5">
+            <span className="min-w-0">
+              <span className="block text-[13px] font-medium text-foreground">
+                Juno may reach for it unasked
+              </span>
+              <span className="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+                {trusted
+                  ? "The planner may pick this up when a task looks like it fits, without you naming it."
+                  : "Only a trusted skill can be chosen for you. Trust it below first."}
+              </span>
+            </span>
+            <Switch
+              checked={skill.autoSelect && trusted}
+              disabled={busy || !trusted}
+              onCheckedChange={(autoSelect) =>
+                void applyPatch({ autoSelect }, "Couldn’t change that. The skill is as it was.")
+              }
+              aria-label="Juno may choose this skill"
+            />
+          </label>
+
+          <div className="rounded-xl border border-border/50 px-3.5 py-2.5">
+            <p className="text-[13px] font-medium text-foreground">Trust</p>
+            {settableTrust !== null ? (
+              <>
+                <SegmentedControl
+                  value={settableTrust}
+                  onChange={(trust) =>
+                    void applyPatch({ trust }, "Couldn’t change that. The skill is as it was.")
+                  }
+                  options={[
+                    { value: "untrusted", label: "Not trusted" },
+                    { value: "user_authored", label: "I trust this" },
+                  ]}
+                  ariaLabel="How far this skill is trusted"
+                  optionClassName="px-3 py-1 text-[12.5px]"
+                  className="mt-2 max-w-sm"
+                />
+                <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
+                  Withdrawing trust also switches off automatic selection, in the same change — the
+                  two are one decision, and a skill that was trusted enough to be chosen for you is
+                  not trusted enough afterwards.
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                Juno reviewed this skill. That is a claim only Juno can make, so it is not something
+                this page can set or take away.
+              </p>
+            )}
+          </div>
+        </section>
+
+        <section>
+          <div className="mb-2.5 flex flex-wrap items-end justify-between gap-2">
+            <h2 className="font-mono text-label text-muted-foreground">Instructions</h2>
+            <span className="font-mono text-[10px] text-muted-foreground">
+              v{skill.currentVersion}
+              {version !== null && ` · saved ${workTimeAgo(version.createdAt)}`}
+            </span>
+          </div>
+          {version === null ? (
+            <WorkStateNote tone="warning" className="mb-2.5">
+              This skill points at a version that is not there, so there are no instructions to show.
+              Anything you write below is saved as a new version and becomes the current one.
+            </WorkStateNote>
+          ) : null}
+          <Textarea
+            value={instructions}
+            onChange={(event) => setInstructions(event.target.value)}
+            rows={14}
+            disabled={busy}
+            aria-label="Skill instructions"
+            className="font-mono text-[13px]"
+          />
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              disabled={busy || instructions.trim().length === 0 || !instructionsChanged}
+              onClick={() => void saveInstructions()}
+              className="gap-1.5"
+            >
+              {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+              Save as a new version
+            </Button>
+            {instructionsChanged && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => setInstructions(version?.instructions ?? "")}
+              >
+                Discard changes
+              </Button>
+            )}
+          </div>
+        </section>
+
+        <section>
+          <h2 className="mb-2.5 font-mono text-label text-muted-foreground">History</h2>
+          {versions === null ? (
+            <p className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+              This skill’s history couldn’t be read just now. Nothing about it has changed.
+            </p>
+          ) : (
+            <ul className="space-y-1.5">
+              {versions.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border border-border/60 bg-card/50 px-3.5 py-2.5"
+                >
+                  <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <span className="shrink-0 font-mono text-[10px] text-foreground">
+                    v{entry.version}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">
+                    {entry.instructions.slice(0, 120)}
+                  </span>
+                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground/70">
+                    {workTimeAgo(entry.createdAt)}
+                  </span>
+                  {entry.version !== skill.currentVersion && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void restore(entry.version)}
+                      className="h-7 shrink-0 gap-1.5 px-2 font-mono text-[10px] text-muted-foreground"
+                    >
+                      <RotateCcw className="h-3 w-3" aria-hidden="true" /> Restore
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      <Dialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete “{skill.name}”?</DialogTitle>
+            <DialogDescription>
+              It disappears from your list and can no longer run. The versions themselves are kept,
+              because runs from before today recorded which one they followed and that has to stay
+              answerable.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmingDelete(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => void destroy()} disabled={busy}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </WorkPageFrame>
+  );
+}
