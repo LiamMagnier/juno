@@ -423,13 +423,20 @@ function describeEvent(event: ClientWorkEvent): EventDescription {
       };
     case "question_answered":
       return {
-        // The same kind carries two things — an answer, and an instruction the
-        // user volunteered — because the shared event vocabulary has no
-        // user-message kind and `/answer` records both under this one. "You
-        // answered" over a sentence that answered nothing is a small lie the
-        // reader will notice, so the marker is read rather than assumed.
+        // This kind is answers now, but it was both for as long as the shared
+        // vocabulary had no user-message kind, and the rows written under it are
+        // still in the log. The marker is read rather than assumed, so an old
+        // instruction is not relabelled "You answered" — a small lie the reader
+        // would notice — the day it is scrolled back to.
         title: payload.steering === true ? "You added an instruction" : "You answered",
         detail: str(payload, "text", "answer"),
+        tone: "quiet",
+        icon: MessageSquare,
+      };
+    case "user_message":
+      return {
+        title: "You added an instruction",
+        detail: str(payload, "text"),
         tone: "quiet",
         icon: MessageSquare,
       };

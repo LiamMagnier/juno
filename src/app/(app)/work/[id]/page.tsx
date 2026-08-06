@@ -269,10 +269,10 @@ export default function WorkThreadPage() {
    * An instruction that answers nothing.
    *
    * The server's own sentence about what it did with it is what gets shown,
-   * rather than a "Sent" of our own: the instruction goes onto the task's
-   * record, and the attempt already running was handed its instructions when it
-   * started. A toast claiming delivery would be this page inventing a promise
-   * the route explicitly declines to make.
+   * rather than a "Sent" of our own. A cloud run reads the instruction before
+   * its next step and a run on a Mac does not, and the route is the only side
+   * that knows which of the two this is; a toast written here would be this page
+   * inventing a promise on behalf of an executor it cannot see.
    */
   const steer = React.useCallback(
     async (text: string) => {

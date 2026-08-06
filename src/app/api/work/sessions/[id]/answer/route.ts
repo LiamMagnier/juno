@@ -2,7 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
-import { isTerminalStatus } from "@/lib/work/domain";
+import {
+  WORK_STEERING_EVENT_KIND,
+  isTerminalStatus,
+  workSteeringPayload,
+} from "@/lib/work/domain";
 import { appendEvents, setSessionAttention } from "@/lib/work/store";
 import { answerSchema } from "@/app/api/work/protocol";
 
@@ -33,18 +37,27 @@ const steerSchema = z.object({
 /**
  * What the caller is told about an instruction that was not an answer.
  *
- * Stated in the response rather than left for a client to assume, because the
- * assumption every client would make is the wrong one. The instruction is
- * appended to the run's transcript and nothing on the executing side re-reads
- * that transcript mid-run: `scripts/work-runner.ts` builds its prompt from
- * `WorkSession.goal` and polls the event log only for an answer to the exact
- * question it is blocked on. So the honest report is that this was recorded,
- * and a surface that rendered "sent to Juno" over it would be describing a
- * delivery that did not happen.
+ * Two sentences, because there are two truths and which one applies depends on
+ * who is executing. The cloud runner reads unconsumed steering events between
+ * turns and puts them in front of the model as a user turn, so for a cloud run
+ * this really is delivered and saying so is not a courtesy. A run on a Mac is
+ * driven by the host app over the relay, which has no such reader yet; claiming
+ * delivery there would be the same lie this response was written to avoid, in
+ * the opposite direction.
+ *
+ * The distinction is drawn on `effectiveTarget` rather than on hope. A run that
+ * has not been dispatched yet has no effective target and is treated as cloud,
+ * which is right: it will be claimed by whichever executor the dispatch picks,
+ * and the instruction is in the log before the first turn either way.
  */
-const STEER_EXPLANATION =
-  "Kept on this task’s record. The attempt that is running was handed its instructions when " +
-  "it started and does not re-read them, so this does not redirect what it is doing now.";
+const STEER_DELIVERED =
+  "Juno reads this before its next step and works to it from there. What it has already done " +
+  "stands.";
+
+const STEER_RECORDED_ONLY =
+  "Kept on this task’s record. This attempt is running on your Mac, and the Mac app is handed " +
+  "its instructions when a run starts rather than re-reading them, so this does not redirect " +
+  "what it is doing now.";
 
 /** One submitted body, already told apart and already validated. */
 type Submission =
@@ -88,7 +101,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const run = await prisma.workRun.findFirst({
     where: { sessionId: session.id, userId: user.id },
     orderBy: { attempt: "desc" },
-    select: { id: true, status: true },
+    select: { id: true, status: true, effectiveTarget: true },
   });
 
   return submission.kind === "answer"
@@ -99,7 +112,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 interface Target<T> {
   submission: T;
   userId: string;
-  run: { id: string; status: string } | null;
+  run: { id: string; status: string; effectiveTarget: string | null } | null;
 }
 
 async function recordAnswer({
@@ -161,22 +174,23 @@ async function recordAnswer({
 }
 
 /**
- * Records an instruction the run did not ask for.
+ * Records an instruction the run did not ask for, and hands it to the executor.
  *
- * The event is written as `question_answered` with no `questionId` and a
- * `steering` marker, because `WORK_EVENT_KINDS` has no user-message kind and
- * that vocabulary is shared with the Mac and the phone — a route is not the
- * place to invent a kind those clients would render as a blank row. The marker
- * is what lets a reader tell the two apart, and `pollAnswer` in the runner
- * already ignores this row on its own terms: it requires `payload.questionId`
- * to equal the question it is blocked on, and there is none here.
+ * The event is written as `user_message`, which is a member of
+ * `WORK_EVENT_KINDS` now that domain.ts owns one. It used to ride
+ * `question_answered` with a `steering` marker and no `questionId`, because a
+ * route could not add to a vocabulary the Mac and the phone share; the payload
+ * keeps that shape exactly — see `workSteeringPayload` — so the rows already in
+ * the log and the ones an older client still writes read identically, and
+ * `steeringInstruction` accepts both.
  *
- * A run that IS waiting on a question is refused rather than accommodated, and
- * that refusal is the mechanism as much as the manners. `pollAnswer` reads the
- * NEWEST `question_answered` on the run; an instruction recorded while a
- * question was open would become that newest row and mask the answer underneath
- * it, and the run would sit out its wait as though nobody had replied. Refusing
- * here means the masking case cannot be constructed.
+ * A run that IS waiting on a question is still refused, but the reason has
+ * changed and it is worth being precise about which one now applies. It is no
+ * longer a mechanism: `pollAnswer` reads the newest `question_answered` row, and
+ * a `user_message` is not one, so an instruction can no longer mask an answer.
+ * It is that the run is stopped. An instruction accepted here would sit in the
+ * log until somebody answered the question, and the user would have been told
+ * their words were delivered to a run that had not moved.
  */
 async function recordInstruction({
   submission,
@@ -201,8 +215,8 @@ async function recordInstruction({
       {
         error: "answer_expected",
         message:
-          "Juno is waiting for an answer to the question it asked. Answer that instead — an " +
-          "instruction recorded now would sit on top of the answer and the run would keep waiting.",
+          "Juno is waiting for an answer to the question it asked, and nothing else will restart " +
+          "it. Answer that, and say the rest of this in the same reply.",
         status: run.status,
       },
       { status: 409 }
@@ -229,8 +243,8 @@ async function recordInstruction({
     userId,
     events: [
       {
-        kind: "question_answered",
-        payload: { text, answeredVia: "web", steering: true },
+        kind: WORK_STEERING_EVENT_KIND,
+        payload: { ...workSteeringPayload(text, "web") },
         ...(idempotencyKey === undefined ? {} : { key: `steer:${idempotencyKey}` }),
       },
     ],
@@ -240,10 +254,11 @@ async function recordInstruction({
   // nothing about their having spoken says the run has stopped needing them —
   // and clearing the flag here would take a task off the "Needs you" list on the
   // strength of a sentence that answered nothing.
+  const delivered = run.effectiveTarget !== "local";
   return NextResponse.json({
     lastSeq: appended.lastSeq,
     replay: appended.duplicates > 0,
-    delivered: false,
-    explanation: STEER_EXPLANATION,
+    delivered,
+    explanation: delivered ? STEER_DELIVERED : STEER_RECORDED_ONLY,
   });
 }

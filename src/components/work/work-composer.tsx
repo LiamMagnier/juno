@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { ConnectorStatus } from "@/components/connections/types";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { useApp } from "@/components/app/app-provider";
@@ -69,6 +70,15 @@ import { cn, formatBytes } from "@/lib/utils";
  * question nobody outside this repository can answer. Both are gone. The
  * browser now always asks for `automatic` and sends no capability list at all;
  * the server reads the goal and decides.
+ *
+ * The Apps chip that replaced them is not the same kind of question, which is
+ * the only reason it is allowed to be here. It asks which of the reader's own
+ * connected apps this errand is about — a question about their work rather than
+ * about Juno's internals, answerable by anyone who linked the app — and every
+ * switch starts off, so a task reaches what it was handed and nothing else. It
+ * is also a control that does something: the selection is stored on the session
+ * and `scripts/work-runner.ts` narrows the run's connector set by it, which is
+ * the bar a permission control has to clear before it is worth drawing.
  *
  * What survived the deletion is the honesty architecture that surrounded them,
  * because it is the point of this surface. `selectForInferred`
@@ -258,6 +268,17 @@ export function WorkComposer({
   const { features, composerPrefs } = useApp();
   const [goal, setGoal] = React.useState("");
   const [projectId, setProjectId] = React.useState<string | null>(null);
+  /**
+   * The connected apps this task may reach. Empty, and empty is a real answer.
+   *
+   * Every switch starts off and the list is sent on every create, including when
+   * it is empty, so a task reaches exactly what the reader handed it and nothing
+   * else. Sending it unconditionally is also what removes the race: a list that
+   * were only sent "once the account's apps have loaded" would quietly fall back
+   * to the account's own rules for anyone who pressed the button early, which is
+   * the one outcome the default exists to prevent.
+   */
+  const [connectorIds, setConnectorIds] = React.useState<string[]>([]);
   const [model, setModel] = React.useState<ModelId>(defaultWorkModelId);
   const [submitting, setSubmitting] = React.useState(false);
   const [blocked, setBlocked] = React.useState<WorkBlocked | null>(null);
@@ -371,10 +392,15 @@ export function WorkComposer({
    * A count, or a check for ids that are new, would have missed the removal —
    * take a file back off and the shorter list still looked like the attempt that
    * was already granted it.
+   *
+   * The connector selection is in here for the same reason a file is: switching
+   * an app off between two presses is a narrowing that has to reach the server,
+   * and an attempt that reused its key would send the first press's permissions
+   * under the second press's button.
    */
   const inputsKey = React.useMemo(
-    () => JSON.stringify([goal.trim(), projectId, attachmentIds]),
-    [goal, projectId, attachmentIds]
+    () => JSON.stringify([goal.trim(), projectId, attachmentIds, connectorIds]),
+    [goal, projectId, attachmentIds, connectorIds]
   );
 
   /*
@@ -473,6 +499,7 @@ export function WorkComposer({
         model,
         reasoningEffort: effort,
         attachmentIds,
+        connectorIds,
         idempotencyKey: attempt.sessionKey,
       });
       if (created.kind !== "ok") {
@@ -510,6 +537,10 @@ export function WorkComposer({
     if (started.kind === "ok") {
       setGoal("");
       clear();
+      // The next task starts from off, like this one did. Carrying the selection
+      // forward would be the composer granting an app to a task nobody has
+      // written yet, on the strength of a decision made about a different one.
+      setConnectorIds([]);
       setDraft(null);
       attemptRef.current = null;
       window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
@@ -543,6 +574,7 @@ export function WorkComposer({
     model,
     effort,
     attachmentIds,
+    connectorIds,
     inputsKey,
     clear,
     router,
@@ -588,6 +620,7 @@ export function WorkComposer({
       <div className="composer-surface relative flex w-full flex-col rounded-[22px] border border-border/65 bg-card/95 backdrop-blur transition-[border-color,box-shadow] duration-base ease-spring focus-within:border-foreground/15 sm:rounded-[24px]">
         <div className="flex flex-wrap items-center gap-1.5 px-3 pb-0 pt-3 sm:px-3.5 sm:pt-3.5">
           <ProjectChip value={projectId} onChange={setProjectId} disabled={submitting} />
+          <AppsChip value={connectorIds} onChange={setConnectorIds} disabled={submitting} />
         </div>
 
         {canAttach && (
@@ -892,7 +925,7 @@ export function WorkComposer({
   );
 }
 
-/* ────────────────────────────── the one chip ─────────────────────────────── */
+/* ──────────────────────────────── the chips ──────────────────────────────── */
 
 /** As much of `GET /api/projects` as a chip has any use for. */
 interface ComposerProject {
@@ -1090,6 +1123,177 @@ function ProjectChip({
             )}
             <span className="flex-1">New project</span>
           </DropdownMenuItem>
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * Which of the reader's connected apps this task may reach.
+ *
+ * Off by default, all of them, and that is the whole design rather than a
+ * cautious default someone can relax later. A linked app is an account-wide
+ * fact — the mailbox stays connected whether or not this errand needs it — and
+ * a task that inherited every one of them would be handed a mailbox, a
+ * repository and a calendar to do something that needed none of the three. The
+ * reader switches on what the errand is about; everything else is simply not
+ * there, and `evaluateConnector` in src/lib/work/connectors.ts refuses it with
+ * `not_selected_for_task` rather than the run discovering it can reach further
+ * than anyone intended.
+ *
+ * This is not a connection setting and does not pretend to be one. Nothing here
+ * links, unlinks or re-authorises anything: it narrows one task inside what the
+ * account already permits, which is why the empty state sends the reader to
+ * /connections rather than offering to connect an app from a composer.
+ *
+ * The list is loaded on mount from the same `/api/connectors` the toolbox and
+ * the connections page read. A second endpoint written for Work would be a
+ * second answer to "is Gmail linked", and the two would disagree the first time
+ * somebody disconnected it from the other page.
+ */
+function AppsChip({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string[];
+  onChange: (connectorIds: string[]) => void;
+  disabled: boolean;
+}) {
+  const [connectors, setConnectors] = React.useState<ConnectorStatus[] | null>(null);
+  const [failed, setFailed] = React.useState(false);
+  const [open, setOpen] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    setFailed(false);
+    try {
+      const response = await fetch("/api/connectors");
+      if (!response.ok) throw new Error("connectors");
+      const data = (await response.json()) as { connectors?: ConnectorStatus[] };
+      setConnectors((data.connectors ?? []).filter((connector) => connector.connected));
+    } catch {
+      setFailed(true);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+
+  const toggle = React.useCallback(
+    (connectorId: string) => {
+      onChange(
+        value.includes(connectorId)
+          ? value.filter((id) => id !== connectorId)
+          : [...value, connectorId]
+      );
+    },
+    [onChange, value]
+  );
+
+  /*
+   * Nothing is rendered for an account with no linked apps, and nothing needs to
+   * be. A chip reading "Apps" that opens onto "you have none" is a control
+   * offering a choice that does not exist; the toolbox on the task page is where
+   * the account's connections are explained, and it links to the page that can
+   * do something about it. The empty selection still goes to the server either
+   * way, so the task is recorded as reaching nothing.
+   *
+   * The chip is also absent while the list is still in flight. It appears rather
+   * than changes width, so the row settles once instead of reflowing under a
+   * pointer already on its way to the Project chip beside it.
+   */
+  if (connectors === null && !failed) return null;
+  if (connectors !== null && connectors.length === 0) return null;
+
+  const chosen = (connectors ?? []).filter((connector) => value.includes(connector.id));
+  const label =
+    chosen.length === 0
+      ? "Apps"
+      : chosen.length === 1
+        ? chosen[0].label
+        : `${chosen.length} apps`;
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label={
+            chosen.length === 0
+              ? "Choose which connected apps this task may use. None yet"
+              : `This task may use ${chosen.map((connector) => connector.label).join(", ")}. Change it`
+          }
+          className={CHIP_CLASS}
+        >
+          <AppIcons.connections
+            className={cn("size-3.5 shrink-0", chosen.length > 0 ? "text-primary" : "text-muted-foreground")}
+            aria-hidden="true"
+          />
+          <span className={cn("truncate", chosen.length === 0 && "text-muted-foreground")}>{label}</span>
+          <ChevronDown
+            className="h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180"
+            aria-hidden="true"
+          />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        side="bottom"
+        sideOffset={8}
+        className="flex max-h-[min(22rem,60vh)] w-64 flex-col p-0"
+      >
+        <DropdownMenuLabel className="px-3 pt-2.5 font-mono text-label">
+          Apps this task may use
+        </DropdownMenuLabel>
+        <ScrollFade className="min-h-0 flex-1" viewportClassName="p-1.5">
+          {failed ? (
+            <div className="space-y-2 px-2 py-4 text-center">
+              <p className="text-caption leading-relaxed text-muted-foreground">
+                Couldn’t read your connected apps. This task will reach none of them until it can.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5">
+                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
+              </Button>
+            </div>
+          ) : (
+            (connectors ?? []).map((connector) => {
+              const active = value.includes(connector.id);
+              return (
+                <DropdownMenuItem
+                  key={connector.id}
+                  // Held open on select: turning two apps on is one decision, and
+                  // a menu that closed after the first would make the reader
+                  // reopen it to finish the sentence they were in the middle of.
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    toggle(connector.id);
+                  }}
+                >
+                  <AppIcons.connections
+                    className={cn(active ? "text-primary" : "text-muted-foreground")}
+                  />
+                  <span className="flex-1 truncate">{connector.label}</span>
+                  {active && <Check className="!size-3.5 text-primary" />}
+                </DropdownMenuItem>
+              );
+            })
+          )}
+        </ScrollFade>
+        {/* The rule, said once, where the decision is made. Neither sentence is
+            decoration: the first is why an app being linked is not enough on its
+            own, and the second is what stops a reader reading this as a switch
+            that disconnects things. */}
+        <div className="shrink-0 border-t border-border/60 px-3 py-2">
+          <p className="text-[12px] leading-relaxed text-muted-foreground">
+            Off means this task cannot reach it. Your connections are unchanged —{" "}
+            <Link href="/connections" className="underline underline-offset-2 hover:text-foreground">
+              manage them
+            </Link>
+            .
+          </p>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

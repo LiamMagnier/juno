@@ -35,6 +35,59 @@ function idempotentSessionId(userId: string, key: string): string {
 }
 
 /**
+ * Writes the connected apps a task may reach.
+ *
+ * A route-local reconcile rather than an argument to `createWorkSession`,
+ * matching how the attachment grants already reach a replayed session: the
+ * whole set the client last sent replaces whatever is there, so a second press
+ * with a switch turned back off removes the grant instead of leaving it. The
+ * unique index on (sessionId, connectorId) means a repeated create is the same
+ * grant arriving twice rather than two rows.
+ *
+ * `connectorsChosen` is set in the same transaction as the rows, because the two
+ * are one fact. The flag alone says a reader answered; the rows alone say what
+ * they answered; a session carrying one without the other is read by
+ * src/lib/work/connectors.ts as a task that may reach everything the account
+ * can, which is the one outcome a reader who switched everything off did not
+ * ask for.
+ */
+async function writeSessionConnectors(
+  // The signed-in user rather than their id, so every clause below reads
+  // `userId: user.id`. That is the shape tests/work-security.test.ts follows
+  // through the route tree, and a helper that took a bare string would put these
+  // three writes outside the only check that proves a Work route cannot be made
+  // to touch another account's rows.
+  user: { id: string },
+  sessionId: string,
+  connectorIds: readonly string[]
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    // Written as a conditional rather than leaning on what an empty `notIn`
+    // means: an empty selection is the common case here — it is what the
+    // composer sends when the reader leaves every switch off — and "delete the
+    // ones that are not in this empty list" is exactly the sort of clause that
+    // is read as a no-op by whoever changes it next.
+    await tx.workSessionConnector.deleteMany({
+      where: {
+        sessionId,
+        userId: user.id,
+        ...(connectorIds.length > 0 ? { connectorId: { notIn: [...connectorIds] } } : {}),
+      },
+    });
+    if (connectorIds.length > 0) {
+      await tx.workSessionConnector.createMany({
+        data: connectorIds.map((connectorId) => ({ sessionId, userId: user.id, connectorId })),
+        skipDuplicates: true,
+      });
+    }
+    await tx.workSession.updateMany({
+      where: { id: sessionId, userId: user.id },
+      data: { connectorsChosen: true },
+    });
+  });
+}
+
+/**
  * Answers a create that landed on a session which already exists, after
  * bringing its file grants back in line with what this request carried.
  *
@@ -56,12 +109,13 @@ function idempotentSessionId(userId: string, key: string): string {
  */
 async function replaySession(
   session: WorkSession,
-  userId: string,
-  attachments: readonly SessionAttachmentGrant[] | null
+  user: { id: string },
+  attachments: readonly SessionAttachmentGrant[] | null,
+  connectorIds: readonly string[] | null
 ): Promise<NextResponse> {
   if (attachments) {
     try {
-      await reconcileSessionAttachments({ userId, sessionId: session.id, attachments });
+      await reconcileSessionAttachments({ userId: user.id, sessionId: session.id, attachments });
     } catch (err) {
       console.error("[work] could not reconcile the session's attachments", {
         sessionId: session.id,
@@ -72,6 +126,28 @@ async function replaySession(
           error: "attachments_not_saved",
           message:
             "The task is saved but its file list is not, so nothing was started. Try again.",
+        },
+        { status: 503 }
+      );
+    }
+  }
+  // The same treatment, for the same reason and with the same failure. A reader
+  // who turned an app off between two presses is making a narrowing that has to
+  // land; answering 200 while the previous press's grant stands would be the
+  // composer being told a permission was withdrawn that was not.
+  if (connectorIds) {
+    try {
+      await writeSessionConnectors(user, session.id, connectorIds);
+    } catch (err) {
+      console.error("[work] could not save the session's connectors", {
+        sessionId: session.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return NextResponse.json(
+        {
+          error: "connectors_not_saved",
+          message:
+            "The task is saved but the apps it may use are not, so nothing was started. Try again.",
         },
         { status: 503 }
       );
@@ -128,6 +204,7 @@ export async function POST(req: Request) {
     model,
     reasoningEffort,
     attachmentIds,
+    connectorIds,
     idempotencyKey,
   } = parsed.data;
 
@@ -210,13 +287,47 @@ export async function POST(req: Request) {
     }
   }
 
+  // The connectors this task may reach get the ownership check the attachments
+  // get, and it is the same argument: a provider id in a request body is a claim
+  // that the account has linked that app, and the only thing that makes it true
+  // is a `Connection` row carrying this user's id. A grant written on trust would
+  // be a task holding a permission for an app nobody connected — harmless today,
+  // because the executor resolves credentials and would find none, and precisely
+  // the row that stops being harmless the day somebody links that app.
+  //
+  // Deduplicated first, and null when the client said nothing. Absent leaves the
+  // session's own answer alone — see the schema note on `connectorsChosen` — and
+  // a present `[]` is a reader who switched everything off, which is a real
+  // answer and is written as one.
+  let connectors: string[] | null = null;
+  if (connectorIds) {
+    connectors = [...new Set(connectorIds)];
+    if (connectors.length > 0) {
+      const linked = await prisma.connection.findMany({
+        where: { userId: user.id, provider: { in: connectors } },
+        select: { provider: true },
+      });
+      const have = new Set(linked.map((row) => row.provider));
+      if (connectors.some((connectorId) => !have.has(connectorId))) {
+        return NextResponse.json(
+          {
+            error: "connector_not_linked",
+            message:
+              "One of the apps this task was given is not connected to your account, so nothing was created.",
+          },
+          { status: 404 }
+        );
+      }
+    }
+  }
+
   const sessionId = idempotencyKey ? idempotentSessionId(user.id, idempotencyKey) : undefined;
   if (sessionId) {
     // Turns the common sequential retry into a clean replay instead of a 500
     // from the unique violation. The catch below is what handles the two
     // requests that raced past this read.
     const existing = await prisma.workSession.findFirst({ where: { id: sessionId, userId: user.id } });
-    if (existing) return replaySession(existing, user.id, attachments);
+    if (existing) return replaySession(existing, user, attachments, connectors);
   }
 
   try {
@@ -238,6 +349,33 @@ export async function POST(req: Request) {
       // the reader attached to it are missing. See `createWorkSession`.
       attachments: attachments ?? [],
     });
+
+    // A second write rather than part of the create's transaction, because
+    // `createWorkSession` does not take connectors and a store function that
+    // grew a second grant type would be the wrong place to settle that. The
+    // failure direction is what makes the split safe: a session whose connector
+    // rows did not land is a session that reaches no connector at all, and the
+    // 503 says so rather than reporting a task that was created with permissions
+    // it does not hold. The idempotency key makes the next press land on this
+    // same session and finish the job.
+    if (connectors) {
+      try {
+        await writeSessionConnectors(user, session.id, connectors);
+      } catch (err) {
+        console.error("[work] could not save the session's connectors", {
+          sessionId: session.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return NextResponse.json(
+          {
+            error: "connectors_not_saved",
+            message:
+              "The task is saved but the apps it may use are not, so nothing was started. Try again.",
+          },
+          { status: 503 }
+        );
+      }
+    }
     return NextResponse.json({ session: serializeSession(session) }, { status: 201 });
   } catch (err) {
     // Two identical creates raced past the pre-check above: the primary key
@@ -254,7 +392,7 @@ export async function POST(req: Request) {
       err.code === "P2002"
     ) {
       const winner = await prisma.workSession.findFirst({ where: { id: sessionId, userId: user.id } });
-      if (winner) return replaySession(winner, user.id, attachments);
+      if (winner) return replaySession(winner, user, attachments, connectors);
     }
     throw err;
   }

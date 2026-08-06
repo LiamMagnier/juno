@@ -363,6 +363,18 @@ export interface CreateWorkSessionInput {
   reasoningEffort?: string | null;
   /** Already-uploaded attachments the run should be handed. */
   attachmentIds?: readonly string[];
+  /**
+   * The connected apps this task may reach, by provider id.
+   *
+   * Absent and `[]` are different requests, and unlike every other optional
+   * field here the empty one is the common answer: the composer starts every
+   * switch off, so a reader who turns none on is stating that this task reaches
+   * no connector, and the route stores that as the answer it is. Absent is a
+   * caller that has no control for this at all, and leaves the task behaving as
+   * tasks did before the control existed. Sent whenever the composer showed the
+   * control, therefore, and not only when something is in it.
+   */
+  connectorIds?: readonly string[];
   idempotencyKey: string;
 }
 
@@ -395,6 +407,11 @@ export function createWorkSession(
       ...(input.attachmentIds && input.attachmentIds.length > 0
         ? { attachmentIds: [...input.attachmentIds] }
         : {}),
+      // Tested against `undefined` rather than for emptiness, like
+      // `reasoningEffort` and unlike `attachmentIds`: an empty connector list is
+      // a sentence — this task reaches nothing — and dropping it would turn the
+      // reader's answer back into silence.
+      ...(input.connectorIds === undefined ? {} : { connectorIds: [...input.connectorIds] }),
       idempotencyKey: input.idempotencyKey,
     },
     (data) => data.session as ClientWorkSession
@@ -529,11 +546,12 @@ export interface WorkSteerOutcome {
   /**
    * Whether the run this was recorded against will read it.
    *
-   * False today, always, and carried rather than assumed because the surface
-   * that shows it has to say something different in each case. The route
-   * records the instruction on the run's transcript; nothing on the executing
-   * side re-reads the transcript mid-run, so a UI that reported "sent to Juno"
-   * would be describing a delivery that did not happen.
+   * True for a cloud run, where the executor drains unconsumed instructions
+   * between turns and puts them in front of the model; false for one running on
+   * a Mac, where the host app is handed its instructions when a run starts and
+   * has no such reader yet. Carried rather than assumed because the surface that
+   * shows it has to say something different in each case, and because assuming
+   * the true one is how a UI comes to report a delivery that did not happen.
    */
   delivered: boolean;
   explanation: string;

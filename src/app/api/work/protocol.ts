@@ -54,6 +54,19 @@ const MAX_DENY_REASON_CHARS = 500;
 /** Ids in this codebase are cuids; the cap is a sanity bound, not a format. */
 const MAX_ID_CHARS = 200;
 
+/**
+ * How many connected apps one task may be handed.
+ *
+ * A bound on the request rather than a statement about the catalog, which is
+ * why it is not `listConnectors().length`: that module is `server-only` and this
+ * one is deliberately not, and the number would be wrong anyway — a Composio
+ * account can link apps this deployment has never enumerated. The real ceiling
+ * is what the account has actually connected, and the route checks every id
+ * against a `Connection` row before it becomes a grant. This only keeps the body
+ * and the ownership query from being unbounded.
+ */
+const MAX_TASK_CONNECTORS = 32;
+
 /** Matches the idempotency bound in `/api/code/tasks`, for one obvious reason:
  *  a client generating keys for both surfaces should not have to remember two. */
 const idempotencyKey = z.string().trim().min(8).max(MAX_ID_CHARS);
@@ -106,6 +119,20 @@ export const createSessionSchema = z.object({
   // picker enforces would reject a selection the UI had already accepted, and
   // the reader would have no way to tell which of their files was the problem.
   attachmentIds: z.array(id).max(MAX_ATTACHMENTS).optional(),
+  // The connected apps this task may reach, by provider id. Absent and `[]` are
+  // different requests and the difference is the whole point: `[]` is a reader
+  // who was shown their linked apps and switched none on — the composer's
+  // default, and a task that reaches nothing — while absent is a client that has
+  // never heard of the control, which must leave the task behaving as it did
+  // before this existed. `WorkSession.connectorsChosen` is what carries that
+  // difference past this schema, and `WorkConnectorAllowlist.taskAllowed` in
+  // src/lib/work/connectors.ts is what reads it.
+  //
+  // Not `z.enum(...)` over the connector registry: the registry is server-only,
+  // and a Composio account links apps no enum here could list. An id that names
+  // nothing the account has connected is refused by the route, against the one
+  // thing that can actually answer the question.
+  connectorIds: z.array(id).max(MAX_TASK_CONNECTORS).optional(),
   idempotencyKey: idempotencyKey.optional(),
 });
 

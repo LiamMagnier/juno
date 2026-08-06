@@ -50,13 +50,16 @@ interface Turn {
  * machinery and belongs in the timeline, where it can be skimmed rather than
  * read.
  *
- * The last of those three carries two different things. `question_answered`
- * with a `questionId` is an answer; the same kind with `steering: true` and no
- * id is an instruction the user offered unprompted, which
- * `/api/work/sessions/[id]/answer` records under that kind because
- * `WORK_EVENT_KINDS` has none of its own and the vocabulary is shared with the
- * Mac and the phone. Both are the user's words and both belong in this column;
- * only the label differs.
+ * The last of those three arrives under two kinds. `question_answered` is an
+ * answer to something Juno asked; `user_message` is an instruction the user
+ * offered unprompted, which the executor folds into the run before its next
+ * step. Both are the user's words and both belong in this column; only the label
+ * differs.
+ *
+ * A `question_answered` row carrying `steering: true` and no id is the same
+ * instruction written before the vocabulary had a kind for it. Those rows are in
+ * the log and an older Mac or phone still writes them, so they are read as what
+ * they are rather than shown as answers to a question nobody asked.
  */
 export function deriveTurns(events: readonly ClientWorkEvent[]): Turn[] {
   const turns: Turn[] = [];
@@ -76,6 +79,10 @@ export function deriveTurns(events: readonly ClientWorkEvent[]): Turn[] {
       if (text) {
         turns.push({ id: event.id, role: "you", text, unprompted: payload.steering === true });
       }
+    }
+    if (event.kind === "user_message") {
+      const text = str(payload, "text");
+      if (text) turns.push({ id: event.id, role: "you", text, unprompted: true });
     }
   }
   return turns;
