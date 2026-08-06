@@ -8,14 +8,19 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /*
- * Getting between Work's three surfaces.
+ * Getting between Work's four surfaces.
  *
- * Tasks are what Juno is doing, schedules are what will start on their own, and
- * skills are the instructions both of those can reach for. They are three views
- * of one thing and they live under /work, so the switch between them belongs on
- * the page rather than in the app sidebar — the sidebar is the product-level
- * switch, and putting three Work-internal destinations in it would make Work
- * look like three products.
+ * Tasks are what Juno is doing, schedules are what will start on their own,
+ * skills are the instructions both of those can reach for, and hosts are the
+ * Macs any of it can run on. They are four views of one thing and they live
+ * under /work, so the switch between them belongs on the page rather than in the
+ * app sidebar — the sidebar is the product-level switch, and putting four
+ * Work-internal destinations in it would make Work look like four products.
+ *
+ * Hosts is last because it is the only one that is not a thing the user made. A
+ * Mac arrives by installing Juno on it and signing in; this surface exists to
+ * see it, narrow it and take it away again, which is a visit somebody makes once
+ * and then when something has gone wrong.
  *
  * Links, not buttons: each of these is a URL somebody bookmarks, and a router
  * push behind a button loses that for nothing.
@@ -25,7 +30,22 @@ const DESTINATIONS = [
   { href: "/work", label: "Tasks" },
   { href: "/work/schedules", label: "Schedules" },
   { href: "/work/skills", label: "Skills" },
+  { href: "/work/hosts", label: "Hosts" },
 ] as const;
+
+/**
+ * The prefixes Tasks must not swallow, derived from the list rather than
+ * restated beside it.
+ *
+ * Tasks is the catch-all — `/work/<id>` is a task thread and has no destination
+ * of its own — so it lights for anything that is not one of its siblings. Naming
+ * the siblings by hand is a list that goes out of date silently: the tab added
+ * and forgotten here lights itself *and* Tasks, on every page it owns, and
+ * nothing fails.
+ */
+const SIBLING_PREFIXES = DESTINATIONS.filter((destination) => destination.href !== "/work").map(
+  (destination) => destination.href
+);
 
 export function WorkNav({ className }: { className?: string }) {
   const pathname = usePathname();
@@ -37,7 +57,8 @@ export function WorkNav({ className }: { className?: string }) {
         // page with nothing selected, which reads as "you have left Work".
         const active =
           destination.href === "/work"
-            ? pathname === "/work" || (!pathname.startsWith("/work/schedules") && !pathname.startsWith("/work/skills"))
+            ? pathname === "/work" ||
+              !SIBLING_PREFIXES.some((prefix) => pathname.startsWith(prefix))
             : pathname.startsWith(destination.href);
         return (
           <Link
@@ -60,7 +81,7 @@ export function WorkNav({ className }: { className?: string }) {
 }
 
 /**
- * The page frame the schedule and skill surfaces share.
+ * The page frame the schedule, skill and host surfaces share.
  *
  * One column, the same width as the Work home, with the back arrow and the
  * navigation in the same place on every one of them — a heading that moves

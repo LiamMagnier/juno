@@ -10,9 +10,11 @@ import type {
 } from "@/lib/work/serializers";
 import {
   WORK_CAPABILITIES,
+  WORK_PERMISSION_POLICIES,
   type WorkCapability,
   type WorkDegradation,
   type WorkHostState,
+  type WorkPermissionPolicy,
 } from "@/lib/work/domain";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
 import type {
@@ -51,7 +53,12 @@ import type {
  *          409 → { error, message, status }
  *   POST /api/work/approvals/[id]/decision { decision, actionDigest, reason? }
  *          409 → { error, message }
- *   GET  /api/work/hosts                   → { hosts: ClientWorkHost[] }
+ *   GET  /api/work/hosts                   → { hosts: ClientWorkHost[] }  ← revoked included
+ *   GET  /api/work/hosts/[id]              → { host, grants, pendingCommands,
+ *                                              routableCapabilities }
+ *   PATCH /api/work/hosts/[id]             { enabled?, allows*?, approvalPolicy?,
+ *                                            revoked?: false } → { host, refused }
+ *   DELETE /api/work/hosts/[id]            → { host, cancelledCommands }
  *   PATCH /api/work/sessions/[id]          { title?, pinned?, archived? } → { session }
  *   GET  /api/work/schedules?limit=N       → { schedules: ClientWorkSchedule[] }
  *   POST /api/work/schedules               → 201 { schedule }
@@ -335,12 +342,108 @@ export function fetchWorkHosts(): Promise<WorkResult<ClientWorkHost[]>> {
 export interface WorkHostDetail {
   host: ClientWorkHost;
   grants: ClientWorkGrant[];
+  /**
+   * Commands queued or claimed at this Mac and not yet expired.
+   *
+   * A different number from `activeRunCount`: a run is the unit of work, a
+   * command is one instruction in flight to the host, and a Mac that has gone
+   * quiet accumulates the second without the first. Both are shown, because
+   * "nothing is running but four instructions are waiting" is exactly the state
+   * somebody about to revoke a Mac needs to see before they do.
+   */
+  pendingCommands: number;
+  /** The manifest's capability keys, narrowed to the ones this relay can route. */
+  routableCapabilities: WorkCapability[];
 }
 
 export function fetchWorkHost(hostId: string): Promise<WorkResult<WorkHostDetail>> {
   return get(`/api/work/hosts/${hostId}`, (data) => ({
     host: data.host as ClientWorkHost,
     grants: list<ClientWorkGrant>(data.grants),
+    // Tolerant, like every other reader here: a build of this page talking to an
+    // older deployment gets a body with neither key, and a settings screen that
+    // threw on that would be unreachable rather than merely less informative.
+    pendingCommands: typeof data.pendingCommands === "number" ? data.pendingCommands : 0,
+    routableCapabilities: capabilitiesFrom(data.routableCapabilities),
+  }));
+}
+
+/**
+ * The switches on one Mac, as `hostPatchSchema` accepts them.
+ *
+ * Notably absent: `allowedApps`, `blockedApps`, `allowedDomains` and the
+ * capability manifest. The route refuses all four on purpose — the manifest is
+ * the host's to report through register/heartbeat, and the three lists are not
+ * in the patch schema at all — so they are read-only on this surface and the
+ * settings page says so in words rather than by greying a control out.
+ *
+ * `revoked` is `false`-only and un-revokes. Revoking is DELETE, which is where
+ * the audit trail expects to find it.
+ */
+export interface PatchWorkHostInput {
+  enabled?: boolean;
+  allowsFileWork?: boolean;
+  allowsBrowser?: boolean;
+  allowsComputerUse?: boolean;
+  allowsShell?: boolean;
+  allowsBackground?: boolean;
+  approvalPolicy?: WorkPermissionPolicy;
+  revoked?: false;
+}
+
+export type WorkHostToggleKey = keyof Omit<PatchWorkHostInput, "approvalPolicy" | "revoked">;
+
+export interface PatchedWorkHost {
+  host: ClientWorkHost;
+  /**
+   * Switches the request asked to turn on that the Mac has not advertised.
+   *
+   * Carried rather than discarded because the route carries it: switching a
+   * capability off always works, switching one on needs the Mac to have offered
+   * it, and a control that snapped back with nothing beside it would be read as
+   * a bug in this page rather than as the escalation boundary it is.
+   */
+  refused: WorkHostToggleKey[];
+}
+
+const HOST_TOGGLE_NAMES = new Set<string>([
+  "enabled",
+  "allowsFileWork",
+  "allowsBrowser",
+  "allowsComputerUse",
+  "allowsShell",
+  "allowsBackground",
+]);
+
+export function patchWorkHost(
+  hostId: string,
+  input: PatchWorkHostInput
+): Promise<WorkResult<PatchedWorkHost>> {
+  return patch(`/api/work/hosts/${hostId}`, { ...input }, (data) => ({
+    host: data.host as ClientWorkHost,
+    refused: (Array.isArray(data.refused) ? data.refused : []).filter(
+      (key): key is WorkHostToggleKey => typeof key === "string" && HOST_TOGGLE_NAMES.has(key)
+    ),
+  }));
+}
+
+export interface RevokedWorkHost {
+  host: ClientWorkHost;
+  /**
+   * Commands that were pending or claimed and have just been cancelled.
+   *
+   * The route retires the queue in the same breath as it sets `revokedAt`, so
+   * this is the count of instructions that will now never reach the Mac. It is
+   * the number the confirmation's aftermath should state: "revoked" alone does
+   * not tell somebody that four things they asked for have stopped.
+   */
+  cancelledCommands: number;
+}
+
+export function revokeWorkHost(hostId: string): Promise<WorkResult<RevokedWorkHost>> {
+  return remove(`/api/work/hosts/${hostId}`, (data) => ({
+    host: data.host as ClientWorkHost,
+    cancelledCommands: typeof data.cancelledCommands === "number" ? data.cancelledCommands : 0,
   }));
 }
 
@@ -1169,6 +1272,81 @@ export function hostWithheldCapabilities(host: ClientWorkHost): WorkCapability[]
   const advertised = capabilitiesFrom(host.capabilities);
   const granted = new Set(hostCapabilities(host));
   return advertised.filter((capability) => !granted.has(capability));
+}
+
+/**
+ * The ceiling: the switches the Mac itself last said it can offer.
+ *
+ * `WorkHost.capabilities` holds the advertisement verbatim and `serializeHost`
+ * passes it through, so this is a read of what the machine claimed rather than
+ * of what is currently in force — the boolean columns hold the second, after the
+ * owner has narrowed it. The settings screen needs both: a switch that is off
+ * because the Mac cannot do it and a switch that is off because somebody turned
+ * it off are the same pixel and completely different sentences.
+ *
+ * Read here rather than imported from `@/lib/work/relay`, whose
+ * `parseAdvertisement` is the server's copy of this. That module is Prisma-free
+ * but pulls zod, which nothing in the client bundle does today, and this file
+ * already keeps its own tolerant `capabilitiesFrom` beside the relay's
+ * `advertisedCapabilityKeys` for the same reason.
+ *
+ * An unreadable manifest yields every switch false, which is the safe way to be
+ * wrong: the reader is told the Mac has not offered a capability it may in fact
+ * have, and can switch it on from the Mac. The other way round would draw a live
+ * switch for a capability the route will refuse.
+ */
+export function hostAdvertisedToggles(host: ClientWorkHost): Record<WorkHostToggleKey, boolean> {
+  const manifest = host.capabilities;
+  const toggles =
+    manifest !== null && typeof manifest === "object" && !Array.isArray(manifest)
+      ? (manifest as { toggles?: unknown }).toggles
+      : undefined;
+  const read = (key: WorkHostToggleKey): boolean =>
+    toggles !== null &&
+    typeof toggles === "object" &&
+    !Array.isArray(toggles) &&
+    (toggles as Record<string, unknown>)[key] === true;
+  return {
+    enabled: read("enabled"),
+    allowsFileWork: read("allowsFileWork"),
+    allowsBrowser: read("allowsBrowser"),
+    allowsComputerUse: read("allowsComputerUse"),
+    allowsShell: read("allowsShell"),
+    allowsBackground: read("allowsBackground"),
+  };
+}
+
+/**
+ * The loosest approval policy the Mac has offered, or null when it said nothing.
+ *
+ * The same asymmetry as the toggles in three values instead of two: the owner
+ * may pick any policy at least as strict as this, and asking for a looser one
+ * lands on the Mac's. Null means the manifest carried no readable policy, and
+ * the caller should offer no ceiling at all rather than guess at one —
+ * `conservative`, which the server substitutes when it cannot read the
+ * advertisement, would grey out two of the three segments on the strength of a
+ * field that was simply missing.
+ */
+export function hostAdvertisedPolicy(host: ClientWorkHost): WorkPermissionPolicy | null {
+  const manifest = host.capabilities;
+  if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) return null;
+  const policy = (manifest as { approvalPolicy?: unknown }).approvalPolicy;
+  return typeof policy === "string" && (WORK_PERMISSION_POLICIES as readonly string[]).includes(policy)
+    ? (policy as WorkPermissionPolicy)
+    : null;
+}
+
+/**
+ * One of the host's allow/block lists as a list of strings.
+ *
+ * The three columns are JSON and the Mac writes them, so this reads what is
+ * there and drops what it cannot render — a list that arrived as an object, or
+ * with a number in it, produces the entries it does have rather than nothing.
+ * These are display-only on the web: `hostPatchSchema` does not accept them.
+ */
+export function hostNameList(raw: ClientWorkHost["allowedApps"]): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
 }
 
 /** Whether a host is in a state that can accept a run at all. */
