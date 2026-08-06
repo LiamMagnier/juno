@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/code-remote";
 import { WORK_LIVE_STATUSES } from "@/lib/work/domain";
 import { finishRun } from "@/lib/work/store";
 import { serializeRun, serializeSession } from "@/lib/work/serializers";
+import { pendingApprovalsForRun } from "@/lib/work/approvals";
 import { patchSessionSchema } from "@/app/api/work/protocol";
 
 export const runtime = "nodejs";
@@ -27,9 +28,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     orderBy: { attempt: "desc" },
   });
 
+  // Approvals travel with the run, not separately.
+  //
+  // The clients decode an `approvals` key here and this route never sent one,
+  // so a task that had stopped to ask permission looked, on the Mac and the
+  // phone, exactly like a task that was still working. See
+  // `pendingApprovalsForRun`.
   return NextResponse.json({
     session: serializeSession(session),
     run: run ? serializeRun(run) : null,
+    approvals: await pendingApprovalsForRun(run?.id, user.id),
   });
 }
 

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { isTerminalStatus } from "@/lib/work/domain";
 import { serializeEvent, serializeRun, serializeSession } from "@/lib/work/serializers";
+import { pendingApprovalsForRun } from "@/lib/work/approvals";
 
 export const runtime = "nodejs";
 // Vercel-only directive (`next start` ignores it); harmless self-hosted, keeps
@@ -132,12 +133,34 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       const usageOf = (run: WorkRun | null) =>
         run === null ? "" : `${run.costMicroUsd}:${run.inputTokens}:${run.outputTokens}`;
 
-      const frame = (type: string, current: WorkSession, run: WorkRun | null, events: unknown[]) =>
+      /**
+       * One frame, with everything the clients decode from it.
+       *
+       * `approvals` was missing, and its absence is why the approval card never
+       * appeared on a Mac or a phone: `NativeWorkClient.decodeFrame` reads an
+       * `approvals` key out of every frame type and this route sent none, so
+       * `NativeWorkModel.pendingApprovals` stayed empty for the whole life of a
+       * run that had stopped to ask for permission.
+       *
+       * Read on each frame rather than each poll. Frames are only sent when
+       * something actually moved — an event landed, the status changed, the
+       * spend changed — so this is one small indexed query per *change*, not
+       * one per second. Raising an approval moves the run to `waiting_approval`
+       * and answering it moves the run off it, so both transitions already send
+       * a frame and both therefore carry the fresh list.
+       */
+      const frame = async (
+        type: string,
+        current: WorkSession,
+        run: WorkRun | null,
+        events: unknown[]
+      ) =>
         send({
           type,
           session: serializeSession(current),
           run: run ? serializeRun(run) : null,
           events,
+          approvals: await pendingApprovalsForRun(run?.id, user.id),
         });
 
       const closedBy = new Promise<"abort">((resolve) => {
@@ -157,7 +180,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           currentUsage = usageOf(run);
           cursor = resumeRunId === run.id ? resumeAfter : 0;
         }
-        frame("snapshot", live, run, run ? deliver(await readEvents(run.id)) : []);
+        await frame("snapshot", live, run, run ? deliver(await readEvents(run.id)) : []);
 
         const deadline = Date.now() + STREAM_WINDOW_MS;
         let lastBeat = Date.now();
@@ -190,7 +213,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
             currentStatus = freshRun.status;
             currentUsage = usageOf(freshRun);
             cursor = 0;
-            frame("snapshot", live, freshRun, deliver(await readEvents(freshRun.id)));
+            await frame("snapshot", live, freshRun, deliver(await readEvents(freshRun.id)));
             lastBeat = Date.now();
             activePolls = ACTIVE_POLL_BUDGET;
             continue;
@@ -203,7 +226,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           currentStatus = freshRun?.status ?? "";
           currentUsage = usage;
           if (events.length > 0 || statusMoved || spent) {
-            frame("events", live, freshRun, events);
+            await frame("events", live, freshRun, events);
             lastBeat = Date.now();
             // Any sign of life buys the next few seconds at the fast rate. A run
             // mid-turn emits in bursts, and the poll that catches the first line
@@ -216,8 +239,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
             // transition, so the last thing the run said is not lost to the
             // race between its final event and its final status.
             const tail = deliver(await readEvents(freshRun.id));
-            if (tail.length > 0) frame("events", live, freshRun, tail);
-            frame("done", live, freshRun, []);
+            if (tail.length > 0) await frame("events", live, freshRun, tail);
+            await frame("done", live, freshRun, []);
             break;
           }
 
