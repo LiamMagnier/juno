@@ -126,17 +126,17 @@ public struct ScriptedBrowserDriver: BrowserDriving {
 /// down is "press the element at index 7"; two tiers down it is "click at
 /// (412, 883)", which is the same instruction whether or not the window moved.
 ///
-/// ### What a real driver needs at runtime
+/// ### What the real driver is
 ///
 /// There is no platform call in this file to put behind an availability check,
-/// because driving a browser is not an OS API — it is a protocol conversation
-/// with a browser process. A real ``BrowserDriving`` is one of two things: a
-/// Chrome DevTools Protocol client speaking WebSocket to a Chromium launched
-/// with `--remote-debugging-port` bound to `127.0.0.1`, using the person's own
-/// profile so their sessions are the ones being driven; or `safaridriver`, which
-/// requires "Allow Remote Automation" in Safari's Develop menu and shows a
-/// persistent banner while it is connected. Neither exists yet. Everything in
-/// this file above the seam is real and does not change when one arrives.
+/// because driving a browser is not an OS API — it is a conversation with a
+/// browser process. ``SystemBrowserDriver`` holds that conversation over Apple
+/// events, and its own documentation says why that rather than the two
+/// alternatives: a Chrome DevTools Protocol client needs the browser relaunched
+/// with `--remote-debugging-port`, which throws away the running session and
+/// opens a port anything on the machine can drive, and `safaridriver` hands back
+/// a fresh profile, which is not the signed-in one this tier exists to act in.
+/// Nothing in this file above the seam changed when that driver arrived.
 public struct BrowserControl: AutomationControl, WorkTool {
     public let tier: AutomationTier = .browserDOM
     public let declaredIntents: Set<AutomationIntent> = [
