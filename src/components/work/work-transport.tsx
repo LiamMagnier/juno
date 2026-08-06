@@ -464,6 +464,22 @@ export interface CreateWorkSessionInput {
    * off once one has been set.
    */
   reasoningEffort?: string | null;
+  /**
+   * Manual, Auto or Skip on the wire: `conservative`, `balanced`, `permissive`.
+   *
+   * Absent means this caller has no control for it, and the route then applies
+   * `DEFAULT_WORK_PERMISSION_POLICY` — which is the value the column has always
+   * defaulted to, so an older client's tasks behave exactly as they did. A
+   * caller that shows the control sends what the reader picked, every time,
+   * rather than only when it differs from the default: "they left it on Auto"
+   * and "they were never asked" are different facts about a task's permissions
+   * and the session is where the first one is recorded.
+   *
+   * It is a request and not a grant. `resolveApprovalMode` intersects it with
+   * the Mac's advertised floor at dispatch, so the widest this field can ever
+   * produce is the host's own setting.
+   */
+  permissionPolicy?: "conservative" | "balanced" | "permissive";
   /** Already-uploaded attachments the run should be handed. */
   attachmentIds?: readonly string[];
   /**
@@ -507,6 +523,9 @@ export function createWorkSession(
       ...(input.projectId ? { projectId: input.projectId } : {}),
       ...(input.model ? { model: input.model } : {}),
       ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }),
+      ...(input.permissionPolicy === undefined
+        ? {}
+        : { permissionPolicy: input.permissionPolicy }),
       ...(input.attachmentIds && input.attachmentIds.length > 0
         ? { attachmentIds: [...input.attachmentIds] }
         : {}),

@@ -102,6 +102,49 @@ function permissionPolicy(value: string): WorkPermissionPolicy {
   return oneOf(WORK_PERMISSION_POLICIES, value, "conservative");
 }
 
+/**
+ * The approval mode a run was dispatched under, read out of its policy blob.
+ *
+ * The blob itself never leaves the server — see `serializeRun`'s note — but the
+ * one thing in it a reader has to be told does: which of Manual, Auto and Skip
+ * the run actually enforced, and whether that is the mode the task asked for.
+ * A task set to Skip that lands on a Mac pinned to Manual runs Manual, and a
+ * Run settings panel that showed "Skip" there would be describing a run that
+ * never happened; one that showed "Manual" with no explanation would look like
+ * the setting had been ignored.
+ *
+ * Three outcomes, and the difference between the first two is the point:
+ *
+ *   absent      → null. Written by a build that predates the mode, or by
+ *                 `createRun`'s `{}` default. This deployment cannot say what
+ *                 the run enforced, and inventing `conservative` would put a
+ *                 mode on screen that nobody chose and nothing applied.
+ *   unreadable  → `conservative`. A value IS stored and this build cannot name
+ *                 it, which is the case `permissionPolicy` above exists for:
+ *                 never widen on a parse.
+ *   readable    → itself.
+ *
+ * `narrowedByHost` is reconstructed the same way `resolveApprovalMode` computed
+ * it, from the layers the dispatch route stored beside the answer: `requested`
+ * when the run body overrode the session, otherwise `session`. It is false
+ * whenever the request cannot be read, because "narrowed" is a claim about a
+ * difference and one side of the comparison is missing.
+ */
+function approvalModeOf(raw: Prisma.JsonValue): {
+  mode: WorkPermissionPolicy | null;
+  narrowedByHost: boolean;
+} {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return { mode: null, narrowedByHost: false };
+  }
+  const blob = raw as Record<string, Prisma.JsonValue | undefined>;
+  if (typeof blob.policy !== "string") return { mode: null, narrowedByHost: false };
+  const mode = permissionPolicy(blob.policy);
+  const asked = typeof blob.requested === "string" ? blob.requested : blob.session;
+  if (typeof asked !== "string") return { mode, narrowedByHost: false };
+  return { mode, narrowedByHost: permissionPolicy(asked) !== mode };
+}
+
 /** Unreadable access mode resolves to read-only, for the same reason. */
 function accessMode(value: string): WorkAccessMode {
   return oneOf(WORK_ACCESS_MODES, value, "read");
@@ -219,6 +262,13 @@ export interface ClientWorkRun {
   requiredCapabilities: WorkCapability[];
   availableCapabilities: WorkCapability[];
   degradation: WorkDegradation[];
+  /**
+   * Which of Manual, Auto and Skip this attempt enforced. Null when the run
+   * carries no mode this build can read — see `approvalModeOf`.
+   */
+  approvalMode: WorkPermissionPolicy | null;
+  /** True when a Mac's own floor was stricter than the task asked for. */
+  approvalModeNarrowedByHost: boolean;
   planVersion: number;
   budget: { maxCostMicroUsd: number; maxTokens: number; maxRuntimeMs: number };
   usage: { costMicroUsd: number; inputTokens: number; outputTokens: number };
@@ -242,8 +292,13 @@ export interface ClientWorkRun {
  * session turns a private retry token into a shared one. `permissionPolicy` is
  * absent for a different reason — it is the blob the executor enforced, and a
  * client that renders it is one refactor away from a client that submits it.
+ * Two facts are read *out* of that blob and published as their own fields,
+ * `approvalMode` and `approvalModeNarrowedByHost`, which is the distinction
+ * that matters: a reader is told which mode ran and whether a Mac narrowed it,
+ * and is handed nothing it could send back.
  */
 export function serializeRun(run: WorkRun): ClientWorkRun {
+  const approval = approvalModeOf(run.permissionPolicy);
   return {
     id: run.id,
     sessionId: run.sessionId,
@@ -263,6 +318,8 @@ export function serializeRun(run: WorkRun): ClientWorkRun {
     requiredCapabilities: capabilityList(run.requiredCapabilities),
     availableCapabilities: capabilityList(run.availableCapabilities),
     degradation: degradationList(run.degradation),
+    approvalMode: approval.mode,
+    approvalModeNarrowedByHost: approval.narrowedByHost,
     planVersion: run.planVersion,
     budget: {
       maxCostMicroUsd: run.maxCostMicroUsd,
@@ -634,11 +691,26 @@ const REMOTE_PAYLOAD_KEYS: Record<WorkCommandKind, readonly string[]> = {
   // to do that; reaching for `serializeCommandForHost` in a route is not, and
   // there is a CI gate that says so, because that shape also passes through
   // the resolved filesystem path in a `grant_folder` result.
-  start: ["runId", "target", "goal", "model"],
+  //
+  // `permissionPolicy` is the newest entry and it is the one this list was
+  // actively breaking. `startCommandPayload` has written it since the day the
+  // Mac learned to enforce a task's mode, and every command the Mac claims
+  // comes through the *remote* shape — so the key was computed, stored on the
+  // command row, and then filtered out one function before the Mac read it.
+  // `DesktopWorkRunHost` therefore saw no mode on any instruction and fell
+  // back to the host's own, which is exactly the bug the narrowing exists to
+  // prevent. It discloses nothing: it is one of three words, it is the mode
+  // the owner picked, and it can only ever be at least as strict as the Mac's
+  // own advertised setting.
+  start: ["runId", "target", "goal", "model", "permissionPolicy"],
   pause: ["runId"],
   // Resume carries the whole start payload, not just the id: a Mac relaunched
   // while a run was parked starts a fresh loop and has no goal to resume from.
-  resume: ["runId", "goal", "model"],
+  // The mode is in here for the same reason and a sharper one — a Mac that
+  // reads no mode assumes the strictest, so a resume without it would restart
+  // a task under Manual that its owner composed as Auto and watch it stop at
+  // every file it had been writing without asking a minute earlier.
+  resume: ["runId", "goal", "model", "permissionPolicy"],
   stop: ["runId", "reason"],
   grant_folder: ["displayName", "accessMode"],
   revoke_grant: ["grantId"],

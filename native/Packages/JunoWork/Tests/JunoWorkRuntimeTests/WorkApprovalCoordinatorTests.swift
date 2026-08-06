@@ -299,4 +299,124 @@ final class WorkApprovalCoordinatorTests: XCTestCase {
         await coordinator.denyAll()
         _ = await untouched.value
     }
+
+    // MARK: - The mode one task was dispatched under
+
+    /// The gap this closes: one coordinator serves every run on a Mac, so until
+    /// a run could pin its own mode, a task composed as Manual and a task
+    /// composed as Skip were gated identically the moment they landed here.
+    func testATaskSetToManualAsksOnAMacSetToAuto() async throws {
+        let coordinator = makeCoordinator(policy: .balanced, clock: TestClock())
+        await answerEverything(coordinator, with: .approved)
+
+        // Auto writes a reversible edit without asking…
+        let unpinned = await requestAuthorization(from: coordinator, risk: .edit)
+        XCTAssertEqual(unpinned, .allowed)
+
+        // …and the same edit under a task pinned to Manual stops for a person.
+        await coordinator.setRunPolicy(.conservative, for: "run-manual")
+        let outcome = await requestAuthorization(from: coordinator, risk: .edit, runID: "run-manual")
+        guard case .approved = outcome else {
+            return XCTFail("a task dispatched as Manual must ask before it changes a file")
+        }
+    }
+
+    /// The direction that must not work. A task cannot buy itself more licence
+    /// than the person sitting at the Mac granted: the effective mode is the
+    /// `min` of the two, so Skip on a Manual Mac is still Manual.
+    func testATaskSetToSkipCannotWidenAMacSetToManual() async throws {
+        let coordinator = makeCoordinator(policy: .conservative, clock: TestClock())
+        await answerEverything(coordinator, with: .approved)
+        await coordinator.setRunPolicy(.permissive, for: "run-skip")
+
+        let effective = await coordinator.permissionPolicy(forRun: "run-skip")
+        XCTAssertEqual(effective, .conservative)
+        guard case .approved = await requestAuthorization(
+            from: coordinator, risk: .edit, runID: "run-skip"
+        ) else {
+            return XCTFail("the Mac's own floor is not something an instruction may lift")
+        }
+    }
+
+    /// A run that names no mode at all is unaffected, which is what keeps this
+    /// a narrowing rather than a second policy: only the runs that were pinned
+    /// see anything different.
+    func testPinningOneRunLeavesEveryOtherRunAlone() async {
+        let coordinator = makeCoordinator(policy: .balanced, clock: TestClock())
+        await coordinator.setRunPolicy(.conservative, for: "run-manual")
+
+        let pinned = await coordinator.permissionPolicy(forRun: "run-manual")
+        let other = await coordinator.permissionPolicy(forRun: "run-other")
+        XCTAssertEqual(pinned, .conservative)
+        XCTAssertEqual(other, .balanced)
+        let unpinned = await requestAuthorization(from: coordinator, risk: .edit)
+        XCTAssertEqual(unpinned, .allowed)
+    }
+
+    /// Narrowing a run's mode revokes that run's unanswered questions — a
+    /// decision is made inside the envelope that existed when it was asked for —
+    /// and only that run's. Another task's question was asked under an authority
+    /// nothing here touched.
+    func testNarrowingOneRunsModeRevokesOnlyItsOwnPendingQuestions() async throws {
+        let coordinator = makeCoordinator(policy: .balanced, clock: TestClock())
+        let narrowed = Task {
+            await requestAuthorization(
+                from: coordinator, risk: .sensitive, digest: "a", runID: "run-1"
+            )
+        }
+        let untouched = Task {
+            await requestAuthorization(
+                from: coordinator, risk: .sensitive, digest: "b", runID: "run-2"
+            )
+        }
+        for _ in 0..<400 {
+            if await coordinator.pendingApprovals.count == 2 { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let asked = await coordinator.pendingApprovals
+        XCTAssertEqual(asked.count, 2)
+
+        await coordinator.setRunPolicy(.conservative, for: "run-1")
+
+        guard case .denied = await narrowed.value else {
+            return XCTFail("an approval asked under a wider mode does not survive the narrowing")
+        }
+        let remaining = await coordinator.pendingApprovals
+        XCTAssertEqual(remaining.map(\.runID), ["run-2"])
+
+        untouched.cancel()
+        await coordinator.denyAll()
+        _ = await untouched.value
+    }
+
+    /// Clearing is widening by construction — back to the Mac's own policy —
+    /// so it revokes nothing. It exists because a map keyed by run id on a
+    /// process that stays open for weeks otherwise only grows.
+    func testClearingARunsModeReturnsItToTheMacsOwn() async {
+        let coordinator = makeCoordinator(policy: .balanced, clock: TestClock())
+        await coordinator.setRunPolicy(.conservative, for: "run-1")
+        let pinned = await coordinator.permissionPolicy(forRun: "run-1")
+        XCTAssertEqual(pinned, .conservative)
+
+        await coordinator.clearRunPolicy(for: "run-1")
+        let cleared = await coordinator.permissionPolicy(forRun: "run-1")
+        XCTAssertEqual(cleared, .balanced)
+    }
+
+    /// The floor is still the floor. A task pinned to Skip on a Mac set to Skip
+    /// is the widest this system goes, and it still stops for anything Juno
+    /// cannot take back.
+    func testAPinnedSkipStillCannotClearTheFloor() async throws {
+        let coordinator = makeCoordinator(policy: .permissive, clock: TestClock())
+        await answerEverything(coordinator, with: .approved)
+        await coordinator.setRunPolicy(.permissive, for: "run-skip")
+
+        for risk in [WorkRiskLevel.sensitive, .irreversible] {
+            guard case .approved = await requestAuthorization(
+                from: coordinator, risk: risk, runID: "run-skip"
+            ) else {
+                return XCTFail("\(risk) went ahead without asking under a task pinned to Skip")
+            }
+        }
+    }
 }

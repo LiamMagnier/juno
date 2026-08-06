@@ -17,6 +17,7 @@ import {
 } from "@/lib/work/domain";
 import { createSessionSchema, startRunSchema } from "@/app/api/work/protocol";
 import { startCommandPayload } from "@/lib/work/relay";
+import { serializeCommandForRemote, serializeRun } from "@/lib/work/serializers";
 
 /*
  * The three approval modes, and the two things that must stay true of them.
@@ -44,6 +45,70 @@ const RISK_RANK = (risk: WorkRiskLevel) => WORK_RISK_LEVELS.indexOf(risk);
 
 /** An action on nobody's list, so the answer is about the risk and the mode. */
 const PLAIN = "work.file.write";
+
+/** A command row, with only the fields either serialiser reads filled in. */
+function startCommand(kind: string, payload: Record<string, unknown>) {
+  return {
+    id: "cmd_1",
+    userId: "user_1",
+    hostId: "host_1",
+    sessionId: "sess_1",
+    runId: "run_1",
+    kind,
+    payload,
+    payloadVersion: 1,
+    status: "pending",
+    result: null,
+    error: null,
+    idempotencyKey: `work:run:run_1:${kind}`,
+    expiresAt: new Date("2026-08-05T12:05:00.000Z"),
+    leaseExpiresAt: null,
+    attempts: 0,
+    createdAt: new Date("2026-08-05T12:00:00.000Z"),
+    claimedAt: null,
+    completedAt: null,
+  } as unknown as Parameters<typeof serializeCommandForRemote>[0];
+}
+
+/** A run row with everything `serializeRun` touches, and nothing else. */
+const RUN_ROW = {
+  id: "run_1",
+  sessionId: "sess_1",
+  attempt: 1,
+  origin: "manual",
+  scheduleId: null,
+  status: "running",
+  terminalReason: null,
+  terminalDetail: null,
+  requestedTarget: "automatic",
+  effectiveTarget: "local",
+  hostId: "host_1",
+  requestedModel: null,
+  effectiveModel: null,
+  requiredCapabilities: [],
+  availableCapabilities: [],
+  degradation: [],
+  permissionPolicy: {},
+  planVersion: 1,
+  maxCostMicroUsd: 0,
+  maxTokens: 0,
+  maxRuntimeMs: 0,
+  costMicroUsd: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  inputSensitivity: "normal",
+  outputSensitivity: "normal",
+  lastSeq: 0,
+  startedAt: null,
+  finishedAt: null,
+  createdAt: new Date("2026-08-05T12:00:00.000Z"),
+  updatedAt: new Date("2026-08-05T12:00:00.000Z"),
+};
+
+/** The same row wearing one `permissionPolicy` blob, as the dispatch writes it. */
+function workRun(policy: Record<string, unknown>) {
+  return { ...RUN_ROW, permissionPolicy: policy } as unknown as Parameters<typeof serializeRun>[0];
+}
 
 // ---------------------------------------------------------------------------
 // 1. The three modes actually differ
@@ -286,13 +351,97 @@ test("the mode a Mac is told to enforce is the narrowed one, never the request",
 });
 
 test("a start command with no mode omits the key rather than sending a null", () => {
-  // The Mac falls back to its own policy on a missing key, which is what every
-  // build before this did. A null would decode as a value and leave it gating
-  // on nothing.
+  // Omission is not a way to get a wider run. `DesktopWorkRunHost` reads a
+  // missing mode as Manual — the strictest — so silence from a relay or a
+  // deployment that predates the key costs a run some extra prompts rather than
+  // some extra licence. A null would decode as a value and leave it gating on
+  // nothing at all, which is why it is dropped rather than passed through.
   assert.deepEqual(startCommandPayload({ goal: "Tidy Downloads" }), { goal: "Tidy Downloads" });
   assert.deepEqual(startCommandPayload({ goal: "Tidy Downloads", permissionPolicy: null }), {
     goal: "Tidy Downloads",
   });
+});
+
+test("the mode survives the remote serialiser, which is where it used to be lost", () => {
+  // The bug this closes, and it was invisible from either end. Every command a
+  // Mac claims comes through `serializeCommandForRemote` — the claim endpoint
+  // answers with the remote shape like every other route under /api/work, and
+  // there is a CI gate stopping it reaching for the host shape — so a key the
+  // per-kind allowlist did not name was computed, written onto the command row,
+  // and filtered out one function before the machine that enforces it. The Mac
+  // saw no mode on any instruction.
+  const started = serializeCommandForRemote(
+    startCommand("start", { runId: "run_1", target: "local", ...startCommandPayload({
+      goal: "Tidy Downloads",
+      model: "claude-opus-4-5",
+      permissionPolicy: "conservative",
+    }) })
+  );
+  assert.deepEqual(started.payload, {
+    runId: "run_1",
+    target: "local",
+    goal: "Tidy Downloads",
+    model: "claude-opus-4-5",
+    permissionPolicy: "conservative",
+  });
+  assert.deepEqual(started.redacted, []);
+
+  // Resume carries it too, and for a sharper reason: a Mac relaunched while a
+  // run was parked starts a fresh loop, and a resume with no mode on it would
+  // restart an Auto task under Manual.
+  const resumed = serializeCommandForRemote(
+    startCommand("resume", { runId: "run_1", goal: "Tidy Downloads", permissionPolicy: "balanced" })
+  );
+  assert.deepEqual(resumed.payload, {
+    runId: "run_1",
+    goal: "Tidy Downloads",
+    permissionPolicy: "balanced",
+  });
+});
+
+test("a run publishes the mode it enforced without publishing the blob", () => {
+  // Two facts a reader needs and nothing else. The blob holds the layers the
+  // narrowing was computed from and is the thing every approval digest is taken
+  // over; a client that rendered it is one refactor away from a client that
+  // submits it.
+  const narrowed = serializeRun(
+    workRun({ policy: "conservative", session: "permissive", host: "conservative" })
+  );
+  assert.equal(narrowed.approvalMode, "conservative");
+  assert.equal(narrowed.approvalModeNarrowedByHost, true);
+  assert.ok(!("permissionPolicy" in narrowed));
+
+  // The attempt-scoped override is what "requested" means when it is present,
+  // so the comparison has to prefer it over the session's stored mode.
+  const overridden = serializeRun(
+    workRun({ policy: "balanced", session: "conservative", host: null, requested: "balanced" })
+  );
+  assert.equal(overridden.approvalMode, "balanced");
+  assert.equal(overridden.approvalModeNarrowedByHost, false);
+
+  const cloud = serializeRun(workRun({ policy: "balanced", session: "balanced", host: null }));
+  assert.equal(cloud.approvalMode, "balanced");
+  assert.equal(cloud.approvalModeNarrowedByHost, false);
+});
+
+test("a run with no readable mode says nothing rather than inventing Manual", () => {
+  // `createRun` defaults the column to `{}`, and every run dispatched before
+  // the mode existed holds exactly that. Reporting those as Manual would put a
+  // mode on screen that nobody chose and nothing enforced — which is the one
+  // outcome worse than an absent row, because it is believed.
+  for (const stored of [{}, null, [], { policy: 42 }]) {
+    const run = serializeRun({ ...RUN_ROW, permissionPolicy: stored } as never);
+    assert.equal(run.approvalMode, null, JSON.stringify(stored));
+    assert.equal(run.approvalModeNarrowedByHost, false);
+  }
+
+  // A value that IS stored and this build cannot name is the other case, and it
+  // resolves the other way: never widen on a parse.
+  const unknown = serializeRun({
+    ...RUN_ROW,
+    permissionPolicy: { policy: "yolo", session: "yolo", host: null },
+  } as never);
+  assert.equal(unknown.approvalMode, "conservative");
 });
 
 // ---------------------------------------------------------------------------

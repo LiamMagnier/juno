@@ -23,9 +23,14 @@ import JunoWorkRuntime
 ///   and this file must never grow one — a loop that reached
 ///   `executeAuthorized` directly would be a loop that could skip the question.
 /// * **The tools it can call are assembled from the request's grants**, not from
-///   anything the instruction said. `WorkRunRequest.payload` is read for the goal
-///   and the model and for nothing else, which is the whole escalation boundary:
-///   a phone says what it wants done and cannot say what this Mac may do.
+///   anything the instruction said. `WorkRunRequest.payload` is read for the
+///   goal, the model and the approval mode, and for nothing else — which is the
+///   whole escalation boundary: a phone says what it wants done and cannot say
+///   what this Mac may do. The mode is not an exception to that. It goes through
+///   `WorkApprovalCoordinator.setRunPolicy`, which takes the `min` of it and
+///   this Mac's own switch, so the only thing an instruction can do to the gate
+///   is tighten it; and an instruction that names no mode gets Manual, not the
+///   Mac's setting.
 /// * **The transcript is reported, not inferred.** Everything a watcher sees is
 ///   an event this loop emitted at the moment it happened, drained through
 ///   ``WorkRunReporting``.
@@ -77,6 +82,14 @@ actor DesktopWorkRunHost: WorkRunHosting {
     /// pick.
     private var inbound: [String: [Said]] = [:]
     private var outboxes: [String: Outbox] = [:]
+    /// The gate each live run was pinned against, so `retire` can unpin it.
+    ///
+    /// Held rather than reached for through the request, because `stopRun` and
+    /// the end of `drive` both retire a run and neither has the request in
+    /// hand. It is the same coordinator every time in practice — one per Mac —
+    /// and keeping it per run is what makes "unpin exactly the run that ended"
+    /// expressible rather than assumed.
+    private var gates: [String: WorkApprovalCoordinator] = [:]
 
     init(dependencies: Dependencies) {
         self.dependencies = dependencies
@@ -191,6 +204,19 @@ actor DesktopWorkRunHost: WorkRunHosting {
         resuming: Bool
     ) async throws {
         let bindings = Self.bindings(for: request, automationTools: automation)
+        // The mode this task was dispatched under, pinned onto the gate before
+        // the first turn can call a tool.
+        //
+        // Read from the payload beside the goal, and read the same way: the
+        // instruction says what the person asked for, and `setRunPolicy` can
+        // only narrow against this Mac's own switch — so this is data the run
+        // reads, never authority it claims. Without it every task landing here
+        // was gated on the Mac's standing policy alone, which made the control
+        // in the composer describe a narrowing that stopped at the relay.
+        await request.approvals.setRunPolicy(
+            Self.permissionPolicy(in: request.payload), for: request.runID
+        )
+        gates[request.runID] = request.approvals
         outboxes[request.runID] = Outbox()
         let task = Task { [weak self] in
             guard let self else { return }
@@ -391,6 +417,11 @@ actor DesktopWorkRunHost: WorkRunHosting {
     /// nobody wants any more. Doing it again from here would be a second place
     /// with an opinion about that ordering.
     private func retire(_ runID: String) async {
+        // Unpinned before anything else, and unpinned rather than left: a mode
+        // keyed by run id on a Mac that stays signed in for weeks would only
+        // ever accumulate, and a run id is never reused so nothing else can
+        // read it again.
+        await gates.removeValue(forKey: runID)?.clearRunPolicy(for: runID)
         runs.removeValue(forKey: runID)
         paused.remove(runID)
         resumeGates.removeValue(forKey: runID)?.resume()
@@ -659,6 +690,27 @@ actor DesktopWorkRunHost: WorkRunHosting {
 
     private static func goal(in payload: [String: WorkToolValue]) -> String? {
         payload["goal"]?.stringValue ?? payload["prompt"]?.stringValue
+    }
+
+    /// The approval mode the instruction asked for, or the strictest one.
+    ///
+    /// `conservative` — Manual — for a missing key, an unreadable value, or a
+    /// word this build does not know, and all three for the same reason the
+    /// server's own serialiser gives: never widen on a parse. Silence here is a
+    /// relay or a deployment that predates the key, and reading it as "whatever
+    /// this Mac's switch happens to say" would mean the one case where nobody
+    /// stated a mode is the case where the widest one applies.
+    ///
+    /// The cost of being wrong this way is a run that asks more often than it
+    /// needed to, which the person can answer; the cost of the other way is a
+    /// run that changed a file it should have asked about first.
+    private static func permissionPolicy(
+        in payload: [String: WorkToolValue]
+    ) -> WorkPermissionPolicy {
+        guard let raw = payload["permissionPolicy"]?.stringValue,
+            let policy = WorkPermissionPolicy(rawValue: raw)
+        else { return .conservative }
+        return policy
     }
 
     // MARK: - The third JSON tree
