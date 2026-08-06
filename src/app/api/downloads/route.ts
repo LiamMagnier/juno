@@ -77,7 +77,10 @@ async function latestRelease(
     // already-published 0.11.0 becomes visible immediately after deployment.
     const endpoint = includePrerelease
       ? `https://api.github.com/repos/${repo}/releases?per_page=100`
-      : `https://api.github.com/repos/${repo}/releases/latest`;
+      // `per_page=1` is ignored by the object endpoint, but deliberately makes
+      // this a new cache key for deployments that previously cached the old
+      // stable list while a release was still marked prerelease.
+      : `https://api.github.com/repos/${repo}/releases/latest?per_page=1`;
     const latestResponse = await fetch(endpoint, { headers, ...cache });
     if (!latestResponse.ok) return null;
     const payload = (await latestResponse.json()) as GitHubRelease | GitHubRelease[];
@@ -170,13 +173,10 @@ export async function GET(req: Request) {
   ];
 
   const response = NextResponse.json({ downloads });
-  // Keep already-installed clients from waiting through a long CDN window
-  // when a GitHub release changes from prerelease to stable. The upstream
-  // request remains server-cached, so this does not turn every visitor into a
-  // GitHub API call.
-  response.headers.set(
-    "Cache-Control",
-    "public, max-age=60, s-maxage=60, stale-while-revalidate=300",
-  );
+  // Keep the small feed out of intermediary caches. The upstream GitHub
+  // request remains server-cached for one minute, so this does not turn every
+  // visitor into a GitHub API call, while an already-installed app never gets
+  // a stale JSON response after a release is promoted from prerelease.
+  response.headers.set("Cache-Control", "no-store");
   return response;
 }
