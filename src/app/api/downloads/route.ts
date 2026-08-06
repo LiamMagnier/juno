@@ -12,14 +12,14 @@ import {
 
 export const runtime = "nodejs";
 /**
- * Cached for ten minutes at the edge.
+ * Cached for one minute at the edge.
  *
  * GitHub rate-limits unauthenticated API calls to 60/hour per IP, and this is the
  * server's IP for every visitor. Without the cache a busy minute would exhaust
  * the budget and the download menu would go dark for everyone — so the menu is
- * allowed to be up to ten minutes stale, which for a desktop release is nothing.
+ * allowed to be up to one minute stale, which for a desktop release is nothing.
  */
-export const revalidate = 600;
+export const revalidate = 60;
 
 interface GitHubRelease {
   tag_name?: string;
@@ -59,29 +59,49 @@ async function latestRelease(
   forceRefresh: boolean,
 ): Promise<GitHubRelease | null> {
   try {
-    // `/releases/latest` means "latest non-draft, non-prerelease by GitHub's
-    // publication ordering", not "highest app version with a usable asset".
-    // That made a newly published 0.10.x development build invisible behind
-    // the older 0.9.2 stable release. Ask for the release list and choose by
-    // semantic version after filtering to releases that actually ship this
-    // platform's installer.
-    const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=100`, {
-      headers: {
-        accept: "application/vnd.github+json",
-        // GitHub asks for one, and an unidentified client is the first thing
-        // they throttle.
-        "user-agent": "juno-downloads",
-      },
-      ...(forceRefresh ? { cache: "no-store" as const } : { next: { revalidate } }),
-    });
-    if (!res.ok) return null;
-    const releases = (await res.json()) as GitHubRelease[];
-    return (
-      releases
-        .filter((release) => (includePrerelease ? !release?.draft : isStableRelease(release)))
-        .filter((release) => Boolean(release.assets && pickAsset(release.assets, platform)))
-        .sort(compareReleaseVersions)[0] ?? null
+    const headers = {
+      accept: "application/vnd.github+json",
+      // GitHub asks for one, and an unidentified client is the first thing
+      // they throttle.
+      "user-agent": "juno-downloads",
+    };
+    const cache = forceRefresh
+      ? ({ cache: "no-store" as const })
+      : ({ next: { revalidate } } as const);
+
+    // Stable clients need the release GitHub itself considers current. The
+    // old implementation always cached `/releases?per_page=100`; when a
+    // release was changed from prerelease to stable, that cache continued to
+    // serve the previous stable version until its full TTL elapsed. Using the
+    // `/latest` endpoint also makes the cache key change with this fix, so the
+    // already-published 0.11.0 becomes visible immediately after deployment.
+    const latestResponse = await fetch(
+      `https://api.github.com/repos/${repo}/releases/${includePrerelease ? "?per_page=100" : "latest"}`,
+      { headers, ...cache },
     );
+    if (!latestResponse.ok) return null;
+    const payload = (await latestResponse.json()) as GitHubRelease | GitHubRelease[];
+    const releases = Array.isArray(payload) ? payload : [payload];
+    const candidate = releases
+      .filter((release) => (includePrerelease ? !release?.draft : isStableRelease(release)))
+      .filter((release) => Boolean(release.assets && pickAsset(release.assets, platform)))
+      .sort(compareReleaseVersions)[0];
+
+    if (candidate || includePrerelease) return candidate ?? null;
+
+    // A repository can publish a release without an installer for this
+    // platform. Keep the download row honest by falling back to the full list
+    // and finding the newest stable release that does have one.
+    const listResponse = await fetch(
+      `https://api.github.com/repos/${repo}/releases?per_page=100`,
+      { headers, ...cache },
+    );
+    if (!listResponse.ok) return null;
+    const list = (await listResponse.json()) as GitHubRelease[];
+    return list
+      .filter(isStableRelease)
+      .filter((release) => Boolean(release.assets && pickAsset(release.assets, platform)))
+      .sort(compareReleaseVersions)[0] ?? null;
   } catch {
     return null;
   }
@@ -149,5 +169,14 @@ export async function GET(req: Request) {
     },
   ];
 
-  return NextResponse.json({ downloads });
+  const response = NextResponse.json({ downloads });
+  // Keep already-installed clients from waiting through a long CDN window
+  // when a GitHub release changes from prerelease to stable. The upstream
+  // request remains server-cached, so this does not turn every visitor into a
+  // GitHub API call.
+  response.headers.set(
+    "Cache-Control",
+    "public, max-age=60, s-maxage=60, stale-while-revalidate=300",
+  );
+  return response;
 }
