@@ -7,6 +7,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useApp } from "@/components/app/app-provider";
 import { JunoMark } from "@/components/brand/logo";
 import { WorkComposer } from "@/components/work/work-composer";
+import { WorkNav } from "@/components/work/work-nav";
 import {
   WorkSection,
   WorkSessionRow,
@@ -109,14 +110,38 @@ export default function WorkHomePage() {
     };
   }, [reload]);
 
+  /**
+   * One row after the user changed it, folded back into the list.
+   *
+   * Archiving is the case that matters: the list route filters `archived: false`
+   * by default, so a task put away here must leave the list rather than sit in
+   * it with a changed flag until the next poll. Everything else is patched in
+   * place, which is what keeps a rename from making the row jump.
+   */
+  const replaceSession = React.useCallback((saved: ClientWorkSession) => {
+    setSessions((current) =>
+      current === null
+        ? current
+        : saved.archived
+          ? current.filter((session) => session.id !== saved.id)
+          : current.map((session) => (session.id === saved.id ? saved : session))
+    );
+  }, []);
+
   const attention = React.useMemo(
     () => (sessions ?? []).filter((session) => session.needsAttention),
     [sessions]
   );
-  const recent = React.useMemo(
-    () => (sessions ?? []).filter((session) => !session.needsAttention && !session.archived),
-    [sessions]
-  );
+  const recent = React.useMemo(() => {
+    const rows = (sessions ?? []).filter(
+      (session) => !session.needsAttention && !session.archived
+    );
+    // Pinned first, and otherwise exactly the order the route sent. The list
+    // query already orders by last activity, so this is a stable partition
+    // rather than a second sort: re-ordering the rest here would disagree with
+    // the paging the route is built for the moment there are more than forty.
+    return [...rows.filter((session) => session.pinned), ...rows.filter((session) => !session.pinned)];
+  }, [sessions]);
 
   // The control is only offered once there is something to filter, and while it
   // is absent the list is unfiltered no matter what the state last held — a
@@ -155,6 +180,13 @@ export default function WorkHomePage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:py-14">
+        {/* Schedules and skills live under /work and are reachable from here
+            rather than from the app sidebar: the sidebar is the switch between
+            products, and three Work-internal destinations in it would make Work
+            look like three of them. */}
+        <div className="mb-6 flex justify-center">
+          <WorkNav />
+        </div>
         <div className="flex flex-col items-center text-center">
           <p className="mb-3 font-mono text-[11px] text-muted-foreground/80 [animation-fill-mode:backwards] motion-safe:animate-fade-in">
             Juno Work
@@ -200,7 +232,13 @@ export default function WorkHomePage() {
           >
             <div className="space-y-2.5">
               {attention.map((session, index) => (
-                <WorkSessionRow key={session.id} session={session} explain index={index} />
+                <WorkSessionRow
+                  key={session.id}
+                  session={session}
+                  explain
+                  index={index}
+                  onChanged={replaceSession}
+                />
               ))}
             </div>
           </WorkSection>
@@ -267,7 +305,12 @@ export default function WorkHomePage() {
           ) : (
             <div className="space-y-2.5">
               {visible.map((session, index) => (
-                <WorkSessionRow key={session.id} session={session} index={index} />
+                <WorkSessionRow
+                  key={session.id}
+                  session={session}
+                  index={index}
+                  onChanged={replaceSession}
+                />
               ))}
             </div>
           )}
