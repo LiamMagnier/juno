@@ -148,6 +148,45 @@ public extension View {
     func junoSidebarRowInk() -> some View {
         foregroundStyle(Color.primary)
     }
+
+    /// A source-list row's mark, in the column's ink rather than the accent.
+    ///
+    /// This has to be stated on the glyph itself. A `Label` inside a `.sidebar`
+    /// list resolves its icon slot against the *system accent*, and neither
+    /// ``junoSidebarRowInk()`` on the row nor a `foregroundStyle` on the `Label`
+    /// reaches it — which is how both navigation columns ended up drawing coral
+    /// glyphs nobody had asked for. The web's rail is greyscale: the mark rests
+    /// on `--sidebar-foreground` and lifts to `--foreground` with its label.
+    func junoSidebarMarkInk(selected: Bool = false) -> some View {
+        foregroundStyle(selected ? Color.primary : Color.junoSidebarForeground)
+    }
+
+    /// The bottom of a source list, where a pinned footer meets the rows that
+    /// scroll behind it.
+    ///
+    /// **What this replaced, and why it was wrong.** The footer used to paint
+    /// `Color.junoSidebar` and a `Divider` behind itself, to stop the list
+    /// drawing through it. That solved the overlap and broke something larger:
+    /// the sidebar is a vibrant region, and an opaque fill laid over the bottom
+    /// of it is a grey slab sitting on translucency — visible as a hard-edged
+    /// bar under the last row, in a column that is otherwise sampling the
+    /// desktop behind the window. The divider made the seam louder rather than
+    /// hiding it. Rule 1 at the top of this file forbids exactly that, and the
+    /// footer was the one place in the app breaking it.
+    ///
+    /// The platform's own answer is the scroll edge effect: rows approaching the
+    /// bottom are progressively blurred and faded *into* the material instead of
+    /// disappearing under a painted lid. The column stays translucent from top to
+    /// bottom, and nothing draws over anything. `.soft` rather than `.hard`
+    /// because a hard edge reintroduces the line this is removing.
+    ///
+    /// Pair it with `safeAreaBar(edge: .bottom)` — not `safeAreaInset` — on the
+    /// list. The bar variant is what tells the system a pinned bar lives there,
+    /// which is what the effect is measured against.
+    @available(macOS 26.0, *)
+    func junoSidebarScrollEdge() -> some View {
+        scrollEdgeEffectStyle(.soft, for: .bottom)
+    }
 }
 
 // MARK: - Liquid Glass

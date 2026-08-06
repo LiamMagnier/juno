@@ -11,10 +11,12 @@ export async function register(): Promise<void> {
   // Edge and browser bundles have neither `crypto` nor the env this checks.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  const { assertMessageCryptoConfigured } = await import("@/lib/message-crypto");
+  const { assertMessageCryptoEnvironmentConfigured } = await import(
+    "@/lib/message-crypto-config"
+  );
 
   try {
-    assertMessageCryptoConfigured();
+    assertMessageCryptoEnvironmentConfigured();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[boot] ${message}`);

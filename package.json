@@ -21,8 +21,11 @@
     "test:memory": "NODE_OPTIONS=--conditions=react-server tsx scripts/test-memory.ts",
     "test:auth": "tsx scripts/test-auth.ts",
     "test:native-auth": "tsx --test tests/native-auth-core.test.ts",
-    "native:contract:check": "node scripts/check-native-swift-contract.mjs",
-    "capabilities:generate": "node scripts/generate-capability-contract.mjs --output=native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoCapabilityContract.swift",
+  "native:contract:check": "node scripts/check-native-swift-contract.mjs",
+  "code:preview:check": "node scripts/check-code-preview-wiring.mjs",
+  "code:remote:check": "node scripts/check-code-remote-wiring.mjs",
+  "code:runtime:check": "node scripts/check-code-runtime-wiring.mjs",
+  "capabilities:generate": "node scripts/generate-capability-contract.mjs --output=native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoCapabilityContract.swift",
     "capabilities:check": "node scripts/check-capability-contract.mjs",
     "test:clarify": "NODE_OPTIONS=--conditions=react-server tsx scripts/test-clarify.ts",
     "test:moderation": "NODE_OPTIONS=--conditions=react-server tsx scripts/test-moderation.ts",
@@ -35,7 +38,12 @@
     "sync:prune": "tsx scripts/prune-sync.ts",
     "sync:models:write": "tsx scripts/sync-models.ts --write --prune",
     "sync:benchmarks": "tsx scripts/fetch-benchmarks.ts",
-    "radar:models": "tsx scripts/model-radar.ts"
+    "radar:models": "tsx scripts/model-radar.ts",
+    "design:contract": "tsx scripts/generate-design-contract.ts",
+    "design:contract:check": "tsx scripts/generate-design-contract.ts --check",
+    "design:editor": "node scripts/build-design-editor.mjs",
+    "design:editor:check": "node scripts/build-design-editor.mjs --check",
+    "design:fixture": "tsx scripts/emit-design-fixture.ts"
   },
   "prisma": {
     "schema": "prisma/schema.prisma"

@@ -1,5 +1,5 @@
 import { apiV1Json } from "@/lib/api-v1";
-import { loadAvailableModels, nativeModelCatalog } from "@/lib/model-catalog-api";
+import { loadSelectableModels, nativeModelCatalog } from "@/lib/model-catalog-api";
 import { sortModelsForDisplay } from "@/lib/model-metrics";
 import { getCurrentUser } from "@/lib/session";
 import { getUserPlan } from "@/lib/usage";
@@ -14,7 +14,7 @@ export async function GET() {
   // silently swap out. Order is the web selector's order (lab, intelligence, …)
   // and clients render it verbatim, so every surface lists models identically.
   const [models, plan] = await Promise.all([
-    loadAvailableModels().then(sortModelsForDisplay),
+    loadSelectableModels().then(sortModelsForDisplay),
     getUserPlan(user.id),
   ]);
   const catalog = nativeModelCatalog(models, plan);

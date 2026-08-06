@@ -6,6 +6,7 @@ import type {
   UserContent,
 } from './types.js';
 import type { ProviderAdapter } from './providers/types.js';
+import { decodeComputerScreenshot } from './computer.js';
 
 /**
  * The single copy of the agent step loop: stream → collect tool calls →
@@ -28,7 +29,7 @@ export interface AgentLoopOptions {
     id: string;
     name: string;
     input: Record<string, unknown>;
-  }) => Promise<UserContent>;
+  }) => Promise<UserContent | UserContent[]>;
   /** Called after each provider request with that request's usage slice.
    *  Return 'stop' to end the turn (budget enforcement). */
   onStep?: (stepUsage: Usage) => void | 'stop';
@@ -41,6 +42,24 @@ export interface AgentLoopResult {
   stopReason: string;
   /** The final assistant text of the turn (the report/answer). */
   finalText: string;
+}
+
+function normalizeToolResult(result: UserContent | UserContent[]): UserContent[] {
+  const values = Array.isArray(result) ? result : [result];
+  if (values.length !== 1) return values;
+  const [only] = values;
+  if (only.type !== 'tool_result' || only.isError || !only.content.startsWith('data:image/')) {
+    return values;
+  }
+  const image = decodeComputerScreenshot(only.content);
+  if (!image) return values;
+  return [
+    {
+      ...only,
+      content: 'Screenshot captured. The image is attached as ephemeral vision input.',
+    },
+    image,
+  ];
 }
 
 export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopResult> {
@@ -117,7 +136,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
         });
         continue;
       }
-      results.content.push(await opts.executeToolCall(call));
+      results.content.push(...normalizeToolResult(await opts.executeToolCall(call)));
     }
     opts.messages.push(results);
     opts.onMessagesChanged?.();

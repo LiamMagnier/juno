@@ -1,10 +1,12 @@
 import "server-only";
-import { promises as fs } from "fs";
+import { promises as fs, createReadStream } from "fs";
+import { Readable } from "stream";
 import path from "path";
 import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
@@ -81,6 +83,103 @@ export async function getObjectBytes(key: string): Promise<{ bytes: Uint8Array; 
   const res = await s3().send(new GetObjectCommand({ Bucket: env.s3.bucket!, Key: key }));
   const bytes = await res.Body!.transformToByteArray();
   return { bytes, contentType: res.ContentType ?? "application/octet-stream" };
+}
+
+/** Total size plus the object's leading bytes, for MIME sniffing. */
+export interface ObjectHead {
+  size: number;
+  /** First `prefixBytes` bytes (fewer if the object is smaller). */
+  prefix: Uint8Array;
+}
+
+/** Parses the `total` out of an S3 `Content-Range: bytes 0-15/1234`. */
+function totalFromContentRange(value: string | undefined, fallback: number): number {
+  const slash = value?.lastIndexOf("/") ?? -1;
+  if (slash < 0) return fallback;
+  const parsed = Number(value!.slice(slash + 1));
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
+ * Read an object's size and leading bytes without downloading it.
+ *
+ * `/api/files` sniffs the real MIME from magic bytes rather than trusting any
+ * stored content type, so it needs the first few bytes before it can decide how
+ * to serve the object — but it must never pull a 1 GB video into RSS to do it.
+ *
+ * On S3 this is one ranged GET: the response carries both the prefix and, via
+ * `Content-Range`, the full size. A zero-byte object is the one case S3 answers
+ * with `InvalidRange`, handled below.
+ */
+export async function headObject(key: string, prefixBytes: number): Promise<ObjectHead> {
+  if (usesLocalDisk()) {
+    const handle = await fs.open(localPath(key), "r");
+    try {
+      const { size } = await handle.stat();
+      if (size === 0) return { size: 0, prefix: new Uint8Array(0) };
+      const buffer = Buffer.alloc(Math.min(prefixBytes, size));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      return { size, prefix: new Uint8Array(buffer.subarray(0, bytesRead)) };
+    } finally {
+      await handle.close();
+    }
+  }
+
+  try {
+    const res = await s3().send(
+      new GetObjectCommand({
+        Bucket: env.s3.bucket!,
+        Key: key,
+        Range: `bytes=0-${Math.max(0, prefixBytes - 1)}`,
+      })
+    );
+    const prefix = await res.Body!.transformToByteArray();
+    return { size: totalFromContentRange(res.ContentRange, prefix.byteLength), prefix };
+  } catch (err) {
+    // A zero-length object cannot satisfy any range. Confirm it is empty rather
+    // than assuming — anything else is a real error and must keep propagating.
+    if (err instanceof Error && (err.name === "InvalidRange" || err.name === "InvalidArgument")) {
+      const stat = await s3().send(new HeadObjectCommand({ Bucket: env.s3.bucket!, Key: key }));
+      return { size: stat.ContentLength ?? 0, prefix: new Uint8Array(0) };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Open a streaming read over an object, optionally over a byte range.
+ *
+ * The point of this function is that memory stays constant: serving a 100 MB
+ * file must not grow RSS by 100 MB. PM2 restarts juno-backend at ~1400 MB
+ * (deploy/ecosystem.config.js) and that restart kills every in-flight SSE
+ * stream on the box, so buffering whole media objects was a way for one video
+ * to end everyone's conversations.
+ *
+ * `range` offsets are inclusive, matching HTTP.
+ */
+export async function openObjectStream(
+  key: string,
+  range?: { start: number; end: number }
+): Promise<ReadableStream<Uint8Array>> {
+  if (usesLocalDisk()) {
+    const stream = createReadStream(
+      localPath(key),
+      range ? { start: range.start, end: range.end } : undefined
+    );
+    // Readable.toWeb destroys the underlying fd when the web stream is
+    // cancelled, so an aborted media request (Safari does this constantly)
+    // releases the descriptor instead of leaking it.
+    return Readable.toWeb(stream) as ReadableStream<Uint8Array>;
+  }
+
+  const res = await s3().send(
+    new GetObjectCommand({
+      Bucket: env.s3.bucket!,
+      Key: key,
+      ...(range ? { Range: `bytes=${range.start}-${range.end}` } : {}),
+    })
+  );
+  return res.Body!.transformToWebStream() as ReadableStream<Uint8Array>;
 }
 
 export async function deleteObject(key: string): Promise<void> {

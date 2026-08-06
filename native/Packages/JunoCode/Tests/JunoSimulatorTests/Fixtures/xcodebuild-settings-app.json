@@ -1,0 +1,26 @@
+[
+  {
+    "action" : "build",
+    "target" : "AuroraKit",
+    "buildSettings" : {
+      "PRODUCT_TYPE" : "com.apple.product-type.framework",
+      "FULL_PRODUCT_NAME" : "AuroraKit.framework",
+      "PRODUCT_BUNDLE_IDENTIFIER" : "com.example.AuroraKit",
+      "TARGET_BUILD_DIR" : "/tmp/juno-derived/Build/Products/Debug-iphonesimulator",
+      "SUPPORTED_PLATFORMS" : "iphoneos iphonesimulator"
+    }
+  },
+  {
+    "action" : "build",
+    "target" : "Aurora",
+    "buildSettings" : {
+      "PRODUCT_TYPE" : "com.apple.product-type.application",
+      "FULL_PRODUCT_NAME" : "Aurora.app",
+      "PRODUCT_BUNDLE_IDENTIFIER" : "com.example.Aurora",
+      "PRODUCT_NAME" : "Aurora",
+      "TARGET_BUILD_DIR" : "/tmp/juno-derived/Build/Products/Debug-iphonesimulator",
+      "IPHONEOS_DEPLOYMENT_TARGET" : "17.0",
+      "SUPPORTED_PLATFORMS" : "iphoneos iphonesimulator"
+    }
+  }
+]

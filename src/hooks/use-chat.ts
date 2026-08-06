@@ -157,6 +157,10 @@ export function useChat(opts: UseChatOptions) {
     setArtifacts(opts.initialArtifacts);
     setStatus("idle");
     setPendingClarification(null);
+    // Conversation-identity reset, deliberately keyed ONLY on conversationId.
+    // opts.initialMessages/initialArtifacts are captured as the values for that
+    // conversation; adding them would wipe live local state every time the
+    // parent re-rendered with a new array literal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.conversationId]);
 
@@ -336,6 +340,9 @@ export function useChat(opts: UseChatOptions) {
     });
 
     void recoverDroppedStream(placeholderId, userMessageId, seq, Date.now() + RESUME_POLL_WINDOW_MS);
+    // Reattach runs once per conversation. recoverDroppedStream polls for up to
+    // an hour, so re-running this on any other dependency change would start a
+    // second, overlapping recovery loop against the same generation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.conversationId]);
 
@@ -571,7 +578,11 @@ export function useChat(opts: UseChatOptions) {
                 )
               );
               if (chunk.quota) opts.onQuota?.(chunk.quota);
-              toast.error(chunk.message);
+              // No toast: the same string is already on the failed turn, with a
+              // "Try again" button next to it. The inline card is the better
+              // surface — anchored to the turn that failed, and actionable.
+              // It also stopped a red toast firing on a deliberate Stop, which
+              // arrives here as an error frame with finishReason "user_stopped".
               break;
             }
           }
@@ -601,7 +612,7 @@ export function useChat(opts: UseChatOptions) {
                   : m
               )
             );
-            toast.error("The connection dropped before the response finished.");
+            // Already written onto the turn as errorMessage/content above.
           }
         }
       } catch (err) {
@@ -633,7 +644,7 @@ export function useChat(opts: UseChatOptions) {
                 : m
             )
           );
-          toast.error(message);
+          // Already rendered inline on the failed turn.
         }
       } finally {
         if (stopFallbackRef.current != null) {

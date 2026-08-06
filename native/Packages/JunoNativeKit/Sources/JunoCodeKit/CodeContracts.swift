@@ -19,6 +19,58 @@ public enum CodePermissionMode: String, Codable, CaseIterable, Sendable {
     case fullAccess
 }
 
+/// The user-facing runtime switch. Both cases share Juno's synchronized task,
+/// conversation, approval, artifact and usage contracts.
+public enum CodeAgentRuntime: String, Codable, CaseIterable, Identifiable, Sendable {
+    case codex
+    case claude
+
+    public var id: String { rawValue }
+
+    public var providerID: String {
+        switch self {
+        case .codex: "openai"
+        case .claude: "anthropic"
+        }
+    }
+}
+
+public enum CodeAgentPermissionMode: String, Codable, CaseIterable, Identifiable,
+    Sendable
+{
+    case plan
+    case ask
+    case autoEdit = "auto-edit"
+    case full
+
+    public var id: String { rawValue }
+}
+
+public struct CodeAgentProfile: Equatable, Codable, Sendable {
+    public var runtime: CodeAgentRuntime
+    public var permissionMode: CodeAgentPermissionMode
+    public var modelID: String?
+    public var reasoningEffort: String?
+    public var computerUse: Bool
+    public var subagentsEnabled: Bool
+
+    public init(
+        runtime: CodeAgentRuntime,
+        permissionMode: CodeAgentPermissionMode = .ask,
+        modelID: String? = nil,
+        reasoningEffort: String? = nil,
+        computerUse: Bool = false,
+        subagentsEnabled: Bool = true
+    ) {
+        self.runtime = runtime
+        self.permissionMode = permissionMode
+        self.modelID = modelID
+        self.reasoningEffort = reasoningEffort
+        self.computerUse = computerUse
+        self.subagentsEnabled = subagentsEnabled
+    }
+}
+
 public enum WorkspaceRelativePathError: Error, Equatable, Sendable {
     case empty
     case absolute

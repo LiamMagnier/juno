@@ -17,13 +17,22 @@ public enum NativeArtifactKind: String, Codable, CaseIterable, Sendable {
     case markdown = "MARKDOWN"
     case svg = "SVG"
     case mermaid = "MERMAID"
+    /// A Juno Design scene document. Its body is DesignDocument JSON, and it is
+    /// opened in the design editor rather than previewed or executed.
+    case design = "DESIGN"
 
     public var supportsRenderedPreview: Bool {
         switch self {
         case .html, .markdown, .svg: true
         case .react, .code, .mermaid: false
+        // A design document is neither: it has no read-only "preview" mode
+        // distinct from the editor, because the editor *is* how it is read.
+        case .design: false
         }
     }
+
+    /// True when this kind opens in the design editor instead of the preview.
+    public var isDesignDocument: Bool { self == .design }
 }
 
 public struct NativeArtifactVersion: Identifiable, Equatable, Sendable {

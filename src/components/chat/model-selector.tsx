@@ -98,6 +98,25 @@ function isFastModel(m: ModelInfo) {
   return getModelMetrics(m).speed >= 8;
 }
 
+/** "2026-10-23" → "23 Oct 2026". Formatted from the parts, not through `Date`:
+ *  the string is a calendar day, and parsing it would shift it by a timezone. */
+function formatRetirementDate(iso: string): string {
+  const [year, month, day] = iso.split("-");
+  const name = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(month) - 1];
+  return name ? `${Number(day)} ${name} ${year}` : iso;
+}
+
+/** "in 16 days" / "tomorrow" — only once it is close enough to matter. A date
+ *  four months out is information; a date next week is a decision. */
+function retirementCountdown(iso: string): string | null {
+  const today = new Date().toISOString().slice(0, 10);
+  const days = Math.round((Date.parse(`${iso}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
+  if (!Number.isFinite(days) || days < 0 || days > 30) return null;
+  if (days === 0) return "last day";
+  if (days === 1) return "tomorrow";
+  return `in ${days} days`;
+}
+
 function ModelDetailPanel({
   model,
   reasoningEffort,
@@ -185,7 +204,19 @@ function ModelDetailPanel({
           {model.status === "deprecated" && (
             <div className="flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-2 text-[11px] font-medium leading-snug text-warning">
               <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />
-              <span>{model.deprecationNote ?? "Retiring — deprecated by the provider."}</span>
+              <span>
+                {model.retiresOn ? (
+                  <>
+                    <span className="font-semibold">Available until {formatRetirementDate(model.retiresOn)}</span>
+                    {retirementCountdown(model.retiresOn) ? <> · {retirementCountdown(model.retiresOn)}</> : null}
+                    {model.deprecationNote?.replace(/^Retires [^—]*— /, "") ? (
+                      <> · {model.deprecationNote.replace(/^Retires [^—]*— /, "")}</>
+                    ) : null}
+                  </>
+                ) : (
+                  (model.deprecationNote ?? "Retiring — deprecated by the provider.")
+                )}
+              </span>
             </div>
           )}
 
@@ -417,7 +448,12 @@ export function ModelSelector({
           <div className="flex items-center justify-between gap-2 w-full mt-auto pt-1 border-t border-dashed border-border/40">
             <div className="flex min-w-0 flex-wrap items-center gap-1">
               {m.status === "deprecated" && (
-                <RowChip icon={TriangleAlert} label="Retiring" warn title={m.deprecationNote ?? "Deprecated by the provider"} />
+                <RowChip
+                  icon={TriangleAlert}
+                  label={m.retiresOn ? `Until ${formatRetirementDate(m.retiresOn)}` : "Retiring"}
+                  warn
+                  title={m.deprecationNote ?? "Deprecated by the provider"}
+                />
               )}
               {m.modality === "image" && <RowChip icon={ImageIcon} label="Image" tint />}
               {m.modality === "video" && <RowChip icon={Video} label="Video" tint />}
@@ -589,10 +625,10 @@ export function ModelSelector({
 
                       {legacyItems.length > 0 && (
                         <div className="mt-2.5">
-                          {/* Auto-expand while searching so legacy matches are visible. */}
+                          {/* Auto-expand while searching so past matches are visible. */}
                           <details key={q ? "open" : "closed"} open={!!q} className="group/legacy rounded-[10px] border border-border/40 bg-muted/10 overflow-hidden">
                             <summary className="cursor-pointer flex items-center justify-between px-3 py-2 text-[10px] font-bold text-muted-foreground hover:bg-accent/30 transition-colors duration-fast ease-out-soft">
-                              <span>Legacy Models ({legacyItems.length})</span>
+                              <span>Past models ({legacyItems.length})</span>
                               <ChevronDown className="h-3.5 w-3.5 transition-transform duration-base group-open/legacy:rotate-180" />
                             </summary>
                             <div className="p-2 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-1 border-t border-dashed border-border/45 bg-background/45">

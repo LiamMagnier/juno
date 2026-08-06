@@ -96,7 +96,7 @@ public struct GitHubPullRequestStatus: Sendable, Equatable {
 /// confirmation-bound, non-force plan that is intentionally absent from the
 /// agent-facing `GitServicing` protocol.
 public final class GitService: GitServicing, Sendable {
-    public static let maximumDiffBytes = 512 * 1_024
+    public static let maximumDiffBytes = 2 * 1_024 * 1_024
 
     private let executor: any CommandExecuting
     private let timeoutSeconds: Double

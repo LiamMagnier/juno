@@ -14,7 +14,9 @@ export interface Usage {
 /** Provider-neutral chat message format. Adapters translate to vendor wire formats. */
 export type UserContent =
   | { type: 'text'; text: string }
-  | { type: 'tool_result'; toolCallId: string; content: string; isError?: boolean };
+  | { type: 'tool_result'; toolCallId: string; content: string; isError?: boolean }
+  /** Ephemeral vision input. Session persistence replaces this with a marker. */
+  | { type: 'image'; mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; data: string };
 
 export type AssistantContent =
   | { type: 'text'; text: string }

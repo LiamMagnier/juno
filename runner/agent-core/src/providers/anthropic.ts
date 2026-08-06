@@ -32,16 +32,21 @@ function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageParam[] 
     if (m.role === 'user') {
       return {
         role: 'user',
-        content: m.content.map((c): Anthropic.ContentBlockParam =>
-          c.type === 'text'
-            ? { type: 'text', text: c.text }
-            : {
-                type: 'tool_result',
-                tool_use_id: c.toolCallId,
-                content: c.content,
-                is_error: c.isError ?? false,
-              },
-        ),
+        content: m.content.map((c): Anthropic.ContentBlockParam => {
+          if (c.type === 'text') return { type: 'text', text: c.text };
+          if (c.type === 'image') {
+            return {
+              type: 'image',
+              source: { type: 'base64', media_type: c.mediaType, data: c.data },
+            };
+          }
+          return {
+            type: 'tool_result',
+            tool_use_id: c.toolCallId,
+            content: c.content,
+            is_error: c.isError ?? false,
+          };
+        }),
       };
     }
     return {

@@ -160,6 +160,17 @@ final class CommandSandboxTests: XCTestCase {
         XCTAssertTrue(profile.profileText().contains("(allow network-outbound)"))
     }
 
+    func testLocalhostCanBeAllowedWithoutGrantingTheInternet() {
+        let profile = CommandSandboxProfile(
+            workspaceRoot: workspaceURL,
+            allowsLocalhost: true
+        )
+        let text = profile.profileText()
+        XCTAssertTrue(text.contains("(allow network-inbound (local ip4 \"localhost:*\"))"))
+        XCTAssertTrue(text.contains("(allow network-outbound (remote ip6 \"localhost:*\"))"))
+        XCTAssertFalse(text.contains("(allow network-outbound)\n"))
+    }
+
     // MARK: - Profile text
 
     func testTheDefaultProfileDeniesEverythingItDoesNotName() throws {

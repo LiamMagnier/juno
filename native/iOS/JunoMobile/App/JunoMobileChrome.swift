@@ -30,6 +30,32 @@ struct JunoMobileQuietLoading: View {
     }
 }
 
+// MARK: - Backdrop
+
+extension View {
+    /// Declares this screen's background — the canvas, laid down so that it also
+    /// covers the strip the keyboard pushes into.
+    ///
+    /// **This is what `.background(Color.junoCanvas)` should have been.** A plain
+    /// background is sized by the screen's safe area, and the keyboard's inset is
+    /// not part of it, so raising a keyboard opened a band between the composer
+    /// (or the search field, or the editor) and the top of the keyboard where
+    /// nothing of ours painted. What showed there was the hosting container's own
+    /// `systemBackground`: pure black in dark and pure white in light, against a
+    /// canvas that is neither.
+    ///
+    /// It has to be applied *inside* a `NavigationStack` rather than around one,
+    /// and that is measured rather than assumed: a canvas placed outside the
+    /// stack, or on the drawer plate behind it, still left the band — the opaque
+    /// view belongs to the navigation content itself, so only a layer above that
+    /// content covers it. The rule that follows is the one this modifier exists
+    /// to make cheap: **every navigation root and every presentation root carries
+    /// it**, because those are the boundaries a new container is introduced at.
+    func junoScreenCanvas() -> some View {
+        background(Color.junoCanvas.ignoresSafeArea())
+    }
+}
+
 // MARK: - Containers
 
 /// A circular Liquid Glass container (OS 26+) with a material fallback, used for

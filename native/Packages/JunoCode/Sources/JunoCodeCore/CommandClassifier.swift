@@ -186,11 +186,31 @@ public struct CommandClassifier: Sendable {
             verdict = .permitted(risk: .destructive, reason: "Process termination.")
         case let executable where interpreterPrograms.contains(executable):
             // Running the project's own tests and scripts. Arbitrary code, but
-            // code from the folder the session was granted.
-            verdict = .permitted(
-                risk: .critical,
-                reason: "'\(program)' can evaluate code or launch another executable."
-            )
+            // code from the folder the session was granted — which is precisely
+            // what `critical` means and why full access proceeds.
+            //
+            // An INLINE program breaks that assumption. `python3 -c "…"`,
+            // `node -e "…"`, `bash -c "…"` run code the model wrote, not code
+            // from the granted folder, and the string is opaque to every rule in
+            // this file: an `rm -rf /`, a `chmod`, a `curl | sh` inside it is
+            // never seen. So it is not ordinary development — it escapes the
+            // workspace boundary, which is the definition of `destructive`.
+            //
+            // This is load-bearing beyond the risk ladder: the macOS entitlements
+            // file justifies disabling the App Sandbox on the soundness of this
+            // classifier, and an unread `-c` string is the one input it cannot
+            // reason about at all.
+            if hasInlineProgramArgument(program: executable, arguments: arguments) {
+                verdict = .permitted(
+                    risk: .destructive,
+                    reason: "'\(program)' runs an inline program this classifier cannot inspect."
+                )
+            } else {
+                verdict = .permitted(
+                    risk: .critical,
+                    reason: "'\(program)' can evaluate code or launch another executable."
+                )
+            }
         case "eval", "exec", "source", ".":
             verdict = .permitted(risk: .critical, reason: "Shell evaluation.")
         case "mv", "cp", "install":
@@ -531,6 +551,87 @@ public struct CommandClassifier: Sendable {
     private static let remoteAccessPrograms: Set<String> = [
         "nc", "ncat", "telnet", "ssh", "scp", "sftp", "rsync",
     ]
+
+    /// Flags that make an interpreter execute a string ARGUMENT rather than a
+    /// file from the workspace, **per program**.
+    ///
+    /// Per program because the same letter means unrelated things depending on
+    /// who reads it. `-c` is inline code to `sh` and `python`, but it is the
+    /// classpath to `java` (`-cp`), a config file to `deno`, `eslint`, `jest`
+    /// and `prettier`, and a syntax-ONLY check to `perl` and `ruby` — which
+    /// parses a file and deliberately runs nothing. A single shared set matched
+    /// every one of those, so `java -cp … Main`, `npx eslint -c …`,
+    /// `python3 -m pytest -p …` and `perl -c script.pl` all came out
+    /// `destructive`, and `.destructive` requires approval in EVERY mode. Full
+    /// access stopped meaning full access on the commands a build runs on
+    /// almost every turn.
+    ///
+    /// Matched on the whole token, so a path like `-config.py` is not a flag;
+    /// `--eval=…` is caught by the prefix check below because it carries its
+    /// program inline just the same.
+    private static let inlineProgramFlags: [String: Set<String>] = {
+        var flags: [String: Set<String>] = [:]
+        for program in shellPrograms {
+            flags[program] = ["-c", "--command"]
+        }
+        for program in ["node", "deno", "bun", "tsx", "ts-node", "js", "qjs"] {
+            flags[program] = ["-e", "--eval", "-p", "--print"]
+        }
+        for program in ["python", "python2", "python3", "pypy", "pypy3"] {
+            flags[program] = ["-c"]
+        }
+        // -e/-E is the inline one for these two; -c is `--check`, a parse with
+        // no execution.
+        for program in ["perl", "ruby"] {
+            flags[program] = ["-e", "-E"]
+        }
+        for program in ["lua", "luajit", "R", "Rscript", "groovy"] {
+            flags[program] = ["-e"]
+        }
+        flags["julia"] = ["-e", "-E"]
+        flags["php"] = ["-r"]
+        // Absent on purpose: java, npx, uv, dotnet-script, tclsh, wish, expect.
+        // They are handed a script path, a class or a package name — there is no
+        // flag that turns an argument into the program.
+        return flags
+    }()
+
+    /// Shells, where clustered short flags are real: `sh -lc "…"` is as inline
+    /// as `sh -c "…"`.
+    private static let shellPrograms: Set<String> = [
+        "sh", "bash", "zsh", "fish", "dash", "ksh",
+    ]
+
+    /// True when this interpreter was handed a program on the command line.
+    ///
+    /// Every argument is examined, not just the leading flag run, because a flag
+    /// that takes a value would otherwise end the scan early and hide what
+    /// follows it — `python3 -W ignore -c "…"` is still inline code. The cost is
+    /// that a script's OWN `-c` argument can be mistaken for the interpreter's;
+    /// that direction over-asks rather than under-asks, which is the right way
+    /// for this check to be wrong.
+    private static func hasInlineProgramArgument(
+        program: String,
+        arguments: [String]
+    ) -> Bool {
+        guard let inlineFlags = inlineProgramFlags[program] else { return false }
+        for argument in arguments {
+            if inlineFlags.contains(argument) { return true }
+            // `--eval=…`, `--command=…`: the program is inline in one token.
+            if let separator = argument.firstIndex(of: "="),
+               inlineFlags.contains(String(argument[argument.startIndex..<separator])) {
+                return true
+            }
+            // Clustered short flags, e.g. `sh -lc "…"`. Shells only: elsewhere a
+            // single-dash letter run is far more likely to be `-cp` or `-rn`.
+            if shellPrograms.contains(program), argument.hasPrefix("-"), !argument.hasPrefix("--"),
+               argument.count > 2, argument.dropFirst().allSatisfy({ $0.isLetter }),
+               argument.contains("c") {
+                return true
+            }
+        }
+        return false
+    }
 
     private static let interpreterPrograms: Set<String> = [
         "sh", "bash", "zsh", "fish", "dash", "ksh",

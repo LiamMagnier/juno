@@ -9,7 +9,7 @@
 
 import { findLearningBlocks, type ParsedLearningBlock } from "@/lib/learning-blocks";
 
-export type ArtifactType = "HTML" | "REACT" | "CODE" | "MARKDOWN" | "SVG" | "MERMAID";
+export type ArtifactType = "HTML" | "REACT" | "CODE" | "MARKDOWN" | "SVG" | "MERMAID" | "DESIGN";
 
 export interface ParsedArtifact {
   identifier: string;
@@ -47,7 +47,15 @@ function artifactId(attrs: Record<string, string>, content: string): string {
 
 function normalizeType(t?: string): ArtifactType {
   const up = (t ?? "").toUpperCase();
-  if (up === "HTML" || up === "REACT" || up === "CODE" || up === "MARKDOWN" || up === "SVG" || up === "MERMAID") {
+  if (
+    up === "HTML" ||
+    up === "REACT" ||
+    up === "CODE" ||
+    up === "MARKDOWN" ||
+    up === "SVG" ||
+    up === "MERMAID" ||
+    up === "DESIGN"
+  ) {
     return up;
   }
   return "CODE";

@@ -30,7 +30,9 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
     /// showing a "sandboxed" badge must be able to tell the difference.
     public static func contained(
         workspaceRootURL: URL,
-        allowsNetwork: Bool = false
+        allowsNetwork: Bool = false,
+        allowsLocalhost: Bool = false,
+        additionalWritablePaths: [String] = []
     ) -> CommandExecutionService {
         guard CommandSandboxProfile.isAvailable else {
             return CommandExecutionService(workspaceRootURL: workspaceRootURL)
@@ -40,7 +42,10 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
             sandbox: CommandSandboxProfile(
                 workspaceRoot: workspaceRootURL,
                 filesystem: .readWrite,
-                allowsNetwork: allowsNetwork
+                allowsNetwork: allowsNetwork,
+                allowsLocalhost: allowsLocalhost,
+                additionalWritablePaths: CommandSandboxProfile.defaultWritablePaths
+                    + additionalWritablePaths
             )
         )
     }

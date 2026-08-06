@@ -349,10 +349,12 @@ struct DesktopProjectsScreen: View {
                 )
             }
         } else if rows.isEmpty {
+            // The website's own search mark, as the "no projects yet" state above
+            // already uses the website's project mark.
             JunoEmptyState(
                 title: "No projects match your search.",
                 message: "Juno searched project names and instructions.",
-                symbol: "magnifyingglass",
+                icon: .search,
                 actionLabel: "Clear search",
                 action: { query = "" }
             )
@@ -1459,6 +1461,12 @@ private struct DesktopProjectDetail: View {
         .overlay {
             // The drop lands in this project's files wherever it is released, so
             // this is the surface that acknowledges it.
+            //
+            // One of the few places the accent survived the greyscale pass, and
+            // deliberately: the web's own drop target is `border-primary/60
+            // ring-2 ring-primary/20` (`projects/[id]/page.tsx:929`). Coral here
+            // is not decoration on a resting state — it appears only while a drag
+            // is over the page, and it is what says the release will land.
             RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
                 .strokeBorder(
                     isDropTargeted ? Color.junoAccent : .clear,

@@ -180,7 +180,10 @@ export function ActivityTimeline({
   // announcement actually worth making.
   const label = streaming
     ? "Open thought process — in progress"
-    : [`Open thought process — complete`, run.elapsedMs === null ? null : formatSpan(run.elapsedMs)]
+    : [
+        hasReasoning ? `Open thought process — complete` : `Open run details — complete`,
+        run.elapsedMs === null ? null : formatSpan(run.elapsedMs),
+      ]
         .filter(Boolean)
         .join(", ");
 
@@ -247,7 +250,14 @@ export function ActivityTimeline({
               <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/45 transition-colors duration-base group-hover/thought:bg-primary/70 motion-reduce:transition-none" />
             </span>
             <span aria-hidden="true" className="min-w-0 flex-1">
-              <span className="block font-serif text-[0.8125rem] font-medium leading-4 tracking-[0.01em] text-muted-foreground/65">Thought process</span>
+              {/* "Thought process" only when there WAS one. Plenty of models
+                  emit no reasoning at all, and labelling their turn with a
+                  thought process invites the reader to open a panel that has
+                  nothing in it — and quietly implies the model reasoned when it
+                  did not. `hasReasoning` is already computed above. */}
+              <span className="block font-serif text-[0.8125rem] font-medium leading-4 tracking-[0.01em] text-muted-foreground/65">
+                {hasReasoning ? "Thought process" : "Run"}
+              </span>
               <span className="block truncate text-body leading-5 text-foreground/78">
                 {detail}
                 {run.note && <span className="text-warning"> · {run.note}</span>}

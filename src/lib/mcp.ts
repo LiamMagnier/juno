@@ -7,6 +7,9 @@ import { mintConnectorToken } from "@/lib/connector-token";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { composioSlugFromId, isComposioAppId } from "@/lib/composio";
 import { env, isComposioConfigured } from "@/lib/env";
+import { wrapUntrusted } from "@/lib/untrusted-content";
+import { classifyToolAccess, type ToolAccess, type ToolAccessHints } from "@/lib/tool-access";
+import { recordToolInvocation, settleToolInvocation } from "@/lib/tool-audit";
 import type { Connection } from "@prisma/client";
 
 /*
@@ -130,16 +133,48 @@ export function anthropicMcpServers(active: ActiveConnector[]) {
   });
 }
 
+/**
+ * Read/write metadata a server declares on its tools, carried on our own tool
+ * objects so callers can tell a read from a write.
+ *
+ * MCP's spec is explicit that these are HINTS, supplied by the connector — the
+ * party we are least willing to trust. A hostile server can claim
+ * readOnlyHint:true on a tool that deletes everything. They are consequently an
+ * INPUT to classifyToolAccess, not the decision itself, and the decision is
+ * never the only thing standing between a connector and a destructive call.
+ */
+export interface McpToolAnnotations {
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+}
+
 export interface McpFunctionTool {
   type: "function";
   function: { name: string; description?: string; parameters: Record<string, unknown> };
+  /** Juno-side metadata — stripped by toWireTools before it reaches a provider. */
+  annotations?: McpToolAnnotations;
 }
 
 export interface McpToolset {
   tools: McpFunctionTool[];
   labelFor(toolName: string): string;
+  /** Whether a namespaced tool name reads, writes, or can't be told apart. */
+  accessFor(toolName: string): ToolAccess;
   execute(toolName: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<string>;
   close(): Promise<void>;
+}
+
+/**
+ * Provider wire shape: the tool minus Juno-side metadata.
+ *
+ * The compat adapter assigns `params.tools` straight through, so without this
+ * the new `annotations` key would ride along to every OpenAI-compatible
+ * provider — a field none of them define, and which the stricter ones reject
+ * outright. (The Responses adapter already rebuilds tools into its own flat
+ * shape and so never carried the extra key.)
+ */
+export function toWireTools(tools: McpFunctionTool[]): { type: "function"; function: McpFunctionTool["function"] }[] {
+  return tools.map(({ type, function: fn }) => ({ type, function: fn }));
 }
 
 const SEP = "__";
@@ -176,15 +211,21 @@ function stringifyToolResult(res: unknown): string {
   return JSON.stringify(res).slice(0, 30_000);
 }
 
+/** Who a toolset's calls belong to. Every dispatch is logged against this. */
+export interface McpToolsetContext {
+  userId: string;
+  conversationId?: string | null;
+}
+
 /**
  * Open MCP connections for the given connectors and expose their tools as
  * OpenAI-style function tools. Tool names are namespaced `<connector>__<tool>`.
  * Always `close()` when the generation ends (best-effort in a finally).
  */
-export async function openMcpToolset(active: ActiveConnector[]): Promise<McpToolset> {
+export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetContext): Promise<McpToolset> {
   const clients = new Map<string, Client>();
   const tools: McpFunctionTool[] = [];
-  const routing = new Map<string, { connectorId: string; toolName: string; label: string }>();
+  const routing = new Map<string, { connectorId: string; toolName: string; label: string; access: ToolAccess }>();
 
   await Promise.all(
     active.map(async (c) => {
@@ -198,7 +239,23 @@ export async function openMcpToolset(active: ActiveConnector[]): Promise<McpTool
         const listed = await client.listTools();
         for (const t of listed.tools) {
           const fnName = uniqueToolName(`${c.id}${SEP}${t.name}`, (n) => routing.has(n));
-          routing.set(fnName, { connectorId: c.id, toolName: t.name, label: c.label });
+          // A server may send annotations, some of them, or none at all. Keep
+          // only the two booleans we act on, and only when they really are
+          // booleans — `readOnlyHint: "false"` must not read as truthy.
+          const raw = t.annotations as ToolAccessHints | undefined;
+          const annotations: McpToolAnnotations = {};
+          if (typeof raw?.readOnlyHint === "boolean") annotations.readOnlyHint = raw.readOnlyHint;
+          if (typeof raw?.destructiveHint === "boolean") annotations.destructiveHint = raw.destructiveHint;
+          const hasAnnotations = Object.keys(annotations).length > 0;
+          // Classify from the BARE tool name: fnName is prefixed with the
+          // connector id, whose first token would otherwise be what the verb
+          // heuristic reads ("github", "notion" — never a verb).
+          routing.set(fnName, {
+            connectorId: c.id,
+            toolName: t.name,
+            label: c.label,
+            access: classifyToolAccess(t.name, hasAnnotations ? annotations : undefined),
+          });
           tools.push({
             type: "function",
             function: {
@@ -206,6 +263,7 @@ export async function openMcpToolset(active: ActiveConnector[]): Promise<McpTool
               description: (t.description ? `[${c.label}] ${t.description}` : `[${c.label}] ${t.name}`).slice(0, 1024),
               parameters: (t.inputSchema as Record<string, unknown>) ?? { type: "object", properties: {} },
             },
+            ...(hasAnnotations ? { annotations } : {}),
           });
         }
       } catch {
@@ -217,16 +275,55 @@ export async function openMcpToolset(active: ActiveConnector[]): Promise<McpTool
   return {
     tools,
     labelFor: (toolName) => routing.get(toolName)?.label ?? "tool",
+    // An unroutable name is "unknown", not "read": the only caller that can ask
+    // about one is asking in order to decide how much to trust it.
+    accessFor: (toolName) => routing.get(toolName)?.access ?? "unknown",
+    /*
+     * The single chokepoint for tool results on both OpenAI paths
+     * (openai-compat.ts and openai-responses.ts both append what this returns),
+     * which is why the untrusted-content envelope goes here rather than at the
+     * two append sites.
+     *
+     * EVERY return path is wrapped, including the error strings: a hostile MCP
+     * server controls its own error messages just as much as its successes.
+     *
+     * The wrapper is applied AFTER stringifyToolResult's 30,000-char truncation,
+     * so content can never grow large enough to push the closing marker out of
+     * the window and leave the envelope unterminated.
+     */
     async execute(toolName, args, signal) {
       const route = routing.get(toolName);
-      if (!route) return `Unknown tool: ${toolName}`;
+      // An unroutable name never reached a connector, so there is nothing to
+      // audit: this is the model hallucinating a tool, not a call happening.
+      if (!route) return wrapUntrusted(toolName, `Unknown tool: ${toolName}`);
       const client = clients.get(route.connectorId);
-      if (!client) return `Connector ${route.connectorId} is not available.`;
+      const label = `${route.label} · ${route.toolName}`;
+
+      const auditId = await recordToolInvocation({
+        userId: ctx.userId,
+        conversationId: ctx.conversationId,
+        connectorId: route.connectorId,
+        toolName: route.toolName,
+        functionName: toolName,
+        access: route.access,
+        args,
+        derivedFromUntrusted: false,
+        status: "executed",
+      });
+
+      if (!client) {
+        await settleToolInvocation(auditId, { status: "failed", error: "connector unavailable" });
+        return wrapUntrusted(label, `Connector ${route.connectorId} is not available.`);
+      }
+      const startedAt = Date.now();
       try {
         const res = await client.callTool({ name: route.toolName, arguments: args }, undefined, signal ? { signal } : undefined);
-        return stringifyToolResult(res);
+        await settleToolInvocation(auditId, { status: "executed", durationMs: Date.now() - startedAt });
+        return wrapUntrusted(label, stringifyToolResult(res));
       } catch (err) {
-        return `Tool error: ${err instanceof Error ? err.message : String(err)}`;
+        const detail = err instanceof Error ? err.message : String(err);
+        await settleToolInvocation(auditId, { status: "failed", error: detail, durationMs: Date.now() - startedAt });
+        return wrapUntrusted(label, `Tool error: ${detail}`);
       }
     },
     async close() {

@@ -23,12 +23,37 @@ targets:
     platform: macOS
     sources:
       - path: App
+        # Migration copies are retained for recovery, but must never become
+        # duplicate Swift declarations when XcodeGen regenerates the project.
+        excludes:
+          - "**/* 2.swift"
       - path: Resources
         excludes:
           - Info.plist
           - JunoDesktop.entitlements
+          - "**/* 2.*"
         buildPhase: resources
       - path: ../../iOS/JunoMobile/Resources/Fonts
+        buildPhase: resources
+      # The SAME string catalog the iOS app ships, not a copy.
+      #
+      # The shared packages call String(localized:) without a `bundle:`, so the
+      # lookup goes to Bundle.main — the app bundle. iOS has this catalog and
+      # resolves; macOS had none, so all 40 dotted keys rendered as literals on
+      # screen: a user saw "connections.blocked.not-configured" and
+      # "diagnostics.phase.idle" instead of English.
+      #
+      # Referenced across rather than duplicated, for the same reason Fonts is
+      # above: two catalogs would drift, and a key added for one app would go
+      # missing on the other.
+      - path: ../../iOS/JunoMobile/Resources/Localizable.xcstrings
+        buildPhase: resources
+      # The bundled Juno Design editor. Copied as a folder reference so
+      # `Bundle.main.url(forResource:withExtension:subdirectory:)` finds
+      # "DesignEditor/index.html" and the host can scope file read access to
+      # that directory alone. Built by `npm run design:editor`.
+      - path: Resources/DesignEditor
+        type: folder
         buildPhase: resources
     dependencies:
       - package: JunoNativeKit
@@ -55,6 +80,13 @@ targets:
         product: JunoCodeBridge
       - package: JunoCode
         product: JunoCodeUI
+      # Juno Simulator's services and models. The pane lives in JunoCodeUI; the
+      # window shell owns the session's lifetime, so it needs the types directly.
+      - package: JunoCode
+        product: JunoSimulator
+      # The Juno Design scene contract, for the hosted design editor.
+      - package: JunoNativeKit
+        product: JunoDesignKit
     configFiles:
       Debug: ../../Config/JunoDesktop-Debug.xcconfig
       Stable: ../../Config/JunoDesktop-Stable.xcconfig
@@ -71,6 +103,8 @@ targets:
     platform: macOS
     sources:
       - path: Tests
+        excludes:
+          - "**/* 2.swift"
     dependencies:
       - target: JunoDesktop
     configFiles:
@@ -86,6 +120,8 @@ targets:
     platform: macOS
     sources:
       - path: UITests
+        excludes:
+          - "**/* 2.swift"
     dependencies:
       - target: JunoDesktop
     configFiles:

@@ -134,7 +134,46 @@ fi
 echo
 
 # ---------------------------------------------------------------------------
-# 4. Release binaries must not contain the DEBUG preview harness.
+# 4. The local website preview must be reachable from the active JunoMac app.
+#
+# The preview engine and the older Desktop shell can both compile while the
+# current Mac workbench leaves its Preview action disabled. This is a cheap
+# source-level guard against shipping that split-brain state again.
+# ---------------------------------------------------------------------------
+echo "Code preview wiring"
+if npm run code:preview:check >/dev/null 2>&1; then
+    pass "active JunoMac Code workbench exposes the local preview"
+else
+    fail "active JunoMac Code workbench is missing local preview wiring"
+fi
+echo
+
+# ---------------------------------------------------------------------------
+# 5. Cloud/Remote creation must remain reachable from the active JunoMac
+# session composer. The task client and provider can compile while the sheet
+# silently disables the feature, so keep this as a source-level release guard.
+# ---------------------------------------------------------------------------
+echo "Code remote wiring"
+if npm run code:remote:check >/dev/null 2>&1; then
+    pass "active JunoMac Code composer exposes Cloud/Remote task dispatch"
+else
+    fail "active JunoMac Code composer is missing Cloud/Remote wiring"
+fi
+echo
+
+# ---------------------------------------------------------------------------
+# 6. Core agent capabilities must be composed into the active runtime.
+# ---------------------------------------------------------------------------
+echo "Code runtime wiring"
+if npm run code:runtime:check >/dev/null 2>&1; then
+    pass "MCP, hooks, Computer Use, subagents, terminal, preview, and remote monitoring are composed"
+else
+    fail "active Juno Code runtime is missing a core capability composition"
+fi
+echo
+
+# ---------------------------------------------------------------------------
+# 7. Release binaries must not contain the DEBUG preview harness.
 #
 # Optional: only runs when a built .app is passed. The harness is wrapped in
 # `#if DEBUG` so this should always hold, but a release that shipped a preview
@@ -202,7 +241,7 @@ if [ $# -ge 1 ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 5. Same-commit requirement: the tree must be clean and pushed.
+# 6. Same-commit requirement: the tree must be clean and pushed.
 # ---------------------------------------------------------------------------
 echo "Source state"
 if [ -n "$(git status --porcelain)" ]; then

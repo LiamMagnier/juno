@@ -40,6 +40,7 @@ public enum SessionEventPayload: Hashable, Codable, Sendable {
     case approvalResolved(ApprovalResolvedEvent)
     case fileChanged(FileChangedEvent)
     case testRunCompleted(TestRunCompletedEvent)
+    case subagentUpdated(SubagentUpdateEvent)
     case goalUpdated(GoalUpdatedEvent)
     case statusChanged(StatusChangedEvent)
     case errorOccurred(ErrorEvent)
@@ -50,15 +51,20 @@ public struct SessionCreatedEvent: Hashable, Codable, Sendable {
     /// Nil when the session was started without a project. The transcript then
     /// opens on a conversation that has no folder rather than naming one.
     public let workspaceID: WorkspaceID?
+    /// The isolated checkout used by this session, if any. Optional for
+    /// backwards-compatible decoding of ordinary and older sessions.
+    public let executionRootPath: String?
     public let workspaceName: String?
     public let configuration: AgentConfiguration
 
     public init(
         workspaceID: WorkspaceID?,
+        executionRootPath: String? = nil,
         workspaceName: String?,
         configuration: AgentConfiguration
     ) {
         self.workspaceID = workspaceID
+        self.executionRootPath = executionRootPath
         self.workspaceName = workspaceName
         self.configuration = configuration
     }
@@ -255,6 +261,152 @@ public struct TestRunCompletedEvent: Hashable, Codable, Sendable {
         self.testsRun = testsRun
         self.failures = failures
         self.durationSeconds = durationSeconds
+    }
+}
+
+/// Where one delegated sub-agent is in its life.
+///
+/// The raw values are the cloud runner's, character for character
+/// (`runner/agent-core/src/subagents.ts`). Two runtimes describing the same
+/// concept in two vocabularies is how a "Done" section ends up meaning something
+/// different on the Mac than it does on the web — and the relay already declares
+/// a `subagent_update` kind that both are expected to speak.
+public enum SubagentStatus: String, Codable, CaseIterable, Sendable {
+    /// Accepted, waiting for a concurrency slot.
+    case queued
+    /// Its session and tool registry are being built.
+    case preparing
+    case running
+    case waitingForApproval = "waiting_approval"
+    case completed
+    case failed
+    case cancelled
+    /// The process ended before this agent did — a quit or a crash mid-run.
+    /// Distinct from `cancelled`, which somebody asked for.
+    case interrupted
+
+    /// The four the web's agent cards also treat as terminal. Anything else
+    /// belongs in the Active list, however long ago it was last heard from.
+    public var isTerminal: Bool {
+        switch self {
+        case .completed, .failed, .cancelled, .interrupted: true
+        case .queued, .preparing, .running, .waitingForApproval: false
+        }
+    }
+}
+
+/// One delegated sub-agent's state, recorded in the *delegating* session's
+/// transcript every time that state changes.
+///
+/// This is what makes a sub-agent visible while it runs. Before it existed the
+/// only trace of a delegation in the parent transcript was the `delegate_task`
+/// tool call, which says nothing until it returns: a running child had no name,
+/// no elapsed time and no link to its own transcript, so the only way to watch
+/// one work was to open its session — which is precisely the "it just opened
+/// another chat" the parent conversation is supposed to make unnecessary.
+///
+/// Emitted on transitions, not on every step. The child's own transcript is the
+/// record of what it did; duplicating each of its tool calls into the parent's
+/// event file would double the write volume of a delegated run to say something
+/// the surface can read live from the child instead.
+public struct SubagentUpdateEvent: Hashable, Codable, Sendable {
+    /// Stable for the life of one delegated task and unique within the session.
+    /// Derived from the delegating call so a single tool call that fans out to
+    /// several agents still gives each one an identity the UI can key rows on.
+    public let agentID: String
+    /// The `delegate_task` call that asked for this agent.
+    public let toolCallID: String
+    /// The agent's own session, once it has been created. Nil in `queued` and in
+    /// a `failed` update that never got that far.
+    public let childSessionID: CodeSessionID?
+    public let title: String
+    /// The instruction the agent was given, verbatim.
+    public let task: String
+    public let role: AgentRole
+    /// The execution contract recorded with the lifecycle, so a completed
+    /// write-capable agent can be offered an explicit review/apply path.
+    public let executionMode: SubagentExecutionMode
+    public let status: SubagentStatus
+    /// A short phrase for what the agent is doing at this moment. Empty when
+    /// there is nothing more specific to say than its status.
+    public let currentActivity: String
+    /// When the agent began working — the anchor a live elapsed counter ticks
+    /// from. Nil while queued, because a queued agent has not started.
+    public let startedAt: Date?
+    public let completedAt: Date?
+    /// Provider-reported token accounting for the agent's own turns, when it
+    /// reported any. Never estimated locally.
+    public let inputTokens: Int?
+    public let outputTokens: Int?
+    /// The agent's written result, capped at the same 3,000 characters the
+    /// cloud runner caps its own summaries at.
+    public let summary: String?
+    public let error: String?
+
+    public static let maximumSummaryCharacters = 3_000
+
+    private enum CodingKeys: String, CodingKey {
+        case agentID, toolCallID, childSessionID, title, task, role
+        case executionMode, status, currentActivity, startedAt, completedAt
+        case inputTokens, outputTokens, summary, error
+    }
+
+    public init(
+        agentID: String,
+        toolCallID: String,
+        childSessionID: CodeSessionID?,
+        title: String,
+        task: String,
+        role: AgentRole,
+        executionMode: SubagentExecutionMode = .readOnly,
+        status: SubagentStatus,
+        currentActivity: String = "",
+        startedAt: Date? = nil,
+        completedAt: Date? = nil,
+        inputTokens: Int? = nil,
+        outputTokens: Int? = nil,
+        summary: String? = nil,
+        error: String? = nil
+    ) {
+        self.agentID = agentID
+        self.toolCallID = toolCallID
+        self.childSessionID = childSessionID
+        self.title = title
+        self.task = task
+        self.role = role
+        self.executionMode = executionMode
+        self.status = status
+        self.currentActivity = currentActivity
+        self.startedAt = startedAt
+        self.completedAt = completedAt
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
+        self.summary = summary.map {
+            String($0.prefix(Self.maximumSummaryCharacters))
+        }
+        self.error = error
+    }
+
+    /// Old transcripts predate the execution mode field. They are read as
+    /// read-only, which is the safe interpretation for a run whose isolation
+    /// contract was never recorded.
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        agentID = try values.decode(String.self, forKey: .agentID)
+        toolCallID = try values.decode(String.self, forKey: .toolCallID)
+        childSessionID = try values.decodeIfPresent(CodeSessionID.self, forKey: .childSessionID)
+        title = try values.decode(String.self, forKey: .title)
+        task = try values.decode(String.self, forKey: .task)
+        role = try values.decode(AgentRole.self, forKey: .role)
+        executionMode = try values.decodeIfPresent(SubagentExecutionMode.self, forKey: .executionMode) ?? .readOnly
+        status = try values.decode(SubagentStatus.self, forKey: .status)
+        currentActivity = try values.decodeIfPresent(String.self, forKey: .currentActivity) ?? ""
+        startedAt = try values.decodeIfPresent(Date.self, forKey: .startedAt)
+        completedAt = try values.decodeIfPresent(Date.self, forKey: .completedAt)
+        inputTokens = try values.decodeIfPresent(Int.self, forKey: .inputTokens)
+        outputTokens = try values.decodeIfPresent(Int.self, forKey: .outputTokens)
+        summary = try values.decodeIfPresent(String.self, forKey: .summary)
+        error = try values.decodeIfPresent(String.self, forKey: .error)
     }
 }
 

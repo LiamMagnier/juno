@@ -5,6 +5,7 @@ import { useTheme } from "next-themes";
 import type { AppBootstrap, AppUser, ClientFolder, ClientSettings, ClientSpend } from "@/types/app";
 import type { ClientConversation, ClientQuota, ReasoningEffort as ComposerReasoningEffort } from "@/types/chat";
 import { MODEL_LIST, type ModelInfo } from "@/lib/models";
+import { withSupersededMarked } from "@/lib/model-metrics";
 
 function hexToHsl(hex: string): { h: number; s: number; l: number } {
   hex = hex.replace(/^#/, "");
@@ -62,6 +63,11 @@ export interface ComposerPrefs {
 // webSearch defaults ON — it's only ever applied to models that actually support
 // native web search, so leaving it on gives up-to-date answers by default.
 const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: "high", webSearch: true, canvas: true, fastMode: false };
+
+/** The bundled catalog, marked the same way /api/models marks it a moment
+ *  later, so the picker's "Past models" section does not appear, disappear and
+ *  reappear across the first fetch. */
+const INITIAL_MODELS = withSupersededMarked(MODEL_LIST);
 const COMPOSER_PREFS_KEY = "juno:composer-prefs";
 
 function sanitizeComposerPrefs(v: unknown): Partial<ComposerPrefs> {
@@ -129,8 +135,9 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
   // Start from defaults so SSR and first client render match; load the persisted
   // values right after mount to avoid a hydration mismatch.
   const [composerPrefs, setComposerPrefsState] = React.useState<ComposerPrefs>(DEFAULT_COMPOSER_PREFS);
-  // Live list of models from each configured provider's API (curated set until loaded).
-  const [models, setModels] = React.useState<ModelInfo[]>(MODEL_LIST);
+  // Live list of models from each configured provider's API (curated set until
+  // loaded).
+  const [models, setModels] = React.useState<ModelInfo[]>(INITIAL_MODELS);
   const { resolvedTheme } = useTheme();
 
   React.useEffect(() => {

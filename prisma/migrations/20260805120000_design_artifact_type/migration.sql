@@ -1,0 +1,16 @@
+-- Juno Design documents as a first-class artifact type.
+--
+-- A design document is stored exactly like every other artifact: one Artifact
+-- row, one ArtifactVersion per revision, with the DesignDocument JSON as the
+-- version body. That is deliberate — it means version history, restore, diff,
+-- sharing, the library and deletion all keep working with no new code, and no
+-- second persistence system to keep in sync.
+--
+-- Additive only. Postgres appends the new label to the end of the enum, so no
+-- existing ordinal moves and every stored value keeps its meaning. Older
+-- application builds that read this column will simply never encounter
+-- 'DESIGN' rows, because only a build that can write them can create them.
+--
+-- IF NOT EXISTS keeps this idempotent for environments where `prisma db push`
+-- already introduced the label ahead of the migration.
+ALTER TYPE "ArtifactType" ADD VALUE IF NOT EXISTS 'DESIGN';

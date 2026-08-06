@@ -20,7 +20,7 @@ public actor AgentOrchestrator {
 
         public init(
             maximumIterations: Int = 40,
-            maximumToolResultBytes: Int = 64 * 1_024,
+            maximumToolResultBytes: Int = 512 * 1_024,
             maximumToolImageBytes: Int = 8 * 1_024 * 1_024,
             maximumToolImages: Int = 4,
             systemPrompt: String
@@ -41,6 +41,7 @@ public actor AgentOrchestrator {
     private let configuration: Configuration
     private let modelID: String
     private let reasoningEffort: ReasoningEffort?
+    private let lifecycleHooks: (any AgentLifecycleHooks)?
 
     private var conversation: [ModelMessage] = []
     private var runTask: Task<Void, Never>?
@@ -62,7 +63,8 @@ public actor AgentOrchestrator {
         store: CodeSessionStore,
         configuration: Configuration,
         modelID: String,
-        reasoningEffort: ReasoningEffort?
+        reasoningEffort: ReasoningEffort?,
+        lifecycleHooks: (any AgentLifecycleHooks)? = nil
     ) {
         self.sessionID = sessionID
         self.model = model
@@ -72,6 +74,7 @@ public actor AgentOrchestrator {
         self.configuration = configuration
         self.modelID = modelID
         self.reasoningEffort = reasoningEffort
+        self.lifecycleHooks = lifecycleHooks
     }
 
     public var isRunning: Bool { runTask != nil }
@@ -245,6 +248,8 @@ public actor AgentOrchestrator {
         var lastAssistantText = ""
         var testsPassed: Bool?
         var modelRetriesLeft = 1
+
+        await lifecycleHooks?.sessionStarted(sessionID: sessionID)
 
         defer {
             runTask = nil
@@ -588,6 +593,37 @@ public actor AgentOrchestrator {
         )
         let startedAt = Date()
 
+        let hookInvocation = AgentToolHookInvocation(
+            sessionID: sessionID,
+            toolName: call.name,
+            input: call.input
+        )
+        if let lifecycleHooks {
+            switch await lifecycleHooks.beforeTool(hookInvocation) {
+            case .allow:
+                break
+            case let .deny(reason):
+                let message = "Action blocked by hook: \(reason)"
+                _ = try? await store.appendEvent(
+                    sessionID: sessionID,
+                    payload: .toolCompleted(
+                        ToolCompletedEvent(
+                            toolCallID: call.id,
+                            status: .denied,
+                            resultSummary: message,
+                            durationSeconds: Date().timeIntervalSince(startedAt)
+                        )
+                    )
+                )
+                return ToolExecutionRecord(
+                    content: message,
+                    isError: true,
+                    images: [],
+                    sideEffects: []
+                )
+            }
+        }
+
         do {
             try await registry.authorizeInvocation(
                 toolName: call.name,
@@ -661,6 +697,11 @@ public actor AgentOrchestrator {
                         )
                     )
                 )
+                await lifecycleHooks?.afterTool(
+                    hookInvocation,
+                    succeeded: false,
+                    summary: message
+                )
                 return ToolExecutionRecord(
                     content: message,
                     isError: true,
@@ -682,6 +723,11 @@ public actor AgentOrchestrator {
                     )
                 )
             )
+            await lifecycleHooks?.afterTool(
+                hookInvocation,
+                succeeded: !result.isError,
+                summary: firstLine(of: result.content)
+            )
             return ToolExecutionRecord(
                 content: result.content,
                 isError: result.isError,
@@ -699,6 +745,11 @@ public actor AgentOrchestrator {
                         durationSeconds: Date().timeIntervalSince(startedAt)
                     )
                 )
+            )
+            await lifecycleHooks?.afterTool(
+                hookInvocation,
+                succeeded: false,
+                summary: "Cancelled"
             )
             return ToolExecutionRecord(
                 content: "Cancelled.",
@@ -718,6 +769,11 @@ public actor AgentOrchestrator {
                         durationSeconds: Date().timeIntervalSince(startedAt)
                     )
                 )
+            )
+            await lifecycleHooks?.afterTool(
+                hookInvocation,
+                succeeded: false,
+                summary: message
             )
             return ToolExecutionRecord(
                 content: "Tool failed: \(message)",
@@ -754,6 +810,7 @@ public actor AgentOrchestrator {
         )
         try? await store.setStatus(id: sessionID, status: status)
         try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+        await lifecycleHooks?.sessionStopped(sessionID: sessionID, status: status)
     }
 
     private func deniedReason(from error: Error) -> String {

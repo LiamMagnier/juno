@@ -78,8 +78,40 @@ public final class DevServerService: @unchecked Sendable {
     private var run: DevServerRun?
     private let classifier = CommandClassifier()
     private let redactor = SecretRedactor()
+    /// Optional kernel containment for the long-lived child. The preview
+    /// service cannot reuse the one-shot executor, but it should still inherit
+    /// its filesystem and network boundary.
+    private let sandbox: CommandSandboxProfile?
 
-    public init() {}
+    public init(sandbox: CommandSandboxProfile? = nil) {
+        self.sandbox = sandbox
+    }
+
+    /// Creates a preview server with the same workspace boundary as regular
+    /// local commands. Network stays off by default: a local preview should be
+    /// able to serve its files without silently turning into an outbound
+    /// process. If sandbox-exec is unavailable the service remains usable,
+    /// and isContained reports the weaker runtime honestly.
+    public static func contained(
+        workspaceRootURL: URL,
+        allowsNetwork: Bool = false,
+        allowsLocalhost: Bool = true
+    ) -> DevServerService {
+        guard CommandSandboxProfile.isAvailable else {
+            return DevServerService()
+        }
+       return DevServerService(
+            sandbox: CommandSandboxProfile(
+                workspaceRoot: workspaceRootURL,
+                filesystem: .readWrite,
+                allowsNetwork: allowsNetwork,
+                allowsLocalhost: allowsLocalhost
+            )
+       )
+    }
+
+    /// Whether the current service applies a kernel-enforced boundary.
+    public var isContained: Bool { sandbox != nil }
 
     /// A dev server left running is a port held hostage and a file watcher
     /// burning CPU until the Mac is restarted. Releasing the service kills it.
@@ -136,8 +168,10 @@ public final class DevServerService: @unchecked Sendable {
             }
 
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            process.arguments = ["-c", commandLine]
+            let invocation = sandbox?.wrap(command: commandLine)
+                ?? (executable: "/bin/zsh", arguments: ["-c", commandLine])
+            process.executableURL = URL(fileURLWithPath: invocation.executable)
+            process.arguments = invocation.arguments
             process.currentDirectoryURL = workspaceRoot
             process.environment = Self.serverEnvironment(workspaceRoot: workspaceRoot.path)
 

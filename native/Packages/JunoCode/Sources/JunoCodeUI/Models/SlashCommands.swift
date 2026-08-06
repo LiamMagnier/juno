@@ -347,15 +347,24 @@ public struct CodeSlashToken: Equatable, Sendable {
 public extension WorkspaceContext {
     /// The command files this workspace carries.
     ///
-    /// Both directories are read, `.juno` last so a repository migrating from
-    /// `.claude` can override one command at a time. Unreadable files are
-    /// skipped rather than failing the lot: one malformed command must not take
-    /// the whole menu down.
+    /// Commands and skills are read from both supported conventions, with
+    /// .juno last so a repository migrating from .claude can override one
+    /// prompt at a time. A skill is represented by its SKILL.md as a slash
+    /// prompt: it remains visible and editable before sending, while keeping
+    /// the same safe behavior/permission contract as every other command.
+    ///
+    /// Unreadable files are skipped rather than failing the lot: one malformed
+    /// prompt must not take the whole menu down.
     func slashCommands() async -> [CodeSlashCommand] {
         var byName: [String: CodeSlashCommand] = [:]
         for directory in [".claude/commands", ".juno/commands"] {
             for command in Self.commands(in: directory, access: access) {
                 byName[command.name] = command
+            }
+        }
+        for directory in [".claude/skills", ".juno/skills"] {
+            for skill in Self.skills(in: directory, access: access) {
+                byName[skill.name] = skill
             }
         }
         return Array(byName.values)
@@ -375,13 +384,49 @@ public extension WorkspaceContext {
 
         return entries.compactMap { entry -> CodeSlashCommand? in
             guard entry.pathExtension.lowercased() == "md" else { return nil }
-            let name = entry.deletingPathExtension().lastPathComponent
-            guard !name.isEmpty else { return nil }
-            guard let contents = try? String(contentsOf: entry, encoding: .utf8) else { return nil }
+           let name = entry.deletingPathExtension().lastPathComponent
+           guard !name.isEmpty else { return nil }
+            let relative = directory + "/" + entry.lastPathComponent
+            guard let filePath = try? WorkspacePath(relative),
+                let fileURL = try? access.resolveForReading(filePath),
+                let contents = try? String(contentsOf: fileURL, encoding: .utf8)
+            else { return nil }
             return CodeSlashCommand.parse(
                 name: name,
                 contents: contents,
                 path: "\(directory)/\(entry.lastPathComponent)"
+            )
+        }
+    }
+
+    /// Discovers the portable skill layout used by Claude Code and compatible
+    /// tools: one directory per skill with a SKILL.md at its root.
+    private static func skills(
+        in directory: String,
+        access: WorkspaceAccess
+    ) -> [CodeSlashCommand] {
+        guard let path = try? WorkspacePath(directory),
+            let url = try? access.resolveForReading(path),
+            let entries = try? FileManager.default.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: [.isDirectoryKey]
+            )
+        else { return [] }
+
+        return entries.compactMap { entry -> CodeSlashCommand? in
+            guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+           else { return nil }
+           let name = entry.lastPathComponent
+           guard !name.isEmpty else { return nil }
+            let relative = directory + "/" + name + "/SKILL.md"
+            guard let skillPath = try? WorkspacePath(relative),
+                let skillURL = try? access.resolveForReading(skillPath),
+                let contents = try? String(contentsOf: skillURL, encoding: .utf8)
+            else { return nil }
+            return CodeSlashCommand.parse(
+                name: name,
+                contents: contents,
+                path: "\(directory)/\(name)/SKILL.md"
             )
         }
     }

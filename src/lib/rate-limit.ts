@@ -52,7 +52,27 @@ export function ipFromHeaders(h: Headers): string {
     const parts = fwd.split(",").map((p) => p.trim()).filter(Boolean);
     if (parts.length) return parts[parts.length - 1];
   }
+  warnMissingProxyHeaders();
   return "unknown";
+}
+
+/**
+ * In production, no proxy header means nginx's header config has drifted — and
+ * the consequence is severe and very hard to diagnose: every anonymous visitor
+ * collapses into the single "unknown" bucket, so signup starts failing globally
+ * after 5 attempts an hour and looks like a mystery outage rather than a
+ * misconfiguration.
+ *
+ * Once per process: this would otherwise fire on every request.
+ */
+let warnedMissingProxyHeaders = false;
+function warnMissingProxyHeaders(): void {
+  if (warnedMissingProxyHeaders || process.env.NODE_ENV !== "production") return;
+  warnedMissingProxyHeaders = true;
+  console.error(
+    "[rate-limit] no X-Real-IP or X-Forwarded-For on a production request — " +
+      "every anonymous client now shares one rate-limit bucket. Check the nginx proxy_set_header config."
+  );
 }
 
 /** Best-effort client IP from the current request context. */

@@ -127,10 +127,8 @@ public struct JunoComposerAura: View {
     private static let swellPeak: Double = 2.3
     private static let swellRise: TimeInterval = 0.176
     private static let swellFall: TimeInterval = 0.924
-    /// What is left of the 1150ms clear after the rise has been waited out, so
-    /// the belt-and-braces reset lands 50ms past the end of the animation rather
-    /// than inside it.
-    private static let swellTail = Duration.milliseconds(1150 - 176)
+    /// The guaranteed clear, a hair past the end of the animation.
+    private static let swellClear = Duration.milliseconds(1150 - 176)
     /// `composer-aura-breathe`: 11s for the whole 1 → 1.06 → 1 cycle, which is
     /// half that each way once SwiftUI is doing the reversing.
     private static let breatheEase = Animation
@@ -166,11 +164,7 @@ public struct JunoComposerAura: View {
                 .position(x: proxy.size.width / 2, y: proxy.size.height / 2 - 8)
         }
         .opacity(focused ? 1 : 0.85)
-        // Focus and colour are crossfades, and a crossfade is what Reduce Motion
-        // asks for *instead* of motion rather than as more of it — so, like the
-        // stylesheet, neither is gated on the preference. Effort is: it drives
-        // `reach` below, which moves the box.
-        .animation(Self.tintEase, value: focused)
+        .animation(JunoMotion.reduced(Self.tintEase, when: reduceMotion), value: focused)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .onChange(of: JunoComposerAuraRamp.clamped(think)) { _, value in
@@ -179,7 +173,7 @@ public struct JunoComposerAura: View {
             }
         }
         .onChange(of: tint) { _, value in
-            withAnimation(Self.tintEase) {
+            withAnimation(JunoMotion.reduced(Self.tintEase, when: reduceMotion)) {
                 tintRed = value.red
                 tintGreen = value.green
                 tintBlue = value.blue
@@ -272,13 +266,13 @@ public struct JunoComposerAura: View {
         withAnimation(.timingCurve(0.16, 1, 0.3, 1, duration: Self.swellRise)) {
             pulse = Self.swellPeak
         }
-        try? await Task.sleep(for: .seconds(Self.swellRise))
+        try? await Task.sleep(for: .milliseconds(Int(Self.swellRise * 1000)))
         guard !Task.isCancelled else { return }
 
         withAnimation(.timingCurve(0.16, 1, 0.3, 1, duration: Self.swellFall)) {
             pulse = 1
         }
-        try? await Task.sleep(for: Self.swellTail)
+        try? await Task.sleep(for: Self.swellClear)
         guard !Task.isCancelled else { return }
         pulse = 1
     }
@@ -372,7 +366,7 @@ enum JunoComposerAuraRamp {
                 Spacer()
 
                 RoundedRectangle(cornerRadius: JunoCornerRadius.composer, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
+                    .fill(.background.secondary)
                     .overlay {
                         Text("Ask Juno anything")
                             .font(.callout)

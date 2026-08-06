@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <!--
+      A restrictive policy on the trusted editor itself. 'self' only: the bundle
+      and its stylesheet come from the app's own resource directory, and there is
+      no connect-src at all — the editor cannot reach the network even if a
+      dependency tried to. User-authored artwork never becomes markup here (the
+      renderer escapes it), and any user-executable preview belongs in an
+      isolated child frame, which is what frame-src permits and nothing else.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'none'; frame-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Juno Design</title>
+    <link rel="stylesheet" href="editor.css" />
+  </head>
+  <body data-juno-design-editor-version="1.0.0+352e8d638c52">
+    <div id="root"></div>
+    <script src="editor.js"></script>
+  </body>
+</html>

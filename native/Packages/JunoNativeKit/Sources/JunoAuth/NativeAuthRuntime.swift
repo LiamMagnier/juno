@@ -173,8 +173,21 @@ public actor NativeAuthRuntime {
     /// credentials were still perfectly good, and which they then could not
     /// sign back in to because sign-in needs the same server.
     public func restore() async throws -> NativeRestoredSession? {
-        guard let stored = try await tokenStore.loadActive() else {
-            return nil
+        let stored: AuthTokenSet
+        do {
+            guard let active = try await tokenStore.loadActive() else {
+                return nil
+            }
+            stored = active
+        } catch {
+            // A Keychain read can be transiently unavailable while macOS is
+            // replacing or re-signing the app bundle. Keep the last confirmed
+            // account open locally and let the normal retry path reconnect it;
+            // showing sign-in here would make an update look like a logout.
+            if let cached = await sessionCache.loadLast() {
+                return .unverified(cached, cause: error.localizedDescription)
+            }
+            throw error
         }
         do {
             let accessToken = try await coordinatedAccessToken(

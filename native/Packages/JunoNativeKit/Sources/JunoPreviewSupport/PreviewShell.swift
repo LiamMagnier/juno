@@ -22,6 +22,14 @@ public enum JunoPreviewEnvironment {
         return .normal
     }
 
+    /// Shows the real desktop profile-footer update card in its staged state.
+    /// This is a visual-QA switch only; it never changes the preview account or
+    /// the production updater's network behavior.
+    public static var updateReady: Bool {
+        CommandLine.arguments.contains("--juno-preview-update-ready")
+            || ProcessInfo.processInfo.environment["JUNO_PREVIEW_UPDATE_READY"] == "1"
+    }
+
     /// Optional starting destination (a section rawValue) from
     /// `--juno-preview-tab <name>` or `JUNO_PREVIEW_TAB`.
     public static var initialDestination: String? {

@@ -428,7 +428,7 @@ struct DesktopArtifactsScreen: View {
                 JunoEmptyState(
                     title: "No artifacts match",
                     message: "Juno searched titles, types, languages and conversations.",
-                    symbol: "magnifyingglass",
+                    icon: .search,
                     actionLabel: "Clear Filters",
                     action: {
                         searchText = ""
@@ -637,10 +637,14 @@ struct DesktopArtifactsScreen: View {
         } else if model.artifacts.isEmpty {
             emptyState
         } else {
+            // The destination's own mark. `square.stack.3d.up` is SF's idea of a
+            // stack; the website's artifact glyph is Lucide's `Layers3`, and it
+            // is already in the asset catalog as the sidebar row this page sits
+            // behind — so drawing a different stack here named a different thing.
             JunoEmptyState(
                 title: "No artifact selected",
                 message: "Choose an artifact to read, edit or export it.",
-                symbol: "square.stack.3d.up"
+                icon: .artifacts
             )
         }
     }
@@ -666,7 +670,7 @@ struct DesktopArtifactsScreen: View {
             JunoEmptyState(
                 title: "No artifacts yet",
                 message: "When Juno builds a page, a component or a diagram in a chat, it is kept here — every version of it.",
-                symbol: "square.stack.3d.up"
+                icon: .artifacts
             )
         }
     }
@@ -1778,6 +1782,7 @@ private enum DesktopArtifactKindName {
         case .markdown: "Document"
         case .svg: "Graphic"
         case .mermaid: "Diagram"
+        case .design: "Design"
         }
     }
 
@@ -1797,6 +1802,7 @@ private enum DesktopArtifactKindName {
         case .markdown: "Documents"
         case .svg: "Graphics"
         case .mermaid: "Diagrams"
+        case .design: "Designs"
         }
     }
 
@@ -1808,6 +1814,7 @@ private enum DesktopArtifactKindName {
         case .markdown: "doc.text"
         case .svg: "scribble.variable"
         case .mermaid: "flowchart"
+        case .design: "pencil.and.outline"
         }
     }
 
@@ -1852,6 +1859,7 @@ private enum DesktopArtifactKindName {
         case .markdown: "md"
         case .svg: "svg"
         case .mermaid: "mmd"
+        case .design: "juno.design.json"
         case .code: codeExtension(language)
         }
     }

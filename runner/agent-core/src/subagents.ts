@@ -19,6 +19,7 @@ import type { ToolContext, ToolDefinition } from './tools/types.js';
 import { PermissionEngine, classifyRisk } from './permissions.js';
 import { runAgentLoop } from './loop.js';
 import type { UsageReporter } from './usage.js';
+import { decodeComputerScreenshot } from './computer.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -774,7 +775,7 @@ export class SubagentManager {
     permissions: PermissionEngine,
     ctx: ToolContext,
     call: { id: string; name: string; input: Record<string, unknown> },
-  ): Promise<UserContent> {
+  ): Promise<UserContent | UserContent[]> {
     const tool = toolsByName.get(call.name);
     if (!tool) {
       return { type: 'tool_result', toolCallId: call.id, content: `Unknown tool: ${call.name}`, isError: true };
@@ -860,16 +861,27 @@ export class SubagentManager {
       output = `Tool crashed: ${err instanceof Error ? err.message : String(err)}`;
       isError = true;
     }
+    const image = !isError && call.name === 'computer_screenshot' ? decodeComputerScreenshot(output) : undefined;
     this.host.emit({
       type: 'tool_finished',
       callId: call.id,
       name: call.name,
-      output: output.length > 2000 ? output.slice(0, 2000) + '…' : output,
+      output: image
+        ? 'Screenshot captured (ephemeral image omitted from the event log).'
+        : output.length > 2000 ? output.slice(0, 2000) + '…' : output,
       isError,
       durationMs: Date.now() - started,
       agentId: task.id,
     });
-    return { type: 'tool_result', toolCallId: call.id, content: output, isError };
+    const result: UserContent = {
+      type: 'tool_result',
+      toolCallId: call.id,
+      content: image
+        ? 'Screenshot captured. The image is attached as ephemeral vision input.'
+        : output,
+      isError,
+    };
+    return image ? [result, image] : result;
   }
 
   private childTools(task: SubagentTask): ToolDefinition[] {

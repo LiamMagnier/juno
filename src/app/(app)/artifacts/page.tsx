@@ -11,6 +11,7 @@ import {
   FileCode2,
   FileText,
   GitBranch,
+  PenTool,
   Globe,
   Image as ImageIcon,
   Loader2,
@@ -54,6 +55,7 @@ const ICONS: Record<ArtifactType, typeof Code2> = {
   SVG: ImageIcon,
   MARKDOWN: FileText,
   MERMAID: GitBranch,
+  DESIGN: PenTool,
 };
 
 /** Filter-chip labels — what the artifact IS, not its file format. */
@@ -64,6 +66,7 @@ const TYPE_LABELS: Record<ArtifactType, string> = {
   MARKDOWN: "Documents",
   SVG: "Graphics",
   MERMAID: "Diagrams",
+  DESIGN: "Designs",
 };
 
 const DOWNLOAD_EXTENSIONS: Record<string, string> = {
@@ -72,6 +75,7 @@ const DOWNLOAD_EXTENSIONS: Record<string, string> = {
   SVG: "svg",
   MARKDOWN: "md",
   MERMAID: "mmd",
+  DESIGN: "juno.design.json",
   CODE: "txt",
 };
 

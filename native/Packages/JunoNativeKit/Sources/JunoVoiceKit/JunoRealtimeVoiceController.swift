@@ -278,6 +278,31 @@ private final class ConversionInput: @unchecked Sendable {
     }
 }
 
+// MARK: - Composed turns
+
+/// One image on a composed voice turn: the JPEG the model is shown, and the
+/// uploaded attachment it came from.
+///
+/// The two travel together rather than as parallel arrays because they are
+/// pruned together — the relay's frame ceiling drops individual images, and an
+/// id left behind by a dropped one would file a picture into the saved
+/// conversation that nothing in the conversation ever saw.
+///
+/// ``attachmentID`` is optional, and nil is a real state rather than a caller's
+/// mistake: the picture is on the reader's device the moment they pick it, and
+/// the upload that mints its id finishes some time later. Sending the turn
+/// without waiting is the right trade — the model sees the image either way, and
+/// only the saved copy goes without it.
+public struct JunoVoiceTurnImage: Equatable, Sendable {
+    public let jpeg: Data
+    public let attachmentID: String?
+
+    public init(jpeg: Data, attachmentID: String? = nil) {
+        self.jpeg = jpeg
+        self.attachmentID = attachmentID
+    }
+}
+
 // MARK: - Controller
 
 /// One realtime voice session against the Juno voice relay.
@@ -358,10 +383,10 @@ public final class JunoRealtimeVoiceController {
     /// `error` frames mid-session for things a conversation survives; promoting
     /// those to ``Phase/error(_:)`` would hang up on a recoverable hiccup.
     public private(set) var notice: String?
-    /// True while this Mac's screen is being streamed to the model. It stays
-    /// false on iPhone by construction: the phone shares a *camera*, and that
-    /// capture session belongs to the app's camera surface, which hands frames
-    /// here through ``sendVideoFrame(_:)``.
+    /// True while this controller's native desktop screen capture is being
+    /// streamed to the model. iPhone ReplayKit capture is owned by the mobile
+    /// voice dock and uses ``sendVideoFrame(_:)`` directly, because ReplayKit's
+    /// lifecycle is distinct from the controller's macOS ScreenCaptureKit task.
     public private(set) var screenSharing = false
     #if os(iOS)
     public private(set) var speakerOutput = true
@@ -385,6 +410,14 @@ public final class JunoRealtimeVoiceController {
     /// otherwise bring an audio engine up behind a dismissed sheet.
     private var closedByUser = false
     private var reconnectAttempted = false
+    /// The chat that was on screen when the call opened, already bounded. Kept
+    /// for the length of the session because a reconnect is a new socket to a
+    /// new relay session, which seeds its history from scratch.
+    private var seededHistory: [JunoVoiceHistoryEntry] = []
+    /// Attachment ids for composed turns the relay has not echoed back yet, in
+    /// send order. An array rather than a dictionary so the oldest is the one
+    /// dropped when the bound is reached.
+    private var pendingTurnAttachments: [(turnID: String, attachmentIDs: [String])] = []
     #if os(macOS)
     private var screenShareTask: Task<Void, Never>?
     /// Bumped by every start and every stop. A capture loop that is already
@@ -426,13 +459,24 @@ public final class JunoRealtimeVoiceController {
     /// `error`, which is how "Start again" works without rebuilding the object —
     /// and refusing it from `connecting`/`live` is what stops a double tap from
     /// opening two sockets onto one audio engine.
-    public func start(provider requested: JunoVoiceProvider? = nil) async {
+    ///
+    /// - Parameter history: The finalized turns of the chat this call was opened
+    ///   from, so the model knows what is being talked about. Nil, not empty, is
+    ///   "unchanged" — "Start again" after a failure passes nothing and keeps the
+    ///   context the first attempt was given, where an empty array would restart
+    ///   the conversation blind. Bounding happens here; callers pass the chat.
+    public func start(
+        provider requested: JunoVoiceProvider? = nil,
+        history: [JunoVoiceHistoryEntry]? = nil
+    ) async {
         switch phase {
         case .idle, .ended, .error: break
         default: return
         }
         closedByUser = false
         reconnectAttempted = false
+        if let history { seededHistory = JunoVoiceHistoryEntry.bounded(history) }
+        pendingTurnAttachments = []
         record.reset()
         usage = nil
         capabilities = nil
@@ -573,11 +617,28 @@ public final class JunoRealtimeVoiceController {
         socket = task
         box.socket = task
         task.resume()
-        send(.sessionStart(provider: provider))
+        send(.sessionStart(provider: provider, history: startHistory()))
         startReceiving(on: task)
         startPinging()
         startMetering()
         if isReconnect { phase = .reconnecting }
+    }
+
+    /// The context for `session.start`: the chat the call was opened from, plus
+    /// anything already said in the call itself.
+    ///
+    /// The second half is what makes a reconnect invisible. A dropped socket
+    /// gets a fresh relay session with an empty provider history, so without
+    /// replaying what has been said the conversation resumes mid-thought with a
+    /// model that has forgotten the last ten minutes. Hypotheses are excluded:
+    /// a half-heard sentence is not something to reintroduce as fact.
+    private func startHistory() -> [JunoVoiceHistoryEntry] {
+        let spoken = record.lines.compactMap { line -> JunoVoiceHistoryEntry? in
+            let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard line.final, !text.isEmpty else { return nil }
+            return JunoVoiceHistoryEntry(role: line.role, text: text)
+        }
+        return JunoVoiceHistoryEntry.bounded(seededHistory + spoken)
     }
 
     private func startReceiving(on task: URLSessionWebSocketTask) {
@@ -666,8 +727,8 @@ public final class JunoRealtimeVoiceController {
                 stopTranscriber()
             }
 
-        case .transcript(let role, let text, let final):
-            upsertTranscript(role: role, text: text, final: final)
+        case .transcript(let role, let text, let final, let turnID):
+            upsertTranscript(role: role, text: text, final: final, turnID: turnID)
 
         case .turn(let turnPhase):
             assistantSpeaking = turnPhase == .start
@@ -706,8 +767,27 @@ public final class JunoRealtimeVoiceController {
     /// Delegates to ``JunoVoiceTranscriptRecord``, which owns the ordering rule
     /// and is tested on its own. Nothing about placing a line depends on the
     /// socket, so nothing about it belongs in the socket's controller.
-    private func upsertTranscript(role: JunoVoiceTranscriptRole, text: String, final: Bool) {
-        record.upsert(role: role, text: text, final: final)
+    ///
+    /// The turn id is resolved here rather than in the record, because what a
+    /// turn id means — "the composed turn this socket sent, coming back" — is a
+    /// fact about the socket and nothing at all about ordering lines. Only the
+    /// reader's own turns can carry images, so an id echoed on an assistant line
+    /// claims nothing.
+    ///
+    /// Defaulted to nil so the on-device recognizer — which invents its own
+    /// lines and has no turn to claim — keeps calling this without one.
+    private func upsertTranscript(
+        role: JunoVoiceTranscriptRole,
+        text: String,
+        final: Bool,
+        turnID: String? = nil
+    ) {
+        record.upsert(
+            role: role,
+            text: text,
+            final: final,
+            attachmentIDs: role == .user ? takeTurnAttachments(for: turnID) : []
+        )
     }
 
     private func showNotice(_ message: String) {
@@ -764,8 +844,9 @@ public final class JunoRealtimeVoiceController {
 
     /// The relay forwards a frame only while its base64 payload is under this.
     nonisolated static let maxVideoFrameBytes = 2_000_000
-    /// Matches the web composer. Past four images a turn, providers start
-    /// answering about the first one and ignoring the rest.
+    /// Matches the web composer, and the `/api/voice/transcript` schema, which
+    /// caps `attachmentIds` at four per turn. Past four images a turn, providers
+    /// start answering about the first one and ignoring the rest.
     nonisolated static let maxTurnImages = 4
 
     /// Sends one composed turn — text plus up to four images — through the live
@@ -778,16 +859,22 @@ public final class JunoRealtimeVoiceController {
     /// when the text actually sent to the model is the stand-in prompt below
     /// rather than anything they typed.
     ///
+    /// That same echo is how the images reach the saved conversation. A
+    /// `video.frame` is anonymous — bytes and nothing else — so the attachment
+    /// ids are held here against the `turnId` and attached to the transcript
+    /// line when the relay hands the turn back. Nothing else on this socket can
+    /// say which line the pictures belonged to.
+    ///
     /// - Returns: false when nothing was sent, so a caller can fall back to the
     ///   normal chat path instead of quietly losing the message.
     @discardableResult
-    public func sendTurn(text: String, images: [Data]) async -> Bool {
+    public func sendTurn(text: String, images: [JunoVoiceTurnImage]) async -> Bool {
         guard phase == .live, let socket else { return false }
         let requested = Array(images.prefix(Self.maxTurnImages))
         guard requested.isEmpty || capabilities?.videoInput == true else { return false }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        var frames: [String] = []
+        var frames: [EncodedTurnImage] = []
         if !requested.isEmpty {
             frames = await Self.encodeFrames(requested)
             // Encoding several megabytes takes long enough for the session to
@@ -816,9 +903,21 @@ public final class JunoRealtimeVoiceController {
         let message = trimmed.isEmpty
             ? "Please look at the image context I just shared and respond naturally."
             : trimmed
-        for frame in frames { send(.videoFrame(jpegBase64: frame)) }
-        send(.inputText(message, turnId: UUID().uuidString, displayText: displayText))
+        let turnID = UUID().uuidString
+        // Only what actually went up. An id kept for a frame the ceiling
+        // dropped would put a picture in the saved conversation that the model
+        // was never shown, which reads back as the model ignoring it.
+        rememberTurnAttachments(frames.compactMap(\.attachmentID), for: turnID)
+        for frame in frames { send(.videoFrame(jpegBase64: frame.base64)) }
+        send(.inputText(message, turnId: turnID, displayText: displayText))
         return true
+    }
+
+    /// A turn's image after encoding: what goes on the wire, and what the save
+    /// needs to file it under.
+    private struct EncodedTurnImage: Sendable {
+        let base64: String
+        let attachmentID: String?
     }
 
     /// Base64 for a whole turn's images, off the main actor.
@@ -826,8 +925,38 @@ public final class JunoRealtimeVoiceController {
     /// `nonisolated async` rather than a plain helper: under SE-0338 that is what
     /// actually leaves the main actor, and four images at the relay's ceiling is
     /// enough work to drop frames from the orb if it ran here.
-    private nonisolated static func encodeFrames(_ images: [Data]) async -> [String] {
-        images.compactMap(relayFrame)
+    private nonisolated static func encodeFrames(
+        _ images: [JunoVoiceTurnImage]
+    ) async -> [EncodedTurnImage] {
+        images.compactMap { image in
+            relayFrame(image.jpeg).map {
+                EncodedTurnImage(base64: $0, attachmentID: image.attachmentID)
+            }
+        }
+    }
+
+    /// How many unechoed turns keep their images. The relay answers a composed
+    /// turn immediately, so more than a couple outstanding means the echoes are
+    /// not coming at all — and an unbounded map would then grow for the length
+    /// of the call holding ids no line will ever claim.
+    private static let pendingTurnAttachmentLimit = 8
+
+    private func rememberTurnAttachments(_ attachmentIDs: [String], for turnID: String) {
+        guard !attachmentIDs.isEmpty else { return }
+        pendingTurnAttachments.append((turnID: turnID, attachmentIDs: attachmentIDs))
+        if pendingTurnAttachments.count > Self.pendingTurnAttachmentLimit {
+            pendingTurnAttachments.removeFirst(
+                pendingTurnAttachments.count - Self.pendingTurnAttachmentLimit
+            )
+        }
+    }
+
+    /// Claims the images sent under this turn id, once.
+    private func takeTurnAttachments(for turnID: String?) -> [String] {
+        guard let turnID,
+            let index = pendingTurnAttachments.firstIndex(where: { $0.turnID == turnID })
+        else { return [] }
+        return pendingTurnAttachments.remove(at: index).attachmentIDs
     }
 
     // MARK: Screen share

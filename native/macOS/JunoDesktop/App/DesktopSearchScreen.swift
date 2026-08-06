@@ -77,7 +77,7 @@ struct DesktopSearchScreen: View {
             JunoEmptyState(
                 title: "Search Juno",
                 message: "Chats, messages, files and artifacts — everything synced to this Mac, searched offline against the encrypted account store.",
-                symbol: "magnifyingglass"
+                icon: .search
             )
             .accessibilityIdentifier("juno.desktop.search-intro")
         case .idle:
@@ -143,7 +143,7 @@ struct DesktopSearchScreen: View {
             JunoEmptyState(
                 title: "No results",
                 message: "Nothing synced to this Mac matches “\(model.query)”.",
-                symbol: "magnifyingglass"
+                icon: .search
             )
             .accessibilityIdentifier("juno.desktop.search-no-results")
         }
@@ -161,6 +161,12 @@ struct DesktopSearchScreen: View {
             }
         }
         .listStyle(.inset)
+        // Says what colour a selection is, and leaves the drawing to the list —
+        // arrow keys, type-select and the focus ring all keep working. Without
+        // it macOS resolves a focused selection to the app's accent, and a
+        // full-width coral bar is nothing like the web, where a selected row is
+        // `--sidebar-accent`: a warm grey barely a step off the ground.
+        .junoSidebarSelectionTint()
         // The canvas behind the rows is the page's, so the list does not paint a
         // second, cooler background inside a warm window.
         .scrollContentBackground(.hidden)
@@ -191,6 +197,26 @@ struct DesktopSearchScreen: View {
             }
         }
         .padding(.vertical, JunoSpace.hairline)
+        // Pinned so the platform's emphasis style cannot invert the label to
+        // white over a pale grey selection. The caption inside keeps its own
+        // secondary style — a colour set closer to the leaf wins.
+        .junoSidebarRowInk()
+        // Belt and braces over ``junoSidebarSelectionTint()``, and the reason
+        // this list is the one place that draws its own fill. The tint is the
+        // supported lever and it is what keeps the platform drawing the
+        // selection — but `.sidebar` and `.inset` are two different AppKit
+        // highlight styles, only the first of which the desktop shell has ever
+        // had eyes on, and a row background is composited above whatever fill
+        // the row view chose. So this settles the colour rather than asking for
+        // it. Clear while unselected, so an unselected row is still nothing but
+        // the canvas it sits on and there is no second fill to keep in step with
+        // the page.
+        //
+        // A `Table` publishes no equivalent, which is why the tables on Library,
+        // Tasks and Memory have to trust the tint alone.
+        .listRowBackground(
+            selection == result.id ? Color.junoSidebarSelection : Color.clear
+        )
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { open(result) }
         .contextMenu {

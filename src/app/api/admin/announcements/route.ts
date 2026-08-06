@@ -8,7 +8,8 @@ export const runtime = "nodejs";
 
 export async function GET() {
   const owner = await getOwnerUser();
-  if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // 404, not 403: the rest of the admin surface refuses to confirm it exists.
+  if (!owner) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const announcements = await prisma.announcement.findMany({
     orderBy: [{ createdAt: "desc" }],
@@ -20,7 +21,8 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const owner = await getOwnerUser();
-  if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // 404, not 403: the rest of the admin surface refuses to confirm it exists.
+  if (!owner) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const parsed = announcementInputSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {

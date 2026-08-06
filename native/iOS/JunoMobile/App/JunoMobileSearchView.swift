@@ -32,18 +32,49 @@ struct JunoMobileSearchView: View {
     var openProject: ((String) -> Void)?
 
     @FocusState private var fieldFocused: Bool
+    /// What is in the field, owned by the field.
+    ///
+    /// The store follows it rather than backing it. A `Binding` straight onto
+    /// `model.query` made the field and the store two sources for one string —
+    /// the clear button wrote to the store while the field read from it — and it
+    /// ran the whole screen's invalidation from inside the text field's own edit
+    /// callback, because the setter moves `phase`, `results` and the error line
+    /// as well.
+    @State private var draft = ""
 
     var body: some View {
-        content
-            .background(Color.junoCanvas)
-            .navigationTitle("Search")
-            .navigationBarTitleDisplayMode(.inline)
-            // Deliberately NOT an identifier on this whole view. It used to carry
-            // `juno.mobile.search`, and an identifier on a container is inherited
-            // by every descendant — so `juno.mobile.search-results` did not exist
-            // at runtime and neither did anything else on the screen.
-            .safeAreaInset(edge: .bottom) { field }
-            .onAppear { fieldFocused = true }
+        // **The canvas is a constant first child, not a `.background`.**
+        //
+        // The field hangs off this view in a bottom inset, and the inset's host
+        // used to be the bare `switch` on `phase`. Every phase change — and the
+        // first keystroke causes one, idle → searching → ready — rebuilt that
+        // host and took the text field's first responder with it: "quasar"
+        // arrived as "q" and everything after the first letter went nowhere.
+        // A stack with one unconditional subview gives the inset something
+        // stable to hang from, and the branch change happens a level below it.
+        ZStack {
+            Color.junoCanvas.ignoresSafeArea()
+            content
+        }
+        .navigationTitle("Search")
+        .navigationBarTitleDisplayMode(.inline)
+        // Deliberately NOT an identifier on this whole view. It used to carry
+        // `juno.mobile.search`, and an identifier on a container is inherited
+        // by every descendant — so `juno.mobile.search-results` did not exist
+        // at runtime and neither did anything else on the screen.
+        .safeAreaInset(edge: .bottom) { field }
+        // Seeded from the store, so coming back to a search that is still live
+        // shows the query its results belong to rather than an empty field.
+        .onAppear {
+            draft = model.query
+            fieldFocused = true
+        }
+        .onChange(of: draft) { _, text in model.setQuery(text) }
+        // The store wins when something other than typing moves the query — a
+        // re-run after a sync, or the model being stopped and restarted.
+        .onChange(of: model.query) { _, query in
+            if query != draft { draft = query }
+        }
     }
 
     // MARK: - Field
@@ -53,34 +84,44 @@ struct JunoMobileSearchView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15))
                 .foregroundStyle(Color.junoMutedForeground)
-            TextField(
-                "Chats, messages, projects, files…",
-                text: Binding(get: { model.query }, set: { model.setQuery($0) })
-            )
-            .font(.system(size: 16))
-            .textFieldStyle(.plain)
-            .foregroundStyle(Color.primary)
-            .submitLabel(.search)
-            .autocorrectionDisabled()
-            .textInputAutocapitalization(.never)
-            .focused($fieldFocused)
-            .accessibilityIdentifier("juno.mobile.search-field")
+            TextField("Chats, messages, projects, files…", text: $draft)
+                .font(.system(size: 16))
+                .textFieldStyle(.plain)
+                .foregroundStyle(Color.primary)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .focused($fieldFocused)
+                .accessibilityIdentifier("juno.mobile.search-field")
 
-            if !model.query.isEmpty {
+            if !draft.isEmpty {
+                // Clears the field and nothing else: the query reaches the store
+                // through the same `onChange` every keystroke uses, so there is
+                // one path from the field to the results rather than two that
+                // can disagree.
                 Button {
-                    model.setQuery("", debounced: false)
+                    draft = ""
                     fieldFocused = true
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 16))
                         .foregroundStyle(Color.junoMutedForeground.opacity(0.7))
+                        // A glyph is not a touch target: the 16pt symbol was the
+                        // whole of it, and a tap that missed by two points went
+                        // to the field instead and cleared nothing.
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
                 .accessibilityIdentifier("juno.mobile.search-clear")
             }
         }
-        .padding(.horizontal, 16)
+        .padding(.leading, 16)
+        // 8 rather than 16 on this side, so the wider clear button lands the
+        // glyph exactly where the bare glyph used to sit: the target grew
+        // outwards into the capsule's own inset, and nothing moved.
+        .padding(.trailing, 8)
         .frame(height: 44)
         // Real Liquid Glass, in the same container the rest of the app's floating
         // chrome uses. `interactive` is what makes it respond to touch, and it

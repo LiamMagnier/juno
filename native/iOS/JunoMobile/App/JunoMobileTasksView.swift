@@ -186,7 +186,7 @@ struct JunoMobileTasksView: View {
 private struct JunoMobileTaskCard: View {
     let task: NativeScheduledTask
     let busy: Bool
-    /// `@MainActor @Sendable` because it is handed straight to a `Binding`'s
+    /// `@MainActor @Sendable` because it is called from inside a `Binding`'s
     /// setter, whose accessors are `@Sendable` in the iOS 26 SDK. The toggle is
     /// driven on the main actor, so the annotation states what already happens.
     let onToggle: @MainActor @Sendable (Bool) -> Void
@@ -218,7 +218,11 @@ private struct JunoMobileTaskCard: View {
                         }
                     }
                     Spacer(minLength: 4)
-                    Toggle("", isOn: Binding(get: { task.enabled }, set: onToggle))
+                    // Called, not passed — the second of the two sites, and see
+                    // the note on the same `Binding` in JunoMobileAttachmentMenu:
+                    // passing the isolated closure itself is what emits the
+                    // thunk the CI toolchain crashes on.
+                    Toggle("", isOn: Binding(get: { task.enabled }, set: { onToggle($0) }))
                         .labelsHidden()
                         .tint(Color.junoAccent)
                         .disabled(busy)

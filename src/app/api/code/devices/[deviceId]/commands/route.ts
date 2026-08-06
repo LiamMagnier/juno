@@ -37,7 +37,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ deviceId
         data: { status: "claimed", claimedAt: new Date() },
       });
       if (claimed.count) {
-        const command = await prisma.codeSessionCommand.findUniqueOrThrow({ where: { id: candidate.id } });
+        const command = await prisma.codeSessionCommand.findUniqueOrThrow({ where: { id: candidate.id, userId: user.id } });
         return NextResponse.json({ command: serializeSessionCommand(command) });
       }
     }

@@ -104,12 +104,13 @@ export async function recordTokens(
 /** Refund one consumed message (used when generation fails), floored at 0. */
 export async function refundMessage(userId: string, plan: Plan): Promise<QuotaStatus> {
   const period = currentPeriod();
-  const current = await prisma.usage.findUnique({ where: { userId_period: { userId, period } } });
-  if (current && current.messageCount > 0) {
-    await prisma.usage.update({
-      where: { userId_period: { userId, period } },
-      data: { messageCount: { decrement: 1 } },
-    });
-  }
+  // Single atomic conditional decrement, mirroring consumeMessage above: the
+  // `messageCount > 0` floor and the decrement are one SQL UPDATE. Read-then-
+  // decrement let two concurrent failures both observe 1 and both decrement,
+  // refunding a message the user never spent.
+  await prisma.usage.updateMany({
+    where: { userId, period, messageCount: { gt: 0 } },
+    data: { messageCount: { decrement: 1 } },
+  });
   return getQuota(userId, plan);
 }

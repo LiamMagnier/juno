@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { PLAN_LIST } from "@/lib/plans";
+import { isPlanPurchasable } from "@/lib/stripe";
 import { Section } from "@/components/landing/section";
 
 /**
@@ -16,6 +17,10 @@ const ONE_LINERS: Record<string, string> = {
 };
 
 export function Pricing() {
+  // Never advertise a price this deployment cannot charge: without its
+  // STRIPE_PRICE_* env var, checkout answers 503 and the tier is a dead end.
+  const plans = PLAN_LIST.filter((plan) => plan.id === "FREE" || isPlanPurchasable(plan.id));
+
   return (
     <Section
       id="pricing"
@@ -23,8 +28,14 @@ export function Pricing() {
       heading="Simple plans, metered honestly."
       lede="Every paid plan unlocks every model. The difference is budget — measured in real usage, not message counts."
     >
-      <ul className="mt-10 grid gap-x-10 sm:grid-cols-2 lg:grid-cols-4">
-        {PLAN_LIST.map((plan) => (
+      <ul
+        className={
+          plans.length === 4
+            ? "mt-10 grid gap-x-10 sm:grid-cols-2 lg:grid-cols-4"
+            : "mt-10 grid gap-x-10 sm:grid-cols-2 lg:grid-cols-3"
+        }
+      >
+        {plans.map((plan) => (
           <li key={plan.id} className="border-t border-border/60 pb-6 pt-5">
             <div className="flex items-baseline justify-between gap-2">
               <h3 className="font-serif text-heading font-medium">{plan.name}</h3>

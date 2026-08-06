@@ -1,3 +1,4 @@
+import type { Plan } from "@prisma/client";
 import type { ClientConversation, ClientQuota } from "@/types/chat";
 import type { Provider } from "@/lib/providers";
 
@@ -46,7 +47,8 @@ export interface ClientSpend {
   budgetMicroUsd: number | null;
   /** EUR per USD of model spend (display conversion; defaults to 1). */
   eurPerUsd: number;
-  /** Rolling windows shown as percentages (no euro figures surfaced). */
+  /** Rolling windows, as percentages. The period total is shown in euros
+   *  alongside them — see the Usage tile in settings. */
   windows: { session: ClientUsageWindow; weekly: ClientUsageWindow };
   /** Billing cycle info for the "renews / cancels" line. */
   billing: {
@@ -66,6 +68,13 @@ export interface AppBootstrap {
   folders: ClientFolder[];
   features: {
     billing: boolean;
+    /** Paid tiers whose MONTHLY Stripe price id is configured, so they can be
+     *  offered. A tier missing from this list must not render a buy button —
+     *  checkout would 503. Existing subscribers on such a tier keep it. */
+    purchasablePlans: Plan[];
+    /** The same, for annual billing. Separate because a deployment can sell a
+     *  tier monthly without having created its yearly price yet. */
+    purchasableAnnualPlans: Plan[];
     /** Server speech-to-text is configured — dictation transcribes with a real
      *  STT model instead of the browser's (poor, English-biased) recognizer. */
     serverStt: boolean;

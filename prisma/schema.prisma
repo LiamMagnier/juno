@@ -759,6 +759,11 @@ enum ArtifactType {
   MARKDOWN
   SVG
   MERMAID
+  // Juno Design scene document. The version body is the DesignDocument JSON
+  // (see src/lib/design/schema.ts); it shares Artifact/ArtifactVersion with
+  // every other type so history, restore, sharing and the library work
+  // unchanged. Added last so existing enum ordinals are untouched.
+  DESIGN
 }
 
 // ----------------------------------------------------------------------------

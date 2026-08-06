@@ -1,0 +1,10 @@
+{
+  "workspace" : {
+    "name" : "Aurora",
+    "schemes" : [
+      "Aurora",
+      "AuroraTests",
+      "AuroraKit"
+    ]
+  }
+}

@@ -271,6 +271,10 @@ public final class SessionController {
         let supportsVision: Bool
         /// Rebuilds the system prompt after a durable goal transition.
         let goalUpdatedAt: Date?
+        /// Rebuilds the orchestrator when the user enables or disables
+        /// repository hooks. Permission mode itself remains live through the
+        /// coordinator; the hook adapter reads it dynamically.
+        let hookPolicyFingerprint: String
     }
 
     public let sessionID: CodeSessionID
@@ -300,17 +304,29 @@ public final class SessionController {
     public private(set) var isRunningTest = false
     /// The command the reader typed into the console, and its real outcome.
     public private(set) var consoleRun: ConsoleCommandRun?
+    /// A real reader-owned PTY, separate from the bounded one-shot command
+    /// transcript above. This is what makes `npm run dev`, REPLs and interactive
+    /// installers usable without weakening the agent tool contract.
+    public private(set) var interactiveTerminalState: InteractiveTerminalState = .idle
+    public private(set) var interactiveTerminalCommand: String?
+    public var interactiveTerminal: [TerminalLine] { interactiveTerminalLog.lines }
     /// Checkpoints recorded for this session. Per file, never per run — there is
     /// no run-level snapshot to count.
     public private(set) var checkpointCount = 0
     public private(set) var gitStatus: GitStatusSummary?
     public private(set) var gitHistory: [GitCommitInfo] = []
+    public private(set) var managedWorktrees: [ManagedWorktree] = []
     public private(set) var gitHubPullRequest: GitHubPullRequestStatus?
     public private(set) var gitHubStatusMessage: String?
     public private(set) var isLoadingGitHubStatus = false
     public private(set) var testSuggestions: [TestSuggestion] = []
     public private(set) var rootEntries: [FileEntry] = []
     public private(set) var instructionFiles: [FileEntry] = []
+    public private(set) var hookDiscoveryResult = HookDiscoveryResult()
+    public private(set) var skillDiscoveryResult = SkillDiscoveryResult()
+    public private(set) var mcpServerConfigurations: [MCPServerConfiguration] = []
+    public private(set) var mcpConfigurationError: String?
+    public private(set) var hookPolicy = HookExecutionPolicy.denyAll
     public private(set) var runStartedAt: Date?
     /// The assistant text accumulating in the turn that is streaming right now,
     /// and empty whenever nothing is streaming. Never persisted: the
@@ -389,6 +405,9 @@ public final class SessionController {
     /// appended while the call is still open, which is what lets a test result
     /// be attributed to the run that produced it.
     private var openToolCallID: String?
+    private var interactiveTerminalService: InteractiveTerminalSession?
+    private var interactiveTerminalTask: Task<Void, Never>?
+    private var interactiveTerminalLog = SessionTerminalLog()
     /// The delegated sub-agents that have not finished, and the line each is
     /// showing. The store observer sees every session's events, so this is what
     /// tells a child's step apart from an unrelated session's.
@@ -414,6 +433,11 @@ public final class SessionController {
     /// backstop for the ones a keyboard shortcut can still reach.
     static func noProjectMessage(_ action: String) -> String {
         "This conversation has no project. Open one to \(action)."
+    }
+
+    private static func hookPolicyFingerprint(_ policy: HookExecutionPolicy) -> String {
+        let ids = policy.allowedHookIDs.sorted().joined(separator: ",")
+        return "\(policy.allowUntrustedHooks ? "trusted" : "off"):\(ids)"
     }
 
     /// The workspace facts the UI displays: never a capability, only text.
@@ -453,6 +477,12 @@ public final class SessionController {
             modelSupportsVision: modelSupportsVision,
             modelTakesThinkingParameter: modelTakesThinkingParameter
         )
+        self.hookPolicy = context?.hookPolicyStore.load(
+            permissionMode: context == nil
+                ? .readOnly
+                : (behavior == .code ? session.configuration.permissionMode : .readOnly)
+        ) ?? .denyAll
+        self.hookDiscoveryResult = context?.hookDiscoveryResult ?? HookDiscoveryResult()
         self.workspaceSurface = context.map {
             WorkspaceSurface(
                 displayName: $0.record.descriptor.displayName,
@@ -485,7 +515,8 @@ public final class SessionController {
                 ? session.configuration.reasoningEffort
                 : nil,
             supportsVision: live.modelSupportsVision(session.configuration.modelID),
-            goalUpdatedAt: session.goal?.updatedAt
+            goalUpdatedAt: session.goal?.updatedAt,
+            hookPolicyFingerprint: Self.hookPolicyFingerprint(hookPolicy)
         )
         if let orchestrator, orchestratorContract == contract {
             return orchestrator
@@ -538,10 +569,15 @@ public final class SessionController {
             tools.removeAll { $0.name.hasPrefix("computer_") }
         }
         if contract.behavior == .code {
+            // Workspace-declared MCP tools are discovered through the same
+            // session construction path as built-in tools. They remain
+            // approval-pinned by MCPCodeTool, so discovery never broadens the
+            // permission contract of a normal Code turn.
+            tools.append(contentsOf: await context.mcpTools())
             tools.append(UpdateGoalTool(store: live.store))
             tools.append(
-                DelegateTaskTool(
-                    model: live.modelClient,
+            DelegateTaskTool(
+                model: live.modelClient,
                     // Sub-agents are inspectable and read-only, and have no
                     // reader gesture with which to activate screen capture.
                     registry: ToolRegistry(
@@ -555,9 +591,52 @@ public final class SessionController {
                     workspaceName: workspaceSurface.displayName,
                     modelID: contract.modelID,
                     reasoningEffort: contract.reasoningEffort,
-                    parentSystemPrompt: systemPrompt
+                    parentSystemPrompt: systemPrompt,
+                    executionFactory: { request in
+                        let worktree = try await context.worktrees.create(
+                            branch: request.branch
+                        )
+                        let isolated = try context.isolatedContext(at: worktree.rootURL)
+                        let childRegistry = ToolRegistry(
+                            tools: isolated.registry.allTools.filter {
+                                !$0.name.hasPrefix("computer_")
+                            }
+                        )
+                        return SubagentExecutionEnvironment(
+                            registry: childRegistry,
+                            workspaceName: isolated.record.descriptor.displayName,
+                            executionRootPath: worktree.rootPath,
+                            gitBranch: worktree.branch,
+                            permissionMode: .workspaceWrite,
+                            finalize: {
+                                try await context.worktrees.finalize(
+                                    worktree,
+                                    message: "Juno sub-agent: \(request.title)"
+                                )
+                            }
+                        )
+                    }
                 )
             )
+        }
+        let activeHooks = hookDiscoveryResult.hooks.filter {
+            hookPolicy.allowedHookIDs.contains($0.id)
+        }
+        let lifecycleHooks: (any AgentLifecycleHooks)?
+        if contract.behavior == .code,
+           !activeHooks.isEmpty,
+           hookPolicy.allowUntrustedHooks
+        {
+            let permissions = live.permissions
+            lifecycleHooks = WorkspaceAgentHooks(
+                definitions: activeHooks,
+                executor: context.executor,
+                permissions: permissions,
+                allowUntrustedHooks: true,
+                currentPermissionMode: { await permissions.permissionMode }
+            )
+        } else {
+            lifecycleHooks = nil
         }
         return AgentOrchestrator(
             sessionID: sessionID,
@@ -567,7 +646,8 @@ public final class SessionController {
             store: live.store,
             configuration: AgentOrchestrator.Configuration(systemPrompt: systemPrompt),
             modelID: contract.modelID,
-            reasoningEffort: contract.reasoningEffort
+            reasoningEffort: contract.reasoningEffort,
+            lifecycleHooks: lifecycleHooks
         )
     }
 
@@ -1149,9 +1229,19 @@ public final class SessionController {
         }
         guard let live else {
             session.configuration.permissionMode = mode
+            hookPolicy = HookExecutionPolicy(
+                allowedHookIDs: hookPolicy.allowedHookIDs,
+                permissionMode: mode,
+                allowUntrustedHooks: hookPolicy.allowUntrustedHooks
+            )
             return
         }
         await live.permissions.setMode(mode)
+        hookPolicy = HookExecutionPolicy(
+            allowedHookIDs: hookPolicy.allowedHookIDs,
+            permissionMode: mode,
+            allowUntrustedHooks: hookPolicy.allowUntrustedHooks
+        )
         _ = try? await live.store.updateSession(id: sessionID) { session in
             session.configuration.permissionMode = mode
         }
@@ -1613,6 +1703,87 @@ public final class SessionController {
         }
     }
 
+    /// Creates a real isolated checkout below `.juno/worktrees` without
+    /// switching the active repository. The returned path can be opened in a
+    /// second Juno window or Finder, and becomes the safe foundation for a
+    /// future write-capable delegated session.
+    @discardableResult
+    public func createIsolatedWorktree(named name: String) async -> ManagedWorktree? {
+        transientError = nil
+        guard session.configuration.behavior == .code else {
+            transientError = "Ask and Plan sessions are read-only by design."
+            return nil
+        }
+        guard let live, let context = live.context else {
+            transientError = Self.noProjectMessage("create an isolated worktree")
+            return nil
+        }
+        guard context.record.descriptor.isGitRepository else {
+            transientError = "An isolated worktree needs a Git repository."
+            return nil
+        }
+        do {
+            let worktree = try await context.worktrees.create(branch: name)
+            managedWorktrees = context.worktrees.worktrees
+            transientError = "Created isolated worktree at " + worktree.rootPath
+            return worktree
+        } catch {
+            transientError = "Could not create an isolated worktree: " + String(describing: error)
+            return nil
+        }
+    }
+
+    public func removeIsolatedWorktree(_ worktree: ManagedWorktree) async {
+        guard let context = live?.context else { return }
+        do {
+            try await context.worktrees.remove(worktree)
+            managedWorktrees = context.worktrees.worktrees
+        } catch {
+            transientError = "Could not remove the isolated worktree: " + String(describing: error)
+        }
+    }
+
+    public var enabledHookCount: Int {
+        hookDiscoveryResult.hooks.filter { hookPolicy.allowedHookIDs.contains($0.id) }.count
+    }
+
+    public var hooksAreEnabled: Bool {
+        hookPolicy.allowUntrustedHooks && enabledHookCount > 0
+    }
+
+    /// Trusts or revokes every currently discovered workspace hook. The trust
+    /// decision is private-storage state; the repository cannot enable itself
+    /// by changing `.claude/settings.json` or `.juno/hooks.json`.
+    public func setHooksEnabled(_ enabled: Bool) async {
+        guard let context = live?.context else {
+            transientError = Self.noProjectMessage("change hook trust")
+            return
+        }
+        if hookDiscoveryResult.hooks.isEmpty {
+            await refreshWorkspacePanels()
+        }
+        let next = HookExecutionPolicy(
+            allowedHookIDs: enabled
+                ? Set(hookDiscoveryResult.hooks.map(\.id))
+                : [],
+            permissionMode: session.configuration.behavior == .code
+                ? session.configuration.permissionMode
+                : .readOnly,
+            allowUntrustedHooks: enabled
+        )
+        do {
+            try context.hookPolicyStore.save(next)
+            hookPolicy = next
+            if let orchestrator, await !orchestrator.isRunning {
+                await orchestrator.release()
+                self.orchestrator = nil
+                orchestratorContract = nil
+            }
+        } catch {
+            transientError = "Could not save hook trust: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Inspector data
 
     /// Refreshes the inspector panels from the workspace. A preview controller
@@ -1624,8 +1795,22 @@ public final class SessionController {
         guard let context = live?.context else { return }
         testSuggestions = await context.tests.detectSuggestions()
         instructionFiles = await context.instructionFiles()
+        hookDiscoveryResult = HookDiscovery(access: context.access).discover()
+        skillDiscoveryResult = SkillDiscovery(access: context.access).discover()
+        hookPolicy = context.hookPolicyStore.load(
+            permissionMode: session.configuration.behavior == .code
+                ? session.configuration.permissionMode
+                : .readOnly
+        )
+        mcpConfigurationError = context.mcpConfigurationError
+        if let registry = context.mcpRegistry {
+            mcpServerConfigurations = await registry.serverConfigurations()
+        } else {
+            mcpServerConfigurations = []
+        }
         rootEntries = (try? await context.index.listDirectory(nil)) ?? []
         checkpointCount = await context.checkpoints.checkpoints(for: sessionID).count
+        managedWorktrees = context.worktrees.worktrees
         if context.record.descriptor.isGitRepository {
             gitStatus = try? await context.git.status()
             gitHistory = (try? await context.git.log(limit: 20)) ?? []
@@ -1891,6 +2076,118 @@ public final class SessionController {
         }
     }
 
+    /// Starts a persistent interactive command after applying the same
+    /// command classifier and permission gate as `run_command`. The process is
+    /// not appended to the agent transcript: it belongs to the reader's
+    /// terminal, and its bounded tail is exposed in the Console drawer.
+    public func startInteractiveTerminal(_ command: String) async {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        await stopInteractiveTerminal()
+        interactiveTerminalLog.clear()
+        interactiveTerminalCommand = trimmed
+        interactiveTerminalState = .starting
+        appendInteractiveTerminal(channel: .log, text: "$ " + trimmed + "\n")
+
+        guard let live else {
+            setInteractiveTerminalFailure("Preview mode has no terminal attached.")
+            return
+        }
+        guard let context = live.context else {
+            setInteractiveTerminalFailure(Self.noProjectMessage("open a terminal"))
+            return
+        }
+        guard session.configuration.location == .local,
+              session.configuration.behavior == .code
+        else {
+            setInteractiveTerminalFailure(
+                "Interactive terminals are available only for local Code sessions."
+            )
+            return
+        }
+
+        do {
+            try await context.registry.authorizeInvocation(
+                toolName: "run_command",
+                input: ["command": .string(trimmed)],
+                permissions: live.permissions
+            )
+        } catch let ToolError.denied(reason) {
+            setInteractiveTerminalFailure(reason)
+            return
+        } catch {
+            setInteractiveTerminalFailure(String(describing: error))
+            return
+        }
+
+        let service = context.makeInteractiveTerminal()
+        interactiveTerminalService = service
+        let stream = service.start(command: trimmed)
+        let task = Task { @MainActor [weak self] in
+            for await event in stream {
+                guard let self else { return }
+                switch event {
+                case let .output(text):
+                    self.appendInteractiveTerminal(channel: .stdout, text: text)
+                case let .state(state):
+                    self.interactiveTerminalState = state
+                    if !state.isRunning {
+                        self.interactiveTerminalService = nil
+                    }
+                }
+            }
+        }
+        interactiveTerminalTask = task
+    }
+
+    /// Sends literal bytes to the PTY. A newline is added for ordinary text;
+    /// callers may pass control bytes directly when they need Ctrl-C or an
+    /// escape sequence.
+    public func writeInteractiveTerminal(_ input: String, submit: Bool = true) async {
+        guard let service = interactiveTerminalService,
+              interactiveTerminalState.isRunning
+        else { return }
+        service.write(submit ? input + "\n" : input)
+    }
+
+    public func stopInteractiveTerminal() async {
+        interactiveTerminalTask?.cancel()
+        interactiveTerminalTask = nil
+        interactiveTerminalService?.stop()
+        interactiveTerminalService = nil
+        if interactiveTerminalState.isRunning {
+            interactiveTerminalState = .idle
+        }
+    }
+
+    /// Why the persistent terminal cannot run, or nil when the session can
+    /// start one. Kept separate from the one-shot command explanation so the
+    /// UI can state the distinction precisely.
+    public var interactiveTerminalUnavailableReason: String? {
+        if live == nil { return "Preview mode has no terminal attached." }
+        if live?.context == nil { return Self.noProjectMessage("open a terminal") }
+        if session.configuration.location != .local {
+            return "Cloud and Remote sessions do not own a local terminal."
+        }
+        if session.configuration.behavior != .code {
+            return "Ask and Plan sessions are read-only and cannot run a terminal."
+        }
+        return nil
+    }
+
+    private func setInteractiveTerminalFailure(_ message: String) {
+        interactiveTerminalState = .failed(reason: message)
+        appendInteractiveTerminal(channel: .stderr, text: message + "\n")
+    }
+
+    private func appendInteractiveTerminal(channel: ToolOutputChannel, text: String) {
+        interactiveTerminalLog.append(
+            channel: channel,
+            text: text,
+            toolCallID: "interactive-terminal"
+        )
+    }
+
     /// `RunCommandTool` appends its exit status as a `[exit 1, 0.4s]` footer to
     /// the result it returns to the model, and never streams it. The console has
     /// to read it from there or invent one, so it reads it.
@@ -1960,6 +2257,67 @@ public final class SessionController {
             session: child,
             events: await live.store.events(for: childID)
         )
+    }
+
+    /// Reads the isolated checkout associated with a write-capable sub-agent.
+    /// The child session's persisted execution root is resolved back through
+    /// the parent's owned WorktreeManager; an arbitrary path from a transcript
+    /// is never treated as a capability.
+    public func subagentWorktreeReview(_ childID: CodeSessionID) async -> WorktreeReview? {
+        guard let live,
+              let context = live.context,
+              let child = try? await live.store.session(id: childID),
+              let rootPath = child.executionRootPath,
+              let worktree = context.worktrees.worktree(rootPath: rootPath)
+        else { return nil }
+        return try? await context.worktrees.review(worktree)
+    }
+
+    /// Merges a finalized sub-agent branch into the parent's checkout only
+    /// after WorktreeManager rechecks parent cleanliness and the base revision.
+    @discardableResult
+    public func applySubagentChanges(_ childID: CodeSessionID) async -> Bool {
+        transientError = nil
+        guard let live,
+              let context = live.context,
+              let child = try? await live.store.session(id: childID),
+              let rootPath = child.executionRootPath,
+              let worktree = context.worktrees.worktree(rootPath: rootPath)
+        else {
+            transientError = "This sub-agent does not have an owned isolated worktree."
+            return false
+        }
+        do {
+            try await context.worktrees.apply(worktree)
+            await refreshWorkspacePanels()
+            return true
+        } catch {
+            transientError = "Could not apply the sub-agent changes: \(error.localizedDescription)"
+            return false
+        }
+    }
+
+    /// Explicitly discards the isolated checkout. The operation is limited to
+    /// a worktree Juno created and is never used as an automatic cleanup path.
+    @discardableResult
+    public func discardSubagentChanges(_ childID: CodeSessionID) async -> Bool {
+        transientError = nil
+        guard let live,
+              let context = live.context,
+              let child = try? await live.store.session(id: childID),
+              let rootPath = child.executionRootPath,
+              let worktree = context.worktrees.worktree(rootPath: rootPath)
+        else {
+            transientError = "This sub-agent does not have an owned isolated worktree."
+            return false
+        }
+        do {
+            try await context.worktrees.remove(worktree)
+            return true
+        } catch {
+            transientError = "Could not discard the sub-agent worktree: \(error.localizedDescription)"
+            return false
+        }
     }
 
     public func commit(message: String) async -> Bool {
@@ -2231,6 +2589,7 @@ public final class SessionController {
         self.rootEntries = fixture.rootEntries
         self.instructionFiles = fixture.instructionFiles
         self.transientError = fixture.transientError
+        self.hookPolicy = .denyAll
         self.composerText = fixture.composerText
         self.runStartedAt = fixture.runStartedAt
         subagentIndex.rebuild(from: events)

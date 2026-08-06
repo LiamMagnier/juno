@@ -99,6 +99,15 @@ struct JunoMobileRootView: View {
             phaseContent
             #endif
         }
+        // The window's own backdrop. It catches what no screen paints — chiefly
+        // the signed-out shell, which declares no background at all and was
+        // therefore the one screen in the app whose colour was `systemBackground`
+        // rather than the canvas.
+        //
+        // Safe to read here, unlike the accent below: `junoCanvas` is a `static
+        // let`, so it registers no observable dependency and cannot re-evaluate
+        // this body.
+        .junoScreenCanvas()
         .preferredColorScheme(preferredColorScheme)
         // NOTE: `.tint(Color.junoAccent)` must NOT go here. Reading the accent in
         // this body makes the body re-evaluate whenever it changes, and this body is
@@ -423,8 +432,7 @@ struct JunoMobileRootView: View {
                         syncModel: syncModel,
                         outbox: outbox,
                         accountDataClient: accountDataClient,
-                        requestSender: requestSender,
-                        shareClient: shareClient
+                        requestSender: requestSender
                     )
                 } else {
                     unavailable
@@ -446,6 +454,7 @@ struct JunoMobileRootView: View {
                     .accessibilityIdentifier("juno.mobile.settings-close")
                 }
             }
+            .junoScreenCanvas()
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -476,36 +485,31 @@ struct JunoMobileRootView: View {
             .background(Color.junoCanvas.ignoresSafeArea())
 
             ZStack {
-                Color(uiColor: .systemBackground)
+                // The plate's own fill, opaque because the drawer's rows sit
+                // directly behind it while it is closed. It was
+                // `systemBackground`, which is the one colour it must not be:
+                // every screen paints `junoCanvas` over it, so the only way that
+                // fill can ever be seen is as a seam where a screen stops — and a
+                // seam in pure white or pure black is exactly the failure this
+                // pass is about.
+                Color.junoCanvas
                 detail(for: selection)
                     .allowsHitTesting(!sidebarOpen)
             }
-            // Closed: the drawer's open-swipe lives on a narrow strip along the
-            // leading edge, exactly where iOS puts its own edge gestures.
-            //
-            // It used to be a `simultaneousGesture` on the whole plate, and that
-            // is the "+ does nothing" report twice over. As an exclusive gesture
-            // it took the button's touch outright; recognising simultaneously
-            // fixed the *button* — but the "+" is a `Menu` now, and a menu's own
-            // recognizer loses that race often enough to be caught by a test
-            // that taps it three times. A gesture that only exists where it is
-            // meant to be used cannot compete with a control at all.
-            .overlay(alignment: .leading) {
-                if !sidebarOpen {
-                    Color.clear
-                        .frame(width: 20)
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 18)
-                                .onEnded { value in
-                                    guard value.translation.width > 60 else { return }
-                                    setSidebar(true)
-                                }
-                        )
-                        .ignoresSafeArea()
-                        .accessibilityHidden(true)
-                }
-            }
+            // The drawer can be revealed from anywhere on the chat plate. A
+            // simultaneous, horizontal-only recognizer preserves buttons and
+            // menus while making the gesture discoverable on the whole screen,
+            // not just the first 20 points at the leading edge.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 18)
+                    .onEnded { value in
+                        guard !sidebarOpen,
+                              value.translation.width > 60,
+                              abs(value.translation.width) > abs(value.translation.height)
+                        else { return }
+                        setSidebar(true)
+                    }
+            )
             .overlay {
                 if sidebarOpen {
                     // Open: the plate is inert anyway, so the close tap *and*
@@ -622,6 +626,7 @@ struct JunoMobileRootView: View {
                         }
                     }
                 }
+                .junoScreenCanvas()
         }
         .tint(Color.junoAccent)
     }
@@ -751,7 +756,15 @@ struct JunoMobileRootView: View {
                     startConversation: startProjectlessCodeConversation,
                     pullsClient: pullsClient,
                     accountID: currentSession?.profile.id,
-                    openConnections: { selection = .connections }
+                    openConnections: { selection = .connections },
+                    // Code gets the account the same way the website's Code mode
+                    // does — the user menu stays in the sidebar there, so plan
+                    // and usage are never more than a glance away.
+                    session: currentSession,
+                    avatarData: avatarModel?.imageData,
+                    requestSender: requestSender,
+                    modelCatalog: conversationModel?.modelCatalog ?? [],
+                    openSettings: { openSidebarDestination(.settings) }
                 )
             } else { unavailable }
         case .tasks:
@@ -800,8 +813,7 @@ struct JunoMobileRootView: View {
                     syncModel: syncModel,
                     outbox: outbox,
                     accountDataClient: accountDataClient,
-                    requestSender: requestSender,
-                        shareClient: shareClient
+                    requestSender: requestSender
                 )
             } else { unavailable }
         }
@@ -1191,9 +1203,14 @@ private struct JunoMobileConversationRow: View {
         Button(action: action) {
             HStack(spacing: 7) {
                 if pinned {
-                    Image(systemName: "pin.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                    // Juno's own pin, in the accent. This is one of exactly two
+                    // places the website lets coral into the sidebar — the
+                    // pinned conversation and the starred project, both
+                    // `fill-primary` — and it was an SF Symbol in `.secondary`
+                    // here while the Mac drew the same concept with a third
+                    // glyph in a fourth colour.
+                    JunoIconView(.pin, size: 12)
+                        .foregroundStyle(Color.junoAccent)
                 }
                 Text(title)
                     .font(.system(size: 16))

@@ -17,7 +17,11 @@ struct JunoMobileThinkingControl: View {
     @Binding var effort: NativeReasoningEffort?
 
     @State private var presented = false
+    /// Bumped every time the ladder lands on its deepest stop, so the flourish
+    /// replays on each fresh arrival rather than once per app run.
+    @State private var topArrivals = 0
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var currentStop: NativeThinkingStop? {
         scale.stops.first { $0.effort == effort }
@@ -28,6 +32,14 @@ struct JunoMobileThinkingControl: View {
         return currentStop?.label ?? "Off"
     }
 
+    /// Whether the ladder is at its deepest rung — "Max" on the models that have
+    /// one. The website reserves a whole visual language for this stop, and the
+    /// chip is the phone's smallest honest share of it.
+    private var atTopTier: Bool {
+        guard !scale.isAutomatic, scale.stops.count > 1, let currentStop else { return false }
+        return currentStop == scale.stops.last
+    }
+
     var body: some View {
         if scale.isPresentable {
             Button {
@@ -35,14 +47,21 @@ struct JunoMobileThinkingControl: View {
                 presented = true
             } label: {
                 HStack(spacing: 5) {
-                    Text(label)
-                        .font(.subheadline.weight(.medium))
-                        .monospacedDigit()
-                        .lineLimit(1)
+                    JunoMobileThinkingLabel(text: label, ultra: atTopTier, pop: topArrivals)
                     if scale.isAdjustable {
                         Image(systemName: "chevron.up")
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(.secondary)
+                            // Turns over while the picker is up, as the web's
+                            // chevron does.
+                            .rotationEffect(.degrees(presented ? 180 : 0))
+                            .animation(
+                                JunoMotion.reduced(
+                                    JunoMobileMotion.easeOutSoft(JunoMobileMotion.durBase),
+                                    when: reduceMotion
+                                ),
+                                value: presented
+                            )
                     }
                 }
                 .foregroundStyle(scale.isAutomatic ? Color.secondary : Color.primary)
@@ -50,8 +69,12 @@ struct JunoMobileThinkingControl: View {
                 .padding(.vertical, 6)
                 .modifier(JunoMobileComposerChipBackground())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(JunoMobileChipPressStyle())
             .disabled(!scale.isAdjustable)
+            .onChange(of: atTopTier) { _, isTop in
+                guard isTop else { return }
+                topArrivals += 1
+            }
             .accessibilityLabel("Thinking")
             .accessibilityValue(accessibilityValue)
             .accessibilityHint(scale.isAdjustable ? "Opens the thinking level picker" : "")
@@ -91,19 +114,155 @@ struct JunoMobileThinkingControl: View {
     }
 }
 
+// MARK: - The value, and what the deepest one looks like
+
+/// The Thinking chip's current value.
+///
+/// Two behaviours, both the website's. The word crossfades when it changes,
+/// because the chip is small enough that a straight swap reads as a glitch. And
+/// the *deepest* stop is drawn differently: the browser gives its top tier a
+/// panning violet ramp and a landing pop, and a "Max" that looks exactly like
+/// "Low" throws that distinction away on the platform where the control is
+/// smallest and most easily missed.
+///
+/// The pan is an offset gradient behind a text mask rather than a redrawn
+/// gradient. An animated `foregroundStyle` does not interpolate — a `Color` is
+/// not a `LinearGradient` — and a `TimelineView` would repaint every frame
+/// directly on top of a Liquid Glass capsule, which re-samples what is behind it
+/// every frame anyway. A `.offset` is owned by the compositor and costs the
+/// composer's frame rate nothing.
+private struct JunoMobileThinkingLabel: View {
+    let text: String
+    let ultra: Bool
+    /// Increments on each fresh arrival at the deepest stop.
+    let pop: Int
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var popped = false
+
+    var body: some View {
+        label
+            .id(text)
+            .transition(.opacity)
+            .animation(
+                JunoMotion.reduced(JunoMobileMotion.fadeIn, when: reduceMotion),
+                value: text
+            )
+            // `ultra-pop`: 1 → 1.18 at 45% → 1 over 420ms. The landing flourish
+            // for arriving at the deepest stop, and the only moment this chip
+            // ever moves.
+            .scaleEffect(popped ? 1.18 : 1)
+            .task(id: pop) {
+                guard pop > 0, ultra, !reduceMotion else { return }
+                withAnimation(JunoMobileMotion.easeSpring(0.189)) { popped = true }
+                try? await Task.sleep(for: .milliseconds(189))
+                guard !Task.isCancelled else { return }
+                withAnimation(JunoMobileMotion.easeSpring(0.231)) { popped = false }
+            }
+    }
+
+    @ViewBuilder
+    private var label: some View {
+        if ultra {
+            JunoMobileThinkingRamp(text: text)
+        } else {
+            JunoMobileThinkingWord(text: text)
+        }
+    }
+}
+
+/// The deepest stop's drifting ramp.
+///
+/// A view of its own, and that is the whole point: the travel is driven by a
+/// `@State` flag animated from `false` to `true`, so it can only start from a
+/// flag that is *actually* false. Held one level up — on the chip's label, which
+/// keeps its place in the composer's `HStack` whichever tier is selected — the
+/// flag survived leaving the top tier still `true`, and coming back re-ran the
+/// `onAppear` against a value that was already at its destination: SwiftUI has
+/// nothing to interpolate, so the ramp froze at the far end of its travel for the
+/// rest of the session. Here the state is born and dies with the branch that
+/// draws it.
+private struct JunoMobileThinkingRamp: View {
+    let text: String
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var panned = false
+
+    /// `--ultra-from` / `--ultra-to`, with the account's accent at both ends so
+    /// the ramp leaves and returns to the colour the rest of the app is in.
+    private var ramp: [Color] {
+        let from = Color.junoAdaptive(
+            light: JunoColorToken(hsl: (h: 252, s: 1, l: 0.68)),
+            dark: JunoColorToken(hsl: (h: 252, s: 1, l: 0.76))
+        )
+        let to = Color.junoAdaptive(
+            light: JunoColorToken(hsl: (h: 271, s: 0.91, l: 0.65)),
+            dark: JunoColorToken(hsl: (h: 271, s: 0.93, l: 0.73))
+        )
+        return [.junoAccent, from, to, from, .junoAccent]
+    }
+
+    var body: some View {
+        JunoMobileThinkingWord(text: text)
+            .hidden()
+            .overlay {
+                LinearGradient(colors: ramp, startPoint: .leading, endPoint: .trailing)
+                    // Three times the word's width, travelling a third of that
+                    // each way: the ramp is always over the glyphs, so the
+                    // colour drifts rather than sweeping past.
+                    .scaleEffect(x: 3, anchor: .center)
+                    .offset(x: panned ? 26 : -26)
+            }
+            .mask { JunoMobileThinkingWord(text: text) }
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.linear(duration: 12).repeatForever(autoreverses: true)) {
+                    panned = true
+                }
+            }
+    }
+}
+
+/// The word itself, shared by both branches so the two states typeset
+/// identically — the ramp is a mask of exactly these glyphs.
+private struct JunoMobileThinkingWord: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.subheadline.weight(.medium))
+            .monospacedDigit()
+            .lineLimit(1)
+    }
+}
+
 // MARK: - Shared chip background
 
 /// The composer's small controls all share one Liquid Glass capsule, so the
 /// model chip and the Thinking chip read as parts of the same control row
 /// rather than as two unrelated buttons.
+///
+/// **The capsule is also the hit area, and it has to say so.** Liquid Glass is
+/// drawn by a layer of the system's own, not by content of ours, so a chip whose
+/// only real content is a word and a chevron is touchable *only over the word
+/// and the chevron* — the 10pt padding and the glass between them are dead. That
+/// left the Thinking chip with a live band roughly 13pt wide inside a 56pt
+/// capsule, and its centre — dragged rightwards by the chevron — landed in the
+/// gap, so a tap dead in the middle of the control did nothing at all. The model
+/// chip escaped only because its label is wide enough that its centre still
+/// falls on a glyph. `contentShape` makes the whole capsule the target for both,
+/// which is what it looks like and what a thumb aims at.
 struct JunoMobileComposerChipBackground: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: Capsule())
+            content
+                .glassEffect(.regular.interactive(), in: Capsule())
+                .contentShape(Capsule())
         } else {
             content
                 .background(.regularMaterial, in: Capsule())
                 .overlay(Capsule().strokeBorder(Color.junoHairline, lineWidth: 1))
+                .contentShape(Capsule())
         }
     }
 }

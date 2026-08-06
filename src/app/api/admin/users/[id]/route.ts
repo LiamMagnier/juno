@@ -39,7 +39,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     select: { status: true },
   });
 
-  console.log(`[admin] plan change by ${owner.email}: ${user.email} ${oldPlan} -> ${plan}`);
+  // Ids, not emails — see the note in the unban route.
+  console.log(`[admin] plan change by ${owner.id}: ${user.id} ${oldPlan} -> ${plan}`);
 
   return NextResponse.json({
     user: {

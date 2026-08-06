@@ -13,14 +13,37 @@ let package = Package(
         .library(name: "JunoCodeRuntime", targets: ["JunoCodeRuntime"]),
         .library(name: "JunoCodeUI", targets: ["JunoCodeUI"]),
         .library(name: "JunoCodeBridge", targets: ["JunoCodeBridge"]),
+        // Juno Simulator: Xcode/simctl discovery, the build-and-run state
+        // machine, frame capture and the capability advertisement. No SwiftUI —
+        // the pane lives in JunoCodeUI, so this stays testable headlessly.
+        .library(name: "JunoSimulator", targets: ["JunoSimulator"]),
     ],
     dependencies: [
         .package(path: "../JunoNativeKit")
     ],
     targets: [
         .target(name: "JunoCodeCore"),
-        .target(name: "JunoCodeLocal", dependencies: ["JunoCodeCore"]),
-        .target(name: "JunoCodeRuntime", dependencies: ["JunoCodeCore"]),
+        .target(
+            name: "JunoCodeLocal",
+            dependencies: ["JunoCodeCore"],
+            exclude: [
+                "DevServerCommandDiscovery 2.swift",
+                "DevServerService 2.swift",
+                "DevServerURLDetector 2.swift",
+            ]
+        ),
+        // Depends on Core only, for SecretRedactor — build logs routinely carry
+        // tokens, and they are redacted before they reach the UI or the model.
+        .target(name: "JunoSimulator", dependencies: ["JunoCodeCore"]),
+        .target(
+            name: "JunoCodeRuntime",
+            dependencies: ["JunoCodeCore"],
+            exclude: [
+                "Tools/ComputerUseTools 2.swift",
+                "Tools/DelegateTaskTool 2.swift",
+                "Tools/UpdateGoalTool 2.swift",
+            ]
+        ),
         .target(
             name: "JunoCodeUI",
             dependencies: [
@@ -28,10 +51,37 @@ let package = Package(
                 // The remote-command protocols. UI depends on the bridge, never
                 // the reverse — the bridge must stay usable without a window.
                 "JunoCodeBridge",
+                "JunoSimulator",
                 // Shared design tokens, so Code and Chat cannot drift apart on
                 // spacing, radii, surfaces or type.
                 .product(name: "JunoDesignSystem", package: "JunoNativeKit"),
                 .product(name: "JunoCodeKit", package: "JunoNativeKit"),
+                .product(name: "JunoAuth", package: "JunoNativeKit"),
+            ],
+            // Keep the retired canvas out of the target. The shared workbench
+            // below now uses the same `CodeSessionCanvas` as the desktop shell;
+            // `AgentCanvasView` is an older, self-contained surface that also
+            // declares copies of shared status/approval views.
+            exclude: [
+                "Models/CodeAttachment 2.swift",
+                "Models/CodeDraftModel 2.swift",
+                "Models/CodeModelCatalog 2.swift",
+                "Models/CodeSessionDigests 2.swift",
+                "Models/FileContextToken 2.swift",
+                "Models/ReviewModel 2.swift",
+                "Models/SlashCommands 2.swift",
+                "Views/CodeSessionSurface 2.swift",
+                "Views/Composer 2.swift",
+                "Views/Console/CodeConsoleDrawer 2.swift",
+                "Views/FileContextMenu 2.swift",
+                "Views/GoalBar 2.swift",
+                "Views/Inspector/ActivityTab 2.swift",
+                "Views/Inspector/ComputerUsePane 2.swift",
+                "Views/Inspector/RepositoryTab 2.swift",
+                "Views/Inspector/SubagentInspector 2.swift",
+                "Views/SlashCommandMenu 2.swift",
+                "Views/StatusChip 2.swift",
+                "Views/AgentCanvasView.swift",
             ]
         ),
         .target(
@@ -45,17 +95,46 @@ let package = Package(
                 .product(name: "JunoAuth", package: "JunoNativeKit"),
                 .product(name: "JunoSync", package: "JunoNativeKit"),
                 .product(name: "JunoChatKit", package: "JunoNativeKit"),
+            ],
+            exclude: ["CodeThinkingWire 2.swift"]
+        ),
+        .testTarget(
+            name: "JunoCodeCoreTests",
+            dependencies: ["JunoCodeCore"],
+            exclude: ["GoalModelsTests 2.swift"]
+        ),
+        .testTarget(
+            name: "JunoSimulatorTests",
+            dependencies: ["JunoSimulator"],
+            resources: [.copy("Fixtures")]
+        ),
+        .testTarget(
+            name: "JunoCodeLocalTests",
+            dependencies: ["JunoCodeCore", "JunoCodeLocal"],
+            exclude: [
+                "ComputerUseKeyChordTests 2.swift",
+                "WorkspaceBookmarkTests 2.swift",
             ]
         ),
-        .testTarget(name: "JunoCodeCoreTests", dependencies: ["JunoCodeCore"]),
-        .testTarget(name: "JunoCodeLocalTests", dependencies: ["JunoCodeCore", "JunoCodeLocal"]),
         .testTarget(
             name: "JunoCodeRuntimeTests",
-            dependencies: ["JunoCodeCore", "JunoCodeRuntime", "JunoCodeLocal"]
+            dependencies: ["JunoCodeCore", "JunoCodeRuntime", "JunoCodeLocal"],
+            exclude: [
+                "CodeSessionStoreTests 2.swift",
+                "DelegateTaskToolTests 2.swift",
+                "GoalModeRuntimeTests 2.swift",
+            ]
         ),
         .testTarget(
             name: "JunoCodeUITests",
-            dependencies: ["JunoCodeCore", "JunoCodeLocal", "JunoCodeRuntime", "JunoCodeUI"]
+            dependencies: ["JunoCodeCore", "JunoCodeLocal", "JunoCodeRuntime", "JunoCodeUI"],
+            exclude: [
+                "CodeModelCatalogTests 2.swift",
+                "FileContextTokenTests 2.swift",
+                "SlashCommandTests 2.swift",
+                "SubagentDigestTests 2.swift",
+                "SubagentSessionVisibilityTests 2.swift",
+            ]
         ),
         .testTarget(
             name: "JunoCodeBridgeTests",
@@ -64,6 +143,10 @@ let package = Package(
                 "JunoCodeLocal",
                 "JunoCodeRuntime",
                 "JunoCodeBridge",
+            ],
+            exclude: [
+                "CodeThinkingWireTests 2.swift",
+                "UserAttachmentWireTests 2.swift",
             ]
         ),
     ],

@@ -21,6 +21,7 @@ struct JunoMobileModelControl: View {
 
     @State private var presented = false
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var selected: NativeChatModelOption? {
         models.first { $0.id == selectedModelID }
@@ -44,16 +45,37 @@ struct JunoMobileModelControl: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
-                Image(systemName: "chevron.up.chevron.down")
+                    // Keyed on the model, so picking a different one *replaces*
+                    // the name in place rather than mutating it letter by letter
+                    // — the web's `<span key={current.id} className="animate-fade-in">`.
+                    .id(selectedModelID)
+                    .transition(.opacity)
+                    .animation(
+                        JunoMotion.reduced(JunoMobileMotion.fadeIn, when: reduceMotion),
+                        value: selectedModelID
+                    )
+                // One chevron, turning over — the web's `rotate-180` when the
+                // popover opens. `chevron.up.chevron.down` cannot do that: it is
+                // symmetrical, so a 180° turn is indistinguishable from no turn
+                // at all, and it stated a direction the picker does not have.
+                Image(systemName: "chevron.up")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .rotationEffect(.degrees(presented ? 180 : 0))
+                    .animation(
+                        JunoMotion.reduced(
+                            JunoMobileMotion.easeOutSoft(JunoMobileMotion.durBase),
+                            when: reduceMotion
+                        ),
+                        value: presented
+                    )
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .frame(minWidth: 0)
             .modifier(JunoMobileComposerChipBackground())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(JunoMobileChipPressStyle())
         .accessibilityLabel("Model")
         .accessibilityValue(
             selected.map { "\($0.displayName), \($0.providerName)" } ?? fallbackName
@@ -144,11 +166,34 @@ struct JunoMobileModelSelectorView: View {
     let onSelect: (NativeChatModelOption) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var query = ""
     @State private var provider: String?
     @State private var detailModelID: String?
     /// Which sections have had their "Older models" group opened by hand.
     @State private var expandedLegacy: Set<String> = []
+    /// Flipped once, on the first layout, to run the opening cascade.
+    ///
+    /// A single flag rather than per-row appearance: the web staggers the list
+    /// *when the popover opens*, and a row that is scrolled to later is already
+    /// settled. Driving it from each row's own `onAppear` would instead make the
+    /// list ripple every time it was scrolled, which is a different — and much
+    /// busier — idea.
+    @State private var rowsIn = false
+
+    /// Each model's place in the flat, displayed order, so the cascade reads as
+    /// one wave down the list rather than restarting at every section header.
+    private var rowOrder: [String: Int] {
+        var order: [String: Int] = [:]
+        var index = 0
+        for section in sections {
+            for model in section.current + section.legacy {
+                order[model.id] = index
+                index += 1
+            }
+        }
+        return order
+    }
 
     var body: some View {
         Group {
@@ -158,6 +203,7 @@ struct JunoMobileModelSelectorView: View {
             }
         }
         .onAppear {
+            rowsIn = true
             // Only the wide layout opens on a detail: it has a column for it.
             // Expanding the selected row inline on a phone would push the rest
             // of the list off a medium-detent sheet before it is even scrolled.
@@ -196,7 +242,7 @@ struct JunoMobileModelSelectorView: View {
             // The list is reading material, so it sits on an opaque canvas.
             // Glass stays on the chrome — the chips, the composer, the search
             // bar — rather than washing out the content behind everything.
-            .background(Color.junoCanvas)
+            .junoScreenCanvas()
             .navigationTitle("Model")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -350,7 +396,11 @@ struct JunoMobileModelSelectorView: View {
 
                 if showsDetailToggle {
                     Button {
-                        withAnimation(.snappy(duration: 0.22)) {
+                        // `fade-in-up`'s own timing, so the spec sheet's arrival
+                        // and the row's growth are one movement.
+                        withAnimation(
+                            JunoMotion.reduced(JunoMobileMotion.fadeInUp, when: reduceMotion)
+                        ) {
                             detailModelID = expanded ? nil : model.id
                         }
                     } label: {
@@ -368,11 +418,26 @@ struct JunoMobileModelSelectorView: View {
             if expanded {
                 JunoModelDetailView(model: model, showsHeader: false)
                     .padding(.top, 2)
-                    .transition(.opacity)
+                    // `fade-in-up`, keyed on the model: the spec sheet is a
+                    // different set of numbers each time, and sliding it up a
+                    // few points is what says so.
+                    .transition(JunoMobileMotion.fadeInUpTransition)
             }
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
+        // The opening cascade, `min(i, 12) * 16ms` exactly as the web caps it:
+        // past a dozen rows the stagger stops adding rhythm and starts adding
+        // wait, so the tail of a long list arrives together.
+        .opacity(rowsIn ? 1 : 0)
+        .offset(y: rowsIn ? 0 : 8)
+        .animation(
+            reduceMotion
+                ? nil
+                : JunoMobileMotion.riseIn
+                    .delay(Double(min(rowOrder[model.id] ?? 0, 12)) * 0.016),
+            value: rowsIn
+        )
         .onTapGesture {
             // Regular width has no inline expansion: tapping a row previews it
             // in the detail column, and the row's own button commits it.

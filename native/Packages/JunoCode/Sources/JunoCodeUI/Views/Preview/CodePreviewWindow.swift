@@ -90,13 +90,17 @@ final class CodePreviewModel {
     /// memory for a window that may be open all day.
     private static let maximumLogLines = 2_000
 
-    private let service = DevServerService()
+    private let service: DevServerService
     private var pump: Task<Void, Never>?
     private var reconnect: Task<Void, Never>?
     private var quitObserver: NSObjectProtocol?
 
     init(target: CodePreviewTarget) {
         self.workspaceRoot = target.workspaceRoot
+        self.service = target.workspaceRoot.map {
+            DevServerService.contained(workspaceRootURL: $0)
+        }
+           ?? DevServerService()
         self.addressText = target.address?.absoluteString ?? ""
         self.address = target.address
         self.isAddressUserProvided = target.address != nil
@@ -145,6 +149,8 @@ final class CodePreviewModel {
     var canStart: Bool {
         workspaceRoot != nil && selectedCommand != nil && !serverState.isLive
     }
+
+    var isServerContained: Bool { service.isContained }
 
     /// Why the Start button is unavailable, in the reader's terms. Nil when it is
     /// available.
@@ -896,6 +902,357 @@ public struct CodePreviewWindowView: View {
         return seconds < 60
             ? "\(seconds)s"
             : String(format: "%dm %02ds", seconds / 60, seconds % 60)
+    }
+}
+
+/// The in-workspace version of the preview.
+///
+/// The window view remains available for a second display, but the primary Code
+/// flow should not eject the reader into another window just to check a page.
+/// This dock deliberately shares CodePreviewModel with that surface: command
+/// discovery, server ownership, URL detection, retries, redaction and process
+/// teardown therefore have one implementation and one set of semantics.
+public struct CodePreviewDock: View {
+    @State private var model: CodePreviewModel
+    private let close: () -> Void
+    private let openInWindow: (() -> Void)?
+    @State private var isLogVisible = false
+
+    public init(
+        target: CodePreviewTarget,
+        close: @escaping () -> Void,
+        openInWindow: (() -> Void)? = nil
+    ) {
+        _model = State(initialValue: CodePreviewModel(target: target))
+        self.close = close
+        self.openInWindow = openInWindow
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider().overlay(Color.junoSeparator)
+            viewport
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if isLogVisible {
+                log
+            }
+        }
+        .background(Color.junoCanvasWarm)
+        .task {
+            await model.discover()
+            // Opening the pane is the user's request to inspect the project.
+            // Start the discovered command immediately, while keeping the
+            // explicit Start control for projects without a safe auto-start path.
+            if model.address == nil, model.canStart {
+                model.start()
+            }
+        }
+        .onDisappear { model.shutDown() }
+        .accessibilityIdentifier("juno.code.preview.dock")
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            HStack(spacing: JunoSpace.tight) {
+                Label("Preview", systemImage: "rectangle.on.rectangle")
+                    .junoRowLabel()
+                status
+                Spacer(minLength: JunoSpace.tight)
+                if let openInWindow {
+                    Button {
+                        openInWindow()
+                    } label: {
+                        Image(systemName: "macwindow.on.rectangle")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Open the preview in a separate window")
+                    .accessibilityLabel("Open preview in separate window")
+                }
+                Button(action: close) {
+                    Image(systemName: "xmark")
+                }
+                .buttonStyle(.borderless)
+                .help("Close the preview pane")
+                .accessibilityLabel("Close preview pane")
+                .accessibilityIdentifier("juno.code.preview.close")
+            }
+
+            HStack(spacing: JunoSpace.tight) {
+                runButton
+                commandMenu
+                Button {
+                    model.reload()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .disabled(model.address == nil)
+                .help("Reload the preview")
+                .accessibilityLabel("Reload preview")
+
+                Spacer(minLength: JunoSpace.tight)
+
+                Button {
+                    isLogVisible.toggle()
+                } label: {
+                    Image(systemName: "text.alignleft")
+                }
+                .buttonStyle(.borderless)
+                .background(
+                    RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                        .fill(isLogVisible ? Color.junoRowSelected : .clear)
+                )
+                .help(isLogVisible ? "Hide server log" : "Show server log")
+                .accessibilityLabel(isLogVisible ? "Hide server log" : "Show server log")
+            }
+
+            HStack(spacing: JunoSpace.tight) {
+                TextField("localhost:3000", text: $model.addressText)
+                    .textFieldStyle(.roundedBorder)
+                    .junoCode()
+                    .onSubmit { model.openTypedAddress() }
+                    .help(
+                        model.addressValidationMessage
+                            ?? "The address detected from the local development server"
+                    )
+                    .accessibilityLabel("Preview address")
+                    .accessibilityIdentifier("juno.code.preview.dock.address")
+
+                Button("Open") {
+                    model.openTypedAddress()
+                }
+                .controlSize(.small)
+                .disabled(model.addressText.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+
+            if let message = model.addressValidationMessage {
+                Text(message)
+                    .junoCaption()
+                    .foregroundStyle(Color.junoDanger)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.horizontal, JunoSpace.snug)
+        .padding(.vertical, JunoSpace.snug)
+    }
+
+    @ViewBuilder
+    private var runButton: some View {
+        if model.serverState.isLive {
+            Button {
+                model.stop()
+            } label: {
+                Label("Stop", systemImage: "stop.fill")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .help("Stop the local development server")
+            .accessibilityIdentifier("juno.code.preview.dock.stop")
+        } else {
+            Button {
+                model.start()
+            } label: {
+                Label("Start", systemImage: "play.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.junoAccent)
+            .controlSize(.small)
+            .disabled(!model.canStart)
+            .help(model.startUnavailableReason ?? "Start the local development server")
+            .accessibilityIdentifier("juno.code.preview.dock.start")
+        }
+    }
+
+    private var commandMenu: some View {
+        Menu {
+            if let commands = model.commandSet?.commands, !commands.isEmpty {
+                ForEach(commands) { command in
+                    Button {
+                        model.chosenCommandID = command.id
+                    } label: {
+                        Text(command.commandLine)
+                        Text(command.script)
+                    }
+                }
+            }
+        } label: {
+            Text(model.selectedCommand?.commandLine ?? "No command")
+                .junoCodeSmall()
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .menuStyle(.borderlessButton)
+        .frame(maxWidth: 150, alignment: .leading)
+        .disabled(model.commandSet?.commands.isEmpty ?? true)
+        .help(
+            model.selectedCommand
+                .map { "\($0.name): \($0.script)" }
+                ?? model.commandSet?.unavailableReason
+                ?? "Reading package.json…"
+        )
+        .accessibilityLabel("Development server command")
+        .accessibilityIdentifier("juno.code.preview.dock.command")
+    }
+
+    @ViewBuilder
+    private var viewport: some View {
+        if let address = model.address {
+            ZStack(alignment: .bottomLeading) {
+                CodePreviewWebView(url: address, reloadID: model.reloadID, model: model)
+                statusPill
+                    .padding(JunoSpace.snug)
+            }
+        } else {
+            VStack(spacing: JunoSpace.snug) {
+                if model.serverState == .starting {
+                    ProgressView()
+                    Text("Starting the local preview…")
+                        .junoRowLabel()
+                } else {
+                    Image(systemName: "macwindow")
+                        .font(.title2)
+                        .foregroundStyle(.secondary)
+                    Text(
+                        model.serverState == .stopped
+                            ? "Preview is ready"
+                            : "Preview is unavailable"
+                    )
+                    .junoRowLabel()
+                }
+
+                Text(
+                    model.serverState == .stopped
+                        ? "Juno will start the workspace's development server and open the address it prints."
+                        : model.startUnavailableReason
+                            ?? "Check the server log for the command's output."
+                )
+                .junoCaption()
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 320)
+
+                if case .failed(let reason) = model.serverState {
+                    Text(reason)
+                        .junoCodeSmall()
+                        .foregroundStyle(Color.junoDanger)
+                        .lineLimit(4)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 340)
+                }
+            }
+            .padding(JunoSpace.region)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private var status: some View {
+        let state = statusState
+        return HStack(spacing: JunoSpace.hairline) {
+            if state.busy {
+                ProgressView().controlSize(.mini)
+            } else {
+                Circle()
+                    .fill(state.tint)
+                    .frame(width: 6, height: 6)
+            }
+           Text(state.label)
+               .junoCaption()
+               .foregroundStyle(.secondary)
+               .lineLimit(1)
+               .truncationMode(.middle)
+            if model.isServerContained {
+                Image(systemName: "lock.shield.fill")
+                    .foregroundStyle(Color.junoSuccess)
+                    .help("The preview server is contained to this workspace with network access disabled")
+                    .accessibilityLabel("Preview server sandboxed")
+            } else if model.workspaceRoot != nil {
+                Image(systemName: "exclamationmark.shield.fill")
+                    .foregroundStyle(Color.junoCaution)
+                    .help("Kernel containment is unavailable on this Mac; the preview still uses a scrubbed environment")
+                    .accessibilityLabel("Preview server containment unavailable")
+            }
+       }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Preview \(state.label)")
+    }
+
+    private var statusPill: some View {
+        let state = statusState
+        return HStack(spacing: JunoSpace.hairline) {
+            Circle()
+                .fill(state.tint)
+                .frame(width: 6, height: 6)
+            Text(state.label)
+                .junoCodeSmall()
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.horizontal, JunoSpace.snug)
+        .padding(.vertical, JunoSpace.tight)
+        .junoFloatingChrome(cornerRadius: JunoRadius.floating)
+        .accessibilityHidden(true)
+    }
+
+    private var statusState: (label: String, tint: Color, busy: Bool) {
+        switch model.serverState {
+        case .starting:
+            return ("Starting", Color.junoCaution, true)
+        case .running:
+            switch model.loadState {
+            case .idle:
+                return ("Server running", Color.junoCaution, false)
+            case .loading:
+                return ("Loading", Color.junoCaution, true)
+            case .loaded:
+                return ("Running", Color.junoSuccess, false)
+            case .failed:
+                return (
+                    model.isAwaitingServer ? "Waiting for server" : "Page unavailable",
+                    Color.junoCaution,
+                    model.isAwaitingServer
+                )
+            }
+        case .failed:
+            return ("Server failed", Color.junoDanger, false)
+        case .exited:
+            return ("Server exited", Color.junoDanger, false)
+        case .stopped:
+            return (
+                model.loadState == .loaded ? "Connected" : "Not started",
+                model.loadState == .loaded ? Color.junoSuccess : Color.secondary,
+                false
+            )
+        }
+    }
+
+    private var log: some View {
+        ScrollView([.vertical, .horizontal]) {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                if model.discardedLineCount > 0 {
+                    Text("\(model.discardedLineCount) earlier lines are no longer held")
+                        .junoCodeSmall()
+                        .foregroundStyle(.tertiary)
+                }
+                ForEach(Array(model.log.suffix(240))) { line in
+                    Text(line.text.isEmpty ? " " : line.text)
+                        .junoCodeSmall()
+                        .foregroundStyle(
+                            line.channel == .stderr ? Color.junoDanger : Color.primary
+                        )
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+            }
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.tight)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 150)
+        .background(Color.junoTerminal)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color.junoSeparator).frame(height: 1)
+        }
+        .accessibilityLabel("Server log")
     }
 }
 

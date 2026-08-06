@@ -466,16 +466,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     /// Whether ``reload()`` may fall back to opening the most recent
     /// conversation when nothing is selected.
     ///
-    /// **True on the Mac**, whose sidebar-plus-detail layout has no resting
-    /// state of its own: an empty detail pane beside a full sidebar reads as a
-    /// window that failed to load, so the last conversation is the right thing
-    /// to land on.
-    ///
-    /// **False on the phone**, where the resting state *is* a screen — the
-    /// greeting and an empty composer, which is what chat.liams.dev opens on.
-    /// With the fallback on, launching the app dropped the reader straight into
-    /// whatever they last said, and the home screen was unreachable without
-    /// tapping New chat.
+    /// The caller chooses whether the first reload should select the newest
+    /// conversation. Both the phone and desktop now pass `false`, so they open
+    /// on the greeting and empty composer while the sidebar still exposes the
+    /// conversation history.
     public var opensMostRecentConversationOnLoad: Bool
 
     public var selectedConversation: NativeConversation? {

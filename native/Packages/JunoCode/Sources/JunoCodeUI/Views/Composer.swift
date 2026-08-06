@@ -85,6 +85,29 @@ public enum AgentBehaviorLabel {
     }
 }
 
+/// The five-bar voice mark shared by the Code composer and its first-turn
+/// launchpad. It is deliberately the same compact signal Chat uses instead of
+/// an ambiguous waveform outline that disappears inside a small toolbar row.
+public struct JunoCodeVoiceGlyph: View {
+    private let color: Color
+    private let heights: [CGFloat] = [7, 13, 18, 11, 6]
+
+    public init(color: Color = .white) {
+        self.color = color
+    }
+
+    public var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Array(heights.enumerated()), id: \.offset) { _, height in
+                Capsule()
+                    .fill(color)
+                    .frame(width: 2, height: height)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 // MARK: - The composer
 
 /// The one place the next turn's contract is set.
@@ -110,6 +133,10 @@ public struct Composer: View {
     /// that boundary while still letting the Code composer offer the same control
     /// the Chat composer has.
     let beginDictation: (() -> Void)?
+    /// Starts realtime voice mode, or nil when the host has no voice service.
+    /// Like dictation, this remains a host closure so JunoCodeUI does not own
+    /// audio permissions, relay credentials, or transcript persistence.
+    let beginVoice: (() -> Void)?
 
     /// Which row the arrow keys are on. Reset every time the query changes, so
     /// the highlight cannot point past the end of a narrowed list.
@@ -125,13 +152,15 @@ public struct Composer: View {
         availableModels: [ModelOption],
         focus: FocusState<Bool>.Binding? = nil,
         slashCommands: CodeSlashCommandLibrary = .builtIn,
-        beginDictation: (() -> Void)? = nil
+        beginDictation: (() -> Void)? = nil,
+        beginVoice: (() -> Void)? = nil
     ) {
         self.controller = controller
         self.availableModels = availableModels
         self.focus = focus
         self.slashCommands = slashCommands
         self.beginDictation = beginDictation
+        self.beginVoice = beginVoice
     }
 
     /// The `/token` being typed, if the composer is on one.
@@ -328,12 +357,12 @@ public struct Composer: View {
             if let beginDictation, !isRunning {
                 Button(action: beginDictation) {
                     Image(systemName: "mic")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 26, height: 26)
+                        .font(.body)
+                        .foregroundStyle(Color.primary.opacity(0.76))
+                        .frame(width: 30, height: 30)
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
                 .help("Dictate a message")
                 .accessibilityLabel("Dictate a message")
                 .accessibilityIdentifier("juno.code.composer.dictate")
@@ -353,17 +382,31 @@ public struct Composer: View {
                 .help("Stop the agent (⌘.)")
                 .accessibilityLabel("Stop the agent")
                 .accessibilityIdentifier("juno.code.composer.stop")
+            } else if let beginVoice,
+                controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                controller.pendingAttachments.isEmpty
+            {
+                Button(action: beginVoice) {
+                    JunoCodeVoiceGlyph(color: Color.junoOnAccent)
+                        .frame(width: 30, height: 30)
+                        .contentShape(.circle)
+                }
+                .accentGlassAction(active: controller.isAgentTransportConfigured)
+                .disabled(!controller.isAgentTransportConfigured)
+                .help("Start a voice conversation")
+                .accessibilityLabel("Start voice mode")
+                .accessibilityIdentifier("juno.code.composer.voice")
             } else {
                 Button(action: send) {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.junoOnAccent)
-                        .frame(width: 26, height: 26)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(canSend ? Color.junoOnAccent : Color.secondary)
+                        .frame(width: 30, height: 30)
+                        .contentShape(.circle)
                 }
                 .accentGlassAction(active: canSend)
-                .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!canSend)
-                .help("Send (⌘⏎)")
+                .help("Send")
                 .accessibilityLabel("Send")
                 .accessibilityIdentifier("juno.code.composer.send")
             }

@@ -58,8 +58,11 @@ public final class ReviewModel {
     }
 
     /// Whether the detail column is showing Review instead of the transcript.
-    /// The window binds its Review command and its detail switch to this, so
-    /// there is exactly one answer to "is the reader reviewing?".
+    ///
+    /// ``CodeSessionCanvas`` renders from this, and mirrors the host window's own
+    /// disclosure flag onto it in both directions, so there is exactly one answer
+    /// to "is the reader reviewing?" no matter who asked — the Review toolbar
+    /// toggle, the inspector's Changes list, or Open Quickly.
     public var isPresented = false
     public var layout: Layout = .unified
     /// The file the canvas should scroll to. Cleared once the scroll happens so

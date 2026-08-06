@@ -225,7 +225,9 @@ public struct NativeCompareView: View {
             run: model.runs[pane.id] ?? NativeCompareModel.Run(),
             descriptors: descriptors,
             summary: selectable.first { $0.id == pane.modelID }?.summary,
-            setModel: { model.setModel($0, for: pane.id) },
+            setModel: { @MainActor @Sendable modelID in
+                model.setModel(modelID, for: pane.id)
+            },
             remove: model.canRemovePane ? { model.removePane(pane.id) } : nil,
             retry: { model.retry(pane.id) }
         )
@@ -279,7 +281,7 @@ struct NativeComparePane: View {
     /// when the manifest published none — in which case the pane says what to do
     /// instead of inventing a description.
     let summary: String?
-    let setModel: (String) -> Void
+    let setModel: @MainActor @Sendable (String) -> Void
     let remove: (() -> Void)?
     let retry: () -> Void
 

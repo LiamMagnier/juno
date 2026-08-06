@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, Terminal } from "lucide-react";
+import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, PenTool, Terminal } from "lucide-react";
 import { Markdown } from "@/components/chat/markdown";
 import { CodeSurface } from "@/components/canvas/code-surface";
 import { SandboxFrame, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
@@ -19,6 +19,7 @@ const ICONS: Record<ArtifactType, typeof Code2> = {
   SVG: ImageIcon,
   MARKDOWN: FileText,
   MERMAID: GitBranch,
+  DESIGN: PenTool,
 };
 
 function ConsolePreview({ entries }: { entries: ConsoleEntry[] }) {

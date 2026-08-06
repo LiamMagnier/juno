@@ -1,8 +1,12 @@
 import AppKit
+import JunoAuth
+import JunoChatKit
 import JunoCodeCore
 import JunoCodeKit
 import JunoCodeUI
 import JunoDesignSystem
+import JunoStorage
+import JunoSync
 import SwiftUI
 
 /// The Code window's navigation column, its selection rules, its status
@@ -54,6 +58,25 @@ enum DesktopCodeSidebarItem: Hashable {
     /// a coding session, and the website has always filed it under Code. A
     /// reader checking on one is in the same product they started it in.
     case pulls
+    /// The account's connected services.
+    ///
+    /// The website keeps this in Code's own navigation — `app-sidebar.tsx` lists
+    /// Plugins beside Pull requests whenever the shell is in code mode — and it
+    /// is not filler: GitHub is granted here and nowhere else, and both Cloud
+    /// runs and the pull request list above are inert without it. This window
+    /// used to drop the "Open Connections" button out of its own "GitHub isn't
+    /// connected" empty state because it had no route to that page.
+    case connections
+    /// The account's own two pages, rendered by this window rather than reached
+    /// through it.
+    ///
+    /// ``JunoDesktopWorkspaceView`` instantiates one product at a time precisely
+    /// so two `NavigationSplitView`s never negotiate against the same window, so
+    /// there is no such thing as "navigate to Chat's Usage page". Code owns the
+    /// same two screens in its own detail column instead — the screens, not
+    /// copies of them.
+    case usage
+    case settings
     case repository(WorkspaceID)
     case session(CodeSessionID)
     case task(String)
@@ -96,6 +119,23 @@ struct DesktopCodeRun: Identifiable {
         parts.append(environment.rawValue)
         return parts.joined(separator: " · ")
     }
+
+    /// The caption for a row already nested under its project.
+    ///
+    /// Printing the project's name on every child is what made the outline hard
+    /// to scan — the parent row two pixels above already says it, so the column
+    /// read as the same string repeated down the page. `Local` goes for the same
+    /// reason: a session nested under a local project has nowhere else to run.
+    /// What is left is the branch and how long ago the run last moved, which are
+    /// the two facts that actually distinguish one session in a repository from
+    /// another. The full caption is still what VoiceOver reads.
+    var nestedCaption: String {
+        var parts: [String] = []
+        if let branch, !branch.isEmpty { parts.append(branch) }
+        if environment != .local { parts.append(environment.rawValue) }
+        parts.append(updatedAt.formatted(.relative(presentation: .named)))
+        return parts.joined(separator: " · ")
+    }
 }
 
 /// The pure navigation rules behind the Code window's column.
@@ -113,6 +153,9 @@ enum DesktopCodeNavigationState {
         case .allProjects: "allProjects"
         case .draft: "draft"
         case .pulls: "pulls"
+        case .connections: "connections"
+        case .usage: "usage"
+        case .settings: "settings"
         case .repository(let id): "repository\(unitSeparator)\(id.value)"
         case .session(let id): "session\(unitSeparator)\(id.value)"
         case .task(let id): "task\(unitSeparator)\(id)"
@@ -127,6 +170,9 @@ enum DesktopCodeNavigationState {
         case ("allProjects", 1): return .allProjects
         case ("draft", 1): return .draft
         case ("pulls", 1): return .pulls
+        case ("connections", 1): return .connections
+        case ("usage", 1): return .usage
+        case ("settings", 1): return .settings
         case ("repository", 2): return .repository(WorkspaceID(value: fields[1]))
         case ("session", 2): return .session(CodeSessionID(value: fields[1]))
         case ("task", 2): return .task(fields[1])
@@ -155,8 +201,9 @@ enum DesktopCodeNavigationState {
         // Always valid: it names the collection, not a member of it.
         case .allProjects: return item
         // Always valid: a draft names nothing that can go missing, and the pull
-        // request list is an account-level page rather than a local record.
-        case .draft, .pulls: return item
+        // request list, the connected services, the usage ledger and the settings
+        // page are account-level pages rather than local records.
+        case .draft, .pulls, .connections, .usage, .settings: return item
         case .remote, .none: return item
         }
     }
@@ -222,6 +269,17 @@ struct CodeRunStatus {
     /// shield and a failure is a circle — and those two must not be a raised
     /// hand and a cross here.
     let junoIcon: JunoIcon?
+    /// Colour is spent only where the state asks something of the reader.
+    ///
+    /// The website's sidebar draws a run's state as one small dot and reserves
+    /// hue for the three states worth interrupting for — `bg-warning` for an
+    /// approval, `bg-destructive` for a failure, `bg-success` for a finish — and
+    /// leaves everything else on `bg-muted-foreground/50`. Running used to be the
+    /// account accent here, which put a coral spinner on every live row in the
+    /// Code column and made the busiest sidebar the loudest one. Nothing about a
+    /// run in flight needs to be *found*: it is already the only thing on screen
+    /// that moves, so the motion is the signal and the indicator itself stays the
+    /// column's own ink.
     let tint: Color
     let isActive: Bool
     let needsApproval: Bool
@@ -252,7 +310,7 @@ struct CodeRunStatus {
         case .idle:
             self.init(label: "Ready", symbol: "circle.dotted", tint: .secondary, isActive: false)
         case .running:
-            self.init(label: "Running", symbol: "bolt.fill", tint: .junoAccent, isActive: true)
+            self.init(label: "Running", symbol: "bolt.fill", tint: .secondary, isActive: true)
         case .waitingForApproval:
             self.init(
                 label: "Needs approval",
@@ -294,7 +352,7 @@ struct CodeRunStatus {
         case .queued:
             self.init(label: "Queued", symbol: "clock", tint: .secondary, isActive: true)
         case .running:
-            self.init(label: "Running", symbol: "bolt.fill", tint: .junoAccent, isActive: true)
+            self.init(label: "Running", symbol: "bolt.fill", tint: .secondary, isActive: true)
         case .awaitingApproval:
             self.init(
                 label: "Needs approval",
@@ -350,7 +408,7 @@ struct CodeRunStatus {
                 isActive: false
             )
         } else if summary.isRunning {
-            self.init(label: "Running", symbol: "bolt.fill", tint: .junoAccent, isActive: true)
+            self.init(label: "Running", symbol: "bolt.fill", tint: .secondary, isActive: true)
         } else if summary.lastError != nil {
             self.init(
                 label: "Failed",
@@ -406,6 +464,19 @@ struct DesktopCodeSidebar: View {
     @Binding var selection: DesktopCodeSidebarItem?
     @Binding var remoteDeviceID: String
     let isBootstrapping: Bool
+    /// The signed-in account, its photo, its synchronisation state and its plan
+    /// meters — the four facts Chat's own column has always shown and this one
+    /// never did.
+    ///
+    /// Optional as a group rather than individually: they all come from the one
+    /// configuration, so a column that had some of them and not others would have
+    /// nothing coherent to draw. When there is no session the column is exactly
+    /// what it was — no half-built account row, no destination that leads to an
+    /// apology.
+    let session: NativeAuthenticatedSession?
+    let avatarModel: NativeAvatarModel?
+    let syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    let plan: DesktopUsagePlan?
     let openRepository: () -> Void
     let newSession: (WorkspaceID) -> Void
     let rename: (CodeSession) -> Void
@@ -525,6 +596,7 @@ struct DesktopCodeSidebar: View {
                 Text("New conversation").junoRowLabel()
             } icon: {
                 JunoIconView(.new, size: 15)
+                    .junoSidebarMarkInk(selected: selection == .draft)
             }
             .junoSidebarRowInk()
             .tag(DesktopCodeSidebarItem.draft)
@@ -538,10 +610,28 @@ struct DesktopCodeSidebar: View {
                 Text("Pull requests").junoRowLabel()
             } icon: {
                 JunoIconView(.pulls, size: 15)
+                    .junoSidebarMarkInk(selected: selection == .pulls)
             }
             .junoSidebarRowInk()
             .tag(DesktopCodeSidebarItem.pulls)
             .accessibilityIdentifier("juno.code.pulls")
+
+            // Plugins, filed where the website files them.
+            //
+            // `app-sidebar.tsx` keeps Connections in the Code nav, and the reason
+            // is right above this row: GitHub is granted on that page, and both
+            // the pull request list and every Cloud run depend on the grant.
+            if session != nil {
+                Label {
+                    Text("Connections").junoRowLabel()
+                } icon: {
+                    JunoIconView(.connections, size: 15)
+                        .junoSidebarMarkInk(selected: selection == .connections)
+                }
+                .junoSidebarRowInk()
+                .tag(DesktopCodeSidebarItem.connections)
+                .accessibilityIdentifier("juno.code.connections")
+            }
 
             // Anything running comes first and is never nested. A run needing
             // attention must not be one disclosure triangle away.
@@ -590,6 +680,7 @@ struct DesktopCodeSidebar: View {
                         Text("All Projects").junoRowLabel()
                     } icon: {
                         JunoIconView(.projects, size: 15)
+                            .junoSidebarMarkInk(selected: selection == .allProjects)
                     }
                     .junoSidebarRowInk()
                     .badge(groups.count)
@@ -606,7 +697,7 @@ struct DesktopCodeSidebar: View {
                                     .selectionDisabled()
                             } else {
                                 ForEach(group.runs) { run in
-                                    row(run)
+                                    row(run, nested: true)
                                         .padding(.leading, Self.childIndent)
                                 }
                             }
@@ -676,9 +767,14 @@ struct DesktopCodeSidebar: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             Color.clear.frame(height: Self.titlebarClearance)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        // `safeAreaBar`, not `safeAreaInset`: the bar variant is what the
+        // system's bottom scroll-edge effect is measured against, and that
+        // effect is what lets the footer sit on a translucent column without an
+        // opaque bar painted behind it.
+        .safeAreaBar(edge: .bottom, spacing: 0) {
             footer
         }
+        .junoSidebarScrollEdge()
         .alert(item: $projectPendingDeletion) { project in
             Alert(
                 title: Text("Delete “\(project.name)” from Juno?"),
@@ -771,6 +867,7 @@ struct DesktopCodeSidebar: View {
                     .truncationMode(.middle)
             } icon: {
                 JunoIconView(.projects, size: 15)
+                    .junoSidebarMarkInk(selected: selection == .repository(group.workspaceID))
             }
 
             Spacer(minLength: JunoSpace.hairline)
@@ -866,14 +963,11 @@ struct DesktopCodeSidebar: View {
             """
     }
 
+    /// Counted from the visible set, because this feeds the delete confirmation
+    /// and a reader can only weigh a number against the runs they can see. The
+    /// sub-agents underneath go with their parents either way.
     private func sessions(in project: ProjectGroup) -> [CodeSession] {
-        workbench.sessions.filter { $0.workspaceID == project.workspaceID }
-    }
-
-    /// Whether the selected item is the projectless composer.
-    private var isDraftSelected: Bool {
-        if case .draft = selection { return true }
-        return false
+        workbench.visibleSessions.filter { $0.workspaceID == project.workspaceID }
     }
 
     private func selectionBelongs(to workspaceID: WorkspaceID) -> Bool {
@@ -884,14 +978,16 @@ struct DesktopCodeSidebar: View {
             return workbench.sessions.first { $0.id == id }?.workspaceID == workspaceID
         // The index belongs to no single project, so deleting one never leaves the
         // reader stranded on it.
-        case .allProjects, .draft, .pulls, .task, .remote, nil:
+        case .allProjects, .draft, .pulls, .connections, .usage, .settings, .task, .remote, nil:
             return false
         }
     }
 
     // MARK: Rows
 
-    private func row(_ run: DesktopCodeRun) -> some View {
+    /// - Parameter nested: whether this row already sits under its project's own
+    ///   row, in which case it drops the facts that row has just stated.
+    private func row(_ run: DesktopCodeRun, nested: Bool = false) -> some View {
         HStack(spacing: JunoSpace.tight) {
             CodeStatusIndicator(status: run.status)
             VStack(alignment: .leading, spacing: 1) {
@@ -899,15 +995,21 @@ struct DesktopCodeSidebar: View {
                     .junoRowLabel()
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(run.caption)
+                Text(nested ? run.nestedCaption : run.caption)
                     .junoCaption()
                     .lineLimit(1)
                     .truncationMode(.head)
             }
             Spacer(minLength: JunoSpace.hairline)
             if isFavorite(run) {
+                // The accent, because a pin is one of exactly two places the
+                // website spends `--primary` inside the whole column
+                // (`app-sidebar.tsx` draws both the pinned conversation and the
+                // starred project `fill-primary`). It was `junoCaution` here —
+                // an amber that matched neither the web's pin nor the Chat
+                // column's, so one mark had three colours across two windows.
                 JunoIconView(.pin, size: 11)
-                    .foregroundStyle(Color.junoCaution)
+                    .foregroundStyle(Color.junoAccent)
                     .accessibilityLabel("Favorite")
             }
         }
@@ -960,7 +1062,7 @@ struct DesktopCodeSidebar: View {
                 Task { await remote.stopGeneration(deviceID: deviceID, sessionID: sessionID) }
             }
             .disabled(!run.status.isActive || remote.isSendingCommand)
-        case .allProjects, .draft, .pulls, .repository:
+        case .allProjects, .draft, .pulls, .connections, .usage, .settings, .repository:
             // None reaches this row builder: repositories carry their own menu,
             // and neither the index, the composer nor the pull request list is a
             // run.
@@ -1012,12 +1114,38 @@ struct DesktopCodeSidebar: View {
 
     // MARK: Footer
 
+    /// What the column pins under the list: a transient workspace notice, and
+    /// then the account.
+    ///
+    /// In that order because the notice is news and the account row is furniture
+    /// — a "choose the folder again" prompt that appeared *below* the reader's
+    /// own name would be reporting an emergency in the quietest place on screen.
+    @ViewBuilder
+    private var footer: some View {
+        VStack(spacing: 0) {
+            workspaceStatus
+            if let session {
+                DesktopSidebarFooter(
+                    session: session,
+                    avatarModel: avatarModel,
+                    syncModel: syncModel,
+                    plan: plan,
+                    // Selection, not a closure out of the window: Usage and
+                    // Settings are this column's own destinations, so they are
+                    // reached the way every other row here is reached.
+                    openUsage: { selection = .usage },
+                    openSettings: { selection = .settings }
+                )
+            }
+        }
+    }
+
     /// The column's own progress, never skeleton rows.
     ///
     /// Placeholder rows behind a real state are the specific dishonesty the brief
     /// rules out: they claim there is content and then contradict themselves.
     @ViewBuilder
-    private var footer: some View {
+    private var workspaceStatus: some View {
         if isBootstrapping {
             HStack(spacing: JunoSpace.snug) {
                 ProgressView().controlSize(.small)
@@ -1672,14 +1800,20 @@ struct DesktopCodeDraftDetail: View {
             // `.symbolEffect` is an SF Symbol capability; a Juno mark is an
             // image asset and cannot morph, so the two branches differ in more
             // than which glyph they draw.
+            //
+            // Neutral, as the website's own target chip is: `code-target-picker.tsx`
+            // draws its folder, branch and chevron marks `text-muted-foreground`
+            // and keeps `--primary` for the send button at the other end of the
+            // same row. A composer with a coral glyph on each side has two
+            // primary actions and therefore none.
             if let junoIcon = target.junoIcon {
                 JunoIconView(junoIcon, size: 15)
-                    .foregroundStyle(Color.junoAccent)
+                    .foregroundStyle(.secondary)
                     .transition(.opacity)
                     .id(target)
             } else {
                 Image(systemName: target.symbol)
-                    .foregroundStyle(Color.junoAccent)
+                    .foregroundStyle(.secondary)
                     .contentTransition(.symbolEffect(.replace))
             }
             Text(destinationTitle)
@@ -1726,8 +1860,11 @@ struct DesktopCodeDraftDetail: View {
             .keyboardShortcut("o", modifiers: [.command])
         } label: {
             HStack(spacing: JunoSpace.snug) {
+                // Same rule as `destinationIdentity`: the web's project chip is
+                // `text-muted-foreground` and the coral in this row belongs to
+                // the send button.
                 JunoIconView(record == nil ? .conversation : .projects, size: 14)
-                    .foregroundStyle(Color.junoAccent)
+                    .foregroundStyle(.secondary)
                 Text(destinationTitle)
                     .junoRowLabel()
                     .lineLimit(1)
@@ -1955,6 +2092,9 @@ struct DesktopCodeDraftDetail: View {
         .accessibilityIdentifier("juno.code.launch-suggestions")
     }
 
+    /// The composer's one primary action, and therefore the one thing in this
+    /// row that keeps the accent — the website's send button is `bg-primary` and
+    /// everything else on its composer bar is `text-muted-foreground`.
     private var sendButton: some View {
         Button(action: send) {
             Group {
@@ -2147,7 +2287,7 @@ struct DesktopCodeAllProjects: View {
 
     private var rows: [Row] {
         workbench.workspaces.map { record in
-            let sessions = workbench.sessions.filter { $0.workspaceID == record.id }
+            let sessions = workbench.visibleSessions.filter { $0.workspaceID == record.id }
             return Row(
                 record: record,
                 sessions: sessions.count,
@@ -2192,10 +2332,20 @@ struct DesktopCodeAllProjects: View {
                 HStack(spacing: JunoSpace.snug) {
                     Text(row.record.descriptor.displayName)
                         .junoTitle()
+                    // A dot and a caption, not coral text.
+                    //
+                    // The website marks a running task with `bg-success` and a
+                    // pulse (`TASK_STATUS_META`) and never with `--primary`, which
+                    // it keeps for the actions on the right of this same card.
+                    // Colouring the *count* in the accent made the card look as
+                    // though something needed doing.
                     if row.active > 0 {
-                        Text(row.active == 1 ? "1 running" : "\(row.active) running")
-                            .junoCaption()
-                            .foregroundStyle(Color.junoAccent)
+                        HStack(spacing: JunoSpace.hairline) {
+                            DesktopCodeRunningDot()
+                            Text(row.active == 1 ? "1 running" : "\(row.active) running")
+                                .junoCaption()
+                        }
+                        .accessibilityElement(children: .combine)
                     }
                 }
                 Text(
@@ -2214,6 +2364,10 @@ struct DesktopCodeAllProjects: View {
             Spacer(minLength: JunoSpace.cozy)
 
             VStack(alignment: .trailing, spacing: JunoSpace.snug) {
+                // One prominent action per card, in the accent, exactly as the
+                // web's default `Button` variant renders `bg-primary` — and the
+                // secondary one below it stays bordered rather than becoming a
+                // second coral fill.
                 Button("Open") { open(row.record.id) }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.junoAccent)

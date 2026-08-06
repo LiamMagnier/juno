@@ -100,3 +100,76 @@ struct DesktopProductSwitcher: View {
         .accessibilityIdentifier("Juno product")
     }
 }
+
+/// Shared measurements for the small pieces of window chrome that sit above the
+/// two native source lists. Keeping these here prevents Chat and Code from
+/// drifting by a few points when one of their sidebars is refreshed.
+enum DesktopSidebarChromeMetrics {
+    /// The native source-list icons begin on this 4-point-grid column.
+    static let productBrandLeadingInset = JunoSpace.regular
+    static let productBrandTrailingInset = JunoSpace.tight
+    /// The mark and its product name are one compact identity, not two controls.
+    static let productBrandSpacing = JunoSpace.hairline
+    /// Clears the titlebar row before the first source-list row begins.
+    static let titlebarClearance: CGFloat = 76
+    /// Keeps the custom split-view control visibly inside the navigation column.
+    static let sidebarToggleLeadingInset = JunoSpace.snug
+}
+
+/// A stable split-view control shared by Chat and Code.
+///
+/// macOS supplies a default toggle for `NavigationSplitView`, but its toolbar
+/// item is flush against the column divider. Juno owns this small control so its
+/// hit target and leading inset match the rest of the sidebar chrome.
+struct DesktopSidebarToggle: View {
+    @Binding var visibility: NavigationSplitViewVisibility
+
+    private var sidebarIsVisible: Bool {
+        visibility != .detailOnly
+    }
+
+    var body: some View {
+        Button {
+            withAnimation(JunoMotion.standard) {
+                visibility = sidebarIsVisible ? .detailOnly : .all
+            }
+        } label: {
+            Image(systemName: "sidebar.left")
+                .frame(width: 28, height: 28)
+        }
+        .padding(.leading, DesktopSidebarChromeMetrics.sidebarToggleLeadingInset)
+        .help(sidebarIsVisible ? "Hide Sidebar" : "Show Sidebar")
+        .accessibilityLabel(sidebarIsVisible ? "Hide Sidebar" : "Show Sidebar")
+        .accessibilityIdentifier("juno.desktop.sidebar.toggle")
+    }
+}
+
+/// The window-level identity shown beside the traffic lights.
+///
+/// A repository or conversation is content, not the product name. Keeping that
+/// content out of the titlebar leaves one stable orientation point while moving
+/// between Chat and Code, and makes the two products read as one Juno app.
+struct DesktopProductBrand: View {
+    let product: DesktopProductMode
+
+    private var title: String {
+        product == .code ? "Juno Code" : "Juno"
+    }
+
+    var body: some View {
+        HStack(spacing: DesktopSidebarChromeMetrics.productBrandSpacing) {
+            JunoMark(size: 18)
+                .foregroundStyle(Color.primary)
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.primary)
+                .lineLimit(1)
+        }
+        .padding(.leading, DesktopSidebarChromeMetrics.productBrandLeadingInset)
+        .padding(.trailing, DesktopSidebarChromeMetrics.productBrandTrailingInset)
+        .frame(minHeight: 28)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityIdentifier("juno.product-brand.\(product.rawValue)")
+    }
+}

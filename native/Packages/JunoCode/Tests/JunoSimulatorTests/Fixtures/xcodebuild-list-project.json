@@ -1,0 +1,16 @@
+{
+  "project" : {
+    "configurations" : [
+      "Debug",
+      "Release"
+    ],
+    "name" : "Aurora",
+    "schemes" : [
+      "Aurora"
+    ],
+    "targets" : [
+      "Aurora",
+      "AuroraTests"
+    ]
+  }
+}

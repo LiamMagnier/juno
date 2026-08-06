@@ -53,7 +53,7 @@ struct JunoMobileMemoryView: View {
             .frame(maxWidth: 768)
             .frame(maxWidth: .infinity)
         }
-        .background(Color.junoCanvas)
+        .junoScreenCanvas()
         // Blank, deliberately. The page states its own name in the serif heading
         // two lines below the bar, and an inline bar title repeated it verbatim
         // on every screen of this app that has a heading.
@@ -145,7 +145,7 @@ struct JunoMobileMemoryView: View {
                 Spacer(minLength: 0)
             }
             .padding(16)
-            .background(Color.junoCanvas)
+            .junoScreenCanvas()
             .navigationTitle("Edit memory")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

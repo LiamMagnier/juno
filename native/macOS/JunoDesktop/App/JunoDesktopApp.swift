@@ -24,7 +24,18 @@ private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         MainActor.assumeIsolated {
             #if DEBUG
-            guard !JunoPreviewEnvironment.isActive else { return }
+            if JunoPreviewEnvironment.isActive {
+                // The harness never polls, downloads or stages anything. It only
+                // seeds the phase the footer card draws, so that card can be
+                // looked at in both appearances instead of reasoned about — the
+                // flag and the seeding method both already existed and had
+                // nothing joining them, which meant the one state this view has
+                // was unreachable in visual QA.
+                if JunoPreviewEnvironment.updateReady {
+                    DesktopUpdateModel.shared.setPreviewReady(version: "0.1.12")
+                }
+                return
+            }
             #endif
             DesktopUpdateModel.shared.start()
         }

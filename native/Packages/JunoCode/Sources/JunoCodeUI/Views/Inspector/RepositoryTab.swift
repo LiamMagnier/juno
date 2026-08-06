@@ -1,6 +1,8 @@
+import AppKit
 import SwiftUI
 import JunoCodeCore
 import JunoCodeLocal
+import JunoCodeRuntime
 import JunoDesignSystem
 
 /// Git status, history, publication and CI in one column, because they are all
@@ -20,78 +22,115 @@ struct RepositoryTab: View {
     @State private var pushPlan: GitPushPlan?
     @State private var creatingBranch = false
     @State private var newBranchName = ""
+    @State private var creatingWorktree = false
+    @State private var newWorktreeBranch = ""
+    @State private var confirmingHookTrust = false
 
     private var isEditable: Bool {
         controller.session.configuration.behavior == .code
     }
 
     var body: some View {
-        if !controller.isGitRepository {
-            JunoEmptyState(
-                title: "Not a Git repository",
-                message: "Juno can still read and edit this folder; branch, commit and pull-request information needs a repository.",
-                symbol: "arrow.triangle.branch"
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            List {
+        List {
+            if controller.isGitRepository {
                 if let status = controller.gitStatus {
                     branchSection(status)
+                    worktreesSection
                     workingTreeSection(status)
                 }
                 pullRequestSection
                 commitsSection
-                instructionsSection
-            }
-            .listStyle(.inset)
-            .refreshable {
-                await controller.refreshWorkspacePanels()
-                await controller.refreshGitHubPullRequest()
-            }
-            .task(id: controller.sessionID) {
-                if controller.gitHubPullRequest == nil, controller.gitHubStatusMessage == nil {
-                    await controller.refreshGitHubPullRequest()
-                }
-            }
-            .alert("New branch", isPresented: $creatingBranch) {
-                TextField("Branch name", text: $newBranchName)
-                Button("Create") {
-                    let name = newBranchName
-                    newBranchName = ""
-                    Task { await controller.createGitBranch(named: name) }
-                }
-                Button("Cancel", role: .cancel) { newBranchName = "" }
-            } message: {
-                Text(
-                    "Switches this repository to a new branch from the current one, so the work in progress is isolated."
-                )
-            }
-            .confirmationDialog(
-                pushPlan?.setsUpstream == true ? "Publish branch?" : "Push branch?",
-                isPresented: Binding(
-                    get: { pushPlan != nil },
-                    set: { if !$0 { pushPlan = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                if let plan = pushPlan {
-                    Button(
-                        plan.setsUpstream
-                            ? "Publish \(plan.localBranch)"
-                            : "Push \(plan.localBranch)"
-                    ) {
-                        publish(plan)
-                    }
-                }
-                Button("Cancel", role: .cancel) { pushPlan = nil }
-            } message: {
-                if let plan = pushPlan {
-                    Text(
-                        "Push \(plan.localBranch) to \(plan.displayTarget). "
-                            + "Juno never force-pushes from this control."
+            } else {
+                Section {
+                    JunoEmptyState(
+                        title: "Not a Git repository",
+                        message: "Juno can still read and edit this folder. Branch, commit and pull-request information needs a repository.",
+                        symbol: "arrow.triangle.branch"
                     )
                 }
             }
+            extensibilitySection
+            instructionsSection
+        }
+        .listStyle(.inset)
+        .refreshable {
+            await controller.refreshWorkspacePanels()
+            await controller.refreshGitHubPullRequest()
+        }
+        .task(id: controller.sessionID) {
+            if controller.gitHubPullRequest == nil, controller.gitHubStatusMessage == nil {
+                await controller.refreshGitHubPullRequest()
+            }
+        }
+        .alert("New branch", isPresented: $creatingBranch) {
+            TextField("Branch name", text: $newBranchName)
+            Button("Create") {
+                let name = newBranchName
+                newBranchName = ""
+                Task { await controller.createGitBranch(named: name) }
+            }
+            Button("Cancel", role: .cancel) { newBranchName = "" }
+        } message: {
+            Text(
+                "Switches this repository to a new branch from the current one, so the work in progress is isolated."
+            )
+        }
+        .alert("Isolate worktree", isPresented: $creatingWorktree) {
+            TextField("feature/branch-name", text: $newWorktreeBranch)
+            Button("Create") {
+                let name = newWorktreeBranch
+                newWorktreeBranch = ""
+                Task {
+                    if let worktree = await controller.createIsolatedWorktree(named: name) {
+                        NSWorkspace.shared.open(worktree.rootURL)
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { newWorktreeBranch = "" }
+        } message: {
+            Text(
+                "Creates a real Git worktree under .juno/worktrees and leaves this checkout's dirty files and branch untouched."
+            )
+        }
+        .confirmationDialog(
+            pushPlan?.setsUpstream == true ? "Publish branch?" : "Push branch?",
+            isPresented: Binding(
+                get: { pushPlan != nil },
+                set: { if !$0 { pushPlan = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let plan = pushPlan {
+                Button(
+                    plan.setsUpstream
+                        ? "Publish \(plan.localBranch)"
+                        : "Push \(plan.localBranch)"
+                ) {
+                    publish(plan)
+                }
+            }
+            Button("Cancel", role: .cancel) { pushPlan = nil }
+        } message: {
+            if let plan = pushPlan {
+                Text(
+                    "Push \(plan.localBranch) to \(plan.displayTarget). "
+                        + "Juno never force-pushes from this control."
+                )
+            }
+        }
+        .confirmationDialog(
+            "Trust workspace hooks?",
+            isPresented: $confirmingHookTrust,
+            titleVisibility: .visible
+        ) {
+            Button("Trust & enable hooks") {
+                Task { await controller.setHooksEnabled(true) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "This allows the discovered .claude/settings.json and .juno/hooks.json commands to run inside the granted workspace. Juno still applies its command sandbox and approval policy."
+            )
         }
     }
 
@@ -137,6 +176,14 @@ struct RepositoryTab: View {
                             ? "Start a branch for this work"
                             : "Ask and Plan sessions are read-only"
                     )
+                Button("Isolate…") { creatingWorktree = true }
+                    .controlSize(.small)
+                    .disabled(!isEditable)
+                    .help(
+                        isEditable
+                            ? "Create a separate checkout without switching this repository"
+                            : "Ask and Plan sessions are read-only"
+                    )
                 Spacer(minLength: 0)
                 Button {
                     preparePush()
@@ -162,6 +209,69 @@ struct RepositoryTab: View {
                 )
                 .accessibilityIdentifier("juno.code.repository.push")
             }
+        }
+    }
+
+    private var worktreesSection: some View {
+        Section {
+            if controller.managedWorktrees.isEmpty {
+                Text("No isolated worktrees created in this session.")
+                    .junoCaption()
+            } else {
+                ForEach(controller.managedWorktrees) { worktree in
+                    VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                        HStack(spacing: JunoSpace.snug) {
+                            Image(systemName: "square.split.2x1")
+                                .foregroundStyle(Color.junoAccent)
+                            Text(worktree.branch)
+                                .junoRowLabel()
+                                .lineLimit(1)
+                            Spacer(minLength: JunoSpace.tight)
+                            Button {
+                                NSWorkspace.shared.open(worktree.rootURL)
+                            } label: {
+                                Image(systemName: "arrow.up.right.square")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Open isolated worktree")
+                            .accessibilityLabel("Open isolated worktree")
+                            Button(role: .destructive) {
+                                Task { await controller.removeIsolatedWorktree(worktree) }
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Remove this isolated worktree")
+                            .accessibilityLabel("Remove isolated worktree")
+                        }
+                        Text(worktree.rootPath)
+                            .junoCodeSmall()
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    }
+                    .padding(.vertical, JunoSpace.hairline)
+                }
+            }
+        } header: {
+            HStack {
+                Text("Isolated worktrees")
+                Spacer()
+                Button {
+                    creatingWorktree = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .disabled(!isEditable)
+                .help("Create an isolated worktree")
+                .accessibilityLabel("Create isolated worktree")
+            }
+        } footer: {
+            Text("Useful for parallel work: each checkout has its own branch and files.")
+                .junoCaption()
         }
     }
 
@@ -389,6 +499,81 @@ struct RepositoryTab: View {
     }
 
     // MARK: - Instructions
+
+    private var extensibilitySection: some View {
+        Section("Extensions") {
+            HStack {
+                Label("Skills", systemImage: "wand.and.stars")
+                Spacer()
+                Text("\(controller.skillDiscoveryResult.skills.count)")
+                    .junoCaption()
+                    .monospacedDigit()
+            }
+            HStack {
+                Label("Hooks", systemImage: "bolt.badge.clock")
+                Spacer()
+                Text(
+                    controller.hookDiscoveryResult.hooks.isEmpty
+                        ? "None"
+                        : "\(controller.hookDiscoveryResult.hooks.count) discovered"
+                )
+                .junoCaption()
+                .foregroundStyle(.secondary)
+            }
+            HStack {
+                Label("MCP servers", systemImage: "puzzlepiece.extension")
+                Spacer()
+                Text("\(controller.mcpServerConfigurations.count)")
+                    .junoCaption()
+                    .monospacedDigit()
+            }
+            ForEach(controller.mcpServerConfigurations, id: \.name) { server in
+                Label(server.name, systemImage: server.enabled ? "checkmark.circle" : "pause.circle")
+                    .junoCaption()
+                    .foregroundStyle(.secondary)
+            }
+            if let error = controller.mcpConfigurationError {
+                Text("MCP configuration: \(error)")
+                    .junoCaption()
+                    .foregroundStyle(Color.junoCaution)
+                    .lineLimit(3)
+            }
+            if !controller.hookDiscoveryResult.hooks.isEmpty {
+                if controller.hooksAreEnabled {
+                    HStack {
+                        Label("Hooks enabled", systemImage: "checkmark.shield.fill")
+                            .junoCaption()
+                            .foregroundStyle(Color.junoSuccess)
+                        Spacer()
+                        Button("Disable") {
+                            Task { await controller.setHooksEnabled(false) }
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                    }
+                } else {
+                    Text("Hooks remain off until explicitly trusted and allowlisted.")
+                        .junoCaption()
+                        .foregroundStyle(.secondary)
+                    Button("Trust & enable hooks") {
+                        confirmingHookTrust = true
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                }
+            }
+            if !controller.hookDiscoveryResult.diagnostics.isEmpty
+                || !controller.skillDiscoveryResult.diagnostics.isEmpty
+            {
+                Label(
+                    "\(controller.hookDiscoveryResult.diagnostics.count + controller.skillDiscoveryResult.diagnostics.count) configuration issue(s)",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .junoCaption()
+                .foregroundStyle(Color.junoCaution)
+            }
+        }
+    }
 
     private var instructionsSection: some View {
         Section("Instructions") {
