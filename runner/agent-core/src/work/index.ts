@@ -121,6 +121,7 @@ export {
 } from './injection.js';
 
 export {
+  BUDGET_CHECK_INTERVAL_MS,
   MAX_STEPS_PER_RUN,
   WORK_ASK_TOOL_NAME,
   WorkAgentSession,
@@ -132,6 +133,42 @@ export {
   type WorkSessionOptions,
   type WorkValidator,
 } from './session.js';
+
+/*
+ * The provider surface, re-exported through the Work entry point.
+ *
+ * The cloud executor deep-imports `dist/work/index.js` and nothing else — see
+ * the seam comment in `execute` in scripts/work-runner.ts for why the import is
+ * deep — so a provider seam it cannot reach from here is a provider seam it
+ * cannot use. `createProviderFromSpec` is the whole point of that: the catalog
+ * lives in the website, the adapter lives here, and this is where they meet.
+ */
+export {
+  DEFAULT_STREAM_SILENCE_MS,
+  ProviderSilenceError,
+} from '../loop.js';
+
+export {
+  createProvider,
+  createProviderFromSpec,
+  defaultProviderId,
+  listProviders,
+  type ModelListing,
+  type ProviderListing,
+  type ProviderSpec,
+} from '../providers/registry.js';
+
+export {
+  REASONING_EFFORTS,
+  isReasoningEffort,
+  type ModelCapabilities,
+  type ProviderAdapter,
+  type ProviderRequest,
+  type ProviderStreamEvent,
+  type ReasoningEffort,
+} from '../providers/types.js';
+
+export { DEFAULT_REQUEST_TIMEOUT_MS } from '../providers/timeouts.js';
 
 export {
   asWorkTool,
