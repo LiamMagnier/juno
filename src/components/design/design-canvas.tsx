@@ -60,6 +60,26 @@ interface DragState {
   guides: { vertical: number[]; horizontal: number[] };
 }
 
+/**
+ * The viewport, as chrome outside the canvas can drive it.
+ *
+ * The canvas keeps the viewport in private state — it has to, since every
+ * gesture reads and writes it between renders — so a toolbar cannot own it.
+ * This is the alternative: a handle the canvas fills in, so a host can drive
+ * zoom without holding a second copy of it that can drift from the one the
+ * pointer is actually panning.
+ */
+export interface DesignViewportHandle {
+  /** Multiply the zoom, anchored on the middle of the canvas. */
+  zoomBy: (factor: number) => void;
+  /** Fit everything on the page, with the same padding the editor opens at. */
+  zoomToFit: () => void;
+  /** Back to 1:1, without throwing away where you were looking. */
+  zoomTo100: () => void;
+  /** Fill the canvas with the selection; the whole page when there is none. */
+  zoomToSelection: () => void;
+}
+
 export interface DesignCanvasProps {
   document: DesignDocument;
   pageId: string;
@@ -71,6 +91,17 @@ export interface DesignCanvasProps {
   readOnly?: boolean;
   /** Nodes drawn with a "changed by Juno" outline while a proposal is pending. */
   highlightedIds?: NodeId[];
+  /** Current magnification, reported whenever it changes, for a host's readout. */
+  onViewportChange?: (zoom: number) => void;
+  /**
+   * Filled in with the viewport controls, for a host that shows its own zoom
+   * chrome. Supplying it also *takes over* that chrome: the canvas stops
+   * drawing its own floating control, because two zoom readouts on one screen
+   * disagreeing by a frame is worse than either of them alone. A surface that
+   * does not pass this — the chat canvas panel, the Mac host — keeps the
+   * floating control and loses nothing.
+   */
+  viewportRef?: React.MutableRefObject<DesignViewportHandle | null>;
   className?: string;
 }
 
@@ -84,6 +115,8 @@ export function DesignCanvas({
   onToolUsed,
   readOnly,
   highlightedIds,
+  onViewportChange,
+  viewportRef,
   className,
 }: DesignCanvasProps) {
   const hostRef = React.useRef<HTMLDivElement>(null);
@@ -166,6 +199,50 @@ export function DesignCanvas({
     const maxY = Math.max(...rects.map((r) => r.y + r.height));
     zoomTo({ x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY) });
   }, [boxes, selection, zoomTo, zoomToFit]);
+
+  /**
+   * Scale the zoom about the middle of the canvas.
+   *
+   * The same arithmetic as the ⌘/Ctrl-wheel branch in `onWheel`, with the
+   * host's centre standing in for the pointer: take the anchor into scene
+   * space at the old magnification, then put it back under the same screen
+   * point at the new one. A button that skips that step anchors the top-left
+   * corner instead, and the artwork walks off towards the bottom right as you
+   * press it.
+   */
+  const zoomAboutCentre = React.useCallback(
+    (next: (current: number) => number) => {
+      setViewport((v) => {
+        const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next(v.zoom)));
+        const cx = size.width / 2;
+        const cy = size.height / 2;
+        const px = cx / v.zoom + v.x;
+        const py = cy / v.zoom + v.y;
+        return { zoom, x: px - cx / zoom, y: py - cy / zoom };
+      });
+    },
+    [size]
+  );
+
+  React.useEffect(() => {
+    onViewportChange?.(viewport.zoom);
+  }, [onViewportChange, viewport.zoom]);
+
+  React.useEffect(() => {
+    if (!viewportRef) return;
+    viewportRef.current = {
+      zoomBy: (factor) => zoomAboutCentre((zoom) => zoom * factor),
+      zoomToFit,
+      zoomTo100: () => zoomAboutCentre(() => 1),
+      zoomToSelection,
+    };
+    // Cleared on unmount so a host's toolbar cannot drive a canvas that is no
+    // longer on screen — the fastest way to that is switching away from the
+    // design while the pointer is still on the zoom button.
+    return () => {
+      viewportRef.current = null;
+    };
+  }, [viewportRef, zoomAboutCentre, zoomToFit, zoomToSelection]);
 
   // Fit once the canvas has a size and a document, and again when the page
   // changes — an editor that opens scrolled away from the artwork is an editor
@@ -768,13 +845,16 @@ export function DesignCanvas({
         onChange={onImageChosen}
       />
 
-      <CanvasZoomControls
-        zoom={viewport.zoom}
-        onZoom={(next) => setViewport((v) => ({ ...v, zoom: Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next)) }))}
-        onFit={zoomToFit}
-        onSelection={zoomToSelection}
-        hasSelection={selection.length > 0}
-      />
+      {!viewportRef && (
+        <CanvasZoomControls
+          zoom={viewport.zoom}
+          onZoomBy={(factor) => zoomAboutCentre((zoom) => zoom * factor)}
+          onReset={() => zoomAboutCentre(() => 1)}
+          onFit={zoomToFit}
+          onSelection={zoomToSelection}
+          hasSelection={selection.length > 0}
+        />
+      )}
     </div>
   );
 }
@@ -957,15 +1037,21 @@ function TextEditorOverlay({
   );
 }
 
+/** The canvas's own zoom control, for surfaces that show no chrome of their own
+ *  (see `viewportRef` on the props). It drives the very same closures a host
+ *  gets through the handle, so zooming is one behaviour rather than two that
+ *  happen to agree. */
 function CanvasZoomControls({
   zoom,
-  onZoom,
+  onZoomBy,
+  onReset,
   onFit,
   onSelection,
   hasSelection,
 }: {
   zoom: number;
-  onZoom: (zoom: number) => void;
+  onZoomBy: (factor: number) => void;
+  onReset: () => void;
   onFit: () => void;
   onSelection: () => void;
   hasSelection: boolean;
@@ -974,13 +1060,13 @@ function CanvasZoomControls({
     "pressable rounded-[8px] px-2 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-9 coarse:px-2.5";
   return (
     <div className="absolute bottom-3 left-3 flex items-center gap-0.5 rounded-[12px] border border-border/60 bg-popover/90 p-1 backdrop-blur-md">
-      <button type="button" className={button} onClick={() => onZoom(zoom / 1.25)} aria-label="Zoom out">
+      <button type="button" className={button} onClick={() => onZoomBy(1 / 1.25)} aria-label="Zoom out">
         −
       </button>
-      <button type="button" className={button} onClick={() => onZoom(1)} aria-label="Reset zoom to 100%">
+      <button type="button" className={button} onClick={onReset} aria-label="Reset zoom to 100%">
         {Math.round(zoom * 100)}%
       </button>
-      <button type="button" className={button} onClick={() => onZoom(zoom * 1.25)} aria-label="Zoom in">
+      <button type="button" className={button} onClick={() => onZoomBy(1.25)} aria-label="Zoom in">
         +
       </button>
       <span aria-hidden className="mx-0.5 h-4 w-px bg-border/70" />

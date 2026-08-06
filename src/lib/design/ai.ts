@@ -289,6 +289,7 @@ const OPERATION_VOCABULARY = [
   `{"op":"createAnimation","animation":{"id":"…","name":"…","durationMs":300,"loop":false,"tracks":[{"nodeId":"<id>","property":"scale","keyframes":[{"time":0,"value":1,"easing":{"type":"spring","stiffness":300,"damping":22,"mass":1}}]}]}}`,
   `{"op":"setKeyframes","animationId":"<id>","track":{…as above…}}`,
   `{"op":"createPage","pageId":"<optional>","name":"<name>","index":<n?>}  /  {"op":"deletePage","pageId":"<id>"}  /  {"op":"renamePage","pageId":"<id>","name":"<name>"}`,
+  `{"op":"renameDocument","name":"<name>"}  — the whole design's name, which is what its exports are called`,
   `{"op":"createAsset","asset":{"id":"<optional>","name":"<name>","url":"<app-relative or data:image/…>","width":<n>,"height":<n>}}  /  {"op":"deleteAsset","assetId":"<id>"}`,
 ];
 
