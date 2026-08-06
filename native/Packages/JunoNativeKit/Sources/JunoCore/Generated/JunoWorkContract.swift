@@ -8,9 +8,9 @@ import Foundation
 
 public enum JunoWorkContract {
     /// Bumped whenever a value is added or its meaning changes.
-    public static let version = 2
+    public static let version = 3
     /// SHA-256 of the contract this was generated from.
-    public static let digest = "c2810b915633348903b9252e858382e551fd3da14ee1644993cd132693b39789"
+    public static let digest = "6bb27a5f78f590a51d6f650f5d3e64ef08159dc800438f0d71ed0ca7a5c0194f"
 }
 
 /// Every state a Work session or run can be in.
@@ -593,6 +593,8 @@ public enum JunoWorkCommandKind: String, CaseIterable, Codable, Sendable {
     case stop = "stop"
     /// Deliver the user's answer to a question the run asked.
     case answer = "answer"
+    /// Deliver an instruction the run did not ask for. The run reads it before its next step and keeps what it has already done.
+    case steer = "steer"
     /// Deliver an allow decision.
     case approve = "approve"
     /// Deliver a refusal.

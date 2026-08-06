@@ -168,6 +168,7 @@ public enum WorkLocalCommandKind: String, CaseIterable, Hashable, Sendable {
     case resume
     case stop
     case answer
+    case steer
     case approve
     case deny
     case undo
@@ -201,6 +202,23 @@ public protocol WorkRunHosting: Sendable {
     func pauseRun(runID: String) async throws
     func stopRun(runID: String, reason: String) async throws
     func deliverAnswer(runID: String, text: String) async throws
+    /// Puts something the run did not ask for in front of the model.
+    ///
+    /// Separate from ``deliverAnswer`` rather than sharing it, because the two
+    /// are different things said at different moments and only the loop can
+    /// tell them apart: an answer resolves a question the run asked and is
+    /// passed on as the person typed it, and an instruction arrives at a run
+    /// that asked nothing and has to say so, or it reads in the transcript as
+    /// the goal being restated. The server draws the same line — `answer` and
+    /// `steer` are two command kinds over one route — and a host that collapsed
+    /// them here would undo that at the last possible moment.
+    ///
+    /// **Between turns.** Whatever implements this must not abort the turn in
+    /// flight: `scripts/work-runner.ts` folds a steer into the messages of the
+    /// next request for the concrete reason that the alternative reaches the
+    /// model no sooner and throws away every tool call that was running when the
+    /// person pressed Enter.
+    func deliverInstruction(runID: String, text: String) async throws
 }
 
 /// Making and taking back grants, which only the person at the Mac can do.
@@ -407,6 +425,18 @@ public actor LocalWorkExecutor: WorkLocalCommandExecuting {
                 throw WorkLocalExecutionError.missingField("answer")
             }
             try await runs.deliverAnswer(runID: runID, text: text)
+            return ["delivered": .bool(true), "runId": .string(runID)]
+
+        case .steer:
+            let runID = try requireRunID(command)
+            // Missing text is a refusal, never an empty turn. A blank user
+            // message in the transcript is one the model has to interpret with
+            // nothing there to interpret, and the person who typed a sentence
+            // would be told it was delivered.
+            guard let text = command.payload["text"]?.stringValue, !text.isEmpty else {
+                throw WorkLocalExecutionError.missingField("instruction")
+            }
+            try await runs.deliverInstruction(runID: runID, text: text)
             return ["delivered": .bool(true), "runId": .string(runID)]
 
         case .approve, .deny:

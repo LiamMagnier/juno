@@ -323,6 +323,17 @@ public actor WorkRemoteHost {
             // happening or answer a question the host itself asked, so they
             // need no capability beyond Work being on.
             return nil
+        case "steer":
+            // Words for a run that is already going, and listed apart from the
+            // control plane because it is the one kind here that does not reduce
+            // what is happening. It still needs no capability of its own: the
+            // run's tool table was built from this Mac's grants when it started
+            // and is not rebuilt, and every call it makes goes back through the
+            // same approval gate — so the widest thing a sentence can do is ask
+            // for something the person is then asked about. Gating it on a
+            // capability would be gating the *asking*, which is the part they
+            // are already able to refuse.
+            return nil
         default:
             return .unsupportedKind
         }

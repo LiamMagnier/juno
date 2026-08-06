@@ -853,6 +853,12 @@ export const WORK_COMMAND_KINDS = [
   "resume",
   "stop",
   "answer",
+  // Next to `answer` because it is the other half of the same thing — the user
+  // saying something to a run — and deliberately not the same kind. An answer
+  // resolves a question the run asked and unblocks it; a steer arrives at a run
+  // that asked nothing and must never be mistaken for one. `steeringInstruction`
+  // draws the same line on the event side, for the same reason.
+  "steer",
   "approve",
   "deny",
   "undo",

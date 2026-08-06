@@ -50,7 +50,7 @@ import {
  * Mac keeps working against a newer relay, which is the entire reason the
  * number exists.
  */
-export const RELAY_PROTOCOL_VERSION = 2;
+export const RELAY_PROTOCOL_VERSION = 3;
 
 /**
  * The lowest host generation that can parse each command kind.
@@ -60,6 +60,12 @@ export const RELAY_PROTOCOL_VERSION = 2;
  * host itself asked. Generation 2 added the instructions that carry a payload
  * an older parser has no case for — `undo` names a batch from the host's own
  * journal, and the grant instructions name a folder dialog and an access mode.
+ * Generation 3 added `steer`, which is the first instruction that changes what
+ * a run is *doing* rather than whether it is running: a build with no case for
+ * it holds a live model loop that was handed its goal at start and re-reads
+ * nothing, so a Mac that cannot parse this has to be refused at enqueue. Told
+ * "your Mac's version of Juno cannot do that" a person updates it; handed
+ * silence they retype the sentence.
  *
  * The table is exhaustive over `WORK_COMMAND_KINDS` on purpose. A kind added to
  * `domain.ts` without a generation here is a compile error, which is the moment
@@ -80,6 +86,7 @@ export const COMMAND_KIND_PROTOCOL: Record<WorkCommandKind, number> = {
   undo: 2,
   grant_folder: 2,
   revoke_grant: 2,
+  steer: 3,
 };
 
 /**
