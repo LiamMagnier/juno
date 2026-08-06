@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { rateLimit } from "@/lib/rate-limit";
 import { recordWorkAudit } from "@/lib/work/audit";
-import { serializeCommand } from "@/lib/work/serializers";
+import { serializeCommand, serializeCommandForHost } from "@/lib/work/serializers";
 import {
   HOST_NOT_FOUND,
   HOST_POLL_INTERVAL_MS,
@@ -191,7 +191,14 @@ export async function GET(req: Request, { params }: RouteParams) {
               protocolVersion,
             },
           });
-          return NextResponse.json({ command: serializeCommand(command) });
+          // The host's shape, not the remote one. This branch answers the Mac
+          // that has to carry the command out, and `serializeCommand` is bound
+          // to the filtered half — `REMOTE_PAYLOAD_KEYS.start` is
+          // ["runId", "target"], so a start arrived with its `goal` and `model`
+          // stripped and DesktopWorkRunHost threw `noGoal` on every one. The
+          // filtering is right for the POST below, which answers the phone or
+          // browser that enqueued the command; it was never right here.
+          return NextResponse.json({ command: serializeCommandForHost(command) });
         }
       }
       // Lost the race, or the row settled underneath us. Falling through to the

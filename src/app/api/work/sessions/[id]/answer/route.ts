@@ -7,7 +7,8 @@ import {
   isTerminalStatus,
   workSteeringPayload,
 } from "@/lib/work/domain";
-import { appendEvents, setSessionAttention } from "@/lib/work/store";
+import { appendEvents, dispatchRunCommand, setSessionAttention } from "@/lib/work/store";
+import { runCommandKey } from "@/lib/work/relay";
 import { answerSchema } from "@/app/api/work/protocol";
 
 export const runtime = "nodejs";
@@ -101,7 +102,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const run = await prisma.workRun.findFirst({
     where: { sessionId: session.id, userId: user.id },
     orderBy: { attempt: "desc" },
-    select: { id: true, status: true, effectiveTarget: true },
+    select: { id: true, status: true, hostId: true, effectiveTarget: true },
   });
 
   return submission.kind === "answer"
@@ -112,7 +113,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 interface Target<T> {
   submission: T;
   userId: string;
-  run: { id: string; status: string; effectiveTarget: string | null } | null;
+  run: { id: string; status: string; hostId: string | null; effectiveTarget: string | null } | null;
 }
 
 async function recordAnswer({
@@ -154,6 +155,23 @@ async function recordAnswer({
         key: idempotencyKey ?? `answer:${questionId}`,
       },
     ],
+  });
+
+  // Tell the Mac, if a Mac is the one waiting. The cloud runner finds the
+  // answer by polling the log, but a local run is blocked inside the host
+  // app's approval coordinator, which reads nothing — so without this the
+  // answer sat in the transcript and the run waited until it timed out. The
+  // key is derived from the question, so a retried answer resolves to the one
+  // command rather than queueing a second.
+  await dispatchRunCommand({
+    userId,
+    sessionId,
+    runId: run.id,
+    hostId: run.hostId,
+    effectiveTarget: run.effectiveTarget,
+    kind: "answer",
+    payload: { questionId, text },
+    idempotencyKey: runCommandKey(run.id, "answer", questionId),
   });
 
   // The status stays `waiting_input` — the executor owns that transition and
