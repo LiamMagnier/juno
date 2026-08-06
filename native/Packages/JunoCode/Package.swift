@@ -114,6 +114,7 @@ let package = Package(
             dependencies: ["JunoCodeCore", "JunoCodeLocal"],
             exclude: [
                 "ComputerUseKeyChordTests 2.swift",
+                "WorktreeManagerTests 2.swift",
                 "WorkspaceBookmarkTests 2.swift",
             ]
         ),
