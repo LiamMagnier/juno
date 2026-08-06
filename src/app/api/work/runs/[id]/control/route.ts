@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
-import { WORK_LIVE_STATUSES, type WorkCommandKind } from "@/lib/work/domain";
+import {
+  WORK_LIVE_STATUSES,
+  type WorkCommandKind,
+  type WorkPermissionPolicy,
+} from "@/lib/work/domain";
 import { recordWorkAudit } from "@/lib/work/audit";
 import {
   appendEvents,
@@ -10,7 +14,7 @@ import {
   setSessionAttention,
   type DispatchRunCommandResult,
 } from "@/lib/work/store";
-import { runCommandKey, startCommandPayload } from "@/lib/work/relay";
+import { isPermissionPolicy, runCommandKey, startCommandPayload } from "@/lib/work/relay";
 import { serializeCommand, serializeRun } from "@/lib/work/serializers";
 import { runControlSchema } from "@/app/api/work/protocol";
 
@@ -38,6 +42,16 @@ const PAUSABLE_STATUSES = WORK_LIVE_STATUSES.filter(
  * it starts the loop afresh and needs the goal in the payload exactly as
  * `start` does. Sending a resume without one would be refused with
  * `noGoal` by the one Mac that most needed to be told: the one that restarted.
+ *
+ * `permissionPolicy` is joined for the same reason and settles the same
+ * question one layer deeper. It is the blob the dispatch route wrote, holding
+ * the already-narrowed mode this attempt runs under; a resume that omitted it
+ * would hand a relaunched Mac an instruction with no mode on it, and a Mac
+ * that reads no mode assumes the strictest — so a task composed as Auto would
+ * come back from a pause stopping at every file it had been writing freely
+ * before. Recomputing the narrowing here instead would be a second answer to a
+ * question that was already answered at dispatch and digested into every
+ * approval this run has granted.
  */
 const RUN_FOR_CONTROL = {
   id: true,
@@ -46,8 +60,23 @@ const RUN_FOR_CONTROL = {
   hostId: true,
   effectiveTarget: true,
   effectiveModel: true,
+  permissionPolicy: true,
   session: { select: { goal: true } },
 } as const;
+
+/**
+ * The mode this run was dispatched under, out of the blob it was stored in.
+ *
+ * Read rather than resolved: `resolveApprovalMode` already ran at dispatch, and
+ * its answer is what `policyDigest` was taken over. An unreadable blob yields
+ * null, and `startCommandPayload` then omits the key — the Mac is told nothing
+ * rather than told something this deployment made up.
+ */
+function enforcedPolicy(stored: unknown): WorkPermissionPolicy | null {
+  if (stored === null || typeof stored !== "object" || Array.isArray(stored)) return null;
+  const policy = (stored as { policy?: unknown }).policy;
+  return isPermissionPolicy(policy) ? policy : null;
+}
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { user, error } = await requireUser();
@@ -204,7 +233,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // needs nothing said about it. A resume carries the whole start payload,
     // for the Mac that was relaunched while the run was parked and has no loop
     // left to lift the pause on.
-    pausing ? {} : startCommandPayload({ goal: run.session.goal, model: run.effectiveModel }),
+    pausing
+      ? {}
+      : startCommandPayload({
+          goal: run.session.goal,
+          model: run.effectiveModel,
+          permissionPolicy: enforcedPolicy(run.permissionPolicy),
+        }),
     appended.lastSeq
   );
 

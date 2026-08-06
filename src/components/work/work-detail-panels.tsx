@@ -3,6 +3,8 @@
 import * as React from "react";
 import { Coins, ExternalLink, FileText, Link2, ShieldCheck, Sigma, Timer } from "lucide-react";
 import {
+  WORK_APPROVAL_MODE_LABEL,
+  WORK_APPROVAL_MODE_SUMMARY,
   WORK_ARTIFACT_KINDS,
   budgetExceeded,
   type WorkArtifactKind,
@@ -330,6 +332,17 @@ export function WorkRunSettings({
               ` (you asked for ${run.requestedModel})`}
           </span>
         </SettingRow>
+        {/* The mode this attempt enforced, which is not always the one the task
+            asked for. Omitted rather than guessed when the run carries none —
+            see `approvalMode` in serializers.ts — because a row reading "Manual"
+            on a run that never enforced it is worse than no row. */}
+        {run.approvalMode !== null && (
+          <SettingRow label="Asks">
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {WORK_APPROVAL_MODE_LABEL[run.approvalMode]}
+            </span>
+          </SettingRow>
+        )}
         <SettingRow label="Attempt">
           <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
             #{run.attempt} · {run.origin}
@@ -343,6 +356,29 @@ export function WorkRunSettings({
           </SettingRow>
         )}
       </dl>
+
+      {/*
+       * What "Asks: Manual" actually means for this run, in a sentence.
+       *
+       * The narrowed case is the reason this is here rather than left to the
+       * three-letter label. A task composed as Skip that lands on a Mac pinned
+       * to Manual runs Manual — the Mac is the machine with the files on it and
+       * is entitled to a floor a phone cannot raise — and a reader who is shown
+       * "Manual" with no explanation concludes the control they used did
+       * nothing. Naming the machine is what turns an apparent bug back into the
+       * rule it is.
+       *
+       * The unnarrowed case reuses `WORK_APPROVAL_MODE_SUMMARY`, which is the
+       * same sentence the composer showed under the same choice. Two wordings
+       * for one mode would have a reader wondering which one the run got.
+       */}
+      {run.approvalMode !== null && (
+        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          {run.approvalModeNarrowedByHost
+            ? `${host?.displayName ?? "That Mac"} is set to ${WORK_APPROVAL_MODE_LABEL[run.approvalMode]}, and a task cannot ask less often than the Mac it runs on — so this attempt ran in ${WORK_APPROVAL_MODE_LABEL[run.approvalMode]} rather than the mode it was started with.`
+            : WORK_APPROVAL_MODE_SUMMARY[run.approvalMode]}
+        </p>
+      )}
 
       {run.requiredCapabilities.length > 0 && (
         <div>

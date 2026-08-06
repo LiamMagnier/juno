@@ -437,8 +437,12 @@ export const HOST_NOT_FOUND = { error: "Not found" } as const;
  * setting because `resolveApprovalMode` intersected the two before it got here.
  *
  * Omitted, not nulled, when the caller has nothing to say, for the same reason
- * as `model`: `DesktopWorkExecutorAdapter` falls back to the host's policy on a
- * missing key, which is exactly the behaviour every build before this had.
+ * as `model`: a null would decode as a value. What a Mac does with the silence
+ * is the Mac's decision and it is the strict one — `DesktopWorkRunHost` narrows
+ * an instruction that names no mode to Manual rather than to the host's own
+ * standing policy. So omission is never a way to get a wider run; it is a way
+ * to get the narrowest one, which is the only safe meaning for "this build did
+ * not say".
  */
 export function startCommandPayload(input: {
   goal: string;

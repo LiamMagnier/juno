@@ -120,13 +120,10 @@ function retirementCountdown(iso: string): string | null {
 function ModelDetailPanel({
   model,
   reasoningEffort,
-  showReasoning = true,
   onCommit,
 }: {
   model: ModelInfo | null;
   reasoningEffort: ReasoningEffort;
-  /** See ``ModelSelector``'s own `showReasoning`. */
-  showReasoning?: boolean;
   // Clicking a thinking pill commits: select THIS model + apply the effort + close.
   onCommit?: (effort: ReasoningEffort) => void;
 }) {
@@ -274,11 +271,12 @@ function ModelDetailPanel({
         {/* Thinking — the same slider as the composer; dragging previews the
             metrics live and commits without closing the picker.
 
-            Omitted entirely, rather than disabled, on a surface whose executor
-            cannot carry an effort. A greyed-out slider still says the setting
-            exists and is merely unavailable here; nothing at all is the truthful
-            shape when the concept does not apply to this run. */}
-        {showReasoning && (
+            This panel carried a `showReasoning` prop for a while, so that Juno
+            Work could hide the slider on a surface whose executor had nowhere
+            to put an effort. Both ends exist now — `ProviderRequest.reasoningEffort`
+            reaches every adapter and `WorkSessionOptions` carries it — so every
+            caller wanted it shown, and a switch with one setting is a switch
+            somebody has to read before discovering it does nothing. */}
         <div className="mt-auto border-t p-5 pt-4">
           {options.length > 1 ? (
             <ReasoningSlider
@@ -303,7 +301,6 @@ function ModelDetailPanel({
             </>
           )}
         </div>
-        )}
       </div>
     </div>
   );
@@ -344,7 +341,6 @@ export function ModelSelector({
   onChange,
   reasoningEffort = null,
   onReasoningChange,
-  showReasoning = true,
   // Destructured under a second name because `filter` is already this
   // component's provider-rail state. The prop keeps the plain name — callers
   // are asking to filter models, not to filter something called a model filter.
@@ -354,16 +350,6 @@ export function ModelSelector({
   onChange: (m: ModelId) => void;
   reasoningEffort?: ReasoningEffort;
   onReasoningChange?: (effort: ReasoningEffort) => void;
-  /**
-   * Whether the detail pane offers a thinking-effort control.
-   *
-   * For a surface whose executor has nowhere to put one. Juno Work is the case
-   * that produced it: `WorkSessionOptions` carries no thinking budget and no
-   * provider adapter could send one, so a slider here would have been a control
-   * the reader sets, the database stores, and the run ignores — which is worse
-   * than no control, because it is a promise rather than an absence.
-   */
-  showReasoning?: boolean;
   /**
    * Narrows the catalog to the models this surface's runtime can actually drive.
    *
@@ -698,7 +684,6 @@ export function ModelSelector({
           <ModelDetailPanel
             model={hoveredModel}
             reasoningEffort={reasoningEffort}
-            showReasoning={showReasoning}
             onCommit={(effort) => {
               // Slider drag: apply effort AND the hovered model, but keep the
               // picker open so the user can keep comparing tiers.
