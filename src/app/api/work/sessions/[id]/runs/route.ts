@@ -15,6 +15,7 @@ import {
   narrowestPolicy,
   selectTarget,
   type HostCapabilityView,
+  type WorkBudget,
   type WorkCapability,
   type WorkDegradation,
   type WorkPermissionPolicy,
@@ -52,6 +53,47 @@ const WORK_RUN_CONCURRENCY_CAP = 3;
  * writes, instead of a queue of runs that nothing will ever claim.
  */
 const CLOUD_WORK_AVAILABLE = true;
+
+/**
+ * The ceilings a run is dispatched with.
+ *
+ * Nothing wrote these until now, so every column was zero — which
+ * `WorkBudget` reads as "no explicit ceiling". The consequence was not
+ * theoretical: `WorkBudgetGuard` never fires, `budget_exceeded` and
+ * `timed_out` are terminal reasons no run can reach, the three budget bars in
+ * the UI render empty, and the only thing bounding a run is
+ * `MAX_STEPS_PER_RUN = 200` — two hundred model turns, on a frontier model, on
+ * the deployment's key, for a task that may have gone in a circle at step
+ * eleven.
+ *
+ * Each number is a number somebody has to be able to defend, so:
+ *
+ *  - Two US dollars. A Work run is meant to be worth more than a chat turn and
+ *    materially less than a person's hour. Two dollars buys a few hundred
+ *    thousand tokens on the models Work admits, which covers research, a draft
+ *    and a revision, and stops a loop at the cost of a coffee rather than the
+ *    cost of a laptop.
+ *  - 600,000 tokens. Deliberately reached at roughly the same time as the cost
+ *    ceiling on a mid-priced model, so the two do not disagree about what a
+ *    long run is — and so a run on a cheap model is stopped by tokens rather
+ *    than running eight times longer for the same money.
+ *  - Twenty minutes of *running* time. The guard stops its clock while a run
+ *    waits for a person (`WorkBudgetGuard.suspend`), so this is twenty minutes
+ *    of work and not twenty minutes of elapsed wall clock — a run that asks a
+ *    question at 17:00 and is answered at 09:00 has spent none of it waiting.
+ *
+ * They are a ceiling and not a target: `narrowestBudget` means a skill, a
+ * schedule or a host may lower any of them and none may raise them. Raising
+ * them for a particular run is a control that does not exist yet — the field
+ * is on `CreateRunInput` and nothing on the wire fills it — so this constant
+ * is the whole policy, which is exactly why it is stated here rather than
+ * defaulted somewhere quieter.
+ */
+const DEFAULT_RUN_BUDGET: WorkBudget = {
+  maxCostMicroUsd: 2_000_000,
+  maxTokens: 600_000,
+  maxRuntimeMs: 20 * 60_000,
+};
 
 /**
  * What a host can currently do, from what the host itself advertised.
@@ -429,6 +471,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // differs from the one they asked for.
         degradation: [...selection.degradation, ...model.degradation],
         permissionPolicy,
+        // The ceilings the executor's budget guard enforces and the three bars
+        // in the UI read. Written at dispatch rather than derived later,
+        // because an approval digest and a budget bar both have to describe
+        // the run as it was started, not as the defaults happen to be today.
+        budget: DEFAULT_RUN_BUDGET,
         idempotencyKey: body.idempotencyKey ?? null,
       });
     });

@@ -30,6 +30,8 @@
 
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import { prisma, prismaUnguarded } from "@/lib/db";
 import {
   appendEvents,
@@ -47,6 +49,35 @@ import {
   type WorkEventKind,
   type WorkTerminalReason,
 } from "@/lib/work/domain";
+import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
+import { isComposioConfigured } from "@/lib/env";
+import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
+import { getObjectBytes, putObject } from "@/lib/storage";
+import { isWebSearchConfigured, webSearch } from "@/lib/web-search";
+import {
+  admitConnectorResult,
+  summarizeConnectors,
+  type WorkConnectorAvailability,
+  type WorkConnectorCandidate,
+  type WorkConnectorDataScope,
+} from "@/lib/work/connectors";
+import { WorkTokenBroker, type CredentialResolver } from "@/lib/work/broker";
+import {
+  DeliverableError,
+  attachmentDisposition,
+  deliverableRequestSchema,
+  generateDeliverable,
+  provenanceForStorage,
+} from "@/lib/work/deliverables";
+import {
+  parseSkillInvocation,
+  resolveSkillPermissions,
+  selectSkillBySlug,
+  selectSkillVersion,
+  skillRequestFromRow,
+  skillVersionRunReference,
+  type SkillVersionRunReference,
+} from "@/lib/work/skills";
 import type { Prisma } from "@prisma/client";
 
 /** How often to look for work. */
@@ -192,6 +223,36 @@ async function pollAnswer(runId: string, questionId: string): Promise<string | n
  * re-importing it.
  */
 type WorkRuntime = typeof import("../runner/agent-core/src/work/index.js");
+
+/*
+ * The runtime's types, named individually.
+ *
+ * `WorkRuntime` above is the type of the module's *value*, which is what the
+ * dynamic import is cast to. These are the type exports, which an indexed
+ * access on that value type cannot reach — a type and a value of the same name
+ * live in different namespaces, and only `import("…").Name` crosses into the
+ * second one.
+ */
+type WorkToolDefinition = import("../runner/agent-core/src/work/index.js").WorkToolDefinition;
+type ConnectorToolDescriptor =
+  import("../runner/agent-core/src/work/index.js").ConnectorToolDescriptor;
+type ConnectorToolDeps = import("../runner/agent-core/src/work/index.js").ConnectorToolDeps;
+type ConnectorAccess = import("../runner/agent-core/src/work/index.js").ConnectorAccess;
+type WorkArtifactRef = import("../runner/agent-core/src/work/index.js").WorkArtifactRef;
+type WorkSession = InstanceType<WorkRuntime["WorkAgentSession"]>;
+
+/**
+ * A late reference to the session a tool's effect needs.
+ *
+ * Tools are built before the session, because the session's constructor takes
+ * them, and yet `web_fetch` has to record a citation on that session and
+ * `create_deliverable` has to record an artifact on it. A holder rather than a
+ * circular constructor argument: the alternative is a setter on the session,
+ * which would let anything reassign the session a tool writes to.
+ */
+interface SessionSink {
+  session?: WorkSession;
+}
 
 /**
  * How much of one attached document may be put in front of the model, and how
@@ -456,6 +517,972 @@ async function openingContext(input: {
 }
 
 // ---------------------------------------------------------------------------
+// Connectors
+// ---------------------------------------------------------------------------
+
+/**
+ * What each connector can see and change, in the words a user reads.
+ *
+ * A table rather than a field on `ConnectorDef`, because `ConnectorDef` is the
+ * OAuth plumbing and describes a connector to the linking flow, not to somebody
+ * deciding whether an unattended run may use it. `describeConnector` turns each
+ * row into the three sentences the composer and the run report show, so a
+ * connector missing from here is not merely undescribed — it is described
+ * wrongly, which is why the fallback claims nothing it cannot substantiate.
+ */
+const CONNECTOR_SCOPES: Record<string, WorkConnectorDataScope> = {
+  github: {
+    reads: ["repositories", "issues", "pull requests"],
+    writes: ["issues", "pull requests"],
+    sensitivity: "confidential",
+    egress: "third_party",
+  },
+  figma: {
+    reads: ["design files", "frames", "components"],
+    writes: [],
+    sensitivity: "confidential",
+    egress: "third_party",
+  },
+  notion: {
+    reads: ["pages", "databases"],
+    writes: ["pages"],
+    sensitivity: "confidential",
+    egress: "third_party",
+  },
+  // The Apple connectors are served by Juno-hosted MCP routes, so they are
+  // cloud connectors whose contents reach Juno's servers — which is the
+  // distinction `WorkConnectorEgress` exists to draw and the one a user
+  // granting a mailbox is actually asking about.
+  "apple-calendar": {
+    reads: ["calendar events"],
+    writes: ["calendar events"],
+    sensitivity: "confidential",
+    egress: "juno_cloud",
+  },
+  "apple-mail": {
+    reads: ["mail"],
+    writes: ["drafts"],
+    sensitivity: "restricted",
+    egress: "juno_cloud",
+  },
+  "apple-music": {
+    reads: ["your music library"],
+    writes: ["playback and playlists"],
+    sensitivity: "internal",
+    egress: "juno_cloud",
+  },
+};
+
+/**
+ * The scope claimed for a connector nothing here describes — a Composio app,
+ * or one added since this table was last read.
+ *
+ * `writes` is deliberately non-empty. `describeConnector` renders an empty
+ * `writes` as "Cannot change anything; it is read-only", and asserting that
+ * about a connector we know nothing about is a safety claim with nothing
+ * behind it. Saying "whatever the connected app exposes" is vaguer and true.
+ */
+const UNKNOWN_CONNECTOR_SCOPE: WorkConnectorDataScope = {
+  reads: ["whatever the connected app exposes"],
+  writes: ["whatever the connected app exposes"],
+  sensitivity: "confidential",
+  egress: "third_party",
+};
+
+/** The two prefixes `openMcpToolset` uses for a call that did not succeed. */
+const MCP_FAILURE_PREFIXES = ["Tool error:", "Connector ", "Unknown tool:"];
+
+/** Everything a run needs to call connectors, plus the verdicts on the rest. */
+interface ConnectorSurface {
+  availability: WorkConnectorAvailability[];
+  descriptors: ConnectorToolDescriptor[];
+  deps: ConnectorToolDeps;
+  /** Connector ids whose results are admitted through the gate below. */
+  admitted: Set<string>;
+  close(): Promise<void>;
+}
+
+const EMPTY_CONNECTOR_SURFACE: ConnectorSurface = {
+  availability: [],
+  descriptors: [],
+  deps: { call: async () => ({ output: "No connector is available.", isError: true }), healthy: () => false },
+  admitted: new Set(),
+  close: async () => {},
+};
+
+/**
+ * The connector inventory, the handles that authorise it, and the tools it
+ * yields.
+ *
+ * Only connectors the user has actually linked are asked about. Evaluating
+ * every connector this deployment offers would be truer to
+ * `summarizeConnectors`' contract — it returns a verdict for everything it is
+ * handed — and would produce five `not_linked` degradations on every run of an
+ * account that linked one connector, which is the sort of noise that teaches
+ * people to skim past the degradation nobody could afford to skim past. A row
+ * in `Connection` is the user saying they want this connector used.
+ *
+ * THE BROKER'S PART, AND ITS LIMIT
+ *
+ * The run never holds a connector credential: the tool definitions carry a
+ * connector id and nothing else, and the header that authorises the MCP
+ * connection is fetched at redemption time by a `CredentialResolver` living in
+ * this process. The handle's scopes come from the connector's declared data
+ * scope, so a connector the user was told is read-only cannot open a write
+ * exchange, and its write tools are dropped before the model is ever shown
+ * them. Every handle dies with the run.
+ *
+ * What it is not, yet: a per-call exchange. MCP is one long-lived connection
+ * per connector and `openMcpToolset` takes its headers at open time, so the
+ * exchange authorises the connection and each later call rides it. The place a
+ * per-call exchange goes is `ConnectorToolDeps.call` below, the day the
+ * transport can take a per-call credential — and until then the exchange id
+ * recorded on each result names the exchange that opened the connection, which
+ * is the strongest true statement available.
+ */
+async function openConnectors(input: {
+  runId: string;
+  userId: string;
+  sessionId: string;
+  runtime: WorkRuntime;
+  sink: SessionSink;
+  emit(kind: WorkEventKind, payload: Prisma.InputJsonValue): Promise<void>;
+}): Promise<ConnectorSurface> {
+  const rows = await prisma.connection.findMany({
+    where: { userId: input.userId },
+    select: { id: true, provider: true, accountLabel: true },
+  });
+  if (rows.length === 0) return EMPTY_CONNECTOR_SURFACE;
+
+  const knownIds = new Set(listConnectors().map((def) => def.id as string));
+  const providers = [...new Set(rows.map((row) => row.provider))];
+  // Resolves credentials and hands back only the connectors that are actually
+  // usable, which is exactly the `credentialUsable` question. Nothing but the
+  // ids and the endpoints is kept: the headers it also returns are dropped on
+  // the floor here and fetched again through the broker below.
+  const active = await getActiveConnectors(input.userId, providers);
+  const activeById = new Map(active.map((entry) => [entry.id, entry]));
+
+  const candidates: WorkConnectorCandidate[] = rows.map((row) => {
+    const def = getConnector(row.provider);
+    const scope = CONNECTOR_SCOPES[row.provider] ?? UNKNOWN_CONNECTOR_SCOPE;
+    return {
+      descriptor: {
+        id: row.provider,
+        label: def?.label ?? row.accountLabel ?? row.provider,
+        locality: "cloud",
+        configured: def ? isConnectorConfigured(def) : knownIds.has(row.provider) || isComposioConfigured(),
+        // Empty, and honestly so: which intents a connector serves is its tool
+        // list, and the tool list only exists after the MCP handshake that this
+        // verdict decides whether to attempt. Nothing in `evaluateConnector`
+        // reads it, and a guess here would be a guess the run then reports.
+        intents: [],
+        scope,
+      },
+      state: { linked: true, credentialUsable: activeById.has(row.provider) },
+    };
+  });
+
+  const availability = summarizeConnectors(candidates);
+  const connectionIdByProvider = new Map(rows.map((row) => [row.provider, row.id]));
+
+  for (const entry of availability) {
+    if (entry.available) continue;
+    // The user is owed the sentence, not the field name. `degraded` is the
+    // event kind the clients already render as "this run will do less than you
+    // asked", and a connector that was linked and could not be reached is
+    // precisely that.
+    await input.emit("degraded", {
+      kind: entry.degradation?.kind ?? "connector_unavailable",
+      subject: entry.connectorId,
+      explanation: entry.explanation,
+    });
+    if (entry.audit) {
+      await recordWorkAudit({
+        userId: input.userId,
+        sessionId: input.sessionId,
+        runId: input.runId,
+        kind: entry.audit.kind,
+        severity: entry.audit.severity,
+        detail: entry.audit.detail,
+        actor: "cloud_runner",
+      });
+    }
+  }
+
+  const usable = availability.filter((entry) => entry.available);
+  if (usable.length === 0) return { ...EMPTY_CONNECTOR_SURFACE, availability };
+
+  const broker = new WorkTokenBroker();
+  const resolveCredential: CredentialResolver = async (ref) => {
+    const [resolved] = await getActiveConnectors(input.userId, [ref.connectorId]);
+    const authorization = resolved?.headers.Authorization ?? resolved?.headers.authorization;
+    if (!authorization) throw new Error("no usable credential");
+    return authorization;
+  };
+
+  interface Authorized {
+    connectorId: string;
+    label: string;
+    mcpUrl: string;
+    headers: Record<string, string>;
+    exchangeId: string;
+    /** False when the connector's declared scope covers no writes. */
+    mayWrite: boolean;
+  }
+
+  const authorized: Authorized[] = [];
+  for (const entry of usable) {
+    const endpoint = activeById.get(entry.connectorId);
+    const connectionId = connectionIdByProvider.get(entry.connectorId);
+    if (!endpoint || !connectionId) continue;
+
+    const scope = CONNECTOR_SCOPES[entry.connectorId] ?? UNKNOWN_CONNECTOR_SCOPE;
+    const handle = broker.mint({
+      runId: input.runId,
+      connectorId: entry.connectorId,
+      credential: { connectorId: entry.connectorId, connectionId },
+      scopes: scope.writes.length > 0 ? ["read", "write"] : ["read"],
+    });
+
+    const readable = await broker.exchange(
+      {
+        handle: handle.handle,
+        exchangeId: randomUUID(),
+        runId: input.runId,
+        connectorId: entry.connectorId,
+        scopes: ["read"],
+      },
+      resolveCredential
+    );
+    if (!readable.ok) {
+      await recordWorkAudit({
+        userId: input.userId,
+        sessionId: input.sessionId,
+        runId: input.runId,
+        kind: readable.audit.kind,
+        severity: readable.audit.severity,
+        detail: readable.audit.detail,
+        actor: "cloud_runner",
+      });
+      await input.emit("degraded", {
+        kind: "connector_unavailable",
+        subject: entry.connectorId,
+        explanation: readable.explanation,
+      });
+      continue;
+    }
+
+    // A second ticket, for the write half. Refused when the connector's
+    // declared data scope covers no writes, and the refusal is what removes
+    // its write tools from the run below — before the model has seen them,
+    // rather than at the moment it tries to use one.
+    const writable = await broker.exchange(
+      {
+        handle: handle.handle,
+        exchangeId: randomUUID(),
+        runId: input.runId,
+        connectorId: entry.connectorId,
+        scopes: ["write"],
+      },
+      resolveCredential
+    );
+
+    authorized.push({
+      connectorId: entry.connectorId,
+      label: entry.label,
+      mcpUrl: endpoint.mcpUrl,
+      headers: { Authorization: readable.credential },
+      exchangeId: readable.exchangeId,
+      mayWrite: writable.ok,
+    });
+  }
+
+  if (authorized.length === 0) {
+    broker.revokeRun(input.runId);
+    return { ...EMPTY_CONNECTOR_SURFACE, availability };
+  }
+
+  const toolset: McpToolset = await openMcpToolset(
+    authorized.map((entry) => ({
+      id: entry.connectorId,
+      label: entry.label,
+      mcpUrl: entry.mcpUrl,
+      headers: entry.headers,
+    })),
+    { userId: input.userId }
+  );
+
+  const byConnector = new Map(authorized.map((entry) => [entry.connectorId, entry]));
+  const descriptors: ConnectorToolDescriptor[] = [];
+  const dropped = new Map<string, number>();
+
+  for (const tool of toolset.tools) {
+    const functionName = tool.function.name;
+    const separator = functionName.indexOf("__");
+    if (separator <= 0) continue;
+    const connectorId = functionName.slice(0, separator);
+    const owner = byConnector.get(connectorId);
+    if (!owner) continue;
+
+    const access = toolset.accessFor(functionName) as ConnectorAccess;
+    if (access !== "read" && !owner.mayWrite) {
+      dropped.set(connectorId, (dropped.get(connectorId) ?? 0) + 1);
+      continue;
+    }
+
+    descriptors.push({
+      connectorId,
+      label: owner.label,
+      toolName: functionName.slice(separator + 2),
+      functionName,
+      description: tool.function.description ?? functionName,
+      inputSchema: tool.function.parameters,
+      access,
+    });
+  }
+
+  for (const [connectorId, count] of dropped) {
+    await input.emit("degraded", {
+      kind: "connector_unavailable",
+      subject: connectorId,
+      explanation:
+        `${byConnector.get(connectorId)?.label ?? connectorId} is connected for reading only, so ` +
+        `${count} tool${count === 1 ? " that changes things was" : "s that change things were"} not offered to this run.`,
+    });
+  }
+
+  // A connector whose MCP handshake failed exposes no tools and no exception:
+  // `openMcpToolset` skips anything it cannot reach, which is right for a chat
+  // and silent for a run. So health is "it answered and listed tools", and a
+  // connector that passed every check up to the handshake and then did not is
+  // reported here rather than merely being absent from the toolset.
+  const reachable = new Set(descriptors.map((descriptor) => descriptor.connectorId));
+  for (const entry of authorized) {
+    if (reachable.has(entry.connectorId)) continue;
+    await input.emit("degraded", {
+      kind: "connector_unavailable",
+      subject: entry.connectorId,
+      explanation: `${entry.label} was connected but did not answer, so this run could not use it.`,
+    });
+  }
+
+  const deps: ConnectorToolDeps = {
+    healthy: (connectorId) => reachable.has(connectorId),
+    async call(descriptor, args) {
+      const callId = randomUUID();
+      const raw = input.runtime.stripUntrustedEnvelope(
+        await toolset.execute(descriptor.functionName, args)
+      );
+
+      // Every path, including the failures. A connector's error message is
+      // text the connector chose, so a hostile server's error is as good a
+      // vector as its success — and an unrecorded failed write is exactly the
+      // row an investigation goes looking for.
+      const result = admitConnectorResult(
+        {
+          connectorId: descriptor.connectorId,
+          tool: descriptor.toolName,
+          callId,
+          label: descriptor.label,
+          access: descriptor.access,
+          locality: "cloud",
+          exchangeId: byConnector.get(descriptor.connectorId)?.exchangeId ?? "",
+          content: raw,
+        },
+        input.runtime.scanUntrusted
+      );
+
+      for (const intent of result.audit) {
+        await recordWorkAudit({
+          userId: input.userId,
+          sessionId: input.sessionId,
+          runId: input.runId,
+          kind: intent.kind,
+          severity: intent.severity,
+          detail: intent.detail,
+          actor: "cloud_runner",
+        }).catch((error: unknown) => {
+          log("connector audit failed", { runId: input.runId, error: String(error) });
+        });
+      }
+
+      await prisma.workRunIO
+        .create({
+          data: {
+            runId: input.runId,
+            direction: result.io.direction,
+            refKind: result.io.refKind,
+            refId: result.io.refId,
+            label: result.io.label,
+            detail: result.io.detail as Prisma.InputJsonValue,
+          },
+        })
+        .catch((error: unknown) => {
+          // The record of what a run read is worth less than the work itself,
+          // and the call has already happened by the time this runs.
+          log("connector io row failed", { runId: input.runId, error: String(error) });
+        });
+
+      // Reported to the user rather than only to the log. The result is still
+      // handed to the model — inside the session's envelope, which is the
+      // mitigation — and the run's own report is the only place a reader would
+      // ever find out that something tried.
+      if (result.notice) input.sink.session?.recordUncertainty(result.notice);
+
+      return {
+        output: raw,
+        isError: MCP_FAILURE_PREFIXES.some((prefix) => raw.startsWith(prefix)),
+      };
+    },
+  };
+
+  return {
+    availability,
+    descriptors,
+    deps,
+    admitted: reachable,
+    async close() {
+      // A finished run has no legitimate use for a connector, so anything
+      // still presenting its handles afterwards is a leak being exercised or a
+      // bug, and both want the same answer.
+      broker.revokeRun(input.runId);
+      await toolset.close().catch(() => {});
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Cloud files
+// ---------------------------------------------------------------------------
+
+/**
+ * How large a cloud file a run may write, and how much of one it may read
+ * back.
+ *
+ * The write cap is what stops a run parking its whole context in the bucket
+ * one step at a time; the read cap is the same argument as the attachment caps
+ * above, and it is announced in the text rather than applied silently for the
+ * same reason.
+ */
+const MAX_CLOUD_FILE_CHARS = 200_000;
+const MAX_CLOUD_READ_CHARS = 40_000;
+
+/** File names a cloud file may take: no directories, no dots leading. */
+const CLOUD_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/;
+
+/**
+ * The object key a named cloud file lives at.
+ *
+ * Derived from the session rather than the run, and deterministic rather than
+ * randomised the way `buildObjectKey` does it. Both follow from what these
+ * files are for: a task that runs, pauses for a person overnight and resumes
+ * on another worker has to find the notes it left itself, and a key with a
+ * UUID in it can only be found through an index. The name is validated against
+ * `CLOUD_FILE_NAME` before it gets here, so no segment of it can be `..`.
+ */
+function cloudFileKey(userId: string, sessionId: string, name: string): string {
+  return `work/${userId}/${sessionId}/${name}`;
+}
+
+// ---------------------------------------------------------------------------
+// The toolset
+// ---------------------------------------------------------------------------
+
+/**
+ * How long one web fetch may take before the run gives up on it.
+ *
+ * A page that has not answered in fifteen seconds is a page the run should
+ * report as unreachable and move past. Without a deadline a single hung socket
+ * spends the run's entire runtime ceiling on one URL, and the user is told the
+ * task timed out rather than that one source would not load.
+ */
+const WEB_FETCH_TIMEOUT_MS = 15_000;
+/** Refuse a body larger than this before decoding it, not after. */
+const MAX_WEB_FETCH_BYTES = 5_000_000;
+/** Hops a fetch may take before the run gives up on where it is being sent. */
+const MAX_WEB_FETCH_REDIRECTS = 5;
+
+/**
+ * Everything the run can do, assembled.
+ *
+ * The shapes come from the runtime and the effects from here, which is the
+ * split the runtime's tools module exists to make: `runner/agent-core` is
+ * vendored and built with this repository absent, so it can express what a
+ * deliverables tool *is* and not what it *does*.
+ *
+ * Order is the order the model reads them in, and it is deliberate: the
+ * connectors first, because they are rung one and the run should reach for
+ * them before anything else; then research; then the things that produce
+ * something; then the workspace and the shell last, which is where a model
+ * that has run out of better ideas goes.
+ */
+function buildTools(input: {
+  runtime: WorkRuntime;
+  runId: string;
+  userId: string;
+  sessionId: string;
+  sink: SessionSink;
+  connectors: ConnectorSurface;
+}): WorkToolDefinition[] {
+  const { runtime } = input;
+
+  const connectorTools = input.connectors.descriptors.map((descriptor) =>
+    runtime.connectorTool(descriptor, input.connectors.deps)
+  );
+
+  const research = [
+    runtime.webSearchTool({
+      configured: isWebSearchConfigured,
+      search: (query, maxResults) => webSearch(query, maxResults),
+    }),
+    runtime.webFetchTool({
+      onCitation: (citation) => input.sink.session?.recordCitation(citation),
+      /*
+       * Redirects are followed by hand, one hop at a time.
+       *
+       * `redirect: "follow"` would make the target check on the URL the model
+       * asked for worth nothing: a page under an attacker's control answers
+       * 302 to http://169.254.169.254/latest/meta-data/, fetch follows it
+       * inside the platform, and the check never sees the address that was
+       * actually requested. Every hop goes back through
+       * `blockedFetchTarget`, and the deadline covers the whole chain rather
+       * than each hop, so a redirect loop cannot buy more time than one page.
+       */
+      async fetchPage(url) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), WEB_FETCH_TIMEOUT_MS);
+        let target = url;
+        try {
+          for (let hop = 0; hop <= MAX_WEB_FETCH_REDIRECTS; hop++) {
+            const response = await fetch(target, {
+              signal: controller.signal,
+              redirect: "manual",
+              headers: { "User-Agent": "Juno Work (+https://chat.liams.dev)" },
+            });
+
+            if (response.status >= 300 && response.status < 400) {
+              const location = response.headers.get("location");
+              if (!location) {
+                return { ok: false, message: `${target} redirected without saying where to.` };
+              }
+              const next = new URL(location, target).toString();
+              const blocked = runtime.blockedFetchTarget(next);
+              if (blocked) {
+                return { ok: false, message: `${target} redirected somewhere Juno will not follow: ${blocked}` };
+              }
+              target = next;
+              continue;
+            }
+
+            if (!response.ok) {
+              return { ok: false, message: `${target} answered ${response.status} ${response.statusText}.` };
+            }
+            const contentType = response.headers.get("content-type") ?? "";
+            const declared = Number(response.headers.get("content-length") ?? "0");
+            if (Number.isFinite(declared) && declared > MAX_WEB_FETCH_BYTES) {
+              return { ok: false, message: `${target} is ${declared} bytes, which is more than Juno will download.` };
+            }
+            const buffer = await response.arrayBuffer();
+            if (buffer.byteLength > MAX_WEB_FETCH_BYTES) {
+              return { ok: false, message: `${target} is larger than Juno will download.` };
+            }
+            return { ok: true, contentType, body: new TextDecoder().decode(buffer) };
+          }
+          return { ok: false, message: `${url} redirected more than ${MAX_WEB_FETCH_REDIRECTS} times.` };
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          return {
+            ok: false,
+            message: controller.signal.aborted
+              ? `${url} did not answer within ${Math.round(WEB_FETCH_TIMEOUT_MS / 1000)}s.`
+              : `${url} could not be fetched: ${detail}`,
+          };
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+    }),
+  ];
+
+  const deliverables = runtime.deliverableTool({
+    async create(request) {
+      const parsed = deliverableRequestSchema.safeParse({ spec: request.spec });
+      if (!parsed.success) {
+        // Zod's own message, verbatim. It names the field and the constraint,
+        // which is the only thing that turns a rejected spec into one retry
+        // rather than a run that keeps guessing at the shape.
+        return { ok: false, message: `That spec is not valid: ${parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ")}` };
+      }
+
+      try {
+        const generated = await generateDeliverable(parsed.data);
+        const artifact = await storeDeliverable({
+          runId: input.runId,
+          userId: input.userId,
+          sessionId: input.sessionId,
+          identifier: request.identifier,
+          generated,
+        });
+        input.sink.session?.recordArtifact(artifact.ref);
+        return { ok: true, artifact: artifact.ref, detail: artifact.detail };
+      } catch (error) {
+        if (error instanceof DeliverableError) {
+          if (error.code === "build_failed") {
+            // The message quotes a library's internals, which is Juno's
+            // problem rather than the model's, so it goes to the log and the
+            // model is told something it can act on.
+            log("deliverable build failed", { runId: input.runId, error: error.message });
+            return { ok: false, message: "Juno could not build that file. Simplify the spec and try once more." };
+          }
+          return { ok: false, message: error.message };
+        }
+        throw error;
+      }
+    },
+  });
+
+  const cloudFiles = runtime.cloudFilesTool({
+    async list() {
+      const rows = await prisma.workRunIO.findMany({
+        where: {
+          refKind: "cloud_file",
+          run: { sessionId: input.sessionId, userId: input.userId },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { label: true, detail: true, createdAt: true },
+      });
+      const seen = new Set<string>();
+      return rows.flatMap((row) => {
+        if (seen.has(row.label)) return [];
+        seen.add(row.label);
+        const detail = row.detail as { byteSize?: unknown } | null;
+        return [
+          {
+            name: row.label,
+            byteSize: typeof detail?.byteSize === "number" ? detail.byteSize : 0,
+            updatedAt: row.createdAt.toISOString(),
+          },
+        ];
+      });
+    },
+    async read(name) {
+      if (!CLOUD_FILE_NAME.test(name)) {
+        return { ok: false, message: `"${name}" is not a name a cloud file can have.` };
+      }
+      try {
+        const { bytes } = await getObjectBytes(cloudFileKey(input.userId, input.sessionId, name));
+        const text = new TextDecoder().decode(bytes);
+        if (text.length > MAX_CLOUD_READ_CHARS) {
+          return {
+            ok: true,
+            text:
+              `${text.slice(0, MAX_CLOUD_READ_CHARS)}\n\n[Cut off here. This file is ${text.length} characters long and only ` +
+              `the first ${MAX_CLOUD_READ_CHARS} are above. Do not describe the rest as though you have read it.]`,
+          };
+        }
+        return { ok: true, text };
+      } catch {
+        return { ok: false, message: `There is no cloud file called "${name}" on this task.` };
+      }
+    },
+    async write(name, text) {
+      if (!CLOUD_FILE_NAME.test(name)) {
+        return { ok: false, message: `"${name}" is not a name a cloud file can have.` };
+      }
+      if (text.length > MAX_CLOUD_FILE_CHARS) {
+        return {
+          ok: false,
+          message: `That is ${text.length} characters and the limit is ${MAX_CLOUD_FILE_CHARS}. Split it across files.`,
+        };
+      }
+      const bytes = Buffer.from(text, "utf8");
+      await putObject(
+        cloudFileKey(input.userId, input.sessionId, name),
+        bytes,
+        "text/plain; charset=utf-8",
+        `attachment; filename="${name}"`
+      );
+      await prisma.workRunIO.create({
+        data: {
+          runId: input.runId,
+          direction: "output",
+          refKind: "cloud_file",
+          refId: cloudFileKey(input.userId, input.sessionId, name),
+          label: name,
+          detail: { byteSize: bytes.byteLength },
+        },
+      });
+      return { ok: true, detail: `Wrote ${bytes.byteLength} bytes to the cloud file "${name}".` };
+    },
+  });
+
+  return [...connectorTools, ...research, deliverables, cloudFiles, ...runtime.workspaceTools()];
+}
+
+/**
+ * Stores a generated deliverable and appends it as a version.
+ *
+ * The order — bytes to the bucket, then the rows that name them — is the one
+ * `/api/work/artifacts` argues for at length, and the reason is that the two
+ * failure directions are not equally bad: an object with no row is garbage a
+ * sweeper collects, while a row with no object is a download that 500s for
+ * ever and a version history with a hole in it.
+ *
+ * This is a second implementation of that route's write path and not a call to
+ * it. The executor holds no session cookie and the route requires one, so
+ * reaching it would mean minting a credential for the runner to call Juno with
+ * — a larger thing to get wrong than a duplicated transaction. What is NOT
+ * duplicated is the part that decides anything: the spec union, the
+ * generators, the byte cap and the validator all come from
+ * `generateDeliverable`, so a deliverable a run produces and one a user
+ * produces are the same file built by the same code.
+ *
+ * What is also not duplicated is the route's version-allocation retry loop,
+ * and that is deliberate rather than an omission. The loop exists because two
+ * browser tabs can POST the same identifier at once; here the agent loop is
+ * sequential within a run and the dispatch route refuses a second live run per
+ * session, so the only writer is this one. A unique-constraint violation would
+ * therefore mean something is true that the dispatcher says cannot be — which
+ * is worth surfacing as a failed tool call the model reports, rather than
+ * quietly retrying past.
+ */
+async function storeDeliverable(input: {
+  runId: string;
+  userId: string;
+  sessionId: string;
+  identifier: string;
+  generated: Awaited<ReturnType<typeof generateDeliverable>>;
+}): Promise<{ ref: WorkArtifactRef; detail: string }> {
+  const { generated } = input;
+  const storageKey = `work-artifacts/${input.userId}/${randomUUID()}-${input.identifier}.${generated.extension}`;
+  await putObject(
+    storageKey,
+    generated.bytes,
+    generated.mimeType,
+    attachmentDisposition(generated.title, input.identifier, generated.kind)
+  );
+
+  const written = await prisma.$transaction(async (tx) => {
+    const current = await tx.workArtifact.findFirst({
+      where: { userId: input.userId, sessionId: input.sessionId, identifier: input.identifier },
+      select: { id: true, kind: true, deletedAt: true },
+    });
+    if (current?.deletedAt) throw new DeliverableError("invalid_spec", `"${input.identifier}" was deleted in this task. Use a different identifier.`);
+    if (current && current.kind !== generated.kind) {
+      throw new DeliverableError(
+        "invalid_spec",
+        `"${input.identifier}" already exists in this task as a ${current.kind}, and the kind describes every version of an artifact.`
+      );
+    }
+
+    const artifactId =
+      current?.id ??
+      (
+        await tx.workArtifact.create({
+          data: {
+            sessionId: input.sessionId,
+            userId: input.userId,
+            identifier: input.identifier,
+            title: generated.title,
+            kind: generated.kind,
+            mimeType: generated.mimeType,
+            currentVersion: 1,
+            validatedAt: generated.validation.ok ? new Date(generated.validation.checkedAt) : null,
+          },
+          select: { id: true },
+        })
+      ).id;
+
+    // The highest version that exists, never `currentVersion`: a pointer can be
+    // moved by a restore, and minting from it re-uses a number the unique index
+    // has already taken.
+    const highest = await tx.workArtifactVersion.findFirst({
+      where: { artifactId, artifact: { userId: input.userId } },
+      orderBy: { version: "desc" },
+      select: { version: true },
+    });
+    const version = await tx.workArtifactVersion.create({
+      data: {
+        artifactId,
+        version: (highest?.version ?? 0) + 1,
+        storageKey,
+        byteSize: generated.byteSize,
+        contentHash: generated.contentHash,
+        origin: "generated",
+        provenance: provenanceForStorage(generated.provenance),
+        validation: {
+          ok: generated.validation.ok,
+          validator: generated.validation.validator,
+          checkedAt: generated.validation.checkedAt,
+          kind: generated.validation.kind,
+          byteSize: generated.validation.byteSize,
+          observations: [...generated.validation.observations],
+          problems: [...generated.validation.problems],
+        },
+        runId: input.runId,
+      },
+    });
+
+    const artifact = await tx.workArtifact.update({
+      where: { id: artifactId, userId: input.userId },
+      data: {
+        currentVersion: version.version,
+        title: generated.title,
+        mimeType: generated.mimeType,
+        validatedAt: generated.validation.ok ? new Date(generated.validation.checkedAt) : null,
+      },
+    });
+
+    return { artifact, version };
+  });
+
+  await prisma.workRunIO.create({
+    data: {
+      runId: input.runId,
+      direction: "output",
+      refKind: "artifact_version",
+      refId: written.version.id,
+      label: `${generated.title} v${written.version.version}`,
+      detail: { artifactKind: generated.kind, byteSize: generated.byteSize, contentHash: generated.contentHash },
+    },
+  });
+
+  // Stated to the model, not left to be inferred. The caller is about to tell
+  // a user the deliverable is ready.
+  const detail = generated.validation.ok
+    ? `Produced "${generated.title}" as version ${written.version.version} of "${input.identifier}" (${generated.byteSize} bytes). It was re-opened by the validator and opens correctly.`
+    : `Produced "${generated.title}" as version ${written.version.version} of "${input.identifier}" (${generated.byteSize} bytes), but the validator could not re-open it: ${generated.validation.problems.join("; ")}. Say so rather than presenting it as finished.`;
+
+  return {
+    ref: {
+      id: written.artifact.id,
+      kind: generated.kind,
+      title: generated.title,
+      version: written.version.version,
+      byteSize: generated.byteSize,
+    },
+    detail,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+
+/** A skill in force for a run: its instructions, and what it may use. */
+interface AppliedSkill {
+  systemSuffix: string;
+  /** The intersection of the version's request and the run's own toolset. */
+  tools: string[];
+  /**
+   * The `WorkRunIO` row that records which version actually ran, built by the
+   * skills module rather than assembled here. `refId` is the version row's id
+   * and not the skill's, because the skill's id resolves to whatever the
+   * instructions say today — which is the one thing the question "which skill
+   * ran" is never asking.
+   */
+  reference: SkillVersionRunReference;
+  /** What the version asked for and did not get. Reported, never dropped. */
+  withheld: string[];
+}
+
+/**
+ * The skill this run is operating under, if any.
+ *
+ * Selection is by slash invocation and only by slash invocation. Neither
+ * `WorkSession` nor `WorkRun` has a skill column, so there is nowhere for a
+ * planner's automatic choice to be recorded — and `selectSkillAutomatically`
+ * needs a confidence score that only a planning model can produce, which this
+ * executor does not run. A goal beginning `/tidy-downloads …` is the one
+ * expression of intent that survives into the executor unambiguously, and it
+ * is the one the user typed, which is also the only case where trust may be
+ * skipped (see `selectSkillBySlug`).
+ *
+ * The goal itself is left alone. `WorkSession.goal` is documented as what the
+ * user asked for verbatim and is the thing the plan is checked back against;
+ * stripping the invocation off it here would mean the run is validated against
+ * a goal the user never wrote.
+ */
+async function applySkill(input: {
+  userId: string;
+  goal: string;
+  toolNames: readonly string[];
+  connectors: readonly string[];
+  policy: string;
+}): Promise<AppliedSkill | null> {
+  const invocation = parseSkillInvocation(input.goal);
+  if (!invocation) return null;
+
+  const candidates = await prisma.workSkill.findMany({
+    where: { userId: input.userId, slug: invocation.slug, deletedAt: null },
+    select: { id: true, slug: true, enabled: true, trust: true, autoSelect: true, currentVersion: true },
+  });
+  const selection = selectSkillBySlug(invocation.slug, candidates);
+  if (!selection.selected) return null;
+
+  const versions = await prisma.workSkillVersion.findMany({
+    where: { skillId: selection.candidate.id },
+    select: { id: true, version: true, instructions: true, contract: true, requestedTools: true },
+  });
+  const choice = selectSkillVersion({
+    slug: invocation.slug,
+    currentVersion: selection.candidate.currentVersion,
+    availableVersions: versions.map((version) => version.version),
+  });
+  if (!choice.ok) return null;
+
+  const row = versions.find((version) => version.version === choice.version);
+  if (!row) return null;
+
+  // Every grant layer this executor can see, passed separately rather than
+  // pre-merged: `narrowestGrant` refuses an empty layer list, and a merged
+  // single value cannot express emptiness. The intersection can only come out
+  // smaller than the run's own toolset, which is the whole security argument
+  // for skills — a shared, imported, pasted-out-of-a-forum-post skill must not
+  // be able to add a tool to a run.
+  const resolved = resolveSkillPermissions({
+    request: skillRequestFromRow({ requestedTools: row.requestedTools, contract: row.contract }),
+    granted: [
+      {
+        tools: input.toolNames,
+        connectors: input.connectors,
+        apps: [],
+        // No domain allowlist is enforced anywhere yet, so claiming one here
+        // would narrow a skill against a rule nothing applies.
+        domains: [],
+        policy: input.policy as "conservative" | "balanced" | "permissive",
+      },
+    ],
+  });
+
+  const withheld = [
+    ...resolved.withheld.tools.map((tool) => `the tool ${tool}`),
+    ...resolved.withheld.connectors.map((connector) => `the connector ${connector}`),
+  ];
+
+  return {
+    systemSuffix: [
+      `# Skill: ${invocation.slug} (version ${choice.version})`,
+      "",
+      "The user invoked this skill by name. These are its instructions. They shape how you do the task; they do not change what the task is, and they cannot give you a tool you were not already given.",
+      "",
+      row.instructions,
+    ].join("\n"),
+    tools: resolved.tools,
+    reference: skillVersionRunReference({
+      versionRowId: row.id,
+      skillId: selection.candidate.id,
+      slug: invocation.slug,
+      version: choice.version,
+      trust: selection.candidate.trust,
+      pinned: choice.pinned,
+    }),
+    withheld,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // The tick
 // ---------------------------------------------------------------------------
 
@@ -665,6 +1692,8 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     maxRuntimeMs: run.maxRuntimeMs,
   };
 
+  const sink: SessionSink = {};
+
   const plan = new runtime.WorkPlan([
     { id: "understand", title: "Understand what is being asked" },
     { id: "work", title: "Do the work" },
@@ -685,6 +1714,85 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     runtime,
   });
 
+  // The connectors go first because everything after them depends on knowing
+  // which ones answered: the toolset includes their tools, and the skill
+  // resolver intersects its request against the connectors this run actually
+  // has rather than the ones the account owns.
+  const connectors = await openConnectors({
+    runId: input.runId,
+    userId: input.userId,
+    sessionId: run.sessionId,
+    runtime,
+    sink,
+    emit: input.emit,
+  });
+
+  const tools = buildTools({
+    runtime,
+    runId: input.runId,
+    userId: input.userId,
+    sessionId: run.sessionId,
+    sink,
+    connectors,
+  });
+
+  const policy = (run.permissionPolicy ?? {}) as { policy?: unknown };
+  const skill = await applySkill({
+    userId: input.userId,
+    goal: run.session.goal,
+    toolNames: runtime.toolNames(tools),
+    connectors: [...connectors.admitted],
+    policy: typeof policy.policy === "string" ? policy.policy : "conservative",
+  });
+
+  // A skill narrows; it never widens. `narrowToPermittedTools` filters the
+  // run's own toolset by the resolved list rather than building a list from
+  // the skill's request, so a name the skill asked for and did not get simply
+  // produces no tool.
+  const effectiveTools = skill ? runtime.narrowToPermittedTools(tools, skill.tools) : tools;
+
+  if (skill) {
+    await prisma.workRunIO
+      .create({
+        data: {
+          runId: input.runId,
+          direction: skill.reference.direction,
+          refKind: skill.reference.refKind,
+          refId: skill.reference.refId,
+          label: skill.reference.label,
+          detail: skill.reference.detail,
+        },
+      })
+      .catch((error: unknown) => {
+        log("skill io row failed", { runId: input.runId, error: String(error) });
+      });
+    await recordWorkAudit({
+      userId: input.userId,
+      sessionId: run.sessionId,
+      runId: input.runId,
+      kind: "skill_applied",
+      severity: "info",
+      detail: {
+        skillId: skill.reference.detail.skillId,
+        skillSlug: skill.reference.detail.slug,
+        skillVersion: skill.reference.detail.version,
+        count: skill.tools.length,
+      },
+      actor: "cloud_runner",
+    });
+    if (skill.withheld.length > 0) {
+      // A skill doing three of the five things it promised is otherwise
+      // indistinguishable from one that only ever promised three, and the
+      // user's actual question — "why did it not file the invoice" — has an
+      // answer nobody can see.
+      await input.emit("degraded", {
+        kind: "capability_unavailable",
+        subject: skill.reference.detail.slug,
+        explanation: `${skill.reference.detail.slug} asked for ${skill.withheld.join(", ")}, which this task does not have.`,
+      });
+    }
+  }
+
   const session = new runtime.WorkAgentSession({
     runId: input.runId,
     goal,
@@ -692,9 +1800,10 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     // The adapter was selected by the provider half; it wants the model half.
     model: (run.effectiveModel ?? run.requestedModel ?? "").split(":").slice(1).join(":"),
     cwd: process.cwd(),
-    tools: [],
+    tools: effectiveTools,
     plan,
     budget,
+    ...(skill ? { systemSuffix: skill.systemSuffix } : {}),
     // `session.reasoningEffort` is deliberately absent: there is nowhere to put
     // it. `WorkSessionOptions` has no field for it and `ProviderRequest` carries
     // no thinking budget, so no adapter could send one even if this line
@@ -831,6 +1940,18 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     },
   });
 
+  // The tools were built before the session, because its constructor takes
+  // them; this is where the two are joined so a citation, an artifact or an
+  // injection notice a tool produces lands on the run that produced it.
+  sink.session = session;
+
+  // Reported through the run rather than only as an event. A degradation is
+  // seen by whoever is watching; an uncertainty is in the report, which is what
+  // is left when nobody was.
+  for (const entry of connectors.availability) {
+    if (!entry.available) session.recordUncertainty(entry.explanation);
+  }
+
   // A Stop button that does not stop anything.
   //
   // POST /api/work/runs/{id}/control writes a terminal row and appends an
@@ -883,6 +2004,12 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     throw error;
   } finally {
     clearInterval(watcher);
+    // Revokes every broker handle this run held and closes the MCP sockets.
+    // Run on the pause path as well as the terminal ones, which is right: a
+    // paused run resumes on whichever worker is free, and that worker mints
+    // its own handles. A handle outliving the process that holds it is a
+    // credential nobody is watching.
+    await connectors.close();
   }
 }
 
