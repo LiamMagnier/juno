@@ -63,6 +63,38 @@ public enum PreviewFixtures {
         "</output>",
     ].joined(separator: "\\n")
 
+    /// A real Juno Design document, produced by the website's own operation layer
+    /// (`tests/design-fixtures.ts`, the same source `npm run design:fixture` emits
+    /// the Swift round-trip fixture from) and pasted here verbatim.
+    ///
+    /// Hand-written JSON was not an option: `DesignDocumentCodec` refuses a
+    /// document that is missing a field or names a child it does not contain, so a
+    /// fixture typed by hand would fail to decode and the design screen would show
+    /// its refusal rather than a drawing — which is indistinguishable from the
+    /// screen being broken.
+    ///
+    /// Small on purpose: one 375×812 frame, a card with a title, a field and a
+    /// button. Enough to see that the renderer laid something out, few enough
+    /// layers to check the outline against by eye.
+    private static let designDocument = #"""
+    {"activeModes":{},"animations":{},"assets":{},"collections":{},"comments":[],"components":{},"id":"design-signin","interactions":{},"migratedFrom":[],"name":"Sign-in screen","nodes":{"button":{"blendMode":"normal","blur":null,"boundVariables":{},"children":["buttonLabel"],"clipsContent":true,"constraints":{"horizontal":"min","vertical":"min"},"cornerRadius":8,"fills":[{"color":{"a":1,"b":0.9,"g":0.3,"r":0.2},"type":"solid"}],"height":48,"heightMode":"fixed","id":"button","layout":null,"layoutChild":{"absolute":false,"grow":false},"limits":{},"locked":false,"name":"Sign in button","opacity":1,"parentId":"card","rotation":0,"shadows":[],"strokes":[],"type":"frame","visible":true,"width":279,"widthMode":"fill","x":0,"y":0},"buttonLabel":{"blendMode":"normal","blur":null,"boundVariables":{},"characters":"Sign in","constraints":{"horizontal":"min","vertical":"min"},"cornerRadius":0,"fills":[{"color":{"a":1,"b":0.08,"g":0.06,"r":0.06},"type":"solid"}],"height":20,"heightMode":"hug","id":"buttonLabel","layoutChild":{"absolute":false,"grow":false},"limits":{},"locked":false,"name":"Label","opacity":1,"parentId":"button","rotation":0,"shadows":[],"strokes":[],"type":"text","typography":{"fontFamily":"Inter","fontSize":16,"fontWeight":400,"letterSpacing":0,"lineHeight":{"unit":"percent","value":140},"textAlign":"left","verticalAlign":"top"},"visible":true,"width":100,"widthMode":"fixed","x":90,"y":14},"card":{"blendMode":"normal","blur":null,"boundVariables":{},"children":["title","email","button"],"clipsContent":true,"constraints":{"horizontal":"min","vertical":"min"},"cornerRadius":16,"fills":[{"color":{"a":1,"b":1,"g":1,"r":1},"type":"solid"}],"height":240,"heightMode":"hug","id":"card","layout":{"align":"start","direction":"vertical","gap":16,"justify":"start","padding":{"bottom":24,"left":24,"right":24,"top":24},"wrap":false},"layoutChild":{"absolute":false,"grow":false},"limits":{},"locked":false,"name":"Card","opacity":1,"parentId":"screen","rotation":0,"shadows":[],"strokes":[],"type":"frame","visible":true,"width":327,"widthMode":"fixed","x":24,"y":200},"email":{"blendMode":"normal","blur":null,"boundVariables":{},"constraints":{"horizontal":"min","vertical":"min"},"cornerRadius":8,"fills":[{"color":{"a":1,"b":0.95,"g":0.6,"r":0.55},"type":"solid"}],"height":44,"heightMode":"fixed","id":"email","layoutChild":{"absolute":false,"grow":false},"limits":{},"locked":false,"name":"Email field","opacity":1,"parentId":"card","rotation":0,"shadows":[],"strokes":[],"type":"rectangle","visible":true,"width":279,"widthMode":"fill","x":0,"y":0},"screen":{"blendMode":"normal","blur":null,"boundVariables":{},"children":["card"],"clipsContent":true,"constraints":{"horizontal":"min","vertical":"min"},"cornerRadius":0,"fills":[{"color":{"a":1,"b":1,"g":1,"r":1},"type":"solid"}],"height":812,"heightMode":"fixed","id":"screen","layout":null,"layoutChild":{"absolute":false,"grow":false},"limits":{},"locked":false,"name":"Sign in","opacity":1,"parentId":null,"rotation":0,"shadows":[],"strokes":[],"type":"frame","visible":true,"width":375,"widthMode":"fixed","x":0,"y":0},"title":{"blendMode":"normal","blur":null,"boundVariables":{},"characters":"Welcome back","constraints":{"horizontal":"min","vertical":"min"},"cornerRadius":0,"fills":[{"color":{"a":1,"b":0.08,"g":0.06,"r":0.06},"type":"solid"}],"height":24,"heightMode":"hug","id":"title","layoutChild":{"absolute":false,"grow":false},"limits":{},"locked":false,"name":"Title","opacity":1,"parentId":"card","rotation":0,"shadows":[],"strokes":[],"type":"text","typography":{"fontFamily":"Inter","fontSize":16,"fontWeight":400,"letterSpacing":0,"lineHeight":{"unit":"percent","value":140},"textAlign":"left","verticalAlign":"top"},"visible":true,"width":279,"widthMode":"fill","x":0,"y":0}},"pages":[{"backgroundColor":{"a":1,"b":0.97,"g":0.96,"r":0.96},"children":["screen"],"id":"page1","name":"Page 1"}],"revision":1,"schemaVersion":1,"updatedAt":"2026-01-01T00:00:00.000Z","variables":{}}
+    """#
+
+    /// `designDocument` escaped for embedding inside a JSON string literal.
+    ///
+    /// Every payload below is written as JSON in a Swift string, and the document
+    /// is four kilobytes of JSON that has to sit inside one of those as a value.
+    /// Escaping it by hand is not a thing anyone should do twice, and getting it
+    /// subtly wrong yields a fixture that decodes to nothing.
+    private static var designDocumentLiteral: String {
+        guard let data = try? JSONEncoder().encode(designDocument),
+              let quoted = String(data: data, encoding: .utf8)
+        else { return "" }
+        // JSONEncoder returns the value *with* its surrounding quotes; the call
+        // sites write their own.
+        return String(quoted.dropFirst().dropLast())
+    }
+
     /// The account settings row every scenario carries so Settings is populated.
     private static func settings(_ accountID: StorageAccountID) -> StoredRecord {
         record(accountID, "settings", "settings-preview", 3, """
@@ -99,7 +131,7 @@ public enum PreviewFixtures {
 
         // Conversations (one pinned, one archived, one project-linked).
         out.append(record(a, "conversation", "conv-1", 5, """
-        {"id":"conv-1","title":"Designing the native sidebar","model":"anthropic:claude-sonnet-4-6","kind":"chat","pinned":true,"archivedAt":null,"createdAt":"\(iso(-7200))","updatedAt":"\(iso(-600))","lastMessageAt":"\(iso(-600))"}
+        {"id":"conv-1","title":"Designing the native sidebar","model":"anthropic:claude-sonnet-4-6","kind":"chat","pinned":true,"archivedAt":null,"createdAt":"\(iso(-7200))","updatedAt":"\(iso(-480))","lastMessageAt":"\(iso(-480))"}
         """))
         out.append(record(a, "conversation", "conv-2", 4, """
         {"id":"conv-2","title":"Weekend trip planning","model":"openai:gpt-5","kind":"chat","pinned":false,"archivedAt":null,"createdAt":"\(iso(-86400))","updatedAt":"\(iso(-5400))","lastMessageAt":"\(iso(-5400))"}
@@ -125,6 +157,17 @@ public enum PreviewFixtures {
         """))
         out.append(record(a, "message", "msg-2", 1, """
         {"id":"msg-2","conversationId":"conv-1","role":"assistant","content":"Keep the sidebar resizable with sensible min/max widths, and let NavigationSplitView collapse it automatically at narrow widths. Persist the user's chosen width and the collapsed state across launches.  <juno:memory>Liam prefers native NavigationSplitView behaviour over a hand-rolled sidebar.</juno:memory>  <juno:artifact identifier='sidebar-spec' type='markdown' title='Sidebar behaviour spec'>## Widths\\n\\n- min 220pt, max 360pt</juno:artifact>","reasoning":"The user wants native behavior. NavigationSplitView already handles adaptive collapse; the key is persistence and reasonable bounds so the layout never feels cramped.","model":"anthropic:claude-sonnet-4-6","promptTokens":8421,"completionTokens":612,"costMicroUsd":21400,"createdAt":"\(iso(-600))"}
+        """))
+        // The same design document as it arrives in a reply: a `<juno:artifact>`
+        // block carrying the whole file. This is the only route either app has to
+        // its design canvas — the artifacts library opens a stored design
+        // document, but the canvas that hosts the editor is opened from the
+        // transcript — so a fixture without it leaves that canvas unreachable.
+        out.append(record(a, "message", "msg-5", 1, """
+        {"id":"msg-5","conversationId":"conv-1","role":"user","content":"Draft the sign-in screen for the phone.","createdAt":"\(iso(-540))"}
+        """))
+        out.append(record(a, "message", "msg-6", 1, """
+        {"id":"msg-6","conversationId":"conv-1","role":"assistant","content":"Here it is — a 375×812 frame with the card centred and the primary action at the bottom of it.  <juno:artifact identifier='signin-screen' type='design' title='Sign-in screen'>\(designDocumentLiteral)</juno:artifact>","model":"anthropic:claude-sonnet-4-6","promptTokens":9120,"completionTokens":880,"costMicroUsd":24100,"createdAt":"\(iso(-480))"}
         """))
         out.append(record(a, "message", "msg-3", 1, """
         {"id":"msg-3","conversationId":"conv-proj","role":"user","content":"Summarize the latest quasar observations for the report.","createdAt":"\(iso(-1800))"}
@@ -158,6 +201,21 @@ public enum PreviewFixtures {
         """))
         out.append(record(a, "artifact_version", "artv-2", 1, """
         {"id":"artv-2","artifactId":"art-1","version":2,"content":"<html><body><h1>Brightness by epoch</h1><p>Updated.</p></body></html>","createdAt":"\(iso(-1200))"}
+        """))
+
+        // A DESIGN artifact, which nothing in either harness could reach before.
+        //
+        // The design screen is the one surface with no fixture behind it, and the
+        // consequence was not theoretical: the bundled editor threw on mount on
+        // both platforms for as long as it has existed, and neither the Mac's
+        // capture set nor the phone's could show it, because there was no design
+        // document in the world either app previews. A screen nobody can open is
+        // a screen nobody looks at.
+        out.append(record(a, "artifact", "art-design", 2, """
+        {"id":"art-design","conversationId":"conv-1","messageId":"msg-6","identifier":"signin-screen","title":"Sign-in screen","type":"DESIGN","language":null,"currentVersion":1,"createdAt":"\(iso(-90000))","updatedAt":"\(iso(-900))"}
+        """))
+        out.append(record(a, "artifact_version", "artv-design", 1, """
+        {"id":"artv-design","artifactId":"art-design","version":1,"content":"\(designDocumentLiteral)","createdAt":"\(iso(-90000))"}
         """))
 
         // Memory entries.

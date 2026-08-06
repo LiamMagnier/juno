@@ -7,40 +7,52 @@ import SwiftUI
 ///
 /// A design artifact used to arrive here as a label and an icon over its raw
 /// JSON — the same body ``NativeArtifactSandbox`` escapes for any surface with
-/// nowhere to draw it. This is that surface with somewhere to put the document:
-/// what it is, what is in it, and every word it contains, decoded by
-/// ``DesignDocument`` so nothing on screen can disagree with the file.
+/// nowhere to draw it. This screen has somewhere to put it: the drawing, the
+/// layers, and the file, decoded by ``DesignDocument`` so nothing on screen can
+/// disagree with what was stored.
 ///
-/// **What this deliberately is not: the drawing.** Two ways to draw one exist
-/// and neither belongs on iOS today.
+/// **The drawing is the bundled editor, not a second renderer.** A Swift
+/// renderer was the other option and it is the wrong one: `src/lib/design/render.ts`
+/// draws what `layout.ts` computed, and that includes measuring text to decide
+/// where lines break, so a CoreText reimplementation would break them elsewhere
+/// and the same document would read one way here and another on the Mac, on the
+/// web, and in every export. ``JunoMobileDesignEditorHost`` runs the same bundle
+/// the Mac runs, read-only, which cannot drift because it is not a second
+/// implementation.
 ///
-/// The first is a Swift renderer. `src/lib/design/render.ts` draws what
-/// `layout.ts` computed, and that includes measuring text to decide where lines
-/// break; a CoreText reimplementation would break them elsewhere, so the same
-/// document would read one way here and another way on the Mac, on the web, and
-/// in every export. ``DesignDocument`` says there is one scene model and one
-/// engine, and a second renderer is what that rule exists to prevent.
+/// That host is why this screen changed. It did not work: the bundle completed
+/// the ``DesignBridge`` handshake and then threw while mounting, and the failure
+/// arrived as WebKit's sanitised "Script error." — a bundle loaded as a
+/// subresource of a `file://` document is cross-origin to it, so `window.onerror`
+/// reports nothing usable. Asked through React's own root callbacks instead, the
+/// exception read "`Tooltip` must be used within `TooltipProvider`": the editor's
+/// toolbar is built from Radix tooltips and the host bundle never supplied the
+/// provider the website's `providers.tsx` wraps the whole app in. It was never an
+/// origin problem, and it was never iOS-specific — the Mac's pane was blank for
+/// the same reason and for as long.
 ///
-/// The second is the Mac's: host the bundled editor read-only in a `WKWebView`,
-/// which is the same renderer and therefore cannot drift. That is the right
-/// shape and it does not currently work. The bundle loads inside an iOS web
-/// view and completes the ``DesignBridge`` handshake — it posts `ready` with the
-/// protocol version and the host accepts it — and then throws while mounting the
-/// editor for the document it was sent, reporting `failure` with the message
-/// WebKit sanitises to "Script error." because the bundle is cross-origin to its
-/// own `file://` document. Relaxing the bundle's `script-src` to permit the one
-/// `eval` it is refused changes nothing, so that violation is incidental. The
-/// fix is in the editor bundle, not on this side, and a canvas that renders
-/// "unavailable" every time is worse than no canvas at all — so the drawing is
-/// named as living elsewhere rather than promised and withheld.
+/// The layer list stays, because it is not a consolation prize: it is the fastest
+/// way to check a typo in a button on a phone, and it is searchable and
+/// selectable in a way a canvas is not.
 struct JunoMobileDesignArtifactBody: View {
     let content: String
+
+    /// Which of the three readings is showing.
+    private enum Reading: Hashable {
+        case drawing
+        case layers
+        case source
+    }
 
     /// Decoded once. A body that is not a valid document — or that was written
     /// by a newer build of Juno — is refused with the reason stated rather than
     /// summarised into a plausible-looking empty outline.
     @State private var decoded: Result<DesignDocument, Error>?
-    @State private var showsSource = false
+    @State private var reading = Reading.drawing
+    /// Created once per document, and held here rather than rebuilt on every
+    /// render: rebuilding would reload the bundle and throw away the reader's
+    /// pan and zoom each time anything above this view changed.
+    @State private var host: JunoMobileDesignEditorHost?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,7 +66,8 @@ struct JunoMobileDesignArtifactBody: View {
 
     @ViewBuilder
     private var reader: some View {
-        if showsSource {
+        switch reading {
+        case .source:
             ScrollView([.horizontal, .vertical]) {
                 Text(content)
                     .font(.system(.footnote, design: .monospaced))
@@ -62,22 +75,59 @@ struct JunoMobileDesignArtifactBody: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
             }
-        } else {
+        case .drawing, .layers:
             switch decoded {
             case .success(let document):
-                outline(document)
+                if reading == .layers {
+                    outline(document)
+                } else {
+                    drawing
+                }
             case .failure(let error):
                 ContentUnavailableView {
                     Label("This design can\u{2019}t be opened", systemImage: "exclamationmark.triangle")
                 } description: {
                     Text(reason(for: error))
                 } actions: {
-                    Button("Show source") { showsSource = true }
+                    Button("Show source") { reading = .source }
                 }
             case nil:
                 // One frame, between `onAppear` and the decode landing.
                 Color.clear
             }
+        }
+    }
+
+    /// The canvas.
+    ///
+    /// A failure from the editor is shown *over* the web view rather than
+    /// instead of it: the host is what reports the failure, so tearing it down to
+    /// display the report would also destroy the thing that has more to say. The
+    /// way out is the layer list, which needs nothing from the bundle.
+    @ViewBuilder
+    private var drawing: some View {
+        if let host {
+            ZStack {
+                JunoMobileDesignEditorView(host: host)
+                switch host.status {
+                case .loading:
+                    ProgressView().controlSize(.small)
+                case .unavailable(let reason), .failed(let reason):
+                    ContentUnavailableView {
+                        Label("Design editor unavailable", systemImage: "exclamationmark.triangle")
+                    } description: {
+                        Text(reason)
+                    } actions: {
+                        Button("Show layers") { reading = .layers }
+                    }
+                    .background(Color.junoSurface)
+                case .ready:
+                    EmptyView()
+                }
+            }
+            .accessibilityIdentifier("juno.mobile.design.canvas")
+        } else {
+            Color.clear
         }
     }
 
@@ -144,19 +194,25 @@ struct JunoMobileDesignArtifactBody: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Says what this screen is and what it is not, on the same line as the way
-    /// out of it. Stated rather than implied: a reader who is told where the
-    /// drawing is stops looking for it here.
+    /// The three readings, in the order a reader wants them: what it looks like,
+    /// what is in it, what it is.
+    ///
+    /// At the bottom rather than the top because it belongs to the document and
+    /// not to the artifact chrome already stacked above this view — and because
+    /// the canvas is what the thumb should not be covering.
     private var footer: some View {
         HStack(spacing: 10) {
-            Label("Open the drawing on a Mac or on the web", systemImage: "rectangle.on.rectangle")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.junoMutedForeground)
-                .lineLimit(2)
-            Spacer(minLength: 8)
-            Button(showsSource ? "Layers" : "Source") { showsSource.toggle() }
-                .font(.system(size: 13, weight: .medium))
-                .accessibilityIdentifier("juno.mobile.design.source-toggle")
+            JunoMobileSegmented(
+                options: [
+                    .init(Reading.drawing, "Design"),
+                    .init(Reading.layers, "Layers"),
+                    .init(Reading.source, "Source"),
+                ],
+                selection: $reading,
+                accessibilityLabel: "Design view"
+            )
+            .accessibilityIdentifier("juno.mobile.design.view-mode")
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -169,9 +225,19 @@ struct JunoMobileDesignArtifactBody: View {
         }
     }
 
+    /// Decodes natively, before the editor ever sees the body.
+    ///
+    /// The order matters: a body that is not a valid `DesignDocument` is refused
+    /// here with a stated reason, rather than handed to a web view that would
+    /// draw an empty canvas indistinguishable from a document whose contents were
+    /// lost. The Mac's canvas makes the same call in the same order.
     private func decode() {
         guard decoded == nil else { return }
-        decoded = Result { try DesignDocumentCodec.load(Data(content.utf8)) }
+        let result = Result { try DesignDocumentCodec.load(Data(content.utf8)) }
+        decoded = result
+        if case .success(let document) = result {
+            host = JunoMobileDesignEditorHost(document: document)
+        }
     }
 
     private func reason(for error: Error) -> String {

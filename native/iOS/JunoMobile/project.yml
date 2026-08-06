@@ -26,6 +26,18 @@ targets:
           - Info.plist
           - JunoMobile.entitlements
         buildPhase: resources
+      # The bundled Juno Design editor — the SAME directory the Mac ships, not a
+      # copy of it.
+      #
+      # Referenced across for the same reason the Mac references this app's Fonts
+      # and string catalog: `scripts/build-design-editor.mjs` writes exactly one
+      # bundle, and a second copy is a second thing to keep fresh. A folder
+      # reference so `Bundle.main.url(forResource:withExtension:subdirectory:)`
+      # finds "DesignEditor/index.html" and the host can scope file read access to
+      # that directory alone. Built by `npm run design:editor`.
+      - path: ../../macOS/JunoDesktop/Resources/DesignEditor
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: JunoNativeKit
         product: JunoAPI

@@ -27,7 +27,13 @@ const outDir = join(root, "native/macOS/JunoDesktop/Resources/DesignEditor");
 const entry = join(root, "src/components/design/host/main.tsx");
 
 /** Stamped into the bundle and reported to the host in the `ready` message, so
- *  a mismatched pair is diagnosable from the pane rather than from a guess. */
+ *  a mismatched pair is diagnosable from the pane rather than from a guess.
+ *
+ *  `main.tsx` belongs in this list even though it is only the entry point: the
+ *  missing `TooltipProvider` that kept the canvas blank on both platforms lived
+ *  there and nowhere else, so a fix to it left the stamped version identical and
+ *  `--check` called a stale bundle up to date. A version that cannot change when
+ *  the mount changes is not a version. */
 function editorVersion() {
   const sources = [
     "src/lib/design/schema.ts",
@@ -36,6 +42,7 @@ function editorVersion() {
     "src/lib/design/render.ts",
     "src/components/design/design-editor.tsx",
     "src/components/design/host/bridge.ts",
+    "src/components/design/host/main.tsx",
   ];
   const hash = createHash("sha256");
   for (const relative of sources) hash.update(readFileSync(join(root, relative)));
