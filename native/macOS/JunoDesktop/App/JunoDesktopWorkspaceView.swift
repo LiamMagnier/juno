@@ -7,19 +7,20 @@ import SwiftUI
 /// The window's contents for the current product, and the one moment of motion
 /// between them.
 ///
-/// **Why the mode change is veiled rather than cross-faded.** Chat, Code and
-/// Work are each a `NavigationSplitView`, and a SwiftUI transition between two
-/// of them keeps both alive for the length of the animation — two split views, two
-/// AppKit split-view controllers, negotiating sizes against the same window at
-/// the same time. That is precisely the shape that produced the documented
+/// **Why the mode change is not cross-faded.** Chat, Code and Work are each a
+/// `NavigationSplitView`, and a SwiftUI transition between two of them keeps
+/// both alive for the length of the animation — two split views, two AppKit
+/// split-view controllers, negotiating sizes against the same window at the
+/// same time. That is precisely the shape that produced the documented
 /// update-constraints crash (`docs/native/MACOS_CRASH_ROOT_CAUSE.md`), and a
 /// nicer-feeling switch is not worth reintroducing it.
 ///
 /// So the swap itself stays instantaneous — only one workspace is ever
-/// instantiated — and the *veil* is what animates: the new window paints under a
-/// full-strength canvas wash that dissolves off it. The result reads as the
-/// content fading in, which is the intent, without either tree having to
-/// co-exist with the other for a single frame.
+/// instantiated — and what animates is the arriving workspace *resolving*:
+/// blurred and dimmed on the frame it appears, sharp a third of a second later.
+/// Nothing has to co-exist with anything, and unlike the canvas-coloured wash
+/// this replaced, what is on screen for the whole transition is the new
+/// workspace rather than a rectangle of flat paint.
 struct JunoDesktopWorkspaceView: View {
     let configuration: JunoDesktopConfiguration
     let session: NativeAuthenticatedSession
@@ -33,7 +34,9 @@ struct JunoDesktopWorkspaceView: View {
     /// from the live app's launch policy.
     var consumeInitialDestination: (() -> Void)? = nil
 
-    @State private var veilOpacity: Double = 0
+    /// 0 the instant the workspace swaps, 1 once it has settled. Drives a short
+    /// defocus on the arriving content rather than a wash laid over it.
+    @State private var settle: Double = 1
     /// A "New chat" raised from Code or Work is deliberately not a session with
     /// no folder or a task with no goal. It is an ordinary Juno conversation, so
     /// it crosses the product boundary and is consumed exactly once by the Chat
@@ -46,28 +49,34 @@ struct JunoDesktopWorkspaceView: View {
 
     var body: some View {
         workspace
-            .overlay {
-                // Never interactive: the veil is scenery over a window that is
-                // already live underneath it, and swallowing the first click
-                // after a mode change would be worse than no transition at all.
-                Color.junoCanvasWarm
-                    .opacity(veilOpacity)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
-            }
+            // The arriving workspace resolves into focus. What was here before
+            // was a full-strength `Color.junoCanvasWarm` laid over the whole
+            // window and faded off, which is a flash of flat paint — for the
+            // first frame of every mode change the window was a rectangle of
+            // canvas colour, and the brighter the content underneath, the more
+            // it read as the app blinking rather than as one thing becoming
+            // another.
+            //
+            // Blur and a shallow opacity dip do the same job the wash was
+            // there for — cover the instant of the swap, so neither tree has to
+            // co-exist with the other — while what is on screen throughout is
+            // the new workspace itself. Never a scale: this is a full-window
+            // surface, and scaling one reads as the window resizing.
+            .blur(radius: (1 - settle) * 7)
+            .opacity(0.55 + 0.45 * settle)
+            .allowsHitTesting(settle > 0.6)
             .onChange(of: product) { _, _ in
                 guard !reduceMotion else { return }
-                // Two phases, and they cannot be one. Setting the veil and
+                // Two phases, and they cannot be one. Setting `settle` and
                 // clearing it inside a single update coalesces to "stay at
-                // zero" — SwiftUI animates from the last *rendered* value, not
+                // one" — SwiftUI animates from the last *rendered* value, not
                 // from the one written and overwritten in the same transaction.
-                // Yielding lets the opaque frame render first, so there is
-                // something for the fade to fade from.
-                veilOpacity = 1
+                // Yielding lets the defocused frame render first, so there is
+                // something for the resolve to resolve from.
+                settle = 0
                 Task { @MainActor in
                     await Task.yield()
-                    withAnimation(.easeOut(duration: 0.28)) { veilOpacity = 0 }
+                    withAnimation(.easeOut(duration: 0.3)) { settle = 1 }
                 }
             }
     }

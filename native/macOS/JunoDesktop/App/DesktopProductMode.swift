@@ -58,30 +58,22 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
 /// Do not read the old warning as a general one; it was about a shape, not about
 /// hand-building.
 ///
-/// **Motion.** The binding is written through `withAnimation` because that
-/// transaction drives two things at once: the thumb's throw between segments and
-/// the workspace veil on the other side of the binding. Set outside one, the
-/// thumb jumps and the window changes under it as two separate events.
+/// **Motion.** The switch animates its own knob, on its own curve, and this
+/// wrapper stays out of it. It used to wrap the binding in a second
+/// `withAnimation(JunoMotion.standard)`, which nested around the one inside
+/// ``DesktopSegmented`` — and the outer transaction wins, so the knob travelled
+/// on `snappy(0.26)` while the file two doors down declared the curve it was
+/// supposed to use and was quietly ignored. The same control then animated
+/// differently depending on which of its two call sites you were looking at.
+/// The workspace on the other side of the binding does not need this
+/// transaction either: it reacts in `onChange`, not to an animated value.
 struct DesktopProductSwitcher: View {
     @Binding var selection: DesktopProductMode
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var animatedSelection: Binding<DesktopProductMode> {
-        Binding(
-            get: { selection },
-            set: { mode in
-                guard mode != selection else { return }
-                withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-                    selection = mode
-                }
-            }
-        )
-    }
 
     var body: some View {
         DesktopSegmented(
             options: DesktopProductMode.allCases.map { .init($0, $0.label) },
-            selection: animatedSelection,
+            selection: $selection,
             accessibilityLabel: "Juno product"
         )
         .accessibilityIdentifier("Juno product")
@@ -161,12 +153,15 @@ extension View {
 
 /// The Chat / Code / Work switch, in the strip above a source list.
 ///
-/// **Why the strip is opaque.** It is the column's own colour rather than
-/// nothing, so the switch reads as the column continuing rather than as a bar
-/// laid on it — `Color.junoSidebar` is the same fill ``DesktopCodeAddProjectLabel``
-/// knocks its badge out against. This is a deliberate, scoped exception to the
-/// desktop vocabulary's rule that nothing paints a background behind a sidebar:
-/// the rule is about the *column*, which stays vibrant from this strip down.
+/// **The strip paints nothing.** It used to fill `Color.junoSidebar` at full
+/// opacity, which was working around a `.sidebar` List pinning its headers to
+/// the top of its own bounds — and those bounds now begin *below* this strip,
+/// so there is nothing left to work around. What the fill did in the meantime
+/// was switch off vibrancy for the one band at the top of the window: an opaque
+/// rectangle sitting on a translucent column, lit from nowhere the rest of the
+/// surface is lit from, with the knob's glass sampling flat paint instead of
+/// the desktop behind it. Removing it is what lets the glass actually refract
+/// something.
 ///
 /// **When the sidebar is collapsed** the switch goes with it. The answer is the
 /// Product menu in ``JunoDesktopCommands`` — an inline `Picker` in the menu bar
@@ -184,6 +179,5 @@ struct DesktopSidebarProductHeader: View {
                 height: DesktopSidebarChromeMetrics.titlebarClearance,
                 alignment: .bottom
             )
-            .background(Color.junoSidebar)
     }
 }
