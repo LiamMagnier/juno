@@ -300,3 +300,30 @@ test("a reading with nothing local in it is passed through untouched", () => {
   });
   assert.deepEqual(softened, direct);
 });
+
+test("a Git host in the goal infers that a connected app is needed", () => {
+  // The reported failure: "Clean my GitHub and add readme to projects that
+  // doesn't have" inferred *nothing*, because the only Git pattern was
+  // `github issues`. So the composer told the reader the task needed no
+  // connected app, the run was dispatched with no Git tools, and the model
+  // narrated an intention, called nothing, and died against a plan it had
+  // never begun. Naming the host is the signal; "issues" never was.
+  for (const goal of [
+    "Clean my GitHub and add readme to projects that doesn't have",
+    "archive my old gitlab repos",
+    "review the open pull requests on bitbucket",
+  ]) {
+    assert.ok(
+      inferCapabilities(goal).capabilities.includes("connectors"),
+      `no connector inferred for: ${goal}`
+    );
+  }
+});
+
+test("a Git host is a connector requirement and not a local one", () => {
+  // `connectors` is cloud-servable, so inferring it must not push the task on
+  // to a Mac the reader was never asked about — the asymmetry this module's
+  // own docstring exists to protect.
+  const inferred = inferCapabilities("clean up my github");
+  assert.deepEqual(inferred.capabilities, ["connectors"]);
+});
