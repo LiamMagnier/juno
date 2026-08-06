@@ -322,6 +322,38 @@ public final class NativeCodeModel {
         }
     }
 
+    /// Starts a new execution in the selected task's durable Code conversation.
+    ///
+    /// Remote task rows are immutable executions. A follow-up is therefore a
+    /// fresh task linked to the same conversation, which keeps the history
+    /// auditable and gives it its own cancellation/approval lifecycle.
+    @discardableResult
+    public func sendFollowUp(prompt: String) async -> NativeCodeTask? {
+        guard let accountID, let current = openTask, current.status.isTerminal else {
+            return nil
+        }
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        isMutating = true
+        defer { isMutating = false }
+        do {
+            let task = try await client.followUp(
+                prompt: trimmed,
+                after: current,
+                for: accountID
+            )
+            guard self.accountID == accountID else { return nil }
+            tasks.insert(task, at: 0)
+            lastErrorDescription = nil
+            open(task)
+            return task
+        } catch {
+            guard self.accountID == accountID else { return nil }
+            lastErrorDescription = NativeFailureMessage.presentable(error)
+            return nil
+        }
+    }
+
     /// Opens a session and starts following its log.
     public func open(_ task: NativeCodeTask) {
         guard openTask?.id != task.id || streamTask == nil else { return }

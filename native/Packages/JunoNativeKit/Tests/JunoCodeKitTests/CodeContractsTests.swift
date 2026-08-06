@@ -57,6 +57,7 @@ final class CodeContractsTests: XCTestCase {
             repoOwner: nil,
             repoName: nil,
             baseRef: nil,
+            conversationID: nil,
             pullRequestURL: nil,
             lastSeq: 0,
             createdAt: Date(timeIntervalSince1970: 1),

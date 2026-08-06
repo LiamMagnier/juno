@@ -9,9 +9,18 @@
 /* Begin PBXBuildFile section */
 		14C1AD0C7B349050ABE19CFB /* JunoCodeAppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D2B3C4320FE60827C5ADC3 /* JunoCodeAppTests.swift */; };
 		150BB813C066FF6D2DB5E53E /* JunoCodeLocal in Frameworks */ = {isa = PBXBuildFile; productRef = 45F4FAF8B814E48C0830A50E /* JunoCodeLocal */; };
+		18F668375968E3BD95527415 /* JunoSync in Frameworks */ = {isa = PBXBuildFile; productRef = A5E1BD085F8B5F8F9C88385E /* JunoSync */; };
+		2B1219B47DE1CC101A9A8533 /* JunoCodeWebAuthenticationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3307EC3F007FCC596CE1AA10 /* JunoCodeWebAuthenticationClient.swift */; };
 		2B842F367054E1A1B54D4260 /* JunoCodeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 037FC1D8B504B9E75A3E893D /* JunoCodeApp.swift */; };
+		7915747252DD0F54010E672F /* JunoChatKit in Frameworks */ = {isa = PBXBuildFile; productRef = 82338CF95196DE7B6A5708AD /* JunoChatKit */; };
+		7E34CE05141F9BFA69F7FF55 /* JunoCore in Frameworks */ = {isa = PBXBuildFile; productRef = C0C30934BAEDD0B347A086A5 /* JunoCore */; };
 		878ABD301599AD805244E0F5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7F651A0C98754284907BCED9 /* Assets.xcassets */; };
 		9D08DEF3901E1975A2D1B79A /* JunoCodeUI in Frameworks */ = {isa = PBXBuildFile; productRef = F19C705C6E21F54BCAED807C /* JunoCodeUI */; };
+		A8283C711B569F0F176CA4AA /* JunoCodeBridge in Frameworks */ = {isa = PBXBuildFile; productRef = 9BDB38D96E54A4C76BF7E4F2 /* JunoCodeBridge */; };
+		A8B0A66BD4A18C31A28EB111 /* JunoAuth in Frameworks */ = {isa = PBXBuildFile; productRef = EEC9FD0C79CAEF014659A8BB /* JunoAuth */; };
+		E0679F66E086F0F81CC60664 /* JunoStorage in Frameworks */ = {isa = PBXBuildFile; productRef = F5E4D2D53B85DA4CD78DB1CE /* JunoStorage */; };
+		E4830D7B58910E615624E6AD /* JunoCodeKit in Frameworks */ = {isa = PBXBuildFile; productRef = DCBC56904DD79F5D47FBBF4B /* JunoCodeKit */; };
+		E588A8151AE4B62B87211705 /* JunoAPI in Frameworks */ = {isa = PBXBuildFile; productRef = 4AD3DDCFDA8F5D65C262FF7F /* JunoAPI */; };
 		EE89505F54EB4148F9509A86 /* JunoCodeCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6E2F48E763A001FB902909AC /* JunoCodeCore */; };
 		F219A4D8B2E525299CB05DA0 /* JunoCodeRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 7063A214F68154405E72954E /* JunoCodeRuntime */; };
 /* End PBXBuildFile section */
@@ -30,7 +39,9 @@
 		037FC1D8B504B9E75A3E893D /* JunoCodeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoCodeApp.swift; sourceTree = "<group>"; };
 		0AEBC1F2A5E60C8B4361EC54 /* JunoCode.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JunoCode.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0E6AE01A288EF33F32C98EAF /* JunoCode */ = {isa = PBXFileReference; lastKnownFileType = folder; name = JunoCode; path = ../../Packages/JunoCode; sourceTree = SOURCE_ROOT; };
+		3307EC3F007FCC596CE1AA10 /* JunoCodeWebAuthenticationClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoCodeWebAuthenticationClient.swift; sourceTree = "<group>"; };
 		335BDC1F54EA827113877872 /* JunoCode-Stable.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoCode-Stable.xcconfig"; sourceTree = "<group>"; };
+		358E7BF9C595C852F9B1FD8B /* JunoNativeKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = JunoNativeKit; path = ../../Packages/JunoNativeKit; sourceTree = SOURCE_ROOT; };
 		79F6505BB64106229756E7E1 /* JunoCode-Next.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoCode-Next.xcconfig"; sourceTree = "<group>"; };
 		7F651A0C98754284907BCED9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		83847BB8B28F7DE9DA6AA817 /* JunoCode-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoCode-Debug.xcconfig"; sourceTree = "<group>"; };
@@ -47,6 +58,14 @@
 				150BB813C066FF6D2DB5E53E /* JunoCodeLocal in Frameworks */,
 				F219A4D8B2E525299CB05DA0 /* JunoCodeRuntime in Frameworks */,
 				9D08DEF3901E1975A2D1B79A /* JunoCodeUI in Frameworks */,
+				A8283C711B569F0F176CA4AA /* JunoCodeBridge in Frameworks */,
+				E588A8151AE4B62B87211705 /* JunoAPI in Frameworks */,
+				A8B0A66BD4A18C31A28EB111 /* JunoAuth in Frameworks */,
+				7915747252DD0F54010E672F /* JunoChatKit in Frameworks */,
+				E4830D7B58910E615624E6AD /* JunoCodeKit in Frameworks */,
+				7E34CE05141F9BFA69F7FF55 /* JunoCore in Frameworks */,
+				E0679F66E086F0F81CC60664 /* JunoStorage in Frameworks */,
+				18F668375968E3BD95527415 /* JunoSync in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -105,6 +124,7 @@
 			isa = PBXGroup;
 			children = (
 				037FC1D8B504B9E75A3E893D /* JunoCodeApp.swift */,
+				3307EC3F007FCC596CE1AA10 /* JunoCodeWebAuthenticationClient.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -121,6 +141,7 @@
 			isa = PBXGroup;
 			children = (
 				0E6AE01A288EF33F32C98EAF /* JunoCode */,
+				358E7BF9C595C852F9B1FD8B /* JunoNativeKit */,
 			);
 			name = Packages;
 			sourceTree = "<group>";
@@ -146,6 +167,14 @@
 				45F4FAF8B814E48C0830A50E /* JunoCodeLocal */,
 				7063A214F68154405E72954E /* JunoCodeRuntime */,
 				F19C705C6E21F54BCAED807C /* JunoCodeUI */,
+				9BDB38D96E54A4C76BF7E4F2 /* JunoCodeBridge */,
+				4AD3DDCFDA8F5D65C262FF7F /* JunoAPI */,
+				EEC9FD0C79CAEF014659A8BB /* JunoAuth */,
+				82338CF95196DE7B6A5708AD /* JunoChatKit */,
+				DCBC56904DD79F5D47FBBF4B /* JunoCodeKit */,
+				C0C30934BAEDD0B347A086A5 /* JunoCore */,
+				F5E4D2D53B85DA4CD78DB1CE /* JunoStorage */,
+				A5E1BD085F8B5F8F9C88385E /* JunoSync */,
 			);
 			productName = JunoCode;
 			productReference = 0AEBC1F2A5E60C8B4361EC54 /* JunoCode.app */;
@@ -178,6 +207,14 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					1FEA13FB0206DCFAD1FCA9D1 = {
+						DevelopmentTeam = 58PVP763WX;
+						ProvisioningStyle = Automatic;
+					};
+					9F44B32DCD5772B52028B27E = {
+						DevelopmentTeam = 58PVP763WX;
+						ProvisioningStyle = Automatic;
+					};
 				};
 			};
 			buildConfigurationList = EAB455C5002A45B2C5E5447B /* Build configuration list for PBXProject "JunoCode" */;
@@ -191,6 +228,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				81309F07A7C0812A3FCE16E0 /* XCLocalSwiftPackageReference "../../Packages/JunoCode" */,
+				F63C1305E595552F41F80CEC /* XCLocalSwiftPackageReference "../../Packages/JunoNativeKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0A81582DCE5DDC33D2841D3F /* Products */;
@@ -220,6 +258,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				2B842F367054E1A1B54D4260 /* JunoCodeApp.swift in Sources */,
+				2B1219B47DE1CC101A9A8533 /* JunoCodeWebAuthenticationClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -310,7 +349,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -449,7 +488,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -505,7 +544,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -556,12 +595,20 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../../Packages/JunoCode;
 		};
+		F63C1305E595552F41F80CEC /* XCLocalSwiftPackageReference "../../Packages/JunoNativeKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../Packages/JunoNativeKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		45F4FAF8B814E48C0830A50E /* JunoCodeLocal */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = JunoCodeLocal;
+		};
+		4AD3DDCFDA8F5D65C262FF7F /* JunoAPI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoAPI;
 		};
 		6E2F48E763A001FB902909AC /* JunoCodeCore */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -571,9 +618,37 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = JunoCodeRuntime;
 		};
+		82338CF95196DE7B6A5708AD /* JunoChatKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoChatKit;
+		};
+		9BDB38D96E54A4C76BF7E4F2 /* JunoCodeBridge */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoCodeBridge;
+		};
+		A5E1BD085F8B5F8F9C88385E /* JunoSync */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoSync;
+		};
+		C0C30934BAEDD0B347A086A5 /* JunoCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoCore;
+		};
+		DCBC56904DD79F5D47FBBF4B /* JunoCodeKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoCodeKit;
+		};
+		EEC9FD0C79CAEF014659A8BB /* JunoAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoAuth;
+		};
 		F19C705C6E21F54BCAED807C /* JunoCodeUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = JunoCodeUI;
+		};
+		F5E4D2D53B85DA4CD78DB1CE /* JunoStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoStorage;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

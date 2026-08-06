@@ -29,17 +29,47 @@ enum CodePreviewLoadState: Equatable {
 /// persisted by SwiftUI's scene restoration, and a file URL round-trips through
 /// that with less ceremony as a string.
 public struct CodePreviewTarget: Hashable, Codable, Sendable {
+    /// Stable identity shared by the dock and pop-out window. Without this,
+    /// both surfaces constructed separate models and could each start their own
+    /// dev server for the same workspace.
+    public var previewID: UUID
     public var workspaceRootPath: String?
     public var address: URL?
 
-    public init(workspaceRootPath: String? = nil, address: URL? = nil) {
+    public init(
+        previewID: UUID = UUID(),
+        workspaceRootPath: String? = nil,
+        address: URL? = nil
+    ) {
+        self.previewID = previewID
         self.workspaceRootPath = workspaceRootPath
         self.address = address
     }
 
-    public init(workspaceRoot: URL?, address: URL? = nil) {
+    public init(
+        previewID: UUID = UUID(),
+        workspaceRoot: URL?,
+        address: URL? = nil
+    ) {
+        self.previewID = previewID
         self.workspaceRootPath = workspaceRoot?.path
         self.address = address
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case previewID
+        case workspaceRootPath
+        case address
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        // Scene restoration values from pre-sharing builds have no previewID.
+        // Give those values a fresh identity rather than failing to restore the
+        // window entirely.
+        previewID = try values.decodeIfPresent(UUID.self, forKey: .previewID) ?? UUID()
+        workspaceRootPath = try values.decodeIfPresent(String.self, forKey: .workspaceRootPath)
+        address = try values.decodeIfPresent(URL.self, forKey: .address)
     }
 
     var workspaceRoot: URL? {
@@ -55,6 +85,9 @@ public struct CodePreviewTarget: Hashable, Codable, Sendable {
 @MainActor
 @Observable
 final class CodePreviewModel {
+    private static var sessions: [UUID: CodePreviewModel] = [:]
+
+    let previewID: UUID
     let workspaceRoot: URL?
 
     private(set) var serverState: DevServerState = .stopped
@@ -94,8 +127,19 @@ final class CodePreviewModel {
     private var pump: Task<Void, Never>?
     private var reconnect: Task<Void, Never>?
     private var quitObserver: NSObjectProtocol?
+    private var activeSurfaceCount = 0
+
+    static func shared(for target: CodePreviewTarget) -> CodePreviewModel {
+        if let existing = sessions[target.previewID] {
+            return existing
+        }
+        let model = CodePreviewModel(target: target)
+        sessions[target.previewID] = model
+        return model
+    }
 
     init(target: CodePreviewTarget) {
+        self.previewID = target.previewID
         self.workspaceRoot = target.workspaceRoot
         self.service = target.workspaceRoot.map {
             DevServerService.contained(workspaceRootURL: $0)
@@ -164,6 +208,20 @@ final class CodePreviewModel {
     }
 
     // MARK: - Lifecycle
+
+    /// A preview target can have two surfaces: the dock and the optional
+    /// pop-out. Keep the server alive until the last surface disappears.
+    func acquireSurface() {
+        activeSurfaceCount += 1
+    }
+
+    func releaseSurface() {
+        guard activeSurfaceCount > 0 else { return }
+        activeSurfaceCount -= 1
+        guard activeSurfaceCount == 0 else { return }
+        shutDown()
+        Self.sessions.removeValue(forKey: previewID)
+    }
 
     func start() {
         guard let workspaceRoot, let command = selectedCommand else { return }
@@ -361,7 +419,7 @@ public struct CodePreviewWindowView: View {
     /// - Parameter target: the workspace this preview belongs to, and an optional
     ///   address to open immediately.
     public init(target: CodePreviewTarget = CodePreviewTarget()) {
-        _model = State(initialValue: CodePreviewModel(target: target))
+        _model = State(initialValue: CodePreviewModel.shared(for: target))
     }
 
     public var body: some View {
@@ -377,8 +435,9 @@ public struct CodePreviewWindowView: View {
         .junoReadingCanvas()
         .navigationTitle("Preview")
         .navigationSubtitle(subtitle)
+        .onAppear { model.acquireSurface() }
         .task { await model.discover() }
-        .onDisappear { model.shutDown() }
+        .onDisappear { model.releaseSurface() }
     }
 
     private var subtitle: String {
@@ -923,7 +982,7 @@ public struct CodePreviewDock: View {
         close: @escaping () -> Void,
         openInWindow: (() -> Void)? = nil
     ) {
-        _model = State(initialValue: CodePreviewModel(target: target))
+        _model = State(initialValue: CodePreviewModel.shared(for: target))
         self.close = close
         self.openInWindow = openInWindow
     }
@@ -939,6 +998,7 @@ public struct CodePreviewDock: View {
             }
         }
         .background(Color.junoCanvasWarm)
+        .onAppear { model.acquireSurface() }
         .task {
             await model.discover()
             // Opening the pane is the user's request to inspect the project.
@@ -948,7 +1008,7 @@ public struct CodePreviewDock: View {
                 model.start()
             }
         }
-        .onDisappear { model.shutDown() }
+        .onDisappear { model.releaseSurface() }
         .accessibilityIdentifier("juno.code.preview.dock")
     }
 

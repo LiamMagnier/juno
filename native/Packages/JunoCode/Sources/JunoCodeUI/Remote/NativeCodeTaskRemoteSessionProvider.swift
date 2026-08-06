@@ -7,9 +7,9 @@ import JunoCore
 ///
 /// This adapter does not fabricate a `CodeSession`, bypass approvals, or call a
 /// new endpoint. It resolves the selected repository/device through the native
-/// client, then delegates creation to `NativeCodeTaskClient.createCloudTask` or
-/// `createDeviceTask`. The returned task id is the only remote handle exposed by
-/// this seam.
+/// client, creates a durable Code conversation, then delegates task creation to
+/// NativeCodeTaskClient.createCloudTask or createDeviceTask. The returned task
+/// id is the only remote handle exposed by this seam.
 public struct NativeCodeTaskRemoteSessionProvider: RemoteSessionProviding {
     private let client: NativeCodeTaskClient
     private let accountID: AccountID
@@ -130,11 +130,18 @@ public struct NativeCodeTaskRemoteSessionProvider: RemoteSessionProviding {
                 )
             }
             do {
+                let conversationID = try await client.createCodeConversation(
+                    workspaceName: nativeRepository.name,
+                    workspacePath: nil,
+                    workspaceKey: nil,
+                    for: accountID
+                )
                 let task = try await client.createCloudTask(
                     prompt: request.prompt,
                     repository: nativeRepository,
                     baseRef: baseRef,
-                    for: accountID
+                    for: accountID,
+                    conversationID: conversationID
                 )
                 return RemoteSessionHandle(
                     taskID: task.id,
@@ -175,11 +182,18 @@ public struct NativeCodeTaskRemoteSessionProvider: RemoteSessionProviding {
                 )
             }
             do {
+                let conversationID = try await client.createCodeConversation(
+                    workspaceName: nativeWorkspace.name,
+                    workspacePath: nativeWorkspace.path,
+                    workspaceKey: nativeWorkspace.key,
+                    for: accountID
+                )
                 let task = try await client.createDeviceTask(
                     prompt: request.prompt,
                     device: nativeDevice,
                     workspace: nativeWorkspace,
-                    for: accountID
+                    for: accountID,
+                    conversationID: conversationID
                 )
                 return RemoteSessionHandle(
                     taskID: task.id,
@@ -258,6 +272,8 @@ public struct NativeCodeTaskRemoteSessionProvider: RemoteSessionProviding {
                 return .unavailable(.githubAuthorizationRequired)
             case .cloudUnavailable(let message):
                 return .unavailable(.backendUnavailable(message))
+            case .followUpUnavailable:
+                return .malformedResponse
             case .malformedResponse:
                 return .malformedResponse
             case .server(let statusCode, let message):

@@ -53,6 +53,16 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    public var symbol: String {
+        switch self {
+        case .changes: "arrow.triangle.2.circlepath"
+        case .activity: "waveform.path.ecg"
+        case .subagents: "person.2"
+        case .preview: "rectangle.on.rectangle"
+        case .repository: "arrow.triangle.branch"
+        }
+    }
+
     public var purpose: String {
         switch self {
         case .changes: "Files this session changed, and the way into the review"
@@ -108,15 +118,31 @@ public struct InspectorView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            Picker("Inspector pane", selection: pane) {
-                ForEach(CodeInspectorPane.allCases) { candidate in
-                    Text(candidate.segmentLabel)
-                        .accessibilityLabel(candidate.label)
-                        .tag(candidate)
+            ViewThatFits(in: .horizontal) {
+                // The inspector can be as narrow as 260pt. Giving the
+                // segmented control an honest minimum makes ViewThatFits pick
+                // the readable menu below instead of squeezing five tabs into
+                // clipped labels.
+                Picker("Inspector pane", selection: pane) {
+                    ForEach(CodeInspectorPane.allCases) { candidate in
+                        Text(candidate.segmentLabel)
+                            .accessibilityLabel(candidate.label)
+                            .tag(candidate)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(minWidth: 390, maxWidth: .infinity)
+
+                Picker("Inspector pane", selection: pane) {
+                    ForEach(CodeInspectorPane.allCases) { candidate in
+                        Label(candidate.label, systemImage: candidate.symbol)
+                            .tag(candidate)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
             .padding(.horizontal, JunoSpace.snug)
             .padding(.vertical, JunoSpace.tight)
             .help(pane.wrappedValue.purpose)

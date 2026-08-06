@@ -42,6 +42,10 @@ public struct SubagentRun: Identifiable, Sendable, Equatable {
     public let task: String
     /// Nil only for a legacy transcript whose call named no role.
     public let role: AgentRole?
+    /// Whether the agent was allowed to write its isolated checkout. Keeping
+    /// this on the digest lets the inspector expose Apply/Discard only for the
+    /// contract that actually created a worktree.
+    public let executionMode: SubagentExecutionMode
     public let status: SubagentStatus
     public let currentActivity: String
     /// The agent's own session, once it has one.
@@ -206,6 +210,7 @@ public enum SubagentDigest {
         var title: String
         var task: String
         var role: AgentRole?
+        var executionMode: SubagentExecutionMode
         var status: SubagentStatus
         var currentActivity = ""
         var childSessionID: CodeSessionID?
@@ -231,6 +236,10 @@ public enum SubagentDigest {
             self.title = String(source.prefix(80))
             self.task = task
             self.role = input["role"]?.stringValue.flatMap(AgentRole.init(rawValue:))
+            self.executionMode = SubagentExecutionMode(
+                rawValue: input["mode"]?.stringValue
+                    ?? SubagentExecutionMode.readOnly.rawValue
+            ) ?? .readOnly
             self.status = .queued
             self.proposedAt = timestamp
             self.sequence = sequence
@@ -242,6 +251,7 @@ public enum SubagentDigest {
             self.title = update.title
             self.task = update.task
             self.role = update.role
+            self.executionMode = update.executionMode
             self.status = update.status
             self.proposedAt = proposedAt
             self.sequence = sequence
@@ -255,6 +265,7 @@ public enum SubagentDigest {
             title = update.title
             task = update.task
             role = update.role
+            executionMode = update.executionMode
             status = update.status
             currentActivity = update.currentActivity
             if let id = update.childSessionID { childSessionID = id }
@@ -309,6 +320,7 @@ public enum SubagentDigest {
                 title: title,
                 task: task,
                 role: role,
+                executionMode: executionMode,
                 status: status,
                 currentActivity: currentActivity,
                 childSessionID: childSessionID,
@@ -448,6 +460,7 @@ public extension SessionController {
                 title: run.title,
                 task: run.task,
                 role: run.role,
+                executionMode: run.executionMode,
                 status: .interrupted,
                 currentActivity: "",
                 childSessionID: run.childSessionID,

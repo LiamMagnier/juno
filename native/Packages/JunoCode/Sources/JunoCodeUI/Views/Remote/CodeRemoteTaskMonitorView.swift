@@ -136,7 +136,11 @@ public struct CodeRemoteTaskMonitorView: View {
     @ViewBuilder
     private var detail: some View {
         if let selection {
-            CodeRemoteTaskDetailView(model: model, taskID: selection)
+            CodeRemoteTaskDetailView(
+                model: model,
+                taskID: selection,
+                selection: $selection
+            )
         } else {
             ContentUnavailableView(
                 "Select a remote task",
@@ -214,7 +218,20 @@ public struct CodeRemoteTaskMonitorView: View {
 private struct CodeRemoteTaskDetailView: View {
     @Bindable var model: NativeCodeModel
     let taskID: String
+    @Binding var selection: String?
     @State private var approvalActionInFlight = false
+    @State private var followUpDraft = ""
+    @State private var followUpInFlight = false
+
+    init(
+        model: NativeCodeModel,
+        taskID: String,
+        selection: Binding<String?>
+    ) {
+        self.model = model
+        self.taskID = taskID
+        self._selection = selection
+    }
 
     private static let measure: CGFloat = 760
 
@@ -388,6 +405,43 @@ private struct CodeRemoteTaskDetailView: View {
                 }
             }
 
+            if task.status.isTerminal, task.conversationID != nil {
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    Label(
+                        "Continue this Code conversation",
+                        systemImage: "arrow.turn.down.right"
+                    )
+                    .font(.callout.weight(.medium))
+                    Text(
+                        "Start a fresh run with the same durable transcript and workspace target."
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    TextField("Ask Juno to continue…", text: $followUpDraft, axis: .vertical)
+                        .lineLimit(2...5)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { sendFollowUp() }
+                    HStack {
+                        Spacer(minLength: 0)
+                        Button(followUpInFlight ? "Starting…" : "Send follow-up") {
+                            sendFollowUp()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.junoAccent)
+                        .disabled(
+                            followUpInFlight
+                                || followUpDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        )
+                    }
+                }
+                .padding(JunoSpace.cozy)
+                .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.panel))
+                .overlay {
+                    RoundedRectangle(cornerRadius: JunoRadius.panel)
+                        .strokeBorder(Color.junoSeparator)
+                }
+            }
+
             HStack(spacing: JunoSpace.cozy) {
                 if let url = task.pullRequestURL {
                     Link(destination: url) {
@@ -415,6 +469,20 @@ private struct CodeRemoteTaskDetailView: View {
         Task {
             await model.respondToApproval(approve: approve)
             approvalActionInFlight = false
+        }
+    }
+
+    private func sendFollowUp() {
+        guard !followUpInFlight else { return }
+        let prompt = followUpDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prompt.isEmpty else { return }
+        followUpInFlight = true
+        Task {
+            if let task = await model.sendFollowUp(prompt: prompt) {
+                followUpDraft = ""
+                selection = task.id
+            }
+            followUpInFlight = false
         }
     }
 }

@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import JunoCodeCore
+import JunoCodeLocal
 import JunoDesignSystem
 
 /// The index over everything this session delegated: **Active · N** above
@@ -188,6 +189,13 @@ private struct SubagentDetailPane: View {
     }
 
     @State private var load: Load = .loading
+    @State private var worktreeReview: WorktreeReview?
+    @State private var isApplying = false
+    @State private var isDiscarding = false
+    @State private var confirmApply = false
+    @State private var confirmDiscard = false
+    @State private var actionMessage: String?
+    @State private var actionFailed = false
 
     private var activity: String {
         guard run.isActive, let child = run.childSessionID else { return "" }
@@ -213,6 +221,7 @@ private struct SubagentDetailPane: View {
                     } else if run.isActive {
                         Text("This sub-agent has not written a result yet.").junoCaption()
                     }
+                    worktreePanel
                     usage
                     session
                 }
@@ -232,6 +241,39 @@ private struct SubagentDetailPane: View {
             } else {
                 load = .missing
             }
+            if run.executionMode == .workspaceWrite {
+                worktreeReview = await controller.subagentWorktreeReview(child)
+            } else {
+                worktreeReview = nil
+            }
+        }
+        .confirmationDialog(
+            "Apply this sub-agent's changes?",
+            isPresented: $confirmApply,
+            titleVisibility: .visible
+        ) {
+            Button("Apply Changes", role: .destructive) {
+                applyWorktree()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "Juno will merge the finalized isolated branch only if the parent workspace is still clean and unchanged."
+            )
+        }
+        .confirmationDialog(
+            "Discard this sub-agent's worktree?",
+            isPresented: $confirmDiscard,
+            titleVisibility: .visible
+        ) {
+            Button("Discard Worktree", role: .destructive) {
+                discardWorktree()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "The isolated checkout is removed. The parent workspace is not changed."
+            )
         }
     }
 
@@ -250,6 +292,9 @@ private struct SubagentDetailPane: View {
                 }
                 Spacer(minLength: JunoSpace.tight)
                 SubagentElapsed(run: run)
+            }
+            if run.executionMode == .workspaceWrite {
+                worktreeActions
             }
         }
         .padding(.horizontal, JunoSpace.cozy)
@@ -284,6 +329,175 @@ private struct SubagentDetailPane: View {
         .help("Back to every sub-agent")
         .accessibilityLabel("Back to every sub-agent")
         .accessibilityIdentifier("juno.code.subagents.back")
+    }
+
+    private var worktreePanel: some View {
+        guard run.executionMode == .workspaceWrite else {
+            return AnyView(EmptyView())
+        }
+        return AnyView(
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                HStack(spacing: JunoSpace.tight) {
+                    Label("Isolated worktree", systemImage: "arrow.triangle.branch")
+                        .junoSidebarSection()
+                    Spacer(minLength: 0)
+                    Text(worktreeLifecycleLabel)
+                        .junoCaption()
+                        .foregroundStyle(worktreeLifecycleTint)
+                }
+                if let review = worktreeReview {
+                    let changedPathCount = review.untrackedPaths.count
+                        + review.status.split(separator: "\n").count
+                    let pathSuffix = changedPathCount == 1 ? "" : "s"
+                    Text(
+                        changedPathCount == 0
+                            ? "No pending file changes in the isolated branch."
+                            : "\(changedPathCount) changed path\(pathSuffix) staged in the isolated branch."
+                    )
+                    .junoCaption()
+                    .foregroundStyle(.secondary)
+                } else {
+                    Text(
+                        run.isActive
+                            ? "The isolated branch is updated when the agent finishes."
+                            : "Reading the isolated branch…"
+                    )
+                    .junoCaption()
+                    .foregroundStyle(.secondary)
+                }
+                if let actionMessage {
+                    Text(actionMessage)
+                        .junoCaption()
+                        .foregroundStyle(actionFailed ? Color.junoDanger : Color.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+        )
+    }
+
+    private var worktreeActions: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: JunoSpace.tight) {
+                worktreeStatusLabel
+                Spacer(minLength: JunoSpace.tight)
+                applyButton(compact: false)
+                discardButton(compact: false)
+            }
+            HStack(spacing: JunoSpace.tight) {
+                worktreeStatusLabel
+                Spacer(minLength: JunoSpace.tight)
+                applyButton(compact: true)
+                discardButton(compact: true)
+            }
+        }
+        .padding(.top, JunoSpace.hairline)
+    }
+
+    private var worktreeStatusLabel: some View {
+        Label("Worktree \(worktreeLifecycleLabel)", systemImage: "arrow.triangle.branch")
+            .junoCaption()
+            .foregroundStyle(worktreeLifecycleTint)
+            .lineLimit(1)
+    }
+
+    private func applyButton(compact: Bool) -> some View {
+        Button {
+            confirmApply = true
+        } label: {
+            if isApplying {
+                ProgressView().controlSize(.small)
+            } else if compact {
+                Image(systemName: "arrow.down.to.line.compact")
+            } else {
+                Label("Apply", systemImage: "arrow.down.to.line.compact")
+            }
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(Color.junoAccent)
+        .controlSize(.small)
+        .disabled(!canApply || isApplying || isDiscarding)
+        .help("Merge the finalized sub-agent branch into the parent workspace")
+        .accessibilityLabel("Apply sub-agent changes")
+    }
+
+    private func discardButton(compact: Bool) -> some View {
+        Button {
+            confirmDiscard = true
+        } label: {
+            if isDiscarding {
+                ProgressView().controlSize(.small)
+            } else if compact {
+                Image(systemName: "trash")
+            } else {
+                Label("Discard", systemImage: "trash")
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(!canDiscard || isApplying || isDiscarding)
+        .help("Remove the sub-agent's isolated worktree")
+        .accessibilityLabel("Discard sub-agent worktree")
+    }
+
+    private var canApply: Bool {
+        run.status.isTerminal
+            && worktreeReview?.worktree.lifecycle == .finalized
+    }
+
+    private var canDiscard: Bool {
+        guard run.status.isTerminal,
+              let lifecycle = worktreeReview?.worktree.lifecycle
+        else { return false }
+        return lifecycle != .removed && lifecycle != .removing
+    }
+
+    private var worktreeLifecycleLabel: String {
+        guard let lifecycle = worktreeReview?.worktree.lifecycle else {
+            return run.isActive ? "running" : "checking"
+        }
+        return lifecycle.rawValue.replacingOccurrences(of: "_", with: " ")
+    }
+
+    private var worktreeLifecycleTint: Color {
+        if canApply { return Color.junoAccent }
+        if actionFailed { return Color.junoDanger }
+        return .secondary
+    }
+
+    private func applyWorktree() {
+        guard let child = run.childSessionID else { return }
+        isApplying = true
+        actionMessage = nil
+        Task {
+            let succeeded = await controller.applySubagentChanges(child)
+            if succeeded {
+                actionMessage = "Changes applied to the parent workspace."
+                actionFailed = false
+            } else {
+                actionMessage = controller.transientError ?? "Juno could not apply the changes."
+                actionFailed = true
+            }
+            worktreeReview = await controller.subagentWorktreeReview(child)
+            isApplying = false
+        }
+    }
+
+    private func discardWorktree() {
+        guard let child = run.childSessionID else { return }
+        isDiscarding = true
+        actionMessage = nil
+        Task {
+            let succeeded = await controller.discardSubagentChanges(child)
+            if succeeded {
+                actionMessage = "The isolated worktree was discarded."
+                actionFailed = false
+            } else {
+                actionMessage = controller.transientError ?? "Juno could not discard the worktree."
+                actionFailed = true
+            }
+            worktreeReview = await controller.subagentWorktreeReview(child)
+            isDiscarding = false
+        }
     }
 
     @ViewBuilder

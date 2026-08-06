@@ -129,6 +129,10 @@ public struct NativeCodeTask: Identifiable, Equatable, Sendable {
     public var repoOwner: String?
     public var repoName: String?
     public var baseRef: String?
+    /// The server conversation this task writes into, when the task was
+    /// created by the authenticated Code session composer. Older standalone
+    /// tasks may legitimately have no conversation and remain monitor-only.
+    public var conversationID: String?
     /// The pull request a finished cloud task opened, when it opened one.
     public var pullRequestURL: URL?
     public var lastSeq: Int
@@ -177,6 +181,7 @@ public enum NativeCodeError: Error, Equatable, LocalizedError, Sendable {
     case malformedResponse
     case repositories(NativeCodeRepositoryFailure)
     case cloudUnavailable(String)
+    case followUpUnavailable
     case server(statusCode: Int, message: String)
 
     public var errorDescription: String? {
@@ -189,6 +194,8 @@ public enum NativeCodeError: Error, Equatable, LocalizedError, Sendable {
             case .unreachable: String(localized: "code.error.github-unreachable")
             }
         case .cloudUnavailable(let message): message
+        case .followUpUnavailable:
+            "This remote run is not linked to a resumable Code conversation."
         case .server(_, let message): message
         }
     }
@@ -374,7 +381,8 @@ public struct NativeCodeTaskClient: Sendable {
         prompt: String,
         repository: NativeCodeRepository,
         baseRef: String?,
-        for accountID: AccountID
+        for accountID: AccountID,
+        conversationID: String? = nil
     ) async throws -> NativeCodeTask {
         try await createTask(
             body: CreateTaskWire(
@@ -387,7 +395,9 @@ public struct NativeCodeTaskClient: Sendable {
                 workspaceName: nil,
                 workspaceKey: nil,
                 origin: "remote",
-                idempotencyKey: UUID().uuidString
+                idempotencyKey: UUID().uuidString,
+                conversationID: conversationID,
+                createsNewSession: conversationID == nil ? nil : false
             ),
             for: accountID
         )
@@ -398,7 +408,8 @@ public struct NativeCodeTaskClient: Sendable {
         prompt: String,
         device: NativeCodeDevice,
         workspace: NativeCodeDevice.Workspace,
-        for accountID: AccountID
+        for accountID: AccountID,
+        conversationID: String? = nil
     ) async throws -> NativeCodeTask {
         try await createTask(
             body: CreateTaskWire(
@@ -411,7 +422,92 @@ public struct NativeCodeTaskClient: Sendable {
                 workspaceName: workspace.name,
                 workspaceKey: workspace.key,
                 origin: "remote",
-                idempotencyKey: UUID().uuidString
+                idempotencyKey: UUID().uuidString,
+                conversationID: conversationID,
+                createsNewSession: conversationID == nil ? nil : false
+            ),
+            for: accountID
+        )
+    }
+
+    /// Creates the server-side Code conversation used by a Cloud/Remote task.
+    ///
+    /// Remote tasks are not local CodeSession rows, but a conversation gives
+    /// the task a durable transcript and makes a later follow-up possible from
+    /// another signed-in Juno client. The request intentionally omits nil
+    /// workspace fields because the route's optional Zod fields accept absence,
+    /// not JSON null.
+    public func createCodeConversation(
+        workspaceName: String?,
+        workspacePath: String?,
+        workspaceKey: String?,
+        for accountID: AccountID
+    ) async throws -> String {
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/conversations",
+                method: .post,
+                headers: try HTTPHeaders([
+                    "accept": "application/json", "content-type": "application/json",
+                ]),
+                body: try JSONEncoder().encode(
+                    CreateCodeConversationWire(
+                        workspaceName: workspaceName,
+                        workspacePath: workspacePath,
+                        workspaceKey: workspaceKey
+                    )
+                )
+            ),
+            for: accountID
+        )
+        try requireSuccess(response)
+        guard let wire = try? JSONDecoder().decode(
+            CreateCodeConversationResponseWire.self, from: response.body
+        ), !wire.conversation.id.isEmpty else {
+            throw NativeCodeError.malformedResponse
+        }
+        return wire.conversation.id
+    }
+
+    /// Starts another server-owned task in the same Code conversation.
+    ///
+    /// A task is an execution, while the conversation is the durable session:
+    /// continuing means a new execution with createsNewSession false, not a
+    /// mutation of a completed task. That preserves the audit trail and lets a
+    /// retry/follow-up remain independently cancellable.
+    public func followUp(
+        prompt: String,
+        after task: NativeCodeTask,
+        for accountID: AccountID
+    ) async throws -> NativeCodeTask {
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let conversationID = task.conversationID else {
+            throw NativeCodeError.followUpUnavailable
+        }
+        let repository: CreateTaskWire.Repo?
+        switch task.target {
+        case .cloud:
+            guard let owner = task.repoOwner, let name = task.repoName else {
+                throw NativeCodeError.followUpUnavailable
+            }
+            repository = .init(owner: owner, name: name)
+        case .device:
+            repository = nil
+        }
+        return try await createTask(
+            body: CreateTaskWire(
+                target: task.target.rawValue,
+                prompt: trimmed,
+                repo: repository,
+                baseRef: task.baseRef,
+                deviceId: task.deviceID,
+                workspacePath: task.workspacePath,
+                workspaceName: task.workspaceName,
+                workspaceKey: nil,
+                origin: "remote",
+                idempotencyKey: UUID().uuidString,
+                conversationID: conversationID,
+                createsNewSession: false
             ),
             for: accountID
         )
@@ -590,6 +686,7 @@ public struct NativeCodeTaskClient: Sendable {
             repoOwner: wire.repoOwner,
             repoName: wire.repoName,
             baseRef: wire.baseRef,
+            conversationID: wire.conversationId,
             pullRequestURL: wire.prUrl.flatMap(URL.init(string:)),
             lastSeq: wire.lastSeq ?? 0,
             createdAt: createdAt,
@@ -822,6 +919,7 @@ private struct TaskWire: Decodable {
     let repoOwner: String?
     let repoName: String?
     let baseRef: String?
+    let conversationId: String?
     let prUrl: String?
     let lastSeq: Int?
     let createdAt: String
@@ -870,6 +968,56 @@ private struct CreateTaskWire: Encodable {
     let workspaceKey: String?
     let origin: String
     let idempotencyKey: String
+    let conversationID: String?
+    let createsNewSession: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case target, prompt, repo, baseRef, deviceId, workspacePath, workspaceName,
+             workspaceKey, origin, idempotencyKey
+        case conversationID = "conversationId"
+        case createsNewSession
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(target, forKey: .target)
+        try container.encode(prompt, forKey: .prompt)
+        try container.encodeIfPresent(repo, forKey: .repo)
+        try container.encodeIfPresent(baseRef, forKey: .baseRef)
+        try container.encodeIfPresent(deviceId, forKey: .deviceId)
+        try container.encodeIfPresent(workspacePath, forKey: .workspacePath)
+        try container.encodeIfPresent(workspaceName, forKey: .workspaceName)
+        try container.encodeIfPresent(workspaceKey, forKey: .workspaceKey)
+        try container.encode(origin, forKey: .origin)
+        try container.encode(idempotencyKey, forKey: .idempotencyKey)
+        try container.encodeIfPresent(conversationID, forKey: .conversationID)
+        try container.encodeIfPresent(createsNewSession, forKey: .createsNewSession)
+    }
+}
+
+private struct CreateCodeConversationWire: Encodable {
+    let workspaceName: String?
+    let workspacePath: String?
+    let workspaceKey: String?
+
+    enum CodingKeys: String, CodingKey {
+        case kind, workspaceName = "codeWorkspaceName"
+        case workspacePath = "codeWorkspacePath"
+        case workspaceKey = "codeWorkspaceKey"
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode("code", forKey: .kind)
+        try container.encodeIfPresent(workspaceName, forKey: .workspaceName)
+        try container.encodeIfPresent(workspacePath, forKey: .workspacePath)
+        try container.encodeIfPresent(workspaceKey, forKey: .workspaceKey)
+    }
+}
+
+private struct CreateCodeConversationResponseWire: Decodable {
+    struct Conversation: Decodable { let id: String }
+    let conversation: Conversation
 }
 
 private struct RespondWire: Encodable {

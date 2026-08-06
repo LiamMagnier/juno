@@ -2,7 +2,7 @@ name: JunoCode
 options:
   createIntermediateGroups: true
   deploymentTarget:
-    macOS: "15.0"
+    macOS: "26.0"
   developmentLanguage: en
   knownRegions:
     - en
@@ -15,12 +15,17 @@ configs:
 packages:
   JunoCode:
     path: ../../Packages/JunoCode
+  JunoNativeKit:
+    path: ../../Packages/JunoNativeKit
 targets:
   JunoCode:
     type: application
     platform: macOS
     sources:
       - path: App
+        excludes:
+          - JunoCodeWebAuthenticationClient.swift
+      - path: App/JunoCodeWebAuthenticationClient.swift
       - path: Resources
         excludes:
           - Info.plist
@@ -35,6 +40,22 @@ targets:
         product: JunoCodeRuntime
       - package: JunoCode
         product: JunoCodeUI
+      - package: JunoCode
+        product: JunoCodeBridge
+      - package: JunoNativeKit
+        product: JunoAPI
+      - package: JunoNativeKit
+        product: JunoAuth
+      - package: JunoNativeKit
+        product: JunoChatKit
+      - package: JunoNativeKit
+        product: JunoCodeKit
+      - package: JunoNativeKit
+        product: JunoCore
+      - package: JunoNativeKit
+        product: JunoStorage
+      - package: JunoNativeKit
+        product: JunoSync
     configFiles:
       Debug: ../../Config/JunoCode-Debug.xcconfig
       Stable: ../../Config/JunoCode-Stable.xcconfig
