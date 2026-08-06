@@ -616,6 +616,12 @@ const REMOTE_PAYLOAD_KEYS: Record<WorkCommandKind, readonly string[]> = {
   // Everything here originated on the client, so echoing it discloses nothing
   // it did not already have.
   answer: ["questionId", "text"],
+  // The instruction itself, which is the whole command. It is the sentence the
+  // user typed on the surface reading this back, so echoing it discloses
+  // nothing — and withholding it would leave a phone rendering its owner's own
+  // steer as an empty row while `serializeCommandForHost` hands the Mac the
+  // text it acts on.
+  steer: ["text"],
   approve: ["approvalId", "actionDigest"],
   deny: ["approvalId", "actionDigest", "reason"],
   undo: ["batchId"],
@@ -647,6 +653,10 @@ const REMOTE_RESULT_KEYS: Record<WorkCommandKind, readonly string[]> = {
   resume: [],
   stop: [],
   answer: [],
+  // Nothing beyond the acknowledgement. Whether the Mac took the instruction is
+  // the command's own `status`, and a second field saying so here would be a
+  // second place for it to disagree with the first.
+  steer: [],
   approve: [],
   deny: [],
   refresh_capabilities: [],

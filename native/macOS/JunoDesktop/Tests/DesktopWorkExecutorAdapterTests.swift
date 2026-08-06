@@ -23,6 +23,7 @@ struct DesktopWorkExecutorAdapterTests {
         private(set) var started: [WorkRunRequest] = []
         private(set) var stopped: [(String, String)] = []
         private(set) var answers: [(String, String)] = []
+        private(set) var instructions: [(String, String)] = []
 
         func startRun(_ request: WorkRunRequest) async throws { started.append(request) }
         func resumeRun(_ request: WorkRunRequest) async throws { started.append(request) }
@@ -32,6 +33,9 @@ struct DesktopWorkExecutorAdapterTests {
         }
         func deliverAnswer(runID: String, text: String) async throws {
             answers.append((runID, text))
+        }
+        func deliverInstruction(runID: String, text: String) async throws {
+            instructions.append((runID, text))
         }
     }
 

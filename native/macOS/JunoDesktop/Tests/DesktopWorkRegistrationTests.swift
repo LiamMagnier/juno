@@ -86,8 +86,9 @@ struct DesktopWorkRegistrationTests {
     /// the host declares. Declaring 1 against a relay at 2 is why `undo`,
     /// `grant_folder` and `revoke_grant` were never delivered to this Mac —
     /// implemented, tested inside the package, and unreachable in the product.
+    /// 3 is `steer`, which would go the same way for the same reason.
     @Test func declaresTheRelaysCurrentProtocolVersion() {
-        #expect(body(WorkHostPolicy())["protocolVersion"]?.numberValue == 2)
+        #expect(body(WorkHostPolicy())["protocolVersion"]?.numberValue == 3)
     }
 
     /// The manifest is derived from the switches, never assembled separately. A

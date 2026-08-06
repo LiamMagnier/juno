@@ -32,13 +32,17 @@ extension NativeWorkClient: WorkRelaying {
     /// version cannot parse, so a version bumped for a harmless addition takes
     /// every older Mac out of service for no reason.
     ///
-    /// **2, matching `RELAY_PROTOCOL_VERSION` in `src/lib/work/relay.ts`.** It
+    /// **3, matching `RELAY_PROTOCOL_VERSION` in `src/lib/work/relay.ts`.** It
     /// said 1 while the relay was at 2, and `hostUnderstands` withholds any kind
     /// whose required version is above what the host declares — so `undo`,
     /// `grant_folder` and `revoke_grant` were never handed to this Mac at all.
     /// They are implemented here and were unreachable, which presents as a
-    /// person tapping Undo on their phone and nothing whatsoever happening.
-    static let protocolVersion = 2
+    /// person tapping Undo on their phone and nothing whatsoever happening. 3 is
+    /// `steer`, and it must move in the same commit that teaches
+    /// `LocalWorkExecutor` and `DesktopWorkRunHost` to act on one: a build that
+    /// declares 3 without handling it claims an instruction it then refuses on
+    /// every re-lease, which is worse than not being offered it.
+    static let protocolVersion = 3
 
     /// The relay's own ceiling on an acknowledgement's error text.
     static let maximumErrorCharacters = 10_000

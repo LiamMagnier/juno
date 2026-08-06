@@ -7,7 +7,12 @@ import {
   isTerminalStatus,
   workSteeringPayload,
 } from "@/lib/work/domain";
-import { appendEvents, dispatchRunCommand, setSessionAttention } from "@/lib/work/store";
+import {
+  appendEvents,
+  dispatchRunCommand,
+  setSessionAttention,
+  type DispatchRunCommandResult,
+} from "@/lib/work/store";
 import { runCommandKey } from "@/lib/work/relay";
 import { answerSchema } from "@/app/api/work/protocol";
 
@@ -36,29 +41,42 @@ const steerSchema = z.object({
 });
 
 /**
- * What the caller is told about an instruction that was not an answer.
+ * What the caller is told when the instruction reached the thing doing the work.
  *
- * Two sentences, because there are two truths and which one applies depends on
- * who is executing. The cloud runner reads unconsumed steering events between
- * turns and puts them in front of the model as a user turn, so for a cloud run
- * this really is delivered and saying so is not a courtesy. A run on a Mac is
- * driven by the host app over the relay, which has no such reader yet; claiming
- * delivery there would be the same lie this response was written to avoid, in
- * the opposite direction.
+ * One sentence for both executors, now that both really do read it. The cloud
+ * runner drains unconsumed steering events between turns and appends them as a
+ * user turn; the Mac is handed a `steer` command over the relay and
+ * `DesktopWorkRunHost` queues it for the top of its next turn. Neither aborts
+ * the turn in flight, so "what it has already done stands" is true on both, and
+ * a person should not have to know which one their task landed on to know what
+ * happens next.
  *
- * The distinction is drawn on `effectiveTarget` rather than on hope. A run that
- * has not been dispatched yet has no effective target and is treated as cloud,
- * which is right: it will be claimed by whichever executor the dispatch picks,
- * and the instruction is in the log before the first turn either way.
+ * A run that has not been dispatched yet has no effective target and is treated
+ * as cloud, which is right: it will be claimed by whichever executor the
+ * dispatch picks, and the instruction is in the log before the first turn
+ * either way.
  */
 const STEER_DELIVERED =
   "Juno reads this before its next step and works to it from there. What it has already done " +
   "stands.";
 
-const STEER_RECORDED_ONLY =
-  "Kept on this task’s record. This attempt is running on your Mac, and the Mac app is handed " +
-  "its instructions when a run starts rather than re-reading them, so this does not redirect " +
-  "what it is doing now.";
+/**
+ * What the caller is told when it did not.
+ *
+ * Only two things can stop it now, and both are about the Mac rather than about
+ * steering: the run's host row is gone, or the relay refused the instruction —
+ * a revoked Mac, Work switched off on it, or a build too old to parse `steer`.
+ * The refusal already carries a sentence written for the person reading it, so
+ * it is quoted rather than paraphrased; anything else would give one failure two
+ * wordings depending on which surface reported it.
+ */
+const STEER_HOST_GONE =
+  "Kept on this task’s record. The Mac this attempt is running on is no longer paired with your " +
+  "account, so there was nothing left to tell.";
+
+function steerNotDelivered(reason: string): string {
+  return `${reason} It is kept on this task’s record.`;
+}
 
 /** One submitted body, already told apart and already validated. */
 type Submission =
@@ -107,7 +125,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   return submission.kind === "answer"
     ? recordAnswer({ submission, sessionId: session.id, userId: user.id, run })
-    : recordInstruction({ submission, userId: user.id, run });
+    : recordInstruction({ submission, sessionId: session.id, userId: user.id, run });
 }
 
 interface Target<T> {
@@ -194,6 +212,14 @@ async function recordAnswer({
 /**
  * Records an instruction the run did not ask for, and hands it to the executor.
  *
+ * Both executors, now. The cloud runner finds the row by polling the log, and a
+ * Mac is told with a `steer` command over the relay — the same shape an answer
+ * has used since the day a local run was found waiting for one that was sitting
+ * in a transcript nobody local was reading. Until that command existed this
+ * route answered a local steer with `delivered: false` and a sentence saying the
+ * Mac app is handed its instructions at run start and never re-reads them, which
+ * was true and is the thing that has changed.
+ *
  * The event is written as `user_message`, which is a member of
  * `WORK_EVENT_KINDS` now that domain.ts owns one. It used to ride
  * `question_answered` with a `steering` marker and no `questionId`, because a
@@ -212,9 +238,10 @@ async function recordAnswer({
  */
 async function recordInstruction({
   submission,
+  sessionId,
   userId,
   run,
-}: Target<Extract<Submission, { kind: "instruction" }>>) {
+}: Target<Extract<Submission, { kind: "instruction" }>> & { sessionId: string }) {
   const { text, idempotencyKey } = submission;
 
   if (!run) {
@@ -268,15 +295,64 @@ async function recordInstruction({
     ],
   });
 
+  // Tell the Mac, if a Mac is the one working. `dispatchRunCommand` answers
+  // `skipped: not_local` for a cloud run, which is the whole of the cloud path
+  // here: the runner is already reading the row that was just written and there
+  // is no machine to instruct.
+  //
+  // The command's key is derived, never random, or a client retrying a lost
+  // response would queue a second instruction against a run that had already
+  // been given the first. It is derived from exactly what deduplicated the event
+  // above, so the two agree by construction: the caller's key when it sent one,
+  // and otherwise the seq of the row that was just written — which `lastSeq` is,
+  // because a keyless event is never dropped as a duplicate, so this append was
+  // one row and the run's sequence now ends at it.
+  const occurrence = idempotencyKey ?? appended.lastSeq;
+  const dispatch = await dispatchRunCommand({
+    userId,
+    sessionId,
+    runId: run.id,
+    hostId: run.hostId,
+    effectiveTarget: run.effectiveTarget,
+    kind: "steer",
+    payload: { text },
+    idempotencyKey: runCommandKey(run.id, "steer", occurrence),
+  });
+
   // Attention is deliberately not touched. Nothing was demanded of the user, so
   // nothing about their having spoken says the run has stopped needing them —
   // and clearing the flag here would take a task off the "Needs you" list on the
   // strength of a sentence that answered nothing.
-  const delivered = run.effectiveTarget !== "local";
   return NextResponse.json({
     lastSeq: appended.lastSeq,
     replay: appended.duplicates > 0,
-    delivered,
-    explanation: delivered ? STEER_DELIVERED : STEER_RECORDED_ONLY,
+    ...steerOutcome(dispatch),
   });
+}
+
+/**
+ * `delivered`, and the sentence that goes with it, read off what the dispatch
+ * actually did rather than off the run's target.
+ *
+ * The target alone was enough to answer this while the answer was "cloud yes,
+ * Mac no". It is not enough now: a local run whose Mac is revoked, switched off
+ * or too old to parse `steer` gets a queued instruction for nobody, and telling
+ * its owner that Juno reads this before its next step would be the same lie in
+ * a new place. Refusing at enqueue is what makes that knowable here, while the
+ * person who typed the sentence is still waiting on the response.
+ */
+function steerOutcome(dispatch: DispatchRunCommandResult): {
+  delivered: boolean;
+  explanation: string;
+} {
+  switch (dispatch.status) {
+    case "queued":
+      return { delivered: true, explanation: STEER_DELIVERED };
+    case "skipped":
+      return dispatch.why === "not_local"
+        ? { delivered: true, explanation: STEER_DELIVERED }
+        : { delivered: false, explanation: STEER_HOST_GONE };
+    case "refused":
+      return { delivered: false, explanation: steerNotDelivered(dispatch.refusal.message) };
+  }
 }

@@ -20,6 +20,10 @@ private actor RecordingRunHost: WorkRunHosting {
     private(set) var paused: [String] = []
     private(set) var stopped: [Stop] = []
     private(set) var answers: [String] = []
+    /// Kept apart from `answers`, so a test can prove the executor did not
+    /// collapse the two kinds into one — which is exactly the mistake that would
+    /// make a steer arrive as though the run had asked for it.
+    private(set) var instructions: [String] = []
 
     func startRun(_ request: WorkRunRequest) async throws { started.append(request) }
     func resumeRun(_ request: WorkRunRequest) async throws { resumed.append(request.runID) }
@@ -28,6 +32,9 @@ private actor RecordingRunHost: WorkRunHosting {
         stopped.append(Stop(runID: runID, reason: reason))
     }
     func deliverAnswer(runID: String, text: String) async throws { answers.append(text) }
+    func deliverInstruction(runID: String, text: String) async throws {
+        instructions.append(text)
+    }
 }
 
 /// A free function for the same reason ``WorkApprovalCoordinatorTests`` uses
@@ -159,6 +166,48 @@ final class LocalWorkExecutorTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? WorkLocalExecutionError, .missingField("task"))
         }
+    }
+
+    /// A steer reaches the loop as an instruction, never as an answer.
+    ///
+    /// The two arrive over one route and are two command kinds precisely so that
+    /// this Mac can keep them apart. An instruction handed to `deliverAnswer`
+    /// would be pasted into the transcript unframed, where it reads as the goal
+    /// being restated rather than as a correction to it.
+    func testAnInstructionReachesTheLoopAsOneRatherThanAsAnAnswer() async throws {
+        let harness = try makeHarness()
+        let receipt = try await harness.executor.execute(
+            command(
+                "steer",
+                payload: ["text": .string("Use the March figures, not February.")],
+                clock: harness.clock
+            )
+        )
+        XCTAssertEqual(receipt["delivered"], .bool(true))
+        XCTAssertEqual(receipt["runId"], .string("run-1"))
+
+        let instructions = await harness.runs.instructions
+        XCTAssertEqual(instructions, ["Use the March figures, not February."])
+        let answers = await harness.runs.answers
+        XCTAssertTrue(answers.isEmpty)
+    }
+
+    /// An empty instruction is refused rather than delivered as a blank turn.
+    ///
+    /// A blank user message is one the model has to interpret with nothing there
+    /// to interpret, and the person who typed a sentence would have been told it
+    /// landed.
+    func testAnInstructionWithNothingInItIsRefused() async throws {
+        let harness = try makeHarness()
+        await assertThrowsAsync(
+            try await harness.executor.execute(
+                command("steer", payload: ["text": .string("")], clock: harness.clock)
+            )
+        ) { error in
+            XCTAssertEqual(error as? WorkLocalExecutionError, .missingField("instruction"))
+        }
+        let instructions = await harness.runs.instructions
+        XCTAssertTrue(instructions.isEmpty)
     }
 
     func testThisMacAnswersAPingAndSaysWhatItCanDo() async throws {

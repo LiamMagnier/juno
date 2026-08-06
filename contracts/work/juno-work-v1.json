@@ -1,6 +1,6 @@
 {
   "$comment": "Canonical Juno Work vocabulary. The TypeScript half (src/lib/work/contract.ts) and the generated Swift half (native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoWorkContract.swift) both derive from this file, and src/lib/work/contract.ts asserts every list here against the constant of the same name in src/lib/work/domain.ts — so a value added on one platform and forgotten on the other is a failing check rather than a client that silently shows nothing. Each vocabulary names the domain constant it must equal, the Swift enum it becomes, and the attributes whose values are checked against the domain function that owns them. Regenerate Swift with: node scripts/generate-work-contract.mjs --output=native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoWorkContract.swift",
-  "version": 2,
+  "version": 3,
   "vocabularies": {
     "statuses": {
       "constant": "WORK_STATUSES",
@@ -773,6 +773,10 @@
         { "value": "resume", "summary": "Continue a paused run." },
         { "value": "stop", "summary": "End the run now." },
         { "value": "answer", "summary": "Deliver the user's answer to a question the run asked." },
+        {
+          "value": "steer",
+          "summary": "Deliver an instruction the run did not ask for. The run reads it before its next step and keeps what it has already done."
+        },
         { "value": "approve", "summary": "Deliver an allow decision." },
         { "value": "deny", "summary": "Deliver a refusal." },
         { "value": "undo", "summary": "Roll back a change the run made." },

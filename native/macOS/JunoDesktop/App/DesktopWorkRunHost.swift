@@ -67,8 +67,15 @@ actor DesktopWorkRunHost: WorkRunHosting {
     private var runs: [String: Task<Void, Never>] = [:]
     private var paused: Set<String> = []
     private var resumeGates: [String: CheckedContinuation<Void, Never>] = [:]
-    /// Text delivered by `answer` that the next turn has not consumed yet.
-    private var inbound: [String: [String]] = [:]
+    /// What the person has said that the next turn has not consumed yet.
+    ///
+    /// One queue for answers and instructions rather than two, because the order
+    /// they arrived in is the order they have to reach the model. Somebody who
+    /// answers a question and then adds "and use the March figures" has said the
+    /// second thing about the first, and two queues drained one after the other
+    /// would put them in the transcript in whichever order the drain happened to
+    /// pick.
+    private var inbound: [String: [Said]] = [:]
     private var outboxes: [String: Outbox] = [:]
 
     init(dependencies: Dependencies) {
@@ -149,8 +156,30 @@ actor DesktopWorkRunHost: WorkRunHosting {
     /// it could be.
     func deliverAnswer(runID: String, text: String) async throws {
         guard runs[runID] != nil else { throw DesktopWorkRunError.notLive }
-        inbound[runID, default: []].append(text)
+        inbound[runID, default: []].append(.answer(text))
         await emit(runID, "question_answered", ["text": .string(text)])
+    }
+
+    /// Hands the run something nobody asked it for.
+    ///
+    /// Queued exactly as an answer is, and for a stronger version of the same
+    /// reason. `scripts/work-runner.ts` wraps the cloud provider so a steer is
+    /// appended to the messages of the *next* request rather than aborting the
+    /// one in flight — the abort-and-restore alternative reaches the model no
+    /// sooner and throws away every tool call that was running when the person
+    /// pressed Enter, and a folder left halfway through a batch is the one state
+    /// undo exists so nobody has to reason about. This loop drains the queue at
+    /// the top of its turn, before it builds the request, which is the same
+    /// moment by construction.
+    ///
+    /// No event is emitted. The row is already in the run's log — the route
+    /// wrote `user_message` before it queued this command, which is what the
+    /// cloud runner reads too — and emitting a second one would show the person
+    /// their own sentence twice in their own thread. The acknowledgement this
+    /// command carries is what says it landed.
+    func deliverInstruction(runID: String, text: String) async throws {
+        guard runs[runID] != nil else { throw DesktopWorkRunError.notLive }
+        inbound[runID, default: []].append(.instruction(text))
     }
 
     // MARK: - Driving one run
@@ -187,7 +216,7 @@ actor DesktopWorkRunHost: WorkRunHosting {
             if Task.isCancelled { return }
             await waitWhilePaused(request.runID)
             if Task.isCancelled { return }
-            for text in takeInbound(request.runID) { messages.append(.user(text)) }
+            for said in takeInbound(request.runID) { messages.append(.user(said.modelText)) }
             turn += 1
 
             var reply = ""
@@ -387,10 +416,54 @@ actor DesktopWorkRunHost: WorkRunHosting {
         }
     }
 
-    private func takeInbound(_ runID: String) -> [String] {
+    private func takeInbound(_ runID: String) -> [Said] {
         let queued = inbound[runID] ?? []
         inbound[runID] = []
         return queued
+    }
+
+    /// One thing the person has said, and how it reaches the model.
+    ///
+    /// The distinction is kept all the way down to the text because it changes
+    /// the text. An answer is passed on as it was typed: the run asked, so the
+    /// context is already in the transcript above it. An instruction is framed,
+    /// because the transcript at that point is a goal, a plan and a run of tool
+    /// results, and an unlabelled sentence dropped into it reads as one more
+    /// tool result — or, worse, as the goal being restated.
+    private enum Said: Sendable {
+        case answer(String)
+        case instruction(String)
+
+        var modelText: String {
+            switch self {
+            case .answer(let text): text
+            case .instruction(let text): DesktopWorkRunHost.framedInstruction(text)
+            }
+        }
+    }
+
+    /// The frame around an instruction, word for word what the cloud runner
+    /// uses.
+    ///
+    /// Deliberately identical to `framedInstruction` in `scripts/work-runner.ts`
+    /// rather than merely similar. The same task can run in the cloud on Monday
+    /// and on this Mac on Tuesday, and a model told its correction "wins where
+    /// the two disagree" in one place and something looser in the other would
+    /// obey the same sentence differently depending on where the run landed —
+    /// which is the one thing about steering nobody could debug from the outside.
+    ///
+    /// "After the task started" rather than "while you were working", because
+    /// both are read by the same prompt: an instruction added while a run sat
+    /// queued is delivered on its first turn, and telling the model it
+    /// interrupted work that had not begun is the sort of small false note it
+    /// then reasons from.
+    private static func framedInstruction(_ instruction: String) -> String {
+        [
+            "The user added this after the task started. It comes after the goal and wins where the two",
+            "disagree. Carry on from where you are rather than starting again.",
+            "",
+            instruction,
+        ].joined(separator: "\n")
     }
 
     // MARK: - Reporting
