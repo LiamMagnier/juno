@@ -36,7 +36,7 @@ requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Models/SessionControlle
   "tools.append(contentsOf: await context.mcpTools())",
   "DelegateTaskTool(",
   "WorkspaceAgentHooks(",
-  "context.makeInteractiveTerminal()",
+  "context.makeInteractiveTerminal(allowsNetwork: true)",
 ]);
 
 requireText("native/Packages/JunoCode/Sources/JunoCodeRuntime/AgentOrchestrator.swift", [
