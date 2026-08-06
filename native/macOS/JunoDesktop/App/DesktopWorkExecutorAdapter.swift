@@ -175,8 +175,13 @@ final class DesktopWorkLocalRuntime {
                 // is possible, and a manifest built from the wish wins this Mac
                 // a task it cannot start.
                 accessibilityPermissionGranted: SystemScreenPreflight.accessibilityAuthorized(),
-                // Browser control has no production driver in this build, so this
-                // Mac claims no browser profiles however the switch is set.
+                // A count of *profiles*, which the Apple-event driver does not
+                // have a notion of: it drives whichever known browser is
+                // already open, under whatever profile the user is signed into.
+                // Zero is honest here rather than a claim of no driver — see
+                // `automationTools()`, which offers browser control only when
+                // `SystemBrowserDriver.isAvailable()` says the Automation grant
+                // is really held.
                 browserProfileGrants: 0,
                 screenRecordingPermissionGranted: SystemScreenPreflight.screenRecordingAuthorized(),
                 shellEnabled: policy.allowsShell
@@ -201,64 +206,47 @@ final class DesktopWorkLocalRuntime {
 
     /// The automation controls this Mac can actually offer right now.
     ///
-    /// Empty is the normal answer, and it is checked afresh per run because
-    /// neither half of it is stable: the person can revoke Accessibility in
-    /// System Settings between two runs, and the switch is theirs to flip at any
-    /// time. Registering a control whose permission has lapsed would put a tool
-    /// in front of the model that fails on its first call.
+    /// Empty is a normal answer, and the question is asked afresh per run
+    /// because none of it is stable: a person can revoke Accessibility or Screen
+    /// Recording in System Settings between two runs, quit their browser, or
+    /// flip a switch on the settings card. Registering a control whose
+    /// permission has lapsed puts a tool in front of the model that fails on its
+    /// first call, and a refusal reads to a model as the person's answer.
     ///
-    /// Only ``AccessibilityControl`` is here. ``BrowserControl`` and
-    /// ``VisualControl`` conform to `WorkTool` and have no production driver in
-    /// JunoWorkAutomation — only the scripted ones the tests use — so offering
-    /// them would advertise a tool that cannot act.
+    /// The three controls, the drivers under them and the tier lattice that
+    /// orders them are assembled by ``AutomationSuite``, which is also what
+    /// decides — through each control's own `health()` — which of them may be
+    /// advertised. That decision is deliberately not restated here: two places
+    /// answering "is screen control usable right now" is two places that
+    /// eventually disagree, and the one that is wrong is the one driving
+    /// somebody's screen.
     private func automationTools() async -> [any WorkTool] {
         let policy = host?.policy ?? .denied
-        guard policy.enabled, policy.allowsComputerUse,
-            SystemScreenPreflight.accessibilityAuthorized()
-        else { return [] }
-
+        guard policy.enabled else { return [] }
+        // `WorkHostPolicy` has already folded the macOS permissions into these
+        // two switches, so what reaches the gate is the wish and the grant
+        // together rather than the wish alone.
         let permission = AutomationPermission(
             automationEnabled: true,
-            allowsBrowserControl: false,
-            allowsAccessibilityControl: true,
-            allowsVisualControl: false,
+            allowsBrowserControl: policy.allowsBrowser,
+            allowsAccessibilityControl: policy.allowsComputerUse,
+            allowsVisualControl: policy.allowsComputerUse,
             allowedApps: policy.allowedApps,
             blockedApps: policy.blockedApps,
             allowedDomains: policy.allowedDomains
         )
-        // The lattice is built from offers rather than from the controls, because
-        // the controls hold the gate and the gate holds the lattice's answer — a
-        // lattice made of controls would have to exist before it could be built.
-        let lattice = AutomationControlLattice(
-            offers: [
-                AutomationTierOffer(
-                    tier: .accessibility,
-                    intents: [.inspect, .enterText, .activateControl],
-                    health: {
-                        SystemScreenPreflight.accessibilityAuthorized()
-                            ? .healthy
-                            : .unavailable(
-                                reason: "Juno does not have macOS Accessibility permission."
-                            )
-                    }
-                )
-            ]
+        return await AutomationSuite.readyTools(
+            permission: permission,
+            stop: emergencyStop,
+            screenshots: ScreenshotPolicy(
+                capturePermitted: policy.allowsComputerUse,
+                // Pictures of this Mac's screen stay on this Mac until there is
+                // a switch for it that somebody has actually been shown.
+                relayPermitted: false
+            ),
+            audit: audit,
+            drivers: .system(permission: permission)
         )
-        return [
-            AccessibilityControl(
-                driver: SystemAccessibilityDriver(),
-                gate: AutomationGate(
-                    permission: permission,
-                    stop: emergencyStop,
-                    // Nothing is captured and nothing leaves. Screen capture
-                    // belongs to the visual tier, which this build does not ship
-                    // a driver for.
-                    screenshots: .refused,
-                    audit: audit,
-                    alternatives: lattice.alternatives
-                )
-            )
-        ]
     }
 
     /// Raw values are identical by design — both mirror `WORK_PERMISSION_POLICIES`
