@@ -46,10 +46,56 @@ function advanceRatio(family: string): number {
   return 0.52;
 }
 
+/** Width one character of `typography` is assumed to take, letter spacing
+ *  included. The renderer wraps with this too — see `wrapText`. */
+export function advanceWidth(typography: Pick<Typography, "fontSize" | "fontFamily" | "letterSpacing">): number {
+  return typography.fontSize * advanceRatio(typography.fontFamily) + typography.letterSpacing;
+}
+
 export function lineHeightPx(typography: Typography): number {
   const lh = typography.lineHeight;
   if (typeof lh === "number") return lh;
   return (typography.fontSize * lh.value) / 100;
+}
+
+/**
+ * Greedy word wrap of `characters` to `maxWidth`; `maxWidth <= 0` means "do not
+ * wrap". Explicit newlines always break.
+ *
+ * Both the measuring pass and the renderer call this. They used to each carry
+ * their own copy of the advance model, and the copies disagreed — the
+ * renderer's knew about monospace but not about serifs, so serif text was
+ * measured at 0.5em per character and drawn as though it were 0.52em. Hug-sized
+ * serif labels came out the wrong size and wrapped somewhere other than where
+ * they had been measured to wrap. One function, one model, no drift.
+ */
+export function wrapText(
+  characters: string,
+  typography: Pick<Typography, "fontSize" | "fontFamily" | "letterSpacing">,
+  maxWidth: number
+): string[] {
+  const perChar = advanceWidth(typography);
+  const out: string[] = [];
+
+  for (const paragraph of characters.split("\n")) {
+    if (maxWidth <= 0 || paragraph.length * perChar <= maxWidth) {
+      out.push(paragraph);
+      continue;
+    }
+    let current = "";
+    for (const word of paragraph.split(" ")) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (current && candidate.length * perChar > maxWidth) {
+        out.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    }
+    out.push(current);
+  }
+
+  return out;
 }
 
 /** Wrap `text` to `maxWidth`, returning the resulting line count and the widest
@@ -59,45 +105,15 @@ export function measureText(
   typography: Typography,
   maxWidth: number
 ): { width: number; height: number; lines: number } {
-  const perChar = typography.fontSize * advanceRatio(typography.fontFamily) + typography.letterSpacing;
-  const lineHeight = lineHeightPx(typography);
-  const paragraphs = characters.split("\n");
-  let lines = 0;
-  let widest = 0;
+  const perChar = advanceWidth(typography);
+  const lines = wrapText(characters, typography, maxWidth);
+  const widest = Math.max(0, ...lines.map((line) => line.length * perChar));
 
-  for (const paragraph of paragraphs) {
-    if (paragraph.length === 0) {
-      lines += 1;
-      continue;
-    }
-    const paragraphWidth = paragraph.length * perChar;
-    if (maxWidth <= 0 || paragraphWidth <= maxWidth) {
-      lines += 1;
-      widest = Math.max(widest, paragraphWidth);
-      continue;
-    }
-    // Greedy word wrap on the same advance model, so the line count a hug box
-    // reserves matches the line count the renderer will draw closely enough for
-    // layout to be stable.
-    let current = 0;
-    let started = false;
-    for (const word of paragraph.split(" ")) {
-      const wordWidth = word.length * perChar;
-      const withSpace = started ? current + perChar + wordWidth : wordWidth;
-      if (started && withSpace > maxWidth) {
-        widest = Math.max(widest, current);
-        lines += 1;
-        current = wordWidth;
-      } else {
-        current = withSpace;
-        started = true;
-      }
-    }
-    widest = Math.max(widest, current);
-    lines += 1;
-  }
-
-  return { width: Math.min(widest, maxWidth > 0 ? maxWidth : widest), height: lines * lineHeight, lines: Math.max(1, lines) };
+  return {
+    width: Math.min(widest, maxWidth > 0 ? maxWidth : widest),
+    height: lines.length * lineHeightPx(typography),
+    lines: Math.max(1, lines.length),
+  };
 }
 
 // ---------------------------------------------------------------------------

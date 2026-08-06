@@ -12,13 +12,18 @@
  *
  * Every gesture ends in one transaction. Nothing writes to the document
  * mid-drag: the drag holds a local delta, and the transaction is committed on
- * release, so a 200-frame drag is one undo step rather than two hundred.
+ * release, so a 200-frame drag is one undo step rather than two hundred. Typing
+ * into a text layer works the same way: the caret is a textarea sitting over
+ * the glyphs, and it commits one `updateNode` when it is done.
  */
 
 import * as React from "react";
-import { layoutPage, resizeWithConstraints, type LayoutBox } from "@/lib/design/layout";
+import { toast } from "sonner";
+import { readImageAsset } from "@/components/design/use-design-document";
+import { layoutPage, lineHeightPx, resizeWithConstraints, wrapText, type LayoutBox } from "@/lib/design/layout";
 import { renderPageSvg } from "@/lib/design/render";
-import { isContainer, type DesignDocument, type NodeId } from "@/lib/design/types";
+import { rgbaToCss } from "@/lib/design/variables";
+import { isContainer, type DesignDocument, type NodeId, type TextNode } from "@/lib/design/types";
 import type { DesignOperation } from "@/lib/design/operations";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +31,11 @@ const MIN_ZOOM = 0.02;
 const MAX_ZOOM = 32;
 /** Distance, in canvas points, within which an edge snaps to a guide. */
 const SNAP_THRESHOLD = 6;
+/** Under this, a drag with the image tool reads as a click: the picture is
+ *  placed at its own size rather than squeezed into an accidental 8pt box. */
+const MIN_DRAWN_IMAGE = 16;
+/** Longest edge, in points, a click-placed picture is scaled down to. */
+const PLACED_IMAGE_MAX = 400;
 
 export type CanvasTool = "select" | "frame" | "rectangle" | "ellipse" | "line" | "text" | "image";
 
@@ -81,6 +91,10 @@ export function DesignCanvas({
   const [drag, setDrag] = React.useState<DragState | null>(null);
   const [hoverId, setHoverId] = React.useState<NodeId | null>(null);
   const [size, setSize] = React.useState({ width: 0, height: 0 });
+  const [editingId, setEditingId] = React.useState<NodeId | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  /** Where the picture being chosen will land, held across the file dialog. */
+  const placementRef = React.useRef<{ x: number; y: number; width: number; height: number; parentId: NodeId | null } | null>(null);
 
   const boxes = React.useMemo(() => layoutPage(doc, pageId), [doc, pageId]);
   const rendered = React.useMemo(() => renderPageSvg(doc, pageId, { includeNodeIds: true }), [doc, pageId]);
@@ -367,25 +381,34 @@ export function DesignCanvas({
         // drawing inside a frame produces a child rather than a floating sibling.
         const parentId = hitTestContainer(drag.originScene);
         const parentBox = parentId ? boxes.get(parentId) : null;
-        const type = tool === "image" ? "image" : tool;
+        const patch = {
+          x: Math.round(x - (parentBox?.x ?? 0)),
+          y: Math.round(y - (parentBox?.y ?? 0)),
+          width: Math.round(width),
+          height: Math.round(height),
+        };
+
+        if (tool === "image") {
+          // An image layer cannot exist before its picture does, so the tool
+          // asks for the file first and creates both in one transaction. The
+          // dialog is opened from inside the pointer-up handler, while the
+          // gesture still counts as user activation.
+          placementRef.current = { ...patch, parentId };
+          fileInputRef.current?.click();
+          onToolUsed();
+          return;
+        }
+
         onApply(
           [
             {
               op: "createNode",
               parentId,
               pageId,
-              node: {
-                type: type as "frame" | "rectangle" | "ellipse" | "line" | "text" | "image",
-                patch: {
-                  x: Math.round(x - (parentBox?.x ?? 0)),
-                  y: Math.round(y - (parentBox?.y ?? 0)),
-                  width: Math.round(width),
-                  height: Math.round(height),
-                },
-              },
+              node: { type: tool as "frame" | "rectangle" | "ellipse" | "line" | "text", patch },
             },
           ],
-          `Draw ${type}`
+          `Draw ${tool}`
         );
         onToolUsed();
         return;
@@ -482,6 +505,93 @@ export function DesignCanvas({
     setDrag(null);
   };
 
+  /** Place the chosen picture, sized to the box that was drawn or — for a plain
+   *  click — to the picture's own proportions. */
+  const onImageChosen = React.useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      // Cleared first: choosing the same file twice must still fire a change.
+      event.target.value = "";
+      const placement = placementRef.current;
+      placementRef.current = null;
+      if (!file || !placement || readOnly) return;
+
+      try {
+        const asset = await readImageAsset(file);
+        const drawn = placement.width >= MIN_DRAWN_IMAGE && placement.height >= MIN_DRAWN_IMAGE;
+        const scale = Math.min(1, PLACED_IMAGE_MAX / Math.max(asset.width, asset.height, 1));
+        onApply(
+          [
+            { op: "createAsset", asset },
+            {
+              op: "createNode",
+              parentId: placement.parentId,
+              pageId,
+              node: {
+                type: "image",
+                // Layer names are bounded; a file name is not.
+                name: file.name.slice(0, 120),
+                patch: {
+                  x: placement.x,
+                  y: placement.y,
+                  width: drawn ? placement.width : Math.max(1, Math.round(asset.width * scale)),
+                  height: drawn ? placement.height : Math.max(1, Math.round(asset.height * scale)),
+                  assetId: asset.id,
+                  scaleMode: "fill",
+                },
+              },
+            },
+          ],
+          "Place image"
+        );
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not read that image.");
+      }
+    },
+    [onApply, pageId, readOnly]
+  );
+
+  // ------------------------------------------------------------ text editing
+
+  const editingNode = editingId ? doc.nodes[editingId] : undefined;
+  const editing = editingNode?.type === "text" ? editingNode : null;
+  const editingBox = editing ? boxes.get(editing.id) : undefined;
+
+  // Deleting the layer, or undoing it back out of existence, ends the edit.
+  React.useEffect(() => {
+    if (editingId && doc.nodes[editingId]?.type !== "text") setEditingId(null);
+  }, [doc, editingId]);
+
+  // The glyphs under the caret are hidden while typing: the textarea draws the
+  // same characters, and two copies a fraction of a pixel apart read as a
+  // rendering fault rather than as an editor.
+  React.useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    for (const element of host.querySelectorAll<SVGElement>("[data-juno-node]")) {
+      element.style.visibility = editingId !== null && element.getAttribute("data-juno-node") === editingId ? "hidden" : "";
+    }
+  }, [editingId, rendered]);
+
+  const commitText = React.useCallback(
+    (value: string) => {
+      const node = editingId ? doc.nodes[editingId] : null;
+      setEditingId(null);
+      if (!node || node.type !== "text" || value === node.characters) return;
+      onApply([{ op: "updateNode", nodeId: node.id, patch: { characters: value } }], "Edit text");
+    },
+    [doc, editingId, onApply]
+  );
+
+  /** Double-click edits a text layer and deep-selects anything else. */
+  const onDoubleClick = (event: React.MouseEvent) => {
+    const hit = hitTest(toScene(event.clientX, event.clientY), true);
+    if (!hit) return;
+    const node = doc.nodes[hit];
+    onSelect([hit]);
+    setEditingId(!readOnly && node?.type === "text" && !node.locked ? hit : null);
+  };
+
   const onWheel = (event: React.WheelEvent) => {
     const rect = hostRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -528,17 +638,22 @@ export function DesignCanvas({
       ref={hostRef}
       className={cn("relative h-full w-full overflow-hidden bg-muted/40 outline-none", className)}
       style={{ cursor: drag?.kind === "pan" ? "grabbing" : tool === "select" ? "default" : "crosshair", touchAction: "none" }}
-      onPointerDown={onPointerDown}
+      onPointerDown={(event) => {
+        // Taking focus is what scopes the editor's keyboard shortcuts: without
+        // it the canvas is never the active element, and Delete or ⌘Z had to be
+        // routed by what the mouse happened to be hovering — which is how they
+        // reached the design while someone was typing in the chat beside it.
+        hostRef.current?.focus({ preventScroll: true });
+        onPointerDown(event);
+      }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
       onWheel={onWheel}
-      onDoubleClick={(event) => {
-        const hit = hitTest(toScene(event.clientX, event.clientY), true);
-        if (hit) onSelect([hit]);
-      }}
+      onDoubleClick={onDoubleClick}
       role="application"
       aria-label="Design canvas"
+      tabIndex={0}
       data-juno-design-canvas=""
     >
       {size.width > 0 && (
@@ -631,6 +746,27 @@ export function DesignCanvas({
           )}
         </svg>
       )}
+
+      {editing && editingBox && (
+        <TextEditorOverlay
+          key={editing.id}
+          node={editing}
+          box={editingBox}
+          viewport={viewport}
+          onCommit={commitText}
+          onCancel={() => setEditingId(null)}
+        />
+      )}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden
+        onChange={onImageChosen}
+      />
 
       <CanvasZoomControls
         zoom={viewport.zoom}
@@ -730,6 +866,95 @@ function stripSvgWrapper(svg: string): string {
   const start = svg.indexOf(">");
   const end = svg.lastIndexOf("</svg>");
   return start >= 0 && end > start ? svg.slice(start + 1, end) : svg;
+}
+
+/**
+ * The caret for a text layer.
+ *
+ * A textarea laid over the glyphs, in the same place and the same face, so that
+ * editing text is editing text rather than a trip to a panel on the right. It
+ * wraps at the layer's own width and reflows as you type, because it measures
+ * with `wrapText` — the function the renderer draws with.
+ *
+ * Escape abandons the edit and blur keeps it, matching every other field in the
+ * editor; ⌘/Ctrl-Enter keeps it without leaving the keyboard.
+ */
+function TextEditorOverlay({
+  node,
+  box,
+  viewport,
+  onCommit,
+  onCancel,
+}: {
+  node: TextNode;
+  box: LayoutBox;
+  viewport: Viewport;
+  onCommit: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = React.useState(node.characters);
+  const ref = React.useRef<HTMLTextAreaElement>(null);
+
+  React.useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    element.focus();
+    element.select();
+  }, []);
+
+  const typography = node.typography;
+  const lineHeight = lineHeightPx(typography);
+  const blockHeight = wrapText(draft, typography, box.width).length * lineHeight;
+  const alignY =
+    typography.verticalAlign === "middle"
+      ? (box.height - blockHeight) / 2
+      : typography.verticalAlign === "bottom"
+        ? box.height - blockHeight
+        : 0;
+  // The renderer puts a baseline 0.8em below the top of its line box; CSS
+  // centres the glyph box inside the line box instead. Half the leading is the
+  // difference, and taking it off here is what stops the text jumping the
+  // moment it is double-clicked.
+  const top = box.y + alignY - (lineHeight - typography.fontSize) / 2;
+  const fill = node.fills[0];
+
+  return (
+    <textarea
+      ref={ref}
+      value={draft}
+      spellCheck={false}
+      aria-label={`Edit ${node.name}`}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => onCommit(draft)}
+      onKeyDown={(event) => {
+        // The editor's shortcuts must not fire over someone's typing.
+        event.stopPropagation();
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onCancel();
+        }
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          onCommit(draft);
+        }
+      }}
+      className="absolute z-10 m-0 resize-none overflow-hidden border-0 bg-transparent p-0 outline-none ring-2 ring-primary/70"
+      style={{
+        left: (box.x - viewport.x) * viewport.zoom,
+        top: (top - viewport.y) * viewport.zoom,
+        width: box.width * viewport.zoom,
+        height: Math.max(box.height, blockHeight) * viewport.zoom,
+        fontFamily: typography.fontFamily,
+        fontSize: typography.fontSize * viewport.zoom,
+        fontWeight: typography.fontWeight,
+        fontStyle: typography.italic ? "italic" : undefined,
+        lineHeight: `${lineHeight * viewport.zoom}px`,
+        letterSpacing: typography.letterSpacing * viewport.zoom,
+        textAlign: typography.textAlign,
+        color: fill?.type === "solid" ? rgbaToCss(fill.color) : undefined,
+      }}
+    />
+  );
 }
 
 function CanvasZoomControls({
