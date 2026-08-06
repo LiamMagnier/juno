@@ -13,7 +13,7 @@
  * already restricts.
  */
 
-import { layoutPage, layoutSubtree, lineHeightPx, measureText, type LayoutMap } from "@/lib/design/layout";
+import { layoutPage, layoutSubtree, lineHeightPx, measureText, wrapText, type LayoutMap } from "@/lib/design/layout";
 import { applyBoundVariables, rgbaToCss } from "@/lib/design/variables";
 import {
   isContainer,
@@ -207,7 +207,7 @@ function renderNode(
             ? box.y + box.height - blockHeight
             : box.y;
       // Baseline sits ~0.8em down from the line box top for typical UI faces.
-      const lines = wrapForRender(resolved.characters, typography, box.width);
+      const lines = wrapText(resolved.characters, typography, box.width);
       const tspans = lines
         .map((line, index) => `<tspan x="${num(anchorX)}" y="${num(top + index * lh + typography.fontSize * 0.8)}">${escapeXml(line) || " "}</tspan>`)
         .join("");
@@ -237,30 +237,6 @@ function renderNode(
   } else {
     out.push(childOut.join(""));
   }
-}
-
-/** Same greedy wrap the measuring pass uses, so drawn lines match measured ones. */
-function wrapForRender(characters: string, typography: { fontSize: number; fontFamily: string; letterSpacing: number }, maxWidth: number): string[] {
-  const perChar = typography.fontSize * (typography.fontFamily.toLowerCase().includes("mono") ? 0.6 : 0.52) + typography.letterSpacing;
-  const out: string[] = [];
-  for (const paragraph of characters.split("\n")) {
-    if (maxWidth <= 0 || paragraph.length * perChar <= maxWidth) {
-      out.push(paragraph);
-      continue;
-    }
-    let current = "";
-    for (const word of paragraph.split(" ")) {
-      const candidate = current ? `${current} ${word}` : word;
-      if (current && candidate.length * perChar > maxWidth) {
-        out.push(current);
-        current = word;
-      } else {
-        current = candidate;
-      }
-    }
-    out.push(current);
-  }
-  return out;
 }
 
 // ---------------------------------------------------------------------------
