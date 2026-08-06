@@ -219,11 +219,29 @@ final class DesktopWorkLocalRuntime {
                 decision: decision == .denied ? .denied : .approved,
                 actionDigest: actionDigest
             )
-            if decision == .allowedAlways,
-                let level = WorkRiskLevel(rawValue: risk),
-                let allowance = WorkAlwaysAllowance(upTo: level)
-            {
-                await approvals.setAllowance(allowance)
+            // **Widen only, never narrow.**
+            //
+            // Resolving first (above) stops this from denying the approval it
+            // is granting, but not from denying everything *else* that is
+            // pending. `setAllowance` revokes every unanswered question the
+            // moment the ceiling drops — deliberately, because a decision made
+            // under a wider envelope must not survive the envelope shrinking.
+            // Setting the allowance to *this* action's risk therefore lowers it
+            // whenever the standing grant already covers more: allow-always on
+            // a `command` action, then allow-always on an `edit` one, and every
+            // other question waiting on this Mac is refused with "Juno's
+            // permissions on this Mac changed before that could run" — caused
+            // by a person granting a permission, not removing one.
+            //
+            // An allowance that already covers this risk is left exactly as it
+            // is, so the button can only ever add authority.
+            if decision == .allowedAlways, let level = WorkRiskLevel(rawValue: risk) {
+                let existing = await approvals.standingAllowance
+                if existing?.covers(level) != true,
+                    let allowance = WorkAlwaysAllowance(upTo: level)
+                {
+                    await approvals.setAllowance(allowance)
+                }
             }
         }
     }

@@ -118,6 +118,29 @@ test("a standing allowance can never cover sensitive or irreversible work", () =
   assert.equal(mayBeCoveredByStandingAllowance("irreversible"), false);
 });
 
+test("granting a standing allowance may only ever widen it", () => {
+  // The rule `DesktopWorkLocalRuntime.decideLocalApproval` has to follow.
+  //
+  // `WorkApprovalCoordinator.setAllowance` revokes every unanswered question
+  // the moment the ceiling drops — correctly, because a decision made under a
+  // wider envelope must not survive the envelope shrinking. So setting the
+  // allowance to whatever *this* action's risk happens to be is a trap:
+  // allow-always on a `command` action and then on an `edit` one lowers the
+  // ceiling, and every other question waiting on that Mac is refused with
+  // "Juno's permissions on this Mac changed before that could run" — triggered
+  // by somebody granting a permission, not removing one.
+  const ceiling = (risk: WorkRiskLevel) => WORK_RISK_LEVELS.indexOf(risk);
+  const covers = (existing: WorkRiskLevel, risk: WorkRiskLevel) =>
+    ceiling(risk) <= ceiling(existing);
+
+  // Already covered: leave the allowance alone.
+  assert.equal(covers("command", "edit"), true);
+  assert.equal(covers("command", "command"), true);
+  // Not covered: widening is safe, because the ceiling rises.
+  assert.equal(covers("edit", "command"), false);
+  assert.equal(covers("safe", "edit"), false);
+});
+
 test("every risk level has a defined standing-allowance answer", () => {
   // An unhandled level defaulting to "allowed" is the failure this guards. A
   // level added to the contract without a decision here should show up as a
