@@ -15,6 +15,7 @@ import type {
 } from "@/lib/work/serializers";
 import {
   WorkActionsPerformed,
+  WorkLiveMeter,
   WorkReferences,
   WorkRunSettings,
   deriveArtifacts,
@@ -36,12 +37,14 @@ import {
   type WorkApprovalCard,
 } from "@/components/work/work-decisions";
 import {
+  WorkActivity,
   WorkCurrentAction,
   WorkPlan,
-  WorkTimeline,
+  deriveActivity,
   deriveCurrentAction,
   derivePerformedActions,
   derivePlan,
+  type ActivityPhase,
 } from "@/components/work/work-timeline";
 import {
   WORK_SYNC_EVENT,
@@ -234,12 +237,14 @@ export default function WorkThreadPage() {
   const approvals = React.useMemo(() => deriveApprovals(events), [events]);
   const references = React.useMemo(() => deriveReferences(events), [events]);
   const artifacts = React.useMemo(() => deriveArtifacts(events), [events]);
+  const activity = React.useMemo(() => deriveActivity(events), [events]);
   const performed = React.useMemo(() => derivePerformedActions(events), [events]);
   const live = session !== null && !isTerminalStatus(session.status);
   const currentAction = React.useMemo(
     () => (live ? deriveCurrentAction(events) : null),
     [events, live]
   );
+  const activityPhase: ActivityPhase = run === null ? "not-started" : live ? "live" : "settled";
   const openApprovals = approvals.filter((approval) => approval.decision === "pending");
   const host = React.useMemo(
     () =>
@@ -495,6 +500,16 @@ export default function WorkThreadPage() {
                   {statusSentence(session.status)}
                 </span>
               </div>
+              {/* What it is costing, where it can be seen without scrolling.
+                  The same three numbers appear as bars against their ceilings at
+                  the bottom of the reference column; these are the glance, those
+                  are the check. A draft has no run and therefore no numbers —
+                  showing three zeroes would imply it had started. */}
+              {run !== null && (
+                <div className="mt-2">
+                  <WorkLiveMeter run={run} />
+                </div>
+              )}
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2 pt-1">
               {notStarted && (
@@ -645,8 +660,11 @@ export default function WorkThreadPage() {
               </div>
             </Panel>
 
-            <Panel title="Progress">
-              <WorkTimeline events={events} />
+            {/* Not "Progress". Progress is a percentage; this is the record of
+                what Juno actually did, step by step, and it is the answer to the
+                question the whole page exists for. */}
+            <Panel title="Activity">
+              <WorkActivity entries={activity} phase={activityPhase} />
             </Panel>
 
             <Panel title="Approvals">
@@ -666,7 +684,7 @@ export default function WorkThreadPage() {
             </Panel>
 
             <Panel title="Actions performed">
-              <WorkActionsPerformed actions={performed} />
+              <WorkActionsPerformed performed={performed} />
             </Panel>
 
             <Panel title="Run settings">
