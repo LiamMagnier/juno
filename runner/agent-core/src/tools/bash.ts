@@ -20,6 +20,21 @@ const MINIMAL_ENV: NodeJS.ProcessEnv = {
   PATH: '/usr/local/bin:/usr/bin:/bin',
   HOME: process.env.HOME ?? '/tmp',
   LANG: 'C.UTF-8',
+  /*
+   * Named because this file is now reachable from the app's own TypeScript
+   * compilation — the Work tool wrappers in ../work/tools.ts import it, and
+   * scripts/work-runner.ts types the runtime through the source — and Next
+   * augments `NodeJS.ProcessEnv` with a *required* NODE_ENV
+   * (next/types/global.d.ts). Under this package's own tsconfig the field was
+   * simply absent and nothing noticed; under the app's it is a compile error
+   * on the object literal.
+   *
+   * Passed through rather than pinned to a value. It is not a secret, a
+   * command that reads it should be told the truth about where it is running,
+   * and `spawn` omits the key entirely when this is undefined — so a shell
+   * that saw no NODE_ENV before still sees none.
+   */
+  NODE_ENV: process.env.NODE_ENV,
 };
 
 export const bashTool: ToolDefinition = {
