@@ -57,16 +57,15 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["ConversationMemory", "userId"],
   ["Attachment", "userId"],
   ["Usage", "userId"],
+  // Reservations gate a paid quota, so an unscoped read here is a cross-account
+  // billing leak rather than a tidiness problem. Every call site in
+  // src/lib/usage.ts scopes by userId.
   ["CodeUsageReservation", "userId"],
   ["Subscription", "userId"],
   ["Settings", "userId"],
   ["Connection", "userId"],
   ["CodeDevice", "userId"],
   ["CodeTask", "userId"],
-  // Reservations gate a paid quota, so an unscoped read here is a cross-account
-  // billing leak rather than a tidiness problem. Every call site in
-  // src/lib/usage.ts scopes by userId.
-  ["CodeUsageReservation", "userId"],
   ["ApiSpend", "userId"],
   ["ChatFirstSubmissionReceipt", "userId"],
   ["FeatureVote", "userId"],
