@@ -1,6 +1,8 @@
 "use client";
 
 import type {
+  ClientWorkArtifact,
+  ClientWorkGrant,
   ClientWorkHost,
   ClientWorkRun,
   ClientWorkSession,
@@ -12,6 +14,12 @@ import {
   type WorkDegradation,
   type WorkHostState,
 } from "@/lib/work/domain";
+import type { ClientWorkSchedule } from "@/lib/work/schedule";
+import type {
+  ClientWorkSkill,
+  ClientWorkSkillVersion,
+  WorkSkillContract,
+} from "@/lib/work/skills";
 
 /*
  * Everything the Work surfaces ask the server for, in one place.
@@ -44,6 +52,20 @@ import {
  *   POST /api/work/approvals/[id]/decision { decision, actionDigest, reason? }
  *          409 → { error, message }
  *   GET  /api/work/hosts                   → { hosts: ClientWorkHost[] }
+ *   PATCH /api/work/sessions/[id]          { title?, pinned?, archived? } → { session }
+ *   GET  /api/work/schedules?limit=N       → { schedules: ClientWorkSchedule[] }
+ *   POST /api/work/schedules               → 201 { schedule }
+ *   GET|PATCH|DELETE /api/work/schedules/[id]
+ *          PATCH → { schedule, scheduling, runs? }   ← prose about the next fire
+ *   POST /api/work/schedules/[id]/run-now  → { run, selection, nextRunAt }
+ *   GET  /api/work/schedules/[id]/runs     → { runs: ClientWorkRun[], nextBefore? }
+ *   GET  /api/work/skills?limit=N          → { skills: ClientWorkSkill[] }
+ *   POST /api/work/skills                  → 201 { skill, version }
+ *   GET|PATCH|DELETE /api/work/skills/[id] → { skill, version }
+ *   GET|POST /api/work/skills/[id]/versions → { versions } | 201 { skill, version }
+ *   GET  /api/work/artifacts?sessionId=…   → { artifacts: ClientWorkArtifact[] }
+ *   GET  /api/work/artifacts/[id]          → { artifact, versions, warning?, truncated }
+ *   GET  /api/work/artifacts/[id]/download?version=N   ← bytes, not JSON
  *
  * Three rules the whole file is built around.
  *
@@ -233,7 +255,19 @@ async function get<T>(url: string, pick: (data: Record<string, unknown>) => T): 
   return { kind: "ok", value: pick(await body(res)) };
 }
 
-async function post<T>(
+/**
+ * Every request with a body, in one place.
+ *
+ * POST, PATCH and DELETE differ here by one word, and writing three near-copies
+ * of the same twelve lines is how one of them ends up without the try/catch that
+ * turns a dropped connection into an `offline` outcome rather than an unhandled
+ * rejection. DELETE carries no body in this surface, which is why `payload` is
+ * allowed to be absent rather than sent as `null` — a JSON `null` body is a
+ * different request from no body at all, and `req.json()` in the route handlers
+ * reads the second as a parse failure.
+ */
+async function send<T>(
+  method: "POST" | "PATCH" | "DELETE",
   url: string,
   payload: unknown,
   pick: (data: Record<string, unknown>) => T
@@ -241,15 +275,36 @@ async function post<T>(
   let res: Response;
   try {
     res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      method,
+      ...(payload === undefined
+        ? {}
+        : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }),
     });
   } catch {
     return { kind: "failed", cause: "offline", message: null };
   }
   if (!res.ok) return refusal(res);
   return { kind: "ok", value: pick(await body(res)) };
+}
+
+function post<T>(
+  url: string,
+  payload: unknown,
+  pick: (data: Record<string, unknown>) => T
+): Promise<WorkResult<T>> {
+  return send("POST", url, payload, pick);
+}
+
+function patch<T>(
+  url: string,
+  payload: unknown,
+  pick: (data: Record<string, unknown>) => T
+): Promise<WorkResult<T>> {
+  return send("PATCH", url, payload, pick);
+}
+
+function remove<T>(url: string, pick: (data: Record<string, unknown>) => T): Promise<WorkResult<T>> {
+  return send("DELETE", url, undefined, pick);
 }
 
 /**
@@ -274,6 +329,19 @@ export function fetchWorkSessions(limit = 40): Promise<WorkResult<ClientWorkSess
 
 export function fetchWorkHosts(): Promise<WorkResult<ClientWorkHost[]>> {
   return get("/api/work/hosts", (data) => list<ClientWorkHost>(data.hosts));
+}
+
+/** One Mac and the folders it has been given, by display name and never by path. */
+export interface WorkHostDetail {
+  host: ClientWorkHost;
+  grants: ClientWorkGrant[];
+}
+
+export function fetchWorkHost(hostId: string): Promise<WorkResult<WorkHostDetail>> {
+  return get(`/api/work/hosts/${hostId}`, (data) => ({
+    host: data.host as ClientWorkHost,
+    grants: list<ClientWorkGrant>(data.grants),
+  }));
 }
 
 export interface CreateWorkSessionInput {
@@ -445,9 +513,8 @@ export function fetchWorkThread(sessionId: string): Promise<WorkResult<WorkThrea
  *
  * `questionId` is required by the route and is not optional here either. Without
  * it a late answer — typed before the run moved on — is applied to whatever the
- * run is asking now. There is deliberately no general "send a message" call:
- * the Work event vocabulary has no user-message kind, and inventing one on the
- * client would put words into a transcript that the executor never receives.
+ * run is asking now, which is why steering below is a separate call rather than
+ * this one with the id left off.
  */
 export function answerWorkQuestion(
   sessionId: string,
@@ -455,6 +522,422 @@ export function answerWorkQuestion(
   answer: string
 ): Promise<WorkResult<null>> {
   return post(`/api/work/sessions/${sessionId}/answer`, { questionId, text: answer }, () => null);
+}
+
+/** What the route did with an instruction that was not an answer. */
+export interface WorkSteerOutcome {
+  /**
+   * Whether the run this was recorded against will read it.
+   *
+   * False today, always, and carried rather than assumed because the surface
+   * that shows it has to say something different in each case. The route
+   * records the instruction on the run's transcript; nothing on the executing
+   * side re-reads the transcript mid-run, so a UI that reported "sent to Juno"
+   * would be describing a delivery that did not happen.
+   */
+  delivered: boolean;
+  explanation: string;
+}
+
+/**
+ * Sends an instruction that is not an answer to anything.
+ *
+ * Same route as the answer, different body, and deliberately a different
+ * function: the two are different requests with different preconditions — an
+ * answer needs a run that is waiting for one, and a steer needs a run that is
+ * not — and one function taking an optional id would have every caller re-derive
+ * which of the two it was making.
+ */
+export function steerWorkRun(
+  sessionId: string,
+  instruction: string
+): Promise<WorkResult<WorkSteerOutcome>> {
+  return post(`/api/work/sessions/${sessionId}/answer`, { text: instruction }, (data) => ({
+    delivered: data.delivered === true,
+    explanation: text(data, "explanation") ?? "Recorded on this task.",
+  }));
+}
+
+/**
+ * Renames, pins or archives a session.
+ *
+ * Each field is optional and an absent one is left alone, so the row's menu can
+ * send the one thing the user touched. Sending all three would have a pin
+ * re-assert a title, which is enough to make `titleSource` manual on a session
+ * the user never renamed and stop the auto-titler for good.
+ */
+export interface PatchWorkSessionInput {
+  title?: string;
+  pinned?: boolean;
+  archived?: boolean;
+}
+
+export function patchWorkSession(
+  sessionId: string,
+  input: PatchWorkSessionInput
+): Promise<WorkResult<ClientWorkSession>> {
+  return patch(
+    `/api/work/sessions/${sessionId}`,
+    {
+      ...(input.title === undefined ? {} : { title: input.title }),
+      ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
+      ...(input.archived === undefined ? {} : { archived: input.archived }),
+    },
+    (data) => data.session as ClientWorkSession
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Schedules
+// ---------------------------------------------------------------------------
+
+/**
+ * One trigger as a form holds it.
+ *
+ * `config` is an untyped object on purpose: the shape depends entirely on
+ * `kind`, and the two parsers on the server — `parseTimeTrigger` and
+ * `parseTriggerConfig` — are the definition of what each kind accepts. A zod
+ * union restated here would be a second, less specific copy that disagrees with
+ * the scheduler the first time a field is added on that side.
+ */
+export interface WorkTriggerDraft {
+  kind: string;
+  config: Record<string, unknown>;
+  enabled: boolean;
+  dedupeWindowSec?: number;
+}
+
+export interface WorkScheduleInput {
+  name: string;
+  instructions: string;
+  timezone: string;
+  target: "cloud" | "local" | "automatic";
+  hostId: string | null;
+  enabled: boolean;
+  triggers: readonly WorkTriggerDraft[];
+  unattendedPolicy: string;
+  hostOfflinePolicy: string;
+  missedRunPolicy: string;
+  notifyPolicy: string;
+  maxConcurrentRuns: number;
+}
+
+function scheduleBody(input: WorkScheduleInput): Record<string, unknown> {
+  return {
+    name: input.name,
+    instructions: input.instructions,
+    timezone: input.timezone,
+    target: input.target,
+    // Null is a real instruction on PATCH — "this schedule is no longer pinned
+    // to one Mac" — and the create route reads an absent key the same way, so
+    // the same body serves both.
+    hostId: input.hostId,
+    enabled: input.enabled,
+    triggers: input.triggers.map((trigger) => ({
+      kind: trigger.kind,
+      config: trigger.config,
+      enabled: trigger.enabled,
+      ...(trigger.dedupeWindowSec === undefined ? {} : { dedupeWindowSec: trigger.dedupeWindowSec }),
+    })),
+    unattendedPolicy: input.unattendedPolicy,
+    hostOfflinePolicy: input.hostOfflinePolicy,
+    missedRunPolicy: input.missedRunPolicy,
+    notifyPolicy: input.notifyPolicy,
+    maxConcurrentRuns: input.maxConcurrentRuns,
+  };
+}
+
+export function fetchWorkSchedules(limit = 50): Promise<WorkResult<ClientWorkSchedule[]>> {
+  return get(`/api/work/schedules?limit=${limit}`, (data) =>
+    list<ClientWorkSchedule>(data.schedules)
+  );
+}
+
+export function fetchWorkSchedule(id: string): Promise<WorkResult<ClientWorkSchedule>> {
+  return get(`/api/work/schedules/${id}`, (data) => data.schedule as ClientWorkSchedule);
+}
+
+export function createWorkSchedule(
+  input: WorkScheduleInput
+): Promise<WorkResult<ClientWorkSchedule>> {
+  return post("/api/work/schedules", scheduleBody(input), (data) => data.schedule as ClientWorkSchedule);
+}
+
+/**
+ * What a save changed, in the server's own words.
+ *
+ * `scheduling` is the sentence the PATCH route writes about whether the next
+ * fire moved, and `runs` is what pausing did to the fires already queued. Both
+ * are shown rather than summarised here: a pause that cancelled two queued runs
+ * and left one under way is a fact the user has to be told, and it is not
+ * derivable from the schedule row that comes back beside it.
+ */
+export interface SavedWorkSchedule {
+  schedule: ClientWorkSchedule;
+  scheduling: string | null;
+  runs: string | null;
+}
+
+export function patchWorkSchedule(
+  id: string,
+  input: Partial<WorkScheduleInput>
+): Promise<WorkResult<SavedWorkSchedule>> {
+  const full =
+    input.name !== undefined &&
+    input.instructions !== undefined &&
+    input.timezone !== undefined &&
+    input.target !== undefined &&
+    input.triggers !== undefined;
+  return patch(
+    `/api/work/schedules/${id}`,
+    // A full edit sends the whole object, which is what the route is written
+    // for — it compares the submitted trigger set against the stored one and
+    // only moves the next fire when the clock kinds really changed. A partial
+    // patch (the pause button) sends only what it touched.
+    full
+      ? scheduleBody(input as WorkScheduleInput)
+      : {
+          ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
+          ...(input.name === undefined ? {} : { name: input.name }),
+        },
+    (data) => ({
+      schedule: data.schedule as ClientWorkSchedule,
+      scheduling: text(data, "scheduling"),
+      runs:
+        data.runs !== null && typeof data.runs === "object" && !Array.isArray(data.runs)
+          ? text(data.runs as Record<string, unknown>, "explanation")
+          : null,
+    })
+  );
+}
+
+export function deleteWorkSchedule(id: string): Promise<WorkResult<string | null>> {
+  return remove(`/api/work/schedules/${id}`, (data) =>
+    data.runs !== null && typeof data.runs === "object" && !Array.isArray(data.runs)
+      ? text(data.runs as Record<string, unknown>, "explanation")
+      : null
+  );
+}
+
+/**
+ * Fires a schedule once without moving it.
+ *
+ * The key is minted per press rather than per component, for the reason
+ * `workIdempotencyKey` gives: the route replays a repeated key instead of
+ * starting a second run, which is what makes "press it again" safe on a
+ * connection that dropped the first response.
+ */
+export function runWorkScheduleNow(id: string): Promise<WorkResult<ClientWorkRun>> {
+  return post(
+    `/api/work/schedules/${id}/run-now`,
+    { idempotencyKey: workIdempotencyKey() },
+    (data) => data.run as ClientWorkRun
+  );
+}
+
+export function fetchWorkScheduleRuns(id: string, limit = 10): Promise<WorkResult<ClientWorkRun[]>> {
+  return get(`/api/work/schedules/${id}/runs?limit=${limit}`, (data) => list<ClientWorkRun>(data.runs));
+}
+
+// ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+
+export function fetchWorkSkills(limit = 100): Promise<WorkResult<ClientWorkSkill[]>> {
+  return get(`/api/work/skills?limit=${limit}`, (data) => list<ClientWorkSkill>(data.skills));
+}
+
+export interface WorkSkillDetail {
+  skill: ClientWorkSkill;
+  /** Null when `currentVersion` names a row that is not there. Never a substitute. */
+  version: ClientWorkSkillVersion | null;
+}
+
+export function fetchWorkSkill(id: string): Promise<WorkResult<WorkSkillDetail>> {
+  return get(`/api/work/skills/${id}`, (data) => ({
+    skill: data.skill as ClientWorkSkill,
+    version: (data.version as ClientWorkSkillVersion | null) ?? null,
+  }));
+}
+
+export interface CreateWorkSkillInput {
+  name: string;
+  description: string;
+  instructions: string;
+  /**
+   * Where it came from, which decides its starting trust and is therefore not
+   * defaulted. `authored` starts `user_authored`; `imported` starts untrusted,
+   * so the planner cannot reach for instructions the user has not read.
+   */
+  origin: "authored" | "imported";
+}
+
+export function createWorkSkill(input: CreateWorkSkillInput): Promise<WorkResult<ClientWorkSkill>> {
+  return post(
+    "/api/work/skills",
+    {
+      name: input.name,
+      description: input.description,
+      instructions: input.instructions,
+      origin: input.origin,
+      // Never on by default. Automatic selection is the planner reaching for a
+      // set of instructions unprompted, and that is a decision the author makes
+      // afterwards, deliberately, once the skill exists and can be read back.
+      autoSelect: false,
+    },
+    (data) => data.skill as ClientWorkSkill
+  );
+}
+
+export interface PatchWorkSkillInput {
+  name?: string;
+  description?: string;
+  enabled?: boolean;
+  autoSelect?: boolean;
+  /** `verified` is absent from the vocabulary a client may set, on purpose. */
+  trust?: "untrusted" | "user_authored";
+}
+
+export function patchWorkSkill(
+  id: string,
+  input: PatchWorkSkillInput
+): Promise<WorkResult<ClientWorkSkill>> {
+  return patch(`/api/work/skills/${id}`, { ...input }, (data) => data.skill as ClientWorkSkill);
+}
+
+export function deleteWorkSkill(id: string): Promise<WorkResult<null>> {
+  return remove(`/api/work/skills/${id}`, () => null);
+}
+
+export function fetchWorkSkillVersions(
+  id: string
+): Promise<WorkResult<ClientWorkSkillVersion[]>> {
+  return get(`/api/work/skills/${id}/versions`, (data) =>
+    list<ClientWorkSkillVersion>(data.versions)
+  );
+}
+
+/**
+ * Mints a version: either new instructions, or a restore of an older one.
+ *
+ * The route refuses a body carrying both and refuses one carrying neither, so
+ * the union is expressed here rather than as two optional fields a caller could
+ * fill in together.
+ */
+export type MintWorkSkillVersionInput =
+  | { instructions: string; contract?: WorkSkillContract }
+  | { restoreVersion: number };
+
+export function mintWorkSkillVersion(
+  id: string,
+  input: MintWorkSkillVersionInput
+): Promise<WorkResult<ClientWorkSkillVersion>> {
+  return post(`/api/work/skills/${id}/versions`, input, (data) => data.version as ClientWorkSkillVersion);
+}
+
+// ---------------------------------------------------------------------------
+// Documents
+// ---------------------------------------------------------------------------
+
+/**
+ * One source a version cites.
+ *
+ * Declared structurally rather than imported from `@/lib/work/deliverables`,
+ * which reaches for `node:crypto` and has no business anywhere near a browser
+ * bundle. The reader below drops an entry it cannot make sense of: a citation
+ * rendered from a half-understood row is worse than an absent one, because a
+ * reviewer would go and check it.
+ */
+export interface WorkProvenanceEntry {
+  /** `web_page`, `connector_record`, `file`, `user_input`, `computed`. */
+  kind: string;
+  label: string;
+  url: string | null;
+}
+
+function provenanceFrom(raw: unknown): WorkProvenanceEntry[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const record = entry as Record<string, unknown>;
+    const kind = text(record, "kind");
+    const label = text(record, "label");
+    if (kind === null || label === null) return [];
+    return [{ kind, label, url: text(record, "url") }];
+  });
+}
+
+/** One stored version of a deliverable, as `/artifacts/[id]` describes it. */
+export interface WorkArtifactVersion {
+  version: number;
+  byteSize: number;
+  /** SHA-256 of the bytes. The download route re-checks it before serving. */
+  contentHash: string;
+  /** `generated`, `uploaded`, and whatever a later build adds. */
+  origin: string;
+  runId: string | null;
+  /** Whether the validator re-opened this version's bytes successfully. */
+  validated: boolean;
+  provenance: WorkProvenanceEntry[];
+  createdAt: string;
+}
+
+export interface WorkArtifactDetail {
+  artifact: ClientWorkArtifact;
+  versions: WorkArtifactVersion[];
+  /** The server's sentence when the current version was never re-opened. */
+  warning: string | null;
+}
+
+/**
+ * Whether a stored verdict says a version's bytes were re-opened.
+ *
+ * Rebuilt from the JSON rather than trusted as a shape, exactly as the download
+ * route does it: the column is written by whichever build produced the version,
+ * and anything that is not an explicit `ok: true` resolves to "not validated" —
+ * the direction that warns rather than the one that reassures.
+ */
+function versionValidated(raw: unknown): boolean {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return false;
+  return (raw as Record<string, unknown>).ok === true;
+}
+
+export function fetchWorkArtifacts(sessionId: string): Promise<WorkResult<ClientWorkArtifact[]>> {
+  return get(`/api/work/artifacts?sessionId=${encodeURIComponent(sessionId)}`, (data) =>
+    list<ClientWorkArtifact>(data.artifacts)
+  );
+}
+
+export function fetchWorkArtifact(id: string): Promise<WorkResult<WorkArtifactDetail>> {
+  return get(`/api/work/artifacts/${id}`, (data) => ({
+    artifact: data.artifact as ClientWorkArtifact,
+    versions: list<Record<string, unknown>>(data.versions).map((version) => ({
+      version: typeof version.version === "number" ? version.version : 0,
+      byteSize: typeof version.byteSize === "number" ? version.byteSize : 0,
+      contentHash: text(version, "contentHash") ?? "",
+      origin: text(version, "origin") ?? "generated",
+      runId: text(version, "runId"),
+      validated: versionValidated(version.validation),
+      provenance: provenanceFrom(version.provenance),
+      createdAt: text(version, "createdAt") ?? "",
+    })),
+    warning: text(data, "warning"),
+  }));
+}
+
+/**
+ * Where the bytes are.
+ *
+ * A plain link rather than a fetch-and-blob: the route sets
+ * `Content-Disposition: attachment` and verifies the SHA-256 before a byte goes
+ * out, so the browser's own download is already the right behaviour, and
+ * pulling a 100 MB deck into memory to hand it straight back would only add a
+ * way to run out of it.
+ */
+export function workArtifactDownloadUrl(artifactId: string, version?: number): string {
+  return version === undefined
+    ? `/api/work/artifacts/${artifactId}/download`
+    : `/api/work/artifacts/${artifactId}/download?version=${version}`;
 }
 
 export type WorkControlAction = "pause" | "resume" | "cancel";
