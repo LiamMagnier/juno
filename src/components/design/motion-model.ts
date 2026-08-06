@@ -142,8 +142,12 @@ export function readNodeProperty(node: DesignNode, property: AnimatableProperty)
       return node.opacity;
     case "cornerRadius":
       return typeof node.cornerRadius === "number" ? node.cornerRadius : node.cornerRadius[0];
-    case "blur":
-      return node.blur?.radius ?? 0;
+    case "blur": {
+      // "The blur" is a stack entry now, not a field, so the timeline reads the
+      // first layer blur — the one a designer means when they say "the blur".
+      const blur = node.effects.find((effect) => effect.type === "layer-blur");
+      return blur ? blur.radius : 0;
+    }
     case "fillColor": {
       const paint = node.fills[0];
       return paint && paint.type === "solid" ? paint.color : { r: 0, g: 0, b: 0, a: 1 };
@@ -382,8 +386,15 @@ function applyMotionValue(node: DesignNode, property: AnimatableProperty, value:
       return { ...node, opacity: clamp01(value) };
     case "cornerRadius":
       return { ...node, cornerRadius: Math.max(0, value) };
-    case "blur":
-      return { ...node, blur: value > 0 ? { type: node.blur?.type ?? "layer", radius: value } : null };
+    case "blur": {
+      const index = node.effects.findIndex((effect) => effect.type === "layer-blur");
+      const radius = Math.max(0, value);
+      // Animating to zero removes the entry rather than leaving a 0pt blur in
+      // the stack: a row you cannot see and cannot have added is not a row.
+      if (radius <= 0) return index < 0 ? node : { ...node, effects: node.effects.filter((_, i) => i !== index) };
+      if (index < 0) return { ...node, effects: [...node.effects, { type: "layer-blur", radius }] };
+      return { ...node, effects: node.effects.map((effect, i) => (i === index ? { ...effect, radius } : effect)) };
+    }
     case "scale": {
       // Scale about the centre, which is where a designer means it. There is no
       // scale field in the model — this is the transform expressed in the
