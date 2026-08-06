@@ -13,10 +13,15 @@
  * so the editor can switch to the page it just asked for without waiting for
  * the transaction to come back; the operation carries that id, so a replay
  * still lands on the same page.
+ *
+ * A row also reports whether the layer carries motion or a prototype trigger.
+ * Both live in collections beside the node tree rather than on the node, so
+ * until a row said so there was no way to tell an animated layer from a still
+ * one without opening every animation in the document and reading its tracks.
  */
 
 import * as React from "react";
-import { ChevronDown, ChevronRight, Eye, EyeOff, Lock, LockOpen, Plus, X } from "lucide-react";
+import { Activity, ChevronDown, ChevronRight, Eye, EyeOff, Lock, LockOpen, Plus, X, Zap } from "lucide-react";
 import { isContainer, type DesignDocument, type NodeId } from "@/lib/design/types";
 import type { DesignOperation } from "@/lib/design/operations";
 import { cn } from "@/lib/utils";
@@ -45,6 +50,10 @@ export function LayersPanel({
   onSelect,
   onApply,
   readOnly,
+  animatedNodeIds,
+  interactiveNodeIds,
+  onShowMotion,
+  onShowInteractions,
 }: {
   document: DesignDocument;
   pageId: string;
@@ -53,6 +62,15 @@ export function LayersPanel({
   onSelect: (ids: NodeId[], mode?: "replace" | "add" | "toggle") => void;
   onApply: (operations: DesignOperation[], summary: string) => void;
   readOnly?: boolean;
+  /** Layers named by a track in some animation. */
+  animatedNodeIds?: ReadonlySet<NodeId>;
+  /** Layers that are the source of a prototype interaction. */
+  interactiveNodeIds?: ReadonlySet<NodeId>;
+  /** Select the layer and reveal the timeline. Absent means the badge is a
+   *  label rather than a shortcut. */
+  onShowMotion?: (id: NodeId) => void;
+  /** Select the layer and reveal its interactions. */
+  onShowInteractions?: (id: NodeId) => void;
 }) {
   const [collapsed, setCollapsed] = React.useState<Set<NodeId>>(new Set());
   const [dragId, setDragId] = React.useState<NodeId | null>(null);
@@ -249,6 +267,30 @@ export function LayersPanel({
                 </span>
                 <span className={cn("truncate text-xs", selected ? "text-primary" : "text-foreground")}>{node.name}</span>
               </button>
+
+              {/* Always visible, unlike the hover controls beside them: these
+                  say what the layer *is*, and a badge you have to hover to find
+                  cannot tell you which layer moves. */}
+              {animatedNodeIds?.has(id) && (
+                <button
+                  type="button"
+                  onClick={() => onShowMotion?.(id)}
+                  aria-label={`${node.name} is animated — open the timeline`}
+                  className="pressable shrink-0 rounded p-0.5 text-primary/70 transition-colors hover:text-primary"
+                >
+                  <Activity className="size-3" aria-hidden />
+                </button>
+              )}
+              {interactiveNodeIds?.has(id) && (
+                <button
+                  type="button"
+                  onClick={() => onShowInteractions?.(id)}
+                  aria-label={`${node.name} has an interaction — open the prototype panel`}
+                  className="pressable shrink-0 rounded p-0.5 text-primary/70 transition-colors hover:text-primary"
+                >
+                  <Zap className="size-3" aria-hidden />
+                </button>
+              )}
 
               <button
                 type="button"
