@@ -1,8 +1,7 @@
 "use client";
 
 import * as React from "react";
-import type { Prisma } from "@prisma/client";
-import { ExternalLink, FileText, Link2, ShieldCheck } from "lucide-react";
+import { Coins, ExternalLink, FileText, Link2, ShieldCheck, Sigma, Timer } from "lucide-react";
 import {
   WORK_ARTIFACT_KINDS,
   budgetExceeded,
@@ -10,7 +9,8 @@ import {
   type WorkCapability,
 } from "@/lib/work/domain";
 import type { ClientWorkEvent, ClientWorkHost, ClientWorkRun } from "@/lib/work/serializers";
-import type { PerformedAction } from "@/components/work/work-timeline";
+import type { PerformedActions } from "@/components/work/work-timeline";
+import { num, prose, readEvent, records, str } from "@/components/work/work-payload";
 import {
   CapabilityChip,
   DegradationNotes,
@@ -34,8 +34,11 @@ import { cn, formatBytes, formatTokens } from "@/lib/utils";
  *
  * Everything here is derived from the event stream, and for the panels in this
  * file that is the only source there is: the stream is what the resume cursor
- * replays, so a panel built from it can never disagree with the timeline beside
- * it about whether something happened.
+ * replays, so a panel built from it can never disagree with the feed beside it
+ * about whether something happened. Payloads are read through work-payload.ts,
+ * which reconciles the two executors' shapes — before it existed these panels
+ * read the Mac's flat keys only, and a cloud run's sources and documents landed
+ * one level down inside `citation` and `artifact` where nothing looked.
  *
  * The one exception is documents, and the exception is instructive. The stream
  * says a file was written; it does not hold the bytes, their size, their hash or
@@ -44,30 +47,6 @@ import { cn, formatBytes, formatTokens } from "@/lib/utils";
  * panel itself lives in `work-documents.tsx` and reads /api/work/artifacts for
  * the facts only the store has.
  */
-
-type Payload = Record<string, unknown>;
-
-function payloadOf(value: Prisma.JsonValue): Payload {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Payload)
-    : {};
-}
-
-function str(payload: Payload, ...keys: string[]): string | null {
-  for (const key of keys) {
-    const value = payload[key];
-    if (typeof value === "string" && value.trim().length > 0) return value;
-  }
-  return null;
-}
-
-function num(payload: Payload, ...keys: string[]): number | null {
-  for (const key of keys) {
-    const value = payload[key];
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-  }
-  return null;
-}
 
 // ---------------------------------------------------------------------------
 // Files and sources
@@ -95,32 +74,34 @@ export function deriveReferences(events: readonly ClientWorkEvent[]): WorkRefere
 
   for (const event of events) {
     if (event.visibility !== "user") continue;
-    const payload = payloadOf(event.payload);
+    const payload = readEvent(event);
 
     if (event.kind === "source_cited") {
-      const url = str(payload, "url", "href");
-      const label = str(payload, "title", "label") ?? url;
+      // `source` is the runtime's field and it is not always a URL — a citation
+      // can name a connector record or a granted folder just as easily as a
+      // page. Only something that parses as http(s) becomes a link; the rest is
+      // printed as the name it is, because an anchor whose href is
+      // `gmail:18f2c…` is a promise the browser cannot keep.
+      const source = str(payload, "url", "href", "source");
+      const url = source !== null && isWebUrl(source) ? source : null;
+      const label = str(payload, "title", "label") ?? url ?? source;
       if (label === null) continue;
       references.push({
         id: event.id,
         direction: "read",
         label,
         url,
-        detail: str(payload, "snippet", "publisher", "site"),
+        // The quote is the passage actually relied on, which is the one thing
+        // that makes a citation checkable rather than decorative.
+        detail: prose(payload, "quote", "snippet", "publisher", "site") ?? (url === null ? null : source),
         at: event.createdAt,
       });
       continue;
     }
 
     if (event.kind === "files_changed" || event.kind === "batch_applied") {
-      const entries = Array.isArray(payload.files)
-        ? payload.files
-        : Array.isArray(payload.items)
-          ? payload.items
-          : [];
-      const named = entries.flatMap((entry, index) => {
-        if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return [];
-        const record = entry as Payload;
+      const entries = records(payload, "files", "items");
+      const named = entries.flatMap((record, index) => {
         const label = str(record, "label", "name", "displayName", "title");
         if (label === null) return [];
         const bytes = num(record, "bytes", "size");
@@ -157,6 +138,22 @@ export function deriveReferences(events: readonly ClientWorkEvent[]): WorkRefere
   }
 
   return references;
+}
+
+/**
+ * Whether a citation's source is something a browser can open.
+ *
+ * Parsed rather than pattern-matched, and restricted to http(s) by protocol
+ * rather than by prefix, because `javascript:` and `data:` are exactly what an
+ * untrusted page would like to see rendered as a link the user clicks.
+ */
+function isWebUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 export function WorkReferences({ references }: { references: readonly WorkReference[] }) {
@@ -259,7 +256,7 @@ export function deriveArtifacts(events: readonly ClientWorkEvent[]): WorkProduce
   for (const event of events) {
     if (event.visibility !== "user") continue;
     if (event.kind !== "artifact_created" && event.kind !== "artifact_updated") continue;
-    const payload = payloadOf(event.payload);
+    const payload = readEvent(event);
     const id = str(payload, "artifactId", "id", "identifier");
     if (id === null) continue;
     const kind = str(payload, "kind");
@@ -464,6 +461,50 @@ function WorkBudget({ run }: { run: ClientWorkRun }) {
   );
 }
 
+/**
+ * Elapsed, cost and tokens, at the top of the page where they can be glanced at.
+ *
+ * The same three numbers as the budget bars below and read from the same run
+ * row, deliberately: this is not a second source, it is the same one at a
+ * different distance. The bars answer "how close is this to its ceiling" and
+ * live at the bottom of the reference column; this answers "what is it costing
+ * me right now" and has to be visible without scrolling, because that is the
+ * question a person asks while a task is running rather than after.
+ *
+ * Ceilings are omitted here on purpose. Three numbers read at a glance; six with
+ * slashes between them do not, and the pair that matters — the one approaching
+ * its limit — is called out by the bars in warning colour anyway.
+ */
+export function WorkLiveMeter({ run }: { run: ClientWorkRun }) {
+  const elapsedMs = useElapsedMs(run);
+  const tokens = run.usage.inputTokens + run.usage.outputTokens;
+  return (
+    <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] tabular-nums text-muted-foreground">
+      <Meter icon={Timer} label="Elapsed" value={formatDuration(elapsedMs)} />
+      <Meter icon={Coins} label="Cost" value={formatMicroUsd(run.usage.costMicroUsd)} />
+      <Meter icon={Sigma} label="Tokens" value={formatTokens(tokens)} />
+    </dl>
+  );
+}
+
+function Meter({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Icon className="h-3 w-3 text-muted-foreground/60" aria-hidden="true" />
+      <dt className="sr-only">{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
 function BudgetBar({
   label,
   used,
@@ -504,12 +545,21 @@ function BudgetBar({
 // What was actually done
 // ---------------------------------------------------------------------------
 
-export function WorkActionsPerformed({ actions }: { actions: readonly PerformedAction[] }) {
+export function WorkActionsPerformed({ performed }: { performed: PerformedActions }) {
+  const { actions, unclassified } = performed;
+
   if (actions.length === 0) {
     return (
       <p className="text-[13px] leading-relaxed text-muted-foreground">
-        Juno hasn’t changed anything yet. Every action that touches the world — a file written, a
-        message sent, a batch applied — is listed here after it happens.
+        {unclassified === 0
+          ? "Juno hasn’t changed anything yet. Every action that touches the world — a file written, a message sent, a batch applied — is listed here after it happens."
+          : // Not "nothing was changed", which this panel is in no position to
+            // claim: an executor that reports neither a risk level nor a
+            // mutating flag leaves every one of its calls unclassified, and
+            // answering the user's real question — what would I have to undo —
+            // with a confident "nothing" on that evidence is the worst way to be
+            // wrong here.
+            `${unclassified} ${unclassified === 1 ? "action ran" : "actions ran"} without saying whether anything was changed. Read the activity below for what they were.`}
       </p>
     );
   }

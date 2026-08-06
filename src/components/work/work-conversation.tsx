@@ -1,11 +1,11 @@
 "use client";
 
 import * as React from "react";
-import type { Prisma } from "@prisma/client";
 import { ArrowUp, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/chat/markdown";
 import type { ClientWorkEvent, ClientWorkSession } from "@/lib/work/serializers";
+import { readEvent, str } from "@/components/work/work-payload";
 import { cn } from "@/lib/utils";
 
 /*
@@ -17,22 +17,6 @@ import { cn } from "@/lib/utils";
  * shadow and no glass. The depth in this page belongs to the composer and the
  * approval controls, which are chrome.
  */
-
-type Payload = Record<string, unknown>;
-
-function payloadOf(value: Prisma.JsonValue): Payload {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Payload)
-    : {};
-}
-
-function str(payload: Payload, ...keys: string[]): string | null {
-  for (const key of keys) {
-    const value = payload[key];
-    if (typeof value === "string" && value.trim().length > 0) return value;
-  }
-  return null;
-}
 
 interface Turn {
   id: string;
@@ -65,7 +49,7 @@ export function deriveTurns(events: readonly ClientWorkEvent[]): Turn[] {
   const turns: Turn[] = [];
   for (const event of events) {
     if (event.visibility !== "user") continue;
-    const payload = payloadOf(event.payload);
+    const payload = readEvent(event);
     if (event.kind === "assistant_message") {
       const text = str(payload, "text", "message");
       if (text) turns.push({ id: event.id, role: "juno", text, unprompted: false });
