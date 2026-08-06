@@ -146,4 +146,12 @@ final class JunoUpdateFeedTests: XCTestCase {
             XCTAssertEqual(error as? JunoUpdateFeed.FeedError, .untrustedOrigin("evil.example.com"))
         }
     }
+
+    func testManualRefreshURLCarriesFreshnessAndChannelWithoutDroppingTheAPIPath() {
+        let url = JunoUpdateFeed.url(cacheBust: "test-token", channel: "next")
+        XCTAssertEqual(url.path, "/api/downloads")
+        let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(query.first(where: { $0.name == "refresh" })?.value, "test-token")
+        XCTAssertEqual(query.first(where: { $0.name == "channel" })?.value, "next")
+    }
 }

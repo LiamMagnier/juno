@@ -17,11 +17,11 @@ import UniformTypeIdentifiers
 /// 12-point shoulder on both sides, so resizing never clips or crowds Search
 /// sessions.
 private enum DesktopCodeInspectorMetrics {
-    private static let searchFieldWidth: CGFloat = 308
-    private static let horizontalPadding: CGFloat = JunoSpace.cozy
-
-    static let minimum = searchFieldWidth + (horizontalPadding * 2)
-    static let ideal = minimum
+    // Search lives in the detail toolbar, not inside the inspector. Tying the
+    // inspector's minimum to that field made the trailing pane open at 332pt
+    // even though its content is readable at the design-system minimum.
+    static let minimum = JunoInspectorMetrics.minimum
+    static let ideal: CGFloat = 348
     static let maximum = JunoInspectorMetrics.maximum
 }
 
@@ -71,9 +71,10 @@ struct DesktopCodeWorkspace: View {
 
     @SceneStorage("juno.desktop.code.selection") private var storedSelection = ""
     @SceneStorage("juno.desktop.code.columns") private var storedColumnVisibility = ""
-    // Versioned so an older launch that persisted the inspector closed does not
-    // hide the new Code workspace's primary review surface forever.
-    @SceneStorage("juno.desktop.code.inspector.v2") private var inspectorVisible = true
+    // The inspector is secondary chrome. Opening Code into a blank “Nothing to
+    // inspect” rail made the product feel like two competing canvases; it opens
+    // on demand from the toolbar and remembers the reader's choice thereafter.
+    @SceneStorage("juno.desktop.code.inspector.v3") private var inspectorVisible = false
     @SceneStorage("juno.desktop.code.console") private var consoleVisible = false
     @SceneStorage("juno.desktop.code.review") private var reviewVisible = false
     @SceneStorage("juno.desktop.code.remote-device") private var remoteDeviceID = ""
@@ -1463,163 +1464,28 @@ struct DesktopCodeWorkspace: View {
 // MARK: - Cloud and device runs
 
 /// A run on Juno's cloud runner or on another computer, followed over the task
-/// relay.
-///
-/// It is a separate surface from the local canvas for a structural reason, not a
-/// stylistic one: `NativeCodeTaskStore` flattens every wire payload into
-/// `title`/`detail` strings, so there is no `SessionEvent`, no `TrackedChange`, no
-/// diff and no terminal output to render. The window says so by disabling Review,
-/// Console and the Inspector rather than by showing empty versions of them.
+/// relay. The detail view is shared with the account-level remote task monitor,
+/// so opening a task from the integrated Code sidebar keeps the same live
+/// reconnect state, approvals, cancellation, pull-request link and follow-up
+/// controls instead of falling into a reduced event-only view.
 private struct DesktopCodeTaskCanvas: View {
     let task: NativeCodeTask
     let code: NativeCodeModel
+    @State private var selection: String?
 
-    private static let measure: CGFloat = 720
+    init(task: NativeCodeTask, code: NativeCodeModel) {
+        self.task = task
+        self.code = code
+        _selection = State(initialValue: task.id)
+    }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
-                    ForEach(code.events) { event in
-                        eventRow(event).id(event.seq)
-                    }
-                    if code.isStreaming {
-                        HStack(spacing: JunoSpace.snug) {
-                            ProgressView().controlSize(.small)
-                            Text("Following this run").junoCaption()
-                        }
-                    }
-                    if let error = code.lastErrorDescription {
-                        Text(error)
-                            .junoCaption()
-                            .foregroundStyle(Color.junoDanger)
-                            .textSelection(.enabled)
-                    }
-                }
-                .frame(maxWidth: Self.measure, alignment: .leading)
-                .frame(maxWidth: .infinity)
-                .padding(JunoSpace.region)
-            }
-            .onChange(of: code.events.count) { _, _ in
-                guard let last = code.events.last?.seq else { return }
-                withAnimation(JunoMotion.fast) { proxy.scrollTo(last, anchor: .bottom) }
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: JunoSpace.snug) {
-                if let approval = code.pendingApproval {
-                    DesktopCodeRelayApproval(
-                        summary: approval.summary,
-                        risk: approval.risk,
-                        detail: approval.detail,
-                        toolName: nil,
-                        isBusy: false,
-                        respond: { approved in
-                            Task { await code.respondToApproval(approve: approved) }
-                        }
-                    )
-                }
-                // No send field: the cloud task API has no message route, so a
-                // composer here would be a control that cannot work. Stop is the
-                // only thing this transport can do to a run in flight.
-                if let url = task.pullRequestURL {
-                    HStack(spacing: JunoSpace.cozy) {
-                        Link(destination: url) {
-                            JunoIconLabel(verbatim: "Open pull request", icon: .pulls, size: 14)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                }
-                Text("This run is driven by Juno. Follow-up messages are not available for cloud and device runs.")
-                    .junoCaption()
-            }
-            .frame(maxWidth: Self.measure, alignment: .leading)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, JunoSpace.region)
-            .padding(.bottom, JunoSpace.regular)
-        }
-    }
-
-    private func eventRow(_ event: NativeCodeEvent) -> some View {
-        HStack(alignment: .top, spacing: JunoSpace.cozy) {
-            Group {
-                if let icon = junoIcon(event.kind) {
-                    JunoIconView(icon, size: 13)
-                } else {
-                    Image(systemName: symbol(event.kind)).font(.caption)
-                }
-            }
-            // Three colours, and only two of them are colours.
-            //
-            // Every glyph in this transcript used to be the account accent, so a
-            // cloud run read as a column of orange marks with the two that
-            // actually matter — a failure and a permission request — indis-
-            // tinguishable from the twenty status lines around them. The web
-            // renders the same stream as typed blocks and tints only `destructive`
-            // and `warning`; everything else is body text with a quiet mark.
-            .foregroundStyle(eventTint(event.kind))
-            .frame(width: 18)
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                Text(event.title).junoRowLabel()
-                if let detail = event.detail {
-                    Group {
-                        if isTechnical(event.kind) {
-                            Text(detail).junoMono()
-                        } else {
-                            Text(detail).junoBody()
-                        }
-                    }
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                }
-            }
-            Spacer(minLength: JunoSpace.snug)
-            Text(event.createdAt, style: .time)
-                .junoCaption()
-                .monospacedDigit()
-        }
-    }
-
-    private func eventTint(_ kind: NativeCodeEvent.Kind) -> Color {
-        switch kind {
-        case .error: Color.junoDanger
-        case .approvalRequest, .approvalResponse: Color.junoCaution
-        default: Color.secondary
-        }
-    }
-
-    private func symbol(_ kind: NativeCodeEvent.Kind) -> String {
-        switch kind {
-        case .status: "circle.dotted"
-        case .user: "person"
-        case .text: "text.alignleft"
-        case .tool: "wrench.and.screwdriver"
-        case .fileChange: "doc.badge.gearshape"
-        case .approvalRequest, .approvalResponse: "hand.raised"
-        case .cancelRequest: "stop.circle"
-        case .error: "exclamationmark.triangle"
-        case .done: "checkmark.circle"
-        case .agent: "person.2"
-        }
-    }
-
-    /// The two event kinds the website has its own mark for.
-    ///
-    /// A transcript is mostly native vocabulary — the web renders tool calls
-    /// and file changes as typed blocks, not as icons — but a permission
-    /// request is a shield everywhere else in Juno and a failure is a circle,
-    /// and a reader who has just seen those marks in the sidebar should not
-    /// meet different ones three inches away.
-    private func junoIcon(_ kind: NativeCodeEvent.Kind) -> JunoIcon? {
-        switch kind {
-        case .approvalRequest, .approvalResponse: .permission
-        case .error: .error
-        default: nil
-        }
-    }
-
-    private func isTechnical(_ kind: NativeCodeEvent.Kind) -> Bool {
-        kind == .tool || kind == .fileChange || kind == .error
+        CodeRemoteTaskDetailView(
+            model: code,
+            taskID: task.id,
+            selection: $selection
+        )
+        .id(task.id)
     }
 }
 

@@ -26,23 +26,62 @@ interface GitHubRelease {
   name?: string;
   draft?: boolean;
   prerelease?: boolean;
+  published_at?: string;
   assets?: ReleaseAsset[];
 }
 
-async function latestRelease(repo: string): Promise<GitHubRelease | null> {
+function versionParts(release: GitHubRelease): number[] {
+  const raw = release.tag_name?.trim().replace(/^v/i, "") ?? "";
+  const core = raw.split(/[+-]/, 1)[0] ?? "";
+  return core.split(".").map((part) => {
+    const parsed = Number.parseInt(part, 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  });
+}
+
+function compareReleaseVersions(a: GitHubRelease, b: GitHubRelease): number {
+  const left = versionParts(a);
+  const right = versionParts(b);
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    const l = left[i] ?? 0;
+    const r = right[i] ?? 0;
+    if (l !== r) return r - l;
+  }
+  const leftDate = Date.parse(a.published_at ?? "") || 0;
+  const rightDate = Date.parse(b.published_at ?? "") || 0;
+  return rightDate - leftDate;
+}
+
+async function latestRelease(
+  repo: string,
+  platform: DownloadPlatform,
+  includePrerelease: boolean,
+  forceRefresh: boolean,
+): Promise<GitHubRelease | null> {
   try {
-    const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+    // `/releases/latest` means "latest non-draft, non-prerelease by GitHub's
+    // publication ordering", not "highest app version with a usable asset".
+    // That made a newly published 0.10.x development build invisible behind
+    // the older 0.9.2 stable release. Ask for the release list and choose by
+    // semantic version after filtering to releases that actually ship this
+    // platform's installer.
+    const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=100`, {
       headers: {
         accept: "application/vnd.github+json",
         // GitHub asks for one, and an unidentified client is the first thing
         // they throttle.
         "user-agent": "juno-downloads",
       },
-      next: { revalidate },
+      ...(forceRefresh ? { cache: "no-store" as const } : { next: { revalidate } }),
     });
     if (!res.ok) return null;
-    const release = (await res.json()) as GitHubRelease;
-    return isStableRelease(release) ? release : null;
+    const releases = (await res.json()) as GitHubRelease[];
+    return (
+      releases
+        .filter((release) => (includePrerelease ? !release?.draft : isStableRelease(release)))
+        .filter((release) => Boolean(release.assets && pickAsset(release.assets, platform)))
+        .sort(compareReleaseVersions)[0] ?? null
+    );
   } catch {
     return null;
   }
@@ -62,10 +101,16 @@ function version(release: GitHubRelease | null): string | null {
  * available while macOS has nothing published is the CURRENT state of the world,
  * and the menu says so rather than hiding the one that works.
  */
-export async function GET() {
+export async function GET(req: Request) {
+  const search = new URL(req.url).searchParams;
+  // The public download page remains stable-only. Native `next` builds may ask
+  // for prereleases explicitly, while a manual updater check adds a unique
+  // refresh value to avoid serving an edge-cached answer from ten minutes ago.
+  const includePrerelease = search.get("channel") === "next";
+  const forceRefresh = search.has("refresh");
   const [apple, windows] = await Promise.all([
-    latestRelease(DOWNLOAD_REPOS.apple),
-    latestRelease(DOWNLOAD_REPOS.windows),
+    latestRelease(DOWNLOAD_REPOS.apple, "macos", includePrerelease, forceRefresh),
+    latestRelease(DOWNLOAD_REPOS.windows, "windows", includePrerelease, forceRefresh),
   ]);
 
   const build = (

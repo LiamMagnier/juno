@@ -27,7 +27,23 @@ public enum JunoUpdateFeed {
     /// would eventually disagree, and the one the app trusted would be the one
     /// nobody looked at.
     public static var url: URL {
-        JunoBackend.productionURL.appending(path: "api/downloads")
+        url(cacheBust: nil, channel: nil)
+    }
+
+    /// The manual menu action supplies a unique value so a CDN cannot replay
+    /// the previous ten-minute `/api/downloads` response. The channel is
+    /// explicit too: stable installs consume stable releases, while a `next`
+    /// build may see the prerelease stream intended for it.
+    public static func url(cacheBust: String?, channel: String?) -> URL {
+        var components = URLComponents(
+            url: JunoBackend.productionURL.appending(path: "api/downloads"),
+            resolvingAgainstBaseURL: false
+        )!
+        var query: [URLQueryItem] = []
+        if let cacheBust { query.append(URLQueryItem(name: "refresh", value: cacheBust)) }
+        if let channel { query.append(URLQueryItem(name: "channel", value: channel)) }
+        components.queryItems = query.isEmpty ? nil : query
+        return components.url!
     }
 
     /// A build the feed is offering. Every field here came off the wire; nothing

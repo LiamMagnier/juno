@@ -116,7 +116,7 @@ final class DesktopUpdateModel {
     func checkNow() {
         guard ineligibilityReason == nil else { return }
         guard work == nil else { return }
-        Task { await check() }
+        Task { await check(forceRefresh: true) }
     }
 
     /// Why this build cannot be updated in place, or nil if it can.
@@ -136,7 +136,7 @@ final class DesktopUpdateModel {
 
     // MARK: - Check
 
-    private func check() async {
+    private func check(forceRefresh: Bool = false) async {
         guard work == nil, ineligibilityReason == nil else { return }
         // An update already staged is the answer to the next check too; asking
         // again would re-download the same DMG every ten minutes.
@@ -145,24 +145,33 @@ final class DesktopUpdateModel {
         phase = .checking
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.runCheck()
+            await self.runCheck(forceRefresh: forceRefresh)
         }
         work = task
         await task.value
         work = nil
     }
 
-    private func runCheck() async {
+    private func runCheck(forceRefresh: Bool) async {
         do {
-            var request = URLRequest(url: JunoUpdateFeed.url)
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-            // The feed is cached for ten minutes at the edge; a cached body is
-            // exactly as useful as a fresh one here and costs nothing.
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-                throw UpdateError.feedUnavailable
+            var candidate = try await fetchCandidate(
+                channel: build.channel == "next" ? "next" : nil,
+                forceRefresh: forceRefresh
+            )
+
+            // A development build produced before the first stable release can
+            // legitimately be newer than the public stable feed. In that case
+            // a stable-only check would report “up to date” forever. Ask the
+            // prerelease stream only when this installation is already ahead of
+            // stable; a current production build never opts into it.
+            if let stable = candidate,
+               JunoUpdateFeed.isNewer(build.version, than: stable.version),
+               build.channel != "next"
+            {
+                candidate = (try? await fetchCandidate(channel: "next", forceRefresh: forceRefresh)) ?? stable
             }
-            guard let candidate = try JunoUpdateFeed.macOSCandidate(from: data) else {
+
+            guard let candidate else {
                 phase = .current(checkedAt: Date())
                 return
             }
@@ -176,6 +185,26 @@ final class DesktopUpdateModel {
         } catch {
             phase = .failed((error as? UpdateError)?.message ?? error.localizedDescription)
         }
+    }
+
+    private func fetchCandidate(channel: String?, forceRefresh: Bool) async throws -> JunoUpdateFeed.Candidate? {
+        let url = JunoUpdateFeed.url(
+            cacheBust: forceRefresh ? UUID().uuidString : nil,
+            channel: channel
+        )
+        var request = URLRequest(url: url)
+        request.cachePolicy = forceRefresh ? .reloadIgnoringLocalCacheData : .useProtocolCachePolicy
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if forceRefresh {
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        }
+        // Scheduled checks use the ten-minute edge cache; manual checks carry a
+        // unique query value and additionally bypass URLSession's local cache.
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw UpdateError.feedUnavailable
+        }
+        return try JunoUpdateFeed.macOSCandidate(from: data)
     }
 
     // MARK: - Download, verify, stage

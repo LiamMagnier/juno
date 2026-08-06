@@ -215,7 +215,14 @@ public struct CodeRemoteTaskMonitorView: View {
     }
 }
 
-private struct CodeRemoteTaskDetailView: View {
+/// The reusable detail surface for one account-owned remote/cloud task.
+///
+/// The monitor presents it inside a split view, while the integrated macOS
+/// Code workspace embeds the same surface in its main canvas. Keeping this as a
+/// public view prevents the two entry points from drifting: approvals,
+/// cancellation, PR links, live reconnect state and follow-up turns are one
+/// product surface regardless of where the task was opened.
+public struct CodeRemoteTaskDetailView: View {
     @Bindable var model: NativeCodeModel
     let taskID: String
     @Binding var selection: String?
@@ -223,7 +230,7 @@ private struct CodeRemoteTaskDetailView: View {
     @State private var followUpDraft = ""
     @State private var followUpInFlight = false
 
-    init(
+    public init(
         model: NativeCodeModel,
         taskID: String,
         selection: Binding<String?>
@@ -239,7 +246,7 @@ private struct CodeRemoteTaskDetailView: View {
         model.tasks.first { $0.id == taskID }
     }
 
-    var body: some View {
+    public var body: some View {
         Group {
             if let task {
                 ScrollViewReader { proxy in
