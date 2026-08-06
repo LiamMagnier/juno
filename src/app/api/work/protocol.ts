@@ -17,10 +17,12 @@ import { z } from "zod";
 import {
   WORK_CAPABILITIES,
   WORK_HOST_STATES,
+  WORK_PERMISSION_POLICIES,
   WORK_STATUSES,
   WORK_TARGETS,
   describeCapability,
   hostStateFor,
+  mayBeCoveredByStandingAllowance,
   selectTarget,
   type TargetSelection,
   type WorkTarget,
@@ -28,6 +30,7 @@ import {
   type WorkCapability,
   type WorkDegradation,
   type WorkHostState,
+  type WorkRiskLevel,
   type WorkStatus,
 } from "@/lib/work/domain";
 import { hostCapabilityView, type WorkHostRow } from "@/lib/work/schedule";
@@ -88,6 +91,24 @@ const id = z.string().trim().min(1).max(MAX_ID_CHARS);
  */
 const reasoningEffort = z.enum(REASONING_TIERS).nullable();
 
+/**
+ * The approval mode a task is composed with, or asked to retry under.
+ *
+ * Optional and never defaulted in the schema. Absent means "whatever this
+ * session already carries", which is what a client that has never heard of the
+ * control sends, and defaulting it here would have every such client silently
+ * rewrite the mode its owner picked on another surface. The routes apply
+ * `DEFAULT_WORK_PERMISSION_POLICY` at the one point where there genuinely is no
+ * prior answer — creating a session — and nowhere else.
+ *
+ * Accepting it from a client is safe in exactly one direction. It is a request,
+ * and `resolveApprovalMode` intersects it with the Mac's advertised policy
+ * before anything is stored, so the widest thing this field can produce is the
+ * host's own setting. A body that asks for `permissive` on a Mac pinned to
+ * `conservative` gets `conservative` and is told so.
+ */
+const permissionPolicy = z.enum(WORK_PERMISSION_POLICIES);
+
 // ---------------------------------------------------------------------------
 // Session bodies
 // ---------------------------------------------------------------------------
@@ -109,6 +130,7 @@ export const createSessionSchema = z.object({
   // does, which is exactly the case a rolling deploy produces.
   model: z.string().trim().min(1).max(MAX_ID_CHARS).optional(),
   reasoningEffort: reasoningEffort.optional(),
+  permissionPolicy: permissionPolicy.optional(),
   // Files the reader picked in the composer, by attachment id. The route
   // re-checks every one of them against the signed-in account before it becomes
   // a grant — an id in a request body is a claim about ownership, and the only
@@ -179,6 +201,17 @@ export const startRunSchema = z.object({
   requestedTarget: z.enum(WORK_TARGETS).optional(),
   model: z.string().trim().min(1).max(MAX_ID_CHARS).optional(),
   reasoningEffort: reasoningEffort.optional(),
+  // The same override for the approval mode, and it exists for the same move:
+  // "it stopped to ask me nine times, run it again and stop asking". Attempt-
+  // scoped like `requestedTarget` and unlike `reasoningEffort`, which has no
+  // column on the run and therefore leaks into the next attempt — the run's
+  // `permissionPolicy` blob is written per attempt, so this one genuinely does
+  // not.
+  //
+  // It may widen past the session's own setting, and that is deliberate: the
+  // session's mode is the composer's default for this task, not a ceiling. The
+  // only ceiling is the Mac's, and it is applied after this.
+  permissionPolicy: permissionPolicy.optional(),
   idempotencyKey: idempotencyKey.optional(),
 });
 
@@ -232,6 +265,13 @@ export const APPROVAL_DECISION_REFUSALS = [
   "expired",
   /** Resolved already: answered differently, or replaced by a newer request. */
   "already_decided",
+  /**
+   * "Always allow" was submitted for something no standing allowance may cover.
+   *
+   * The plain `allowed` on the same card is accepted — this refuses the
+   * standing half of the answer, not the answer.
+   */
+  "not_standing_allowable",
 ] as const;
 
 export type ApprovalDecisionRefusal = (typeof APPROVAL_DECISION_REFUSALS)[number];
@@ -249,6 +289,8 @@ export interface ApprovalDecisionInput {
   approval: {
     action: string;
     detail: unknown;
+    /** As the executor graded it when it asked. Decides what "always" may cover. */
+    risk: WorkRiskLevel;
     actionDigest: string;
     policyDigest: string;
     decision: WorkApprovalDecision;
@@ -268,7 +310,9 @@ export interface ApprovalDecisionInput {
  * that is not this row's is a client answering a different card — the
  * substitution case the whole digest mechanism exists for — and reporting
  * "expired" or "already decided" ahead of it would file a substitution attempt
- * as a timing problem.
+ * as a timing problem. The standing-allowance check sits immediately below it,
+ * above everything else, for the same reason: those two are the refusals about
+ * the answer being wrong, and the rest are about it being late.
  *
  * `verifyApproval` is then called with the submitted decision, so the stored
  * row is re-checked against the policy in force right now rather than the one
@@ -283,6 +327,20 @@ export function classifyApprovalDecision(input: ApprovalDecisionInput): Approval
 
   if (input.submittedDigest !== approval.actionDigest) {
     return { outcome: "refuse", reason: "digest_mismatch" };
+  }
+  // Above the replay check, so a row written before this rule existed cannot be
+  // re-affirmed into a standing allowance either. A standing "always allow" is
+  // the one answer that authorises actions the user has not seen, so the answer
+  // and the row have to agree that this action may ever be covered by one — and
+  // the check is on the action name as well as the risk, because the risk is the
+  // executor's classification and the always-confirm list exists precisely
+  // because that classification is the thing not to trust. A UI that offers the
+  // button for a send is a UI bug; a server that records it is a permission.
+  if (
+    submittedDecision === "allowed_always" &&
+    !mayBeCoveredByStandingAllowance(approval.action, approval.risk)
+  ) {
+    return { outcome: "refuse", reason: "not_standing_allowable" };
   }
   if (approval.decision === submittedDecision) {
     // A phone retrying over a flaky connection, or the same person tapping

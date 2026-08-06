@@ -4,6 +4,7 @@ import type { WorkCommand, WorkRun, WorkSession } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/db";
 import type { EventVisibility } from "@/lib/event-envelope";
 import {
+  DEFAULT_WORK_PERMISSION_POLICY,
   NO_BUDGET,
   RUN_LEASE_MS,
   WORK_TERMINAL_STATUSES,
@@ -145,7 +146,12 @@ export async function createWorkSession(input: CreateWorkSessionInput): Promise<
         preferredHostId: input.preferredHostId ?? null,
         requestedModel: input.requestedModel ?? null,
         reasoningEffort: input.reasoningEffort ?? null,
-        permissionPolicy: input.permissionPolicy ?? "balanced",
+        // `DEFAULT_WORK_PERMISSION_POLICY` rather than the literal it used to
+        // be. Same value, but the reason for it — Manual asks so often that its
+        // owner learns to press Allow without reading — is now written down
+        // once, in domain.ts, next to the ladder that gives the three modes
+        // their meaning.
+        permissionPolicy: input.permissionPolicy ?? DEFAULT_WORK_PERMISSION_POLICY,
       },
     });
 
