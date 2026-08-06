@@ -22,6 +22,10 @@ set -euo pipefail
 
 VERSION="${1:-}"
 PUBLISH="${2:-}"
+# Publishing a development-signed build is refused by default (see the gate
+# below). This is the deliberate, typed-out override — long on purpose, because
+# it is not something to reach for by habit.
+ALLOW_DEVELOPMENT="${3:-}"
 REPO="LiamMagnier/juno"
 SCHEME="JunoDesktop"
 PROJECT="native/macOS/JunoDesktop/JunoDesktop.xcodeproj"
@@ -36,6 +40,10 @@ step() { printf '\n▸ %s\n' "$1"; }
 case "$PUBLISH" in
   ""|--publish) ;;
   *) die "The second argument must be --publish when publishing, got '$PUBLISH'." ;;
+esac
+case "$ALLOW_DEVELOPMENT" in
+  ""|--allow-development-build) ;;
+  *) die "The third argument may only be --allow-development-build, got '$ALLOW_DEVELOPMENT'." ;;
 esac
 
 # ── Preflight ──────────────────────────────────────────────────────────────
@@ -100,11 +108,23 @@ printf '  team          %s\n' "$CONFIGURED_TEAM"
 printf '  notarize      %s\n' "$([ "$NOTARIZE" = 1 ] && echo yes || echo 'no (development build)')"
 
 # A development artifact is useful for local installation and verification, but
-# it is not a release. Publishing it would make /api/downloads expose a file
-# that Gatekeeper rejects, so the irreversible path fails closed until the real
-# distribution inputs are installed.
+# it is not a distributable release. Publishing it puts a file on /api/downloads
+# that Gatekeeper refuses on every Mac except one signed by the same team, so
+# the irreversible path fails closed by default.
+#
+# It is not, however, forbidden: v0.10.0 and v0.10.1 shipped exactly this way,
+# to an audience of installs that are themselves development-signed and update
+# from the same team. `--allow-development-build` is how that decision is
+# stated — out loud, in the command, and recorded in the shell history — rather
+# than by editing this gate or reaching for `gh release create` by hand, which
+# would skip the tag, the symbols, the checksums and the warning below.
 if [ "$PUBLISH" = "--publish" ] && [ "$NOTARIZE" != 1 ]; then
-  die "Refusing to publish a development-signed artifact. Install a Developer ID Application certificate and notarization credentials first."
+  [ "$ALLOW_DEVELOPMENT" = "--allow-development-build" ] || die \
+    "Refusing to publish a development-signed artifact.
+     Install a Developer ID Application certificate and notarization credentials,
+     or pass --allow-development-build to publish a pre-release that only
+     development-signed installs by this team can run."
+  printf '  publish       yes, as a PRE-RELEASE (development build, Gatekeeper will refuse it)\n'
 fi
 
 if [ "$NOTARIZE" = 1 ]; then
@@ -288,17 +308,39 @@ step "Publish v$VERSION to $REPO"
 [ -z "$(git tag --list "v$VERSION")" ] || die "Tag v$VERSION already exists. Choose a new version; releases are immutable."
 git tag -a "v$VERSION" -m "Juno for Mac $VERSION"
 git push origin "v$VERSION"
+# A development build is published as a PRE-RELEASE, titled as one, and says so
+# in its own notes.
+#
+# All three matter and none is decoration. GitHub's "Latest release" pointer
+# skips pre-releases, so an unnotarized build cannot become the thing a stranger
+# downloads by default; the title is what somebody scanning the releases list
+# reads; and the paragraph is the only warning a person gets before Gatekeeper
+# refuses the app with a message that sounds like the download was corrupted.
+# v0.10.0 and v0.10.1 carried the same three, and this keeps the shelf
+# consistent rather than mixing two kinds of release under one style.
+TITLE="Juno for Mac $VERSION"
+PRERELEASE=()
+DEVELOPMENT_NOTE=""
+if [ "$NOTARIZE" != 1 ]; then
+  TITLE="$TITLE (Development build)"
+  PRERELEASE=(--prerelease)
+  DEVELOPMENT_NOTE="
+
+**This build is not notarized.** macOS Gatekeeper will refuse to open it after download. It updates existing installs that are themselves development-signed by this team; on any other Mac, build from source."
+fi
+
 gh release create "v$VERSION" "$DMG" \
   "$DSYM" \
   "$CHECKSUMS" \
   --repo "$REPO" \
-  --title "Juno for Mac $VERSION" \
+  "${PRERELEASE[@]}" \
+  --title "$TITLE" \
   --notes "$(cat <<NOTES
 Source commit \`$(git rev-parse HEAD)\`
 DMG SHA-256 \`$SHA\` · $SIZE bytes
 Symbols and \`SHA256SUMS.txt\` are attached for crash diagnosis and independent verification.
 
-Installs by drag-and-drop. Existing installs update themselves within ten minutes, or immediately from Juno → Install Update and Relaunch.
+Installs by drag-and-drop. Existing installs update themselves within ten minutes, or immediately from Juno → Install Update and Relaunch.$DEVELOPMENT_NOTE
 NOTES
 )"
 
