@@ -1981,10 +1981,25 @@ function runModelChoice(canonicalModelId: string): RunModelChoice {
  */
 async function drive(runId: string, userId: string): Promise<void> {
   let seq = 0;
+  // Whether the transcript already has a terminal event for this run.
+  //
+  // The session emits its own `run_finished` — carrying the reason, the
+  // detail, the usage and the report — and this function then emitted a second,
+  // bare one right after `finishRun`. Both reached the transcript, so every
+  // cloud run ended with "Finished — failed" twice in the Activity list: once
+  // with the explanation and once with nothing, which reads as the run dying,
+  // being retried, and dying again.
+  //
+  // Tracked rather than simply deleting the emit below, because not every exit
+  // path runs the session: a run that cannot reach its model, or is refused
+  // before the loop starts, never reaches `session.ts` and would otherwise have
+  // no terminal event in its transcript at all.
+  let emittedRunFinished = false;
   const emit = async (
     kind: WorkEventKind,
     payload: Prisma.InputJsonValue
   ): Promise<void> => {
+    if (kind === "run_finished") emittedRunFinished = true;
     seq += 1;
     await appendEvents({
       runId,
@@ -2010,13 +2025,24 @@ async function drive(runId: string, userId: string): Promise<void> {
 
     const outcome = await execute({ runId, userId, emit });
 
+    if (outcome.paused) {
+      // A paused run is resumable, not terminal. The executor has already
+      // written the latest checkpoint; this conditional park releases its
+      // lease only if this worker still owns it, so a fast Resume cannot be
+      // overwritten by a late pause completion.
+      await parkRun({ runId, userId, executorId: EXECUTOR_ID });
+      return;
+    }
+
     await finishRun({
       runId,
       userId,
       reason: outcome.reason,
       detail: outcome.detail,
     });
-    await emit("run_finished", { reason: outcome.reason });
+    if (!emittedRunFinished) {
+      await emit("run_finished", { reason: outcome.reason, detail: outcome.detail });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log("run failed", { runId, error: message });

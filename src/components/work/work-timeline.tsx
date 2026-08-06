@@ -983,13 +983,33 @@ interface EventDescription {
  */
 function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescription {
   switch (event.kind) {
-    case "run_started":
-      return {
-        title: "Started",
-        detail: str(payload, "target", "executor", "model"),
-        tone: "quiet",
-        icon: PlayCircle,
-      };
+    case "run_started": {
+      // Two events wear this kind, and they are not the same moment.
+      //
+      // The cloud runner writes one the instant it claims the run — before the
+      // session exists, because opening connectors can take up to 45 seconds
+      // and a blank transcript for that long reads as nothing happening. The
+      // session then writes its own when the model actually starts. Both are
+      // deliberate; rendering both as "Started" with `str(payload, "target",
+      // "executor", "model")` is what made a run report starting twice, once
+      // with the bare token `cloud` and once with a raw model id like
+      // `mistral-medium-latest`.
+      //
+      // The payload shape tells them apart: only the claim carries `executor`
+      // without a `model`, and only the session carries `model`.
+      const executor = str(payload, "executor");
+      const model = str(payload, "model");
+      const target = str(payload, "target") ?? executor;
+      if (model === null) {
+        return {
+          title: target === "local" ? "Picked up by your Mac" : "Picked up by the cloud",
+          detail: null,
+          tone: "quiet",
+          icon: PlayCircle,
+        };
+      }
+      return { title: "Started", detail: model, tone: "quiet", icon: PlayCircle };
+    }
     case "plan_created":
       return { title: "Wrote a plan", detail: null, tone: "quiet", icon: Sparkles };
     case "plan_updated":

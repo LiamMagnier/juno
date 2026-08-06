@@ -886,6 +886,21 @@ export function structuralValidation(input: {
         : `Not mentioned: ${unmentioned.map((step) => step.title).join('; ')}.`,
   });
 
-  const unmet = checks.filter((check) => !check.satisfied).map((check) => check.claim);
-  return { satisfied: unmet.length === 0, checks, unmet };
+  // `unmet` carries the *evidence*, not the claim.
+  //
+  // A claim is written as the thing that is true when the check passes —
+  // "Every planned step reached a conclusion." — and `terminalOutcome`
+  // interpolates this list after "The deliverable does not yet answer the
+  // goal:". Mapping claims therefore printed the success sentence as the
+  // reason for the failure, and a user watching a run die read:
+  //
+  //   The deliverable does not yet answer the goal: Every planned step
+  //   reached a conclusion.
+  //
+  // — which asserts the opposite of what happened and names nothing they can
+  // act on. Every `evidence` string on a failing branch is already written as
+  // a statement of what went wrong ("Still open: …", "No artifact and no
+  // written answer."), so the sentence becomes true and specific by using it.
+  const failed = checks.filter((check) => !check.satisfied);
+  return { satisfied: failed.length === 0, checks, unmet: failed.map((check) => check.evidence) };
 }
