@@ -835,13 +835,26 @@ export function structuralValidation(input: {
   const snapshot = input.plan.snapshot();
 
   const outstanding = snapshot.steps.filter((step) => !isTerminalStepStatus(step.status));
+  // "Never began" and "got partway" are the same check and not the same
+  // failure, and saying so is the difference between a message a person can act
+  // on and a list they cannot.
+  //
+  // A run whose every step is still `pending` did not stall halfway — the model
+  // answered without touching the plan at all, which in practice means it
+  // narrated an intention ("let me fetch that information") and called no tool.
+  // Reporting that as "Still open: <every step>" points the reader at their
+  // plan, which is not where the problem is; the plan is a fixed three-step
+  // scaffold and identical on every run.
+  const untouched = snapshot.steps.length > 0 && snapshot.steps.every((step) => step.status === 'pending');
   checks.push({
     claim: 'Every planned step reached a conclusion.',
     satisfied: outstanding.length === 0,
     evidence:
       outstanding.length === 0
         ? `All ${snapshot.steps.length} steps are done, skipped or failed.`
-        : `Still open: ${outstanding.map((step) => step.title).join('; ')}.`,
+        : untouched
+          ? 'Juno answered without starting the plan: no step was begun, so nothing was actually done.'
+          : `Still open: ${outstanding.map((step) => step.title).join('; ')}.`,
   });
 
   const unexplained = snapshot.steps.filter(

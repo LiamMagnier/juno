@@ -52,12 +52,13 @@ test('a satisfied run reports nothing unmet', () => {
 });
 
 test('an unmet check reports what went wrong, not the claim that would have passed', () => {
-  // The exact shape of the reported run: the model answered in prose without
-  // advancing a single step, so every step is still open.
+  // A run that got somewhere and then stopped, which is the case that keeps
+  // the outstanding list. ("Never began at all" is a distinct failure with a
+  // message of its own — see the next test.)
   const result = structuralValidation({
-    goal: 'clean my GitHub & add readme on projects that doesn’t have',
-    plan: planWith(),
-    answer: 'What I need from you: what does "clean my GitHub" mean?',
+    goal: 'Reconcile the invoices',
+    plan: planWith((p) => p.complete('a')),
+    answer: 'Read the first invoice and stopped.',
     artifacts: [],
   });
 
@@ -71,11 +72,44 @@ test('an unmet check reports what went wrong, not the claim that would have pass
     !sentence.includes('Every planned step reached a conclusion.'),
     `the failure sentence asserts the check passed: ${sentence}`,
   );
-  // And it must name the steps that are actually outstanding, because that is
+  // And it must name the step that is actually outstanding, because that is
   // the only part a person can do anything with.
   assert.ok(sentence.includes('Still open:'), sentence);
-  assert.ok(sentence.includes('Read the invoices'), sentence);
   assert.ok(sentence.includes('Reconcile them'), sentence);
+});
+
+test('a run that never began says that, not "still open"', () => {
+  // The exact reported failure: the model narrated an intention, called no
+  // tool, and every step of the fixed three-step scaffold stayed pending.
+  const result = structuralValidation({
+    goal: 'Clean my GitHub and add readme to projects that doesn’t have',
+    plan: planWith(),
+    answer: 'First, I need to know your GitHub username. Let me fetch that information.',
+    artifacts: [],
+  });
+
+  assert.equal(result.satisfied, false);
+  const sentence = result.unmet.join(' ');
+  assert.ok(sentence.includes('without starting the plan'), sentence);
+  // The step list is what made the old message read as a problem with the
+  // plan, which is a fixed scaffold identical on every run.
+  assert.ok(!sentence.includes('Still open:'), sentence);
+});
+
+test('a run that got partway still lists what is outstanding', () => {
+  const plan = planWith((p) => p.complete('a'));
+  const result = structuralValidation({
+    goal: 'Reconcile the invoices',
+    plan,
+    answer: 'Read the first invoice.',
+    artifacts: [],
+  });
+  assert.equal(result.satisfied, false);
+  const sentence = result.unmet.join(' ');
+  // Partial progress is a different failure and keeps the specific list.
+  assert.ok(sentence.includes('Still open:'), sentence);
+  assert.ok(sentence.includes('Reconcile them'), sentence);
+  assert.ok(!sentence.includes('without starting the plan'), sentence);
 });
 
 test('a run that produced nothing says so', () => {

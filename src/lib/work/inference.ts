@@ -153,7 +153,16 @@ const RULES: readonly InferenceRule[] = [
     patterns: [
       /\b(?:my |our )?(?:inbox|gmail|email|e-mail|mailbox)\b/i,
       /\b(?:my |our )?calendar\b/i,
-      /\b(?:slack|notion|linear|jira|asana|hubspot|salesforce|google drive|dropbox|github issues)\b/i,
+      /\b(?:slack|notion|linear|jira|asana|hubspot|salesforce|google drive|dropbox)\b/i,
+      // `github issues` used to be the only Git host pattern, so "clean my
+      // GitHub and add a readme to the projects that don't have one" inferred
+      // *nothing* — the composer promised the task needed no connected app, the
+      // run was dispatched with no Git tools, and the model narrated "let me
+      // fetch that information", called nothing, and died against a plan it had
+      // never started. Naming the host is the signal; "issues" was never the
+      // part that made it a connector.
+      /\b(?:github|gitlab|bitbucket)\b/i,
+      /\bpull requests?\b/i,
       /\b(?:send|draft|reply to)\b[^.!?]{0,20}\b(?:email|message|invite)\b/i,
     ],
   },
