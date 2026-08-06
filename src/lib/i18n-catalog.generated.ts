@@ -6994,6 +6994,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Xiaomi MiMo's reasoning, coding and agentic flagship."
   },
   {
+    "id": "8c9cca0bcd2e50ff",
+    "source": "Upstream provider request timed out."
+  },
+  {
     "id": "8ca344247c18317e",
     "source": "Motion"
   },
@@ -9008,6 +9012,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b40b3713b43dc702",
     "source": "Open menu"
+  },
+  {
+    "id": "b418469a476c91d3",
+    "source": "The cloud runner could not be started. Try again."
   },
   {
     "id": "b4267ce93cbba4e4",
