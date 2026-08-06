@@ -92,7 +92,11 @@ export async function POST(req: Request) {
   return NextResponse.json({
     artifactId: artifact.id,
     conversationId: conversation.id,
-    // Where to send the browser: the chat that owns it, with the canvas open.
-    url: `/chat/${conversation.id}?artifact=${artifact.id}`,
+    // Where to send the browser: the design's own window. This used to open the
+    // chat that owns it with the canvas panel showing, which put the editor in a
+    // side panel too narrow to keep its layers rail or inspector — a brand-new
+    // design landed as a canvas with nothing to edit it with. The conversation
+    // is still one click away from there.
+    url: `/design/${artifact.id}`,
   });
 }

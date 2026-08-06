@@ -9,8 +9,8 @@
  * reported as "I don't see it" twice, correctly.
  *
  * This is deliberately a *list plus a start button*, not a second editor: the
- * editor lives in the Canvas, where a design sits beside the conversation that
- * can change it. Opening a design from here lands in exactly that place.
+ * editor lives at `/design/{artifactId}`, where it gets the whole window and
+ * keeps its layers rail and inspector. Opening a design from here lands there.
  */
 
 import * as React from "react";
@@ -163,7 +163,7 @@ export default function DesignPage() {
                 <li key={item.id}>
                   <button
                     type="button"
-                    onClick={() => router.push(`/chat/${item.conversationId}?artifact=${item.id}`)}
+                    onClick={() => router.push(`/design/${item.id}`)}
                     className="pressable flex w-full items-center gap-3 rounded-[14px] border border-border/60 bg-card/40 px-4 py-3 text-left transition-colors duration-fast hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                   >
                     <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
