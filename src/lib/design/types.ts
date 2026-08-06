@@ -80,33 +80,103 @@ export interface Stroke {
   dash?: number[];
 }
 
-export interface Shadow {
-  type: "drop" | "inner";
+/**
+ * How an effect that draws its own pixels mixes with the layer beneath it.
+ *
+ * Restricted to the modes `feBlend`, CSS `mix-blend-mode`/`background-blend-mode`
+ * and Core Graphics all agree on, so grain and texture composite the same way in
+ * the canvas, the SVG/PNG export and the generated HTML.
+ */
+export type EffectBlendMode = "normal" | "multiply" | "screen" | "overlay" | "soft-light";
+
+/**
+ * One entry in a layer's effect stack.
+ *
+ * **Why one list rather than three fields.** This used to be `shadows: Shadow[]`
+ * plus `blur: Blur | null` plus `noise: Noise | null`, and the shape of that
+ * carried a claim the renderer could not honour: that a layer has at most one
+ * blur, that grain is a property rather than a thing you stack, and — worst —
+ * that the relative order of a blur, a grain and a shadow is fixed by the model
+ * instead of chosen by the designer. It is not. Grain *under* a blur is a
+ * smeared field; grain *over* it is film. Both are legitimate and only an
+ * ordered list can say which one this layer means.
+ *
+ * So: one `effects` array per node, tagged variants, **applied in list order**.
+ * Index 0 is applied first — closest to the raw layer — and every later entry
+ * composites on top of the result of the ones before it. Adding appends, which
+ * is why a freshly added drop shadow lands over what is already there.
+ *
+ * The one thing order cannot decide is where a *backdrop* effect sits.
+ * `background-blur` and `glass` sample what is painted **behind** the layer, so
+ * they are drawn beneath it no matter where in the list they appear; their order
+ * among themselves is respected, their order relative to the filter effects is
+ * not, because "behind the layer" and "on the layer" are different places rather
+ * than different times. The panel says so rather than pretending otherwise.
+ *
+ * Every variant below is a *composition of primitives every target already has*.
+ * That is the rule this module exists to enforce: `glass` is a name for a recipe
+ * (backdrop blur + rim refraction + tint + light), not a new drawing primitive,
+ * so SVG, PNG, PDF, HTML, React and SwiftUI can each honour it or say precisely
+ * which part of it they cannot. Figma's own list has one more item — *Shader
+ * (Beta)* — and it is deliberately absent here: a shader is a **program**, and a
+ * document that holds a program can only be rendered by something that runs it.
+ * Eight exporters cannot, so a Juno document will not hold one.
+ */
+export type Effect =
+  | DropShadowEffect
+  | InnerShadowEffect
+  | LayerBlurEffect
+  | BackgroundBlurEffect
+  | NoiseEffect
+  | TextureEffect
+  | GlassEffect;
+
+export type EffectType = Effect["type"];
+
+/** Fields every effect carries. Absent `visible` means visible — an effect
+ *  written before the eye existed is not a hidden one. */
+interface EffectCommon {
+  visible?: boolean;
+}
+
+export interface DropShadowEffect extends EffectCommon {
+  type: "drop-shadow";
   color: Rgba;
   offsetX: number;
   offsetY: number;
   blur: number;
   spread: number;
-  visible?: boolean;
 }
 
-export interface Blur {
-  type: "layer" | "background";
+export interface InnerShadowEffect extends EffectCommon {
+  type: "inner-shadow";
+  color: Rgba;
+  offsetX: number;
+  offsetY: number;
+  blur: number;
+  spread: number;
+}
+
+/**
+ * Saturation on the blurs is a multiplier, 1 being "leave the colour alone".
+ *
+ * It lives on the blur rather than on the node because saturation is only ever
+ * meaningful *with* one: a frosted panel is a blurred sample of what is behind
+ * it with its colour pushed back up, and every target expresses the pair as a
+ * single operation — `backdrop-filter: blur() saturate()` in CSS,
+ * `feGaussianBlur` + `feColorMatrix type="saturate"` in SVG, and the saturation
+ * SwiftUI's materials already bake in. Splitting them would let a document
+ * express a saturation nothing could render.
+ */
+export interface LayerBlurEffect extends EffectCommon {
+  type: "layer-blur";
   radius: number;
-  /**
-   * Saturation multiplier applied together with the blur; 1 leaves colour alone.
-   *
-   * It lives on the blur rather than on the node because saturation is only ever
-   * meaningful *with* one: a "liquid glass" panel is a blurred sample of what is
-   * behind it with its colour pushed back up, and every target expresses the
-   * pair as a single operation — `backdrop-filter: blur() saturate()` in CSS,
-   * `feGaussianBlur` + `feColorMatrix type="saturate"` in SVG, and the
-   * saturation SwiftUI's materials already bake in. Splitting them would let a
-   * document express a saturation nothing could render.
-   *
-   * Optional, with 1 as the identity, for the same reason `Paint.opacity` is:
-   * a stored blur that never mentions it means "unchanged".
-   */
+  saturation?: number;
+}
+
+export interface BackgroundBlurEffect extends EffectCommon {
+  type: "background-blur";
+  radius: number;
   saturation?: number;
 }
 
@@ -120,7 +190,8 @@ export interface Blur {
  * and the CSS targets (which embed the same turbulence as a data-URI
  * background) all draw the identical grain from the identical parameters.
  */
-export interface Noise {
+export interface NoiseEffect extends EffectCommon {
+  type: "noise";
   /** 0..1 — how strongly the grain is mixed over the layer. */
   opacity: number;
   /** `feTurbulence` base frequency, in cycles per point. Higher is finer. */
@@ -130,9 +201,130 @@ export interface Noise {
   seed: number;
   /** Grey grain (film) rather than per-channel colour speckle. */
   monochrome: boolean;
-  /** How the grain mixes with the layer beneath it. Restricted to the modes
-   *  `feBlend`, CSS `mix-blend-mode` and Core Graphics all agree on. */
-  blend: "normal" | "multiply" | "screen" | "overlay" | "soft-light";
+  blend: EffectBlendMode;
+}
+
+/**
+ * A lit relief — Figma's "Texture".
+ *
+ * Grain and texture come from the same turbulence field and are still two
+ * different things: grain is that field used as *colour*, texture is that field
+ * used as a *height map* and then lit. So this is the same `feTurbulence` the
+ * noise effect emits, handed to `feDiffuseLighting` with a distant light, which
+ * is the standard SVG recipe for a surface and is expressible everywhere
+ * turbulence already was (the CSS exporter embeds the identical filter as a
+ * tiled data-URI, exactly as it does for grain).
+ *
+ * `depth` is `surfaceScale`, `roughness` is `numOctaves` — named for what a
+ * designer is reaching for, stored as what the filter takes, so nothing has to
+ * be guessed back out on the way to an export.
+ */
+export interface TextureEffect extends EffectCommon {
+  type: "texture";
+  /** `feTurbulence` base frequency — the size of the grain of the surface. */
+  scale: number;
+  /** `feDiffuseLighting` surfaceScale — how far the relief stands up. */
+  depth: number;
+  /** `feTurbulence` numOctaves: 1 is smooth swells, 4 is coarse tooth. */
+  roughness: number;
+  seed: number;
+  /** The light's colour, which is what tints the lit surface. */
+  color: Rgba;
+  /** 0..1 — how strongly the lit surface is mixed over the layer. */
+  opacity: number;
+  blend: EffectBlendMode;
+}
+
+/**
+ * Glass: a named recipe, not a new primitive.
+ *
+ * This replaces a one-shot "Liquid glass" button that expanded into a blur, a
+ * gradient fill, two inner shadows and a grain and then forgot it had done so —
+ * which meant there was no such thing as *a* glass effect to adjust, hide or
+ * remove, only a scattering of primitives you had to recognise. The whole point
+ * of an effect stack is that what you added is a thing you can still see.
+ *
+ * The fields are the ones Figma exposes on its Glass effect, and every one of
+ * them is rendered by composing primitives:
+ *
+ *  - `blur`/`saturation` — the backdrop sample, drawn the way `background-blur`
+ *    already is.
+ *  - `refraction`/`depth` — the rim. A real lens magnifies and displaces what is
+ *    behind it near its edge, so the renderer paints a second, magnified copy of
+ *    the same backdrop masked to a band `depth` points wide at the silhouette's
+ *    edge. Nothing exotic: a transform, a mask and a gradient.
+ *  - `tint`/`tintOpacity` — the surface colour, painted as a shape over the
+ *    backdrop with a top-to-bottom sheen so the surface reads as curved.
+ *  - `lightIntensity`/`lightAngle` — the rim light, painted as a gradient stroke
+ *    on the silhouette, bright where the light is and dark opposite it.
+ *
+ * A target that cannot do one of those parts says which part, rather than
+ * dropping the effect or inventing its own glass.
+ */
+export interface GlassEffect extends EffectCommon {
+  type: "glass";
+  /** Backdrop blur radius, in points. */
+  blur: number;
+  /** Saturation lift on the backdrop; 1 leaves colour alone. */
+  saturation: number;
+  /** 0..1 — how hard the rim bends what is behind it. 0 is flat frosting. */
+  refraction: number;
+  /** Width of the refracting rim, in points. */
+  depth: number;
+  /** The glass's own colour. */
+  tint: Rgba;
+  /** 0..1, applied over `tint`'s own alpha. */
+  tintOpacity: number;
+  /** 0..1 — brightness of the specular rim. */
+  lightIntensity: number;
+  /** Degrees clockwise from 12 o'clock: where the light is coming from. */
+  lightAngle: number;
+}
+
+/** The effects that sample what is painted behind the layer rather than the
+ *  layer itself, and are therefore drawn beneath it. */
+export function isBackdropEffect(effect: Effect): effect is BackgroundBlurEffect | GlassEffect {
+  return effect.type === "background-blur" || effect.type === "glass";
+}
+
+// ---------------------------------------------------------------------------
+// The pre-`effects` wire shapes
+// ---------------------------------------------------------------------------
+
+/**
+ * `shadows`, `blur` and `noise` as documents written before the effect stack
+ * carry them.
+ *
+ * These are not part of the decoded model any more — no renderer, exporter or
+ * panel reads them — but they are still part of the *wire* format, because a
+ * document stored last week has them and no other shape. `schema.ts` folds them
+ * into `effects` on the way in (see `foldLegacyEffects`), which is why there is
+ * no migration and no schema version bump: the same reasoning the `noise`
+ * default was added under, and the same benefit — a build that has not run
+ * anything still opens every stored document.
+ */
+export interface LegacyShadow {
+  type: "drop" | "inner";
+  color: Rgba;
+  offsetX: number;
+  offsetY: number;
+  blur: number;
+  spread: number;
+  visible?: boolean;
+}
+
+export interface LegacyBlur {
+  type: "layer" | "background";
+  radius: number;
+  saturation?: number;
+}
+
+export interface LegacyNoise {
+  opacity: number;
+  density: number;
+  seed: number;
+  monochrome: boolean;
+  blend: EffectBlendMode;
   visible?: boolean;
 }
 
@@ -260,12 +452,15 @@ export interface BaseNode {
   fills: Paint[];
   strokes: Stroke[];
   cornerRadius: CornerRadius;
-  shadows: Shadow[];
-  blur: Blur | null;
-  /** Grain over this layer. Required (never absent) on a decoded node: the
-   *  schema defaults a missing key to `null`, so a v1 document written before
-   *  grain existed still decodes to a total node. */
-  noise: Noise | null;
+  /**
+   * The layer's effect stack, applied in list order (see `Effect`).
+   *
+   * Required (never absent) on a decoded node even though every document
+   * written before the stack existed lacks the key: the schema folds those
+   * documents' `shadows`/`blur`/`noise` into this list on the way in and
+   * defaults the rest to `[]`, so a renderer never has to invent one mid-frame.
+   */
+  effects: Effect[];
   constraints: Constraints;
   widthMode: SizingMode;
   heightMode: SizingMode;

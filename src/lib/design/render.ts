@@ -24,11 +24,14 @@
 import { layoutPage, layoutSubtree, lineHeightPx, measureText, wrapText, type LayoutBox, type LayoutMap } from "@/lib/design/layout";
 import { applyBoundVariables, rgbaToCss, rgbaToHex } from "@/lib/design/variables";
 import {
+  isBackdropEffect,
   isContainer,
-  type Blur,
+  type BackgroundBlurEffect,
   type CornerRadius,
   type DesignDocument,
   type DesignNode,
+  type Effect,
+  type GlassEffect,
   type NodeId,
   type Paint,
   type PageId,
@@ -156,142 +159,180 @@ function radiusAttrs(radius: CornerRadius): string {
 // ---------------------------------------------------------------------------
 
 /**
- * The whole effect stack of one node as a single SVG filter.
+ * The layer-side half of a node's effect stack, as a single SVG filter.
  *
- * Order is the order a designer describes it in: the layer is blurred, grain
- * goes over the blurred layer (grain that gets blurred is not grain), inner
- * shadows sit on top of both because they are lighting on the surface, and drop
- * shadows go behind everything because they are cast by it.
+ * The list is walked **in order**, and each entry composites onto the result of
+ * the ones before it. That is the whole reason the model unified three fields
+ * into one array: the old renderer hard-coded blur → grain → inner shadows →
+ * drop shadows, so a document could not say "grain, then blur it" even though
+ * that is a different and perfectly ordinary surface. Now the document says it
+ * and this reads it back.
  *
- * Two things this replaces are worth naming, because both were silent:
- * `feDropShadow` cannot express `spread`, so every spread a user typed was
- * discarded on the way to the canvas; and inner shadows were filtered out of
- * the list entirely, so the model could hold one and nothing could ever show
- * it. Both are now built by hand out of morphology, offset, blur and flood.
+ * Shadows are still cast by `SourceAlpha` rather than by whatever the chain has
+ * accumulated, on purpose: a shadow is cast by the layer's *silhouette*, which
+ * is what CSS `box-shadow` and SwiftUI `.shadow` both do, and casting it from a
+ * blurred intermediate would make the canvas the only target that agreed with
+ * itself.
+ *
+ * Two things this originally replaced are worth keeping named, because both
+ * were silent: `feDropShadow` cannot express `spread`, so every spread a user
+ * typed was discarded on the way to the canvas; and inner shadows were filtered
+ * out of the list entirely, so the model could hold one and nothing could ever
+ * show it. Both are built by hand out of morphology, offset, blur and flood.
  */
-function effectFilter(node: DesignNode, box: LayoutBox, defs: Defs): string | null {
-  const shadows = node.shadows.filter((s) => s.visible !== false);
-  const drops = shadows.filter((s) => s.type === "drop");
-  const inners = shadows.filter((s) => s.type === "inner");
-  const layerBlur = node.blur && node.blur.type === "layer" ? node.blur : null;
-  const noise = node.noise && node.noise.visible !== false && node.noise.opacity > 0 ? node.noise : null;
-  if (drops.length === 0 && inners.length === 0 && !layerBlur && !noise) return null;
+function effectFilter(effects: Effect[], box: LayoutBox, defs: Defs): string | null {
+  const layerEffects = effects.filter((effect) => !isBackdropEffect(effect));
+  if (layerEffects.length === 0) return null;
 
   const parts: string[] = [];
   let counter = 0;
   const step = () => `f${(counter++).toString(36)}`;
   let last = "SourceGraphic";
 
-  if (layerBlur) {
-    const blurred = step();
-    parts.push(`<feGaussianBlur in="${last}" stdDeviation="${num(layerBlur.radius / 2)}" result="${blurred}"/>`);
-    last = blurred;
-    const saturation = layerBlur.saturation ?? 1;
-    if (saturation !== 1) {
-      const saturated = step();
-      parts.push(`<feColorMatrix in="${last}" type="saturate" values="${num(saturation)}" result="${saturated}"/>`);
-      last = saturated;
-    }
-  }
-
-  if (noise) {
-    const turbulence = step();
+  /** Turbulence, shared by grain and texture — the same field, used two ways. */
+  const turbulence = (frequency: number, octaves: number, seed: number) => {
+    const result = step();
     parts.push(
-      `<feTurbulence type="fractalNoise" baseFrequency="${num(noise.density)}" numOctaves="3" seed="${num(noise.seed)}" stitchTiles="stitch" result="${turbulence}"/>`
+      `<feTurbulence type="fractalNoise" baseFrequency="${num(frequency)}" numOctaves="${num(octaves)}" seed="${num(seed)}" stitchTiles="stitch" result="${result}"/>`
     );
-    let grain = turbulence;
-    if (noise.monochrome) {
-      const grey = step();
-      parts.push(`<feColorMatrix in="${grain}" type="saturate" values="0" result="${grey}"/>`);
-      grain = grey;
-    }
-    // `feTurbulence` writes a noisy alpha channel as well as noisy colour.
-    // Left alone it punches transparent holes through the layer instead of
-    // speckling it, so alpha is flattened to the grain's own strength.
-    const flattened = step();
+    return result;
+  };
+
+  /** Trim to the layer's silhouette, fade to `opacity`, blend onto the chain. */
+  const overlay = (source: string, opacity: number, blend: string) => {
+    const faded = step();
     parts.push(
-      `<feComponentTransfer in="${grain}" result="${flattened}"><feFuncA type="linear" slope="0" intercept="${num(noise.opacity)}"/></feComponentTransfer>`
+      `<feComponentTransfer in="${source}" result="${faded}"><feFuncA type="linear" slope="0" intercept="${num(opacity)}"/></feComponentTransfer>`
     );
     const trimmed = step();
-    parts.push(`<feComposite in="${flattened}" in2="SourceAlpha" operator="in" result="${trimmed}"/>`);
+    parts.push(`<feComposite in="${faded}" in2="SourceAlpha" operator="in" result="${trimmed}"/>`);
     const blended = step();
-    parts.push(`<feBlend in="${trimmed}" in2="${last}" mode="${noise.blend}" result="${blended}"/>`);
+    parts.push(`<feBlend in="${trimmed}" in2="${last}" mode="${blend}" result="${blended}"/>`);
     last = blended;
+  };
+
+  for (const effect of layerEffects) {
+    switch (effect.type) {
+      case "layer-blur": {
+        const blurred = step();
+        parts.push(`<feGaussianBlur in="${last}" stdDeviation="${num(effect.radius / 2)}" result="${blurred}"/>`);
+        last = blurred;
+        const saturation = effect.saturation ?? 1;
+        if (saturation !== 1) {
+          const saturated = step();
+          parts.push(`<feColorMatrix in="${last}" type="saturate" values="${num(saturation)}" result="${saturated}"/>`);
+          last = saturated;
+        }
+        break;
+      }
+
+      case "noise": {
+        let grain = turbulence(effect.density, 3, effect.seed);
+        if (effect.monochrome) {
+          const grey = step();
+          parts.push(`<feColorMatrix in="${grain}" type="saturate" values="0" result="${grey}"/>`);
+          grain = grey;
+        }
+        // `feTurbulence` writes a noisy alpha channel as well as noisy colour.
+        // Left alone it punches transparent holes through the layer instead of
+        // speckling it, so `overlay` flattens alpha to the grain's own strength.
+        overlay(grain, effect.opacity, effect.blend);
+        break;
+      }
+
+      case "texture": {
+        // The same turbulence, read as a height map and lit — which is the only
+        // difference between grain and a surface. `feDiffuseLighting` discards
+        // the colour of its input and lights its alpha, so the field is fed in
+        // as-is and the light's own colour is what tints the relief.
+        const field = turbulence(effect.scale, effect.roughness, effect.seed);
+        const lit = step();
+        parts.push(
+          `<feDiffuseLighting in="${field}" surfaceScale="${num(effect.depth)}" diffuseConstant="1" lighting-color="${rgbaToCss(effect.color)}" result="${lit}"><feDistantLight azimuth="225" elevation="55"/></feDiffuseLighting>`
+        );
+        overlay(lit, effect.opacity, effect.blend);
+        break;
+      }
+
+      case "inner-shadow": {
+        // A positive spread makes an inner shadow *thicker*, which means the
+        // silhouette it is cast into has to shrink — hence erode, not dilate.
+        let alpha = "SourceAlpha";
+        if (effect.spread !== 0) {
+          const eroded = step();
+          parts.push(
+            `<feMorphology in="SourceAlpha" operator="${effect.spread > 0 ? "erode" : "dilate"}" radius="${num(Math.abs(effect.spread))}" result="${eroded}"/>`
+          );
+          alpha = eroded;
+        }
+        const offset = step();
+        parts.push(`<feOffset in="${alpha}" dx="${num(effect.offsetX)}" dy="${num(effect.offsetY)}" result="${offset}"/>`);
+        let hole = offset;
+        if (effect.blur > 0) {
+          const softened = step();
+          parts.push(`<feGaussianBlur in="${hole}" stdDeviation="${num(effect.blur / 2)}" result="${softened}"/>`);
+          hole = softened;
+        }
+        // Inside the shape but outside the offset silhouette: that difference is
+        // exactly the crescent an inner shadow occupies.
+        const ring = step();
+        parts.push(`<feComposite in="SourceAlpha" in2="${hole}" operator="out" result="${ring}"/>`);
+        const flood = step();
+        parts.push(`<feFlood flood-color="${rgbaToCss(effect.color)}" result="${flood}"/>`);
+        const tinted = step();
+        parts.push(`<feComposite in="${flood}" in2="${ring}" operator="in" result="${tinted}"/>`);
+        const merged = step();
+        parts.push(`<feComposite in="${tinted}" in2="${last}" operator="over" result="${merged}"/>`);
+        last = merged;
+        break;
+      }
+
+      case "drop-shadow": {
+        let alpha = "SourceAlpha";
+        if (effect.spread !== 0) {
+          const grown = step();
+          parts.push(
+            `<feMorphology in="SourceAlpha" operator="${effect.spread > 0 ? "dilate" : "erode"}" radius="${num(Math.abs(effect.spread))}" result="${grown}"/>`
+          );
+          alpha = grown;
+        }
+        const offset = step();
+        parts.push(`<feOffset in="${alpha}" dx="${num(effect.offsetX)}" dy="${num(effect.offsetY)}" result="${offset}"/>`);
+        let softened = offset;
+        if (effect.blur > 0) {
+          const blurred = step();
+          parts.push(`<feGaussianBlur in="${softened}" stdDeviation="${num(effect.blur / 2)}" result="${blurred}"/>`);
+          softened = blurred;
+        }
+        const flood = step();
+        parts.push(`<feFlood flood-color="${rgbaToCss(effect.color)}" result="${flood}"/>`);
+        const tinted = step();
+        parts.push(`<feComposite in="${flood}" in2="${softened}" operator="in" result="${tinted}"/>`);
+        const merged = step();
+        parts.push(`<feComposite in="${last}" in2="${tinted}" operator="over" result="${merged}"/>`);
+        last = merged;
+        break;
+      }
+    }
   }
 
-  for (const shadow of inners) {
-    // A positive spread makes an inner shadow *thicker*, which means the
-    // silhouette it is cast into has to shrink — hence erode, not dilate.
-    let alpha = "SourceAlpha";
-    if (shadow.spread !== 0) {
-      const eroded = step();
-      parts.push(
-        `<feMorphology in="SourceAlpha" operator="${shadow.spread > 0 ? "erode" : "dilate"}" radius="${num(Math.abs(shadow.spread))}" result="${eroded}"/>`
-      );
-      alpha = eroded;
-    }
-    const offset = step();
-    parts.push(`<feOffset in="${alpha}" dx="${num(shadow.offsetX)}" dy="${num(shadow.offsetY)}" result="${offset}"/>`);
-    let hole = offset;
-    if (shadow.blur > 0) {
-      const softened = step();
-      parts.push(`<feGaussianBlur in="${hole}" stdDeviation="${num(shadow.blur / 2)}" result="${softened}"/>`);
-      hole = softened;
-    }
-    // Inside the shape but outside the offset silhouette: that difference is
-    // exactly the crescent an inner shadow occupies.
-    const ring = step();
-    parts.push(`<feComposite in="SourceAlpha" in2="${hole}" operator="out" result="${ring}"/>`);
-    const flood = step();
-    parts.push(`<feFlood flood-color="${rgbaToCss(shadow.color)}" result="${flood}"/>`);
-    const tinted = step();
-    parts.push(`<feComposite in="${flood}" in2="${ring}" operator="in" result="${tinted}"/>`);
-    const merged = step();
-    parts.push(`<feComposite in="${tinted}" in2="${last}" operator="over" result="${merged}"/>`);
-    last = merged;
-  }
-
-  for (const shadow of drops) {
-    let alpha = "SourceAlpha";
-    if (shadow.spread !== 0) {
-      const grown = step();
-      parts.push(
-        `<feMorphology in="SourceAlpha" operator="${shadow.spread > 0 ? "dilate" : "erode"}" radius="${num(Math.abs(shadow.spread))}" result="${grown}"/>`
-      );
-      alpha = grown;
-    }
-    const offset = step();
-    parts.push(`<feOffset in="${alpha}" dx="${num(shadow.offsetX)}" dy="${num(shadow.offsetY)}" result="${offset}"/>`);
-    let softened = offset;
-    if (shadow.blur > 0) {
-      const blurred = step();
-      parts.push(`<feGaussianBlur in="${softened}" stdDeviation="${num(shadow.blur / 2)}" result="${blurred}"/>`);
-      softened = blurred;
-    }
-    const flood = step();
-    parts.push(`<feFlood flood-color="${rgbaToCss(shadow.color)}" result="${flood}"/>`);
-    const tinted = step();
-    parts.push(`<feComposite in="${flood}" in2="${softened}" operator="in" result="${tinted}"/>`);
-    const merged = step();
-    parts.push(`<feComposite in="${last}" in2="${tinted}" operator="over" result="${merged}"/>`);
-    last = merged;
-  }
+  if (parts.length === 0) return null;
 
   const id = defs.next();
   defs.entries.push(
-    `<filter id="${id}"${filterRegionAttrs(box, effectPadding(node))} color-interpolation-filters="sRGB">${parts.join("")}</filter>`
+    `<filter id="${id}"${filterRegionAttrs(box, effectPadding(layerEffects))} color-interpolation-filters="sRGB">${parts.join("")}</filter>`
   );
   return id;
 }
 
 /** How far outside its own box a node's effects can reach, in points. */
-function effectPadding(node: DesignNode): number {
+function effectPadding(effects: Effect[]): number {
   let pad = 0;
-  if (node.blur?.type === "layer") pad = Math.max(pad, node.blur.radius * 1.5);
-  for (const shadow of node.shadows) {
-    if (shadow.visible === false || shadow.type !== "drop") continue;
-    const reach = shadow.blur * 1.5 + Math.max(shadow.spread, 0);
-    pad = Math.max(pad, Math.abs(shadow.offsetX) + reach, Math.abs(shadow.offsetY) + reach);
+  for (const effect of effects) {
+    if (effect.type === "layer-blur") pad = Math.max(pad, effect.radius * 1.5);
+    if (effect.type !== "drop-shadow") continue;
+    const reach = effect.blur * 1.5 + Math.max(effect.spread, 0);
+    pad = Math.max(pad, Math.abs(effect.offsetX) + reach, Math.abs(effect.offsetY) + reach);
   }
   return pad;
 }
@@ -314,31 +355,40 @@ function filterRegionAttrs(box: LayoutBox, pad: number): string {
   return ` x="${num(-px)}%" y="${num(-py)}%" width="${num(100 + px * 2)}%" height="${num(100 + py * 2)}%"`;
 }
 
-/** The clip geometry for a node, in page coordinates — the shape a background
- *  blur is seen through, which has to be the node's silhouette rather than its
- *  box or every rounded glass panel would blur square corners. */
-function clipShape(node: DesignNode, box: LayoutBox): string {
+/**
+ * The node's own silhouette, in page coordinates, with whatever paint
+ * attributes the caller needs.
+ *
+ * One function rather than three, because the shape a background blur is *seen
+ * through*, the shape a glass tint is *painted on* and the shape a rim light is
+ * *stroked around* are all the same shape — and the moment they were written out
+ * separately, a rounded glass panel blurred square corners.
+ */
+function silhouette(node: DesignNode, box: LayoutBox, attrs: string): string {
   switch (node.type) {
     case "ellipse":
-      return `<ellipse cx="${num(box.x + box.width / 2)}" cy="${num(box.y + box.height / 2)}" rx="${num(box.width / 2)}" ry="${num(box.height / 2)}"/>`;
+      return `<ellipse cx="${num(box.x + box.width / 2)}" cy="${num(box.y + box.height / 2)}" rx="${num(box.width / 2)}" ry="${num(box.height / 2)}"${attrs}/>`;
     case "path":
-      return `<path transform="translate(${num(box.x)} ${num(box.y)})" d="${escapeXml(node.d)}" clip-rule="${node.windingRule === "evenodd" ? "evenodd" : "nonzero"}"/>`;
+      return `<path transform="translate(${num(box.x)} ${num(box.y)})" d="${escapeXml(node.d)}"${attrs}/>`;
     default:
-      return `<rect x="${num(box.x)}" y="${num(box.y)}" width="${num(box.width)}" height="${num(box.height)}"${radiusAttrs(node.cornerRadius)}/>`;
+      return `<rect x="${num(box.x)}" y="${num(box.y)}" width="${num(box.width)}" height="${num(box.height)}"${radiusAttrs(node.cornerRadius)}${attrs}/>`;
   }
 }
 
+function clipShape(node: DesignNode, box: LayoutBox): string {
+  return silhouette(node, box, node.type === "path" ? ` clip-rule="${node.windingRule === "evenodd" ? "evenodd" : "nonzero"}"` : "");
+}
+
 /**
- * A background blur, drawn as what it actually is.
+ * Everything already painted that could show through this node, as markup.
  *
  * SVG has no backdrop filter. `BackgroundImage` was specified for exactly this
  * and no browser ever implemented it; Filter Effects 1 dropped it. So the only
  * honest way to composite a backdrop in a single-pass SVG renderer is to draw
- * one: take the markup already emitted beneath this node, blur and saturate it,
- * clip it to the node's silhouette, and paint that immediately before the node
- * itself. The node's own low-alpha fill then tints the result — which is
- * precisely the compositing model `backdrop-filter` describes, performed
- * explicitly instead of asked for.
+ * one: take the markup already emitted beneath this node and paint a filtered
+ * copy of it immediately before the node itself. The node's own low-alpha fill
+ * then tints the result — which is precisely the compositing model
+ * `backdrop-filter` describes, performed explicitly instead of asked for.
  *
  * Two consequences worth stating rather than discovering:
  *
@@ -350,8 +400,8 @@ function clipShape(node: DesignNode, box: LayoutBox): string {
  *    attribute, and a duplicated one would make the topmost element under the
  *    pointer a ghost of a layer painted somewhere else entirely.
  */
-function backgroundBlurMarkup(ctx: RenderContext, node: DesignNode, box: LayoutBox, blur: Blur): string | null {
-  const bleed = blur.radius * 1.5 + 1;
+function backdropCopy(ctx: RenderContext, box: LayoutBox, radius: number): string | null {
+  const bleed = radius * 1.5 + 1;
   const region: LayoutBox = {
     x: box.x - bleed,
     y: box.y - bleed,
@@ -360,18 +410,121 @@ function backgroundBlurMarkup(ctx: RenderContext, node: DesignNode, box: LayoutB
   };
   const behind = ctx.painted.filter((chunk) => !chunk.box || intersects(chunk.box, region));
   if (behind.length === 0) return null;
+  return behind.map((chunk) => chunk.markup).join("").replace(/ data-juno-node="[^"]*"/g, "");
+}
 
-  const clipId = ctx.defs.next();
-  ctx.defs.entries.push(`<clipPath id="${clipId}">${clipShape(node, box)}</clipPath>`);
-
-  const filterId = ctx.defs.next();
-  const saturation = blur.saturation ?? 1;
+/** A blur (and optional saturation lift) as a reusable filter def. */
+function backdropFilter(ctx: RenderContext, radius: number, saturation: number): string {
+  const id = ctx.defs.next();
   ctx.defs.entries.push(
-    `<filter id="${filterId}" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="${num(blur.radius / 2)}"/>${saturation !== 1 ? `<feColorMatrix type="saturate" values="${num(saturation)}"/>` : ""}</filter>`
+    `<filter id="${id}" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="${num(radius / 2)}"/>${saturation !== 1 ? `<feColorMatrix type="saturate" values="${num(saturation)}"/>` : ""}</filter>`
   );
+  return id;
+}
 
-  const copy = behind.map((chunk) => chunk.markup).join("").replace(/ data-juno-node="[^"]*"/g, "");
+function clipDef(ctx: RenderContext, node: DesignNode, box: LayoutBox): string {
+  const id = ctx.defs.next();
+  ctx.defs.entries.push(`<clipPath id="${id}">${clipShape(node, box)}</clipPath>`);
+  return id;
+}
+
+function backgroundBlurMarkup(ctx: RenderContext, node: DesignNode, box: LayoutBox, effect: BackgroundBlurEffect): string | null {
+  const copy = backdropCopy(ctx, box, effect.radius);
+  if (!copy) return null;
+  const clipId = clipDef(ctx, node, box);
+  const filterId = backdropFilter(ctx, effect.radius, effect.saturation ?? 1);
   return `<g clip-path="url(#${clipId})"><g filter="url(#${filterId})">${copy}</g></g>`;
+}
+
+/** The light's direction as a unit vector, from `lightAngle` degrees clockwise
+ *  from 12 o'clock. Pointing *towards* the light, so the bright edge is the one
+ *  the vector reaches. */
+function lightVector(angle: number): { x: number; y: number } {
+  const radians = ((angle % 360) * Math.PI) / 180;
+  return { x: Math.sin(radians), y: -Math.cos(radians) };
+}
+
+/**
+ * Glass, composed.
+ *
+ * Two pieces of markup, because glass genuinely is two things in two places: a
+ * treatment of what is *behind* the layer, and a surface painted *on* it. The
+ * old "Liquid glass" button could only ever emit the second half plus a blur,
+ * which is why it looked like frosting rather than glass — a real one bends what
+ * is behind it, and only the renderer that owns the backdrop can do that.
+ *
+ *  - **backdrop**: the blurred, saturated copy, clipped to the silhouette; then,
+ *    masked to a band `depth` points wide at the rim, a *magnified* second copy.
+ *    That is what a lens does — near the edge you see a displaced, enlarged
+ *    version of what is behind it — and it is a transform plus a gradient mask,
+ *    nothing a target cannot follow.
+ *  - **surface**: the tint, a sheen along the light direction so the surface
+ *    reads as curved rather than flat, and a rim light stroked on the silhouette,
+ *    bright where the light is and dark opposite it.
+ *
+ * Both halves are painted from the node's own geometry, so they rotate, clip and
+ * export with it.
+ */
+function glassMarkup(
+  ctx: RenderContext,
+  node: DesignNode,
+  box: LayoutBox,
+  effect: GlassEffect
+): { backdrop: string | null; surface: string } {
+  const clipId = clipDef(ctx, node, box);
+  const filterId = backdropFilter(ctx, effect.blur, effect.saturation);
+  const copy = backdropCopy(ctx, box, effect.blur);
+
+  let backdrop: string | null = null;
+  if (copy) {
+    const layers = [`<g filter="url(#${filterId})">${copy}</g>`];
+    const reach = Math.max(box.width, box.height) / 2;
+    if (effect.refraction > 0 && effect.depth > 0 && reach > 0) {
+      // The rim band, as a luminance mask: black through the middle, white at
+      // the edge, so the magnified copy only shows where the glass curves.
+      const gradientId = ctx.defs.next();
+      const inner = Math.max(0, Math.min(0.95, 1 - effect.depth / reach));
+      ctx.defs.entries.push(
+        `<radialGradient id="${gradientId}" gradientUnits="userSpaceOnUse" cx="${num(box.x + box.width / 2)}" cy="${num(box.y + box.height / 2)}" r="${num(reach)}"><stop offset="0" stop-color="#000"/><stop offset="${num(inner)}" stop-color="#000"/><stop offset="1" stop-color="#fff"/></radialGradient>`
+      );
+      const maskId = ctx.defs.next();
+      ctx.defs.entries.push(
+        `<mask id="${maskId}" maskUnits="userSpaceOnUse" x="${num(box.x)}" y="${num(box.y)}" width="${num(box.width)}" height="${num(box.height)}"><rect x="${num(box.x)}" y="${num(box.y)}" width="${num(box.width)}" height="${num(box.height)}" fill="url(#${gradientId})"/></mask>`
+      );
+      // A quarter of the refraction as magnification: past that the rim stops
+      // reading as a bevel and starts reading as a second, wrong image.
+      const scale = 1 + effect.refraction * 0.25;
+      const cx = box.x + box.width / 2;
+      const cy = box.y + box.height / 2;
+      layers.push(
+        `<g mask="url(#${maskId})"><g transform="translate(${num(cx)} ${num(cy)}) scale(${num(scale)}) translate(${num(-cx)} ${num(-cy)})" filter="url(#${filterId})">${copy}</g></g>`
+      );
+    }
+    backdrop = `<g clip-path="url(#${clipId})">${layers.join("")}</g>`;
+  }
+
+  const parts: string[] = [];
+  const tintAlpha = effect.tint.a * effect.tintOpacity;
+  if (tintAlpha > 0) parts.push(silhouette(node, box, ` fill="${rgbaToCss({ ...effect.tint, a: tintAlpha })}"`));
+
+  const light = lightVector(effect.lightAngle);
+  if (effect.lightIntensity > 0) {
+    const sheenId = ctx.defs.next();
+    // Object-bounding-box coordinates: the sheen has to follow the shape when the
+    // shape is resized, and a user-space axis would slide off it.
+    ctx.defs.entries.push(
+      `<linearGradient id="${sheenId}" x1="${num(0.5 + light.x / 2)}" y1="${num(0.5 + light.y / 2)}" x2="${num(0.5 - light.x / 2)}" y2="${num(0.5 - light.y / 2)}"><stop offset="0" stop-color="#fff" stop-opacity="${num(effect.lightIntensity * 0.28)}"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>`
+    );
+    parts.push(silhouette(node, box, ` fill="url(#${sheenId})"`));
+
+    const rimId = ctx.defs.next();
+    ctx.defs.entries.push(
+      `<linearGradient id="${rimId}" x1="${num(0.5 + light.x / 2)}" y1="${num(0.5 + light.y / 2)}" x2="${num(0.5 - light.x / 2)}" y2="${num(0.5 - light.y / 2)}"><stop offset="0" stop-color="#fff" stop-opacity="${num(effect.lightIntensity)}"/><stop offset="0.5" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="${num(effect.lightIntensity * 0.35)}"/></linearGradient>`
+    );
+    parts.push(silhouette(node, box, ` fill="none" stroke="url(#${rimId})" stroke-width="1.25"`));
+  }
+
+  return { backdrop, surface: parts.join("") };
 }
 
 // ---------------------------------------------------------------------------
@@ -386,13 +539,27 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
   const fill = paintFill(resolved.fills[0], ctx.defs, doc);
   const fillOpacity = paintOpacityAttr(resolved.fills[0]);
   const stroke = resolved.strokes[0];
-  const filterId = effectFilter(resolved, box, ctx.defs);
+  // A hidden effect is skipped once, here, so every consumer below — the filter
+  // chain, the backdrops, the surfaces, the padding — agrees about what is on.
+  const effects = resolved.effects.filter((effect) => effect.visible !== false);
+  const filterId = effectFilter(effects, box, ctx.defs);
 
   const push = (markup: string) => ctx.painted.push({ markup, box });
 
-  if (resolved.blur?.type === "background") {
-    const backdrop = backgroundBlurMarkup(ctx, resolved, box, resolved.blur);
-    if (backdrop) push(backdrop);
+  // Backdrop effects go down before the layer, in list order among themselves.
+  // Each one samples what has been painted so far, so a glass panel over a
+  // background blur sees the blur — which is the whole reason they are pushed
+  // one at a time rather than gathered and emitted together.
+  const surfaces: string[] = [];
+  for (const effect of effects) {
+    if (effect.type === "background-blur") {
+      const backdrop = backgroundBlurMarkup(ctx, resolved, box, effect);
+      if (backdrop) push(backdrop);
+    } else if (effect.type === "glass") {
+      const glass = glassMarkup(ctx, resolved, box, effect);
+      if (glass.backdrop) push(glass.backdrop);
+      if (glass.surface) surfaces.push(glass.surface);
+    }
   }
 
   const idAttr = options.includeNodeIds ? ` data-juno-node="${escapeXml(node.id)}"` : "";
@@ -406,7 +573,35 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
   const strokeAttrs = stroke
     ? ` stroke="${paintFill(stroke.paint, ctx.defs, doc)}" stroke-width="${num(stroke.weight)}"${stroke.dash?.length ? ` stroke-dasharray="${stroke.dash.map(num).join(" ")}"` : ""}`
     : "";
-  const common = `${idAttr}${opacityAttr}${filterAttr}${rotateAttr}${blendAttr}`;
+
+  /**
+   * Fills past the first, painted as their own silhouettes over the shape.
+   *
+   * `fills` has been an array since the first slice and this drew `fills[0]`,
+   * which made a second fill something a document could hold, an inspector could
+   * now add, and nothing could ever show. They stack **back to front** — index 0
+   * is the layer's base, matching `children` and the effect stack rather than
+   * contradicting both.
+   *
+   * Text and lines are excluded, and honestly: a glyph run has one `fill` and a
+   * line has none, so a second paint on either has nowhere to go. The exporters
+   * say the same thing in their own words.
+   */
+  const extraFills =
+    resolved.type === "text" || resolved.type === "line" ? [] : resolved.fills.slice(1).filter((paint) => paint.visible !== false);
+
+  // With extra fills the whole stack has to sit inside one group, or the effect
+  // filter would run once per fill and a single drop shadow would be cast three
+  // times. The single-fill case is left exactly as it was — that is the common
+  // one, and it is the markup the canvas hit-tests against.
+  const common = extraFills.length > 0 ? idAttr : `${idAttr}${opacityAttr}${filterAttr}${rotateAttr}${blendAttr}`;
+  const pushShape = (markup: string) => {
+    if (extraFills.length === 0) return push(markup);
+    const layers = extraFills
+      .map((paint) => silhouette(resolved, box, ` fill="${paintFill(paint, ctx.defs, doc)}"${paintOpacityAttr(paint)}`))
+      .join("");
+    push(`<g${opacityAttr}${filterAttr}${rotateAttr}${blendAttr}>${markup}${layers}</g>`);
+  };
 
   switch (resolved.type) {
     case "rectangle":
@@ -417,37 +612,37 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
       // Groups have no fill of their own unless one was authored. A group that
       // carries effects still needs a box to hang them on, though — a rim light
       // with nothing to be a rim of draws nothing at all.
-      const hasBox = resolved.type !== "group" || resolved.fills.length > 0 || !!stroke || !!filterId;
+      const hasBox = resolved.type !== "group" || resolved.fills.length > 0 || !!stroke || !!filterId || surfaces.length > 0;
       if (hasBox) {
-        push(
+        pushShape(
           `<rect x="${num(box.x)}" y="${num(box.y)}" width="${num(box.width)}" height="${num(box.height)}"${radiusAttrs(resolved.cornerRadius)} fill="${fill}"${fillOpacity}${strokeAttrs}${common}/>`
         );
       }
       break;
     }
     case "ellipse":
-      push(
+      pushShape(
         `<ellipse cx="${num(box.x + box.width / 2)}" cy="${num(box.y + box.height / 2)}" rx="${num(box.width / 2)}" ry="${num(box.height / 2)}" fill="${fill}"${fillOpacity}${strokeAttrs}${common}/>`
       );
       break;
     case "line":
-      push(
+      pushShape(
         `<line x1="${num(box.x)}" y1="${num(box.y + box.height / 2)}" x2="${num(box.x + box.width)}" y2="${num(box.y + box.height / 2)}"${strokeAttrs || ' stroke="#000" stroke-width="1"'}${common}/>`
       );
       break;
     case "path":
-      push(
+      pushShape(
         `<g transform="translate(${num(box.x)} ${num(box.y)})"${common}><path d="${escapeXml(resolved.d)}" fill="${fill}"${fillOpacity} fill-rule="${resolved.windingRule === "evenodd" ? "evenodd" : "nonzero"}"${strokeAttrs}/></g>`
       );
       break;
     case "image": {
       const asset = doc.assets[resolved.assetId];
       if (asset) {
-        push(
+        pushShape(
           `<image href="${escapeXml(asset.url)}" x="${num(box.x)}" y="${num(box.y)}" width="${num(box.width)}" height="${num(box.height)}" preserveAspectRatio="${resolved.scaleMode === "fit" ? "xMidYMid meet" : resolved.scaleMode === "stretch" ? "none" : "xMidYMid slice"}"${common}/>`
         );
       } else {
-        push(`<rect x="${num(box.x)}" y="${num(box.y)}" width="${num(box.width)}" height="${num(box.height)}" fill="rgba(0,0,0,0.06)"${common}/>`);
+        pushShape(`<rect x="${num(box.x)}" y="${num(box.y)}" width="${num(box.width)}" height="${num(box.height)}" fill="rgba(0,0,0,0.06)"${common}/>`);
       }
       break;
     }
@@ -469,12 +664,18 @@ function renderNode(doc: DesignDocument, node: DesignNode, boxes: LayoutMap, ctx
       const tspans = lines
         .map((line, index) => `<tspan x="${num(anchorX)}" y="${num(top + index * lh + typography.fontSize * 0.8)}">${escapeXml(line) || " "}</tspan>`)
         .join("");
-      push(
+      pushShape(
         `<text fill="${fill}"${fillOpacity} font-family="${escapeXml(typography.fontFamily)}" font-size="${num(typography.fontSize)}" font-weight="${num(typography.fontWeight)}"${typography.italic ? ' font-style="italic"' : ""} letter-spacing="${num(typography.letterSpacing)}" text-anchor="${anchor}"${typography.textDecoration && typography.textDecoration !== "none" ? ` text-decoration="${typography.textDecoration === "strikethrough" ? "line-through" : "underline"}"` : ""}${common}>${tspans}</text>`
       );
       break;
     }
   }
+
+  // The glass surface sits on the layer and *under* its children: a card's
+  // contents are on the glass, not behind it. It carries the node's own rotation
+  // so a tilted panel's rim light tilts with it, and no `data-juno-node`, because
+  // the layer itself is already the hit target and a second one would shadow it.
+  if (surfaces.length > 0) push(`<g${rotateAttr}${opacityAttr}>${surfaces.join("")}</g>`);
 
   if (!isContainer(node)) return;
 

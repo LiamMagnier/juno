@@ -9,7 +9,7 @@
  */
 
 import { z } from "zod";
-import { DESIGN_SCHEMA_VERSION, type DesignDocument, type DesignNode, type Rgba } from "@/lib/design/types";
+import { DESIGN_SCHEMA_VERSION, type DesignDocument, type DesignNode, type Effect, type EffectType, type Rgba } from "@/lib/design/types";
 
 // ---------------------------------------------------------------------------
 // Primitives
@@ -74,42 +74,155 @@ export const strokeSchema = z.object({
   dash: z.array(finite.min(0)).max(16).optional(),
 });
 
-export const shadowSchema = z.object({
-  type: z.enum(["drop", "inner"]),
+export const effectBlendSchema = z.enum(["normal", "multiply", "screen", "overlay", "soft-light"]);
+
+/** The two shadow variants share every field but their tag. */
+const shadowFields = {
   color: rgbaSchema,
   offsetX: coord,
   offsetY: coord,
   blur: finite.min(0).max(10_000),
   spread: finite.min(-10_000).max(10_000),
   visible: z.boolean().optional(),
-});
+};
 
-export const blurSchema = z.object({
-  type: z.enum(["layer", "background"]),
-  radius: finite.min(0).max(10_000),
-  /** 0 drains the colour, 1 leaves it, >1 pushes it up — the range every
-   *  `saturate()` filter takes. Capped well below the point where the result is
-   *  pure clipped primaries. */
-  saturation: finite.min(0).max(10).optional(),
-});
+/** 0 drains the colour, 1 leaves it, >1 pushes it up — the range every
+ *  `saturate()` filter takes. Capped well below the point where the result is
+ *  pure clipped primaries. */
+const saturation = finite.min(0).max(10);
 
 /**
- * Grain. Every bound here is an `feTurbulence` bound, not a taste one.
+ * One effect. Every bound here is a *renderer* bound, not a taste one.
  *
- * `density` is a base frequency: below ~0.05 the "grain" is a smear of blobs
- * and above ~2 it aliases into a flat grey at any sane zoom, so the useful band
- * is narrow and stated. `seed` is an integer because `feTurbulence` truncates
- * it anyway, and a fractional seed that renders identically to its floor is a
- * value the document can hold but nobody can see.
+ * `density`/`scale` are `feTurbulence` base frequencies: below ~0.05 the result
+ * is a smear of blobs and above ~2 it aliases into flat grey at any sane zoom,
+ * so the useful band is narrow and stated. Seeds are integers because
+ * `feTurbulence` truncates them anyway, and a fractional seed that renders
+ * identically to its floor is a value the document can hold but nobody can see.
+ * `roughness` is `numOctaves`, capped at 4 because a fifth octave costs a full
+ * extra turbulence pass and is below the noise floor of the ones before it.
  */
-export const noiseSchema = z.object({
+export const effectSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("drop-shadow"), ...shadowFields }),
+  z.object({ type: z.literal("inner-shadow"), ...shadowFields }),
+  z.object({
+    type: z.literal("layer-blur"),
+    radius: finite.min(0).max(10_000),
+    saturation: saturation.optional(),
+    visible: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal("background-blur"),
+    radius: finite.min(0).max(10_000),
+    saturation: saturation.optional(),
+    visible: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal("noise"),
+    opacity: unit,
+    density: finite.min(0.001).max(4),
+    seed: z.number().int().min(0).max(65_535),
+    monochrome: z.boolean(),
+    blend: effectBlendSchema,
+    visible: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal("texture"),
+    scale: finite.min(0.001).max(4),
+    depth: finite.min(0).max(200),
+    roughness: z.number().int().min(1).max(4),
+    seed: z.number().int().min(0).max(65_535),
+    color: rgbaSchema,
+    opacity: unit,
+    blend: effectBlendSchema,
+    visible: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal("glass"),
+    blur: finite.min(0).max(10_000),
+    saturation,
+    refraction: unit,
+    depth: finite.min(0).max(1_000),
+    tint: rgbaSchema,
+    tintOpacity: unit,
+    lightIntensity: unit,
+    lightAngle: finite.min(-3_600).max(3_600),
+    visible: z.boolean().optional(),
+  }),
+]);
+
+// ---------------------------------------------------------------------------
+// The pre-`effects` wire shapes, and the fold that retires them
+// ---------------------------------------------------------------------------
+
+const legacyShadowSchema = z.object({ type: z.enum(["drop", "inner"]), ...shadowFields });
+
+const legacyBlurSchema = z.object({
+  type: z.enum(["layer", "background"]),
+  radius: finite.min(0).max(10_000),
+  saturation: saturation.optional(),
+});
+
+const legacyNoiseSchema = z.object({
   opacity: unit,
   density: finite.min(0.001).max(4),
   seed: z.number().int().min(0).max(65_535),
   monochrome: z.boolean(),
-  blend: z.enum(["normal", "multiply", "screen", "overlay", "soft-light"]),
+  blend: effectBlendSchema,
   visible: z.boolean().optional(),
 });
+
+/**
+ * Fold a pre-stack node's `shadows`/`blur`/`noise` into one ordered `effects`
+ * list, and drop the old keys.
+ *
+ * Done here rather than as a schema migration, for the same reason the `noise`
+ * default was: a migration is a step some build has to have run, and every
+ * document already in the wild was written by a build that had not. Parsing is
+ * the one place every reader — the browser, the Mac, an export job, a test —
+ * goes through, so it is the one place a fold is guaranteed to happen exactly
+ * once and never be skipped. `DESIGN_SCHEMA_VERSION` therefore stays at 1: the
+ * documents are readable by every build, and the Swift `Codable` mirror stays
+ * pinned to the v1 contract file it is generated against.
+ *
+ * The order is the order the renderer used to apply these fields in, so a folded
+ * document draws exactly what it drew before: the blur first (closest to the
+ * layer), then the grain over it, then the shadows in the order they were
+ * stored. Anything else would be a silent redraw of every document ever saved.
+ *
+ * `effects` already present wins outright — a node written by this build is
+ * never re-folded, even if a stray legacy key rides along with it.
+ */
+function foldLegacyEffects(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const node = raw as Record<string, unknown>;
+  if (!("shadows" in node) && !("blur" in node) && !("noise" in node)) return raw;
+
+  const { shadows, blur, noise, ...rest } = node;
+  if (Array.isArray(rest.effects)) return rest;
+
+  const effects: unknown[] = [];
+
+  const parsedBlur = legacyBlurSchema.safeParse(blur);
+  if (parsedBlur.success) {
+    const { type, ...fields } = parsedBlur.data;
+    effects.push({ type: type === "layer" ? "layer-blur" : "background-blur", ...fields });
+  }
+
+  const parsedNoise = legacyNoiseSchema.safeParse(noise);
+  if (parsedNoise.success) effects.push({ type: "noise", ...parsedNoise.data });
+
+  if (Array.isArray(shadows)) {
+    for (const entry of shadows) {
+      const parsed = legacyShadowSchema.safeParse(entry);
+      if (!parsed.success) continue;
+      const { type, ...fields } = parsed.data;
+      effects.push({ type: type === "drop" ? "drop-shadow" : "inner-shadow", ...fields });
+    }
+  }
+
+  return { ...rest, effects };
+}
 
 export const blendModeSchema = z.enum([
   "normal",
@@ -204,16 +317,18 @@ const baseNodeShape = {
   fills: z.array(paintSchema).max(32),
   strokes: z.array(strokeSchema).max(32),
   cornerRadius: cornerRadiusSchema,
-  shadows: z.array(shadowSchema).max(32),
-  blur: blurSchema.nullable(),
-  // `.default(null)` rather than `.optional()`: the *wire* form tolerates a
-  // missing key, because every document written before grain existed is missing
-  // it and the migration table is empty at v1 — but the *decoded* form never
-  // is, so `types.ts` can keep declaring it required and the renderer never has
-  // to invent a default mid-frame. A migration would have been the other way to
-  // get here; it would also have refused every stored v1 document on any build
-  // that had not yet run it.
-  noise: noiseSchema.nullable().default(null),
+  // `.default([])` rather than `.optional()`: the *wire* form tolerates a
+  // missing key, because every document written before the effect stack existed
+  // is missing it — but the *decoded* form never is, so `types.ts` can keep
+  // declaring it required and the renderer never has to invent a default
+  // mid-frame. Documents that carry the old `shadows`/`blur`/`noise` keys have
+  // them folded into this list by `foldLegacyNodeEffects` on the way in, which
+  // is why the default only ever fires for a node that genuinely had no effects.
+  //
+  // 64 rather than the old 32: the ceiling used to be per-field and there were
+  // three fields, so keeping 32 here would have made a document that opened
+  // yesterday fail to open today.
+  effects: z.array(effectSchema).max(64).default([]),
   constraints: constraintsSchema,
   widthMode: sizingModeSchema,
   heightMode: sizingModeSchema,
@@ -528,10 +643,36 @@ export function validateHierarchy(doc: DesignDocument): string[] {
   return issues;
 }
 
+/**
+ * Rewrite a raw document's nodes so any pre-stack effect fields become
+ * `effects`, leaving everything else alone.
+ *
+ * This runs *before* validation rather than inside the node schema on purpose:
+ * the contract generator projects these schemas to JSON Schema for the Swift
+ * `Codable` mirror, and a `z.preprocess` in front of the node union projects to
+ * `{}` — the whole node definition would vanish from the contract and the Mac
+ * would have nothing left to be checked against.
+ */
+export function foldLegacyNodeEffects(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const doc = raw as Record<string, unknown>;
+  const nodes = doc.nodes;
+  if (!nodes || typeof nodes !== "object" || Array.isArray(nodes)) return raw;
+
+  const folded: Record<string, unknown> = {};
+  let changed = false;
+  for (const [id, node] of Object.entries(nodes as Record<string, unknown>)) {
+    const next = foldLegacyEffects(node);
+    if (next !== node) changed = true;
+    folded[id] = next;
+  }
+  return changed ? { ...doc, nodes: folded } : raw;
+}
+
 /** Parse + structurally validate. Throws `DesignValidationError` on anything
  *  that is not a complete, coherent document at the current schema version. */
 export function parseDesignDocument(raw: unknown): DesignDocument {
-  const result = designDocumentSchema.safeParse(raw);
+  const result = designDocumentSchema.safeParse(foldLegacyNodeEffects(raw));
   if (!result.success) {
     throw new DesignValidationError(
       "Design document failed schema validation",
@@ -570,9 +711,7 @@ export function baseNodeDefaults(): Omit<DesignNode, "id" | "type" | "name"> & R
     fills: [],
     strokes: [],
     cornerRadius: 0,
-    shadows: [],
-    blur: null,
-    noise: null,
+    effects: [],
     constraints: { horizontal: "min", vertical: "min" },
     widthMode: "fixed",
     heightMode: "fixed",
@@ -580,6 +719,50 @@ export function baseNodeDefaults(): Omit<DesignNode, "id" | "type" | "name"> & R
     layoutChild: { grow: false, absolute: false },
     boundVariables: {},
   } as unknown as Omit<DesignNode, "id" | "type" | "name"> & Record<string, unknown>;
+}
+
+/**
+ * What each effect looks like the moment it is added.
+ *
+ * One table, shared by the inspector's **+** menu and by the model's tool
+ * description, so "add a drop shadow" means the same thing whoever asks. The
+ * values are the ones that read as the effect at a glance on a 100pt card: a
+ * grain at 0.5% is a grain nobody can see, and an effect you add and cannot see
+ * is indistinguishable from one that did not work.
+ *
+ * `glass` is the interesting row. It is not a preset that expands into other
+ * effects — it stays one entry you can hide, adjust and remove — and its
+ * defaults are a frosted panel: enough backdrop blur to obscure text behind it,
+ * a saturation lift so the colours behind stay colours instead of going grey, a
+ * rim that bends, a barely-there white tint and a light from above.
+ */
+export function defaultEffect(type: EffectType): Effect {
+  switch (type) {
+    case "drop-shadow":
+      return { type, color: { r: 0, g: 0, b: 0, a: 0.25 }, offsetX: 0, offsetY: 4, blur: 12, spread: 0 };
+    case "inner-shadow":
+      return { type, color: { r: 0, g: 0, b: 0, a: 0.2 }, offsetX: 0, offsetY: 2, blur: 4, spread: 0 };
+    case "layer-blur":
+      return { type, radius: 4 };
+    case "background-blur":
+      return { type, radius: 16, saturation: 1.4 };
+    case "noise":
+      return { type, opacity: 0.08, density: 0.9, seed: 1, monochrome: true, blend: "overlay" };
+    case "texture":
+      return { type, scale: 0.35, depth: 3, roughness: 2, seed: 1, color: WHITE, opacity: 0.35, blend: "soft-light" };
+    case "glass":
+      return {
+        type,
+        blur: 24,
+        saturation: 1.8,
+        refraction: 0.45,
+        depth: 12,
+        tint: WHITE,
+        tintOpacity: 0.14,
+        lightIntensity: 0.55,
+        lightAngle: 0,
+      };
+  }
 }
 
 export function defaultTypography() {

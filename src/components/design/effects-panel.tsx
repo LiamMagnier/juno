@@ -1,23 +1,26 @@
 "use client";
 
 /**
- * Fill and Effects — the inspector's two direct-manipulation sections.
+ * Fill, Stroke and Effects — the inspector's direct-manipulation sections.
  *
- * Almost nothing here is new to the document. Gradients, drop shadows, inner
- * shadows and blur have been in the scene model since the first slice and have
- * never had a control, so a document could hold a three-stop radial gradient
- * that no one could author and no one could edit. This is the surface that
- * makes them reachable; only grain is genuinely new.
+ * All three are **lists** here because all three are lists in the model, and for
+ * a long time none of them were lists in this panel. `fills` and `strokes` have
+ * been arrays since the first slice while the inspector offered one paint and
+ * one colour, so a document could hold a photo under a tint that nothing in the
+ * product could author or reach. Effects were worse than that: three separate
+ * fields pretending to be a stack, with a "Liquid glass" button that fired once
+ * and scattered five primitives you then had to recognise.
  *
- * Two rules the whole file follows:
+ * Three rules the whole file follows:
  *
- *  - **Every write is one `setEffects` or one `updateNode` over the whole
- *    selection.** Effects are lists, and a list edit built per layer from that
- *    layer's own list is how "set the shadow colour" used to carry the first
- *    layer's blur radius onto the rest. So when layers disagree the header says
- *    "Mixed", the fields read the first layer — exactly as the scalar fields
- *    upstairs already do — and an edit assigns the whole new value to all of
- *    them. That is what "set the selection's shadows" means.
+ *  - **A list is a list.** Header, a **+**, and one row per entry with its own
+ *    swatch or fields, its own opacity, an eye and a remove. Effects also get up
+ *    and down, because their order is visible.
+ *  - **Every write is one operation over the whole selection.** When layers
+ *    disagree the header says "Mixed", the rows read the first layer — exactly as
+ *    the scalar fields upstairs already do — and an edit assigns the whole new
+ *    list to all of them. The one exception is **+** on the effect stack, which
+ *    uses `addEffect` so a mixed selection keeps the stacks it already has.
  *  - **A drag is the primary gesture, and a number is the fallback.** The
  *    gradient axis, the stop positions and the radial centre are all dragged on
  *    a pad, because that is what they are; the numeric fields exist for the
@@ -30,18 +33,29 @@
  */
 
 import * as React from "react";
-import { effectPresetOperations, type DesignOperation, type NodePatch } from "@/lib/design/operations";
+import { effectLabel, type DesignOperation, type NodePatch } from "@/lib/design/operations";
+import { defaultEffect } from "@/lib/design/schema";
 import { hexToRgba, rgbaToCss, rgbaToHex } from "@/lib/design/variables";
-import type { Blur, DesignNode, GradientStop, Noise, Paint, Rgba, Shadow } from "@/lib/design/types";
+import type {
+  DesignNode,
+  Effect,
+  EffectBlendMode,
+  EffectType,
+  GradientStop,
+  Paint,
+  Rgba,
+  Stroke,
+} from "@/lib/design/types";
 import { cn } from "@/lib/utils";
 
 type Apply = (operations: DesignOperation[], summary: string) => void;
 
 // ---------------------------------------------------------------------------
-// Fill
+// Paint lists (Fill and Stroke)
 // ---------------------------------------------------------------------------
 
 const DEFAULT_FILL: Rgba = { r: 0.55, g: 0.6, b: 0.95, a: 1 };
+const DEFAULT_STROKE: Rgba = { r: 0.06, g: 0.06, b: 0.08, a: 1 };
 
 /** The stops a solid becomes when it is promoted to a gradient: the colour you
  *  already had, fading to nothing. Anything else would replace the user's
@@ -61,13 +75,66 @@ function solidFrom(paint: Paint | undefined): Rgba {
   return DEFAULT_FILL;
 }
 
-const FILL_KINDS = [
-  { value: "none", label: "None" },
+const PAINT_KINDS = [
   { value: "solid", label: "Solid" },
   { value: "linear-gradient", label: "Linear" },
   { value: "radial-gradient", label: "Radial" },
 ] as const;
 
+function paintKindLabel(paint: Paint): string {
+  switch (paint.type) {
+    case "solid":
+      return rgbaToHex(paint.color);
+    case "linear-gradient":
+      return "Linear";
+    case "radial-gradient":
+      return "Radial";
+    case "image":
+      return "Image";
+  }
+}
+
+/** The swatch behind a row: a solid chip, a ramp, or a placeholder for an image
+ *  paint whose asset this panel has no business resolving. */
+function paintPreviewCss(paint: Paint): string {
+  switch (paint.type) {
+    case "solid":
+      return rgbaToCss(paint.color);
+    case "linear-gradient":
+      return `linear-gradient(to bottom, ${paint.stops
+        .slice()
+        .sort((a, b) => a.position - b.position)
+        .map((s) => `${rgbaToCss(s.color)} ${Math.round(s.position * 100)}%`)
+        .join(", ")})`;
+    case "radial-gradient":
+      return `radial-gradient(circle, ${paint.stops
+        .slice()
+        .sort((a, b) => a.position - b.position)
+        .map((s) => `${rgbaToCss(s.color)} ${Math.round(s.position * 100)}%`)
+        .join(", ")})`;
+    case "image":
+      return "repeating-conic-gradient(hsl(var(--border)) 0% 25%, transparent 0% 50%)";
+  }
+}
+
+/**
+ * Fill as a **list**, which is what it always was in the model and never was in
+ * this panel.
+ *
+ * `fills` has been `Paint[]` since the first slice, and the inspector offered a
+ * segmented None/Solid/Linear/Radial picker over `fills[0]` — so a document could
+ * hold three stacked fills, the renderer would draw the first, and there was no
+ * gesture anywhere in the product that could reach the other two or make a
+ * fourth. A layer with a photo under a tint is two fills; the picker made it
+ * unsayable. Now every fill is a row with its own swatch, opacity, eye and
+ * remove, a **+** adds one, and the type picker and gradient editors live inside
+ * the row they belong to.
+ *
+ * Every write is one `updateNode` per editable layer carrying the whole new list,
+ * for the reason in the module note: a list edit assembled per layer from that
+ * layer's own list is how "set the fill colour" used to carry the first layer's
+ * gradient onto the rest.
+ */
 export function FillControl({
   nodes,
   editable,
@@ -79,61 +146,304 @@ export function FillControl({
   onApply: Apply;
   readOnly?: boolean;
 }) {
-  const first = nodes[0];
-  const paint = first.fills[0];
-  const kind = paint?.type ?? "none";
-  const mixed = nodes.some((n) => (n.fills[0]?.type ?? "none") !== kind);
-  const [selectedStop, setSelectedStop] = React.useState(0);
+  return (
+    <PaintListSection
+      title="Fill"
+      nodes={nodes}
+      editable={editable}
+      onApply={onApply}
+      readOnly={readOnly}
+      read={(node) => node.fills}
+      write={(paints) => ({ fills: paints })}
+      addLabel="Add fill"
+      newPaint={(existing) => ({ type: "solid", color: existing.length > 0 ? { ...DEFAULT_FILL, a: 1 } : DEFAULT_FILL })}
+    />
+  );
+}
 
-  const setFills = (fills: NodePatch["fills"], summary: string) =>
+/**
+ * Stroke as a list, on the same terms.
+ *
+ * A stroke is a paint plus a weight and an alignment, so the row carries those
+ * two extra fields and everything else — the swatch, the opacity, the eye, the
+ * remove, the gradient editor — is the identical machinery the fills use. The
+ * model has been `Stroke[]` all along; the inspector offered exactly one colour
+ * and one weight.
+ */
+export function StrokeControl({
+  nodes,
+  editable,
+  onApply,
+  readOnly,
+}: {
+  nodes: DesignNode[];
+  editable: DesignNode[];
+  onApply: Apply;
+  readOnly?: boolean;
+}) {
+  return (
+    <PaintListSection
+      title="Stroke"
+      nodes={nodes}
+      editable={editable}
+      onApply={onApply}
+      readOnly={readOnly}
+      read={(node) => node.strokes.map((stroke) => stroke.paint)}
+      write={(paints, node) => ({
+        strokes: paints.map((paint, index) => ({
+          paint,
+          weight: node.strokes[index]?.weight ?? 1,
+          align: node.strokes[index]?.align ?? "center",
+          ...(node.strokes[index]?.dash ? { dash: node.strokes[index].dash } : {}),
+        })),
+      })}
+      addLabel="Add stroke"
+      newPaint={() => ({ type: "solid", color: DEFAULT_STROKE })}
+      extra={(index, node, patchAll) => (
+        <div className="grid grid-cols-2 gap-1.5">
+          <NumberField
+            label="Weight"
+            value={node.strokes[index]?.weight ?? 1}
+            min={0}
+            disabled={readOnly}
+            onCommit={(v) =>
+              patchAll(
+                (target) => ({
+                  strokes: target.strokes.map((stroke, i) => (i === index ? { ...stroke, weight: Math.max(0, v) } : stroke)),
+                }),
+                "Set stroke weight"
+              )
+            }
+          />
+          <SelectField
+            label="Align"
+            value={node.strokes[index]?.align ?? "center"}
+            options={[
+              { value: "inside", label: "Inside" },
+              { value: "center", label: "Centre" },
+              { value: "outside", label: "Outside" },
+            ]}
+            disabled={readOnly}
+            onChange={(value) =>
+              patchAll(
+                (target) => ({
+                  strokes: target.strokes.map((stroke, i) =>
+                    i === index ? { ...stroke, align: value as Stroke["align"] } : stroke
+                  ),
+                }),
+                "Set stroke alignment"
+              )
+            }
+          />
+        </div>
+      )}
+    />
+  );
+}
+
+/** The shared body of Fill and Stroke: a list of paints with per-row opacity,
+ *  visibility and removal, and the gradient editors folded into the row. */
+function PaintListSection({
+  title,
+  nodes,
+  editable,
+  onApply,
+  readOnly,
+  read,
+  write,
+  addLabel,
+  newPaint,
+  extra,
+}: {
+  title: string;
+  nodes: DesignNode[];
+  editable: DesignNode[];
+  onApply: Apply;
+  readOnly?: boolean;
+  read: (node: DesignNode) => Paint[];
+  write: (paints: Paint[], node: DesignNode) => NodePatch;
+  addLabel: string;
+  newPaint: (existing: Paint[]) => Paint;
+  extra?: (index: number, node: DesignNode, patchAll: PatchAll) => React.ReactNode;
+}) {
+  const first = nodes[0];
+  const paints = read(first);
+  const mixed = nodes.some((node) => JSON.stringify(read(node)) !== JSON.stringify(paints));
+  const [expanded, setExpanded] = React.useState<number | null>(null);
+
+  const patchAll: PatchAll = (build, summary) =>
     onApply(
-      editable.map((n) => ({ op: "updateNode" as const, nodeId: n.id, patch: { fills } })),
+      editable.map((node) => ({ op: "updateNode" as const, nodeId: node.id, patch: build(node) })),
       summary
     );
 
-  const setPaint = (next: Paint, summary: string) => setFills([next], summary);
+  const setPaints = (next: Paint[], summary: string) => patchAll((node) => write(next, node), summary);
+  const setPaint = (index: number, paint: Paint, summary: string) =>
+    setPaints(paints.map((p, i) => (i === index ? paint : p)), summary);
+
+  return (
+    <Section
+      title={title}
+      action={
+        <div className="flex items-center gap-1.5">
+          {mixed && <MixedBadge />}
+          <IconButton
+            label={addLabel}
+            disabled={readOnly || editable.length === 0 || paints.length >= 32}
+            onClick={() => {
+              setPaints([...paints, newPaint(paints)], addLabel);
+              setExpanded(paints.length);
+            }}
+          >
+            +
+          </IconButton>
+        </div>
+      }
+    >
+      {paints.length === 0 && <EmptyRow>None</EmptyRow>}
+      {paints.map((paint, index) => {
+        const hidden = paint.visible === false;
+        const gradient = paint.type === "linear-gradient" || paint.type === "radial-gradient" ? paint : null;
+        return (
+          <div key={index} className={cn("space-y-1.5 rounded-[10px] border border-border/60 p-1.5", hidden && "opacity-50")}>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                aria-label={`${title} ${index + 1} — edit`}
+                aria-expanded={expanded === index}
+                disabled={readOnly}
+                onClick={() => setExpanded(expanded === index ? null : index)}
+                className="pressable size-6 shrink-0 rounded-[6px] border border-border/60"
+                style={{ background: paintPreviewCss(paint) }}
+              />
+              {paint.type === "solid" ? (
+                <input
+                  type="text"
+                  aria-label={`${title} ${index + 1} colour`}
+                  className={cn(fieldClass, "min-w-0 flex-1")}
+                  value={rgbaToHex(paint.color).slice(0, 7)}
+                  disabled={readOnly}
+                  onChange={(event) => {
+                    const color = hexToRgba(event.target.value);
+                    if (color) setPaint(index, { ...paint, color: { ...color, a: paint.color.a } }, `Set ${title.toLowerCase()} colour`);
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                />
+              ) : (
+                <span className="min-w-0 flex-1 truncate px-2 text-xs text-muted-foreground">{paintKindLabel(paint)}</span>
+              )}
+              <input
+                type="number"
+                aria-label={`${title} ${index + 1} opacity`}
+                className={cn(fieldClass, "w-14 shrink-0")}
+                value={Math.round((paint.opacity ?? 1) * 100)}
+                min={0}
+                max={100}
+                disabled={readOnly}
+                onChange={(event) => {
+                  const parsed = Number.parseFloat(event.target.value);
+                  if (Number.isFinite(parsed)) {
+                    setPaint(index, { ...paint, opacity: Math.max(0, Math.min(1, parsed / 100)) }, `Set ${title.toLowerCase()} opacity`);
+                  }
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+              />
+              <IconButton
+                label={hidden ? `Show ${title.toLowerCase()} ${index + 1}` : `Hide ${title.toLowerCase()} ${index + 1}`}
+                disabled={readOnly}
+                onClick={() => setPaint(index, { ...paint, visible: hidden }, hidden ? `Show ${title.toLowerCase()}` : `Hide ${title.toLowerCase()}`)}
+              >
+                {hidden ? "○" : "●"}
+              </IconButton>
+              <IconButton
+                label={`Remove ${title.toLowerCase()} ${index + 1}`}
+                disabled={readOnly}
+                destructive
+                onClick={() => {
+                  setPaints(paints.filter((_, i) => i !== index), `Remove ${title.toLowerCase()}`);
+                  setExpanded(null);
+                }}
+              >
+                −
+              </IconButton>
+            </div>
+
+            {extra?.(index, first, patchAll)}
+
+            {expanded === index && (
+              <PaintEditor
+                paint={paint}
+                // Stop editing needs one list to edit. Across a mixed selection
+                // there is no such list, so the ramp is shown and the stops are
+                // not — the alternative is a stop editor that silently rewrites
+                // four layers from a fifth one's ramp.
+                singleLayer={nodes.length === 1}
+                disabled={readOnly}
+                onChange={(next, summary) => setPaint(index, next, summary)}
+              />
+            )}
+            {expanded === index && gradient === null && paint.type === "image" && (
+              <p className="text-[10px] leading-snug text-muted-foreground">
+                An image fill is placed from the canvas; its asset is not editable here.
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </Section>
+  );
+}
+
+type PatchAll = (build: (node: DesignNode) => NodePatch, summary: string) => void;
+
+/** The type picker and, for a gradient, its ramp and geometry — the detail of
+ *  one row, shown under the row it belongs to. */
+function PaintEditor({
+  paint,
+  singleLayer,
+  disabled,
+  onChange,
+}: {
+  paint: Paint;
+  singleLayer: boolean;
+  disabled?: boolean;
+  onChange: (paint: Paint, summary: string) => void;
+}) {
+  const [selectedStop, setSelectedStop] = React.useState(0);
+  const gradient = paint.type === "linear-gradient" || paint.type === "radial-gradient" ? paint : null;
 
   const changeKind = (next: string) => {
-    if (next === kind) return;
-    if (next === "none") return setFills([], "Remove fill");
-    if (next === "solid") return setPaint({ type: "solid", color: solidFrom(paint) }, "Set fill");
+    if (next === paint.type) return;
+    const opacity = paint.opacity;
+    const visible = paint.visible;
+    const carried = { ...(opacity === undefined ? {} : { opacity }), ...(visible === undefined ? {} : { visible }) };
+    if (next === "solid") return onChange({ type: "solid", color: solidFrom(paint), ...carried }, "Set fill type");
     const stops = stopsFrom(paint);
     if (next === "linear-gradient") {
-      return setPaint({ type: "linear-gradient", stops, from: { x: 0, y: 0 }, to: { x: 0, y: 1 } }, "Set gradient fill");
+      return onChange({ type: "linear-gradient", stops, from: { x: 0, y: 0 }, to: { x: 0, y: 1 }, ...carried }, "Set gradient fill");
     }
-    return setPaint({ type: "radial-gradient", stops, center: { x: 0.5, y: 0.5 }, radius: 0.5 }, "Set gradient fill");
+    return onChange({ type: "radial-gradient", stops, center: { x: 0.5, y: 0.5 }, radius: 0.5, ...carried }, "Set gradient fill");
   };
-
-  const gradient = paint && (paint.type === "linear-gradient" || paint.type === "radial-gradient") ? paint : null;
-  // Stop editing needs one list to edit. Across a mixed selection there is no
-  // such list, so the ramp is shown and the stops are not — the alternative is
-  // a stop editor that silently rewrites four layers from a fifth one's ramp.
-  const editStops = gradient && nodes.length === 1;
 
   const commitStops = (stops: GradientStop[], summary: string) => {
     if (!gradient) return;
-    const ordered = [...stops].sort((a, b) => a.position - b.position);
-    setPaint({ ...gradient, stops: ordered }, summary);
+    onChange({ ...gradient, stops: [...stops].sort((a, b) => a.position - b.position) }, summary);
   };
 
   return (
-    <Section title="Fill" action={mixed ? <MixedBadge /> : null}>
-      <Segmented
-        value={mixed ? "" : kind}
-        options={FILL_KINDS}
-        disabled={readOnly}
-        onChange={changeKind}
-        label="Fill type"
-      />
+    <div className="space-y-1.5 border-t border-border/40 pt-1.5">
+      {paint.type !== "image" && (
+        <Segmented value={paint.type} options={PAINT_KINDS} disabled={disabled} onChange={changeKind} label="Paint type" />
+      )}
 
-      {kind === "solid" && !mixed && (
+      {paint.type === "solid" && (
         <ColorField
           label="Colour"
-          value={rgbaToHex(solidFrom(paint))}
-          disabled={readOnly}
+          value={rgbaToHex(paint.color)}
+          disabled={disabled}
           onCommit={(hex) => {
             const color = hexToRgba(hex);
-            if (color) setPaint({ type: "solid", color }, "Set fill");
+            if (color) onChange({ ...paint, color }, "Set fill colour");
           }}
         />
       )}
@@ -143,18 +453,17 @@ export function FillControl({
           <GradientRail
             stops={gradient.stops}
             selected={selectedStop}
-            disabled={readOnly || !editStops}
+            disabled={disabled || !singleLayer}
             onSelect={setSelectedStop}
             onMove={(index, position) => {
-              const next = gradient.stops.map((s, i) => (i === index ? { ...s, position } : s));
-              commitStops(next, "Move gradient stop");
+              commitStops(gradient.stops.map((s, i) => (i === index ? { ...s, position } : s)), "Move gradient stop");
             }}
           />
-          {editStops && (
+          {singleLayer && (
             <StopEditor
               stops={gradient.stops}
               selected={Math.min(selectedStop, gradient.stops.length - 1)}
-              disabled={readOnly}
+              disabled={disabled}
               onSelect={setSelectedStop}
               onChange={commitStops}
             />
@@ -163,20 +472,20 @@ export function FillControl({
             <AxisPad
               from={gradient.from}
               to={gradient.to}
-              disabled={readOnly}
-              onChange={(from, to) => setPaint({ ...gradient, from, to }, "Set gradient direction")}
+              disabled={disabled}
+              onChange={(from, to) => onChange({ ...gradient, from, to }, "Set gradient direction")}
             />
           ) : (
             <RadialPad
               center={gradient.center}
               radius={gradient.radius}
-              disabled={readOnly}
-              onChange={(center, radius) => setPaint({ ...gradient, center, radius }, "Set gradient shape")}
+              disabled={disabled}
+              onChange={(center, radius) => onChange({ ...gradient, center, radius }, "Set gradient shape")}
             />
           )}
         </>
       )}
-    </Section>
+    </div>
   );
 }
 
@@ -478,23 +787,42 @@ function PadHandle({
 // Effects
 // ---------------------------------------------------------------------------
 
-const DEFAULT_DROP_SHADOW: Shadow = {
-  type: "drop",
-  color: { r: 0, g: 0, b: 0, a: 0.25 },
-  offsetX: 0,
-  offsetY: 4,
-  blur: 12,
-  spread: 0,
-};
+/**
+ * The **+** menu, and what is deliberately not in it.
+ *
+ * These are Figma's items, in Figma's order, minus one. *Shader (Beta)* is
+ * absent because a shader is a program: a document that holds one can only be
+ * drawn by something that runs it, and this renderer feeds eight exporters that
+ * cannot. The rule the whole design surface rests on is that nothing is
+ * authorable here unless SVG, PNG, PDF, HTML, React and SwiftUI can each either
+ * honour it or say exactly which part of it they dropped — and "we ran your
+ * fragment shader" is not something a PDF can say.
+ */
+const EFFECT_MENU: { type: EffectType; label: string; hint: string }[] = [
+  { type: "inner-shadow", label: "Inner shadow", hint: "Shadow cast inside the layer's own silhouette." },
+  { type: "drop-shadow", label: "Drop shadow", hint: "Shadow cast behind the layer." },
+  { type: "layer-blur", label: "Layer blur", hint: "Blurs this layer." },
+  { type: "background-blur", label: "Background blur", hint: "Blurs what is behind this layer." },
+  { type: "noise", label: "Noise", hint: "Film grain over the layer." },
+  { type: "texture", label: "Texture", hint: "The same grain, lit as a relief." },
+  { type: "glass", label: "Glass", hint: "Backdrop blur, a refracting rim, a tint and a light." },
+];
 
-const DEFAULT_NOISE: Noise = { opacity: 0.08, density: 0.9, seed: 1, monochrome: true, blend: "overlay" };
-
-const BLUR_KINDS = [
-  { value: "none", label: "None" },
-  { value: "layer", label: "Layer" },
-  { value: "background", label: "Background" },
-] as const;
-
+/**
+ * The effect stack.
+ *
+ * What this replaces: a fixed shadow list, a single None/Layer/Background blur
+ * choice, one optional grain, and a **Liquid glass** button that fired once and
+ * expanded into five unrelated primitives. That last one was the tell — there
+ * was no such thing as *a* glass effect to hide, retune or delete, only a
+ * scattering of parts you had to recognise as having once been glass.
+ *
+ * Now there is one list. Every entry is added from the **+** menu, and every
+ * entry has the same four controls in the same place — eye, up, down, remove —
+ * because in a stack those are properties of *being an entry*, not of being a
+ * shadow. Ordering is real: the list is applied bottom-up and moving a row
+ * changes what the layer looks like.
+ */
 export function EffectsSection({
   nodes,
   editable,
@@ -507,26 +835,36 @@ export function EffectsSection({
   readOnly?: boolean;
 }) {
   const first = nodes[0];
-  const shadows = first.shadows;
-  const blur = first.blur;
-  const noise = first.noise;
-  const same = (read: (node: DesignNode) => unknown) => {
-    const reference = JSON.stringify(read(first) ?? null);
-    return !nodes.some((n) => JSON.stringify(read(n) ?? null) !== reference);
-  };
-  const mixed = !same((n) => n.shadows) || !same((n) => n.blur) || !same((n) => n.noise);
-  const ids = editable.map((n) => n.id);
-  const write = (
-    fields: { shadows?: Shadow[]; blur?: Blur | null; noise?: Noise | null },
-    summary: string
-  ) => {
+  const effects = first.effects;
+  const mixed = nodes.some((node) => JSON.stringify(node.effects) !== JSON.stringify(effects));
+  const ids = editable.map((node) => node.id);
+
+  const setEffects = (next: Effect[], summary: string) => {
     if (ids.length === 0) return;
-    onApply([{ op: "setEffects", nodeIds: ids, ...fields }], summary);
+    onApply([{ op: "setEffects", nodeIds: ids, effects: next }], summary);
   };
 
-  const setShadows = (next: Shadow[], summary: string) => write({ shadows: next }, summary);
-  const patchShadow = (index: number, partial: Partial<Shadow>, summary: string) =>
-    setShadows(shadows.map((s, i) => (i === index ? { ...s, ...partial } : s)), summary);
+  const patchEffect = (index: number, effect: Effect, summary: string) =>
+    setEffects(effects.map((e, i) => (i === index ? effect : e)), summary);
+
+  /** Adding uses `addEffect`, not an assignment: across a mixed selection the
+   *  other layers keep the stacks they already have, which is the whole reason
+   *  that operation exists. */
+  const addEffect = (type: EffectType) => {
+    if (ids.length === 0) return;
+    onApply([{ op: "addEffect", nodeIds: ids, effect: defaultEffect(type) }], `Add ${effectLabel(type)}`);
+  };
+
+  const move = (index: number, delta: number) => {
+    const to = index + delta;
+    if (to < 0 || to >= effects.length) return;
+    const next = [...effects];
+    const [moved] = next.splice(index, 1);
+    next.splice(to, 0, moved);
+    setEffects(next, "Reorder effects");
+  };
+
+  const hasBackdrop = effects.some((effect) => effect.type === "background-blur" || effect.type === "glass");
 
   return (
     <Section
@@ -534,105 +872,86 @@ export function EffectsSection({
       action={
         <div className="flex items-center gap-1.5">
           {mixed && <MixedBadge />}
-          <button
-            type="button"
-            disabled={readOnly || ids.length === 0}
-            onClick={() => onApply(effectPresetOperations(ids, "liquid-glass"), "Apply liquid glass")}
-            title="Background blur, a sheen gradient, a rim light, a lift shadow and a little grain — applied as those five things, each still editable below."
-            className="pressable rounded-[6px] border border-border/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-          >
-            Liquid glass
-          </button>
+          <AddEffectMenu disabled={readOnly || ids.length === 0 || effects.length >= 64} onAdd={addEffect} />
         </div>
       }
     >
-      {shadows.map((shadow, index) => (
-        <ShadowRow
+      {effects.length === 0 && <EmptyRow>None</EmptyRow>}
+      {effects.map((effect, index) => (
+        <EffectRow
           key={index}
-          shadow={shadow}
+          effect={effect}
           index={index}
-          count={shadows.length}
+          count={effects.length}
           disabled={readOnly}
-          onChange={(partial, summary) => patchShadow(index, partial, summary)}
-          onRemove={() => setShadows(shadows.filter((_, i) => i !== index), "Remove shadow")}
-          onMove={(delta) => {
-            const to = index + delta;
-            if (to < 0 || to >= shadows.length) return;
-            const next = [...shadows];
-            const [moved] = next.splice(index, 1);
-            next.splice(to, 0, moved);
-            setShadows(next, "Reorder shadows");
-          }}
+          onChange={(next, summary) => patchEffect(index, next, summary)}
+          onRemove={() => setEffects(effects.filter((_, i) => i !== index), `Remove ${effectLabel(effect.type)}`)}
+          onMove={(delta) => move(index, delta)}
         />
       ))}
-      <div className="flex gap-1.5">
-        <MiniButton
-          disabled={readOnly || shadows.length >= 32}
-          onClick={() => setShadows([...shadows, { ...DEFAULT_DROP_SHADOW }], "Add shadow")}
-        >
-          Add shadow
-        </MiniButton>
-        <MiniButton
-          disabled={readOnly || shadows.length >= 32}
-          onClick={() =>
-            setShadows(
-              [...shadows, { ...DEFAULT_DROP_SHADOW, type: "inner", color: { r: 0, g: 0, b: 0, a: 0.2 }, blur: 4, offsetY: 2 }],
-              "Add inner shadow"
-            )
-          }
-        >
-          Add inner shadow
-        </MiniButton>
-      </div>
-
-      <div className="grid grid-cols-2 gap-1.5 pt-1">
-        <SelectField
-          label="Blur"
-          value={blur?.type ?? "none"}
-          options={BLUR_KINDS as unknown as { value: string; label: string }[]}
-          disabled={readOnly}
-          onChange={(value) =>
-            write(
-              { blur: value === "none" ? null : { type: value as Blur["type"], radius: blur?.radius ?? 16, saturation: blur?.saturation } },
-              value === "none" ? "Remove blur" : "Set blur"
-            )
-          }
-        />
-        {blur && (
-          <NumberField
-            label="Radius"
-            value={blur.radius}
-            min={0}
-            disabled={readOnly}
-            onCommit={(v) => write({ blur: { ...blur, radius: Math.max(0, v) } }, "Set blur radius")}
-          />
-        )}
-      </div>
-      {blur && (
-        <NumberField
-          label="Saturation"
-          suffix="%"
-          value={Math.round((blur.saturation ?? 1) * 100)}
-          min={0}
-          max={1000}
-          step={10}
-          disabled={readOnly}
-          onCommit={(v) => write({ blur: { ...blur, saturation: Math.max(0, v / 100) } }, "Set blur saturation")}
-        />
-      )}
-      {blur?.type === "background" && (
+      {hasBackdrop && (
         <p className="text-[10px] leading-snug text-muted-foreground">
-          Blurs what is behind this layer. Give the layer a low-alpha fill so there is something to see through.
+          A backdrop effect samples what is behind this layer, so it is drawn beneath it wherever it sits in the list. Give the
+          layer a low-alpha fill, or none, so there is something to see through.
         </p>
       )}
-
-      <NoiseRows noise={noise} disabled={readOnly} onChange={(next, summary) => write({ noise: next }, summary)} />
     </Section>
   );
 }
 
-function ShadowRow({
-  shadow,
+/** The **+** and its menu. A listbox rather than a `<select>` because each item
+ *  carries a one-line explanation of what it does, and an option element cannot
+ *  hold one. */
+function AddEffectMenu({ disabled, onAdd }: { disabled?: boolean; onAdd: (type: EffectType) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative"
+      onBlur={(event) => {
+        // Closes when focus leaves the menu entirely, not when it moves between
+        // the button and the items — `relatedTarget` is what tells them apart.
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") setOpen(false);
+        event.stopPropagation();
+      }}
+    >
+      <IconButton label="Add effect" disabled={disabled} onClick={() => setOpen((value) => !value)}>
+        +
+      </IconButton>
+      {open && (
+        <div
+          role="menu"
+          aria-label="Add effect"
+          className="absolute right-0 top-full z-30 mt-1 w-56 space-y-0.5 rounded-[10px] border border-border/60 bg-popover p-1 shadow-soft"
+        >
+          {EFFECT_MENU.map((item) => (
+            <button
+              key={item.type}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onAdd(item.type);
+                setOpen(false);
+              }}
+              className="pressable block w-full rounded-[6px] px-2 py-1 text-left transition-colors hover:bg-accent"
+            >
+              <span className="block text-xs text-foreground">{item.label}</span>
+              <span className="block text-[10px] leading-snug text-muted-foreground">{item.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EffectRow({
+  effect,
   index,
   count,
   disabled,
@@ -640,154 +959,337 @@ function ShadowRow({
   onRemove,
   onMove,
 }: {
-  shadow: Shadow;
+  effect: Effect;
   index: number;
   count: number;
   disabled?: boolean;
-  onChange: (partial: Partial<Shadow>, summary: string) => void;
+  onChange: (effect: Effect, summary: string) => void;
   onRemove: () => void;
   onMove: (delta: number) => void;
 }) {
-  const hidden = shadow.visible === false;
+  const hidden = effect.visible === false;
+  const label = effectLabel(effect.type);
+  const title = label.charAt(0).toUpperCase() + label.slice(1);
+
   return (
     <div className={cn("space-y-1.5 rounded-[10px] border border-border/60 p-2", hidden && "opacity-50")}>
       <div className="flex items-center gap-1.5">
-        <SelectField
-          label={`Shadow ${index + 1}`}
-          value={shadow.type}
-          options={[
-            { value: "drop", label: "Drop" },
-            { value: "inner", label: "Inner" },
-          ]}
-          disabled={disabled}
-          onChange={(value) => onChange({ type: value as Shadow["type"] }, "Set shadow type")}
-        />
-        <div className="flex shrink-0 items-end gap-0.5 self-end pb-0.5">
+        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">{title}</span>
+        <div className="flex shrink-0 items-center gap-0.5">
           <IconButton
-            label={hidden ? `Show shadow ${index + 1}` : `Hide shadow ${index + 1}`}
+            label={hidden ? `Show ${label}` : `Hide ${label}`}
             disabled={disabled}
-            onClick={() => onChange({ visible: hidden }, hidden ? "Show shadow" : "Hide shadow")}
+            onClick={() => onChange({ ...effect, visible: hidden }, hidden ? `Show ${label}` : `Hide ${label}`)}
           >
             {hidden ? "○" : "●"}
           </IconButton>
-          <IconButton label={`Move shadow ${index + 1} forward`} disabled={disabled || index === 0} onClick={() => onMove(-1)}>
+          <IconButton label={`Move ${label} down the stack`} disabled={disabled || index === 0} onClick={() => onMove(-1)}>
             ↑
           </IconButton>
-          <IconButton label={`Move shadow ${index + 1} back`} disabled={disabled || index === count - 1} onClick={() => onMove(1)}>
+          <IconButton label={`Move ${label} up the stack`} disabled={disabled || index === count - 1} onClick={() => onMove(1)}>
             ↓
           </IconButton>
-          <IconButton label={`Remove shadow ${index + 1}`} disabled={disabled} destructive onClick={onRemove}>
-            ×
+          <IconButton label={`Remove ${label}`} disabled={disabled} destructive onClick={onRemove}>
+            −
           </IconButton>
         </div>
       </div>
-      <ColorField
-        label="Colour"
-        value={rgbaToHex(shadow.color)}
-        disabled={disabled}
-        onCommit={(hex) => {
-          const color = hexToRgba(hex);
-          if (color) onChange({ color }, "Set shadow colour");
-        }}
-      />
-      <div className="grid grid-cols-4 gap-1.5">
-        <NumberField label="X" value={shadow.offsetX} disabled={disabled} onCommit={(v) => onChange({ offsetX: v }, "Set shadow offset")} />
-        <NumberField label="Y" value={shadow.offsetY} disabled={disabled} onCommit={(v) => onChange({ offsetY: v }, "Set shadow offset")} />
-        <NumberField label="Blur" value={shadow.blur} min={0} disabled={disabled} onCommit={(v) => onChange({ blur: Math.max(0, v) }, "Set shadow blur")} />
-        <NumberField label="Spread" value={shadow.spread} disabled={disabled} onCommit={(v) => onChange({ spread: v }, "Set shadow spread")} />
-      </div>
+      <EffectFields effect={effect} disabled={disabled} onChange={onChange} />
     </div>
   );
 }
 
-function NoiseRows({
-  noise,
+/** One row's controls. A `switch` over the tag rather than a table of field
+ *  descriptors: the variants genuinely do not share a shape, and a descriptor
+ *  table would have to invent one and then work around it for glass. */
+function EffectFields({
+  effect,
   disabled,
   onChange,
 }: {
-  noise: Noise | null;
+  effect: Effect;
   disabled?: boolean;
-  onChange: (noise: Noise | null, summary: string) => void;
+  onChange: (effect: Effect, summary: string) => void;
 }) {
-  if (!noise) {
-    return (
-      <MiniButton disabled={disabled} onClick={() => onChange({ ...DEFAULT_NOISE }, "Add grain")}>
-        Add grain
-      </MiniButton>
-    );
-  }
-  const hidden = noise.visible === false;
-  return (
-    <div className={cn("space-y-1.5 rounded-[10px] border border-border/60 p-2", hidden && "opacity-50")}>
-      <div className="flex items-center justify-between">
-        <span className="font-mono text-[10px] text-muted-foreground">Grain</span>
-        <div className="flex gap-0.5">
-          <IconButton
-            label={hidden ? "Show grain" : "Hide grain"}
+  switch (effect.type) {
+    case "drop-shadow":
+    case "inner-shadow":
+      return (
+        <>
+          <ColorField
+            label="Colour"
+            value={rgbaToHex(effect.color)}
             disabled={disabled}
-            onClick={() => onChange({ ...noise, visible: hidden }, hidden ? "Show grain" : "Hide grain")}
-          >
-            {hidden ? "○" : "●"}
-          </IconButton>
-          <IconButton label="Remove grain" disabled={disabled} destructive onClick={() => onChange(null, "Remove grain")}>
-            ×
-          </IconButton>
+            onCommit={(hex) => {
+              const color = hexToRgba(hex);
+              if (color) onChange({ ...effect, color }, "Set shadow colour");
+            }}
+          />
+          <div className="grid grid-cols-4 gap-1.5">
+            <NumberField label="X" value={effect.offsetX} disabled={disabled} onCommit={(v) => onChange({ ...effect, offsetX: v }, "Set shadow offset")} />
+            <NumberField label="Y" value={effect.offsetY} disabled={disabled} onCommit={(v) => onChange({ ...effect, offsetY: v }, "Set shadow offset")} />
+            <NumberField
+              label="Blur"
+              value={effect.blur}
+              min={0}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, blur: Math.max(0, v) }, "Set shadow blur")}
+            />
+            <NumberField label="Spread" value={effect.spread} disabled={disabled} onCommit={(v) => onChange({ ...effect, spread: v }, "Set shadow spread")} />
+          </div>
+        </>
+      );
+
+    case "layer-blur":
+    case "background-blur":
+      return (
+        <div className="grid grid-cols-2 gap-1.5">
+          <NumberField
+            label="Radius"
+            value={effect.radius}
+            min={0}
+            disabled={disabled}
+            onCommit={(v) => onChange({ ...effect, radius: Math.max(0, v) }, "Set blur radius")}
+          />
+          <NumberField
+            label="Saturation"
+            suffix="%"
+            value={Math.round((effect.saturation ?? 1) * 100)}
+            min={0}
+            max={1000}
+            step={10}
+            disabled={disabled}
+            onCommit={(v) => onChange({ ...effect, saturation: Math.max(0, Math.min(10, v / 100)) }, "Set blur saturation")}
+          />
         </div>
-      </div>
-      <div className="grid grid-cols-2 gap-1.5">
-        <NumberField
-          label="Amount"
-          suffix="%"
-          value={Math.round(noise.opacity * 100)}
-          min={0}
-          max={100}
-          disabled={disabled}
-          onCommit={(v) => onChange({ ...noise, opacity: Math.max(0, Math.min(1, v / 100)) }, "Set grain amount")}
-        />
-        <NumberField
-          label="Density"
-          value={noise.density}
-          min={0.001}
-          max={4}
-          step={0.05}
-          disabled={disabled}
-          onCommit={(v) => onChange({ ...noise, density: Math.max(0.001, Math.min(4, v)) }, "Set grain density")}
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-1.5">
-        <SelectField
-          label="Blend"
-          value={noise.blend}
-          options={[
-            { value: "overlay", label: "Overlay" },
-            { value: "soft-light", label: "Soft light" },
-            { value: "multiply", label: "Multiply" },
-            { value: "screen", label: "Screen" },
-            { value: "normal", label: "Normal" },
-          ]}
-          disabled={disabled}
-          onChange={(value) => onChange({ ...noise, blend: value as Noise["blend"] }, "Set grain blend")}
-        />
-        <NumberField
-          label="Seed"
-          value={noise.seed}
-          min={0}
-          max={65535}
-          disabled={disabled}
-          onCommit={(v) => onChange({ ...noise, seed: Math.max(0, Math.min(65_535, Math.round(v))) }, "Set grain seed")}
-        />
-      </div>
-      <label className="flex items-center gap-2 text-xs text-muted-foreground">
-        <input
-          type="checkbox"
-          checked={noise.monochrome}
-          disabled={disabled}
-          onChange={(event) => onChange({ ...noise, monochrome: event.target.checked }, "Set grain colour")}
-        />
-        Monochrome
-      </label>
-    </div>
+      );
+
+    case "noise":
+      return (
+        <>
+          <div className="grid grid-cols-2 gap-1.5">
+            <NumberField
+              label="Amount"
+              suffix="%"
+              value={Math.round(effect.opacity * 100)}
+              min={0}
+              max={100}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, opacity: clampUnit(v / 100) }, "Set grain amount")}
+            />
+            <NumberField
+              label="Density"
+              value={effect.density}
+              min={0.001}
+              max={4}
+              step={0.05}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, density: Math.max(0.001, Math.min(4, v)) }, "Set grain density")}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <BlendField value={effect.blend} disabled={disabled} onChange={(blend) => onChange({ ...effect, blend }, "Set grain blend")} />
+            <NumberField
+              label="Seed"
+              value={effect.seed}
+              min={0}
+              max={65535}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, seed: clampSeed(v) }, "Set grain seed")}
+            />
+          </div>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={effect.monochrome}
+              disabled={disabled}
+              onChange={(event) => onChange({ ...effect, monochrome: event.target.checked }, "Set grain colour")}
+            />
+            Monochrome
+          </label>
+        </>
+      );
+
+    case "texture":
+      return (
+        <>
+          <div className="grid grid-cols-3 gap-1.5">
+            <NumberField
+              label="Scale"
+              value={effect.scale}
+              min={0.001}
+              max={4}
+              step={0.05}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, scale: Math.max(0.001, Math.min(4, v)) }, "Set texture scale")}
+            />
+            <NumberField
+              label="Depth"
+              value={effect.depth}
+              min={0}
+              max={200}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, depth: Math.max(0, Math.min(200, v)) }, "Set texture depth")}
+            />
+            <NumberField
+              label="Rough"
+              value={effect.roughness}
+              min={1}
+              max={4}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, roughness: Math.max(1, Math.min(4, Math.round(v))) }, "Set texture roughness")}
+            />
+          </div>
+          <ColorField
+            label="Light"
+            value={rgbaToHex(effect.color)}
+            disabled={disabled}
+            onCommit={(hex) => {
+              const color = hexToRgba(hex);
+              if (color) onChange({ ...effect, color }, "Set texture colour");
+            }}
+          />
+          <div className="grid grid-cols-3 gap-1.5">
+            <NumberField
+              label="Amount"
+              suffix="%"
+              value={Math.round(effect.opacity * 100)}
+              min={0}
+              max={100}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, opacity: clampUnit(v / 100) }, "Set texture amount")}
+            />
+            <BlendField value={effect.blend} disabled={disabled} onChange={(blend) => onChange({ ...effect, blend }, "Set texture blend")} />
+            <NumberField
+              label="Seed"
+              value={effect.seed}
+              min={0}
+              max={65535}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, seed: clampSeed(v) }, "Set texture seed")}
+            />
+          </div>
+        </>
+      );
+
+    case "glass":
+      return (
+        <>
+          <div className="grid grid-cols-2 gap-1.5">
+            <NumberField
+              label="Blur"
+              value={effect.blur}
+              min={0}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, blur: Math.max(0, v) }, "Set glass blur")}
+            />
+            <NumberField
+              label="Saturation"
+              suffix="%"
+              value={Math.round(effect.saturation * 100)}
+              min={0}
+              max={1000}
+              step={10}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, saturation: Math.max(0, Math.min(10, v / 100)) }, "Set glass saturation")}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <NumberField
+              label="Refraction"
+              suffix="%"
+              value={Math.round(effect.refraction * 100)}
+              min={0}
+              max={100}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, refraction: clampUnit(v / 100) }, "Set glass refraction")}
+            />
+            <NumberField
+              label="Depth"
+              value={effect.depth}
+              min={0}
+              max={1000}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, depth: Math.max(0, Math.min(1000, v)) }, "Set glass depth")}
+            />
+          </div>
+          <ColorField
+            label="Tint"
+            value={rgbaToHex(effect.tint)}
+            disabled={disabled}
+            onCommit={(hex) => {
+              const tint = hexToRgba(hex);
+              if (tint) onChange({ ...effect, tint }, "Set glass tint");
+            }}
+          />
+          <div className="grid grid-cols-3 gap-1.5">
+            <NumberField
+              label="Tint"
+              suffix="%"
+              value={Math.round(effect.tintOpacity * 100)}
+              min={0}
+              max={100}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, tintOpacity: clampUnit(v / 100) }, "Set glass tint opacity")}
+            />
+            <NumberField
+              label="Light"
+              suffix="%"
+              value={Math.round(effect.lightIntensity * 100)}
+              min={0}
+              max={100}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, lightIntensity: clampUnit(v / 100) }, "Set glass light")}
+            />
+            <NumberField
+              label="Angle"
+              suffix="°"
+              value={effect.lightAngle}
+              min={-360}
+              max={360}
+              step={15}
+              disabled={disabled}
+              onCommit={(v) => onChange({ ...effect, lightAngle: Math.max(-360, Math.min(360, v)) }, "Set glass light angle")}
+            />
+          </div>
+        </>
+      );
+  }
+}
+
+function BlendField({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: EffectBlendMode;
+  disabled?: boolean;
+  onChange: (blend: EffectBlendMode) => void;
+}) {
+  return (
+    <SelectField
+      label="Blend"
+      value={value}
+      options={[
+        { value: "overlay", label: "Overlay" },
+        { value: "soft-light", label: "Soft light" },
+        { value: "multiply", label: "Multiply" },
+        { value: "screen", label: "Screen" },
+        { value: "normal", label: "Normal" },
+      ]}
+      disabled={disabled}
+      onChange={(next) => onChange(next as EffectBlendMode)}
+    />
   );
+}
+
+const clampUnit = (value: number) => Math.max(0, Math.min(1, value));
+const clampSeed = (value: number) => Math.max(0, Math.min(65_535, Math.round(value)));
+
+/** What a list section shows when it is empty. Not nothing: an empty section
+ *  with no row at all reads as a section that failed to load. */
+function EmptyRow({ children }: { children: React.ReactNode }) {
+  return <p className="rounded-[8px] border border-dashed border-border/60 px-2 py-1 text-[11px] text-muted-foreground">{children}</p>;
 }
 
 // ---------------------------------------------------------------------------
