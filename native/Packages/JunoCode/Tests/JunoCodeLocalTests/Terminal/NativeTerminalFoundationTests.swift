@@ -121,9 +121,16 @@ final class NativeTerminalFoundationTests: XCTestCase {
     }
 
     func testOutputAndTranscriptLimitsTerminateTheProcess() async throws {
+        // Keep the child alive while the PTY drains. A short-lived `printf` can
+        // exit between two PTY reads, and macOS may report EIO before the last
+        // bytes that were written have become readable. That is a valid PTY
+        // race, but it makes this test assert on scheduling rather than on the
+        // output-limit contract. A bounded reader must stop a live producer at
+        // exactly its configured byte budget.
+        let payload = String(repeating: "x", count: 512)
         let command = try NativeTerminalCommand(
-            executable: "/usr/bin/printf",
-            arguments: [String(repeating: "x", count: 512)],
+            executable: "/bin/sh",
+            arguments: ["-c", "while :; do printf '%s' '\(payload)'; done"],
             workingDirectory: URL(fileURLWithPath: "/tmp")
         )
         let session = NativeTerminalSession(
