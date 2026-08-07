@@ -70,6 +70,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "juno:inspect-off"
   },
   {
+    "id": "00adad250c69be03",
+    "source": "Delete design"
+  },
+  {
     "id": "00b834936f190433",
     "source": "Meituan's 1.6T-parameter open MoE — native 1M context via LongCat Sparse Attention."
   },
@@ -2296,6 +2300,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2db54f592d548729",
     "source": "Usage recap every Monday."
+  },
+  {
+    "id": "2dc1179c83b92185",
+    "source": "Design deleted."
   },
   {
     "id": "2dd18707e2fd56d0",
@@ -5002,6 +5010,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "memory/edit"
   },
   {
+    "id": "65f213772b9c5334",
+    "source": "Delete layer"
+  },
+  {
     "id": "65f4c0abb9366471",
     "source": "Too many uploads — try again later."
   },
@@ -5100,6 +5112,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "67524dc870ed2a73",
     "source": "[Nom et prénom du directeur de la publication]"
+  },
+  {
+    "id": "6762de723e443630",
+    "source": "Every version of this design and its history will be permanently removed. This cannot be undone."
   },
   {
     "id": "6775884f6d777637",
@@ -10728,6 +10744,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d5af0924afee92cc",
     "source": "Couldn’t load your Code projects."
+  },
+  {
+    "id": "d5c0d99686202c1a",
+    "source": "Design actions"
   },
   {
     "id": "d5cdfcf7ff75338f",
