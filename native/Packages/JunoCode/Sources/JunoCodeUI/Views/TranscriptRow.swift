@@ -28,6 +28,10 @@ struct TranscriptContext {
     var subagents: [String: [SubagentRun]] = [:]
     /// What each running sub-agent is doing right now, keyed by its session.
     var subagentActivity: [CodeSessionID: String] = [:]
+    /// Retries the parent session's most recent user turn. Child transcripts do
+    /// not receive this action: a sub-agent cannot be resent from inside its
+    /// parent's read-only embedded view.
+    var retryLastTurn: @MainActor @Sendable () async -> Void = {}
     /// 0 for the session's own transcript, 1 inside a sub-agent's. A child never
     /// nests further: `DelegateTaskTool` cannot delegate, so there is nothing
     /// deeper to show, and an unbounded tree in a transcript is a maze.
@@ -45,6 +49,7 @@ struct TranscriptContext {
         loadDiff: @escaping @MainActor @Sendable (String) async -> TextDiff? = { _ in nil },
         subagents: [SubagentRun] = [],
         subagentActivity: [CodeSessionID: String] = [:],
+        retryLastTurn: @escaping @MainActor @Sendable () async -> Void = {},
         depth: Int = 0
     ) {
         self.events = events
@@ -53,6 +58,7 @@ struct TranscriptContext {
         self.loadDiff = loadDiff
         self.subagents = Dictionary(grouping: subagents, by: \.toolCallID)
         self.subagentActivity = subagentActivity
+        self.retryLastTurn = retryLastTurn
         self.depth = depth
         var completions: [String: ToolCompletedEvent] = [:]
         var outputs: [String: [ToolOutputEvent]] = [:]
@@ -235,6 +241,18 @@ struct TranscriptRow: View {
                 }
             }
             Spacer(minLength: 0)
+            if error.isRecoverable {
+                Button {
+                    Task { await context.retryLastTurn() }
+                } label: {
+                    Label("Retry", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(tint)
+                .help("Retry the last user message")
+                .accessibilityLabel("Retry the last message")
+            }
         }
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, JunoSpace.snug)

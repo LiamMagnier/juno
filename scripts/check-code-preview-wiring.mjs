@@ -28,7 +28,8 @@ function requireText(relativePath, snippets) {
 requireText("native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift", [
   "DesktopCodePreviewDock(",
   "target: previewTarget",
-  "previewTarget = CodePreviewTarget(workspaceRoot: root)",
+  "previewTarget = CodePreviewTarget(",
+  "sessionID: controller?.sessionID",
   "openPreviewWindow(previewTarget)",
   "keyboardShortcut(\"p\", modifiers: [.command, .option])",
 ]);
@@ -42,6 +43,13 @@ requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Views/Preview/CodePrevi
   "CodePreviewScene",
   "WindowGroup(id: Self.windowID, for: CodePreviewTarget.self)",
   "juno.code.preview.dock",
+]);
+requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Views/Preview/CodePreviewInspectionTool.swift", [
+  "let name = \"inspect_preview\"",
+  "CodePreviewModel.inspectActive(",
+]);
+requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Models/SessionController.swift", [
+  "tools.append(CodePreviewInspectTool())",
 ]);
 requireText("native/macOS/JunoDesktop/App/JunoDesktopApp.swift", ["CodePreviewScene()"]);
 

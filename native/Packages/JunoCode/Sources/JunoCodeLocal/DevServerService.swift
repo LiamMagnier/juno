@@ -506,7 +506,15 @@ private final class DevServerRun: @unchecked Sendable {
         defer { lock.unlock() }
         guard let remainder = partials[channel], !remainder.isEmpty else { return [] }
         partials[channel] = ""
-        return [makeLine(remainder, channel: channel)]
+        let line = makeLine(remainder, channel: channel)
+        // A short-lived server can print its complete ready line without a
+        // trailing newline. It is still a real served address, so preserve that
+        // fact before the termination handler snapshots the run; otherwise a
+        // clean exit is incorrectly reported as "never served an address".
+        if url == nil, let detected = DevServerURLDetector.detect(in: line.text) {
+            url = detected
+        }
+        return [line]
     }
 
     /// A line Juno wrote itself, marked `.log` so the view can tint it as

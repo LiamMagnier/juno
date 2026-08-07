@@ -1,6 +1,7 @@
 import AppKit
 import JunoCodeCore
 import JunoCodeLocal
+import JunoCodeRuntime
 import JunoDesignSystem
 import SwiftUI
 import WebKit
@@ -35,31 +36,40 @@ public struct CodePreviewTarget: Hashable, Codable, Sendable {
     public var previewID: UUID
     public var workspaceRootPath: String?
     public var address: URL?
+    /// The Code session that owns this preview. This is the security boundary
+    /// for agent diagnostics; older scene-restoration values decode as nil and
+    /// therefore remain visible to the reader but not to an agent tool.
+    public var sessionID: CodeSessionID?
 
     public init(
         previewID: UUID = UUID(),
         workspaceRootPath: String? = nil,
-        address: URL? = nil
+        address: URL? = nil,
+        sessionID: CodeSessionID? = nil
     ) {
         self.previewID = previewID
         self.workspaceRootPath = workspaceRootPath
         self.address = address
+        self.sessionID = sessionID
     }
 
     public init(
         previewID: UUID = UUID(),
         workspaceRoot: URL?,
-        address: URL? = nil
+        address: URL? = nil,
+        sessionID: CodeSessionID? = nil
     ) {
         self.previewID = previewID
         self.workspaceRootPath = workspaceRoot?.path
         self.address = address
+        self.sessionID = sessionID
     }
 
     private enum CodingKeys: String, CodingKey {
         case previewID
         case workspaceRootPath
         case address
+        case sessionID
     }
 
     public init(from decoder: Decoder) throws {
@@ -70,6 +80,7 @@ public struct CodePreviewTarget: Hashable, Codable, Sendable {
         previewID = try values.decodeIfPresent(UUID.self, forKey: .previewID) ?? UUID()
         workspaceRootPath = try values.decodeIfPresent(String.self, forKey: .workspaceRootPath)
         address = try values.decodeIfPresent(URL.self, forKey: .address)
+        sessionID = try values.decodeIfPresent(CodeSessionID.self, forKey: .sessionID)
     }
 
     var workspaceRoot: URL? {
@@ -302,9 +313,47 @@ private extension DevServerCommand {
 @Observable
 final class CodePreviewModel {
     private static var sessions: [UUID: CodePreviewModel] = [:]
+    static let diagnosticsMessageName = "junoPreviewDiagnostics"
+    static let diagnosticsScript = """
+    (() => {
+      const stringify = (value) => {
+        try {
+          if (value instanceof Error) return value.stack || value.message || String(value);
+          if (typeof value === "string") return value;
+          if (typeof value === "undefined") return "undefined";
+          if (typeof value === "object") return JSON.stringify(value);
+          return String(value);
+        } catch (_) {
+          return String(value);
+        }
+      };
+      const send = (kind, values) => {
+        try {
+          window.webkit.messageHandlers.junoPreviewDiagnostics.postMessage({
+            kind,
+            message: values.map(stringify).join(" ")
+          });
+        } catch (_) {}
+      };
+      ["error", "warn"].forEach((level) => {
+        const original = console[level];
+        console[level] = (...values) => {
+          send("console." + level, values);
+          if (original) original.apply(console, values);
+        };
+      });
+      window.addEventListener("error", (event) => {
+        send("runtime.error", [event.message + " (" + event.filename + ":" + event.lineno + ")"]);
+      });
+      window.addEventListener("unhandledrejection", (event) => {
+        send("runtime.unhandledrejection", [event.reason]);
+      });
+    })();
+    """
 
     let previewID: UUID
     let workspaceRoot: URL?
+    let sessionID: CodeSessionID?
 
     private(set) var serverState: DevServerState = .stopped
     private(set) var log: [DevServerLogLine] = []
@@ -329,6 +378,7 @@ final class CodePreviewModel {
     private(set) var loadState: CodePreviewLoadState = .idle
     private(set) var reconnectAttempt = 0
     private(set) var addressValidationMessage: String?
+    private(set) var browserDiagnostics: [String] = []
 
     /// A dev server prints its address before it can answer a request — Next
     /// announces the port, then spends a few seconds compiling. Retrying a real
@@ -344,6 +394,8 @@ final class CodePreviewModel {
     private var reconnect: Task<Void, Never>?
     private var quitObserver: NSObjectProtocol?
     private var activeSurfaceCount = 0
+    private weak var activeWebView: WKWebView?
+    private let diagnosticsRedactor = SecretRedactor()
 
     static func shared(for target: CodePreviewTarget) -> CodePreviewModel {
         if let existing = sessions[target.previewID] {
@@ -357,6 +409,7 @@ final class CodePreviewModel {
     init(target: CodePreviewTarget) {
         self.previewID = target.previewID
         self.workspaceRoot = target.workspaceRoot
+        self.sessionID = target.sessionID
         self.service = target.workspaceRoot.map {
             DevServerService.contained(workspaceRootURL: $0)
         }
@@ -489,6 +542,8 @@ final class CodePreviewModel {
         reconnect?.cancel()
         service.stop()
         pump?.cancel()
+        activeWebView = nil
+        browserDiagnostics.removeAll()
     }
 
     private func apply(_ state: DevServerState) {
@@ -575,9 +630,133 @@ final class CodePreviewModel {
         NSWorkspace.shared.open(address)
     }
 
+    /// Registers the WebKit surface currently owned by the dock or pop-out.
+    /// There can be two surfaces for one preview, but both point to the same
+    /// model and the latest attached web view is the one the agent should see.
+    func attach(webView: WKWebView) {
+        activeWebView = webView
+    }
+
+    func recordBrowserDiagnostic(kind: String, message: String) {
+        let cleanKind = String(kind.prefix(80))
+        let cleanMessage = diagnosticsRedactor.redact(
+            message.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        guard !cleanMessage.isEmpty else { return }
+        let line = "[\(cleanKind)] \(String(cleanMessage.prefix(2_000)))"
+        browserDiagnostics.append(line)
+        if browserDiagnostics.count > 100 {
+            browserDiagnostics.removeFirst(browserDiagnostics.count - 100)
+        }
+    }
+
+    /// Inspects the active preview for one granted workspace. This stays on the
+    /// main actor because WebKit is UI state; the Code tool reaches it through
+    /// `MainActor.run`, never by holding a WebKit object in the runtime layer.
+    static func inspectActive(
+        sessionID: CodeSessionID,
+        includeScreenshot: Bool,
+        maxText: Int
+    ) async throws -> CodePreviewInspection {
+        guard let model = sessions.values.first(where: { model in
+            model.activeSurfaceCount > 0 && model.sessionID == sessionID
+        }) else {
+            throw CodePreviewInspectionError.noActivePreview
+        }
+        return try await model.inspect(includeScreenshot: includeScreenshot, maxText: maxText)
+    }
+
+    private func inspect(includeScreenshot: Bool, maxText: Int) async throws -> CodePreviewInspection {
+        guard let webView = activeWebView else {
+            throw CodePreviewInspectionError.previewNotReady(
+                detail: "the WebKit page is still attaching"
+            )
+        }
+        guard let address else {
+            throw CodePreviewInspectionError.previewNotReady(
+                detail: "no local server address has been opened"
+            )
+        }
+        guard serverState.isLive, serverState.url == address else {
+            throw CodePreviewInspectionError.previewNotReady(
+                detail: "Juno did not start the server currently shown in the Preview"
+            )
+        }
+
+        let boundedText = min(max(maxText, 200), 12_000)
+        let script = """
+        (() => ({
+          url: window.location.href || "",
+          title: document.title || "",
+          text: (document.body && document.body.innerText || "").slice(0, \(boundedText)),
+          interactive: document.querySelectorAll("a,button,input,textarea,select,[role='button']").length
+        }))()
+        """
+
+        let value: Any
+        do {
+            guard let evaluated = try await webView.evaluateJavaScript(script) else {
+                throw CodePreviewInspectionError.pageEvaluationFailed(
+                    "the page returned no diagnostics"
+                )
+            }
+            value = evaluated
+        } catch {
+            throw CodePreviewInspectionError.pageEvaluationFailed(error.localizedDescription)
+        }
+        guard let page = value as? [String: Any] else {
+            throw CodePreviewInspectionError.pageEvaluationFailed(
+                "the page returned an unexpected diagnostics shape"
+            )
+        }
+
+        let rawPageURL = (page["url"] as? String) ?? address.absoluteString
+        let safePageURL = diagnosticsRedactor.redact(rawPageURL)
+        let pageURL = URL(string: safePageURL) ?? address
+        let title = diagnosticsRedactor.redact(page["title"] as? String ?? "")
+        let visibleText = diagnosticsRedactor.redact(page["text"] as? String ?? "")
+        let interactiveCount = page["interactive"] as? Int
+            ?? (page["interactive"] as? NSNumber)?.intValue
+            ?? 0
+
+        var screenshot: ModelImage?
+        if includeScreenshot {
+            do {
+                let image = try await webView.takeSnapshot(configuration: nil)
+                guard let png = Self.pngData(from: image) else {
+                    throw CodePreviewInspectionError.screenshotFailed(
+                        "WebKit returned an image Juno could not encode"
+                    )
+                }
+                screenshot = ModelImage(mediaType: "image/png", data: png, detail: .high)
+            } catch let error as CodePreviewInspectionError {
+                throw error
+            } catch {
+                throw CodePreviewInspectionError.screenshotFailed(error.localizedDescription)
+            }
+        }
+
+        return CodePreviewInspection(
+            url: pageURL,
+            title: title,
+            visibleText: String(visibleText.prefix(boundedText)),
+            interactiveElementCount: max(0, interactiveCount),
+            diagnostics: Array(browserDiagnostics.suffix(20)),
+            screenshot: screenshot
+        )
+    }
+
+    private static func pngData(from image: NSImage) -> Data? {
+        guard let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff)
+        else { return nil }
+        return bitmap.representation(using: .png, properties: [:])
+    }
+
     // MARK: - Page reporting
 
     func reportLoadStarted() {
+        browserDiagnostics.removeAll()
         loadState = .loading
     }
 
@@ -1572,6 +1751,17 @@ private struct CodePreviewWebView: NSViewRepresentable {
     func makeNSView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
+        configuration.userContentController.addUserScript(
+            WKUserScript(
+                source: CodePreviewModel.diagnosticsScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
+        configuration.userContentController.add(
+            context.coordinator,
+            name: CodePreviewModel.diagnosticsMessageName
+        )
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         // What shows before the page paints, and behind a page shorter than the
@@ -1584,6 +1774,8 @@ private struct CodePreviewWebView: NSViewRepresentable {
         // wanted, and it is off by default on modern WebKit.
         webView.isInspectable = true
         webView.allowsBackForwardNavigationGestures = true
+        context.coordinator.webView = webView
+        model.attach(webView: webView)
         context.coordinator.lastURL = url
         context.coordinator.lastReloadID = reloadID
         webView.load(Self.request(for: url))
@@ -1613,13 +1805,26 @@ private struct CodePreviewWebView: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var model: CodePreviewModel
         var lastURL: URL?
         var lastReloadID: UUID?
+        weak var webView: WKWebView?
 
         init(model: CodePreviewModel) {
             self.model = model
+        }
+
+        func userContentController(
+            _ userContentController: WKUserContentController,
+            didReceive message: WKScriptMessage
+        ) {
+            guard message.name == CodePreviewModel.diagnosticsMessageName,
+                  let body = message.body as? [String: Any],
+                  let kind = body["kind"] as? String,
+                  let text = body["message"] as? String
+            else { return }
+            model.recordBrowserDiagnostic(kind: kind, message: text)
         }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation: WKNavigation?) {

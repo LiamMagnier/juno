@@ -145,6 +145,13 @@ enum DevServerOutputSanitizer {
                 withTemplate: ""
             )
         }
+        // Pipe framing keeps the byte before `\n`, so a CRLF line reaches this
+        // function with a trailing `\r`. Remove that delimiter before applying
+        // the progress-line rule; otherwise `split` selects the empty segment
+        // after the CR and silently drops the whole log line and its URL.
+        if value.last == "\r" {
+            value.removeLast()
+        }
         // A progress line rewrites itself with a carriage return; keep only what
         // it settled on rather than showing the overwritten fragments.
         if let lastSegment = value.split(separator: "\r", omittingEmptySubsequences: false).last {

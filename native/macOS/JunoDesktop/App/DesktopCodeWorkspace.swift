@@ -1222,7 +1222,10 @@ struct DesktopCodeWorkspace: View {
             return
         }
         simulatorHost.closePane()
-        previewTarget = CodePreviewTarget(workspaceRoot: root)
+        previewTarget = CodePreviewTarget(
+            workspaceRoot: root,
+            sessionID: controller?.sessionID
+        )
     }
 
     private func closePreview() {

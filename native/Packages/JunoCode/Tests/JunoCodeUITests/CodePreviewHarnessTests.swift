@@ -1,6 +1,7 @@
 import Foundation
 import XCTest
 import JunoCodeCore
+import JunoCodeRuntime
 @testable import JunoCodeUI
 
 /// Proves the DEBUG preview harness is inert *by construction* and
@@ -41,6 +42,51 @@ final class CodePreviewHarnessTests: XCTestCase {
                 """
             )
         }
+    }
+
+    func testPreviewInspectorIsReadOnlyAndFailsClosedWithoutAnActiveSurface() async throws {
+        let tool = CodePreviewInspectTool()
+
+        XCTAssertEqual(tool.name, "inspect_preview")
+        XCTAssertEqual(tool.assessRisk(input: [:]), .read)
+        XCTAssertTrue(tool.description.contains("optional screenshot"))
+
+        do {
+            _ = try await tool.execute(
+                input: ["include_screenshot": false],
+                context: ToolContext(
+                    sessionID: CodeSessionID(),
+                    toolCallID: "preview-inspection-test",
+                    emitOutput: { _, _ in }
+                )
+            )
+            XCTFail("an inspection must not invent a preview when no surface is open")
+        } catch let error as ToolError {
+            guard case let .executionFailed(message) = error else {
+                return XCTFail("unexpected tool error: \(error)")
+            }
+            XCTAssertTrue(message.contains("No active local Preview"))
+        }
+    }
+
+    func testPreviewTargetBindsTheOwningSessionAndReadsLegacySceneValues() throws {
+        let owner = CodeSessionID(value: "preview-owner")
+        let target = CodePreviewTarget(
+            previewID: UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!,
+            workspaceRoot: URL(fileURLWithPath: "/tmp/project", isDirectory: true),
+            sessionID: owner
+        )
+        let encoded = try JSONEncoder().encode(target)
+        let decoded = try JSONDecoder().decode(CodePreviewTarget.self, from: encoded)
+
+        XCTAssertEqual(decoded, target)
+
+        let legacy = Data(
+            "{\"previewID\":\"AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE\",\"workspaceRootPath\":\"/tmp/project\"}".utf8
+        )
+        let restoredLegacy = try JSONDecoder().decode(CodePreviewTarget.self, from: legacy)
+        XCTAssertNil(restoredLegacy.sessionID)
+        XCTAssertEqual(restoredLegacy.workspaceRootPath, "/tmp/project")
     }
 
     /// The preview workspaces are never registered and carry no bookmark, so

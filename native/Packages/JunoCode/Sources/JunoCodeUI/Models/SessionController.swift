@@ -576,6 +576,11 @@ public final class SessionController {
             tools.removeAll { $0.name.hasPrefix("computer_") }
         }
         if contract.behavior == .code {
+            // Preview inspection is bound to the exact parent session by the
+            // ToolContext supplied during invocation. It is deliberately not
+            // part of WorkspaceContext, so Ask, Plan and isolated sub-agents
+            // cannot observe a UI surface they do not own.
+            tools.append(CodePreviewInspectTool())
             // Workspace-declared MCP tools are discovered through the same
             // session construction path as built-in tools. They remain
             // approval-pinned by MCPCodeTool, so discovery never broadens the
@@ -923,6 +928,27 @@ public final class SessionController {
         } catch {
             transientError = "Could not start the run: \(error)"
         }
+    }
+
+    /// Resubmits the most recent user prompt as a new turn.
+    ///
+    /// This is intentionally the same semantic operation exposed to Remote:
+    /// the prompt is restored to the composer and goes through ``send()`` so
+    /// goal state, turn contracts, approvals, checkpoints and transcript
+    /// durability remain identical to a manually retried message.
+    public func retryLastTurn() async {
+        guard let lastPrompt = events.reversed().compactMap({ event -> String? in
+            if case let .userPrompt(prompt) = event.payload { return prompt.text }
+            return nil
+        }).first,
+        !lastPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            transientError = "There is no previous message to retry."
+            return
+        }
+
+        composerText = lastPrompt
+        await send()
     }
 
     /// Attaches an image the reader dropped, pasted or chose.

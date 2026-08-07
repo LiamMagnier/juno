@@ -81,7 +81,10 @@ public struct TranscriptView: View {
                 await controller.diff(for: path)
             },
             subagents: controller.subagents,
-            subagentActivity: controller.subagentActivity
+            subagentActivity: controller.subagentActivity,
+            retryLastTurn: { [controller] in
+                await controller.retryLastTurn()
+            }
         )
     }
 

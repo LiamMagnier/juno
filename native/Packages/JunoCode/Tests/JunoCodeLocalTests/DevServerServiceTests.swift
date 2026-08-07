@@ -75,6 +75,24 @@ final class DevServerServiceTests: XCTestCase {
         XCTAssertFalse(line.text.contains(token))
     }
 
+    func testURLWithoutTrailingNewlineIsStillRecordedBeforeExit() async {
+        let service = DevServerService()
+
+        let events = await collectEvents(
+            from: service,
+            command: "printf 'Local: http://127.0.0.1:4568/'"
+        )
+
+        XCTAssertTrue(
+            events.contains(.state(.exited(code: 0))),
+            "a server that printed a usable URL before exiting must not be reported as a launch failure"
+        )
+        XCTAssertFalse(events.contains { event in
+            if case .state(.failed) = event { return true }
+            return false
+        })
+    }
+
     func testServerEnvironmentUsesAStableScrubbedPreviewEnvironment() {
         setenv("JUNO_TEST_SECRET_TOKEN", "must-not-leak", 1)
         defer { unsetenv("JUNO_TEST_SECRET_TOKEN") }

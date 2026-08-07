@@ -268,7 +268,10 @@ public struct WorkbenchView<SidebarHeader: View>: View {
 
     private func openPreviewForCurrentSession() {
         guard let root = controller?.context?.access.rootURL else { return }
-        previewTarget = CodePreviewTarget(workspaceRoot: root)
+        previewTarget = CodePreviewTarget(
+            workspaceRoot: root,
+            sessionID: controller?.sessionID
+        )
     }
 
     private func closePreview() {
