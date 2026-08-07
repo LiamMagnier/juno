@@ -64,11 +64,15 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout runner (LiamMagnier/juno)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          # 22, not 20 (EOL April 2026). Unlike deploy.yml this job ships
+          # nothing to the VM — it builds and runs the vendored agent core
+          # entirely on the runner — so it is free to track LTS, and matches
+          # native.yml and sync-models.yml.
+          node-version: 22
 
       - name: Build the vendored agent core
         working-directory: runner/agent-core

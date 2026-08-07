@@ -36,10 +36,23 @@ jobs:
     # one hung job holds the single deploy slot for GitHub's 360-minute default.
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
+          # Pinned to the major the VM actually runs, NOT to the newest LTS.
+          # `build-and-deploy` builds here and rsyncs the result to the VM, so
+          # build-time and runtime must not diverge. Verified 2026-07-31: the VM
+          # is on v20.20.2 (all three PM2 processes), its apt source is pinned to
+          # deb.nodesource.com/node_20.x, and this runner resolves 20 to the same
+          # v20.20.2.
+          #
+          # Node 20 went end-of-life in April 2026, so this pin is a stopgap.
+          # Moving it forward is a THREE-part change that lands together, in
+          # this order: repoint the VM's NodeSource source and upgrade it first,
+          # then this file (both jobs), then package.json `engines`. Bumping only
+          # this file would build on a newer major and run the result on an older
+          # one.
           node-version: 20
           cache: npm
 
@@ -415,10 +428,12 @@ jobs:
     # GitHub's 360-minute default. Healthy runs finish well inside this.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
+          # Must stay equal to the `test` job's pin above, which explains why
+          # this tracks the VM's Node major rather than the newest LTS.
           node-version: 20
           cache: npm
 

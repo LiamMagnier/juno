@@ -54,8 +54,8 @@ jobs:
     # GitHub's 360-minute default and starve the 5 macOS slots.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -91,7 +91,7 @@ jobs:
         # tested by CI at all — the matrix is the whole gate for the packages.
         package: [JunoNativeKit, JunoCode, JunoWork]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Select the newest installed Xcode
         run: |
@@ -121,7 +121,7 @@ jobs:
     # Observed max 17m25s, so 30 would leave under a 2x margin.
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Require an Xcode new enough for the deployment floor
         run: |
@@ -205,7 +205,7 @@ jobs:
     # Observed 6m25s–11m15s.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Select the newest installed Xcode
         run: |
