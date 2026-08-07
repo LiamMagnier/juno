@@ -56,6 +56,15 @@ export const WORK_DEFAULT_MODEL: ModelId = DEFAULT_MODEL;
 export function isWorkCapableModel(model: ModelInfo): boolean {
   return (
     model.modality === "chat" &&
+    // The whole point of a Work run. Everything else on this list is about
+    // whether the model can be *reached*; this is about whether it can do the
+    // job once reached.
+    //
+    // Without it a model that answers in prose instead of calling tools was
+    // offered for Work, picked by `cheapestWorkModel` as the Auto fallback, and
+    // produced runs that left the plan untouched and failed while costing real
+    // tokens. See `ModelInfo.agenticTools`.
+    model.agenticTools &&
     // The proxy provider speaks /chat/completions or /v1/messages, not the
     // Responses API. `model-catalog-api.ts` draws this same line for Code.
     model.api !== "responses" &&

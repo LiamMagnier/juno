@@ -6,7 +6,9 @@
  */
 import type { Plan } from "@prisma/client";
 import { providerApiKey, providerBaseUrl, type Provider } from "@/lib/providers";
-import { MODELS, prettifyModelName, guessVision, guessPlan, guessReasoning, guessCost, providerSupportsWebSearch, type ModelInfo } from "@/lib/models";
+import { MODELS, prettifyModelName, guessVision, guessPlan, guessReasoning, guessCost, providerSupportsWebSearch, type ModelInfo,
+  guessAgenticTools,
+} from "@/lib/models";
 
 export const DEFAULT_DISCOVERY_TIMEOUT_MS = 2500;
 
@@ -262,6 +264,9 @@ export function toModelInfo(provider: Provider, rawId: string, fam?: Family): Mo
     minPlan: fam?.minPlan ?? known?.minPlan ?? guessPlan(rawId),
     vision: fam?.vision ?? known?.vision ?? guessVision(rawId),
     reasoning: known?.reasoning ?? guessReasoning(rawId),
+    // Curated wins, then the heuristic — the same precedence every other
+    // capability here follows.
+    agenticTools: known?.agenticTools ?? guessAgenticTools(rawId),
     cost: known?.cost ?? guessCost(rawId),
     modality: known?.modality ?? "chat",
     webSearch: providerSupportsWebSearch(provider),

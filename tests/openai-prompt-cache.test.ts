@@ -17,6 +17,7 @@ function fake(providerModel: string, provider: ModelInfo["provider"] = "openai")
     minPlan: "PRO",
     vision: true,
     reasoning: true,
+    agenticTools: true,
     cost: 2,
     modality: "chat",
     webSearch: false,

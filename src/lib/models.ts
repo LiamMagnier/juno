@@ -29,6 +29,29 @@ export interface ModelInfo {
   minPlan: Plan;
   vision: boolean;
   reasoning: boolean; // supports a "thinking"/reasoning effort
+  /**
+   * Whether this model reliably drives a multi-step tool-calling loop.
+   *
+   * Not "does the provider's API accept a tools array" — nearly all of them do,
+   * and `providerSpecFor` in the Work runner hard-codes `tools: true` for every
+   * model it builds an adapter for. This is the stronger, product-level claim
+   * the agent surfaces actually depend on: given tools and a system prompt that
+   * names them, does the model *call* them rather than narrating what it would
+   * do.
+   *
+   * It exists because nothing recorded it. `isWorkCapableModel` filtered on
+   * modality, wire protocol, coming-soon and deprecation — so a model that
+   * cannot drive a loop was offered for Work, chosen by `cheapestWorkModel` as
+   * the Auto fallback, and produced runs that answered in prose, called no
+   * tool, left the plan untouched and failed. There was no field to consult and
+   * therefore no way to keep it out.
+   *
+   * Defaults to true for chat models. The default has to be permissive: a model
+   * this catalog has never met is far more likely to be capable than not, and
+   * excluding it would silently shrink what Auto may choose every time a lab
+   * ships something new.
+   */
+  agenticTools: boolean;
   cost: CostTier;
   modality: Modality; // chat (text) · image · video
   webSearch: boolean; // can search the web + cite sources (chat models)
@@ -87,6 +110,39 @@ const CHEAP_RE = /(flash|mini|nano|lite|air|small|haiku|8b|tiny|turbo|free)/i;
 const REASONING_RE =
   /(fable|mythos|reasoner|thinking|^o\d|-o\d|gpt-(?:[5-9]|\d\d)|magistral|deepseek-(r|v[4-9])|[-/]r1|qwq|qwen3(\.[5-9]|-(max|235|30|vl))|qwen[\d.]*-(plus|flash|max)|claude-(opus|sonnet|haiku-[4-9])|minimax-m[2-9]|mimo-v[2-9]|glm-(4\.[6-9]|[5-9])|gemini-[2-9]\.[5-9]|gemini-[3-9]|grok-(?:[4-9]|\d\d|build)|kimi-k[2-9])/i;
 
+/**
+ * Models that do not reliably drive an agent loop, however well they chat.
+ *
+ * A denylist rather than an allowlist, and the asymmetry is deliberate. An
+ * allowlist answers "no" for every model newer than itself, so the day a lab
+ * ships its next flagship the catalog quietly stops offering it for Work —
+ * exactly the failure the comment above `VISION_RE` describes for the other
+ * heuristics. A denylist is wrong in the recoverable direction: a bad model
+ * gets offered until somebody adds it here.
+ *
+ * `mistral-medium` is here on direct evidence rather than reputation. Across
+ * seven consecutive cloud Work runs on `mistral-medium-latest` — with an
+ * `ask_user` tool, an `update_plan` tool, and a system prompt naming both — it
+ * made zero tool calls of any kind, answering each time in prose describing
+ * what it would do. The runs cost real tokens, left the plan untouched, and
+ * failed. Mistral's API supports function calling and the adapter serialises
+ * tools correctly, so this is about the model in this harness, not the vendor.
+ *
+ * Keep entries narrow and evidenced. A guess here removes a model somebody is
+ * paying for from the only product that needs it most.
+ */
+const NO_AGENTIC_TOOLS_RE = /(mistral-medium)/i;
+
+/**
+ * Whether a model can be trusted to call the tools it is given.
+ *
+ * Permissive by default: see `NO_AGENTIC_TOOLS_RE` for why the unknown case has
+ * to answer yes.
+ */
+export function guessAgenticTools(providerModel: string): boolean {
+  return !NO_AGENTIC_TOOLS_RE.test(providerModel);
+}
+
 export function guessVision(providerModel: string): boolean {
   return VISION_RE.test(providerModel);
 }
@@ -142,6 +198,9 @@ interface ModelDef {
   family: string;
   vision?: boolean;
   reasoning?: boolean; // default: guessed from the id
+  /** Default: true for chat models. Set false only with evidence — see the
+   *  field's note on ModelInfo. */
+  agenticTools?: boolean;
   cost?: CostTier; // default: guessed from the id
   released?: string; // "YYYY-MM"
   contextWindow?: number;
@@ -178,6 +237,7 @@ function def(d: ModelDef): ModelInfo {
     minPlan: d.minPlan,
     vision: d.vision ?? false,
     reasoning: d.reasoning ?? (modality === "chat" ? guessReasoning(d.id) : false),
+    agenticTools: d.agenticTools ?? (modality === "chat" ? guessAgenticTools(d.id) : false),
     cost: d.cost ?? guessCost(d.id),
     modality,
     webSearch: modality === "chat" ? providerSupportsWebSearch(d.provider) : false,
@@ -448,6 +508,7 @@ const DISCOVERED_MODELS: ModelInfo[] = DISCOVERED.filter(
   minPlan: guessPlan(d.id),
   vision: guessVision(d.id),
   reasoning: guessReasoning(d.id),
+  agenticTools: guessAgenticTools(d.id),
   cost: guessCost(d.id),
   modality: "chat",
   webSearch: providerSupportsWebSearch(d.provider),
@@ -690,6 +751,9 @@ export function resolveModel(id: string): ModelInfo | null {
       minPlan: "FREE",
       vision: true,
       reasoning: true,
+      // Auto is a sentinel: the concrete model it resolves to is what
+      // actually runs, and that model carries its own flag.
+      agenticTools: true,
       cost: 1,
       modality: "chat",
       webSearch: true,
@@ -713,6 +777,7 @@ export function resolveModel(id: string): ModelInfo | null {
     minPlan: guessPlan(migrated.providerModel),
     vision: guessVision(migrated.providerModel),
     reasoning: guessReasoning(migrated.providerModel),
+    agenticTools: guessAgenticTools(migrated.providerModel),
     cost: guessCost(migrated.providerModel),
     modality: "chat",
     webSearch: providerSupportsWebSearch(migrated.provider),

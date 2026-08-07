@@ -26,6 +26,7 @@ function model(overrides: Partial<ModelInfo> & { id: string; name: string }): Mo
     minPlan: "FREE",
     vision: false,
     reasoning: false,
+    agenticTools: true,
     cost: 2,
     modality: "chat",
     webSearch: false,

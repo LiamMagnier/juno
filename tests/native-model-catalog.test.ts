@@ -14,6 +14,7 @@ function fakeModel(overrides: Partial<ModelInfo> = {}): ModelInfo {
     minPlan: "FREE",
     vision: true,
     reasoning: true,
+    agenticTools: true,
     cost: 2,
     modality: "chat",
     webSearch: true,

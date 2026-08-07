@@ -278,6 +278,9 @@ export const AUTO_MODEL_INFO: ModelInfo = {
   minPlan: "FREE",
   vision: true,
   reasoning: true,
+  // See resolveModel: Auto is a sentinel and the model it picks carries
+  // its own flag.
+  agenticTools: true,
   cost: 1,
   modality: "chat",
   webSearch: true,

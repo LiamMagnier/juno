@@ -41,6 +41,7 @@ function chatModel(overrides: Partial<ModelInfo> = {}): ModelInfo {
     minPlan: "FREE",
     vision: false,
     reasoning: false,
+    agenticTools: true,
     cost: 1,
     modality: "chat",
     webSearch: false,
