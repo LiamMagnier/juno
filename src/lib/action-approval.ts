@@ -134,7 +134,30 @@ const DESTRUCTIVE_TOKENS = new Set([
   "reject", "remove", "reset", "revoke", "role", "security", "token", "trash", "unlock",
 ]);
 
-const SECRET_KEY = /(?:authorization|cookie|credential|password|private.?key|secret|token)/i;
+/*
+ * Argument KEYS whose value is masked before it can be shown to anyone.
+ *
+ * This list is now load-bearing in two places, not one. It has always redacted
+ * the approval card's `detail`; since tool detail shipped it also redacts the
+ * arguments of EVERY connector call into the thought-process panel, including
+ * the read-only calls that never raise a card — and that projection is
+ * persisted, unencrypted, on `Message.activity`. A name this misses is a name
+ * that is written down.
+ *
+ * The additions are the credential spellings the original list did not reach:
+ * `apiKey` / `api_key` / `x-api-key`, `accessKey`, a bare `auth` field, `bearer`
+ * and `passphrase`. `accessToken`, `refresh_token` and `client_secret` were
+ * already caught by `token` / `secret`.
+ *
+ * BOUNDED ON PURPOSE where the word is a prefix of an innocent one: `\bauth\b`
+ * so a GitHub `author` is not blanked out of an issue the user asked to read
+ * back, and `\bbearer\b` for symmetry. Names that are ambiguous rather than
+ * credential-shaped are deliberately NOT here — `key` (Linear project keys),
+ * `signature` (an email signature), `session`, `pin` — because a redactor that
+ * blanks the content the panel exists to show teaches people to distrust it.
+ */
+const SECRET_KEY =
+  /(?:api.?key|access.?key|authorization|\bauth\b|\bbearer\b|cookie|credential|pass(?:word|phrase)|private.?key|secret|token)/i;
 
 function safeIdentifier(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "unknown";
