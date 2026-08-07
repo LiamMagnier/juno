@@ -55,7 +55,12 @@ public extension JunoColorToken {
     // Developer surfaces — terminal and diff, slightly deeper than the canvas
     // so monospaced output reads as machine output.
     static let terminalLight = JunoColorToken(unchecked: 0.965, 0.963, 0.957)
-    static let terminalDark = JunoColorToken(unchecked: 0.063, 0.063, 0.070)
+    // Was (0.063, 0.063, 0.070) — BLUE HIGHEST, i.e. a cool surface sitting on a
+    // warm canvas: the identical defect `canvasDarkWarm` was fixed for, and it
+    // survived that pass because the warmth test enumerates its tokens by hand
+    // and this one was never added to the list. It is now covered there.
+    // 48 7% 6.5%, keeping the same depth below the canvas it always had.
+    static let terminalDark = JunoColorToken(unchecked: 0.070, 0.068, 0.060)
 }
 
 public extension Color {

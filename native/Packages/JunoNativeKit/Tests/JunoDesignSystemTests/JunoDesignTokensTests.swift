@@ -64,6 +64,11 @@ final class JunoDesignTokensTests: XCTestCase {
             .sidebarLight, .sidebarDark,
             .sidebarSelectionLight, .sidebarSelectionDark,
             .sidebarForegroundLight, .sidebarForegroundDark,
+            // Added after `terminalDark` shipped cool (blue highest) through the
+            // pass that fixed exactly that bug elsewhere. A hand-enumerated list
+            // only guards what someone remembered to add, so any NEW neutral
+            // surface token belongs here on the day it is written.
+            .terminalLight, .terminalDark,
         ]
         for token in tokens {
             XCTAssertGreaterThan(token.red, token.blue, "expected a warm neutral")
