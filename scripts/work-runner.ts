@@ -2150,30 +2150,65 @@ async function drive(runId: string, userId: string): Promise<void> {
   // before the loop starts, never reaches `session.ts` and would otherwise have
   // no terminal event in its transcript at all.
   let emittedRunFinished = false;
-  const emit = async (
-    kind: WorkEventKind,
-    payload: Prisma.InputJsonValue
-  ): Promise<void> => {
+  /**
+   * The tail of the append chain, so events reach the transcript in the order
+   * they happened.
+   *
+   * **Why a chain and not just an await.** `appendEvents` does not take the
+   * sequence number from the caller: it increments the run row's `lastSeq`
+   * inside a transaction and stamps whatever it reads. So an event's `seq` —
+   * the only thing the transcript is ordered by, and the cursor every client
+   * resumes from — records *when its write ran*, not when it happened.
+   *
+   * The session's callbacks are synchronous and call this with `void`
+   * (`onEvent` in `execute`, which cannot await), so every session event was a
+   * fire-and-forget write racing every other one. A real run showed
+   * "Finished - failed" stamped ahead of the `assistant_message` that preceded
+   * it by seconds.
+   *
+   * Out-of-order is not only ugly. A client resumes with `seq > cursor`, so an
+   * event that lands with a lower seq than one already delivered is filtered
+   * out on every subsequent poll — silently and permanently missing from the
+   * transcript.
+   *
+   * Chaining serialises the writes without making the callers wait: the agent
+   * loop keeps running, and the appends queue behind one another in call order.
+   */
+  let appendTail: Promise<void> = Promise.resolve();
+  const emit = (kind: WorkEventKind, payload: Prisma.InputJsonValue): Promise<void> => {
     if (kind === "run_finished") emittedRunFinished = true;
     seq += 1;
-    await appendEvents({
-      runId,
-      userId,
-      events: [
-        {
-          kind,
-          payload,
-          visibility: defaultVisibilityFor(kind),
-          key: `${runId}:${EXECUTOR_ID}:${seq}`,
-        },
-      ],
-    }).catch((error: unknown) => {
-      // An event that cannot be written must not take the run down with it: the
-      // transcript is worth less than the work, and a gap is visible to the
-      // client's gap detector.
-      log("event append failed", { runId, kind, error: String(error) });
-    });
+    const key = `${runId}:${EXECUTOR_ID}:${seq}`;
+    const queued = appendTail.then(() =>
+      appendEvents({
+        runId,
+        userId,
+        events: [
+          {
+            kind,
+            payload,
+            visibility: defaultVisibilityFor(kind),
+            key,
+          },
+        ],
+      }).then(
+        () => undefined,
+        (error: unknown) => {
+          // An event that cannot be written must not take the run down with it:
+          // the transcript is worth less than the work, and a gap is visible to
+          // the client's gap detector.
+          log("event append failed", { runId, kind, error: String(error) });
+        }
+      )
+    );
+    // The chain must survive a rejection, or one failed write stops every
+    // later event from ever being attempted.
+    appendTail = queued.catch(() => undefined);
+    return queued;
   };
+
+  /** Waits for every queued append, so nothing is dropped when `drive` returns. */
+  const flushEvents = (): Promise<void> => appendTail;
 
   try {
     await emit("run_started", { executor: "cloud" });
@@ -2217,6 +2252,15 @@ async function drive(runId: string, userId: string): Promise<void> {
         log("could not record the failure", { runId, error: String(finishError) });
       }
     );
+  } finally {
+    // Nothing queued may be dropped on the way out.
+    //
+    // Awaiting any `emit` implicitly drains everything before it, because each
+    // append chains on the last — but two exits skip that: the paused branch
+    // returns without emitting, and the terminal path skips its own emit when
+    // the session already wrote one. Both would otherwise leave the last
+    // events of a run unwritten when this worker moves on to the next.
+    await flushEvents();
   }
 }
 
