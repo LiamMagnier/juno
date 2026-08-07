@@ -13,7 +13,16 @@ const ONE_LINERS: Record<string, string> = {
   FREE: "Create an account, look around, keep your history. Chatting unlocks with Pro.",
   PRO: "Every model, voice, memory and artifacts — a real month of everyday use.",
   MAX: "Five times Pro's monthly budget, for people who live in Juno.",
-  MAX20: "Twenty times Pro — the most headroom we sell.",
+  // Deliberately no multiple. This said "Twenty times Pro", and the enforced
+  // budgets are Pro 11 € against Max x20's 110 € — ten times, not twenty. The
+  // plan's NAME is a tier label, not a promise about budget, but this sentence
+  // was a promise, and it was the wrong number. Max's "five times" is left
+  // alone because 55 against 11 really is five.
+  //
+  // The figure lives in one place, BUDGET_EUR in src/lib/spend.ts, and is shown
+  // to the user on the settings Usage tile where it is read from that same
+  // constant. Copy that restates it is copy that will drift from it again.
+  MAX20: "The most headroom we sell.",
 };
 
 export function Pricing() {
