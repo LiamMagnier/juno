@@ -263,3 +263,66 @@ test('a wrong answer with every box ticked still passes the structural gate', ()
   });
   assert.equal(result.satisfied, true, result.unmet.join(' | '));
 });
+
+/*
+ * The regression `write_plan` introduced, and the reason it had no passing move.
+ *
+ * Model-authored plans changed what a step title looks like. The check that
+ * used to sit at the end of `structuralValidation` demanded a skipped step's
+ * entire title, verbatim, as a lowercase substring of the final answer — a test
+ * a three-word placeholder could pass and a written sentence never could. With
+ * `outstanding` also requiring every step to reach a terminal status, the three
+ * terminal statuses collapsed to: `done` passes, `skipped` fails, `failed`
+ * fails. A model that wrote six steps and honestly concluded two of them were
+ * unnecessary could not report success by any route except claiming work it had
+ * not done.
+ */
+
+const AUTHORED = [
+  { id: 's1', title: 'Identify your GitHub account so I know whose repositories to list' },
+  { id: 's2', title: 'List every repository on the account (paginating until none remain)' },
+  { id: 's3', title: "Check each repository's root for a README file" },
+  { id: 's4', title: 'Cross-check the licence headers against the repository licence' },
+];
+
+test('a model-authored plan may skip a step it honestly did not need', () => {
+  const plan = new WorkPlan(AUTHORED);
+  plan.complete('s1');
+  plan.complete('s2');
+  plan.complete('s3');
+  plan.skip('s4', 'No repository declares a licence header, so there was nothing to cross-check.');
+
+  const result = structuralValidation({
+    goal: 'Audit my GitHub repositories',
+    plan,
+    // A real summary. It paraphrases; it does not quote the step titles, and no
+    // instruction could reliably make a model quote them.
+    answer:
+      '# GitHub Repository Audit\n\nEleven repositories, one without a README (`test`). ' +
+      'Licences were not compared, because none of the repositories declares one.',
+    artifacts: [],
+  });
+
+  assert.equal(result.satisfied, true, result.unmet.join(' '));
+  assert.deepEqual(result.unmet, []);
+});
+
+test('a skipped step with no reason is still refused', () => {
+  // The protection that must survive: silence about an abandoned step is the
+  // thing worth failing a run over, not the wording of the summary.
+  const plan = new WorkPlan(AUTHORED);
+  plan.complete('s1');
+  plan.complete('s2');
+  plan.complete('s3');
+  plan.skip('s4', '');
+
+  const result = structuralValidation({
+    goal: 'Audit my GitHub repositories',
+    plan,
+    answer: 'Eleven repositories, one without a README.',
+    artifacts: [],
+  });
+
+  assert.equal(result.satisfied, false);
+  assert.match(result.unmet.join(' '), /without saying why|says why|no reason/i);
+});
