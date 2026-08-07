@@ -156,6 +156,14 @@ if [ "$PUBLISHING" = 1 ]; then
       printf '%s\n' "$RELEASE_LOOKUP" >&2
       die "Could not prove that GitHub release v$VERSION is absent (HTTP $HTTP_STATUS)."
     }
+    RELEASES_JSON="$(gh api "repos/$REPO/releases?per_page=100" 2>&1)" || {
+      printf '%s\n' "$RELEASES_JSON" >&2
+      die "Could not inspect GitHub drafts while proving that v$VERSION is absent."
+    }
+    DRAFT_RELEASE_ID="$(printf '%s' "$RELEASES_JSON" \
+      | jq -r --arg tag "v$VERSION" '[.[] | select(.tag_name == $tag)] | .[0].id // empty')"
+    [ -z "$DRAFT_RELEASE_ID" ] || die \
+      "GitHub draft release v$VERSION already exists (id $DRAFT_RELEASE_ID). Repair or publish that draft instead of creating another release."
   fi
 fi
 
@@ -537,13 +545,16 @@ gh release create "v$VERSION" "$DMG" \
   --title "$TITLE" \
   --notes "$RELEASE_NOTES"
 
-RELEASE_ID="$(gh api "repos/$REPO/releases/tags/v$VERSION" --jq '.id // empty')"
+RELEASES_JSON="$(gh api "repos/$REPO/releases?per_page=100")" || die \
+  "GitHub created the draft release but its release list could not be read."
+RELEASE_ID="$(printf '%s' "$RELEASES_JSON" \
+  | jq -r --arg tag "v$VERSION" '[.[] | select(.tag_name == $tag and .draft == true)] | .[0].id // empty')"
 [ -n "$RELEASE_ID" ] || die "GitHub created the draft release but returned no release ID; it remains draft-only."
 if ! gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" \
   -F draft=false -F prerelease=false >/dev/null; then
   die "Could not publish the verified draft release; it remains draft-only."
 fi
-RELEASE_STATE="$(gh api "repos/$REPO/releases/tags/v$VERSION")"
+RELEASE_STATE="$(gh api "repos/$REPO/releases/$RELEASE_ID")"
 [ "$(printf '%s' "$RELEASE_STATE" | jq -r '.draft')" = "false" ] || die \
   "GitHub did not publish the release as a stable release."
 [ "$(printf '%s' "$RELEASE_STATE" | jq -r '.prerelease')" = "false" ] || die \
