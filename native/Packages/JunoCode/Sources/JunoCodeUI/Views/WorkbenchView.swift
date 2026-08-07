@@ -102,6 +102,20 @@ public struct WorkbenchView<SidebarHeader: View>: View {
             }
             controller = await model.controller(for: sessionID)
         }
+        // The agent can ask to inspect the site it is building. Only the
+        // workbench owning the exact session accepts the request; a notification
+        // from another window or session must never reveal its local workspace
+        // in this canvas.
+        .onReceive(NotificationCenter.default.publisher(for: .junoCodePreviewOpenRequested)) { notification in
+            guard let target = notification.object as? CodePreviewTarget,
+                  target.sessionID == controller?.sessionID,
+                  target.workspaceRootPath == controller?.context?.access.rootURL.path,
+                  previewTarget == nil
+            else { return }
+            withAnimation(JunoMotion.fast) {
+                previewTarget = target
+            }
+        }
         .sheet(isPresented: $showingNewSession) {
             NewSessionSheet(
                 model: model,

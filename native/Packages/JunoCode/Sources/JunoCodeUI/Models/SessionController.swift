@@ -585,6 +585,7 @@ public final class SessionController {
             // ToolContext supplied during invocation. It is deliberately not
             // part of WorkspaceContext, so Ask, Plan and isolated sub-agents
             // cannot observe a UI surface they do not own.
+            tools.append(CodePreviewOpenTool(workspaceRoot: context.access.rootURL))
             tools.append(CodePreviewInspectTool())
             // Workspace-declared MCP tools are discovered through the same
             // session construction path as built-in tools. They remain

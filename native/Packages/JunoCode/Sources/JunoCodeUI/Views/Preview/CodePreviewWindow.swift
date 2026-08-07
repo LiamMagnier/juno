@@ -3,8 +3,22 @@ import JunoCodeCore
 import JunoCodeLocal
 import JunoCodeRuntime
 import JunoDesignSystem
+import Observation
 import SwiftUI
 import WebKit
+
+/// Posted by the Code runtime when an agent asks to inspect the local web app.
+///
+/// The agent loop lives below the UI layer, so it cannot mutate a SwiftUI
+/// `@State` value directly. A notification keeps the bridge narrow: the tool
+/// can request a target, while the focused Code workbench remains the only
+/// surface allowed to decide whether that target belongs to its selected
+/// session and to present the pane.
+public extension Notification.Name {
+    static let junoCodePreviewOpenRequested = Notification.Name(
+        "com.liammagnier.juno.code.preview.open-requested"
+    )
+}
 
 /// What the *page* is doing, read from the navigation delegate rather than
 /// assumed.
@@ -404,6 +418,24 @@ final class CodePreviewModel {
         let model = CodePreviewModel(target: target)
         sessions[target.previewID] = model
         return model
+    }
+
+    /// Returns the target for an already-presented preview owned by a session.
+    ///
+    /// `open_preview` can therefore be called repeatedly without creating a
+    /// second dev-server process for the same Code session. The lookup is
+    /// MainActor-isolated with the model, so it cannot race the dock's surface
+    /// lifecycle or its server teardown.
+    static func activeTarget(for sessionID: CodeSessionID) -> CodePreviewTarget? {
+        guard let model = sessions.values.first(where: { $0.sessionID == sessionID }) else {
+            return nil
+        }
+        return CodePreviewTarget(
+            previewID: model.previewID,
+            workspaceRoot: model.workspaceRoot,
+            address: model.address,
+            sessionID: model.sessionID
+        )
     }
 
     init(target: CodePreviewTarget) {

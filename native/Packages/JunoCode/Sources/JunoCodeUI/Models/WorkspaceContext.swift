@@ -232,7 +232,7 @@ public final class WorkspaceContext: Sendable {
             """
 
         let previewInstruction = behavior == .code
-            ? "When the local Preview pane is open, use inspect_preview after meaningful UI changes to check the rendered page, visible text, runtime/console diagnostics, and (when the model can see images) an optional screenshot. It only observes the active Juno preview for this session; it cannot browse arbitrary URLs."
+            ? "When building or changing a local website, use open_preview to open Juno's Preview and start the discovered development server, then use inspect_preview after meaningful UI changes to check the rendered page, visible text, runtime/console diagnostics, and (when the model can see images) an optional screenshot. Wait for the Preview to become ready before inspecting it. These tools only act on the active Juno preview for this session; they cannot browse arbitrary URLs."
             : ""
 
         return """

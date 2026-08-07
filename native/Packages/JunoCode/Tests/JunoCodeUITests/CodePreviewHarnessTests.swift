@@ -4,6 +4,10 @@ import JunoCodeCore
 import JunoCodeRuntime
 @testable import JunoCodeUI
 
+private final class PreviewNotificationBox: @unchecked Sendable {
+    var value: CodePreviewTarget?
+}
+
 /// Proves the DEBUG preview harness is inert *by construction* and
 /// deterministic between launches.
 ///
@@ -67,6 +71,38 @@ final class CodePreviewHarnessTests: XCTestCase {
             }
             XCTAssertTrue(message.contains("No active local Preview"))
         }
+    }
+
+    func testPreviewOpenToolRequestsTheOwningWorkspaceSurface() async throws {
+        let sessionID = CodeSessionID(value: "preview-open-tool-\(UUID().uuidString)")
+        let root = URL(fileURLWithPath: "/tmp/juno-preview-open", isDirectory: true)
+        let tool = CodePreviewOpenTool(workspaceRoot: root)
+        let expectation = expectation(description: "preview request posted")
+        let received = PreviewNotificationBox()
+        let observer = NotificationCenter.default.addObserver(
+            forName: .junoCodePreviewOpenRequested,
+            object: nil,
+            queue: .main
+        ) { notification in
+            received.value = notification.object as? CodePreviewTarget
+            expectation.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+
+        XCTAssertEqual(tool.assessRisk(input: [:]), .critical)
+        let result = try await tool.execute(
+            input: [:],
+            context: ToolContext(
+                sessionID: sessionID,
+                toolCallID: "preview-open-tool-call",
+                emitOutput: { _, _ in }
+            )
+        )
+
+        await fulfillment(of: [expectation], timeout: 1)
+        XCTAssertEqual(received.value?.sessionID, sessionID)
+        XCTAssertEqual(received.value?.workspaceRootPath, root.path)
+        XCTAssertTrue(result.content.contains("Opened the local Preview"))
     }
 
     func testPreviewInspectionPolicyAllowsOnlyTheActiveLoopbackOrigin() {

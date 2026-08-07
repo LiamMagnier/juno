@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version already committed in native/Config/Base.xcconfig (for example 0.10.2)"
+        description: "Version already committed in native/Config/Base.xcconfig (for example 0.11.1)"
         required: true
         type: string
 
@@ -28,6 +28,7 @@ jobs:
   release:
     name: notarized macOS release
     runs-on: macos-26
+    if: github.ref == 'refs/heads/main'
     # Same 5-slot macOS contention as native.yml: notarisation waits on Apple,
     # so this is generous, but it must not sit on a slot for 6 hours.
     timeout-minutes: 40
@@ -75,6 +76,30 @@ jobs:
           npm run lint
           npm run build
           JUNO_CHECK_LIVE_CONTRACT=1 ./scripts/release-gates.sh
+
+      - name: Verify production signing inputs before the archive
+        shell: bash
+        env:
+          APPLE_DEVELOPER_ID_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_P12_BASE64 }}
+          APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_NOTARY_KEY_BASE64: ${{ secrets.APPLE_NOTARY_KEY_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in \
+            APPLE_DEVELOPER_ID_P12_BASE64 \
+            APPLE_DEVELOPER_ID_P12_PASSWORD \
+            APPLE_NOTARY_KEY_BASE64 \
+            APPLE_NOTARY_KEY_ID \
+            APPLE_NOTARY_ISSUER; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Production signing input $name is not configured in the protected Production environment."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
 
       - name: Import Developer ID certificate
         uses: apple-actions/import-codesign-certs@v3

@@ -174,3 +174,52 @@ struct CodePreviewInspectTool: CodeTool {
         }
     }
 }
+
+/// Opens the local Preview surface for the current Code session.
+///
+/// This is intentionally a UI-bound companion to ``CodePreviewInspectTool``.
+/// Starting the preview executes a repository-controlled development command,
+/// so it is classified as `.critical` and follows the normal permission mode:
+/// Full Access can proceed, while lower modes ask or refuse. The dock owns the
+/// actual process and starts it only after the request has been accepted by the
+/// reader-facing workbench.
+struct CodePreviewOpenTool: CodeTool {
+    let workspaceRoot: URL
+
+    let name = "open_preview"
+    let description = "Open Juno's local website Preview for this Code session. The Preview stays inside the granted workspace, starts the discovered development server, and can then be checked with inspect_preview."
+
+    var inputSchema: JSONValue {
+        [
+            "type": "object",
+            "properties": [:],
+            "required": [],
+        ]
+    }
+
+    func assessRisk(input: JSONValue) -> ActionRisk { .critical }
+
+    func summary(input: JSONValue) -> String {
+        "Open the local website Preview and start its development server"
+    }
+
+    func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        let target = await MainActor.run {
+            let target = CodePreviewModel.activeTarget(for: context.sessionID)
+                ?? CodePreviewTarget(
+                    workspaceRoot: workspaceRoot,
+                    sessionID: context.sessionID
+                )
+            NotificationCenter.default.post(
+                name: .junoCodePreviewOpenRequested,
+                object: target
+            )
+            return target
+        }
+
+        let workspaceName = target.workspaceRoot?.lastPathComponent ?? "the workspace"
+        return ToolResult(
+            content: "Opened the local Preview for \(workspaceName). Wait for the development server to become ready, then use inspect_preview to review the rendered page and browser diagnostics."
+        )
+    }
+}

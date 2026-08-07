@@ -339,6 +339,21 @@ struct DesktopCodeWorkspace: View {
         .task { await bootstrap() }
         .task(id: liveRunCount) { await readPlan() }
         .task(id: selectedSessionID) { await resolveController() }
+        // `open_preview` is an agent action, but the selected Code workbench
+        // remains the authority that presents a pane. Bind it to both the
+        // session and the granted root so a request from another window cannot
+        // surface the wrong repository here.
+        .onReceive(NotificationCenter.default.publisher(for: .junoCodePreviewOpenRequested)) { notification in
+            guard let target = notification.object as? CodePreviewTarget,
+                  target.sessionID == controller?.sessionID,
+                  target.workspaceRootPath == controller?.context?.access.rootURL.path,
+                  previewTarget == nil
+            else { return }
+            withAnimation(JunoMotion.fast) {
+                simulatorHost.closePane()
+                previewTarget = target
+            }
+        }
         // A simulator belongs to one workspace. Changing workspace or session ends
         // the previous build, log stream and capture before anything new starts.
         .onChange(of: targetRepository?.id) { _, _ in
