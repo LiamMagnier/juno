@@ -5626,6 +5626,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No open pull requests"
   },
   {
+    "id": "6c33a583be9f6132",
+    "source": "Apps this task may use"
+  },
+  {
     "id": "6c582b62e0e5aa05",
     "source": "Fast"
   },
@@ -7132,6 +7136,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "890892ed3349a7c8",
     "source": "Newest Qwen flagship — always-on deep thinking, vision, and ~1M context."
+  },
+  {
+    "id": "89437f029777c47d",
+    "source": "Attach a document"
   },
   {
     "id": "8963a42c9bb2121d",
