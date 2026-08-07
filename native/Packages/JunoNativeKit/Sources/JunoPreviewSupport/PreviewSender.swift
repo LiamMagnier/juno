@@ -140,7 +140,12 @@ public enum PreviewModelCatalog {
             providerName: "Anthropic · Claude", name: "Claude Opus 4.8",
             description: "Anthropic's most capable model for deep reasoning and long agentic work.",
             context: 500_000, cost: "premium", speed: 3, intelligence: 10,
-            efforts: ["low", "medium", "high", "xhigh", "max"], canDisable: true, reasoning: true
+            efforts: ["low", "medium", "high", "xhigh", "max"], canDisable: true, reasoning: true,
+            // The one Anthropic model with a real fast tier, so the preview
+            // harness actually renders a Flash toggle. It stamped every model
+            // with no modes at all, which would have let a screenshot review
+            // report "no regression" for a feature that never drew.
+            fastRateMultiplier: 2
         )),
         \(model(
             id: "anthropic:claude-haiku-4-5", provider: "anthropic",
@@ -155,7 +160,10 @@ public enum PreviewModelCatalog {
             description: "OpenAI's flagship with a six-step effort ladder.",
             context: 400_000, cost: "standard", speed: 6, intelligence: 9,
             efforts: ["minimal", "low", "medium", "high", "xhigh", "max"],
-            canDisable: true, reasoning: true
+            canDisable: true, reasoning: true,
+            // The only line with both, so the preview shows the two toggles
+            // side by side — the layout most likely to clip.
+            proMode: true, fastRateMultiplier: 2
         )),
         \(model(
             id: "openai:gpt-5-4-pro", provider: "openai", providerName: "OpenAI · GPT",
@@ -236,7 +244,9 @@ public enum PreviewModelCatalog {
         requiredPlan: String = "free",
         modality: String = "chat",
         legacy: Bool = false,
-        released: String? = nil
+        released: String? = nil,
+        proMode: Bool = false,
+        fastRateMultiplier: Double? = nil
     ) -> String {
         let highlightsJSON = highlights.isEmpty
             ? "null"
@@ -270,12 +280,13 @@ public enum PreviewModelCatalog {
           "supportedReasoningEfforts": [\(efforts.map { "\"\($0)\"" }.joined(separator: ","))],
           "reasoning": {
             "supported": \(reasoning), "canDisable": \(canDisable),
-            "onOffOnly": \(onOffOnly), "supportsProMode": false, "automatic": \(automatic)
+            "onOffOnly": \(onOffOnly), "supportsProMode": \(proMode), "automatic": \(automatic)
           },
           "capabilities": {
             "tools": true, "vision": true, "webSearch": true,
             "attachments": true, "streaming": true
           },
+          "fastMode": \(fastRateMultiplier.map { "{\"rateMultiplier\": \($0)}" } ?? "null"),
           "deprecationNote": null
         }
         """

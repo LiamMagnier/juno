@@ -1972,6 +1972,12 @@ struct DesktopComposer: View {
     @State private var deepResearch = false
     @State private var webSearch = false
     @State private var canvasEnabled = false
+    // @AppStorage rather than @State, unlike its neighbours: these two are
+    // preferences that must survive a relaunch (the web keeps them in
+    // localStorage, iOS in UserDefaults), where deepResearch above is
+    // deliberately per-send and webSearch/canvas are per-view here already.
+    @AppStorage("juno.desktop.composer.fast-mode") private var fastMode = false
+    @AppStorage("juno.desktop.composer.pro-mode") private var proMode = false
     @State private var selectedProjectID: String?
     @State private var selectedConnectors: Set<String> = []
     @State private var showingFileImporter = false
@@ -2718,12 +2724,20 @@ struct DesktopComposer: View {
                 attachmentAnchor: .rect(.bounds),
                 arrowEdge: .bottom
             ) {
-                JunoThinkingPopover(
+                let popover = JunoThinkingPopover(
                     scale: scale,
                     effort: thinkingEffortBinding(for: scale),
-                    width: 268
+                    width: 268,
+                    fastMode: $fastMode,
+                    proMode: $proMode
                 )
-                .frame(width: 268, height: 118)
+                // The height has to grow with the mode row; the panel cannot
+                // measure itself (see JunoThinkingPanel's crash note), so the
+                // caller states the sum.
+                popover.frame(
+                    width: 268,
+                    height: 118 + (popover.showsModeToggles ? JunoThinkingMetrics.modeRowHeight : 0)
+                )
             }
         }
     }
@@ -2895,6 +2909,11 @@ struct DesktopComposer: View {
         let research = deepResearch
         let search = webSearch
         let canvas = canvasEnabled
+        // Snapshotted with the others: the send is async, and reading the
+        // @AppStorage values inside the task would pick up a toggle the reader
+        // flipped after hitting send.
+        let fast = fastMode
+        let pro = proMode
         let connectors = Array(selectedConnectors.prefix(5))
         let projectID = selectedProjectID
 
@@ -2920,7 +2939,9 @@ struct DesktopComposer: View {
                 deepResearch: research,
                 webSearch: search,
                 canvasEnabled: canvas ? true : nil,
-                connectors: connectors
+                connectors: connectors,
+                fastMode: fast,
+                proMode: pro
             )
             guard sent else { return }
             prompt = ""

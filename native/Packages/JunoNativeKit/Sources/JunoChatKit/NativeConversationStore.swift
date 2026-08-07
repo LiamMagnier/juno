@@ -578,6 +578,11 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         let webSearch: Bool
         let canvasEnabled: Bool?
         let connectors: [String]
+        /// Same reason again, and with money attached: a retry that dropped
+        /// Flash would answer more slowly than the reader paid for, and one that
+        /// dropped Pro would answer with less thought than they asked for.
+        let fastMode: Bool
+        let proMode: Bool
         var userMessageID: String?
         var userCreatedAt: Date
     }
@@ -979,7 +984,12 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         deepResearch: Bool = false,
         webSearch: Bool = false,
         canvasEnabled: Bool? = nil,
-        connectors: [String] = []
+        connectors: [String] = [],
+        // Defaulted so the call sites with no mode UI — JunoMacChatView's send
+        // and the programmatic code-conversation start — keep compiling and keep
+        // sending exactly the body they sent before.
+        fastMode: Bool = false,
+        proMode: Bool = false
     ) -> Bool {
         guard !chatPhase.isActive, let accountID, chatClient != nil,
             let conversation = conversations.first(where: { $0.id == conversationID }),
@@ -1016,6 +1026,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             webSearch: webSearch,
             canvasEnabled: canvasEnabled,
             connectors: connectors,
+            fastMode: fastMode,
+            proMode: proMode,
             userMessageID: nil,
             userCreatedAt: now
         )
@@ -1142,7 +1154,9 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                         deepResearch: context.deepResearch,
                         webSearch: context.webSearch,
                         canvasEnabled: context.canvasEnabled,
-                        connectors: context.connectors
+                        connectors: context.connectors,
+                        fastMode: context.fastMode,
+                        proMode: context.proMode
                     ),
                     for: context.accountID
                 )

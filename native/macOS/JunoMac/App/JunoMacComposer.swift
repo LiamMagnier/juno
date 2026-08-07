@@ -15,6 +15,8 @@ struct JunoMacComposer: View {
     let catalog: [NativeChatModelOption]
     @Binding var selectedModelID: String
     @Binding var reasoningEffort: NativeReasoningEffort?
+    @Binding var fastMode: Bool
+    @Binding var proMode: Bool
     let projectName: String?
     let isGenerating: Bool
     let canSend: Bool
@@ -141,7 +143,9 @@ struct JunoMacComposer: View {
         if let selectedModel {
             JunoMacThinkingControl(
                 scale: NativeThinkingScale(model: selectedModel),
-                effort: $reasoningEffort
+                effort: $reasoningEffort,
+                fastMode: $fastMode,
+                proMode: $proMode
             )
         }
     }

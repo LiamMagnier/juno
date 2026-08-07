@@ -172,16 +172,33 @@ public struct JunoThinkingPanel: View {
     private let ladder: JunoThinkingLadder
     @Binding private var stopID: String?
     private let width: CGFloat
+    private let fastMode: Binding<Bool>?
+    private let proMode: Binding<Bool>?
 
+    /// `fastMode` and `proMode` are optional BINDINGS rather than plain flags so
+    /// that a product which does not have the concept passes nothing and gets no
+    /// toggles. Juno Code shares this panel and has neither; a non-optional
+    /// parameter would have put two Chat-only controls in Code's composer.
     public init(
         ladder: JunoThinkingLadder,
         stopID: Binding<String?>,
-        width: CGFloat = JunoThinkingMetrics.width
+        width: CGFloat = JunoThinkingMetrics.width,
+        fastMode: Binding<Bool>? = nil,
+        proMode: Binding<Bool>? = nil
     ) {
         self.ladder = ladder
         _stopID = stopID
         self.width = width
+        self.fastMode = fastMode
+        self.proMode = proMode
     }
+
+    private var showsFast: Bool { fastMode != nil && ladder.supportsFastMode }
+    private var showsPro: Bool { proMode != nil && ladder.supportsProMode }
+
+    /// Whether this panel draws the mode row at all — read by callers that must
+    /// state their own popover height. See ``JunoThinkingMetrics``.
+    public var showsModeToggles: Bool { showsFast || showsPro }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: JunoSpacing.control) {
@@ -189,14 +206,54 @@ public struct JunoThinkingPanel: View {
                 Text("THINKING")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
+                    // Hidden individually rather than on the HStack. The whole
+                    // row used to carry `.accessibilityHidden(true)`, which is
+                    // correct for two decorative labels and silently fatal for a
+                    // button: the toggles below would have been on screen and
+                    // absent from the VoiceOver tree.
+                    .accessibilityHidden(true)
                 Spacer(minLength: JunoSpace.cozy)
                 Text(ladder.label(for: stopID))
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(Color.junoAccent)
+                    .accessibilityHidden(true)
             }
-            .accessibilityHidden(true)
 
             JunoThinkingTrack(ladder: ladder, stopID: $stopID)
+
+            if showsModeToggles {
+                HStack(spacing: JunoSpace.cozy) {
+                    if showsFast, let fastMode {
+                        JunoModeToggle(
+                            isOn: fastMode,
+                            symbol: "bolt.fill",
+                            title: "Flash",
+                            detail: ladder.fastModeRateMultiplier.map {
+                                // The premium named, not gestured at. "Faster,
+                                // at a premium" is a sentence a reader believes
+                                // once; a number is one they can decide on.
+                                "\(JunoThinkingPanel.rate($0))x rate"
+                            } ?? "Premium rate",
+                            accessibilityName: "Flash mode"
+                        )
+                    }
+                    if showsPro, let proMode {
+                        JunoModeToggle(
+                            isOn: proMode,
+                            symbol: "sparkles",
+                            title: "Pro",
+                            // Deliberately NOT the same shape of sentence as
+                            // Flash. Pro is the same rate spent on more tokens;
+                            // describing both as "premium" would make the one
+                            // that multiplies the bill look like the one that
+                            // does not.
+                            detail: "Same rate",
+                            accessibilityName: "Pro mode"
+                        )
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
 
             if let caption = ladder.caption {
                 Text(caption)
@@ -207,6 +264,73 @@ public struct JunoThinkingPanel: View {
         }
         .padding(14)
         .frame(width: width)
+    }
+
+    /// "2" and "2.5", never "2.0" — the multiplier is a price the reader reads,
+    /// and a trailing zero on a round number looks like a rounding artefact.
+    static func rate(_ value: Double) -> String {
+        value == value.rounded()
+            ? String(Int(value))
+            : String(format: "%.1f", value)
+    }
+}
+
+/// One of the composer's two mode switches.
+///
+/// A labelled pill rather than the web's bare icon button. The browser can lean
+/// on a hover tooltip to say what its Flash bolt costs; neither Mac nor iPhone
+/// can, and an unlabelled icon that silently multiplies the bill by 2.5 is the
+/// wrong thing to make people guess at.
+private struct JunoModeToggle: View {
+    @Binding var isOn: Bool
+    let symbol: String
+    let title: String
+    let detail: String
+    let accessibilityName: String
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: symbol)
+                    .font(.system(size: 9, weight: .semibold))
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            // The web's on-state is `bg-foreground text-background` — the
+            // inverted pair, deliberately not the coral accent, which already
+            // means "the current tier" two rows up in this same panel.
+            .foregroundStyle(isOn ? Color.junoCanvas : Color.secondary)
+            .background {
+                Capsule().fill(isOn ? Color.junoForeground : Color.clear)
+            }
+            .overlay {
+                Capsule().strokeBorder(
+                    isOn ? Color.clear : Color.junoHairline,
+                    lineWidth: 1
+                )
+            }
+            // Liquid Glass and plain capsules alike draw nothing the hit-tester
+            // sees, so the pill states its own shape. Without this the live area
+            // is the glyphs only — the bug already documented on the iOS
+            // Thinking chip, where a 56pt capsule had a 13pt target.
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: isOn)
+        .help("\(accessibilityName) — \(detail)")
+        // `[.isButton, .isSelected]` and not `.isToggle`: every other two-state
+        // control in this tree uses the former, and one control announcing
+        // itself differently is a worse inconsistency than a better trait.
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
+        .accessibilityLabel(accessibilityName)
+        .accessibilityValue(isOn ? "On, \(detail)" : "Off, \(detail)")
+        .accessibilityIdentifier("juno.thinking.\(title.lowercased())-toggle")
     }
 }
 
@@ -300,4 +424,19 @@ public enum JunoThinkingMetrics {
     public static let height: CGFloat = 88
     /// The same, plus two lines of caption.
     public static let captionedHeight: CGFloat = 118
+    /// What the Flash/Pro row adds: a 27pt pill plus the stack's spacing.
+    ///
+    /// A constant every caller adds for itself, because the panel cannot be
+    /// allowed to measure itself and tell them — a self-sizing AppKit popover
+    /// containing this file's `GeometryReader` recurses until the app dies, and
+    /// that shipped once as the 3.0.5 thinking-slider crash. Growing the panel
+    /// without growing the frame around it clips the toggles instead, silently
+    /// and only on macOS, which is the failure this constant exists to prevent.
+    public static let modeRowHeight: CGFloat = 39
+
+    /// The panel's height for a given shape. Callers state a fixed frame; this
+    /// is the one place that decides what the number is.
+    public static func height(caption: Bool, modeToggles: Bool) -> CGFloat {
+        (caption ? captionedHeight : height) + (modeToggles ? modeRowHeight : 0)
+    }
 }

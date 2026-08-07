@@ -30,18 +30,35 @@ public enum NativeThinkingStop: Equatable, Sendable, Identifiable {
         }
     }
 
+    /// "Instant" and not "Off", which is what this said until it was noticed.
+    ///
+    /// The state is the same one the web calls Instant, the stop id has always
+    /// been `instant`, and every internal name for it says instant — only the
+    /// visible word on macOS and iOS said Off, from the mobile composer rebuild
+    /// onward. That is a product term the two platforms disagreed on, which is
+    /// worse than either word: someone reading the web's Instant and the phone's
+    /// Off has no way to know they are the same setting, and the release notes
+    /// for one do not describe the other.
+    ///
+    /// Instant also says the right thing. Off names what is switched off;
+    /// Instant names what the reader gets, which is the answer immediately.
     public var label: String {
         switch self {
-        case .instant: "Off"
+        case .instant: "Instant"
         case .thinking: "Thinking"
         case .effort(let effort): effort.label
         }
     }
 
     /// The longer form used by VoiceOver and the popover's caption.
+    ///
+    /// Not the mechanical "Thinking instant" the other cases would produce — it
+    /// reads as a depth called instant. The comma form keeps the product term a
+    /// VoiceOver user hears matching the one a sighted user reads, and still
+    /// says what it does.
     public var accessibilityLabel: String {
         switch self {
-        case .instant: "Thinking off"
+        case .instant: "Instant, no thinking"
         case .thinking: "Thinking on"
         case .effort(let effort): "Thinking \(effort.label.lowercased())"
         }
@@ -95,10 +112,18 @@ public struct NativeThinkingScale: Equatable, Sendable {
     public let stops: [NativeThinkingStop]
     public let isAutomatic: Bool
     public let modelName: String
+    /// Carried alongside the ladder, not folded into it. Both are separate axes
+    /// from thinking depth — Flash changes how the answer is served, Pro how
+    /// hard the model works — and neither is ever a stop, because every stop
+    /// maps back to a `reasoningEffort` the chat route accepts.
+    public let fastModeRateMultiplier: Double?
+    public let supportsProMode: Bool
 
     public init(model: NativeChatModelOption) {
         modelName = model.displayName
         isAutomatic = model.choosesReasoningAutomatically
+        fastModeRateMultiplier = model.fastModeRateMultiplier
+        supportsProMode = model.supportsProMode
         if model.choosesReasoningAutomatically || !model.supportsReasoning {
             stops = []
         } else if model.isOnOffReasoningOnly {

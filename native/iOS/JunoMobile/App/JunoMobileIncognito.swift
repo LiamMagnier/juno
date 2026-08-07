@@ -113,6 +113,14 @@ struct JunoMobileIncognitoChat: View {
     @State private var prompt = ""
     @State private var selectedModelID = ""
     @State private var reasoningEffort: NativeReasoningEffort?
+    // Deliberately NOT cleared by `configureThinking()` when the model changes,
+    // matching the web, where `changeModel` re-fits the effort and leaves the
+    // mode prefs alone. The toggle hides itself on a model without the mode and
+    // the chat route re-checks support, so a carried-over flag is inert rather
+    // than wrong — and clearing it would make a sticky preference un-sticky the
+    // moment someone browsed the model list.
+    @State private var fastMode = false
+    @State private var proMode = false
     @State private var showingCloseWarning = false
     @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @FocusState private var composerFocused: Bool
@@ -242,7 +250,12 @@ struct JunoMobileIncognitoChat: View {
                 .layoutPriority(1)
 
                 if let scale = thinkingScale {
-                    JunoMobileThinkingControl(scale: scale, effort: $reasoningEffort)
+                    JunoMobileThinkingControl(
+                        scale: scale,
+                        effort: $reasoningEffort,
+                        fastMode: $fastMode,
+                        proMode: $proMode
+                    )
                         .layoutPriority(2)
                 }
 
@@ -316,7 +329,9 @@ struct JunoMobileIncognitoChat: View {
         model.send(
             prompt: text,
             modelID: selectedModelID.isEmpty ? initialModelID : selectedModelID,
-            reasoningEffort: reasoningEffort
+            reasoningEffort: reasoningEffort,
+            fastMode: fastMode,
+            proMode: proMode
         )
     }
 

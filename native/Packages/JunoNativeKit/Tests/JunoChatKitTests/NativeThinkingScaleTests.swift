@@ -33,7 +33,7 @@ final class NativeThinkingScaleTests: XCTestCase {
     func testLadderIsOffPlusExactlyTheSupportedTiers() {
         let scale = NativeThinkingScale(model: option(efforts: [.low, .high]))
 
-        XCTAssertEqual(scale.stops.map(\.label), ["Off", "Low", "High"])
+        XCTAssertEqual(scale.stops.map(\.label), ["Instant", "Low", "High"])
         XCTAssertTrue(scale.isAdjustable)
         XCTAssertEqual(scale.stop(at: 2)?.effort, .high)
     }
@@ -41,7 +41,7 @@ final class NativeThinkingScaleTests: XCTestCase {
     func testTiersAreOrderedByDepthRegardlessOfServerOrder() {
         let scale = NativeThinkingScale(model: option(efforts: [.max, .low, .medium]))
 
-        XCTAssertEqual(scale.stops.map(\.label), ["Off", "Low", "Medium", "Max"])
+        XCTAssertEqual(scale.stops.map(\.label), ["Instant", "Low", "Medium", "Max"])
     }
 
     func testAlwaysOnModelHasNoOffStop() {
@@ -71,7 +71,7 @@ final class NativeThinkingScaleTests: XCTestCase {
     func testOnOffModelGetsTwoStopsAndSendsHighForOn() {
         let scale = NativeThinkingScale(model: option(onOffOnly: true))
 
-        XCTAssertEqual(scale.stops.map(\.label), ["Off", "Thinking"])
+        XCTAssertEqual(scale.stops.map(\.label), ["Instant", "Thinking"])
         XCTAssertNil(scale.stops[0].effort)
         XCTAssertEqual(scale.stops[1].effort, .high)
     }

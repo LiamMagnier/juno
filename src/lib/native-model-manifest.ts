@@ -4,6 +4,7 @@ import { AUTO_MODEL_INFO, isAutoModelId } from "@/lib/auto-model";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { imageEditSupport, isSupersededModel, type ModelInfo } from "@/lib/models";
 import { effectiveMinPlan, planRank } from "@/lib/plans";
+import { fastModeMultiplier, supportsFastMode } from "@/lib/pricing";
 import { PROVIDERS } from "@/lib/providers";
 
 /**
@@ -135,6 +136,37 @@ export function nativeModelCatalog(models: ModelInfo[], plan?: Plan) {
         // masking — or offer a region selection to a model that ignores it.
         imageEdit: model.modality === "image" ? imageEditSupport(model.provider) : "none",
       },
+      /**
+       * A provider's premium serving tier — Anthropic `speed:"fast"`, OpenAI
+       * `service_tier:"priority"` — or null when the model has no faster tier.
+       *
+       * A top-level key rather than a `capabilities` boolean, and NOT nested in
+       * `pricing`, for two separate reasons.
+       *
+       * It carries the multiplier because the client has to be able to name the
+       * premium it is agreeing to. "Faster, at a premium" is a sentence a user
+       * believes once; "2.5x the normal rate" is one they can decide on. And
+       * the presence of the object IS the support flag, so a boolean and a
+       * number can never disagree about the same model.
+       *
+       * It is not inside `pricing` because `pricing` is null for Auto, which
+       * would force a client to read "no pricing" as "no fast mode" — true
+       * today only by coincidence, and a silent wrong answer the day it stops
+       * being true.
+       *
+       * The asymmetry with `reasoning.supportsProMode` is deliberate and is the
+       * point: pro mode is a way of thinking (same rate, more tokens), fast mode
+       * is a way of being served (same tokens, higher rate). A client that
+       * rendered them as two identical switches would be misdescribing one of
+       * them, and it would be the one that costs money.
+       *
+       * Null for Auto: the router picks the model per message, so a premium
+       * agreed to here would land on a model the user never chose.
+       */
+      fastMode:
+        auto || !supportsFastMode(model)
+          ? null
+          : { rateMultiplier: fastModeMultiplier(model) ?? 1 },
       deprecationNote: model.deprecationNote ?? null,
       // The day the provider stops serving it, "YYYY-MM-DD", so a client can
       // say "Available until 23 Oct 2026" instead of parsing it back out of the

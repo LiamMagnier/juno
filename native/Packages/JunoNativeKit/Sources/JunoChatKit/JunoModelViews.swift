@@ -30,7 +30,9 @@ public extension NativeThinkingScale {
             },
             isAutomatic: isAutomatic,
             modelName: modelName,
-            caption: caption
+            caption: caption,
+            fastModeRateMultiplier: fastModeRateMultiplier,
+            supportsProMode: supportsProMode
         )
     }
 
@@ -129,22 +131,40 @@ public struct JunoThinkingPopover: View {
     private let scale: NativeThinkingScale
     @Binding private var effort: NativeReasoningEffort?
     private let width: CGFloat
+    private let fastMode: Binding<Bool>?
+    private let proMode: Binding<Bool>?
 
+    /// The two mode bindings default to nil so every existing call site keeps
+    /// compiling and keeps rendering exactly what it did — a surface that has no
+    /// state for these toggles must not be given them.
     public init(
         scale: NativeThinkingScale,
         effort: Binding<NativeReasoningEffort?>,
-        width: CGFloat
+        width: CGFloat,
+        fastMode: Binding<Bool>? = nil,
+        proMode: Binding<Bool>? = nil
     ) {
         self.scale = scale
         _effort = effort
         self.width = width
+        self.fastMode = fastMode
+        self.proMode = proMode
+    }
+
+    /// Whether this popover will draw the Flash/Pro row, so a macOS caller can
+    /// state the matching fixed height. iOS self-sizes and can ignore it.
+    public var showsModeToggles: Bool {
+        (fastMode != nil && scale.fastModeRateMultiplier != nil)
+            || (proMode != nil && scale.supportsProMode)
     }
 
     public var body: some View {
         JunoThinkingPanel(
             ladder: scale.junoLadder,
             stopID: scale.junoStopIDBinding(for: $effort),
-            width: width
+            width: width,
+            fastMode: fastMode,
+            proMode: proMode
         )
     }
 }

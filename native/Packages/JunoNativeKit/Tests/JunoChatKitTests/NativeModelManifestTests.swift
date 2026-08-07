@@ -29,6 +29,54 @@ final class NativeModelManifestTests: XCTestCase {
         XCTAssertTrue(model.supportsWebSearch)
         XCTAssertEqual(model.supportedReasoningEfforts, [.low, .high, .max])
         XCTAssertNil(model.unavailability)
+        XCTAssertTrue(model.supportsProMode)
+        XCTAssertEqual(model.fastModeRateMultiplier, 2.5)
+        XCTAssertTrue(model.supportsFastMode)
+        // Pro is a mode, never a rung. If it ever leaks into the ladder the
+        // client will send "pro" where the route expects a reasoning effort.
+        XCTAssertEqual(NativeThinkingScale(model: model).stops.map(\.id), ["low", "high", "max"])
+    }
+
+    func testAServerThatPredatesTheModesStillDecodes() async throws {
+        // The whole catalog is decoded in one do/catch, so a field this build
+        // expects and an older server does not send is not a missing toggle —
+        // it is an empty model picker. Both keys are stripped here to prove the
+        // absence is tolerated rather than fatal.
+        let older = fullModel
+            .replacingOccurrences(of: ",\"supportsProMode\":true", with: "")
+            .replacingOccurrences(of: "\"fastMode\": {\"rateMultiplier\":2.5},", with: "")
+        let client = client(body: manifest(models: [older]))
+
+        let catalog = try await client.modelCatalog(for: accountID)
+        let model = try XCTUnwrap(catalog.models.first)
+
+        XCTAssertEqual(model.displayName, "Kimi K3", "the rest of the row must still decode")
+        XCTAssertFalse(model.supportsProMode)
+        XCTAssertNil(model.fastModeRateMultiplier)
+        XCTAssertFalse(model.supportsFastMode)
+    }
+
+    func testAutoOffersNeitherModeHoweverTheServerAnswers() async throws {
+        // Auto routes per message, so a premium agreed to on the router would be
+        // charged on a model the reader never picked. The client refuses on its
+        // own rather than trusting the server to keep saying false.
+        let permissiveAuto = autoModel
+            .replacingOccurrences(
+                of: "\"automatic\":true",
+                with: "\"automatic\":true,\"supportsProMode\":true"
+            )
+            .replacingOccurrences(
+                of: "\"deprecationNote\": null",
+                with: "\"fastMode\": {\"rateMultiplier\":2}, \"deprecationNote\": null"
+            )
+        let client = client(body: manifest(models: [permissiveAuto]))
+
+        let catalog = try await client.modelCatalog(for: accountID)
+        let auto = try XCTUnwrap(catalog.models.first)
+
+        XCTAssertTrue(auto.choosesReasoningAutomatically)
+        XCTAssertFalse(auto.supportsProMode)
+        XCTAssertNil(auto.fastModeRateMultiplier)
     }
 
     func testRetirementDateSurvivesDecodingAndFormats() async throws {
@@ -214,8 +262,9 @@ final class NativeModelManifestTests: XCTestCase {
       "pricing": {"class":"premium","inputPerMillion":2.4,"outputPerMillion":10,"currency":"USD","source":"official"},
       "metrics": {"speed":2,"intelligence":10},
       "supportedReasoningEfforts": ["low","high","max"],
-      "reasoning": {"supported":true,"canDisable":false,"onOffOnly":false,"automatic":false},
+      "reasoning": {"supported":true,"canDisable":false,"onOffOnly":false,"automatic":false,"supportsProMode":true},
       "capabilities": {"tools":true,"vision":true,"webSearch":true,"attachments":true,"streaming":true},
+      "fastMode": {"rateMultiplier":2.5},
       "deprecationNote": null
     }
     """

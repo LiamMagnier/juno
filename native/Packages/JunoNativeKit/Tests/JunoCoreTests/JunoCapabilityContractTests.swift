@@ -110,8 +110,26 @@ final class JunoCapabilityContractTests: XCTestCase {
         XCTAssertNil(result.reasoning)
     }
 
+    /// v2 added `proMode` and `pro_mode_unavailable`.
+    ///
+    /// Pinned to an exact number rather than `>= 1` on purpose: the version is
+    /// the one thing a client can gate a feature on, so it must move when the
+    /// manifest moves and must not move when it does not. Updating this line is
+    /// the point at which someone editing the manifest is made to notice they
+    /// changed a cross-platform contract.
     func testTheContractReportsTheManifestItWasBuiltFrom() {
-        XCTAssertEqual(JunoCapabilityContract.version, 1)
+        XCTAssertEqual(JunoCapabilityContract.version, 2)
         XCTAssertEqual(JunoCapabilityContract.digest.count, 64, "a SHA-256 hex digest")
+    }
+
+    /// The capability added in v2. Present here so the enum and the manifest
+    /// cannot drift apart silently — the generated file is not hand-editable,
+    /// but nothing else asserts that a regeneration actually happened.
+    func testProModeIsPartOfTheContract() {
+        XCTAssertEqual(JunoCapability.proMode.rawValue, "proMode")
+        XCTAssertEqual(
+            JunoDegradationKind.proModeUnavailable.rawValue,
+            "pro_mode_unavailable"
+        )
     }
 }

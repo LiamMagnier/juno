@@ -108,6 +108,20 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
     /// True only for Auto: the server picks the thinking depth per message, so
     /// the client must offer no slider and send no effort.
     public let choosesReasoningAutomatically: Bool
+    /// GPT-5.6's pro execution — a second axis, NOT a deeper rung on the
+    /// thinking ladder. It composes with the effort rather than replacing it,
+    /// which is why it never appears in `supportedReasoningEfforts`.
+    public let supportsProMode: Bool
+    /// What the provider's premium serving tier multiplies this model's rates
+    /// by, or nil when it has no faster tier.
+    ///
+    /// A rate and not a flag, because the two toggles are not the same kind of
+    /// thing and the UI must not imply they are: fast mode bills the same
+    /// answer at 2x or 2.5x, while pro mode bills the same rate for more
+    /// tokens. A client holding only a Bool cannot tell the user which premium
+    /// they just agreed to.
+    public let fastModeRateMultiplier: Double?
+
     public let supportsStreaming: Bool
     public let supportsVision: Bool
     public let supportsWebSearch: Bool
@@ -127,6 +141,9 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
     /// and video generation entries share the manifest but are not selectable
     /// here, and are not "unavailable" either; they are a different product.
     public var isChatCapable: Bool { supportsStreaming }
+
+    /// Whether the provider offers a premium serving tier for this model.
+    public var supportsFastMode: Bool { fastModeRateMultiplier != nil }
 
     public var isAvailable: Bool {
         availability == "available" && supportsStreaming
@@ -163,6 +180,8 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
         supportsReasoning: Bool = false,
         isOnOffReasoningOnly: Bool = false,
         choosesReasoningAutomatically: Bool = false,
+        supportsProMode: Bool = false,
+        fastModeRateMultiplier: Double? = nil,
         supportsStreaming: Bool,
         supportsVision: Bool = false,
         supportsWebSearch: Bool = false,
@@ -193,6 +212,8 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
         self.supportsReasoning = supportsReasoning
         self.isOnOffReasoningOnly = isOnOffReasoningOnly
         self.choosesReasoningAutomatically = choosesReasoningAutomatically
+        self.supportsProMode = supportsProMode
+        self.fastModeRateMultiplier = fastModeRateMultiplier
         self.supportsStreaming = supportsStreaming
         self.supportsVision = supportsVision
         self.supportsWebSearch = supportsWebSearch
@@ -456,6 +477,13 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
     /// The connected apps this turn may act through, by connector id. Empty
     /// means "none", which is also the server's default.
     public let connectors: [String]
+    /// The provider's premium serving tier for this turn (2x–2.5x the normal
+    /// rate). Like `webSearch` this is a request, not an instruction: the route
+    /// re-checks the model actually has a faster tier and ignores it otherwise.
+    public let fastMode: Bool
+    /// GPT-5.6 pro execution for this turn — the same rate, spent on more
+    /// tokens. Independent of `reasoningEffort`: a turn can be pro at Low.
+    public let proMode: Bool
 
     public init(
         conversationID: String,
@@ -465,7 +493,9 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
         deepResearch: Bool = false,
         webSearch: Bool = false,
         canvasEnabled: Bool? = nil,
-        connectors: [String] = []
+        connectors: [String] = [],
+        fastMode: Bool = false,
+        proMode: Bool = false
     ) {
         self.conversationID = conversationID
         self.modelID = modelID
@@ -475,6 +505,8 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
         self.webSearch = webSearch
         self.canvasEnabled = canvasEnabled
         self.connectors = connectors
+        self.fastMode = fastMode
+        self.proMode = proMode
     }
 }
 
@@ -513,17 +545,28 @@ public struct NativeChatPrivateGenerationRequest: Equatable, Sendable {
     public let generationID: String
     /// The whole conversation so far, oldest first, INCLUDING the turn being sent.
     public let history: [NativeChatPrivateTurn]
+    /// Incognito honours both modes, because the server does: `/api/chat`'s
+    /// private branch reads `fastMode`/`proMode` from the same input as the
+    /// saved branch. Leaving them off here would have made the two paths quietly
+    /// different — the same toggle, in the same composer, billing differently
+    /// depending on whether the chat happened to be private.
+    public let fastMode: Bool
+    public let proMode: Bool
 
     public init(
         modelID: String,
         reasoningEffort: NativeReasoningEffort?,
         generationID: String,
-        history: [NativeChatPrivateTurn]
+        history: [NativeChatPrivateTurn],
+        fastMode: Bool = false,
+        proMode: Bool = false
     ) {
         self.modelID = modelID
         self.reasoningEffort = reasoningEffort
         self.generationID = generationID
         self.history = history
+        self.fastMode = fastMode
+        self.proMode = proMode
     }
 }
 
@@ -693,6 +736,13 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                 supportsReasoning: model.reasoning.supported ?? !efforts.isEmpty,
                 isOnOffReasoningOnly: model.reasoning.onOffOnly ?? false,
                 choosesReasoningAutomatically: automatic,
+                // Auto is excluded on both: the router picks the model per
+                // message, so a premium or a mode agreed to here would land
+                // on a model the user never chose. The server already sends
+                // false/null for it; this is the client refusing to depend
+                // on that being true forever.
+                supportsProMode: automatic ? false : (model.reasoning.supportsProMode ?? false),
+                fastModeRateMultiplier: automatic ? nil : model.fastMode?.rateMultiplier,
                 supportsStreaming: model.capabilities.streaming,
                 supportsVision: model.capabilities.vision ?? false,
                 supportsWebSearch: model.capabilities.webSearch ?? false,
@@ -781,7 +831,9 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             generationId: request.generationID,
             client: "app",
             privateMode: true,
-            privateHistory: request.history
+            privateHistory: request.history,
+            fastMode: request.fastMode ? true : nil,
+            proMode: request.proMode ? true : nil
         )
         return try await streamEvents(body: try JSONEncoder().encode(body), for: accountID)
     }
@@ -803,7 +855,9 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             deepResearch: request.deepResearch ? true : nil,
             webSearch: request.webSearch ? true : nil,
             canvasEnabled: request.canvasEnabled,
-            connectors: request.connectors.isEmpty ? nil : request.connectors
+            connectors: request.connectors.isEmpty ? nil : request.connectors,
+            fastMode: request.fastMode ? true : nil,
+            proMode: request.proMode ? true : nil
         )
         return try await streamEvents(body: try JSONEncoder().encode(body), for: accountID)
     }
@@ -1154,6 +1208,22 @@ private struct ModelCatalogWire: Decodable {
             let canDisable: Bool
             let onOffOnly: Bool?
             let automatic: Bool?
+            /// GPT-5.6's `reasoning.mode:"pro"`. Optional like its neighbours,
+            /// and that is load-bearing rather than stylistic: the whole body is
+            /// decoded in ONE do/catch, so a non-optional field would turn a
+            /// server that predates it into an empty catalog, not a missing
+            /// toggle.
+            let supportsProMode: Bool?
+        }
+        /// The provider's premium serving tier, present only when the model has
+        /// one. Absence means "no faster tier" — which is also what an older
+        /// server that never sends the key says, and the two mean the same
+        /// thing to the UI: no toggle.
+        struct FastMode: Decodable {
+            /// What the tier multiplies the published rates by (2, or 2.5 on
+            /// GPT-5.5). Carried so the toggle can name the premium instead of
+            /// gesturing at one.
+            let rateMultiplier: Double?
         }
         struct Capabilities: Decodable {
             let streaming: Bool
@@ -1188,6 +1258,10 @@ private struct ModelCatalogWire: Decodable {
         let supportedReasoningEfforts: [String]
         let reasoning: Reasoning
         let capabilities: Capabilities
+        /// Sibling of `pricing` rather than a field inside it: `pricing` is null
+        /// for the Auto router, so nesting would make "no pricing" have to mean
+        /// "no fast mode" — true today only by coincidence.
+        let fastMode: FastMode?
         let deprecationNote: String?
         let retiresOn: String?
     }
@@ -1254,15 +1328,22 @@ private struct GenerationRequestWire: Encodable {
     let generationId: String
     let client: String
     /// Omitted when false so a plain turn's body is byte-identical to what it
-    /// was before deep research existed. The same rule covers `webSearch` and
-    /// `connectors`: the route's schema is `.strict()` and every one of these is
-    /// optional there, so "off" is best said by saying nothing.
+    /// was before deep research existed. The same rule covers `webSearch`,
+    /// `connectors`, `fastMode` and `proMode`: the route's schema is `.strict()`
+    /// and every one of these is optional there, so "off" is best said by saying
+    /// nothing.
+    ///
+    /// Note this is the OPPOSITE of `canvasEnabled` below, whose server default
+    /// is on — copying that field's shape for the two mode flags would send
+    /// `false` on every ordinary turn and change every body in the app.
     let deepResearch: Bool?
     let webSearch: Bool?
     /// The exception: canvas defaults to *on* server-side, so `false` has to be
     /// sent explicitly and only `nil` means "leave it alone".
     let canvasEnabled: Bool?
     let connectors: [String]?
+    let fastMode: Bool?
+    let proMode: Bool?
 }
 /// The private branch's body. `conversationId` and `regenerate` are ABSENT rather
 /// than nil-encoded: the server rejects `regenerate` outright in this mode, and an
@@ -1274,6 +1355,11 @@ private struct PrivateGenerationRequestWire: Encodable {
     let client: String
     let privateMode: Bool
     let privateHistory: [NativeChatPrivateTurn]
+    /// Same omit-when-off rule as the saved branch, and present for the same
+    /// reason: the server reads both flags on this path too, so leaving them out
+    /// would make the identical toggle behave differently in incognito.
+    let fastMode: Bool?
+    let proMode: Bool?
 }
 private struct CancelRequestWire: Encodable { let generationId: String }
 private struct CancelResponseWire: Decodable { let ok: Bool; let cancelled: Bool }
