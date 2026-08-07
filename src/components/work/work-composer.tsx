@@ -10,9 +10,8 @@ import {
   Check,
   ChevronDown,
   FileText,
-  FileUp,
-  Library,
   Loader2,
+  Mic,
   Plus,
   RefreshCw,
   X,
@@ -22,19 +21,18 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollFade } from "@/components/ui/scroll-fade";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ConnectorStatus } from "@/components/connections/types";
+import { ComposerDictation } from "@/components/chat/composer-dictation";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { useApp } from "@/components/app/app-provider";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useUploads } from "@/hooks/use-uploads";
 import { AppIcons } from "@/lib/app-icons";
 import { requiresViewerCredentials } from "@/lib/image-source";
@@ -48,9 +46,7 @@ import { resolveModel, type ModelId } from "@/lib/models";
 import { DOC_MIME } from "@/lib/uploads";
 import {
   DEFAULT_WORK_PERMISSION_POLICY,
-  WORK_APPROVAL_MODE_LABEL,
   WORK_APPROVAL_MODE_SUMMARY,
-  WORK_PERMISSION_POLICIES,
   describeCapability,
   type HostCapabilityView,
   type WorkPermissionPolicy,
@@ -80,6 +76,14 @@ import {
 } from "@/components/work/clarify/preflight";
 import { WorkPreflightCard } from "@/components/work/clarify/preflight-card";
 import { WorkRunDisclosure } from "@/components/work/clarify/run-disclosure";
+import { ComposerAddMenu } from "@/components/work/composer-home/composer-add-menu";
+import { COMPOSER_CHIP_CLASS } from "@/components/work/composer-home/composer-chip";
+import { WorkPermissionChip } from "@/components/work/composer-home/permission-chip";
+import {
+  applySkillInvocation,
+  invokedSkill,
+} from "@/components/work/composer-home/skill-invocation";
+import { useWorkSkills } from "@/components/work/composer-home/use-work-skills";
 import type { PreflightClarificationAnswer } from "@/lib/preflight-clarification";
 import { cn, formatBytes } from "@/lib/utils";
 
@@ -94,22 +98,38 @@ import { cn, formatBytes } from "@/lib/utils";
  * browser now always asks for `automatic` and sends no capability list at all;
  * the server reads the goal and decides.
  *
- * The Apps chip that replaced them is not the same kind of question, which is
- * the only reason it is allowed to be here. It asks which of the reader's own
- * connected apps this errand is about — a question about their work rather than
- * about Juno's internals, answerable by anyone who linked the app — and every
- * switch starts off, so a task reaches what it was handed and nothing else. It
- * is also a control that does something: the selection is stored on the session
- * and `scripts/work-runner.ts` narrows the run's connector set by it, which is
- * the bar a permission control has to clear before it is worth drawing.
+ * The Apps selection that replaced them is not the same kind of question, which
+ * is the only reason it is allowed to be here. It asks which of the reader's
+ * own connected apps this errand is about — a question about their work rather
+ * than about Juno's internals, answerable by anyone who linked the app — and
+ * every switch starts off, so a task reaches what it was handed and nothing
+ * else. It is also a control that does something: the selection is stored on
+ * the session and `scripts/work-runner.ts` narrows the run's connector set by
+ * it, which is the bar a permission control has to clear before it is worth
+ * drawing.
  *
- * The approval mode below the surface — Manual, Auto, Skip — is here on the
- * same terms and is the second control to clear that bar. `approvalRuling` in
- * src/lib/work/domain.ts is what the three modes differ in, the session stores
- * the choice, dispatch narrows it against any Mac's advertised floor, and both
- * executors gate on the result. It is drawn now for exactly that reason and
- * would not have been drawn a week ago, when the three modes were the same
- * mode wearing three names.
+ * The approval mode — Manual, Auto, Skip — is here on the same terms and is the
+ * second control to clear that bar. `approvalRuling` in src/lib/work/domain.ts
+ * is what the three modes differ in, the session stores the choice, dispatch
+ * narrows it against any Mac's advertised floor, and both executors gate on the
+ * result. It is drawn now for exactly that reason and would not have been drawn
+ * a week ago, when the three modes were the same mode wearing three names.
+ *
+ * The surface holds two rows under the textarea rather than one, and the split
+ * is by what a control changes rather than by how it looks. The first row is
+ * what this *sentence* is answered with — the files it is handed, the skill it
+ * runs under, the apps it may reach, the model, the thinking depth, the
+ * microphone, and the button that starts it. The second, quieter row is the
+ * frame around it: which project the task is filed in, and how often it stops
+ * to ask. Both were one row until it held nine controls, at which point the
+ * model picker and the permission mode were the same size, the same colour and
+ * one space apart, which said they were the same kind of decision. They are
+ * not: one is a preference, the other is a licence.
+ *
+ * Nothing in either row is a mode switch between Chat and Work. Juno already
+ * separates the two as top-level products in the sidebar, and a second switch
+ * inside this composer would be a control that can disagree with the page it is
+ * drawn on.
  *
  * What survived the deletion is the honesty architecture that surrounded them,
  * because it is the point of this surface. `selectForInferred`
@@ -138,7 +158,7 @@ import { cn, formatBytes } from "@/lib/utils";
  * delivered as that one sentence rather than as an inventory.
  *
  * The pre-flight card below the surface is the third control to clear the bar
- * the Apps chip and the approval mode set, and it clears it in the one way this
+ * the Apps selection and the approval mode set, and it clears it in the one way this
  * surface had left uncovered. Everything above tells the reader what Juno read
  * into their sentence; nothing asked them about the parts it could not read. A
  * run holds a $2, 600,000-token, twenty-minute ceiling and nobody is watching
@@ -333,21 +353,48 @@ export function WorkComposer({
   /**
    * The account's linked apps, loaded once and shared.
    *
-   * Hoisted out of the Apps chip because two surfaces now need the same list
-   * and neither may have its own copy of it: the chip draws the switches, and
-   * the pre-flight card has to know that an app named in the goal is one this
+   * Hoisted out of the + menu because two surfaces now need the same list and
+   * neither may have its own copy of it: the menu draws the switches, and the
+   * pre-flight card has to know that an app named in the goal is one this
    * account has actually connected before it offers to switch it on. A second
    * fetch would be a second answer to "is GitHub linked", and the two would
    * disagree the first time somebody disconnected it in another tab.
    */
   const apps = useConnectedApps();
+  /**
+   * The skills this account could name on a task.
+   *
+   * Loaded here rather than inside the menu for the reason `apps` is: the menu
+   * draws the list, and `namedSkill` below has to check the goal's leading
+   * `/slug` against the same library before it will treat it as a choice. Two
+   * fetches would be two answers to "does `tidy-downloads` exist", and they
+   * would disagree the first moment somebody switched a skill off elsewhere.
+   */
+  const skillLibrary = useWorkSkills();
   const [model, setModel] = React.useState<ModelId>(defaultWorkModelId);
   const [submitting, setSubmitting] = React.useState(false);
   const [blocked, setBlocked] = React.useState<WorkBlocked | null>(null);
   const [draft, setDraft] = React.useState<ClientWorkSession | null>(null);
   const [failure, setFailure] = React.useState<StartFailure | null>(null);
-  const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
+  /**
+   * Dictate Mode, borrowed whole from the chat composer.
+   *
+   * `ComposerDictation` is imported rather than reimplemented, so a Work task is
+   * dictated through the same two-tier pipeline chat uses — Web Speech for the
+   * live preview, `/api/voice/stt` for the transcript that actually lands — and
+   * somebody who has learned the capsule once has learned it everywhere. The
+   * mic is gated on the same `supported` flag chat gates on, so the two
+   * composers never disagree about whether this browser can dictate.
+   *
+   * There is no live voice *conversation* here, unlike chat. That control opens
+   * a realtime relay against a chat conversation and writes turns back into it;
+   * a Work run is an agent loop with nobody on the other end of it, so the
+   * button would be a promise this surface has no transport to keep.
+   */
+  const { supported: speechSupported } = useSpeechRecognition();
+  const [dictating, setDictating] = React.useState(false);
+  const [startAfterDictation, setStartAfterDictation] = React.useState(false);
   const [removingIds, setRemovingIds] = React.useState<string[]>([]);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -535,8 +582,8 @@ export function WorkComposer({
    * arrive as something the reader watched appear and can still delete. The
    * connector grants cannot travel that way — a sentence saying "reach GitHub"
    * grants nothing, `evaluateConnector` reads the grant rows — so those are
-   * applied to the Apps chip in the same action, and the two cannot disagree
-   * because they are set from the same answer.
+   * applied to the Apps selection in the same action, and the two cannot
+   * disagree because they are set from the same answer.
    */
   const acceptPreflight = React.useCallback(
     (answers: PreflightClarificationAnswer[], grantConnectorIds: string[]) => {
@@ -558,6 +605,49 @@ export function WorkComposer({
   );
 
   const skipPreflight = React.useCallback(() => setPreflightSettled(goal), [goal]);
+
+  /**
+   * The skill this task names, if it names one this account actually has.
+   *
+   * A Work session carries no skill id. `applySkill` in scripts/work-runner.ts
+   * reads a leading `/slug` off the goal and nothing else, so that string is the
+   * state — there is no second copy of the choice to keep in step with it, and
+   * deleting the name in the textarea genuinely un-picks the skill.
+   */
+  const namedSkill = React.useMemo(
+    () => invokedSkill(goal, skillLibrary.skills),
+    [goal, skillLibrary.skills]
+  );
+
+  const nameSkill = React.useCallback(
+    (slug: string | null) => {
+      setGoal(applySkillInvocation(goal, slug, namedSkill));
+      // Back to the field, where the reader can see what was added and take it
+      // out again — the same hand-off the pre-flight card makes, for the same
+      // reason: a menu that writes into somebody's sentence owes them the sight
+      // of it.
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    },
+    [goal, namedSkill]
+  );
+
+  /**
+   * Dictate Mode hands back, exactly as it does in chat.
+   *
+   * Stop lands the transcript in the textarea for editing; Send asks for the
+   * task to start. Either way the transcript is merged onto whatever was
+   * already typed rather than replacing it, so somebody who wrote half a
+   * sentence and spoke the rest keeps both.
+   */
+  const closeDictation = React.useCallback(
+    (transcript: string, startNow: boolean) => {
+      setDictating(false);
+      setGoal([goal.trim(), transcript.trim()].filter(Boolean).join(" "));
+      if (startNow) setStartAfterDictation(true);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    },
+    [goal]
+  );
 
   const attachmentIds = React.useMemo(
     () => readyAttachments.map((attachment) => attachment.id),
@@ -778,6 +868,27 @@ export function WorkComposer({
     router,
   ]);
 
+  /*
+   * "Send" from the dictation capsule, run one render after the words land.
+   *
+   * `submit` reads the goal out of its own closure and keys the attempt on
+   * `inputsKey`, which is derived from the same value. Calling it in the tick
+   * that set the transcript would create the draft from the new words while
+   * keying the attempt to the sentence before them — so a second press after a
+   * refusal would replay a draft that never held what was spoken. Waiting one
+   * render costs nothing anybody can perceive and keeps the two in step.
+   *
+   * The flag is cleared whether or not the press lands. A transcript that
+   * arrives while the host list is still in flight does not start a task, but
+   * it is sitting in the textarea with the button beside it; a flag that
+   * survived would fire it later, from nowhere.
+   */
+  React.useEffect(() => {
+    if (!startAfterDictation) return;
+    setStartAfterDictation(false);
+    if (canStart) void submit();
+  }, [startAfterDictation, canStart, submit]);
+
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
@@ -815,308 +926,375 @@ export function WorkComposer({
 
   return (
     <div className="w-full">
-      <div className="composer-surface relative flex w-full flex-col rounded-[22px] border border-border/65 bg-card/95 backdrop-blur transition-[border-color,box-shadow] duration-base ease-spring focus-within:border-foreground/15 sm:rounded-[24px]">
-        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-0 pt-3 sm:px-3.5 sm:pt-3.5">
-          <ProjectChip value={projectId} onChange={setProjectId} disabled={submitting} />
-          <AppsChip
-            value={connectorIds}
-            onChange={setConnectorIds}
-            disabled={submitting}
-            connectors={apps.connectors}
-            failed={apps.failed}
-            onRetry={apps.reload}
-          />
+      {/*
+       * Composer ⇄ dictation share one grid cell and cross-fade, the same
+       * arrangement the chat composer uses and for the reason written there:
+       * the only animated layout property is this container's min-height, and
+       * both layers move on opacity and transform, which stay on the
+       * compositor. The height opens to make room for the capsule's transcript
+       * preview, which floats above it.
+       */}
+      <div
+        className={cn(
+          "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-spring motion-reduce:transition-none",
+          dictating ? "min-h-[190px]" : "min-h-0"
+        )}
+      >
+        <div
+          className={cn(
+            "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+            dictating
+              ? "translate-y-0 scale-100 opacity-100"
+              : "pointer-events-none translate-y-1 scale-95 opacity-0"
+          )}
+        >
+          {dictating && (
+            <ComposerDictation
+              onCancel={() => setDictating(false)}
+              onStop={(transcript) => closeDictation(transcript, false)}
+              onSend={(transcript) => closeDictation(transcript, true)}
+            />
+          )}
         </div>
 
-        {canAttach && (
-          <div
-            className={cn(
-              "grid transition-[grid-template-rows] duration-base ease-out-soft",
-              uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-            )}
-          >
-            <div className="min-h-0 overflow-hidden">
-              <div className="flex flex-wrap gap-2 px-3 pb-0 pt-2.5 sm:px-3.5">
-                {uploads.map((upload) => (
-                  <div
-                    key={upload.localId}
-                    className={cn(
-                      "group relative flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-xs shadow-soft",
-                      removingIds.includes(upload.localId)
-                        ? "pointer-events-none motion-safe:animate-pop-out"
-                        : "motion-safe:animate-rise-in"
-                    )}
-                  >
-                    {upload.attachment?.kind === "IMAGE" ? (
-                      <Image
-                        src={upload.attachment.url}
-                        unoptimized={requiresViewerCredentials(upload.attachment.url)}
-                        alt={upload.fileName}
-                        width={32}
-                        height={32}
-                        className="h-8 w-8 rounded object-cover"
-                      />
-                    ) : (
-                      <FileText className="h-5 w-5 text-muted-foreground" />
-                    )}
-                    <div className="max-w-[140px]">
-                      <p className="truncate font-medium">{upload.fileName}</p>
-                      <p className="text-muted-foreground">
-                        {upload.status === "uploading"
-                          ? `${upload.progress}%`
-                          : upload.status === "error"
-                            ? "Failed"
-                            : formatBytes(upload.size)}
-                      </p>
-                    </div>
-                    {upload.status === "uploading" && (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => removeUpload(upload.localId)}
-                      className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
-                      aria-label="Remove attachment"
-                    >
-                      <X className="h-3 w-3 coarse:h-4 coarse:w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <textarea
-          ref={textareaRef}
-          value={goal}
-          onChange={(event) => setGoal(event.target.value)}
-          onKeyDown={onKeyDown}
-          rows={1}
-          disabled={submitting}
-          placeholder="Describe the task — what you want done, and what “done” looks like"
-          aria-label="Describe the task for Juno to carry out"
-          className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]"
-        />
-
-        {/* Toolbar — attach, model, thinking, send. The same row, in the same
-            order, at the same sizes as the chat and Code composers. */}
-        <div className="flex flex-nowrap items-center gap-1.5 px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5">
-          <div className="flex min-w-0 flex-1 items-center gap-1">
-            {canAttach && (
-              <>
-                {/* One menu, two destinations, no submenu. The chat composer
-                    nests these under "Attach" because its + also holds canvas,
-                    projects and tools; here that parent would contain a single
-                    child, which is a click that buys nothing. */}
-                <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Attach a document"
-                      disabled={submitting}
+        <div
+          className={cn(
+            "composer-surface relative col-start-1 row-start-1 flex w-full flex-col rounded-[22px] border border-border/65 bg-card/95 backdrop-blur transition-[border-color,box-shadow,opacity,transform] duration-base ease-spring focus-within:border-foreground/15 motion-reduce:transition-none sm:rounded-[24px]",
+            dictating && "pointer-events-none -translate-y-1 scale-[0.97] opacity-0"
+          )}
+        >
+          {canAttach && (
+            <div
+              className={cn(
+                "grid transition-[grid-template-rows] duration-base ease-out-soft",
+                uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+              )}
+            >
+              <div className="min-h-0 overflow-hidden">
+                <div className="flex flex-wrap gap-2 px-3 pb-0 pt-2.5 sm:px-3.5">
+                  {uploads.map((upload) => (
+                    <div
+                      key={upload.localId}
                       className={cn(
-                        "composer-add-button group shrink-0 rounded-[11px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
-                        plusOpen && "bg-accent"
+                        "group relative flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-xs shadow-soft",
+                        removingIds.includes(upload.localId)
+                          ? "pointer-events-none motion-safe:animate-pop-out"
+                          : "motion-safe:animate-rise-in"
                       )}
                     >
-                      <Plus
-                        aria-hidden="true"
-                        strokeWidth={1.75}
-                        className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
-                      />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
-                    {/* "Attach a document", not "Attach": the heading is the only
-                        place left that says what this menu is for now that
-                        Photos is gone, and "Attach" over a list with no images
-                        in it reads as a list that failed to load. */}
-                    <DropdownMenuLabel className="font-mono text-label">
-                      Attach a document
-                    </DropdownMenuLabel>
-                    <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
-                      <FileUp className="text-muted-foreground" />
-                      <span className="flex-1">Files</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
-                      <Library className="text-muted-foreground" />
-                      <span className="flex-1">From your library</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                      {upload.attachment?.kind === "IMAGE" ? (
+                        <Image
+                          src={upload.attachment.url}
+                          unoptimized={requiresViewerCredentials(upload.attachment.url)}
+                          alt={upload.fileName}
+                          width={32}
+                          height={32}
+                          className="h-8 w-8 rounded object-cover"
+                        />
+                      ) : (
+                        <FileText className="h-5 w-5 text-muted-foreground" />
+                      )}
+                      <div className="max-w-[140px]">
+                        <p className="truncate font-medium">{upload.fileName}</p>
+                        <p className="text-muted-foreground">
+                          {upload.status === "uploading"
+                            ? `${upload.progress}%`
+                            : upload.status === "error"
+                              ? "Failed"
+                              : formatBytes(upload.size)}
+                        </p>
+                      </div>
+                      {upload.status === "uploading" && (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeUpload(upload.localId)}
+                        className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
+                        aria-label="Remove attachment"
+                      >
+                        <X className="h-3 w-3 coarse:h-4 coarse:w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
-                <span
-                  className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block"
-                  aria-hidden="true"
-                />
-              </>
-            )}
+          <textarea
+            ref={textareaRef}
+            value={goal}
+            onChange={(event) => setGoal(event.target.value)}
+            onKeyDown={onKeyDown}
+            rows={1}
+            disabled={submitting}
+            placeholder="Describe the task — what you want done, and what “done” looks like"
+            aria-label="Describe the task for Juno to carry out"
+            className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]"
+          />
 
-            <div
-              className={cn("min-w-0 flex-1 sm:flex-none", submitting && "pointer-events-none opacity-60")}
-            >
-              {/* Only the models the Work runner can actually drive. Plan-locked
-                  ones stay, wearing their lock — see the prop's own note.
-
-                  `showReasoning` is on now that the executor carries an effort,
-                  so the picker's own slider and the button beside it are the
-                  same control seen twice rather than two ideas — which is the
-                  arrangement chat has always had. */}
-              <ModelSelector
-                value={model}
-                onChange={changeModel}
-                reasoningEffort={reasoningEffort}
-                onReasoningChange={setReasoningEffort}
-                filter={isWorkCapableModel}
+          {/* Row one — what this sentence is answered with: the things handed to
+              the task, the model, the thinking depth, the microphone and the
+              button that starts it. Attach, model and thinking keep the order
+              and the sizes the chat and Code composers use, because somebody who
+              has used one of the three has used all three. */}
+          <div className="flex flex-nowrap items-center gap-1.5 px-2 pb-1.5 pt-0.5 sm:px-2.5">
+            <div className="flex min-w-0 flex-1 items-center gap-1">
+              {/* One menu for everything a task is handed: documents, the skill
+                  it runs under, the apps it may reach. The Apps switches were a
+                  chip of their own above the textarea until now; they are in
+                  here because all three answer the same question — what does
+                  this task get to work with — and three controls in three places
+                  made one question look like three. What was switched on is
+                  still said out loud below, in the run disclosure's own
+                  sentence, and the dot on this trigger keeps a granted app
+                  legible while the menu is shut. */}
+              <ComposerAddMenu
+                disabled={submitting}
+                attach={
+                  canAttach
+                    ? {
+                        onFiles: () => fileInputRef.current?.click(),
+                        onLibrary: () => setLibraryOpen(true),
+                      }
+                    : undefined
+                }
+                skills={{
+                  skills: skillLibrary.skills,
+                  failed: skillLibrary.failed,
+                  onRetry: skillLibrary.reload,
+                  invokedSlug: namedSkill?.slug ?? null,
+                  onInvoke: nameSkill,
+                }}
+                apps={{
+                  connectors: apps.connectors,
+                  failed: apps.failed,
+                  onRetry: apps.reload,
+                  selected: connectorIds,
+                  onToggle: (connectorId) =>
+                    setConnectorIds((prev) =>
+                      prev.includes(connectorId)
+                        ? prev.filter((id) => id !== connectorId)
+                        : [...prev, connectorId]
+                    ),
+                }}
               />
+
+              <span
+                className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block"
+                aria-hidden="true"
+              />
+
+              <div
+                className={cn("min-w-0 flex-1 sm:flex-none", submitting && "pointer-events-none opacity-60")}
+              >
+                {/* Only the models the Work runner can actually drive. Plan-locked
+                    ones stay, wearing their lock — see the prop's own note.
+
+                    `showReasoning` is on now that the executor carries an effort,
+                    so the picker's own slider and the button beside it are the
+                    same control seen twice rather than two ideas — which is the
+                    arrangement chat has always had. */}
+                <ModelSelector
+                  value={model}
+                  onChange={changeModel}
+                  reasoningEffort={reasoningEffort}
+                  onReasoningChange={setReasoningEffort}
+                  filter={isWorkCapableModel}
+                />
+              </div>
+
+              {/* Thinking effort, presented exactly as chat and /code/new present
+                  it: a fixed-width button naming the current tier, opening onto
+                  the same slider. Same component, same widths, same wording — a
+                  reader who has set this once anywhere in the product has set it
+                  everywhere, and a third arrangement of the same choice would be
+                  a second thing to learn for no new fact. */}
+              {isAutoModelId(model) ? (
+                <>
+                  <span
+                    className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block"
+                    aria-hidden="true"
+                  />
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span
+                        className="inline-flex h-8 shrink-0 items-center gap-1 rounded-[10px] px-2 font-mono text-[12px] text-muted-foreground min-[480px]:text-[13px]"
+                        aria-label="Thinking effort: Auto — chosen with the model"
+                      >
+                        <span className="truncate">Auto</span>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>Thinking depth is chosen automatically with the model</TooltipContent>
+                  </Tooltip>
+                </>
+              ) : (
+                effortOptions.length > 0 &&
+                (() => {
+                  // Matched against the clamped value, never the raw preference.
+                  // The two disagree whenever a tier chosen elsewhere is wider
+                  // than this model offers, and matching the raw one falls
+                  // through to `effortOptions[0]` — the LOWEST tier — while the
+                  // run goes out at the highest tier at or below it. The label
+                  // would read "Instant" for a task that thought hard.
+                  const current =
+                    effortOptions.find((option) => option.value === effort) ?? effortOptions[0];
+                  const compact = current.label === "Extra high" ? "X-high" : current.label;
+                  const atTopTier =
+                    effortOptions.length > 1 &&
+                    current.value === effortOptions[effortOptions.length - 1].value;
+                  return (
+                    <>
+                      <span
+                        className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block"
+                        aria-hidden="true"
+                      />
+                      <Tooltip>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                disabled={submitting}
+                                aria-label={`Thinking effort: ${current.label}`}
+                                className={cn(
+                                  "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-[10px] px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
+                                  atTopTier ? "text-ultra" : "text-foreground/80"
+                                )}
+                              >
+                                <span className="min-w-0 flex-1 truncate text-center min-[480px]:hidden">
+                                  {compact}
+                                </span>
+                                <span className="hidden min-w-0 flex-1 truncate text-center min-[480px]:inline">
+                                  {current.label}
+                                </span>
+                                <ChevronDown className="h-3 w-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
+                              </Button>
+                            </TooltipTrigger>
+                          </PopoverTrigger>
+                          <PopoverContent align="start" sideOffset={10} className="w-[264px] origin-popper p-3">
+                            {/* No Flash-mode switch, unlike chat's. That toggle
+                                swaps the transport for a lower-latency one the
+                                Work runner does not use, so offering it would be
+                                a control with nothing behind it — the exact
+                                mistake this whole surface was carrying until the
+                                executor learned to carry an effort. */}
+                            <ReasoningSlider
+                              options={effortOptions}
+                              value={effort}
+                              onChange={setReasoningEffort}
+                              disabled={submitting}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                        <TooltipContent>Thinking effort</TooltipContent>
+                      </Tooltip>
+                    </>
+                  );
+                })()
+              )}
             </div>
 
-            {/* Thinking effort, presented exactly as chat and /code/new present
-                it: a fixed-width button naming the current tier, opening onto
-                the same slider. Same component, same widths, same wording — a
-                reader who has set this once anywhere in the product has set it
-                everywhere, and a third arrangement of the same choice would be
-                a second thing to learn for no new fact. */}
-            {isAutoModelId(model) ? (
-              <>
-                <span
-                  className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block"
-                  aria-hidden="true"
-                />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span
-                      className="inline-flex h-8 shrink-0 items-center gap-1 rounded-[10px] px-2 font-mono text-[12px] text-muted-foreground min-[480px]:text-[13px]"
-                      aria-label="Thinking effort: Auto — chosen with the model"
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              {/* Dictate, in the same slot and at the same size as chat's, gated
+                  on the same support flag. It sits beside the start button rather
+                  than taking it over, because unlike chat there is no empty-field
+                  state to hand the primary action to: this button always starts a
+                  task. */}
+              {speechSupported && (
+                <>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setDictating(true)}
+                        disabled={submitting || dictating}
+                        aria-label="Dictate"
+                        aria-pressed={dictating}
+                        className="composer-mic-button rounded-[11px] coarse:h-11 coarse:w-11"
+                      >
+                        <Mic className="composer-mic-icon h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Dictate</TooltipContent>
+                  </Tooltip>
+                  <span
+                    className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block"
+                    aria-hidden="true"
+                  />
+                </>
+              )}
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="shrink-0">
+                    <Button
+                      type="button"
+                      size="icon"
+                      onClick={() => void submit()}
+                      disabled={!canStart}
+                      aria-label={selection.target === null ? selection.explanation : "Start this task"}
+                      className="composer-primary-action h-9 w-9 rounded-[13px] coarse:h-11 coarse:w-11"
                     >
-                      <span className="truncate">Auto</span>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>Thinking depth is chosen automatically with the model</TooltipContent>
-                </Tooltip>
-              </>
-            ) : (
-              effortOptions.length > 0 &&
-              (() => {
-                // Matched against the clamped value, never the raw preference.
-                // The two disagree whenever a tier chosen elsewhere is wider
-                // than this model offers, and matching the raw one falls
-                // through to `effortOptions[0]` — the LOWEST tier — while the
-                // run goes out at the highest tier at or below it. The label
-                // would read "Instant" for a task that thought hard.
-                const current =
-                  effortOptions.find((option) => option.value === effort) ?? effortOptions[0];
-                const compact = current.label === "Extra high" ? "X-high" : current.label;
-                const atTopTier =
-                  effortOptions.length > 1 &&
-                  current.value === effortOptions[effortOptions.length - 1].value;
-                return (
-                  <>
-                    <span
-                      className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block"
-                      aria-hidden="true"
-                    />
-                    <Tooltip>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              disabled={submitting}
-                              aria-label={`Thinking effort: ${current.label}`}
-                              className={cn(
-                                "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-[10px] px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
-                                atTopTier ? "text-ultra" : "text-foreground/80"
-                              )}
-                            >
-                              <span className="min-w-0 flex-1 truncate text-center min-[480px]:hidden">
-                                {compact}
-                              </span>
-                              <span className="hidden min-w-0 flex-1 truncate text-center min-[480px]:inline">
-                                {current.label}
-                              </span>
-                              <ChevronDown className="h-3 w-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
-                            </Button>
-                          </TooltipTrigger>
-                        </PopoverTrigger>
-                        <PopoverContent align="start" sideOffset={10} className="w-[264px] origin-popper p-3">
-                          {/* No Flash-mode switch, unlike chat's. That toggle
-                              swaps the transport for a lower-latency one the
-                              Work runner does not use, so offering it would be
-                              a control with nothing behind it — the exact
-                              mistake this whole surface was carrying until the
-                              executor learned to carry an effort. */}
-                          <ReasoningSlider
-                            options={effortOptions}
-                            value={effort}
-                            onChange={setReasoningEffort}
-                            disabled={submitting}
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      <TooltipContent>Thinking effort</TooltipContent>
-                    </Tooltip>
-                  </>
-                );
-              })()
-            )}
+                      {submitting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <ArrowUp className="composer-send-icon h-4 w-4" aria-hidden="true" />
+                      )}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Start task</TooltipContent>
+              </Tooltip>
+            </div>
           </div>
 
-          <div className="ml-auto flex shrink-0 items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="shrink-0">
-                  <Button
-                    type="button"
-                    size="icon"
-                    onClick={() => void submit()}
-                    disabled={!canStart}
-                    aria-label={selection.target === null ? selection.explanation : "Start this task"}
-                    className="composer-primary-action h-9 w-9 rounded-[13px] coarse:h-11 coarse:w-11"
-                  >
-                    {submitting ? (
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <ArrowUp className="composer-send-icon h-4 w-4" aria-hidden="true" />
-                    )}
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>Start task</TooltipContent>
-            </Tooltip>
+          {/* Row two — the frame around the errand rather than the errand itself:
+              where the task is filed, and how often it stops to ask. Quieter than
+              the row above on purpose. Both of these hold an answer whether or not
+              anybody looks at them, and drawing them at the weight of the model
+              picker was what made one toolbar read as nine equally urgent
+              decisions. The hairline is what makes these two rows two rather than
+              one that wrapped. */}
+          <div className="flex flex-wrap items-center gap-0.5 border-t border-border/50 px-2 py-1 sm:px-2.5">
+            <ProjectChip value={projectId} onChange={setProjectId} disabled={submitting} />
+            <WorkPermissionChip
+              value={approvalMode}
+              onChange={setApprovalMode}
+              disabled={submitting}
+            />
           </div>
-        </div>
 
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept={WORK_ACCEPT_ATTRIBUTE}
-          className="hidden"
-          onChange={(event) => {
-            if (event.target.files?.length) addFiles(event.target.files);
-            event.target.value = "";
-          }}
-        />
-        {/* The library dialog is shared with chat and still lists images under
-            its own Images tab, which this file does not own. One picked there
-            arrives as a chip like any other and the run reports that it could
-            not read it — the honest outcome, rather than the silent one the
-            Photos entry produced. */}
-        {canAttach && (
-          <LibraryPicker
-            open={libraryOpen}
-            onOpenChange={setLibraryOpen}
-            onAttach={addAttachments}
-            existingCount={uploads.length}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={WORK_ACCEPT_ATTRIBUTE}
+            className="hidden"
+            onChange={(event) => {
+              if (event.target.files?.length) addFiles(event.target.files);
+              event.target.value = "";
+            }}
           />
-        )}
+          {/* The library dialog is shared with chat and still lists images under
+              its own Images tab, which this file does not own. One picked there
+              arrives as a chip like any other and the run reports that it could
+              not read it — the honest outcome, rather than the silent one the
+              Photos entry produced. */}
+          {canAttach && (
+            <LibraryPicker
+              open={libraryOpen}
+              onOpenChange={setLibraryOpen}
+              onAttach={addAttachments}
+              existingCount={uploads.length}
+            />
+          )}
+        </div>
       </div>
 
       {/*
@@ -1140,49 +1318,35 @@ export function WorkComposer({
       )}
 
       {/*
-       * How often this task stops to ask.
+       * What the chosen approval mode actually means, left here after the
+       * control itself moved up into the strip.
        *
-       * Below the surface rather than in the toolbar, and with its sentence
-       * under it, because it is the one control here whose options are not
-       * self-explanatory from their names. "Skip" alone reads as a promise
-       * never to be interrupted, which is false in four cases and would be
-       * discovered as a prompt somebody was told would not come; the sentence
-       * is what makes the three legible before the task starts rather than
-       * after it has done something.
+       * The three-segment control that used to sit here carried this sentence
+       * beneath it, and the argument for it has not changed: these are the only
+       * options on this surface whose names are not self-explanatory. "Skip"
+       * alone reads as a promise never to be interrupted, which is false in four
+       * cases — `ALWAYS_CONFIRM_ACTIONS`, the floor under all three modes — and
+       * would otherwise be discovered as a prompt somebody was told would not
+       * come.
        *
-       * Only the mode is offered, never a per-action list. The four things
-       * that ask under every mode are the floor — `ALWAYS_CONFIRM_ACTIONS` —
-       * and a control that appeared to negotiate them would be a control
-       * promising something `approvalRuling` refuses to deliver.
+       * The menu rows carry the same three sentences from the same record, so
+       * somebody choosing between the modes reads the difference where the
+       * choice is made. This line is for the far commoner reader who never opens
+       * the menu at all and should still know what Auto lets a task do while
+       * they are not watching. It is announced on change for the reader moving
+       * between the modes without seeing either.
        */}
-      <div className="mt-3 px-1.5">
-        <SegmentedControl
-          value={approvalMode}
-          onChange={setApprovalMode}
-          options={WORK_PERMISSION_POLICIES.map((policy) => ({
-            value: policy,
-            label: WORK_APPROVAL_MODE_LABEL[policy],
-          }))}
-          ariaLabel="How often this task asks before it acts"
-          className="w-full max-w-[19rem]"
-          optionClassName="h-8 coarse:h-10"
-        />
-        <p
-          // Announced when it changes: the segments are the control and this is
-          // the only place their difference is stated, so a reader moving
-          // between them with a screen reader would otherwise hear three words
-          // and no meaning.
-          aria-live="polite"
-          className="mt-2 text-caption leading-relaxed text-muted-foreground"
-        >
-          {WORK_APPROVAL_MODE_SUMMARY[approvalMode]}
-        </p>
-      </div>
+      <p
+        aria-live="polite"
+        className="mt-3 px-1.5 text-caption leading-relaxed text-muted-foreground"
+      >
+        {WORK_APPROVAL_MODE_SUMMARY[approvalMode]}
+      </p>
 
       {/* What the run commits to, from the values that will be sent rather than
           from a second computation of them: `selection` is the same object the
           caption below reads, and the connector labels are the ones the reader
-          switched on in the chip above. Suppressed while the host list is in
+          switched on in the + menu above. Suppressed while the host list is in
           flight, for the reason the degradation note below is: a "runs on
           Juno's cloud" that corrects itself two hundred milliseconds later is
           the one line here nobody can check. */}
@@ -1302,8 +1466,9 @@ export function WorkComposer({
  * The account's connected apps, loaded once for everything on this surface that
  * needs them.
  *
- * Three things do now — the Apps chip that switches them on, the pre-flight
- * question that offers to switch one on because the goal named it, and the
+ * Three things do now — the + menu's Apps section that switches them on, the
+ * pre-flight question that offers to switch one on because the goal named it,
+ * and the
  * disclosure that lists what the run will reach — and each of them asking
  * `/api/connectors` for itself would be three answers to one question, arriving
  * at three different moments. Only connected apps are kept: everything here is
@@ -1354,16 +1519,13 @@ interface ComposerProject {
   conversationCount: number;
 }
 
-/**
- * The shared shape of every state this chip can be in.
- *
- * The trigger and the "New project" button are the same 32px box wearing the
- * same nothing-at-rest treatment, so the row does not resize as the project
- * list resolves under it — a control that changes width the moment a fetch
- * lands is a control that moves out from under the pointer heading for it.
+/*
+ * The shape every state of this chip wears is now `COMPOSER_CHIP_CLASS` in
+ * `composer-home/composer-chip.tsx`, because the permission chip beside it in
+ * the strip wears the same one. Its reason for existing is unchanged: the
+ * trigger, the "New project" button and the loading placeholder are the same
+ * box, so the strip does not resize as its fetches land under it.
  */
-const CHIP_CLASS =
-  "group inline-flex h-8 min-w-0 max-w-[13rem] items-center gap-1.5 rounded-[10px] px-2 font-mono text-[12px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[480px]:text-[13px] coarse:h-11";
 
 /**
  * Files this task into a Project, so the project's instructions and files apply.
@@ -1438,9 +1600,9 @@ function ProjectChip({
 
   if (projects === null && !failed) {
     return (
-      <button type="button" disabled className={CHIP_CLASS} aria-hidden="true" tabIndex={-1}>
+      <button type="button" disabled className={COMPOSER_CHIP_CLASS} aria-hidden="true" tabIndex={-1}>
         <AppIcons.projects className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-        <span className="truncate text-muted-foreground">Project</span>
+        <span className="truncate">Project</span>
       </button>
     );
   }
@@ -1451,7 +1613,7 @@ function ProjectChip({
         type="button"
         onClick={() => void createAndPick()}
         disabled={disabled || creating}
-        className={CHIP_CLASS}
+        className={COMPOSER_CHIP_CLASS}
       >
         {creating ? (
           <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
@@ -1470,17 +1632,21 @@ function ProjectChip({
           type="button"
           disabled={disabled}
           aria-label={selected ? `Project: ${selected.name}. Change it` : "File this task in a project"}
-          className={CHIP_CLASS}
+          className={COMPOSER_CHIP_CLASS}
         >
           <AppIcons.projects
             className={cn("size-3.5 shrink-0", selected ? "text-primary" : "text-muted-foreground")}
             aria-hidden="true"
           />
-          <span className={cn("truncate", !selected && "text-muted-foreground")}>
+          {/* The strip is muted by default, so a filed task is the one that
+              brightens rather than the unfiled one that dims — the reverse of
+              what this said when the chip lived on a row of full-weight
+              controls. */}
+          <span className={cn("truncate", selected && "text-foreground")}>
             {selected?.name ?? "Project"}
           </span>
           <ChevronDown
-            className="h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180"
+            className="h-3 w-3 shrink-0 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180"
             aria-hidden="true"
           />
         </button>
@@ -1543,172 +1709,6 @@ function ProjectChip({
             )}
             <span className="flex-1">New project</span>
           </DropdownMenuItem>
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-/**
- * Which of the reader's connected apps this task may reach.
- *
- * Off by default, all of them, and that is the whole design rather than a
- * cautious default someone can relax later. A linked app is an account-wide
- * fact — the mailbox stays connected whether or not this errand needs it — and
- * a task that inherited every one of them would be handed a mailbox, a
- * repository and a calendar to do something that needed none of the three. The
- * reader switches on what the errand is about; everything else is simply not
- * there, and `evaluateConnector` in src/lib/work/connectors.ts refuses it with
- * `not_selected_for_task` rather than the run discovering it can reach further
- * than anyone intended.
- *
- * This is not a connection setting and does not pretend to be one. Nothing here
- * links, unlinks or re-authorises anything: it narrows one task inside what the
- * account already permits, which is why the empty state sends the reader to
- * /connections rather than offering to connect an app from a composer.
- *
- * The list is loaded on mount from the same `/api/connectors` the toolbox and
- * the connections page read. A second endpoint written for Work would be a
- * second answer to "is Gmail linked", and the two would disagree the first time
- * somebody disconnected it from the other page.
- *
- * The load itself is `useConnectedApps` above rather than state in here, for the
- * same argument one rung down: the pre-flight card and the run disclosure both
- * need this list, and three copies of it would be three answers to the same
- * question. The chip still owns everything else about the control — what it
- * says, when it is drawn at all, and what an empty account sees.
- */
-function AppsChip({
-  value,
-  onChange,
-  disabled,
-  connectors,
-  failed,
-  onRetry,
-}: {
-  value: string[];
-  onChange: (connectorIds: string[]) => void;
-  disabled: boolean;
-  /** Null while the list is still in flight. */
-  connectors: ConnectorStatus[] | null;
-  failed: boolean;
-  onRetry: () => void;
-}) {
-  const [open, setOpen] = React.useState(false);
-
-  const toggle = React.useCallback(
-    (connectorId: string) => {
-      onChange(
-        value.includes(connectorId)
-          ? value.filter((id) => id !== connectorId)
-          : [...value, connectorId]
-      );
-    },
-    [onChange, value]
-  );
-
-  /*
-   * Nothing is rendered for an account with no linked apps, and nothing needs to
-   * be. A chip reading "Apps" that opens onto "you have none" is a control
-   * offering a choice that does not exist; the toolbox on the task page is where
-   * the account's connections are explained, and it links to the page that can
-   * do something about it. The empty selection still goes to the server either
-   * way, so the task is recorded as reaching nothing.
-   *
-   * The chip is also absent while the list is still in flight. It appears rather
-   * than changes width, so the row settles once instead of reflowing under a
-   * pointer already on its way to the Project chip beside it.
-   */
-  if (connectors === null && !failed) return null;
-  if (connectors !== null && connectors.length === 0) return null;
-
-  const chosen = (connectors ?? []).filter((connector) => value.includes(connector.id));
-  const label =
-    chosen.length === 0
-      ? "Apps"
-      : chosen.length === 1
-        ? chosen[0].label
-        : `${chosen.length} apps`;
-
-  return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label={
-            chosen.length === 0
-              ? "Choose which connected apps this task may use. None yet"
-              : `This task may use ${chosen.map((connector) => connector.label).join(", ")}. Change it`
-          }
-          className={CHIP_CLASS}
-        >
-          <AppIcons.connections
-            className={cn("size-3.5 shrink-0", chosen.length > 0 ? "text-primary" : "text-muted-foreground")}
-            aria-hidden="true"
-          />
-          <span className={cn("truncate", chosen.length === 0 && "text-muted-foreground")}>{label}</span>
-          <ChevronDown
-            className="h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180"
-            aria-hidden="true"
-          />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        side="bottom"
-        sideOffset={8}
-        className="flex max-h-[min(22rem,60vh)] w-64 flex-col p-0"
-      >
-        <DropdownMenuLabel className="px-3 pt-2.5 font-mono text-label">
-          Apps this task may use
-        </DropdownMenuLabel>
-        <ScrollFade className="min-h-0 flex-1" viewportClassName="p-1.5">
-          {failed ? (
-            <div className="space-y-2 px-2 py-4 text-center">
-              <p className="text-caption leading-relaxed text-muted-foreground">
-                Couldn’t read your connected apps. This task will reach none of them until it can.
-              </p>
-              <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5">
-                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
-              </Button>
-            </div>
-          ) : (
-            (connectors ?? []).map((connector) => {
-              const active = value.includes(connector.id);
-              return (
-                <DropdownMenuItem
-                  key={connector.id}
-                  // Held open on select: turning two apps on is one decision, and
-                  // a menu that closed after the first would make the reader
-                  // reopen it to finish the sentence they were in the middle of.
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    toggle(connector.id);
-                  }}
-                >
-                  <AppIcons.connections
-                    className={cn(active ? "text-primary" : "text-muted-foreground")}
-                  />
-                  <span className="flex-1 truncate">{connector.label}</span>
-                  {active && <Check className="!size-3.5 text-primary" />}
-                </DropdownMenuItem>
-              );
-            })
-          )}
-        </ScrollFade>
-        {/* The rule, said once, where the decision is made. Neither sentence is
-            decoration: the first is why an app being linked is not enough on its
-            own, and the second is what stops a reader reading this as a switch
-            that disconnects things. */}
-        <div className="shrink-0 border-t border-border/60 px-3 py-2">
-          <p className="text-[12px] leading-relaxed text-muted-foreground">
-            Off means this task cannot reach it. Your connections are unchanged —{" "}
-            <Link href="/connections" className="underline underline-offset-2 hover:text-foreground">
-              manage them
-            </Link>
-            .
-          </p>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

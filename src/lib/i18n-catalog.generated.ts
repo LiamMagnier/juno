@@ -4554,10 +4554,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "connector_not_linked"
   },
   {
-    "id": "59359c525cb0d1da",
-    "source": "No skills switched on yet. A skill is instructions Juno follows for a particular kind of errand."
-  },
-  {
     "id": "595b066a8838734a",
     "source": "Remove attachment"
   },
@@ -5624,10 +5620,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6bfaeff8aea7e231",
     "source": "No open pull requests"
-  },
-  {
-    "id": "6c33a583be9f6132",
-    "source": "Apps this task may use"
   },
   {
     "id": "6c582b62e0e5aa05",
@@ -7136,10 +7128,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "890892ed3349a7c8",
     "source": "Newest Qwen flagship — always-on deep thinking, vision, and ~1M context."
-  },
-  {
-    "id": "89437f029777c47d",
-    "source": "Attach a document"
   },
   {
     "id": "8963a42c9bb2121d",
@@ -9690,10 +9678,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Visual"
   },
   {
-    "id": "ba3bbbe10d8bef66",
-    "source": "Loading…"
-  },
-  {
     "id": "ba445cff3898a3f2",
     "source": "Privacy policy"
   },
@@ -10052,10 +10036,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c28402480c1f59cb",
     "source": "A connector-event trigger must name the connector it listens to."
-  },
-  {
-    "id": "c28bc7e79033b420",
-    "source": "No apps connected yet. Connect one and it can be switched on for a task."
   },
   {
     "id": "c297754554ed9b24",
