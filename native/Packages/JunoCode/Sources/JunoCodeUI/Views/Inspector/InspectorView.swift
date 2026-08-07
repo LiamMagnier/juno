@@ -116,6 +116,20 @@ public struct InspectorView: View {
         )
     }
 
+    private func segmentLabel(for candidate: CodeInspectorPane) -> String {
+        guard candidate == .subagents, !controller.subagents.isEmpty else {
+            return candidate.segmentLabel
+        }
+        return "\(candidate.segmentLabel) \(controller.subagents.count)"
+    }
+
+    private var paneAccessibilityValue: String {
+        guard pane.wrappedValue == .subagents else { return pane.wrappedValue.label }
+        let active = controller.subagents.filter(\.isActive).count
+        let done = controller.subagents.count - active
+        return "\(active) active, \(done) done"
+    }
+
     public var body: some View {
         VStack(spacing: 0) {
             ViewThatFits(in: .horizontal) {
@@ -125,7 +139,7 @@ public struct InspectorView: View {
                 // tabs into clipped labels.
                 Picker("Inspector pane", selection: pane) {
                     ForEach(CodeInspectorPane.allCases) { candidate in
-                        Text(candidate.segmentLabel)
+                        Text(segmentLabel(for: candidate))
                             .accessibilityLabel(candidate.label)
                             .tag(candidate)
                     }
@@ -164,6 +178,7 @@ public struct InspectorView: View {
             .padding(.horizontal, JunoSpace.snug)
             .padding(.vertical, JunoSpace.tight)
             .help(pane.wrappedValue.purpose)
+            .accessibilityValue(paneAccessibilityValue)
             .accessibilityIdentifier("juno.code.inspector.pane")
 
             Divider().overlay(Color.junoSeparator)

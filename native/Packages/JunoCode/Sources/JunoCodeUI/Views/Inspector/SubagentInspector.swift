@@ -34,6 +34,8 @@ struct SubagentPane: View {
         // Folded once per pass: every section below is a split of this list, not
         // another walk of the transcript.
         let runs = controller.subagents
+        let active = SubagentDigest.active(in: runs)
+        let done = SubagentDigest.finished(in: runs)
         return Group {
             if let focused, let run = runs.first(where: { $0.agentID == focused }) {
                 SubagentDetailPane(
@@ -42,18 +44,10 @@ struct SubagentPane: View {
                     back: { self.focused = nil }
                 )
             } else if runs.isEmpty {
-                // One honest empty state, never placeholder rows: a list of grey
-                // rectangles under the words "nothing delegated" claims content
-                // that does not exist.
-                JunoEmptyState(
-                    title: "No sub-agents yet",
-                    message:
-                        "When Juno splits work across sub-agents, each one appears here while it runs.",
-                    symbol: "person.2"
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                SubagentEmptyState()
+                    .accessibilityIdentifier("juno.code.subagents")
             } else {
-                list(runs)
+                list(active: active, done: done)
             }
         }
         // The pane is a rail, not a modal: a delegation that finishes while the
@@ -61,32 +55,76 @@ struct SubagentPane: View {
         .animation(JunoMotion.standard, value: focused)
     }
 
-    private func list(_ runs: [SubagentRun]) -> some View {
-        List {
-            section("Active", runs: SubagentDigest.active(in: runs))
-            section("Done", runs: SubagentDigest.finished(in: runs))
+    private func list(active: [SubagentRun], done: [SubagentRun]) -> some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: JunoSpace.section) {
+                SubagentOverview(
+                    activeCount: active.count,
+                    doneCount: done.count,
+                    hasRunningWork: active.contains {
+                        $0.status == .running || $0.status == .preparing
+                    }
+                )
+                section(
+                    "Active",
+                    symbol: "bolt.horizontal.fill",
+                    tint: Color.junoAccent,
+                    runs: active
+                )
+                section(
+                    "Done",
+                    symbol: "checkmark.circle.fill",
+                    tint: .secondary,
+                    runs: done
+                )
+            }
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.cozy)
         }
-        .listStyle(.inset)
         .accessibilityIdentifier("juno.code.subagents")
     }
 
     @ViewBuilder
-    private func section(_ title: String, runs: [SubagentRun]) -> some View {
+    private func section(
+        _ title: String,
+        symbol: String,
+        tint: Color,
+        runs: [SubagentRun]
+    ) -> some View {
         if !runs.isEmpty {
-            Section {
-                ForEach(runs) { run in
-                    SubagentListRow(
-                        run: run,
-                        activity: activity(for: run),
-                        open: { focused = run.agentID }
-                    )
-                }
-            } header: {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
                 HStack(spacing: JunoSpace.tight) {
+                    Image(systemName: symbol)
+                        .imageScale(.small)
+                        .foregroundStyle(tint)
                     Text(title)
-                    Text("·")
-                    Text("\(runs.count)").monospacedDigit()
+                        .junoSidebarSection()
+                        .foregroundStyle(tint)
+                    Text("\(runs.count)")
+                        .font(.caption2.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(tint)
+                        .padding(.horizontal, JunoSpace.tight)
+                        .padding(.vertical, 2)
+                        .background(tint.opacity(0.13), in: Capsule())
+                    if title == "Active",
+                       runs.contains(where: { $0.status == .running || $0.status == .preparing })
+                    {
+                        ProgressView().controlSize(.small).tint(tint)
+                    }
                     Spacer(minLength: 0)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(title), \(runs.count)")
+
+                LazyVStack(spacing: JunoSpace.tight) {
+                    ForEach(runs) { run in
+                        SubagentListRow(
+                            run: run,
+                            activity: activity(for: run),
+                            open: { focused = run.agentID }
+                        )
+                    }
                 }
             }
         }
@@ -105,6 +143,118 @@ struct SubagentPane: View {
     }
 }
 
+private struct SubagentEmptyState: View {
+    var body: some View {
+        VStack(spacing: JunoSpace.regular) {
+            Spacer(minLength: 0)
+            Image(systemName: "person.2")
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(Color.junoAccent)
+                .frame(width: 56, height: 56)
+                .background(Color.junoAccent.opacity(0.12), in: Circle())
+                .accessibilityHidden(true)
+                .accessibilityHidden(true)
+            VStack(spacing: JunoSpace.tight) {
+                Text("No sub-agents yet")
+                    .junoEmptyTitle()
+                Text("Delegated work will appear here while it runs, then stay available as a report.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: 250)
+            Spacer(minLength: 0)
+        }
+        .padding(JunoSpace.regular)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "No sub-agents yet. Delegated work will appear here while it runs, then stay available as a report."
+        )
+    }
+}
+
+private struct SubagentOverview: View {
+    let activeCount: Int
+    let doneCount: Int
+    let hasRunningWork: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack(spacing: JunoSpace.snug) {
+                Image(systemName: "person.2.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.junoAccent)
+                    .frame(width: 30, height: 30)
+                    .background(Color.junoAccent.opacity(0.12), in: Circle())
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Sub-agents")
+                        .junoRowLabel()
+                        .fontWeight(.semibold)
+                    Text(activeCount == 0 ? "No active work" : "\(activeCount) active now")
+                        .junoCaption()
+                }
+                Spacer(minLength: JunoSpace.tight)
+                if hasRunningWork {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(Color.junoAccent)
+                        .accessibilityHidden(true)
+                }
+            }
+
+            HStack(spacing: JunoSpace.tight) {
+                SubagentMetric(
+                    title: "Active",
+                    value: activeCount,
+                    tint: Color.junoAccent
+                )
+                SubagentMetric(
+                    title: "Done",
+                    value: doneCount,
+                    tint: .secondary
+                )
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(JunoSpace.cozy)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color.junoRaised.opacity(0.78),
+            in: RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                .strokeBorder(Color.junoBorder, lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "Sub-agents, \(activeCount) active, \(doneCount) done"
+        )
+    }
+}
+
+private struct SubagentMetric: View {
+    let title: String
+    let value: Int
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: JunoSpace.hairline) {
+            Text("\(value)")
+                .font(.caption.weight(.semibold))
+                .monospacedDigit()
+            Text(title)
+                .font(.caption)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, JunoSpace.snug)
+        .padding(.vertical, 4)
+        .background(tint.opacity(0.10), in: Capsule())
+    }
+}
+
 // MARK: - One row
 
 /// One agent: its mark, its name, what it is doing, and how long it has been
@@ -118,11 +268,17 @@ private struct SubagentListRow: View {
         Button(action: open) {
             HStack(alignment: .top, spacing: JunoSpace.snug) {
                 SubagentStatusGlyph(status: run.status)
-                    .frame(width: JunoSpace.regular, alignment: .center)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        SubagentFormatting.tint(run.status).opacity(0.12),
+                        in: Circle()
+                    )
+                    .tint(SubagentFormatting.tint(run.status))
                 VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                     HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
                         Text(run.title)
                             .junoRowLabel()
+                            .fontWeight(run.isActive ? .semibold : .regular)
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                             .layoutPriority(1)
@@ -133,10 +289,7 @@ private struct SubagentListRow: View {
                             .foregroundStyle(.tertiary)
                     }
                     HStack(spacing: JunoSpace.tight) {
-                        Text(SubagentFormatting.listLabel(run.status))
-                            .junoCaption()
-                            .foregroundStyle(SubagentFormatting.tint(run.status))
-                            .lineLimit(1)
+                        SubagentStatusBadge(status: run.status)
                         if let role = run.role {
                             Text("·")
                                 .junoCaption()
@@ -156,13 +309,65 @@ private struct SubagentListRow: View {
                     }
                 }
             }
-            .padding(.vertical, JunoSpace.tight)
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.cozy)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                (run.isActive
+                    ? Color.junoAccent.opacity(0.075)
+                    : Color.junoRaised.opacity(0.68)),
+                in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                    .strokeBorder(
+                        run.isActive
+                            ? Color.junoAccent.opacity(0.25)
+                            : Color.junoBorder.opacity(0.75),
+                        lineWidth: 1
+                    )
+            )
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(SubagentFormatting.accessibilityLabel(run))
         .accessibilityHint("Opens this sub-agent's report")
         .accessibilityIdentifier("juno.code.subagents.row")
+    }
+}
+
+private struct SubagentStatusBadge: View {
+    let status: SubagentStatus
+
+    var body: some View {
+        HStack(spacing: JunoSpace.hairline) {
+            Image(systemName: statusSymbol)
+                .imageScale(.small)
+            Text(SubagentFormatting.listLabel(status))
+                .lineLimit(1)
+        }
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(SubagentFormatting.tint(status))
+        .padding(.horizontal, JunoSpace.tight)
+        .padding(.vertical, 3)
+        .background(
+            SubagentFormatting.tint(status).opacity(0.12),
+            in: Capsule()
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(SubagentFormatting.label(status))
+    }
+
+    private var statusSymbol: String {
+        switch status {
+        case .queued, .preparing: "clock"
+        case .running: "bolt.horizontal.fill"
+        case .waitingForApproval: "hand.raised.fill"
+        case .completed: "checkmark"
+        case .failed: "xmark"
+        case .cancelled: "stop.fill"
+        case .interrupted: "bolt.horizontal"
+        }
     }
 }
 
@@ -218,18 +423,37 @@ private struct SubagentDetailPane: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: JunoSpace.regular) {
                     if !activity.isEmpty {
-                        field("Now", text: activity)
+                        detailCard {
+                            field("Now", text: activity)
+                        }
                     }
                     liveControls
-                    field("Task", text: run.task)
+                    detailCard {
+                        field("Task", text: run.task)
+                    }
                     if let error = run.error {
-                        field("Problem", text: error, tint: SubagentFormatting.tint(run.status))
+                        SubagentInspectorStateCard(
+                            title: "Problem",
+                            message: error,
+                            symbol: "exclamationmark.triangle.fill",
+                            tint: SubagentFormatting.tint(run.status)
+                        )
                     }
                     steps
                     if let summary = run.summary {
-                        field("Result", text: summary)
-                    } else if run.isActive {
-                        Text("This sub-agent has not written a result yet.").junoCaption()
+                        detailCard {
+                            field("Result", text: summary)
+                        }
+                    } else {
+                        SubagentInspectorStateCard(
+                            title: run.isActive ? "Result pending" : "No result recorded",
+                            message: run.isActive
+                                ? "This sub-agent is still working and has not written a result yet."
+                                : "The sub-agent finished without a result summary.",
+                            symbol: run.isActive ? "hourglass" : "doc.text.magnifyingglass",
+                            tint: run.isActive ? Color.junoAccent : .secondary,
+                            showsProgress: run.isActive
+                        )
                     }
                     worktreePanel
                     usage
@@ -313,23 +537,85 @@ private struct SubagentDetailPane: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             backControl
-            HStack(spacing: JunoSpace.snug) {
-                SubagentStatusGlyph(status: run.status)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(run.title)
-                        .junoRowLabel()
-                        .lineLimit(2)
-                    Text(pendingApprovals.isEmpty
-                        ? SubagentFormatting.label(run.status)
-                        : "Waiting for approval")
-                        .junoCaption()
-                        .foregroundStyle(pendingApprovals.isEmpty
-                            ? SubagentFormatting.tint(run.status)
-                            : Color.junoCaution)
+            VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                HStack(alignment: .top, spacing: JunoSpace.snug) {
+                    SubagentStatusGlyph(status: run.status)
+                        .frame(width: 32, height: 32)
+                        .background(
+                            SubagentFormatting.tint(run.status).opacity(0.13),
+                            in: Circle()
+                        )
+                        .tint(SubagentFormatting.tint(run.status))
+                    VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                        Text(run.title)
+                            .junoRowLabel()
+                            .fontWeight(.semibold)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: JunoSpace.tight) {
+                            SubagentStatusBadge(status: run.status)
+                            if let role = run.role {
+                                Text(role.rawValue.capitalized)
+                                    .junoCaption()
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                    Spacer(minLength: JunoSpace.tight)
+                    SubagentElapsed(run: run)
                 }
-                Spacer(minLength: JunoSpace.tight)
-                SubagentElapsed(run: run)
+                if run.isActive {
+                    HStack(alignment: .top, spacing: JunoSpace.snug) {
+                        if pendingApprovals.isEmpty,
+                           run.status == .running || run.status == .preparing
+                        {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(Color.junoAccent)
+                        } else if pendingApprovals.isEmpty {
+                            Image(systemName: "clock")
+                                .imageScale(.small)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Image(systemName: "hand.raised.fill")
+                                .imageScale(.small)
+                                .foregroundStyle(Color.junoCaution)
+                        }
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(detailProgressTitle)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(
+                                    detailIsWaitingForApproval
+                                        ? Color.junoCaution
+                                        : Color.junoAccent
+                                )
+                            Text(activity.isEmpty ? detailProgressMessage : activity)
+                                .junoCaption()
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, JunoSpace.snug)
+                    .padding(.vertical, JunoSpace.tight)
+                    .background(
+                        (detailIsWaitingForApproval
+                            ? Color.junoCaution
+                            : Color.junoAccent).opacity(0.09),
+                        in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                    )
+                }
             }
+            .padding(JunoSpace.cozy)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                Color.junoRaised.opacity(0.80),
+                in: RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                    .strokeBorder(Color.junoBorder, lineWidth: 1)
+            )
             liveActionBar
             if run.executionMode == .workspaceWrite {
                 worktreeActions
@@ -337,6 +623,27 @@ private struct SubagentDetailPane: View {
         }
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, JunoSpace.snug)
+    }
+
+    private var detailIsWaitingForApproval: Bool {
+        !pendingApprovals.isEmpty || run.status == .waitingForApproval
+    }
+
+    private var detailProgressTitle: String {
+        if detailIsWaitingForApproval { return "Waiting for approval" }
+        if run.status == .queued { return "Queued" }
+        if run.status == .preparing { return "Starting" }
+        return "In progress"
+    }
+
+    private var detailProgressMessage: String {
+        if detailIsWaitingForApproval {
+            return "The agent is paused until this request is resolved."
+        }
+        if run.status == .queued {
+            return "The agent will begin when execution is available."
+        }
+        return "Waiting for the next step…"
     }
 
     /// The only way out of a report, and sized like one.
@@ -354,13 +661,13 @@ private struct SubagentDetailPane: View {
     private var backControl: some View {
         Button(action: back) {
             Label("All sub-agents", systemImage: "chevron.backward")
-                .junoRowLabel()
-                .padding(.vertical, JunoSpace.hairline)
-                .padding(.trailing, JunoSpace.snug)
-                .contentShape(.rect)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, JunoSpace.snug)
+                .padding(.vertical, JunoSpace.tight)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .tint(.secondary)
         // Deliberately no Escape shortcut: the inspector is a permanently
         // visible column, and claiming Escape here would swallow it for the
         // composer and every sheet the window can present.
@@ -391,14 +698,14 @@ private struct SubagentDetailPane: View {
     private var liveActionBar: some View {
         if run.isActive, let child = run.childSessionID {
             HStack(spacing: JunoSpace.tight) {
-                if pendingApprovals.isEmpty {
-                    Label("Agent is working", systemImage: "bolt.horizontal.fill")
-                        .junoCaption()
-                        .foregroundStyle(.secondary)
-                } else {
+                if detailIsWaitingForApproval {
                     Label("Agent is paused", systemImage: "pause.fill")
                         .junoCaption()
                         .foregroundStyle(Color.junoCaution)
+                } else {
+                    Label("Agent is working", systemImage: "bolt.horizontal.fill")
+                        .junoCaption()
+                        .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: JunoSpace.tight)
                 Button {
@@ -430,40 +737,42 @@ private struct SubagentDetailPane: View {
             return AnyView(EmptyView())
         }
         return AnyView(
-            VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                HStack(spacing: JunoSpace.tight) {
-                    Label("Isolated worktree", systemImage: "arrow.triangle.branch")
-                        .junoSidebarSection()
-                    Spacer(minLength: 0)
-                    Text(worktreeLifecycleLabel)
+            detailCard {
+                VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                    HStack(spacing: JunoSpace.tight) {
+                        Label("Isolated worktree", systemImage: "arrow.triangle.branch")
+                            .junoSidebarSection()
+                        Spacer(minLength: 0)
+                        Text(worktreeLifecycleLabel)
+                            .junoCaption()
+                            .foregroundStyle(worktreeLifecycleTint)
+                    }
+                    if let review = worktreeReview {
+                        let changedPathCount = review.untrackedPaths.count
+                            + review.status.split(separator: "\n").count
+                        let pathSuffix = changedPathCount == 1 ? "" : "s"
+                        Text(
+                            changedPathCount == 0
+                                ? "No pending file changes in the isolated branch."
+                                : "\(changedPathCount) changed path\(pathSuffix) staged in the isolated branch."
+                        )
                         .junoCaption()
-                        .foregroundStyle(worktreeLifecycleTint)
-                }
-                if let review = worktreeReview {
-                    let changedPathCount = review.untrackedPaths.count
-                        + review.status.split(separator: "\n").count
-                    let pathSuffix = changedPathCount == 1 ? "" : "s"
-                    Text(
-                        changedPathCount == 0
-                            ? "No pending file changes in the isolated branch."
-                            : "\(changedPathCount) changed path\(pathSuffix) staged in the isolated branch."
-                    )
-                    .junoCaption()
-                    .foregroundStyle(.secondary)
-                } else {
-                    Text(
-                        run.isActive
-                            ? "The isolated branch is updated when the agent finishes."
-                            : "Reading the isolated branch…"
-                    )
-                    .junoCaption()
-                    .foregroundStyle(.secondary)
-                }
-                if let actionMessage {
-                    Text(actionMessage)
+                        .foregroundStyle(.secondary)
+                    } else {
+                        Text(
+                            run.isActive
+                                ? "The isolated branch is updated when the agent finishes."
+                                : "Reading the isolated branch…"
+                        )
                         .junoCaption()
-                        .foregroundStyle(actionFailed ? Color.junoDanger : Color.secondary)
-                        .textSelection(.enabled)
+                        .foregroundStyle(.secondary)
+                    }
+                    if let actionMessage {
+                        Text(actionMessage)
+                            .junoCaption()
+                            .foregroundStyle(actionFailed ? Color.junoDanger : Color.secondary)
+                            .textSelection(.enabled)
+                    }
                 }
             }
         )
@@ -598,34 +907,51 @@ private struct SubagentDetailPane: View {
     private var steps: some View {
         switch load {
         case .loading:
-            ProgressView().controlSize(.small)
-        case .missing:
-            Text(
-                run.childSessionID == nil
-                    ? "This sub-agent never opened a session, so it recorded no steps."
-                    : "Juno could not read this sub-agent's session from the store."
+            SubagentInspectorStateCard(
+                title: "Loading steps",
+                message: "Reading the sub-agent's activity…",
+                symbol: "arrow.triangle.2.circlepath",
+                tint: Color.junoAccent,
+                showsProgress: true
             )
-            .junoCaption()
+        case .missing:
+            SubagentInspectorStateCard(
+                title: run.childSessionID == nil ? "No session" : "Report unavailable",
+                message: run.childSessionID == nil
+                    ? "This sub-agent never opened a session, so it recorded no steps."
+                    : "Juno could not read this sub-agent's session from the store.",
+                symbol: run.childSessionID == nil ? "doc.text" : "exclamationmark.triangle",
+                tint: run.childSessionID == nil ? .secondary : Color.junoDanger
+            )
         case let .loaded(detail):
-            VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                Text("Steps").junoSidebarSection()
-                if detail.steps.isEmpty {
-                    Text("This sub-agent recorded no tool calls.").junoCaption()
-                } else {
-                    ForEach(detail.steps) { step in
-                        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
-                            Image(systemName: SubagentFormatting.glyph(step.status))
-                                .imageScale(.small)
-                                .foregroundStyle(SubagentFormatting.tint(step.status))
-                            Text(step.summary)
-                                .junoCaption()
-                                .lineLimit(2)
-                            Spacer(minLength: 0)
+            detailCard {
+                VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                    HStack(spacing: JunoSpace.tight) {
+                        Text("Steps").junoSidebarSection()
+                        Spacer(minLength: 0)
+                        Text("\(detail.steps.count)")
+                            .junoCaption()
+                            .monospacedDigit()
+                    }
+                    if detail.steps.isEmpty {
+                        Text("This sub-agent recorded no tool calls.")
+                            .junoCaption()
+                    } else {
+                        ForEach(detail.steps) { step in
+                            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
+                                Image(systemName: SubagentFormatting.glyph(step.status))
+                                    .imageScale(.small)
+                                    .foregroundStyle(SubagentFormatting.tint(step.status))
+                                Text(step.summary)
+                                    .junoCaption()
+                                    .lineLimit(2)
+                                Spacer(minLength: 0)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel(
+                                "\(step.summary), \(SubagentFormatting.label(step.status))"
+                            )
                         }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(
-                            "\(step.summary), \(SubagentFormatting.label(step.status))"
-                        )
                     }
                 }
             }
@@ -638,19 +964,21 @@ private struct SubagentDetailPane: View {
     @ViewBuilder
     private var usage: some View {
         if run.inputTokens != nil || run.outputTokens != nil {
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                Text("Tokens").junoSidebarSection()
-                HStack(spacing: JunoSpace.cozy) {
-                    if let input = run.inputTokens {
-                        Label("\(input) in", systemImage: "arrow.down")
+            detailCard {
+                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                    Text("Tokens").junoSidebarSection()
+                    HStack(spacing: JunoSpace.cozy) {
+                        if let input = run.inputTokens {
+                            Label("\(input) in", systemImage: "arrow.down")
+                        }
+                        if let output = run.outputTokens {
+                            Label("\(output) out", systemImage: "arrow.up")
+                        }
+                        Spacer(minLength: 0)
                     }
-                    if let output = run.outputTokens {
-                        Label("\(output) out", systemImage: "arrow.up")
-                    }
-                    Spacer(minLength: 0)
+                    .junoCaption()
+                    .monospacedDigit()
                 }
-                .junoCaption()
-                .monospacedDigit()
             }
         }
     }
@@ -658,26 +986,28 @@ private struct SubagentDetailPane: View {
     @ViewBuilder
     private var session: some View {
         if let child = run.childSessionID {
-            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                Text("Session").junoSidebarSection()
-                HStack(spacing: JunoSpace.tight) {
-                    Text(child.value)
-                        .junoCodeSmall()
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                    Button {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(child.value, forType: .string)
-                    } label: {
-                        Image(systemName: "doc.on.doc")
+            detailCard {
+                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                    Text("Session").junoSidebarSection()
+                    HStack(spacing: JunoSpace.tight) {
+                        Text(child.value)
+                            .junoCodeSmall()
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(child.value, forType: .string)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                        }
+                        .buttonStyle(.borderless)
+                        .controlSize(.small)
+                        .help("Copy this sub-agent's session identifier")
+                        .accessibilityLabel("Copy sub-agent session identifier")
+                        Spacer(minLength: 0)
                     }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                    .help("Copy this sub-agent's session identifier")
-                    .accessibilityLabel("Copy sub-agent session identifier")
-                    Spacer(minLength: 0)
                 }
             }
         }
@@ -688,11 +1018,72 @@ private struct SubagentDetailPane: View {
             Text(label).junoSidebarSection()
             Text(text)
                 .font(.callout)
-                .foregroundStyle(tint ?? Color.secondary)
+                .foregroundStyle(tint ?? Color.primary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func detailCard<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(JunoSpace.cozy)
+            .background(
+                Color.junoRaised.opacity(0.68),
+                in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                    .strokeBorder(Color.junoBorder.opacity(0.8), lineWidth: 1)
+            )
+    }
+}
+
+private struct SubagentInspectorStateCard: View {
+    let title: String
+    let message: String
+    let symbol: String
+    let tint: Color
+    var showsProgress = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: JunoSpace.snug) {
+            if showsProgress {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(tint)
+            } else {
+                Image(systemName: symbol)
+                    .imageScale(.small)
+                    .foregroundStyle(tint)
+                    .frame(width: 16)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(tint)
+                Text(message)
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(JunoSpace.cozy)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            tint.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                .strokeBorder(tint.opacity(0.24), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(message)")
     }
 }
 

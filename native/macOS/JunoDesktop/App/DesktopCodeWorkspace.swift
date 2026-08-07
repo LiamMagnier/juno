@@ -1510,6 +1510,173 @@ private struct DesktopCodeTaskCanvas: View {
 
 // MARK: - Relay-watched sessions
 
+/// A reader-facing projection of the relay protocol.
+///
+/// The relay deliberately transports a small, forward-compatible `(kind,
+/// payload)` envelope. That is useful at the protocol boundary, but showing the
+/// envelope in the product makes Remote Code feel like a log viewer rather than
+/// the same agent experience running on another Mac. Keep the wire shape loose
+/// and make the presentation typed here, with a graceful fallback for newer
+/// event kinds this binary does not know yet.
+private struct DesktopRemoteEventPresentation {
+    let title: String
+    let detail: String?
+    let symbol: String
+    let tint: Color
+    let usesMonoDetail: Bool
+
+    static func make(_ event: CodeRemoteSessionEvent) -> Self {
+        let payload = event.payload
+        let value: ([String]) -> String? = { keys in
+            for key in keys {
+                if let value = payload[key]?.stringValue,
+                   !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                {
+                    return value
+                }
+            }
+            return nil
+        }
+
+        switch event.kind {
+        case "message", "user", "user_message":
+            return Self(
+                title: value(["text", "message"]) ?? "Message sent",
+                detail: nil,
+                symbol: "person.crop.circle",
+                tint: .secondary,
+                usesMonoDetail: false
+            )
+        case "text", "assistant", "assistant_text", "response":
+            return Self(
+                title: value(["text", "message"]) ?? "Juno replied",
+                detail: nil,
+                symbol: "sparkles",
+                tint: .junoAccent,
+                usesMonoDetail: false
+            )
+        case "tool", "tool_call", "tool_started":
+            return Self(
+                title: value(["summary", "name", "toolName"]) ?? "Running a tool",
+                detail: value(["command", "detail"]),
+                symbol: "terminal",
+                tint: .secondary,
+                usesMonoDetail: true
+            )
+        case "tool_output", "terminal", "command_output":
+            return Self(
+                title: value(["summary", "name"]) ?? "Command output",
+                detail: value(["text", "output", "detail"]),
+                symbol: "chevron.left.forwardslash.chevron.right",
+                tint: .secondary,
+                usesMonoDetail: true
+            )
+        case "file_change", "file_changed":
+            let path = value(["path", "file"]) ?? "A file"
+            let added = payload["added"]?.numberValue.map { Int($0) }
+            let removed = payload["removed"]?.numberValue.map { Int($0) }
+            let counts = if let added, let removed {
+                "+\(added)  −\(removed)"
+            } else {
+                value(["detail", "changeKind"])
+            }
+            return Self(
+                title: "Changed \(path)",
+                detail: counts,
+                symbol: "doc.text",
+                tint: .junoAccent,
+                usesMonoDetail: true
+            )
+        case "approval_request":
+            return Self(
+                title: "Approval required",
+                detail: value(["summary", "text", "detail"]),
+                symbol: "hand.raised.fill",
+                tint: .junoCaution,
+                usesMonoDetail: false
+            )
+        case "approval_response":
+            let approved = payload["approve"]?.boolValue
+                ?? payload["approved"]?.boolValue
+                ?? false
+            return Self(
+                title: approved ? "Approval granted" : "Approval denied",
+                detail: value(["summary", "detail"]),
+                symbol: approved ? "checkmark.circle" : "xmark.circle",
+                tint: approved ? .junoSuccess : .junoDanger,
+                usesMonoDetail: false
+            )
+        case "subagent_update", "agent":
+            let agent: [String: JunoJSONValue]? = if case .object(let object)? = payload["agent"] {
+                object
+            } else {
+                nil
+            }
+            let title = agent?["title"]?.stringValue
+                ?? value(["title", "summary"])
+                ?? "Sub-agent update"
+            let status = agent?["status"]?.stringValue
+                ?? value(["status", "detail"])
+            return Self(
+                title: title,
+                detail: status,
+                symbol: "person.2",
+                tint: .junoAccent,
+                usesMonoDetail: false
+            )
+        case "status", "status_changed":
+            return Self(
+                title: value(["status", "title", "text"]) ?? "Session status changed",
+                detail: value(["detail", "summary"]),
+                symbol: "waveform.path.ecg",
+                tint: .secondary,
+                usesMonoDetail: false
+            )
+        case "error", "failed":
+            return Self(
+                title: value(["message", "error", "text"]) ?? "Remote session error",
+                detail: value(["detail", "summary"]),
+                symbol: "exclamationmark.triangle.fill",
+                tint: .junoDanger,
+                usesMonoDetail: false
+            )
+        case "done", "completed", "session_completed":
+            return Self(
+                title: "Session finished",
+                detail: value(["summary", "detail"]),
+                symbol: "checkmark.circle.fill",
+                tint: .junoSuccess,
+                usesMonoDetail: false
+            )
+        default:
+            let fallback = value(["text", "detail", "summary", "title", "message"])
+                ?? encodedPayload(payload)
+            return Self(
+                title: humanize(event.kind),
+                detail: fallback,
+                symbol: "circle.dotted",
+                tint: .secondary,
+                usesMonoDetail: true
+            )
+        }
+    }
+
+    private static func humanize(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
+
+    private static func encodedPayload(_ payload: [String: JunoJSONValue]) -> String? {
+        guard let data = try? JSONEncoder().encode(payload),
+              let encoded = String(data: data, encoding: .utf8)
+        else { return nil }
+        return encoded.count > 1_200 ? String(encoded.prefix(1_200)) + "…" : encoded
+    }
+}
+
 /// A session running on another Mac, driven through the relay.
 ///
 /// Unlike a cloud task this transport *does* accept messages
@@ -1525,17 +1692,18 @@ private struct DesktopCodeRemoteCanvas: View {
     private static let measure: CGFloat = 720
 
     var body: some View {
-        ScrollViewReader { proxy in
+        VStack(spacing: 0) {
+            if let summary {
+                sessionHeader(summary)
+            }
+            ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                LazyVStack(alignment: .leading, spacing: JunoSpace.snug) {
                     ForEach(remote.events, id: \.seq) { event in
                         eventRow(event).id(event.seq)
                     }
                     if let error = remote.lastErrorDescription {
-                        Text(error)
-                            .junoCaption()
-                            .foregroundStyle(Color.junoDanger)
-                            .textSelection(.enabled)
+                        errorRow(error)
                     }
                 }
                 .frame(maxWidth: Self.measure, alignment: .leading)
@@ -1545,9 +1713,10 @@ private struct DesktopCodeRemoteCanvas: View {
             .onChange(of: remote.cursor) { _, cursor in
                 withAnimation(JunoMotion.fast) { proxy.scrollTo(cursor, anchor: .bottom) }
             }
+            }
         }
         .overlay {
-            if remote.events.isEmpty {
+            if remote.events.isEmpty && remote.lastErrorDescription == nil {
                 JunoEmptyState(
                     title: summary == nil ? "That session is not listed" : "Nothing yet",
                     message: summary == nil
@@ -1588,6 +1757,66 @@ private struct DesktopCodeRemoteCanvas: View {
         }
     }
 
+    private func sessionHeader(_ summary: CodeRemoteSessionSummary) -> some View {
+        let status = CodeRunStatus(summary)
+        return HStack(alignment: .top, spacing: JunoSpace.snug) {
+            Image(systemName: "laptopcomputer")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.junoAccent)
+                .frame(width: 28, height: 28)
+                .background(Color.junoAccent.opacity(0.12), in: Circle())
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: JunoSpace.snug) {
+                    Text(summary.title)
+                        .junoRowLabel()
+                        .lineLimit(1)
+                    Spacer(minLength: JunoSpace.hairline)
+                    HStack(spacing: JunoSpace.hairline) {
+                        Image(systemName: status.symbol)
+                        Text(status.label)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(status.tint)
+                    .padding(.horizontal, JunoSpace.snug)
+                    .padding(.vertical, 3)
+                    .background(Capsule(style: .continuous).fill(status.tint.opacity(0.13)))
+                }
+
+                HStack(spacing: JunoSpace.snug) {
+                    Text(summary.workspaceName ?? "Remote workspace")
+                        .junoCaption()
+                        .lineLimit(1)
+                    if let branch = summary.activeBranch, !branch.isEmpty {
+                        Label(branch, systemImage: "arrow.triangle.branch")
+                            .junoCaption()
+                            .lineLimit(1)
+                    }
+                    if summary.pendingChangeCount > 0 {
+                        Label(
+                            "\(summary.pendingChangeCount) change\(summary.pendingChangeCount == 1 ? "" : "s")",
+                            systemImage: "doc.badge.gearshape"
+                        )
+                        .junoCaption()
+                        .foregroundStyle(Color.junoAccent)
+                    }
+                    Spacer(minLength: JunoSpace.hairline)
+                    Text(summary.updatedAt, style: .relative)
+                        .junoCaption()
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, JunoSpace.region)
+        .padding(.vertical, JunoSpace.snug)
+        .background(Color.primary.opacity(0.035))
+        .overlay(alignment: .bottom) { Divider().opacity(0.55) }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(summary.title), \(summary.workspaceName ?? "remote workspace"), \(status.label)"
+        )
+    }
+
     /// A deliberately minimal composer. The next-turn contract — mode, model,
     /// reasoning — belongs to the host that owns the session; the relay exposes no
     /// route to change any of it, so this surface offers only what it can do.
@@ -1601,6 +1830,21 @@ private struct DesktopCodeRemoteCanvas: View {
                     .disabled(!canSend)
                     .onSubmit(send)
                     .accessibilityIdentifier("juno.code.remote-composer")
+                if summary?.isRunning == true {
+                    Button {
+                        Task {
+                            await remote.stopGeneration(deviceID: deviceID, sessionID: sessionID)
+                        }
+                    } label: {
+                        Image(systemName: "stop.fill")
+                            .frame(width: 22, height: 22)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Color.junoDanger)
+                    .disabled(remote.isSendingCommand)
+                    .keyboardShortcut(".", modifiers: .command)
+                    .accessibilityLabel("Stop this session")
+                }
                 Button(action: send) {
                     Image(systemName: "arrow.up")
                         .frame(width: 22, height: 22)
@@ -1660,25 +1904,66 @@ private struct DesktopCodeRemoteCanvas: View {
     }
 
     private func eventRow(_ event: CodeRemoteSessionEvent) -> some View {
-        HStack(alignment: .top, spacing: JunoSpace.cozy) {
-            Text(event.kind.replacingOccurrences(of: "_", with: " "))
-                .junoCaption()
-                .frame(width: 116, alignment: .leading)
-            Text(text(of: event))
-                .junoMono()
-                .textSelection(.enabled)
-            Spacer(minLength: JunoSpace.snug)
+        let presentation = DesktopRemoteEventPresentation.make(event)
+        return HStack(alignment: .top, spacing: JunoSpace.snug) {
+            Image(systemName: presentation.symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(presentation.tint)
+                .frame(width: 24, height: 24)
+                .background(presentation.tint.opacity(0.12), in: Circle())
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                    Text(presentation.title)
+                        .junoRowLabel()
+                        .lineLimit(2)
+                    Spacer(minLength: JunoSpace.hairline)
+                    Text(event.createdAt, style: .time)
+                        .junoCaption()
+                        .monospacedDigit()
+                }
+                if let detail = presentation.detail {
+                    Text(detail)
+                        .lineLimit(6)
+                        .textSelection(.enabled)
+                        .modifier(DesktopRemoteDetailStyle(usesMono: presentation.usesMonoDetail))
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, JunoSpace.snug)
+        .padding(.vertical, JunoSpace.snug)
+        .background(
+            RoundedRectangle(cornerRadius: CGFloat(JunoCornerRadius.control), style: .continuous)
+                .fill(Color.primary.opacity(0.035))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: CGFloat(JunoCornerRadius.control), style: .continuous)
+                .stroke(presentation.tint.opacity(0.14), lineWidth: 0.7)
         }
     }
 
-    private func text(of event: CodeRemoteSessionEvent) -> String {
-        for key in ["text", "detail", "summary", "title"] {
-            if let value = event.payload[key]?.stringValue { return value }
+    private func errorRow(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: JunoSpace.snug) {
+            Image(systemName: "wifi.exclamationmark")
+                .foregroundStyle(Color.junoDanger)
+            Text(message)
+                .junoCaption()
+                .foregroundStyle(Color.junoDanger)
+                .textSelection(.enabled)
+            Spacer(minLength: JunoSpace.snug)
+            Button("Retry") {
+                Task { await remote.pollEvents(deviceID: deviceID, sessionID: sessionID) }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
         }
-        guard let data = try? JSONEncoder().encode(event.payload),
-            let encoded = String(data: data, encoding: .utf8)
-        else { return "—" }
-        return encoded
+        .padding(.horizontal, JunoSpace.snug)
+        .padding(.vertical, JunoSpace.snug)
+        .background(
+            RoundedRectangle(cornerRadius: CGFloat(JunoCornerRadius.control), style: .continuous)
+                .fill(Color.junoDanger.opacity(0.08))
+        )
     }
 
     private func send() {
@@ -1686,6 +1971,18 @@ private struct DesktopCodeRemoteCanvas: View {
         guard canSend, !text.isEmpty else { return }
         message = ""
         Task { await remote.send(deviceID: deviceID, sessionID: sessionID, text: text) }
+    }
+}
+
+private struct DesktopRemoteDetailStyle: ViewModifier {
+    let usesMono: Bool
+
+    func body(content: Content) -> some View {
+        if usesMono {
+            content.junoMono().foregroundStyle(.secondary)
+        } else {
+            content.junoCaption().foregroundStyle(.secondary)
+        }
     }
 }
 

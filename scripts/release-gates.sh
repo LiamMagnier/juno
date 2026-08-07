@@ -164,7 +164,7 @@ echo
 # ---------------------------------------------------------------------------
 echo "macOS publication safety"
 if bash -n native/Scripts/release-macos.sh \
-    && grep -q 'Refusing to publish a development-signed artifact' native/Scripts/release-macos.sh \
+    && grep -Eq "Production publication requires a valid 'Developer ID Application'|Refusing to publish a development-signed artifact" native/Scripts/release-macos.sh \
     && grep -q 'apple-actions/import-codesign-certs' .github/workflows/release-macos.yml \
     && grep -q 'JUNO_NOTARY_PROFILE' .github/workflows/release-macos.yml; then
     pass "macOS publication requires notarization and has a protected workflow"
