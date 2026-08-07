@@ -38,6 +38,19 @@ export type ProviderFailureKind =
   | 'transient'
   /** Our credentials were rejected. Waiting will never fix this. */
   | 'auth'
+  /**
+   * The lab took the request and refused it for money: the account behind the
+   * key is out of credit.
+   *
+   * Its own kind rather than folded into `auth` or `invalid_request`, because
+   * the three want three different things done about them and only this one is
+   * fixed by a person topping up an account. It earned the distinction the
+   * expensive way: DeepSeek answers `402 Insufficient Balance`, 402 was in
+   * none of the lists below, so it fell through to `unknown` and a production
+   * Work run reported "DeepSeek failed in a way Juno does not recognise" —
+   * true, unhelpful, and one HTTP status away from being actionable.
+   */
+  | 'insufficient_balance'
   /** The lab refused the request itself — a bad parameter, an unknown model. */
   | 'invalid_request'
   /** The model or the account is not allowed to do this. */
@@ -145,6 +158,7 @@ function retryAfterFrom(error: { headers?: unknown }): number | null {
 function kindForStatus(status: number | null, error: unknown): ProviderFailureKind {
   if (status === 429) return 'rate_limit';
   if (status === 401) return 'auth';
+  if (status === 402) return 'insufficient_balance';
   if (status === 403) return 'forbidden';
   if (status === 408 || status === 409) return 'transient';
   if (status === 400 || status === 404 || status === 422) return 'invalid_request';
@@ -186,6 +200,8 @@ function sentenceFor(
       return `${providerLabel} did not answer, so this run could not continue.`;
     case 'auth':
       return `${providerLabel} rejected Juno's credentials, so this run could not start. This is a problem with the deployment rather than with the task.`;
+    case 'insufficient_balance':
+      return `${providerLabel} refused the request because the account Juno bills it to has run out of credit. Nothing is wrong with the task, and another model can run it.`;
     case 'forbidden':
       return `${providerLabel} refused this request. The model may not be available to this account.`;
     case 'invalid_request':

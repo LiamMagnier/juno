@@ -87,6 +87,26 @@ test("separates the failures worth retrying from the ones that will never clear"
   assert.equal(reset.retryable, true);
 });
 
+test("a lab that is out of credit says so, and is worth failing over from", () => {
+  // The exact shape DeepSeek returned in production on 2026-08-07, which fell
+  // through to `unknown` and told a user their run "failed in a way Juno does
+  // not recognise".
+  const outOfCredit = Object.assign(new Error("402 Insufficient Balance"), {
+    status: 402,
+    code: "invalid_request_error",
+  });
+
+  const classified = classifyProviderError(outOfCredit, "DeepSeek");
+
+  assert.equal(classified.kind, "insufficient_balance");
+  // Retrying the same key cannot help; a different lab can.
+  assert.equal(classified.retryable, false);
+  assert.equal(classified.worthFailingOver, true);
+  assert.match(classified.message, /run out of credit/);
+  assert.match(classified.message, /another model can run it/);
+  assert.doesNotMatch(classified.message, /does not recognise/);
+});
+
 test("classification is idempotent, so a nested adapter cannot wrap twice", () => {
   const once = classifyProviderError(
     Object.assign(new Error("x"), { status: 429 }),
