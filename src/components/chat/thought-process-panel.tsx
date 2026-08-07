@@ -1,11 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, X } from "lucide-react";
+import { X } from "lucide-react";
 import { ThinkingReasoning } from "@/components/aicss/thinking-reasoning";
-import { WebSearchBlock, type WebSearchSite } from "@/components/aicss/web-search";
+import { ThinkingState } from "@/components/aicss/thinking-state";
+import type { WebSearchSite } from "@/components/aicss/web-search";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { cn } from "@/lib/utils";
+import { formatSpan, splitCost, toRunMarkdown, toSourcesMarkdown } from "@/lib/run-receipt";
 import { toReasoningLines } from "@/lib/reasoning-lines";
 import { toSteps } from "@/lib/reasoning-parts";
 import type { ClientActivityEvent } from "@/types/chat";
@@ -23,17 +25,37 @@ import type { ClientActivityEvent } from "@/types/chat";
  * were a process. The fix is not to restyle the rail; it is to delete the form
  * that lies and split the data by what was actually measured:
  *
- *   - things with a real duration  → PROFILE, which HAS a duration column
- *   - things that took no time     → FACTS,   which has NO time column at all
+ *   - things with a real duration  → PHASES, which HAVE a figure column
+ *   - things that took no time     → FACTS,  which have NO figure column at all
  *
  * That absence is the design. It becomes structurally impossible to imply that
  * "Selected model" took time, because there is nowhere for that implication to
  * live. It is also forward-compatible: if the producer ever grows a `duration`
- * field, rows migrate from FACTS to PROFILE into a column already built.
+ * field, rows migrate from FACTS to PHASES into a column already built.
  *
- * Wall-clock is gone outright. It was the SERVER's absolute clock answering
- * "what time was it?" — a question nobody asked — from the exact slot where a
- * duration belongs, hiding the only question the panel exists to answer.
+ * THE SPLIT IS NOW CARRIED BY THE MARKUP ITSELF. Every list in this panel is one
+ * `<dl>` on the same three-column `LEDGER` grid: label · detail · FIGURE. A
+ * MEASURED row fills all three columns. A STATED row's `<dd>` spans `2/-1`, so
+ * it does not leave an empty figure cell — it HAS no figure cell, in the DOM and
+ * in the accessibility tree alike. Putting a duration beside "Selected model"
+ * now requires changing that row's grammar, which is exactly the amount of
+ * friction the claim deserves. Assistive tech hears what the eye sees: no time
+ * for facts.
+ *
+ * Wall-clock is gone outright, and stays gone for a second reason discovered
+ * since. `t0` is `at(events[0]) ?? anchorT0`, and `anchorT0` is the moment
+ * ActivityTimeline MOUNTED. For a reasoning-only message, or any persisted
+ * message re-rendered on page load, a "Started 14:32:07" footer would print the
+ * time the reader opened the page dressed as the time the run began — a flat
+ * falsehood with a timestamp on it. `t0` is an internal origin. It is never
+ * rendered.
+ *
+ * AND THERE IS NO BAR. Not a progress bar, not a segmented proportion bar, not a
+ * hairline rule under a figure, with or without a track. A proportional graphic
+ * whose only content is `ms / max(ms)` says nothing the two adjacent numbers do
+ * not already say legibly, in a column built for numbers; its only real function
+ * is to make the block LOOK measured, which is the placebic-explanation failure
+ * mode this panel exists to avoid.
  * ───────────────────────────────────────────────────────────────────────────── */
 
 export function domainOf(url: string) {
@@ -55,7 +77,13 @@ function searchLabelOf(url: string) {
 }
 
 /**
- * A run's sources as AIcss search rows.
+ * A run's sources as AIcss search rows — for the LIVE STRIP only.
+ *
+ * The resting panel renders its own source rows (see SOURCES below) because
+ * `WebSearchBlock` re-derives host+path from the URL when `sources[].domain` is
+ * already on the model, and because its row lets a long title push the row wider
+ * than the dock. Mid-stream, in the transcript, it remains the right renderer
+ * and is untouched.
  *
  * EVERY ROW IS `done`, and that is a statement about the data rather than a
  * shortcut. A `visit` event is emitted at the moment a source has been collected
@@ -83,13 +111,32 @@ function parseTs(value: string) {
   return Number.isFinite(t) ? t : null;
 }
 
-/** The ms are already in the ISO strings and were merely thrown away by
- *  toLocaleTimeString. Unknown stays unknown — never a guess. */
-export function formatSpan(ms: number) {
+/* The one span formatter. It lives in run-receipt.ts — a module with no React in
+ * it and no runtime import back into this one — because the copy-run receipt
+ * needs it too, and a second duration formatter is precisely the bug that had
+ * the strip printing `2s` beside this panel's `2.7s` for the same run. Re-
+ * exported here because this is where every caller already looks for it. */
+export { formatSpan } from "@/lib/run-receipt";
+
+/**
+ * The same duration, SPOKEN.
+ *
+ * `formatSpan` produces a glyph — `2.7s`, `1m 4s` — which a screen reader either
+ * spells out or mangles depending on the engine. The announcer is the one place
+ * where the value has to be a sentence, so it gets its own formatter rather than
+ * making `formatSpan` serve two audiences and satisfy neither. Same rounding
+ * ladder, so the two never disagree about the number itself.
+ */
+function speakSpan(ms: number) {
   const s = ms / 1000;
-  if (s < 10) return `${s.toFixed(1)}s`;
-  if (s < 60) return `${Math.round(s)}s`;
-  return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+  if (s < 60) {
+    const value = s < 10 ? s.toFixed(1) : String(Math.round(s));
+    return `${value} ${value === "1" ? "second" : "seconds"}`;
+  }
+  const minutes = Math.floor(s / 60);
+  const seconds = Math.round(s % 60);
+  const head = `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+  return seconds ? `${head} ${seconds} ${seconds === 1 ? "second" : "seconds"}` : head;
 }
 
 function plural(n: number, one: string, many = `${one}s`) {
@@ -123,6 +170,15 @@ interface Call {
   id: string;
   label: string;
   object: string;
+  /**
+   * Offset from `t0`, carried but DELIBERATELY NOT RENDERED.
+   *
+   * It is real for a mid-stream `Using X` (route.ts:598) and structurally `0`
+   * for every preflight one (route.ts:519) — honest for some rows in a column
+   * and degenerate for others, which reads worse than either alone. The figure
+   * column comes back the day the producer emits a real per-call DURATION; the
+   * `LEDGER` grid already has the column waiting for it.
+   */
   offsetMs: number | null;
   warn: boolean;
 }
@@ -149,6 +205,13 @@ export interface RunModel {
   note: string | null;
 }
 
+/** What the live strip is currently saying. Computed ONCE, by the caller that
+ *  owns the events, and handed to the panel — see the `live` prop. */
+export interface LiveCopy {
+  message: string;
+  warning: boolean;
+}
+
 /**
  * Reclassify every event by what it physically IS, not by its `kind`.
  *
@@ -173,6 +236,10 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
   // when this line appeared. That is a client-frame number — but with no events
   // the skew is uncalibrated and therefore zero, so `nowServer` is client-frame
   // too. The two ends always sit in the same frame; we never mix them.
+  //
+  // NOTE the second consequence, which is why nothing renders `t0` as a time of
+  // day: on a persisted message this is the mount instant of the row, not the
+  // instant the run began. It is an ORIGIN for subtraction and nothing else.
   const t0 = at(events[0]) ?? anchorT0 ?? null;
   const writeEv = events.find((e) => e.kind === "write");
   const usageEv = events.find((e) => e.kind === "usage");
@@ -259,7 +326,7 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
   // THINK is time-to-first-token minus the research sub-interval. While
   // streaming with no `write` yet it is open-ended — which is precisely the
   // longest window, and the one a user is most likely to open the panel during.
-  // Hiding the profile until first token would make the running phase invisible
+  // Hiding the phases until first token would make the running phase invisible
   // for the whole of it, so it stays and simply has no end yet.
   const thinkEnd = tWrite ?? tEnd;
   const thinkTotal = span(t0, thinkEnd);
@@ -367,9 +434,77 @@ export function useRunClock(events: ClientActivityEvent[], streaming?: boolean) 
   };
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+/* ─────────────────────────────────────────────────────────────────────────────
+ * ONE GRID GRAMMAR FOR THE WHOLE PANEL.
+ *
+ * col 1 = label · col 2 = detail · col 3 = FIGURE.
+ *
+ * A MEASURED row fills all three. A STATED row's <dd> spans 2/-1, so it does not
+ * leave an empty figure cell — it HAS no figure cell. That absence is the
+ * PHASES/FACTS split expressed as markup: it is structurally impossible to put a
+ * duration next to "Selected model" without changing the row's grammar.
+ * ───────────────────────────────────────────────────────────────────────────── */
+const LEDGER = "grid grid-cols-[5rem_minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-2";
+const FIG_TOTAL = "font-mono text-[1.375rem] leading-none tracking-[-0.01em] tabular-nums text-foreground";
+const FIG = "font-mono text-[0.8125rem] leading-5 tabular-nums text-foreground/70";
+
+/* Sections are separated by a rule and vertical space — no cards, no shadows, no
+ * nested backgrounds. The rule is a SEPARATOR, so it is drawn BETWEEN sections
+ * and never above the first one: the header already ends in a border, and two
+ * hairlines 16px apart at the top of a column read as a mistake rather than as
+ * structure. `SECTION_FIRST` is that first-section case. */
+const SECTION = "mt-5 border-t border-border/60 pt-5";
+const SECTION_FIRST = "";
+
+function SectionHeading({ id, children }: { id: string; children: React.ReactNode }) {
   return (
-    <span className="font-mono text-[10px] font-medium text-muted-foreground/65">{children}</span>
+    <h3 id={id} className="font-mono text-label uppercase text-muted-foreground">
+      {children}
+    </h3>
+  );
+}
+
+/**
+ * THE READING COLUMN — the one renderer for model-generated prose.
+ *
+ * Splits on the MODEL'S OWN blank lines and nothing else. `toReasoningLines` is
+ * deliberately not used here: its `WRAP_AT = 170` is a display chunker for the
+ * AIcss 40px slots, and at rest it would insert paragraph breaks the model never
+ * wrote — structure invented by a layout constant.
+ *
+ * No clamp, no ellipsis, no max-height, no inner scroller. The old panel routed
+ * this text through `.aicss-tr-sentence` (height 40px, -webkit-line-clamp 2),
+ * which truncated every paragraph mid-sentence: correct for a live trace that
+ * must not reflow the transcript, wrong in a panel opened specifically to READ.
+ * The panel's own scroller bounds this; a scrollbar inside a scrollbar is the
+ * thing edge fades are usually papering over.
+ *
+ * `content-visibility` because a deep-research trace can run to thousands of
+ * words and the browser should not lay out what is not on screen.
+ */
+function Prose({ text, className }: { text: string; className?: string }) {
+  const paras = React.useMemo(
+    () =>
+      text
+        .trim()
+        .split(/\n\s*\n+/)
+        .map((p) => p.trim())
+        .filter(Boolean),
+    [text],
+  );
+  return (
+    <div className={cn("space-y-3", className)}>
+      {paras.map((p, i) => (
+        // Keyed by position: a trace can and does repeat a paragraph verbatim.
+        <p
+          key={i}
+          style={{ contentVisibility: "auto", containIntrinsicSize: "0 96px" }}
+          className="whitespace-pre-wrap break-words font-serif text-[0.9375rem] leading-[1.72] text-foreground/80"
+        >
+          {p}
+        </p>
+      ))}
+    </div>
   );
 }
 
@@ -390,10 +525,15 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
  * WHERE THERE IS NO CHOICE, THERE IS NO CONTROL. `toSteps` returns null for
  * every provider that streamed unbroken prose — Anthropic, Zhipu, Mistral,
  * Google — and for every message persisted before parts were carried. Those
- * runs render exactly what they rendered before: the wrapped trace and the
- * disclosure. A two-option switch with one honest option would be an invitation
- * to a summary this app would then have to invent, which is precisely what
- * reasoning-parts.ts exists to prevent.
+ * runs render one flat column of prose and say so, in a caption. A two-option
+ * switch with one honest option would be an invitation to a summary this app
+ * would then have to invent, which is precisely what reasoning-parts.ts exists
+ * to prevent.
+ *
+ * The switch is also hidden WHILE STREAMING, for the same reason: mid-run the
+ * reasoning column is the AIcss live viewport, so neither view is on screen and
+ * neither button would do anything. A control that visibly does nothing is the
+ * same lie in a smaller box.
  * ───────────────────────────────────────────────────────────────────────────── */
 
 type ReasoningView = "summary" | "full";
@@ -434,46 +574,80 @@ function useReasoningView(): [ReasoningView, (next: ReasoningView) => void] {
   return [view, choose];
 }
 
+const VIEW_OPTIONS: { key: ReasoningView; label: string; hint: string }[] = [
+  { key: "summary", label: "Summary", hint: "The model’s own summary steps." },
+  { key: "full", label: "Full", hint: "The complete reasoning trace." },
+];
+
 /**
- * The switch itself: two segments, in the panel's own chip vocabulary.
+ * The switch itself: two segments, in the panel's own vocabulary.
  *
  * A `radiogroup` rather than two buttons or a checkbox, because that is what it
  * is — one of two mutually exclusive views — and it is what gives a screen
- * reader arrow-key traversal and "1 of 2" for free.
+ * reader "1 of 2" for free.
+ *
+ * ROVING TABINDEX, because a radiogroup is ONE tab stop and the arrow keys move
+ * within it. The previous version left both segments in the tab order and bound
+ * no keys at all, so it announced itself as a radiogroup and then behaved like
+ * two buttons. The hint moved off `title=` for the same class of reason: a
+ * tooltip attribute is unreachable by keyboard and by touch, so the explanation
+ * existed only for a mouse hovering in place. It is now visible text, wired with
+ * `aria-describedby`.
  */
 function ReasoningViewToggle({
   value,
   onChange,
+  describedBy,
 }: {
   value: ReasoningView;
   onChange: (next: ReasoningView) => void;
+  describedBy: string;
 }) {
-  const options: { key: ReasoningView; label: string; hint: string }[] = [
-    { key: "summary", label: "Summary", hint: "The model's own summary steps" },
-    { key: "full", label: "Full", hint: "The complete reasoning trace" },
-  ];
+  const refs = React.useRef<(HTMLButtonElement | null)[]>([]);
+  const index = Math.max(0, VIEW_OPTIONS.findIndex((o) => o.key === value));
+
+  // Selection FOLLOWS focus, which is the ARIA-authoring-practices behaviour for
+  // a radio group and the only one that does not require a second keypress to
+  // commit a choice the user has already visibly made.
+  const move = (next: number) => {
+    const i = (next + VIEW_OPTIONS.length) % VIEW_OPTIONS.length;
+    onChange(VIEW_OPTIONS[i].key);
+    refs.current[i]?.focus();
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") move(index + 1);
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") move(index - 1);
+    else if (e.key === "Home") move(0);
+    else if (e.key === "End") move(VIEW_OPTIONS.length - 1);
+    else return;
+    e.preventDefault();
+  };
 
   return (
     <div
       role="radiogroup"
       aria-label="Reasoning detail"
+      aria-describedby={describedBy}
+      onKeyDown={onKeyDown}
       className="flex shrink-0 items-center gap-0.5 rounded-full bg-muted/70 p-0.5"
     >
-      {options.map((option) => {
+      {VIEW_OPTIONS.map((option, i) => {
         const selected = value === option.key;
         return (
           <button
             key={option.key}
+            ref={(node) => {
+              refs.current[i] = node;
+            }}
             type="button"
             role="radio"
             aria-checked={selected}
-            title={option.hint}
+            tabIndex={selected ? 0 : -1}
             onClick={() => onChange(option.key)}
             className={cn(
-              "rounded-full px-2.5 py-1 font-mono text-[10px] font-medium transition-[background-color,color,box-shadow] duration-base ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card motion-reduce:transition-none",
-              selected
-                ? "bg-background text-foreground shadow-soft"
-                : "text-muted-foreground/70 hover:text-foreground",
+              "rounded-full px-2.5 py-1 font-sans text-caption transition-[background-color,color,box-shadow] duration-base ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card motion-reduce:transition-none",
+              selected ? "bg-background text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground",
             )}
           >
             {option.label}
@@ -484,9 +658,19 @@ function ReasoningViewToggle({
   );
 }
 
-/** Shared receipt geometry. The label stays scannable while the value owns the
- *  flexible measure and the time remains right-aligned. */
-const ROW = "grid grid-cols-[4rem_minmax(0,1fr)_auto] items-baseline gap-3 py-2";
+/** A figure that was MEASURED. The sr-only prefix is what tells a screen reader
+ *  that the bare number in column three is a duration — the visual column header
+ *  it would otherwise be reading from does not exist for it. */
+function Figure({ className, children }: { className: string; children: React.ReactNode }) {
+  return (
+    <dd className={className}>
+      <span className="sr-only">duration </span>
+      {children}
+    </dd>
+  );
+}
+
+const COPY_REVERT_MS = 1400;
 
 /**
  * DOCKED, NOT OVERLAID. This was a Radix <Sheet> — a modal dialog with a
@@ -502,6 +686,12 @@ const ROW = "grid grid-cols-[4rem_minmax(0,1fr)_auto] items-baseline gap-3 py-2"
  * scrollable and typeable while this is open.
  *
  * The panel mounts only while open, so there is no `open` prop to thread.
+ *
+ * STREAMING AND COMPLETE ARE THE SAME CHASSIS. Nothing reflows on settle: the
+ * eyebrow crossfades to COMPLETE, the live line unmounts, the elapsed figure
+ * gains its tenth in place, and COST appends BELOW the elapsed block so nothing
+ * above it moves. There is no auto-close — auto-close belongs to an in-transcript
+ * disclosure, not to a docked column the reader opened deliberately.
  */
 export function ThoughtProcessPanel({
   id,
@@ -510,6 +700,8 @@ export function ThoughtProcessPanel({
   reasoning,
   reasoningParts,
   streaming,
+  live,
+  finishNote,
 }: {
   /** DOM id, so the trigger's aria-controls points at something real. */
   id: string;
@@ -524,53 +716,48 @@ export function ThoughtProcessPanel({
    *  Absence is a fact carried from the wire, never a gap to fill in. */
   reasoningParts?: string[] | null;
   streaming?: boolean;
+  /** The strip's current sentence, computed by `liveCopy` in ActivityTimeline
+   *  and handed down for exactly the reason `run` is: one value, one call site,
+   *  so the strip and the panel CANNOT drift. The panel has no events of its
+   *  own to derive it from and is not given any. */
+  live?: LiveCopy;
+  /** The finish-reason sentence, already resolved by message-item. Threaded
+   *  down rather than re-derived: `finishReason` lives on the message, not in
+   *  the run's event stream, and there must be exactly one wording of it. */
+  finishNote?: string | null;
 }) {
   const hasReasoning = !!reasoning?.trim();
-  const reasoningRef = React.useRef<HTMLDivElement>(null);
   const rootRef = React.useRef<HTMLElement>(null);
-  // COLLAPSED BY DEFAULT. The prose was the loudest thing in the panel; it is
-  // evidence, not the headline. It stays mounted-on-demand: when closed the
-  // scroller is unmounted, which the autoscroll effect below already tolerates.
-  //
-  // Only the no-steps path still uses this. Where the provider sent parts the
-  // disclosure is replaced by the Summary/Full switch, and "Full" IS the
-  // disclosure — nesting one inside the other would make the reader press two
-  // controls to reach one body of text.
-  const [rawOpen, setRawOpen] = React.useState(false);
   const [view, setView] = useReasoningView();
+  const [copied, setCopied] = React.useState<"run" | "sources" | null>(null);
+  const copyTimer = React.useRef<number | null>(null);
 
   /**
    * STEPS — the model's own words, or nothing.
    *
    * `toSteps` returns null unless the provider actually delivered parts, so
    * this is null for Anthropic, Zhipu, Mistral, Google and for every message
-   * persisted before parts were carried. Those runs render the disclosure
-   * alone. Nothing here inspects `reasoning` to look for structure: the only
-   * boundaries that exist are the ones the provider sent.
+   * persisted before parts were carried. Nothing here inspects `reasoning` to
+   * look for structure: the only boundaries that exist are the ones the
+   * provider sent.
    */
   const steps = React.useMemo(() => toSteps(reasoningParts), [reasoningParts]);
 
   /**
-   * The settled AIcss trace, for the providers that HAVE no steps.
+   * The lines the AIcss viewport shows WHILE STREAMING, and only then.
    *
-   * Anthropic, Zhipu, Mistral and Google stream one unbroken block, so `steps` is
-   * null for them and the section used to be a single disclosure over a wall of
-   * prose. This gives those runs something scannable — the trace's own paragraphs
-   * in the 40px viewport — without inventing the step boundaries that
-   * reasoning-parts.ts is explicit must never be inferred. It is wrapping, and it
-   * is numbered nowhere and counted nowhere.
-   *
-   * Rendered only at rest. While streaming, the live strip in the transcript is
-   * already showing this exact stream a column away.
+   * The old panel refused to render this at all, on the grounds that "the strip
+   * is showing this exact stream a column away". That is false below `lg`, where
+   * chat-view puts the chat column in `hidden lg:flex` — the strip is
+   * `display:none` and the panel was the only surface left, showing nothing. So
+   * the live trace mounts here too, in the container built for it: 40px slots,
+   * a 180px cap, and the newest line translated into view rather than scrolled
+   * to, which is what stops a growing trace reflowing under the reader.
    */
-  const traceLines = React.useMemo(
-    () => (steps || streaming ? [] : toReasoningLines(reasoning, reasoningParts)),
-    [steps, streaming, reasoning, reasoningParts],
+  const liveLines = React.useMemo(
+    () => (streaming ? toReasoningLines(reasoning, reasoningParts) : []),
+    [streaming, reasoning, reasoningParts],
   );
-
-  /** Whether the verbatim trace is on screen, however the reader got there —
-   *  the switch when this run has steps, the disclosure when it does not. */
-  const showFull = steps ? view === "full" : rawOpen;
 
   // Focus moves in on open — the user pressed a control to get here, so the
   // caret follows. Nothing holds it: Tab leaves the panel normally, and
@@ -580,335 +767,452 @@ export function ThoughtProcessPanel({
     rootRef.current?.focus({ preventScroll: true });
   }, []);
 
-  // Keep the live thinking pinned to the latest token while it streams.
-  //
-  // The null check is now load-bearing rather than defensive: while the trace is
-  // not shown the scroller is UNMOUNTED, so this no-ops for the whole time.
-  // `showFull` is in the deps because switching to Full mid-stream must pin to
-  // the tail immediately — without it the effect would not run again until the
-  // next delta, and a paused stream would open scrolled to the top.
-  React.useEffect(() => {
-    if (streaming && reasoningRef.current) {
-      reasoningRef.current.scrollTop = reasoningRef.current.scrollHeight;
+  React.useEffect(
+    () => () => {
+      if (copyTimer.current) window.clearTimeout(copyTimer.current);
+    },
+    [],
+  );
+
+  const copy = React.useCallback(async (what: "run" | "sources", text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // No clipboard permission, or an insecure origin. Saying "Copied" when
+      // nothing was copied is the smallest lie in the panel and still a lie.
+      return;
     }
-  }, [reasoning, streaming, showFull]);
+    setCopied(what);
+    if (copyTimer.current) window.clearTimeout(copyTimer.current);
+    copyTimer.current = window.setTimeout(() => setCopied(null), COPY_REVERT_MS);
+  }, []);
 
-  // Soft edge on the newest reasoning text so the stream reads as live. The
-  // boundary sits on whitespace so the dimmed tail never splits a word; on
-  // settle the tail span transitions to full opacity instead of snapping.
-  const tailFrom = React.useMemo(() => {
-    const text = reasoning ?? "";
-    const window = 140;
-    if (text.length <= window) return 0;
-    const cut = text.length - window;
-    const newline = text.lastIndexOf("\n");
-    if (newline >= cut) return newline + 1;
-    const space = text.indexOf(" ", cut);
-    return space === -1 ? cut : space + 1;
-  }, [reasoning]);
+  const factOf = (label: string) => run.facts.find((f) => f.label === label)?.value ?? null;
+  const modelName = factOf("Model");
+  const costValue = factOf("Cost");
 
-  const scopeMeta = [
-    run.searches ? plural(run.searches, "search", "searches") : null,
-    run.sourceCount ? plural(run.sourceCount, "source") : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  /**
+   * THE COST FIGURE, AND ITS ONE FAILURE MODE.
+   *
+   * `chat-usage.ts` joins the whole usage breakdown into one prose string and
+   * throws the structure away, so the money has to be read back out of it. The
+   * rule is: lift the currency token with one anchored match and degrade to a
+   * STATED row — the producer's whole string, verbatim, inside SETUP — never to
+   * a partial or reconstructed number. See `splitCost`.
+   */
+  const { money, billed } = splitCost(costValue);
 
   const warnings = run.calls.filter((c) => c.warn);
   const tools = run.calls.filter((c) => !c.warn);
-  const totalMs = run.phases.reduce((sum, p) => sum + (p.ms ?? 0), 0);
-  // A one-segment bar is a rectangle carrying zero bits — the exact ornament
-  // this redesign exists to delete. It appears only once it encodes a real
-  // proportion between at least two measured spans.
-  const showBar = run.phases.length >= 2 && totalMs > 0;
-  const activePhase = run.phases.find((phase) => phase.active);
-  const thinkMs = run.elapsedMs ?? 0;
-  const overviewTitle = streaming
-    ? activePhase?.key === "research"
-      ? "Finding and checking sources"
-      : activePhase?.key === "write"
-        ? "Writing the response"
-        : thinkMs >= 10 * 60_000
-          ? "Still thinking deeply — safe to leave and come back"
-          : thinkMs >= 2 * 60_000
-            ? "Still thinking — working in the background"
-            : "Thinking about your request"
-    : "Response complete";
-  const overviewLabel = streaming
-    ? activePhase?.key === "research"
-      ? "Researching"
-      : activePhase?.key === "write"
-        ? "Writing"
-        : "Thinking"
-    : "Complete";
+  const setupFacts = run.facts.filter((f) => f.label !== "Model" && f.label !== "Cost");
+  // When the money could not be lifted, the whole usage string joins SETUP as
+  // one more stated row rather than vanishing.
+  const setupRows = money === null && costValue ? [...setupFacts, { label: "Cost", value: costValue }] : setupFacts;
+
+  const domainCount = new Set(run.sources.map((s) => s.domain)).size;
+  const countLine =
+    [
+      run.sourceCount ? plural(run.sourceCount, "source") : null,
+      domainCount ? plural(domainCount, "domain") : null,
+      run.searches ? plural(run.searches, "search", "searches") : null,
+    ]
+      .filter(Boolean)
+      .join(" · ") || null;
+
+  const activeKey = run.phases.find((p) => p.active)?.key;
+  const statusEyebrow = !streaming
+    ? "COMPLETE"
+    : activeKey === "research"
+      ? "RESEARCHING"
+      : activeKey === "write"
+        ? "WRITING"
+        : "THINKING";
+
+  const showNotice = warnings.length > 0 || !!finishNote;
+  const showElapsed = run.elapsedMs !== null;
+  // COST DOES NOT RENDER UNTIL `usage` LANDS. A dash at 22px for the length of a
+  // 90-second run is a large, prominent nothing; absence is already this panel's
+  // idiom for unknown, so it is used here rather than a placeholder with a
+  // "pending" caption beside it.
+  const showCost = money !== null && !streaming;
+  const showSetup = setupRows.length > 0;
+  // WIDENED GATE. A search that returned nothing used to show no query, no
+  // search line and no evidence a search had happened at all — the run's most
+  // interesting outcome rendered as a gap.
+  const showSources = !!run.query || run.sources.length > 0;
+  const showTools = tools.length > 0;
+  const showReasoning = hasReasoning || (streaming && liveLines.length > 0);
+
+  // Which ruled section is first, so the rule can be a separator rather than a
+  // second header border. Nothing above the ledger (no notice, not streaming)
+  // means the first ledger section draws no rule of its own.
+  const ruledOrder = [
+    showElapsed && "elapsed",
+    showCost && "cost",
+    showSetup && "setup",
+    showSources && "sources",
+    showTools && "tools",
+    showReasoning && "reasoning",
+    "footer",
+  ].filter(Boolean) as string[];
+  const firstRuled = showNotice || streaming ? null : ruledOrder[0];
+  const rule = (key: string) => (key === firstRuled ? SECTION_FIRST : SECTION);
+
+  /**
+   * ONE ANNOUNCER, PHASE-LEVEL ONLY.
+   *
+   * The scroller is `aria-live="off"` and every mutating row inside it is
+   * therefore silent, because this panel is portalled into chat-view's dock —
+   * outside message-item's polite region — and its figures rewrite once a
+   * second. What a screen reader actually needs from a run is three or four
+   * events, not three hundred: which phase it is in, and how it ended.
+   *
+   * Debounced, because a fast run can cross two phases inside 500ms and a
+   * queued pair of announcements would be read after the run had already
+   * finished. Spoken duration uses `speakSpan`, not `formatSpan`'s glyph.
+   */
+  const announceTarget = streaming
+    ? statusEyebrow.charAt(0) + statusEyebrow.slice(1).toLowerCase()
+    : [
+        run.elapsedMs === null ? "Complete." : `Complete in ${speakSpan(run.elapsedMs)}.`,
+        money ? `Cost ${money}.` : null,
+      ]
+        .filter(Boolean)
+        .join(" ");
+  const [announcement, setAnnouncement] = React.useState("");
+  React.useEffect(() => {
+    const t = window.setTimeout(() => setAnnouncement(announceTarget), 500);
+    return () => window.clearTimeout(t);
+  }, [announceTarget]);
+
+  const hintId = `${id}-view-hint`;
+  const showToggle = !streaming && !!steps;
 
   return (
     <aside
       id={id}
       ref={rootRef}
       tabIndex={-1}
-      aria-label="Thought process"
+      aria-labelledby={`${id}-title`}
       className="flex h-full w-full flex-col bg-card focus:outline-none"
     >
-        <header className="flex shrink-0 items-center gap-4 border-b border-border/55 px-5 py-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              {streaming && <ThinkingDots className="origin-left scale-75 text-muted-foreground/55" />}
-              <span className={cn("font-serif text-[0.8125rem] font-medium leading-4 tracking-[0.01em]", streaming ? "text-muted-foreground/80" : "text-muted-foreground/60")}>{streaming ? "Live process" : "Run summary"}</span>
-            </div>
-            <h2 className="mt-0.5 truncate font-serif text-heading text-foreground">Thought process</h2>
+      <header className="flex shrink-0 items-start gap-4 border-b border-border/55 px-5 py-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            {streaming && <ThinkingDots className="origin-left scale-75 text-muted-foreground/55" />}
+            <span
+              key={statusEyebrow}
+              className={cn(
+                "font-mono text-label uppercase motion-safe:animate-fade-in",
+                streaming ? "text-primary" : "text-muted-foreground",
+              )}
+            >
+              {statusEyebrow}
+            </span>
           </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors duration-base ease-out-soft hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-reduce:transition-none coarse:size-11"
+          {/* Archivo, not Newsreader: inside this panel serif is reserved for
+              text the MODEL generated. A model NAME is Juno's chrome. This is a
+              deliberate local override of the house "serif carries headings"
+              rule, recorded here so it does not read as an inconsistency and
+              get "fixed" back. */}
+          <h2
+            id={`${id}-title`}
+            className="mt-1 truncate font-sans text-heading text-foreground"
+            title={modelName ?? undefined}
           >
-            <X className="size-4" aria-hidden="true" />
-            <span className="sr-only">Close thought process</span>
-          </button>
-        </header>
+            {modelName ?? "Thought process"}
+          </h2>
+        </div>
 
-        <div className="flex flex-1 flex-col gap-7 overflow-y-auto bg-muted/10 px-5 py-5">
-          {/* RUN OVERVIEW — the answer to "what is it doing?" lives at the top,
-              where a live process belongs. Durations remain measurements; the
-              step rail only connects phases that actually exist in the data. */}
-          <section aria-label="Run progress" className="rounded-2xl border border-border/55 bg-background/55 p-4 shadow-soft">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <span className="font-serif text-[0.8125rem] font-medium leading-4 tracking-[0.01em] text-muted-foreground/65">{overviewLabel}</span>
-                <p key={overviewTitle} className={cn("mt-0.5 truncate font-serif text-heading text-foreground/90 motion-safe:animate-fade-in", streaming && "motion-safe:animate-status-glow")}>{overviewTitle}</p>
-                {scopeMeta && <p className="mt-1 font-mono text-caption text-muted-foreground/65">{scopeMeta}</p>}
-              </div>
-              {run.elapsedMs !== null && (
-                <span className={cn("shrink-0 rounded-full px-2.5 py-1 font-mono text-caption tabular-nums", streaming ? "bg-primary/8 text-primary" : "bg-muted text-muted-foreground")}>{formatSpan(run.elapsedMs)}</span>
-              )}
-            </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors duration-base ease-out-soft hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-reduce:transition-none coarse:size-11"
+        >
+          <X className="size-4" aria-hidden="true" />
+          <span className="sr-only">Close thought process</span>
+        </button>
+      </header>
 
-            {showBar && (
-              <div className="mt-4 flex h-1 w-full overflow-hidden rounded-full bg-muted/60" aria-hidden="true">
-                {run.phases.map((phase) => (
-                  <span
-                    key={phase.key}
-                    style={{ flexGrow: phase.ms ?? 0 }}
-                    className={cn(
-                      "transition-colors duration-slow ease-out-soft motion-reduce:transition-none",
-                      phase.active
-                        ? "bg-primary"
-                        : phase.key === "research"
-                          ? "bg-source/55"
-                          : phase.key === "think"
-                            ? "bg-muted-foreground/35"
-                            : "bg-foreground/45"
-                    )}
-                  />
-                ))}
-              </div>
-            )}
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {announcement}
+      </div>
 
-            {run.phases.length > 0 && (
-              <ol className="mt-3">
-                {run.phases.map((phase, index) => (
-                  <li key={phase.key} className="relative grid grid-cols-[1rem_minmax(0,1fr)_auto] gap-3 py-2 motion-safe:animate-fade-in">
-                    {index < run.phases.length - 1 && <span aria-hidden="true" className="absolute bottom-[-0.5rem] left-[0.21875rem] top-[1.15rem] w-px bg-border/75" />}
-                    <span aria-hidden="true" className="relative mt-[0.3rem] flex h-2 w-2 items-center justify-center rounded-full">
-                      <span className={cn("h-2 w-2 rounded-full transition-[background-color,box-shadow] duration-slow ease-out-soft motion-reduce:transition-none", phase.active ? "bg-primary shadow-[0_0_0_4px_hsl(var(--primary)/0.10)]" : "bg-muted-foreground/35")} />
-                    </span>
-                    <span className="min-w-0">
-                      <span className={cn("block font-serif text-[0.8125rem] font-medium leading-4 tracking-[0.01em]", phase.active ? "text-primary" : "text-muted-foreground/70")}>{phase.label}</span>
-                      {phase.object && <span className="mt-0.5 block truncate text-body leading-5 text-foreground/72">{phase.object}</span>}
-                    </span>
-                    <span className="font-mono text-caption tabular-nums text-muted-foreground/70">{phase.ms === null ? "—" : formatSpan(phase.ms)}</span>
-                  </li>
-                ))}
-              </ol>
-            )}
+      <div aria-live="off" className="flex-1 overflow-y-auto px-5 pb-6 pt-4">
+        {/* NOTICE — first, conditional, and ABSENT when the run was clean. There
+            is no "no warnings" state: its absence is the signal.
+
+            The text is the producer's own `[title, detail].join(" · ")`,
+            verbatim. It is deliberately NOT re-phrased into blame ("The Linear
+            connector did not respond"): the only exact signal on the wire is
+            `kind === "warning"`, and naming a failing component from a warning
+            title is inference dressed as fact. `RunModel.note` says so in its
+            own contract. Blame-splitting waits for a `source` field. */}
+        {showNotice && (
+          <section
+            aria-labelledby={`${id}-notice`}
+            className="-mx-5 border-l-2 border-warning/35 bg-warning/5 px-5 py-3 motion-safe:animate-fade-in-up"
+          >
+            <h3 id={`${id}-notice`} className="font-mono text-label uppercase text-warning">
+              Notice
+            </h3>
+            <ul className="mt-1.5 space-y-1">
+              {warnings.map((c) => (
+                <li key={c.id} className="break-words text-body text-warning">
+                  {c.object}
+                </li>
+              ))}
+              {finishNote && <li className="break-words text-body text-warning">{finishNote}</li>}
+            </ul>
           </section>
+        )}
 
-          {/* NOTICES — success is not news; failure is. Fixed position at the top
-              so the panel's structure never reshuffles between runs. */}
-          {warnings.length > 0 && (
-            <section className="flex flex-col gap-3">
-              <SectionLabel>Notices</SectionLabel>
-              <ul className="flex flex-col rounded-xl border border-warning/20 bg-warning/5 px-3">
-                {warnings.map((c) => (
-                  <li key={c.id} className={cn(ROW, "motion-safe:animate-fade-in-up")}>
-                    <span className="font-mono text-caption text-warning">{c.label}</span>
-                    <span className="min-w-0 break-words text-body text-warning">{c.object}</span>
-                    <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground/55">
-                      {c.offsetMs === null ? "—" : `+${formatSpan(c.offsetMs)}`}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+        {/* THE LIVE LINE — honest about NOW, and destroyed on settle. No log of
+            it survives, because a record of per-step narration would be a
+            fabrication: the events it is derived from nearly all share one
+            timestamp. */}
+        {streaming && live && (
+          <p className="mt-3">
+            {live.warning ? (
+              <span className="text-body-lg leading-6 text-warning">{live.message}</span>
+            ) : (
+              <ThinkingState className="text-body-lg leading-6" tone="strong">
+                {live.message}
+              </ThinkingState>
+            )}
+          </p>
+        )}
 
-          {/* REASONING — steps lead, prose is the evidence behind them.
-              The question that made the user open the panel is "what did it
-              do?", and a wall of streaming prose answers it worse than the
-              model's own titles do. So the titles are the headline and the full
-              text moved behind a disclosure.
+        {/* ELAPSED — the first ledger, and the only block with real figures.
+            The <dt> spans columns 1–2 so the total lands in column 3 with its
+            constituents directly beneath it, on one axis: total = sum of parts
+            is arithmetic here (buildRun subtracts the research sub-interval out
+            of THINK precisely so that it is), and now it is visibly so. */}
+        {showElapsed && (
+          <section aria-labelledby={`${id}-elapsed`} className={cn(rule("elapsed"), "motion-safe:animate-fade-in-up")}>
+            <dl className={LEDGER}>
+              <dt id={`${id}-elapsed`} className="col-span-2 font-mono text-label uppercase text-muted-foreground">
+                Elapsed
+              </dt>
+              <Figure className={FIG_TOTAL}>{formatSpan(run.elapsedMs as number, { live: streaming })}</Figure>
 
-              The steps are NOT a summary we wrote. They are the parts the
-              provider emitted, in order, verbatim — which is why they appear for
-              OpenAI's Responses models and for nobody else. When no provider
-              parts exist there is no Steps list and no placeholder for one: the
-              section is just the disclosure, and its absence is the design. */}
-          {hasReasoning && (
-            <section className="flex flex-col gap-3">
-              <div className="flex items-center justify-between gap-3">
-                <SectionLabel>Reasoning</SectionLabel>
-                {/* Only where both views exist. See ReasoningViewToggle. */}
-                {steps && <ReasoningViewToggle value={view} onChange={setView} />}
-              </div>
-
-              {/* THE SUMMARY, now readable as one.
-                  Each step keeps its number and its title, and gains the body the
-                  provider sent with it — which the titles-only list had been
-                  discarding, so the "summary" was a table of contents and the
-                  only way to read a step was to open the full trace and find it
-                  again by eye. A title-only part stays title-only: several
-                  models emit those, and `toStep` returns an empty body for them
-                  rather than a placeholder. */}
-              {steps && view === "summary" && (
-                <ol className="flex flex-col rounded-2xl border border-border/45 bg-card/65 px-3.5 py-2.5">
-                  {steps.map((s, i) => {
-                    // Only the LAST step can be in flight, and only while the run
-                    // is live. Coral is ACTIVE/SELECTED ONLY — the same rule as
-                    // the run overview.
-                    const active = !!streaming && i === steps.length - 1;
-                    const title = s.title ?? s.body.split("\n")[0];
-                    // With no title of its own the opening line IS the label, so
-                    // repeating the body underneath would print it twice.
-                    const body = s.title ? s.body : "";
-                    return (
-                      // Keyed by ARRAY POSITION, never by the provider's index or
-                      // the title: OpenAI repeats summary_index within one
-                      // response (live: [0…14, 13, 14]) and repeats titles too,
-                      // so either would collide two steps into one and drop text.
-                      <li key={i} className="relative grid grid-cols-[1.5rem_minmax(0,1fr)] gap-3 py-2.5 motion-safe:animate-fade-in">
-                        {i < steps.length - 1 && <span aria-hidden="true" className="absolute bottom-[-0.65rem] left-[0.71875rem] top-[2rem] w-px bg-border/65" />}
-                        <span className={cn("relative z-10 mt-[0.0625rem] flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background font-mono text-[9px] tabular-nums transition-[border-color,color,box-shadow] duration-slow ease-out-soft motion-reduce:transition-none", active ? "border-primary/45 text-primary shadow-[0_0_0_4px_hsl(var(--primary)/0.08)]" : "border-border/70 text-muted-foreground/60")}>{String(i + 1).padStart(2, "0")}</span>
-                        <span className="min-w-0">
-                          {/* No truncation any more. The line was clipped because
-                              it was the only thing standing in for the step; with
-                              the body present the title can wrap and say what it
-                              says. */}
-                          <span className="block text-body leading-5 text-foreground/82">{title}</span>
-                          {body && (
-                            <span className="mt-1 block whitespace-pre-wrap break-words font-serif text-[0.8125rem] leading-6 text-foreground/62">{body}</span>
-                          )}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ol>
-              )}
-
-              {traceLines.length > 0 && (
-                <ThinkingReasoning
-                  lines={traceLines}
-                  // Preformatted here so the panel keeps exactly one opinion about
-                  // how long the run took — the same `formatSpan` the header uses.
-                  duration={run.elapsedMs === null ? null : formatSpan(run.elapsedMs)}
-                  className="rounded-2xl border border-border/45 bg-card/65 px-3.5 py-2.5"
-                />
-              )}
-
-              <div className="flex flex-col gap-2.5">
-                {/* The disclosure survives only for runs with no steps, where
-                    there is no switch to carry the choice. */}
-                {!steps && (
-                  <button
-                    type="button"
-                    onClick={() => setRawOpen((v) => !v)}
-                    aria-expanded={rawOpen}
-                    aria-controls={rawOpen ? `${id}-reasoning-full` : undefined}
-                    className="group flex min-h-11 w-full items-center gap-3 rounded-xl border border-border/45 bg-card/60 px-3 text-left transition-[background-color,border-color] duration-base ease-out-soft hover:border-border hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-reduce:transition-none"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-body leading-5 text-foreground/82">Full thinking</span>
-                      {/* Says why there is no Summary to switch to, rather than
-                          leaving its absence to be read as a missing feature. */}
-                      <span className="block font-mono text-[9px] text-muted-foreground/55">This model streams one unbroken trace</span>
-                    </span>
-                    <ChevronRight aria-hidden="true" className={cn("size-3.5 text-muted-foreground/55 transition-transform duration-base ease-out-soft motion-reduce:transition-none", rawOpen && "rotate-90")} />
-                  </button>
-                )}
-
-                {/* Frame/scroller split: the 4px inlay gutter keeps the fade mask off
-                    the border, and 2xl(16) − p-1(4) = xl(12) keeps it concentric. */}
-                {showFull && (
-                  <div
-                    id={`${id}-reasoning-full`}
-                    className="rounded-2xl border border-border/50 bg-background/55 p-1 duration-base ease-out-soft motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1"
-                  >
-                    <div
-                      ref={reasoningRef}
-                      className="max-h-[42vh] overflow-y-auto whitespace-pre-wrap break-words rounded-xl px-3.5 py-3 font-serif text-[0.875rem] leading-6 text-foreground/72"
-                    >
-                      {reasoning!.slice(0, tailFrom)}
-                      <span
-                        className={cn(
-                          "transition-opacity duration-slow ease-out-soft motion-reduce:transition-none",
-                          streaming ? "opacity-60" : "opacity-100"
-                        )}
-                      >
-                        {reasoning!.slice(tailFrom)}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
-
-          {/* SOURCES — the durable asset. Survives the stream, addressable,
-              auditable.
-              Now AIcss's search rows rather than a cloud of domain pills. The
-              pills spent a whole line each on a host and dropped the page title
-              the producer had already sent us, so five results from one site were
-              five identical chips: breadth to look at, nothing to choose between.
-              A row names the page, then the host, then offers the arrow. */}
-          {run.sources.length > 0 && (
-            <section className="flex flex-col gap-3">
-              <SectionLabel>Sources</SectionLabel>
-              <WebSearchBlock query={run.query} sites={toSearchSites(run.sources)} settled={!streaming} />
-            </section>
-          )}
-
-          {tools.length > 0 && (
-            <section className="flex flex-col gap-3">
-              <SectionLabel>Tools</SectionLabel>
-              <ul className="flex flex-col rounded-xl border border-border/45 bg-card/60 px-3">
-                {tools.map((call) => (
-                  <li key={call.id} className={cn(ROW, "motion-safe:animate-fade-in")}>
-                    <span className="font-mono text-caption text-muted-foreground/65">{call.label}</span>
-                    <span className="min-w-0 truncate text-body text-foreground/80">{call.object}</span>
-                    <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground/55">{call.offsetMs === null ? "—" : `+${formatSpan(call.offsetMs)}`}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {/* RUN DETAILS — configuration and usage are facts, not phases. The
-              missing time column is the whole point. */}
-          {run.facts.length > 0 && (
-            <section className="flex flex-col gap-3">
-              <SectionLabel>Run details</SectionLabel>
-              <dl className="grid grid-cols-[4rem_minmax(0,1fr)] gap-x-3 gap-y-2 rounded-xl border border-border/45 bg-card/60 px-3 py-3">
-                {run.facts.map((f) => (
-                  <React.Fragment key={f.label}>
-                    <dt className="font-mono text-caption text-muted-foreground/60">{f.label}</dt>
-                    <dd className="min-w-0 break-words text-body text-foreground/80">{f.value}</dd>
+              {/* Constituents only when there are at least two of them. One
+                  phase whose ms equals the total, printed twice, is noise
+                  wearing the shape of a breakdown. */}
+              {run.phases.length >= 2 &&
+                run.phases.map((p) => (
+                  <React.Fragment key={p.key}>
+                    <dt className={cn("text-body", p.active ? "text-primary" : "text-muted-foreground")}>{p.label}</dt>
+                    <dd className="min-w-0 truncate text-body text-foreground/72">
+                      {/* Effort is an INPUT. It appears exactly once, in SETUP —
+                          not here, where it would read as something Think did. */}
+                      {p.key === "think" ? "" : p.object}
+                    </dd>
+                    {/* The active row goes coral. The figure carries no shine:
+                        shine belongs on prose, not on a number that is already
+                        changing once a second of its own accord. */}
+                    <Figure className={cn(FIG, p.active && "text-primary")}>
+                      {p.ms === null ? "—" : formatSpan(p.ms, { live: streaming && p.active })}
+                    </Figure>
                   </React.Fragment>
                 ))}
-              </dl>
-            </section>
+            </dl>
+          </section>
+        )}
+
+        {/* COST — appended below ELAPSED so its arrival on settle moves nothing
+            above it. `Billed` is a STATED row: the <dd> spans into the figure
+            column's territory rather than leaving a hole, so it HAS no figure
+            cell. There is no expand-on-click breakdown, because the one string
+            the producer sends IS the breakdown. */}
+        {showCost && (
+          <section aria-labelledby={`${id}-cost`} className={cn(rule("cost"), "motion-safe:animate-fade-in-up")}>
+            <dl className={LEDGER}>
+              <dt id={`${id}-cost`} className="col-span-2 font-mono text-label uppercase text-muted-foreground">
+                Cost
+              </dt>
+              <dd className={FIG_TOTAL}>{money}</dd>
+              {billed && (
+                <>
+                  <dt className="text-body text-muted-foreground">Billed</dt>
+                  <dd className="col-span-2 min-w-0 break-words text-body text-foreground/80">{billed}</dd>
+                </>
+              )}
+            </dl>
+          </section>
+        )}
+
+        {/* SETUP — configuration, and every row STATED. The missing figure
+            column is the whole point. */}
+        {showSetup && (
+          <section aria-labelledby={`${id}-setup`} className={cn(rule("setup"), "motion-safe:animate-fade-in-up")}>
+            <SectionHeading id={`${id}-setup`}>Setup</SectionHeading>
+            <dl className={cn(LEDGER, "mt-3")}>
+              {setupRows.map((f) => (
+                <React.Fragment key={f.label}>
+                  <dt className="text-body text-muted-foreground">{f.label}</dt>
+                  <dd className="col-span-2 min-w-0 break-words text-body text-foreground/80">{f.value}</dd>
+                </React.Fragment>
+              ))}
+            </dl>
+          </section>
+        )}
+
+        {/* SOURCES — the durable asset. Survives the stream, addressable,
+            auditable. Rendered here rather than through WebSearchBlock: the
+            model already carries `domain`, so nothing needs re-deriving from the
+            URL, and `overflow-hidden` + `truncate` keeps a long title from
+            pushing the dock into a horizontal scrollbar. */}
+        {showSources && (
+          <section aria-labelledby={`${id}-sources`} className={cn(rule("sources"), "motion-safe:animate-fade-in-up")}>
+            <SectionHeading id={`${id}-sources`}>Sources</SectionHeading>
+
+            {/* Newsreader italic: the query is text the model wrote. */}
+            {run.query && <p className="mt-3 font-serif text-body italic text-muted-foreground">“{run.query}”</p>}
+            {countLine && <p className="mt-1 font-mono text-caption text-muted-foreground/70">{countLine}</p>}
+
+            {run.sources.length > 0 ? (
+              <ul className="-mx-2 mt-2.5">
+                {run.sources.map((s) => (
+                  <li key={s.url}>
+                    <a
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-baseline gap-3 overflow-hidden rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-body text-foreground/85">{s.title}</span>
+                      <span className="shrink-0 font-mono text-caption text-source">{s.domain}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2.5 text-body text-muted-foreground">The search returned no sources.</p>
+            )}
+          </section>
+        )}
+
+        {/* TOOLS — STATED rows, no offset column. See Call.offsetMs. */}
+        {showTools && (
+          <section aria-labelledby={`${id}-tools`} className={cn(rule("tools"), "motion-safe:animate-fade-in-up")}>
+            <SectionHeading id={`${id}-tools`}>Tools</SectionHeading>
+            <dl className={cn(LEDGER, "mt-3")}>
+              {tools.map((c) => (
+                <React.Fragment key={c.id}>
+                  <dt className="text-body text-muted-foreground">Tool</dt>
+                  <dd className="col-span-2 min-w-0 break-words text-body text-foreground/80">{c.object}</dd>
+                </React.Fragment>
+              ))}
+            </dl>
+          </section>
+        )}
+
+        {/* REASONING — the panel's body, and the largest area on screen, because
+            it is the only thing here with genuine content.
+
+            Disclosure depth inside this section is ZERO. The old "Full thinking
+            ›" button was a second tier over text the reader had already opened a
+            panel to read; Summary↔Full is lateral, not nested. */}
+        {showReasoning && (
+          <section
+            aria-labelledby={`${id}-reasoning`}
+            className={cn(rule("reasoning"), "motion-safe:animate-fade-in-up")}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <SectionHeading id={`${id}-reasoning`}>Reasoning</SectionHeading>
+              {showToggle && <ReasoningViewToggle value={view} onChange={setView} describedBy={hintId} />}
+            </div>
+
+            {/* PERMANENT, and body-sized rather than fine print. A reasoning
+                trace is the model's account of itself, not an execution log, and
+                a reader who does not know that will read it as one. */}
+            <p className="mt-2.5 text-body text-muted-foreground">
+              The model’s own account of its reasoning. Not a log of what it computed.
+            </p>
+            {showToggle && (
+              <p id={hintId} className="mt-1 text-caption text-muted-foreground/70">
+                {VIEW_OPTIONS.find((o) => o.key === view)?.hint}
+              </p>
+            )}
+
+            <div className="mt-4">
+              {streaming ? (
+                <ThinkingReasoning lines={liveLines} streaming showHeader={false} />
+              ) : steps && view === "summary" ? (
+                <div className="space-y-5">
+                  {steps.map((s, i) => (
+                    // Keyed by ARRAY POSITION, never by the provider's index or
+                    // the title: OpenAI repeats summary_index within one
+                    // response (live: [0…14, 13, 14]) and repeats titles too, so
+                    // either would collide two steps into one and drop text.
+                    <div key={i}>
+                      {/* No ordinal, no numbered token, no connector rail, no
+                          ring, no card. The title is a sub-heading and the body
+                          is prose; that is all a step is.
+
+                          A PART WITH NO TITLE GETS NO HEADING. `toStep` returns
+                          `title: null` when the model did not open the part with
+                          a `**Bold**` line, and in that case `body` is the WHOLE
+                          part. Promoting its first line to the <h4> and printing
+                          nothing else — which is what this did — set 177
+                          characters of the model's prose as a semibold Archivo
+                          heading and DROPPED the 202 characters behind it, with
+                          no ellipsis and no way to tell. That is the same
+                          mid-sentence truncation the reading column was rebuilt
+                          to end, and it breaks §3 as well: Archivo carries
+                          Juno's words, not the model's.
+
+                          So: heading only when the model wrote one. Otherwise
+                          the part is prose, entire. Nothing is invented and
+                          nothing is lost — the step boundary is still the
+                          provider's own, and it is still visible as the gap
+                          between blocks. */}
+                      {s.title && (
+                        <h4 className="font-sans text-body font-semibold text-foreground/85">{s.title}</h4>
+                      )}
+                      {s.body && <Prose text={s.body} className={s.title ? "mt-1.5" : undefined} />}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <Prose text={reasoning ?? ""} />
+                  {/* Says why there is no Summary to switch to, rather than
+                      leaving the switch's absence to read as a missing feature. */}
+                  {!steps && (
+                    <p className="mt-4 text-caption text-muted-foreground/70">
+                      This model streams one unbroken trace.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* FOOTER — two copy buttons and nothing else. No "Started 14:32:07"
+            line: `t0` is not reliably a server instant (see the header comment).
+            No toast either — the label is the receipt. */}
+        <div className={cn(rule("footer"), "flex items-center gap-2")}>
+          <button
+            type="button"
+            onClick={() => void copy("run", toRunMarkdown(run, reasoning, finishNote))}
+            className="rounded-control px-2.5 py-1.5 font-mono text-caption uppercase tracking-[0.08em] text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] active:duration-press motion-reduce:transition-none"
+          >
+            {copied === "run" ? "Copied" : "Copy run"}
+          </button>
+          {run.sources.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void copy("sources", toSourcesMarkdown(run))}
+              className="rounded-control px-2.5 py-1.5 font-mono text-caption uppercase tracking-[0.08em] text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] active:duration-press motion-reduce:transition-none"
+            >
+              {copied === "sources" ? "Copied" : "Copy sources"}
+            </button>
           )}
         </div>
+      </div>
     </aside>
   );
 }

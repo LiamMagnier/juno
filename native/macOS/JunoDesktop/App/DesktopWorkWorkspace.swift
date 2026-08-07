@@ -400,7 +400,7 @@ struct DesktopWorkWorkspace: View {
             Label("No task open", systemImage: "checklist")
                 .labelStyle(.titleAndIcon)
                 .font(.system(.caption, design: .default, weight: .medium))
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
         }
     }
 
@@ -1005,8 +1005,7 @@ private struct DesktopWorkThread: View {
                                 hostModel?.localApprovalDecider?(
                                     blocking.request.id,
                                     decision,
-                                    blocking.request.actionDigest,
-                                    blocking.request.risk
+                                    blocking.request.actionDigest
                                 )
                             }
                             : nil
@@ -1552,9 +1551,9 @@ private struct DesktopWorkApprovalCard: View {
     private var tint: Color { DesktopWorkVocabulary.riskTint(approval.risk) }
 
     /// Whether this action could be covered by a standing "always allow".
-    /// See ``DesktopWorkApprovalRules/allowsStandingGrant(_:)``.
+    /// The shared rule checks both risk and always-confirm action identity.
     private var allowsStandingGrant: Bool {
-        DesktopWorkApprovalRules.allowsStandingGrant(risk)
+        approval.allowsStandingGrant
     }
 
     var body: some View {
@@ -1633,7 +1632,7 @@ private struct DesktopWorkApprovalCard: View {
                     // something a person can see rather than something the
                     // codebase merely honours.
                     if allowsStandingGrant {
-                        Button("Always allow this") { decide(.allowedAlways) }
+                        Button("work.approval.allow-always") { decide(.allowedAlways) }
                             .buttonStyle(.bordered)
                             .accessibilityIdentifier("juno.work.approval.allow-always")
                     }
@@ -1784,7 +1783,7 @@ private struct DesktopWorkInstructionCard: View {
                 } icon: {
                     Image(systemName: outcome.delivered
                         ? "checkmark.circle" : "exclamationmark.triangle")
-                        .foregroundStyle(outcome.delivered ? Color.secondary : Color.junoCaution)
+                        .foregroundStyle(outcome.delivered ? Color.junoMutedForeground : Color.junoCaution)
                 }
                 .accessibilityIdentifier("juno.work.instruction.outcome")
             }
@@ -1879,6 +1878,9 @@ private struct DesktopWorkComposer: View {
         }
         .padding(JunoSpace.section)
         .frame(width: Self.width, height: Self.height)
+        // Sheet contract: the warm ground inside the content, the platter left to
+        // the system. `.fitted` honours the explicit frame above.
+        .junoSheetSurface(.fitted)
     }
 
     private func start() {
@@ -1944,7 +1946,7 @@ private struct DesktopWorkSection<Content: View>: View {
                     Text(count.formatted())
                         .font(.system(.caption, design: .default, weight: .medium))
                         .monospacedDigit()
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                 }
             }
             .padding(.horizontal, JunoSpace.hairline)

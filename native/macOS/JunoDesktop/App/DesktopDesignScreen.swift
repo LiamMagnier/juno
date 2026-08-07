@@ -298,7 +298,7 @@ struct DesktopDesignScreen: View {
                         "Draw it yourself, or ask Juno. Either way it opens as an editable document you can restyle and hand to Juno Code."
                     )
                     .junoRowLabel()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -385,7 +385,7 @@ struct DesktopDesignScreen: View {
                     // section title competing with the page's.
                     Text("Recent")
                         .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     ForEach(designs) { design in
                         DesktopDesignRow(design: design, open: { open(design.id) }) {
                             requestDelete(design)
@@ -461,7 +461,7 @@ struct DesktopDesignScreen: View {
                     .lineLimit(1)
                 Text(subtitle(design))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .lineLimit(1)
             }
 
@@ -620,7 +620,7 @@ private struct DesktopDesignPresetTile: View {
                     // readable at a glance was the one part you had to look for.
                     RoundedRectangle(cornerRadius: 2.5, style: .continuous)
                         .strokeBorder(
-                            isHovering && !isDisabled ? Color.junoAccent : Color.secondary,
+                            isHovering && !isDisabled ? Color.junoAccent : Color.junoMutedForeground,
                             lineWidth: 1.5
                         )
                         .frame(width: markSize.width, height: markSize.height)
@@ -708,7 +708,7 @@ private struct DesktopDesignRow: View {
 
                     Image(systemName: "chevron.right")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                         .accessibilityHidden(true)
                 }
                 .contentShape(.rect)

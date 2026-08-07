@@ -7,6 +7,7 @@ import JunoCodeKit
 import JunoCodeRuntime
 import JunoCodeUI
 import JunoCore
+import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import SwiftUI
@@ -281,17 +282,25 @@ private struct JunoCodeSignInView: View {
     var body: some View {
         VStack(spacing: 18) {
             Image(systemName: "chevron.left.forwardslash.chevron.right")
-                .font(.system(size: 38, weight: .semibold))
+                // Scales with Dynamic Type: this is the hero glyph of a
+                // full-screen sign-in state with no fixed plate around it, so
+                // nothing breaks when it grows.
+                .junoFont(size: 38, relativeTo: .largeTitle, weight: .semibold)
                 .foregroundStyle(.tint)
             Text("Sign in to Juno Code")
                 .font(.title.bold())
             Text("Connect your Juno account to run agents, use Computer Use, and access Cloud/Remote work.")
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 440)
             if let error = authModel.lastErrorDescription {
                 Text(error)
-                    .foregroundStyle(.red)
+                    // The status ramp, not system red. System red is tuned for
+                    // the platform's neutral grey chrome; on Juno's warm canvas
+                    // it reads as a foreign, slightly pink alarm. `junoDanger`
+                    // is the same role at the hue and contrast the palette was
+                    // measured at.
+                    .foregroundStyle(Color.junoDanger)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 480)
             }
@@ -306,7 +315,11 @@ private struct JunoCodeSignInView: View {
                         Text("Continue in browser")
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                // Untinted `.borderedProminent` draws in the *system* accent,
+                // so this sign-in button was system blue on a coral app.
+                // `junoProminentAction()` carries the tint on both branches and
+                // upgrades to `.glassProminent` above macOS 26.
+                .junoProminentAction()
                 .disabled(authModel.phase == .signingIn)
             }
         }

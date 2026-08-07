@@ -103,7 +103,7 @@ struct JunoMobileThoughtProcessRow: View {
             // strip changes state. One gutter for both states keeps the text on a
             // single axis, which is the point of the two states being one object.
             JunoThinkingMatrix()
-                .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
+                .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: Self.gutter)
             liveCopy
             Spacer(minLength: 0)
@@ -162,7 +162,7 @@ struct JunoMobileThoughtProcessRow: View {
                     Text("Thought process")
                         .font(JunoSerif.font(size: 13, relativeTo: .footnote, face: .medium))
                         .kerning(0.13)
-                        .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
+                        .foregroundStyle(Color.junoMutedForeground)
                     Text("See how this response was made")
                         .font(.system(size: 15))
                         .foregroundStyle(Color.primary.opacity(0.78))
@@ -176,13 +176,13 @@ struct JunoMobileThoughtProcessRow: View {
                         .font(.system(size: 11, design: .monospaced))
                         .kerning(0.22)
                         .monospacedDigit()
-                        .foregroundStyle(Color.junoMutedForeground.opacity(0.6))
+                        .foregroundStyle(Color.junoMutedForeground)
                         .padding(.horizontal, 1)
                 }
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.junoMutedForeground.opacity(0.35))
+                    .foregroundStyle(Color.junoMutedForeground)
             }
             .frame(minHeight: 48)
             .padding(.horizontal, 8)
@@ -330,7 +330,7 @@ private struct JunoMobileThoughtProcessPanel: View {
                     Text("Run summary")
                         .font(JunoSerif.font(size: 13, relativeTo: .footnote, face: .medium))
                         .kerning(0.13)
-                        .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
+                        .foregroundStyle(Color.junoMutedForeground)
                     Text("Response complete")
                         .font(JunoSerif.font(size: 18, relativeTo: .headline, face: .semibold))
                         .foregroundStyle(Color.primary.opacity(0.9))
@@ -356,7 +356,7 @@ private struct JunoMobileThoughtProcessPanel: View {
             Text("REASONING")
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .kerning(0.5)
-                .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
+                .foregroundStyle(Color.junoMutedForeground)
 
             // The trace leads; the prose is the evidence behind it. The question
             // that made someone open this sheet is "what did it do?", and a wall of

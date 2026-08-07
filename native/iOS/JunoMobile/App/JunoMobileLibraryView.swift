@@ -238,7 +238,7 @@ struct JunoMobileLibraryView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 TextField("library.search", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 17))
@@ -251,7 +251,7 @@ struct JunoMobileLibraryView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 17))
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("library.search.clear")
@@ -303,12 +303,12 @@ private struct JunoLibraryMessage: View {
         VStack(spacing: 10) {
             Image(systemName: symbol)
                 .font(.system(size: 28))
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
             Text(title)
                 .font(.system(size: 17, weight: .semibold))
             Text(detail)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 40)

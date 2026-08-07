@@ -188,16 +188,16 @@ public struct JunoAIcssReasoningStream: View {
                     Text("Thought")
                         .foregroundStyle(Color.junoMutedForeground)
                         + Text(duration.map { " for \($0)" } ?? "")
-                        .foregroundStyle(Color.junoMutedForeground.opacity(0.68))
+                        .foregroundStyle(Color.junoMutedForeground)
                     Image(systemName: "chevron.up")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Color.junoMutedForeground.opacity(0.7))
+                        .junoFont(size: 9, relativeTo: .caption2, weight: .semibold)
+                        .foregroundStyle(Color.junoMutedForeground)
                         .rotationEffect(.degrees(open ? 0 : 180))
                 }
-                .font(.system(size: 13, weight: .medium))
+                .junoFont(size: 13, relativeTo: .subheadline, weight: .medium)
                 .frame(minHeight: 20)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.junoPress)
             .accessibilityLabel("Toggle thought")
         }
     }
@@ -216,7 +216,7 @@ public struct JunoAIcssReasoningStream: View {
         let rows = VStack(alignment: .leading, spacing: Self.gap) {
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 Text(line)
-                    .font(.system(size: 13, weight: .regular))
+                    .junoFont(size: 13, relativeTo: .subheadline, weight: .regular)
                     .lineSpacing(3)
                     .foregroundStyle(Color.junoMutedForeground)
                     // Two lines in a fixed box: the clamp is what makes the slot

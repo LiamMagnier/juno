@@ -84,7 +84,7 @@ struct JunoMobileUsageView: View {
                 }
                 Text(subhead)
                     .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
 
             // Juno's own switch, not `.pickerStyle(.segmented)`. The system
@@ -140,7 +140,7 @@ struct JunoMobileUsageView: View {
                     .font(.system(size: 16, weight: .semibold))
                 Text("No requests in the \(range.subtitle). Ask Juno something and this fills in.")
                     .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
         }
     }
@@ -215,7 +215,7 @@ private struct JunoMobileUsageStats: View {
                 .minimumScaleFactor(0.7)
             Text(label)
                 .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
@@ -289,12 +289,12 @@ private struct JunoMobileUsageActivity: View {
             if let busiest = breakdown.busiestDay, busiest.requests > 0 {
                 Text("Busiest \(NativeUsageFormat.day(busiest.dayMs)) · \(busiest.requests)")
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
             Spacer(minLength: 4)
             Text("Less")
                 .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
             ForEach(0..<5, id: \.self) { level in
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(NativeUsageActivityCell.fill(forLevel: level))
@@ -302,7 +302,7 @@ private struct JunoMobileUsageActivity: View {
             }
             Text("More")
                 .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
         }
         .accessibilityHidden(true)
     }
@@ -334,7 +334,7 @@ private struct JunoMobileUsageSurfaces: View {
                 if rows.isEmpty {
                     Text("No surface has spent anything in this window.")
                         .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 } else {
                     ForEach(rows) { row in
                         VStack(alignment: .leading, spacing: 5) {
@@ -342,13 +342,13 @@ private struct JunoMobileUsageSurfaces: View {
                                 Image(systemName: row.symbol)
                                     .font(.system(size: 13))
                                     .frame(width: 18)
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                                 Text(row.displayName)
                                     .font(.system(size: 15))
                                 Spacer(minLength: 6)
                                 Text(NativeUsageFormat.tokens(row.totalTokens))
                                     .font(.system(size: 13, design: .monospaced))
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                             }
                             JunoMobileUsageBar(
                                 fraction: Double(row.totalTokens) / Double(largest)
@@ -424,7 +424,7 @@ private struct JunoMobileUsageTokenMix: View {
                 .font(.system(size: 14, weight: .medium, design: .monospaced))
             Text(title)
                 .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(title): \(value) tokens")
@@ -466,10 +466,10 @@ private struct JunoMobileUsageModels: View {
                             Spacer(minLength: 6)
                             Text("\(NativeUsageFormat.count(row.requests))×")
                                 .font(.system(size: 12, design: .monospaced))
-                                .foregroundStyle(.tertiary)
+                                .junoMetaInk()
                             Text(NativeUsageFormat.tokens(row.totalTokens))
                                 .font(.system(size: 13, design: .monospaced))
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                         }
                         .accessibilityElement(children: .combine)
                         .accessibilityLabel(
@@ -501,11 +501,11 @@ private struct JunoMobileUsagePlanCard: View {
                 if plan.isUnlimited {
                     Text("No usage limits on this plan.")
                         .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 } else if plan.isBrowseOnly {
                     Text("Free is a browse-only tier. Upgrade to start using models.")
                         .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 } else {
                     meter("Session", plan.session)
                     meter("Weekly", plan.weekly)
@@ -514,7 +514,7 @@ private struct JunoMobileUsagePlanCard: View {
                 if let renewsAt = plan.renewsAt {
                     Text("\(plan.renewalLabel) \(renewsAt.formatted(date: .abbreviated, time: .omitted))")
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
             }
         }
@@ -528,18 +528,18 @@ private struct JunoMobileUsagePlanCard: View {
                 Spacer(minLength: 6)
                 Text(window.fraction.formatted(.percent.precision(.fractionLength(0))))
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
             // Coral until it is nearly spent, then amber: the colour is a
             // warning only where there is something to warn about.
             JunoMobileUsageBar(
                 fraction: window.fraction,
-                tint: window.fraction >= 0.9 ? .orange : .junoAccent
+                tint: window.fraction >= 0.9 ? .junoCaution : .junoAccent
             )
             if let resetsAt = window.resetsAt {
                 Text("Resets \(resetsAt.formatted(date: .omitted, time: .shortened))")
                     .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
             }
         }
         .accessibilityElement(children: .combine)

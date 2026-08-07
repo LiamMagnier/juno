@@ -57,7 +57,7 @@ struct JunoAttachmentThumbnail: View {
             } else if data == nil {
                 Image(systemName: "doc")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .frame(width: size, height: size)
             } else {
                 // The decode is a few milliseconds; a spinner here would flash

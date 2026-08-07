@@ -294,20 +294,29 @@ export default function WorkThreadPage() {
     [hosts, run]
   );
 
+  /**
+   * Answers the question the run asked.
+   *
+   * Resolves true only when the answer landed. Every sender on this page returns
+   * that boolean and the composer keeps the reader's words until it sees one:
+   * a refused send that had already emptied the box costs somebody a paragraph
+   * they then have to retype from memory.
+   */
   const answer = React.useCallback(
-    async (questionId: string, text: string) => {
+    async (questionId: string, text: string): Promise<boolean> => {
       setAnswering(true);
       const result = await answerWorkQuestion(id, questionId, text);
       setAnswering(false);
       if (result.kind === "ok") {
         window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
-        return;
+        return true;
       }
       toast.error(
         result.kind === "blocked"
           ? result.explanation
           : "Couldn’t send that answer, so Juno hasn’t seen it. Try again."
       );
+      return false;
     },
     [id]
   );
@@ -322,20 +331,21 @@ export default function WorkThreadPage() {
    * inventing a promise on behalf of an executor it cannot see.
    */
   const steer = React.useCallback(
-    async (text: string) => {
+    async (text: string): Promise<boolean> => {
       setAnswering(true);
       const result = await steerWorkRun(id, text);
       setAnswering(false);
       if (result.kind === "ok") {
         toast.success(result.value.explanation);
         window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
-        return;
+        return true;
       }
       toast.error(
         result.kind === "blocked"
           ? result.explanation
           : "Couldn’t add that to the task. Nothing was recorded."
       );
+      return false;
     },
     [id]
   );
@@ -396,8 +406,15 @@ export default function WorkThreadPage() {
     [run, load, restream]
   );
 
+  /**
+   * Starts an attempt. Resolves the run it started, or null if nothing started.
+   *
+   * The return value exists for `startCarrying` below, which has a second
+   * request to make and may only make it once this one has genuinely produced a
+   * run. The header's own buttons ignore it.
+   */
   const dispatch = React.useCallback(
-    async (origin: "manual" | "retry") => {
+    async (origin: "manual" | "retry"): Promise<ClientWorkRun | null> => {
       setBusyControl(true);
       setBlocked(null);
       const result = await startWorkRun(id, {
@@ -419,19 +436,82 @@ export default function WorkThreadPage() {
         restream();
         window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
         void load();
-        return;
+        return result.value.run;
       }
       if (result.kind === "blocked") {
         setBlocked(result);
-        return;
+        return null;
       }
       toast.error(
         result.cause === "offline"
           ? "Couldn’t reach Juno to start this. Nothing was queued."
           : "Couldn’t start this. Nothing was queued, so trying again is safe."
       );
+      return null;
     },
     [id, run, load, restream]
+  );
+
+  /**
+   * Saying something to a task that is not running: start it, carrying the words.
+   *
+   * This is the capability the thread was missing. A finished, failed or
+   * cancelled task took nothing at all — the composer removed itself and the
+   * reader was told to press "Try again" and then say nothing to it — and a
+   * draft was the same story with a different sentence.
+   *
+   * It is two requests, in this order, and the order is the whole mechanism:
+   *
+   *   1. `POST /sessions/[id]/runs` dispatches the attempt.
+   *   2. `POST /sessions/[id]/answer` records the message on it.
+   *
+   * The second cannot come first. That route reads the newest run and refuses a
+   * terminal one with `run_finished` and a never-dispatched session with
+   * `run_not_started` — the two states this function exists for. Once the new
+   * attempt is in the table it is the newest, it is `queued`, and the
+   * instruction lands on it.
+   *
+   * And it is genuinely carried rather than merely stored. `openSteering` in
+   * scripts/work-runner.ts starts its cursor at zero and drains inside the FIRST
+   * `provider.stream` call, so an instruction written between dispatch and the
+   * first turn is put in front of the model before it does anything — framed by
+   * `framedInstruction` as something that comes after the goal and wins where
+   * the two disagree. On a Mac the same words go over the relay as a `steer`
+   * command. Nothing here forwards the message itself; both executors already
+   * read the row.
+   *
+   * The failure that matters is the half one: the attempt started and the
+   * message did not reach it. Saying "couldn't send" alone would be a lie by
+   * omission — the task is now running — so it is reported as what it is, and
+   * false comes back so the composer keeps the words. The mode has moved to
+   * `steer` by then, and pressing send again delivers them to the run that is
+   * already going.
+   */
+  const startCarrying = React.useCallback(
+    async (origin: "manual" | "retry", text: string): Promise<boolean> => {
+      setAnswering(true);
+      const started = await dispatch(origin);
+      if (started === null) {
+        setAnswering(false);
+        // `dispatch` has already said why, either as a toast or as the blocked
+        // note at the top of the page. A second sentence here would be the same
+        // refusal reported twice in two wordings.
+        return false;
+      }
+      const result = await steerWorkRun(id, text);
+      setAnswering(false);
+      if (result.kind === "ok") {
+        toast.success(result.value.explanation);
+        window.dispatchEvent(new CustomEvent(WORK_SYNC_EVENT));
+        return true;
+      }
+      toast.error(
+        "This task started again, but your message didn’t reach it. It is running on the goal " +
+          "alone — send the message again and Juno will read it before its next step."
+      );
+      return false;
+    },
+    [dispatch, id]
   );
 
   if (loadFailure !== null) {
@@ -479,7 +559,7 @@ export default function WorkThreadPage() {
   }
 
   /*
-   * What the box at the bottom is for.
+   * What the box at the bottom is for. There is always a box.
    *
    * An open question outranks everything: while one is open, `POST /answer`
    * refuses an unprompted instruction on purpose — the runner reads the newest
@@ -487,32 +567,42 @@ export default function WorkThreadPage() {
    * answer would leave the run waiting for a reply it had already been given.
    * The oldest open question is the one chosen, because it is the one blocking.
    *
-   * With no question open the box takes an instruction instead, which the route
-   * records on the task. A finished task and a task nothing can execute take
-   * neither, and say which.
+   * Then the two states that used to close the composer and no longer do. A
+   * draft has no attempt for an instruction to join and a finished one has no
+   * attempt still listening, so in both the send starts a run and hands the
+   * message to it — see `startCarrying`. That is the same answer to the same
+   * question the reader was asking when the field disappeared on them.
+   *
+   * `blocked` is deliberately not a mode. It means the LAST dispatch was
+   * refused, and its sentence is already at the top of this page where it
+   * cannot be scrolled away; the refusal is about an attempt, not about the
+   * reader's ability to type, and a Mac that has since woken makes the next
+   * press succeed. Greying the box out on the strength of a stale refusal is
+   * how this surface got into trouble in the first place.
    */
   const openQuestion = questions[0] ?? null;
   const composerMode: WorkComposerMode =
     openQuestion !== null
       ? { kind: "answer", question: openQuestion.question }
-      : blocked !== null
-        ? {
-            kind: "closed",
-            reason:
-              "Juno cannot act on this right now, so there is nowhere for a new instruction to go.",
-          }
+      : run === null
+        ? { kind: "start" }
         : isTerminalStatus(session.status)
-          ? {
-              kind: "closed",
-              reason: "This task has finished. Start it again above, or begin a new one, to say more.",
-            }
-          : run === null
-            ? {
-                kind: "closed",
-                reason:
-                  "This is still a draft. Start it, and everything in the goal goes with it — there is no attempt yet for anything else to join.",
-              }
-            : { kind: "steer" };
+          ? { kind: "restart" }
+          : { kind: "steer" };
+
+  /**
+   * One send, routed by the mode the composer is already showing.
+   *
+   * Written here rather than in the composer because each branch is a different
+   * request with different preconditions, and the composer's job is to say which
+   * one is about to be made — not to know how it is made.
+   */
+  const sendFromComposer = async (text: string): Promise<boolean> => {
+    if (openQuestion !== null) return answer(openQuestion.id, text);
+    if (run === null) return startCarrying("manual", text);
+    if (isTerminalStatus(session.status)) return startCarrying("retry", text);
+    return steer(text);
+  };
 
   const notStarted = run === null;
 
@@ -926,13 +1016,7 @@ export default function WorkThreadPage() {
               turns={turns}
               sending={answering}
               mode={composerMode}
-              onSend={(text) => {
-                if (openQuestion !== null) {
-                  void answer(openQuestion.id, text);
-                  return;
-                }
-                void steer(text);
-              }}
+              onSend={sendFromComposer}
             />
           </div>
 

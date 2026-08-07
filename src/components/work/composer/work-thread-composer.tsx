@@ -1,0 +1,301 @@
+"use client";
+
+import * as React from "react";
+import { ArrowUp, Loader2, Mic, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ComposerDictation } from "@/components/chat/composer-dictation";
+import { WorkThreadReach } from "@/components/work/composer/work-thread-reach";
+import { cn } from "@/lib/utils";
+
+/**
+ * The box at the bottom of a Work thread. It is always there.
+ *
+ * This replaces a composer that removed itself — a `{ kind: "closed", reason }`
+ * that swapped the box for a dashed panel saying "This task has finished. Start
+ * it again above, or begin a new one, to say more." Three ordinary states hit
+ * that branch: a finished task, a draft, and a task the server had refused to
+ * dispatch. In all three the reader had something to say and the product's
+ * answer was to take the field away and point at a button somewhere else.
+ *
+ * So the box never goes. What varies is what SENDING does, and every mode says
+ * so above the field before the send rather than in a toast after it:
+ *
+ *   answer   the run asked something; this goes to `POST /answer` with its id
+ *   steer    the run is going; this is recorded on the task and read next turn
+ *   restart  the run is over; this starts a NEW attempt carrying the message
+ *   start    never dispatched; this starts it, carrying the message
+ *
+ * The last two are the capability that was missing. Neither is faked: see the
+ * note on `startCarrying` in the thread page for the two requests they are made
+ * of and why they are made in that order.
+ *
+ * ── Nothing typed is ever thrown away ──────────────────────────────────────
+ *
+ * `onSend` resolves false when the words did not land, and the draft is only
+ * cleared on true — the same contract the chat composer keeps with its
+ * `accepted: false`. Clearing on submit and hoping is how a refused send costs
+ * somebody a paragraph they will not retype.
+ *
+ * ── It must not take focus while a run streams ─────────────────────────────
+ *
+ * There is no `autoFocus` here and nothing focuses the textarea except the
+ * reader and the dictation hand-off. The field is also never `disabled`: the
+ * page re-renders roughly once a second while a run is live, and a `disabled`
+ * that flipped on any of those frames would blur whatever the reader was in the
+ * middle of. Sending is gated on the button and on the Enter handler instead,
+ * which is where the guard belongs.
+ */
+
+/** What the box is for right now. There is no "closed" — that was the bug. */
+export type WorkComposerMode =
+  /** The run asked something and is stopped until it is answered. */
+  | { kind: "answer"; question: string }
+  /** The run is under way; this is an instruction it will read next turn. */
+  | { kind: "steer" }
+  /** The run is over; sending starts another attempt at the same goal. */
+  | { kind: "restart" }
+  /** Never dispatched; sending starts it. */
+  | { kind: "start" };
+
+/** The mono line above the field: what pressing send will actually do. */
+function intent(mode: WorkComposerMode): string {
+  switch (mode.kind) {
+    case "answer":
+      return `Answering: ${mode.question}`;
+    case "steer":
+      // Said before the send rather than after it, because the difference
+      // matters: this goes on the task's record, and the attempt already running
+      // was handed its instructions when it started. What became of it is the
+      // route's sentence to write, not this one's — a cloud run and a Mac whose
+      // relay refused the instruction are different outcomes, and only the
+      // response knows which happened.
+      return "Not an answer to anything — this is kept on the task";
+    // "This attempt is over" rather than "this task has finished": the same
+    // branch serves a failure, a cancellation and a Mac that went offline, and
+    // three of the four would be told they had succeeded.
+    case "restart":
+      return "This attempt is over — sending starts another and hands it this message";
+    case "start":
+      return "Not started yet — sending starts this task and hands it this message";
+  }
+}
+
+function placeholder(mode: WorkComposerMode): string {
+  return mode.kind === "answer" ? "Answer in your own words" : "Write a message…";
+}
+
+/** The send button's accessible name, which is the only place its effect is named twice. */
+function sendLabel(mode: WorkComposerMode): string {
+  switch (mode.kind) {
+    case "answer":
+      return "Send answer";
+    case "steer":
+      return "Add this to the task";
+    case "restart":
+      return "Start this task again with this message";
+    case "start":
+      return "Start this task with this message";
+  }
+}
+
+export function WorkThreadComposer({
+  mode,
+  sending,
+  onSend,
+}: {
+  mode: WorkComposerMode;
+  /** A send is in flight. Locks the button, never the field. */
+  sending: boolean;
+  /** Resolves true when the words landed. False keeps them in the box. */
+  onSend: (text: string) => Promise<boolean>;
+}) {
+  const [draft, setDraft] = React.useState("");
+  const [dictating, setDictating] = React.useState(false);
+  const [reachOpen, setReachOpen] = React.useState(false);
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  const autoresize = React.useCallback(() => {
+    const element = textareaRef.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
+  }, []);
+  React.useEffect(() => {
+    autoresize();
+  }, [draft, autoresize]);
+
+  const submit = React.useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || sending) return;
+      const accepted = await onSend(trimmed);
+      // Only a landed send empties the box. A refusal leaves the words exactly
+      // where the reader left them, so "try again" is one keystroke rather than
+      // a retype.
+      if (!accepted) return;
+      setDraft((current) => {
+        // A send takes a second or so and the field stays live throughout, so
+        // the box is not necessarily holding what was sent by the time this
+        // resolves. Only the sent words are removed; anything typed on top of
+        // them is the reader's next message and a blanket clear would eat it.
+        const head = current.trimStart();
+        if (head === trimmed) return "";
+        return head.startsWith(trimmed) ? head.slice(trimmed.length).trimStart() : current;
+      });
+    },
+    [onSend, sending]
+  );
+
+  /**
+   * Dictate mode hands its transcript back the same two ways chat's does.
+   *
+   * Stop merges it into the field for editing; Send merges and submits through
+   * the identical path as typing, so a dictated message cannot take a shortcut
+   * around the mode the composer is in.
+   */
+  const closeDictation = React.useCallback(
+    (transcript: string, sendNow: boolean) => {
+      setDictating(false);
+      const merged = [draft.trim(), transcript.trim()].filter(Boolean).join(" ");
+      if (!sendNow || !merged || sending) {
+        setDraft(merged);
+        requestAnimationFrame(() => {
+          autoresize();
+          textareaRef.current?.focus();
+        });
+        return;
+      }
+      setDraft(merged);
+      void submit(merged);
+    },
+    [autoresize, draft, sending, submit]
+  );
+
+  const canSend = draft.trim().length > 0 && !sending;
+
+  return (
+    <div
+      className={cn(
+        "relative grid w-full grid-cols-1 grid-rows-1 items-end justify-items-center",
+        // Only min-height animates. Dictation's transcript preview floats above
+        // the capsule and needs the headroom; animating the two layers'
+        // opacity/transform keeps the swap on the compositor.
+        "transition-[min-height] duration-slow ease-spring motion-reduce:transition-none",
+        dictating ? "min-h-[170px]" : "min-h-0"
+      )}
+    >
+      <div
+        className={cn(
+          "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+          dictating
+            ? "translate-y-0 scale-100 opacity-100"
+            : "pointer-events-none translate-y-1 scale-95 opacity-0"
+        )}
+      >
+        {dictating && (
+          <ComposerDictation
+            onCancel={() => setDictating(false)}
+            onStop={(text) => closeDictation(text, false)}
+            onSend={(text) => closeDictation(text, true)}
+          />
+        )}
+      </div>
+
+      <div
+        className={cn(
+          "composer-surface col-start-1 row-start-1 flex w-full flex-col gap-1 rounded-[20px] border border-border/65 bg-card/95 p-1.5 backdrop-blur",
+          "transition-[border-color,opacity,transform] duration-base ease-spring focus-within:border-foreground/15 motion-reduce:transition-none",
+          dictating && "pointer-events-none translate-y-1 scale-[0.98] opacity-0"
+        )}
+      >
+        {/* What sending does, in the same mono register as every other metadata
+            label in Work. Only the echoed question is truncated — the four fixed
+            sentences are the whole point of the strip and a clipped one would be
+            worse than none. */}
+        <p
+          className={cn(
+            "px-2.5 pt-1 font-mono text-[10px] leading-relaxed text-muted-foreground",
+            mode.kind === "answer" && "truncate"
+          )}
+        >
+          {intent(mode)}
+        </p>
+
+        <textarea
+          ref={textareaRef}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              // Escape gets out of the box rather than out of the page: the
+              // transcript is what a reader wants their keyboard back for.
+              event.preventDefault();
+              event.currentTarget.blur();
+              return;
+            }
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              void submit(draft);
+            }
+          }}
+          rows={1}
+          placeholder={placeholder(mode)}
+          // Stable in every mode but the one where it carries real information.
+          // The page re-renders about once a second while a run is live, and a
+          // field whose accessible name changed as the run moved between states
+          // would be re-announced under the reader mid-sentence. The send button
+          // is where the effect is named, and it is not the thing holding focus.
+          aria-label={mode.kind === "answer" ? `Answer: ${mode.question}` : "Message"}
+          className="max-h-[180px] min-h-[38px] w-full resize-none bg-transparent px-2.5 py-2 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground/70"
+        />
+
+        <div className="flex items-center gap-1.5">
+          <Popover open={reachOpen} onOpenChange={setReachOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="What this task can reach"
+                className="shrink-0 rounded-[11px] text-muted-foreground hover:text-foreground"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" side="top" sideOffset={10} className="w-80 p-0">
+              <WorkThreadReach onNavigate={() => setReachOpen(false)} />
+            </PopoverContent>
+          </Popover>
+
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setDictating(true)}
+              aria-label="Dictate this message"
+              className="shrink-0 rounded-[11px] text-muted-foreground hover:text-foreground"
+            >
+              <Mic className="h-4 w-4" aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              size="icon-sm"
+              onClick={() => void submit(draft)}
+              disabled={!canSend}
+              aria-label={sendLabel(mode)}
+              className="composer-primary-action h-8 w-8 shrink-0 rounded-[11px]"
+            >
+              {sending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

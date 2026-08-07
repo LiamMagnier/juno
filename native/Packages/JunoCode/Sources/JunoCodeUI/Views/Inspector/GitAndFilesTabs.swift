@@ -85,7 +85,7 @@ struct GitTab: View {
                 }
                 Section("Recent commits") {
                     if controller.gitHistory.isEmpty {
-                        Text("No commits yet.").foregroundStyle(.secondary)
+                        Text("No commits yet.").junoSecondaryInk()
                     } else {
                         ForEach(controller.gitHistory) { commit in
                             VStack(alignment: .leading, spacing: 1) {
@@ -97,7 +97,7 @@ struct GitTab: View {
                                     Text(commit.date, style: .relative)
                                 }
                                 .font(.caption2)
-                                .foregroundStyle(.tertiary)
+                                .junoMetaInk()
                             }
                         }
                     }
@@ -217,7 +217,7 @@ struct ContextTab: View {
             }
             Section("Detected toolchains") {
                 if controller.testSuggestions.isEmpty {
-                    Text("None detected.").foregroundStyle(.secondary)
+                    Text("None detected.").junoSecondaryInk()
                 } else {
                     ForEach(controller.testSuggestions) { suggestion in
                         Label(suggestion.toolchain, systemImage: "wrench.and.screwdriver")
@@ -227,7 +227,7 @@ struct ContextTab: View {
             Section("Instruction files") {
                 if controller.instructionFiles.isEmpty {
                     Text("No repository instruction files found.")
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 } else {
                     ForEach(controller.instructionFiles) { file in
                         Label(file.path.value, systemImage: "doc.text")
@@ -235,7 +235,7 @@ struct ContextTab: View {
                     }
                     Text("Instructions are context for the agent, never policy: they cannot override permissions or approvals.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
             }
             Section("Session") {
@@ -300,7 +300,7 @@ struct ComputerTab: View {
 
                 Text("Allows Juno Code to capture screen state and execute desktop actions with explicit approval step-by-step.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
 
                 HStack(spacing: 8) {
                     permissionBadge("Screen Capture", granted: screenCaptureGranted)

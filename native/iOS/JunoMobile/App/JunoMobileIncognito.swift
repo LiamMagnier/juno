@@ -277,7 +277,12 @@ struct JunoMobileIncognitoChat: View {
                     Button(action: send) {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(Color.junoOnAccent)
+                            // Follows the ground: `junoOnAccent` on the coral,
+                            // the quiet ink on the untinted glass the inactive
+                            // state now wears.
+                            .foregroundStyle(
+                                sendDisabled ? Color.junoMutedForeground : Color.junoOnAccent
+                            )
                             .frame(width: 34, height: 34)
                             .modifier(JunoComposerSendBackground(active: !sendDisabled))
                             .scaleEffect(sendDisabled ? 0.92 : 1)
@@ -382,10 +387,10 @@ private struct JunoMobileIncognitoTurnRow: View {
                 } else {
                     HStack(spacing: 12) {
                         JunoThinkingMatrix()
-                            .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
+                            .foregroundStyle(Color.junoMutedForeground)
                         Text("Thinking about your request")
                             .font(.system(size: 17))
-                            .foregroundStyle(Color.junoMutedForeground.opacity(0.85))
+                            .foregroundStyle(Color.junoMutedForeground)
                     }
                     .frame(minHeight: 40)
                 }
@@ -393,7 +398,7 @@ private struct JunoMobileIncognitoTurnRow: View {
                     Text(junoDisplayModelName(model))
                         .font(.system(size: 11, design: .monospaced))
                         .kerning(0.22)
-                        .foregroundStyle(Color.junoMutedForeground.opacity(0.6))
+                        .foregroundStyle(Color.junoMutedForeground)
                         .padding(.top, 2)
                 }
             }

@@ -349,7 +349,7 @@ struct DesktopArtifactsScreen: View {
                         .junoPageHeading()
                     Text("Pages, diagrams, code and documents Juno built with you.")
                         .junoRowLabel()
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
 
                 Spacer(minLength: JunoSpace.roomy)
@@ -368,7 +368,7 @@ struct DesktopArtifactsScreen: View {
             HStack(spacing: JunoSpace.cozy) {
                 HStack(spacing: JunoSpace.tight) {
                     Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .accessibilityHidden(true)
                     TextField("Search artifacts", text: $searchText)
                         .textFieldStyle(.plain)
@@ -378,7 +378,7 @@ struct DesktopArtifactsScreen: View {
                             searchText = ""
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.tertiary)
+                                .junoMetaInk()
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Clear artifact search")
@@ -387,8 +387,12 @@ struct DesktopArtifactsScreen: View {
                 .padding(.horizontal, JunoSpace.cozy)
                 .frame(height: 32)
                 .background(
+                    // Pure #FFFFFF in light aqua, exactly as the Projects search
+                    // field was. Both fields are the same control doing the same
+                    // job, so both now stand on the card token rather than on a
+                    // white the rest of the palette does not contain.
                     RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
-                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .fill(Color.junoSurface)
                 )
                 .frame(maxWidth: 420)
 
@@ -544,7 +548,7 @@ struct DesktopArtifactsScreen: View {
                         Text(DesktopArtifactKindName.singular(artifact.kind))
                             .junoMono()
                     }
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .accessibilityHidden(true)
                 }
             }
@@ -781,7 +785,7 @@ struct DesktopArtifactsScreen: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(provenance(artifact, version: version))
                 .junoCodeSmall()
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Divider()
@@ -874,7 +878,12 @@ struct DesktopArtifactsScreen: View {
             .scrollContentBackground(.hidden)
             .padding(JunoSpace.cozy)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color(nsColor: .textBackgroundColor))
+            // `NSColor.textBackgroundColor` is pure #FFFFFF in light aqua. This
+            // is the largest single surface on the page and the one a reader
+            // stares at, so a cold white here is the version of the defect that
+            // shows most. The card token keeps the same one-step lift off the
+            // canvas without leaving the palette.
+            .background(Color.junoSurface)
             .accessibilityLabel(
                 "Artifact source for \(artifact.title), version \(version)"
             )
@@ -985,7 +994,7 @@ struct DesktopArtifactsScreen: View {
                 if version.version == current {
                     Text("current")
                         .junoCodeSmall()
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
             }
             Text(versionCaption(version))
@@ -1021,7 +1030,7 @@ struct DesktopArtifactsScreen: View {
                 HStack(spacing: JunoSpace.snug) {
                     Text("v\(baseVersion) → v\(targetVersion)")
                         .junoCodeSmall()
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     Text("+\(addedCount)")
                         .junoCodeSmall()
                         .foregroundStyle(Color.junoSuccess)
@@ -1085,7 +1094,7 @@ struct DesktopArtifactsScreen: View {
                 if !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .lineLimit(1)
                 }
             }
@@ -1207,7 +1216,11 @@ struct DesktopArtifactsScreen: View {
         .controlSize(.small)
         .padding(.horizontal, JunoSpace.cozy)
         .frame(minHeight: 52)
-        .background(Color(nsColor: .windowBackgroundColor))
+        // `windowBackgroundColor` is the system's neutral grey, which put a cold
+        // strip across the top of a warm page — the same defect as the pure-white
+        // search field below, one step less obvious because grey hides better
+        // than white does. The canvas is the ground this bar sits on.
+        .background(Color.junoCanvas)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("juno.artifact-command-bar")
     }
@@ -1450,16 +1463,16 @@ private struct DesktopArtifactDiffCanvas: View {
             Text(gutter(line.baseLine))
                 .junoCodeSmall()
                 .monospacedDigit()
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
                 .frame(width: 34, alignment: .trailing)
             Text(gutter(line.targetLine))
                 .junoCodeSmall()
                 .monospacedDigit()
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
                 .frame(width: 34, alignment: .trailing)
             Text(sign(line.change))
                 .junoCode()
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .frame(width: 10, alignment: .leading)
             Text(line.text.isEmpty ? " " : line.text)
                 .junoCode()

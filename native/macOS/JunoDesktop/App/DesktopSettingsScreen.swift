@@ -246,7 +246,7 @@ struct DesktopSettingsScreen: View {
         JunoSettingsTile("Preferences") {
             Label(settingsUnavailableMessage, systemImage: "clock.arrow.circlepath")
                 .junoRowLabel()
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .fixedSize(horizontal: false, vertical: true)
             Button("Reload settings") { Task { await model.refresh() } }
                 .accessibilityIdentifier("juno.desktop.settings.reload")
@@ -591,7 +591,7 @@ struct DesktopSettingsScreen: View {
                         .textSelection(.enabled)
                     Text("Channel \(JunoBuildInfo.current.channel) · contract \(JunoBuildInfo.current.contractVersion)")
                         .junoCodeSmall()
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .textSelection(.enabled)
                 }
                 Spacer(minLength: JunoSpace.snug)
@@ -660,7 +660,7 @@ struct DesktopSettingsScreen: View {
                     Task { await model.resolveConflicts(keepLocalChanges: false) }
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .accessibilityIdentifier("juno.desktop.settings.use-server")
             }
         } else if model.phase == .offline || model.phase == .failed,
@@ -690,7 +690,7 @@ struct DesktopSettingsScreen: View {
         JunoDesktopGlass(spacing: JunoSpace.snug) {
             HStack(spacing: JunoSpace.cozy) {
                 Image(systemName: symbol)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .accessibilityHidden(true)
                 Text(message)
                     .junoRowLabel()
@@ -760,6 +760,11 @@ private struct DesktopSettingsSheetHost<Content: View>: View {
             width: DesktopSettingsMetrics.sheetWidth,
             height: DesktopSettingsMetrics.sheetHeight
         )
+        // Sheet contract: this host is the root of every Settings sheet, so the
+        // warm ground goes on once here rather than in each pane. Without it the
+        // panes stood on the system's neutral window grey while the Settings page
+        // behind them was warm. The platter stays the system's.
+        .junoSheetSurface(.fitted)
     }
 }
 
@@ -784,7 +789,7 @@ private extension View {
     /// The small monospaced caps above a page heading — the web's `eyebrow`.
     func junoSettingsEyebrow() -> some View {
         junoCodeSmall()
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
             .textCase(.uppercase)
     }
 
@@ -837,7 +842,7 @@ private struct DesktopSettingsAction: View {
                 Spacer(minLength: JunoSpace.snug)
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
                     .accessibilityHidden(true)
             }
             .padding(.horizontal, JunoSpace.cozy)
@@ -987,7 +992,7 @@ private struct DesktopSettingsAppearanceTile: View {
                         trailing: {
                             Image(systemName: theme.symbol)
                                 .font(.system(size: 13))
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                         },
                         select: { update(NativeSettingsPatch(theme: theme.value)) }
                     )
@@ -1143,7 +1148,7 @@ private struct DesktopSettingsModelTile: View {
                 Spacer(minLength: JunoSpace.snug)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .accessibilityHidden(true)
             }
             .padding(.horizontal, JunoSpace.cozy)
@@ -1284,7 +1289,7 @@ private struct DesktopSettingsFavoritesTile: View {
                 setFavorite(option.id, false)
             } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
             }
             .buttonStyle(.plain)
             .disabled(disabled)
@@ -1395,7 +1400,7 @@ private struct DesktopSettingsInstructionsTile: View {
                 // actually landed.
                 Text("\(draft.count.formatted()) chars")
                     .junoCodeSmall()
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
                     .padding(.trailing, JunoSpace.cozy)
                     .padding(.bottom, JunoSpace.snug)
                     .allowsHitTesting(false)
@@ -1597,7 +1602,7 @@ private struct DesktopSettingsDangerActions: View {
                 .junoEmptyTitle()
             Text("This permanently deletes every conversation, project, file and memory on this account. It cannot be undone.")
                 .junoBody()
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .fixedSize(horizontal: false, vertical: true)
             Text("Type \(session.profile.email) to confirm.")
                 .junoCaption()
@@ -1628,6 +1633,9 @@ private struct DesktopSettingsDangerActions: View {
         // re-measure is what this shell has previously fallen into a constraint
         // loop over.
         .frame(width: DesktopSettingsMetrics.confirmWidth)
+        // Sheet contract: the warm ground inside the content, the platter left to
+        // the system. `.fitted` honours the explicit width above.
+        .junoSheetSurface(.fitted)
     }
 
     /// The same comparison the server makes, so the button is dead until the

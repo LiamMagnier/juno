@@ -182,21 +182,17 @@ struct JunoMobileWorkView: View {
     private var empty: some View {
         JunoCard {
             VStack(alignment: .leading, spacing: 10) {
-                Text("No tasks yet").font(.system(size: 17, weight: .semibold))
+                Text("No tasks yet").junoEmptyTitle()
                 Text(
                     "A task is something you hand to Juno to go and do — sort a folder, pull a report together, work through an inbox. It runs on one of your Macs or in the cloud, and tells you here what it did."
                 )
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 Button { isComposing = true } label: {
-                    Text("New task")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 18)
-                        .frame(height: 40)
-                        .modifier(JunoAccentGlassCapsule())
+                    Text("New task").fontWeight(.semibold)
                 }
-                .buttonStyle(.plain)
+                .junoProminentAction()
+                .controlSize(.large)
                 .padding(.top, 2)
             }
         }
@@ -250,7 +246,7 @@ private struct JunoMobileWorkHostCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Your Macs")
                     .font(.system(.footnote, design: .default, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .textCase(nil)
                     .accessibilityAddTraits(.isHeader)
 
@@ -259,7 +255,7 @@ private struct JunoMobileWorkHostCard: View {
                         "No Mac is signed in to Juno Work, so only tasks that need nothing local can run. Juno Work is switched on at the Mac itself."
                     )
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .fixedSize(horizontal: false, vertical: true)
                 } else {
                     ForEach(hosts) { row($0) }
@@ -282,7 +278,7 @@ private struct JunoMobileWorkHostCard: View {
                     .lineLimit(1)
                 Text(style.sentence)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .fixedSize(horizontal: false, vertical: true)
                 // The heartbeat itself, so "not answering" can be judged rather
                 // than taken on trust.
@@ -290,7 +286,7 @@ private struct JunoMobileWorkHostCard: View {
                     "Last heard from \(host.lastSeenAt.formatted(.relative(presentation: .named)))"
                 )
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
                 .lineLimit(1)
             }
             Spacer(minLength: 6)
@@ -341,13 +337,13 @@ private struct JunoMobileWorkSessionCard: View {
 
                     Text(session.goal)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
 
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                         .lineLimit(1)
                 }
             }
@@ -557,12 +553,12 @@ private struct JunoMobileWorkThread: View {
 
             Text(style.sentence)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(runningWhere(session))
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
                 .fixedSize(horizontal: false, vertical: true)
 
             degradations
@@ -587,7 +583,7 @@ private struct JunoMobileWorkThread: View {
                             .foregroundStyle(Color.junoCaution)
                         Text(note.explanation)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -728,7 +724,7 @@ private struct JunoMobileWorkThread: View {
                 } else {
                     Image(systemName: "clock.badge.questionmark")
                         .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(action.title)
@@ -737,13 +733,13 @@ private struct JunoMobileWorkThread: View {
                     if let detail = action.detail {
                         Text(detail)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .lineLimit(1)
                     }
                     if !live {
                         Text("This is the last thing Juno reported. Nothing is running it now.")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -817,7 +813,7 @@ private struct JunoMobileWorkThread: View {
                             if let detail = reference.detail {
                                 Text(detail)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                                     .lineLimit(1)
                             }
                         }
@@ -868,7 +864,7 @@ private struct JunoMobileWorkThread: View {
                                     + artifact.subtitle
                             )
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .lineLimit(1)
                         }
                         Spacer(minLength: 0)
@@ -941,7 +937,7 @@ private struct JunoMobileWorkThread: View {
                             if let detail = entry.detail {
                                 Text(detail)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
@@ -958,7 +954,7 @@ private struct JunoMobileWorkThread: View {
     private func quiet(_ text: String) -> some View {
         Text(text)
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -998,7 +994,7 @@ private struct JunoMobileWorkApprovalCard: View {
                         .foregroundStyle(tint)
                     Text(JunoWorkVocabulary.action(approval.action))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .lineLimit(1)
                     Spacer(minLength: 4)
                 }
@@ -1018,7 +1014,7 @@ private struct JunoMobileWorkApprovalCard: View {
                 // by the client as a sentence saying the approval expired.
                 Text("Expires \(approval.expiresAt.formatted(.relative(presentation: .named)))")
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
 
                 // **Weight follows consequence, and it did not before.**
                 //
@@ -1038,36 +1034,36 @@ private struct JunoMobileWorkApprovalCard: View {
                 VStack(spacing: 8) {
                     Button { decide(.allowed) } label: {
                         Text("Allow once")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color.junoOnAccent)
+                            .fontWeight(.semibold)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                            .modifier(JunoAccentGlassCapsule())
                     }
-                    .buttonStyle(.plain)
+                    .junoProminentAction()
+                    .controlSize(.large)
                     .accessibilityIdentifier("juno.mobile.work.approval.allow")
 
                     HStack(spacing: 8) {
-                        Button { decide(.allowedAlways) } label: {
-                            Text("Always allow this")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(Color.primary)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 44)
-                                .background(
-                                    Capsule(style: .continuous)
-                                        .strokeBorder(Color.junoBorder, lineWidth: 1)
-                                )
+                        if approval.allowsStandingGrant {
+                            Button { decide(.allowedAlways) } label: {
+                                Text("work.approval.allow-always")
+                                    .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
+                                    .junoInk()
+                                    .frame(maxWidth: .infinity)
+                                    .frame(minHeight: 44)
+                                    .background(
+                                        Capsule(style: .continuous)
+                                            .strokeBorder(Color.junoBorder, lineWidth: 1)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("juno.mobile.work.approval.allow-always")
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("juno.mobile.work.approval.allow-always")
 
                         Button { decide(.denied) } label: {
                             Text("Refuse")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(Color.primary)
+                                .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
+                                .junoInk()
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 44)
+                                .frame(minHeight: 44)
                                 .background(
                                     Capsule(style: .continuous)
                                         .strokeBorder(Color.junoBorder, lineWidth: 1)
@@ -1115,13 +1111,11 @@ private struct JunoMobileWorkQuestionCard: View {
 
                 Button(action: answer) {
                     Text("Answer")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .fontWeight(.semibold)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 42)
-                        .modifier(JunoAccentGlassCapsule())
                 }
-                .buttonStyle(.plain)
+                .junoProminentAction()
+                .controlSize(.large)
                 .accessibilityIdentifier("juno.mobile.work.answer")
             }
         }
@@ -1240,13 +1234,11 @@ private struct JunoMobileWorkInstructionCard: View {
 
                 Button(action: compose) {
                     Text("Say something")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .fontWeight(.semibold)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 42)
-                        .modifier(JunoAccentGlassCapsule())
                 }
-                .buttonStyle(.plain)
+                .junoProminentAction()
+                .controlSize(.large)
                 .accessibilityIdentifier("juno.mobile.work.instruct")
 
                 if let outcome = model.lastInstructionOutcome {
@@ -1257,7 +1249,7 @@ private struct JunoMobileWorkInstructionCard: View {
                             .foregroundStyle(outcome.delivered ? Color.secondary : Color.junoCaution)
                         Text(outcome.explanation)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .accessibilityIdentifier("juno.mobile.work.instruct-outcome")
@@ -1329,7 +1321,7 @@ private struct JunoMobileWorkInstructionSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Juno reads this before its next step. It does not undo what it has already done.")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .fixedSize(horizontal: false, vertical: true)
 
             TextField("What should Juno take into account?", text: $draft, axis: .vertical)
@@ -1417,6 +1409,10 @@ private struct JunoMobileWorkComposer: View {
                 }
             }
         }
+        // The one thing the system leaves to us on a form sheet: the ground.
+        // A `Form` paints its own opaque grouped background, which was covering
+        // the warm canvas and leaving this the only cold rectangle in the flow.
+        .junoSheetSurface(.form)
         .tint(Color.junoAccent)
         .onAppear { focused = true }
     }
@@ -1429,7 +1425,7 @@ private struct JunoMobileWorkComposer: View {
         if model.availableHosts.isEmpty {
             Text("None of your Macs can take work right now.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
         } else {
             Picker("Mac", selection: $preferredHostID) {
                 Text("Any of mine").tag(String?.none)
@@ -1492,7 +1488,7 @@ private struct JunoMobileWorkSection<Content: View>: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.system(.footnote, design: .default, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .textCase(nil)
                 .accessibilityAddTraits(.isHeader)
             content

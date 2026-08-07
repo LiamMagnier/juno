@@ -68,11 +68,11 @@ public struct JunoProviderMark: View {
 
     private var monogram: some View {
         RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-            .fill(.quaternary)
+            .fill(Color.junoMuted)
             .overlay {
                 Text(String(providerName.prefix(1)).uppercased())
                     .font(.system(size: size * 0.55, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
     }
 }
@@ -162,12 +162,12 @@ public struct JunoGradeBars: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(label.uppercased())
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .junoFont(size: 10, relativeTo: .caption, weight: .medium, design: .monospaced)
+                    .junoSecondaryInk()
                 Spacer()
                 Text("\(value)/10")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .junoFont(size: 10, relativeTo: .caption, design: .monospaced)
+                    .junoMetaInk()
             }
             HStack(spacing: 3) {
                 ForEach(0..<10, id: \.self) { index in
@@ -207,11 +207,11 @@ public struct JunoModelCapabilityChips: View {
                     Group {
                         if compact {
                             Image(systemName: chip.systemImage)
-                                .font(.system(size: 10, weight: .medium))
+                                .junoFont(size: 10, relativeTo: .caption, weight: .medium)
                                 .frame(width: 15, height: 15)
                         } else {
                             Label(chip.label, systemImage: chip.systemImage)
-                                .font(.system(size: 10, weight: .medium))
+                                .junoFont(size: 10, relativeTo: .caption, weight: .medium)
                                 .labelStyle(.titleAndIcon)
                                 // A chip is one line by definition; without this
                                 // the label wraps mid-word inside its capsule.
@@ -221,7 +221,7 @@ public struct JunoModelCapabilityChips: View {
                                 .padding(.vertical, 2)
                         }
                     }
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .background {
                         Capsule().strokeBorder(Color.junoHairline, lineWidth: 1)
                     }
@@ -276,14 +276,14 @@ public struct JunoModelSpecSheet: View {
                         Text(model.displayName).font(.headline)
                         Text(subtitle)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                     }
                 }
 
                 if let summary = model.summary {
                     Text(summary)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -297,7 +297,7 @@ public struct JunoModelSpecSheet: View {
                                 .foregroundStyle(Color.junoAccent)
                             Text(line)
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -317,7 +317,7 @@ public struct JunoModelSpecSheet: View {
                     if let explanation = capability.explanation {
                         Text(explanation)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -374,11 +374,11 @@ public struct JunoModelSpecSheet: View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
             Text(label)
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
                 .frame(width: 76, alignment: .leading)
             Text(value)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)

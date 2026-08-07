@@ -79,7 +79,7 @@ struct SidebarView: View {
                         // the workspace, the leading ones are shared noise.
                         Text(abbreviatedPath(record.descriptor.localPathHint))
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                             .lineLimit(1)
                             .truncationMode(.head)
                     }
@@ -111,7 +111,7 @@ struct SidebarView: View {
                 Label("Open Workspace…", systemImage: "plus.rectangle.on.folder")
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
             .keyboardShortcut("o", modifiers: [.command, .shift])
             .accessibilityLabel("Open a workspace folder")
         }
@@ -148,7 +148,7 @@ struct SidebarView: View {
                     Text(session.configuration.location.rawValue.capitalized)
                 }
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
                 .lineLimit(1)
             }
             Spacer()
@@ -198,11 +198,11 @@ struct SidebarView: View {
                 .accessibilityLabel("Completed")
         case .cancelled:
             Image(systemName: "stop.circle")
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .accessibilityLabel("Stopped")
         case .idle:
             Image(systemName: "circle.dotted")
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
                 .accessibilityLabel("Idle")
         }
     }

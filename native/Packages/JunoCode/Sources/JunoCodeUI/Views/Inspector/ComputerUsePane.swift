@@ -144,9 +144,9 @@ struct ComputerUseSections: View {
         if controller.computerUseActive {
             StatusChip("Active", systemImage: "record.circle", tint: .junoDanger)
         } else if controller.session.configuration.computerUseEnabled {
-            StatusChip("Not running", systemImage: "pause.circle", tint: .secondary)
+            StatusChip("Not running", systemImage: "pause.circle", tint: .junoMutedForeground)
         } else {
-            StatusChip("Off", systemImage: "stop.circle", tint: .secondary)
+            StatusChip("Off", systemImage: "stop.circle", tint: .junoMutedForeground)
         }
     }
 
@@ -295,7 +295,7 @@ struct ComputerUseSections: View {
                 )
                 .accessibilityLabel("Most recent screen capture")
             if let pixels = pixelSize(of: image) {
-                Text(pixels).junoCodeSmall().foregroundStyle(.secondary)
+                Text(pixels).junoCodeSmall().junoSecondaryInk()
             }
         }
         .padding(.vertical, JunoSpace.hairline)
@@ -355,7 +355,7 @@ struct ComputerUseSections: View {
                 Spacer(minLength: JunoSpace.tight)
                 Text(entry.timestamp, style: .time)
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
             }
             if let note = entry.note {
                 // The coordinator's own reason the action failed once it had
@@ -474,7 +474,7 @@ struct ComputerUseSections: View {
         switch state {
         // Caution, not danger: a grant that has never been asked for is a step
         // still to take, not a failure, and macOS cannot tell the two apart.
-        case .notDetermined: .secondary
+        case .notDetermined: .junoMutedForeground
         case .denied: .junoCaution
         case .granted: .junoSuccess
         }

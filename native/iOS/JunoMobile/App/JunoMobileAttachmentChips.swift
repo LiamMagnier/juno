@@ -54,7 +54,7 @@ struct JunoMobileAttachmentChips: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text("attachments.remove"))
@@ -81,14 +81,14 @@ struct JunoMobileAttachmentChips: View {
         case .preparing, .uploading:
             HStack(spacing: 4) {
                 ProgressView().controlSize(.mini)
-                Text("attachments.uploading").font(.caption2).foregroundStyle(.secondary)
+                Text("attachments.uploading").font(.caption2).junoSecondaryInk()
             }
         case .uploaded:
-            Text("attachments.ready").font(.caption2).foregroundStyle(.secondary)
+            Text("attachments.ready").font(.caption2).junoSecondaryInk()
         case .failed(let message, _):
             Text(message)
                 .font(.caption2)
-                .foregroundStyle(.red)
+                .foregroundStyle(Color.junoDanger)
                 .lineLimit(2)
         }
     }

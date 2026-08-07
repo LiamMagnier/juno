@@ -69,6 +69,12 @@ struct JunoMobileTasksView: View {
                     await model.create(saved)
                 }
             }
+            // A `Form` sheet: full height, and `scrollContentBackground(.hidden)`
+            // so the grouped background the `Form` supplies for itself stops
+            // covering the warm canvas. This is the one thing the system does not
+            // draw for a sheet — the platter, its radius, its material and its
+            // motion are all already handled and must not be overridden.
+            .junoSheetSurface(.form)
         }
         .confirmationDialog(
             deleteTarget.map { String(format: String(localized: "tasks.delete.confirm"), $0.name) } ?? "",
@@ -129,7 +135,7 @@ struct JunoMobileTasksView: View {
                     if model.isAtLimit {
                         Text(String(format: String(localized: "tasks.limit"), model.limit))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.top, 4)
                     }
@@ -144,23 +150,19 @@ struct JunoMobileTasksView: View {
         JunoCard {
             VStack(alignment: .leading, spacing: 10) {
                 Text("tasks.empty.title")
-                    .font(.system(size: 17, weight: .semibold))
+                    .junoEmptyTitle()
                 Text("tasks.empty.detail")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 Button {
                     editing = JunoTaskEditorRequest(
                         draft: NativeScheduledTaskDraft(model: defaultModelID), taskID: nil
                     )
                 } label: {
-                    Text("tasks.new")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 18)
-                        .frame(height: 40)
-                        .modifier(JunoAccentGlassCapsule())
+                    Text("tasks.new").fontWeight(.semibold)
                 }
-                .buttonStyle(.plain)
+                .junoProminentAction()
+                .controlSize(.large)
                 .disabled(models.isEmpty)
                 .padding(.top, 2)
             }
@@ -174,7 +176,7 @@ struct JunoMobileTasksView: View {
                     .font(.system(size: 17, weight: .semibold))
                 Text("tasks.locked.detail")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
         }
     }
@@ -201,19 +203,19 @@ private struct JunoMobileTaskCard: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(task.scheduleDescription)
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                         Text(task.name)
                             .font(JunoSerif.cardTitle)
                             .lineLimit(1)
                         HStack(spacing: 5) {
                             Text(task.modelName)
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                                 .lineLimit(1)
                             if task.webSearch {
                                 Image(systemName: "globe")
                                     .font(.caption2)
-                                    .foregroundStyle(.tertiary)
+                                    .junoMetaInk()
                             }
                         }
                     }
@@ -250,7 +252,7 @@ private struct JunoMobileTaskCard: View {
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .frame(width: 30, height: 30)
                             .contentShape(Rectangle())
                     }
@@ -271,7 +273,7 @@ private struct JunoMobileTaskCard: View {
                             .font(.caption.weight(.medium))
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     }
                 }
             }
@@ -288,11 +290,11 @@ private struct JunoMobileTaskCard: View {
                 .font(.caption)
                 .foregroundStyle(Color.junoAccent)
         } else if !task.enabled {
-            Text("tasks.status.paused").font(.caption).foregroundStyle(.secondary)
+            Text("tasks.status.paused").font(.caption).junoSecondaryInk()
         } else if let run = task.latestRun, run.didFail {
             Text(run.errorDescription ?? String(localized: "tasks.status.failed"))
                 .font(.caption)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.junoCaution)
                 .lineLimit(2)
         } else if let run = task.latestRun {
             Text(
@@ -302,7 +304,7 @@ private struct JunoMobileTaskCard: View {
                 )
             )
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
         } else {
             Text(
                 String(
@@ -311,7 +313,7 @@ private struct JunoMobileTaskCard: View {
                 )
             )
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
         }
     }
 }
@@ -381,7 +383,7 @@ private struct JunoMobileTaskEditor: View {
                         "tasks.field.time", selection: $time, displayedComponents: .hourAndMinute
                     )
                     LabeledContent("tasks.field.timezone", value: draft.timezone)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
 
                 Section("tasks.section.how") {

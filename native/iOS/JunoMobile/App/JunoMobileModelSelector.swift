@@ -60,7 +60,7 @@ struct JunoMobileModelControl: View {
                 // at all, and it stated a direction the picker does not have.
                 Image(systemName: "chevron.up")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .rotationEffect(.degrees(presented ? 180 : 0))
                     .animation(
                         JunoMotion.reduced(
@@ -346,7 +346,7 @@ struct JunoMobileModelSelectorView: View {
                 } label: {
                     Text("Older models (\(section.legacy.count))")
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
                 .tint(.secondary)
                 .accessibilityIdentifier("juno.mobile.model-legacy.\(section.key)")
@@ -406,7 +406,7 @@ struct JunoMobileModelSelectorView: View {
                     } label: {
                         Image(systemName: expanded ? "chevron.up" : "info.circle")
                             .font(.system(size: 15))
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .frame(width: 30, height: 30)
                             .contentShape(Rectangle())
                     }
@@ -458,13 +458,13 @@ struct JunoMobileModelSelectorView: View {
                     Image(systemName: "square.grid.2x2")
                         .font(.system(size: 14))
                         .frame(width: 18, height: 18)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
                 Text(name).lineLimit(1)
                 Spacer(minLength: 4)
                 Text("\(count)")
                     .font(.caption.monospacedDigit())
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
             }
             .contentShape(Rectangle())
         }
@@ -612,7 +612,7 @@ private struct JunoMobileSelectorSearchField: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
             TextField("Search models", text: $query)
                 .textFieldStyle(.plain)
                 .focused($focused)
@@ -623,7 +623,7 @@ private struct JunoMobileSelectorSearchField: View {
                     focused = true
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
@@ -676,25 +676,25 @@ private struct JunoMobileModelRowLabel: View {
                     if let cost = NativeModelPresentation.costGlyph(model.pricing) {
                         Text(cost)
                             .font(.caption.monospaced())
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                     }
                 }
 
                 Text(model.providerName)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
 
                 if let summary = model.summary {
                     Text(summary)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .lineLimit(2)
                 }
 
                 if let unavailabilityReason {
                     Label(unavailabilityReason, systemImage: "lock")
                         .font(.caption2.weight(.medium))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.junoCaution)
                 } else {
                     JunoCapabilityChips(model: model, compact: true)
                 }

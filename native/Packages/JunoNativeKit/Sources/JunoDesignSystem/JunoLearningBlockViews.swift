@@ -53,7 +53,7 @@ struct JunoLessonMicrocap: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .junoFont(size: 11, relativeTo: .caption, weight: .semibold, design: .monospaced)
             .foregroundStyle(tint)
     }
 }
@@ -95,7 +95,7 @@ struct JunoLessonHeader: View {
             }
             if let description, !description.isEmpty {
                 Text(description)
-                    .font(.system(size: 15))
+                    .junoFont(size: 15, relativeTo: .body)
                     .lineSpacing(6)
                     .foregroundStyle(Color.junoMutedForeground)
                     .fixedSize(horizontal: false, vertical: true)
@@ -119,7 +119,7 @@ struct JunoLessonToggle: View {
             HStack(spacing: 6) {
                 JunoLessonMicrocap(text: label)
                 Text(verbatim: "+")
-                    .font(.system(size: 13, design: .monospaced))
+                    .junoFont(size: 13, relativeTo: .subheadline, design: .monospaced)
                     .foregroundStyle(Color.junoMutedForeground)
                     .rotationEffect(.degrees(open ? 45 : 0))
                     .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: open)
@@ -127,7 +127,7 @@ struct JunoLessonToggle: View {
             .contentShape(Rectangle())
             .frame(minHeight: JunoLessonMetrics.touchTarget, alignment: .leading)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.junoPress)
         .accessibilityLabel(label)
         .accessibilityAddTraits(open ? [.isSelected] : [])
     }
@@ -180,9 +180,9 @@ public struct JunoLearningCardView: View {
                             .font(JunoSerif.font(size: 19, relativeTo: .title3, face: .medium))
                             .fixedSize(horizontal: false, vertical: true)
                         Text(card.content)
-                            .font(.system(size: 15))
+                            .junoFont(size: 15, relativeTo: .body)
                             .lineSpacing(6)
-                            .foregroundStyle(Color.primary.opacity(0.8))
+                            .foregroundStyle(Color.junoForeground.opacity(0.8))
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                     }
@@ -254,7 +254,7 @@ public struct JunoProcessTimelineView: View {
                         .monospacedDigit()
                         .foregroundStyle(
                             isActive ? Color.junoAccent
-                                : isWalked ? Color.primary : Color.junoMutedForeground.opacity(0.8)
+                                : isWalked ? Color.junoForeground : Color.junoMutedForeground
                         )
                     if !isLast {
                         Rectangle()
@@ -270,11 +270,11 @@ public struct JunoProcessTimelineView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(step.label)
                         .font(JunoSerif.font(size: 15, relativeTo: .callout, face: .semibold))
-                        .foregroundStyle(isActive ? Color.junoAccent : Color.primary)
+                        .foregroundStyle(isActive ? Color.junoAccent : Color.junoForeground)
                         .fixedSize(horizontal: false, vertical: true)
                     if let description = step.description {
                         Text(description)
-                            .font(.system(size: 14))
+                            .junoFont(size: 14, relativeTo: .body)
                             .lineSpacing(5)
                             .foregroundStyle(Color.junoMutedForeground)
                             .fixedSize(horizontal: false, vertical: true)
@@ -289,7 +289,7 @@ public struct JunoProcessTimelineView: View {
                     .fill(isActive ? Color.junoAccent.opacity(0.05) : .clear)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.junoPress)
         .accessibilityLabel("Stage \(index + 1): \(step.label)")
         .accessibilityValue(step.description ?? "")
         .accessibilityAddTraits(isActive ? [.isSelected] : [])
@@ -333,7 +333,12 @@ public struct JunoComparisonView: View {
                 if isWide { table } else { stacked }
                 if let verdict = comparison.verdict { verdictFooter(verdict) }
             }
-            .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: focused)
+            // `.tint`: focus here is drawn as a border and fill colour, not as
+            // a ring that grows. See ``JunoMotion/Tier``.
+            .animation(
+                JunoMotion.reduced(JunoMotion.standard, when: reduceMotion, tier: .tint),
+                value: focused
+            )
         }
     }
 
@@ -355,7 +360,7 @@ public struct JunoComparisonView: View {
             ForEach(comparison.rows) { row in
                 GridRow {
                     Text(row.label)
-                        .font(.system(size: 14, weight: .semibold))
+                        .junoFont(size: 14, relativeTo: .body, weight: .semibold)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.vertical, 10)
                     ForEach(Array(comparison.columns.enumerated()), id: \.offset) { index, _ in
@@ -379,7 +384,7 @@ public struct JunoComparisonView: View {
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text(column)
-                    .font(.system(size: 13, weight: .semibold))
+                    .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold)
                     .lineLimit(1)
                 Capsule(style: .continuous)
                     .fill(Color.junoAccent)
@@ -392,7 +397,7 @@ public struct JunoComparisonView: View {
             .padding(.vertical, 8)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.junoPress)
         .accessibilityLabel("Column \(column)")
         .accessibilityHint("Focuses this column")
         .accessibilityAddTraits(isFocused ? [.isSelected] : [])
@@ -403,12 +408,12 @@ public struct JunoComparisonView: View {
         // in a comparison row reads as "the table is broken", and an em dash
         // reads as "this option does not have one", which is what it means.
         Text(value?.isEmpty == false ? value! : "—")
-            .font(.system(size: 14))
+            .junoFont(size: 14, relativeTo: .body)
             .lineSpacing(4)
             .foregroundStyle(
                 value?.isEmpty == false
                     ? Color.junoMutedForeground
-                    : Color.junoMutedForeground.opacity(0.4)
+                    : Color.junoMutedForeground
             )
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -430,22 +435,22 @@ public struct JunoComparisonView: View {
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     Text(row.label)
-                        .font(.system(size: 14, weight: .semibold))
+                        .junoFont(size: 14, relativeTo: .body, weight: .semibold)
                         .fixedSize(horizontal: false, vertical: true)
                     ForEach(Array(comparison.columns.enumerated()), id: \.offset) { index, column in
                         HStack(alignment: .top, spacing: 12) {
                             Text(column)
-                                .font(.system(size: 11, design: .monospaced))
+                                .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
                                 .foregroundStyle(Color.junoMutedForeground)
                                 .lineLimit(1)
                                 .frame(width: 86, alignment: .leading)
                             let value = row.values.indices.contains(index) ? row.values[index] : nil
                             Text(value?.isEmpty == false ? value! : "—")
-                                .font(.system(size: 14))
+                                .junoFont(size: 14, relativeTo: .body)
                                 .foregroundStyle(
                                     value?.isEmpty == false
-                                        ? Color.primary.opacity(0.8)
-                                        : Color.junoMutedForeground.opacity(0.4)
+                                        ? Color.junoForeground.opacity(0.8)
+                                        : Color.junoMutedForeground
                                 )
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -470,7 +475,7 @@ public struct JunoComparisonView: View {
                 Text(verdict)
                     .font(JunoSerif.font(size: 15, relativeTo: .callout, face: .mediumItalic))
                     .lineSpacing(6)
-                    .foregroundStyle(Color.primary.opacity(0.85))
+                    .foregroundStyle(Color.junoForeground.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 14)
             }
@@ -510,19 +515,19 @@ public struct JunoDeepDiveView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             if deepDive.summary != deepDive.title, !open {
                                 Text(deepDive.summary)
-                                    .font(.system(size: 13))
+                                    .junoFont(size: 13, relativeTo: .subheadline)
                                     .foregroundStyle(Color.junoMutedForeground)
                                     .lineLimit(1)
                             }
                         }
                         Text(verbatim: "+")
-                            .font(.system(size: 16, design: .monospaced))
+                            .junoFont(size: 16, relativeTo: .body, design: .monospaced)
                             .foregroundStyle(Color.junoMutedForeground)
                             .rotationEffect(.degrees(open ? 45 : 0))
                     }
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.junoPress)
 
                 if open {
                     HStack(alignment: .top, spacing: 0) {
@@ -531,15 +536,15 @@ public struct JunoDeepDiveView: View {
                             .frame(width: 1)
                             .accessibilityHidden(true)
                         Text(deepDive.content)
-                            .font(.system(size: 15))
+                            .junoFont(size: 15, relativeTo: .body)
                             .lineSpacing(6)
-                            .foregroundStyle(Color.primary.opacity(0.85))
+                            .foregroundStyle(Color.junoForeground.opacity(0.85))
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
                             .padding(.leading, 14)
                     }
                     .fixedSize(horizontal: false, vertical: true)
-                    .transition(.opacity)
+                    .transition(.junoInline)
                 }
             }
             .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: open)
@@ -663,7 +668,7 @@ public struct JunoQuizInteraction: View {
                             .lineSpacing(5)
                             .foregroundStyle(Color.junoMutedForeground)
                             .fixedSize(horizontal: false, vertical: true)
-                            .transition(.opacity)
+                            .transition(.junoInline)
                     }
                 }
                 .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: hintOpen)
@@ -671,7 +676,7 @@ public struct JunoQuizInteraction: View {
 
             if answered {
                 answerKey(q, chosen: chosen, correctIndex: correctIndex)
-                    .transition(.opacity)
+                    .transition(.junoInline)
             }
         }
     }
@@ -716,7 +721,7 @@ public struct JunoQuizInteraction: View {
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 Text(marker(state, index: index))
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .junoFont(size: 12, relativeTo: .footnote, weight: .semibold, design: .monospaced)
                     .foregroundStyle(state.markerColor)
                     .frame(width: 18)
                 Text(option.label)
@@ -739,7 +744,7 @@ public struct JunoQuizInteraction: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.junoPress)
         .disabled(answered)
         .accessibilityLabel(option.label)
         .accessibilityValue(state.accessibilityValue)
@@ -763,7 +768,7 @@ public struct JunoQuizInteraction: View {
             .font(JunoSerif.font(size: 15, relativeTo: .callout, face: .mediumItalic))
             .foregroundStyle(isCorrect ? Color.junoSuccess : Color.junoDanger)
         let body = Text(explanation ?? fallback)
-            .font(.system(size: 14))
+            .font(.junoBody)
             .foregroundStyle(Color.junoMutedForeground)
 
         return VStack(alignment: .leading, spacing: 10) {
@@ -784,14 +789,14 @@ public struct JunoQuizInteraction: View {
                     .frame(minHeight: JunoLessonMetrics.touchTarget, alignment: .leading)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.junoPress)
             } else {
                 Button(action: reset) {
                     JunoLessonMicrocap(text: "Try again")
                         .frame(minHeight: JunoLessonMetrics.touchTarget, alignment: .leading)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.junoPress)
             }
         }
         .accessibilityElement(children: .contain)
@@ -820,7 +825,7 @@ public struct JunoQuizInteraction: View {
                     .frame(minHeight: JunoLessonMetrics.touchTarget, alignment: .leading)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.junoPress)
         }
     }
 
@@ -835,17 +840,17 @@ public struct JunoQuizInteraction: View {
         let correctLabel = question.options.first(where: \.correct)?.label
         return HStack(alignment: .top, spacing: 10) {
             Text(right ? "✓" : "✕")
-                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold, design: .monospaced)
                 .foregroundStyle(right ? Color.junoSuccess : Color.junoDanger)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 2) {
                 Text(question.question)
                     .font(JunoSerif.font(size: 15, relativeTo: .callout))
-                    .foregroundStyle(Color.primary.opacity(0.9))
+                    .foregroundStyle(Color.junoForeground.opacity(0.9))
                     .fixedSize(horizontal: false, vertical: true)
                 if !right, let correctLabel {
                     Text("Answer: \(correctLabel)")
-                        .font(.system(size: 13))
+                        .junoFont(size: 13, relativeTo: .subheadline)
                         .foregroundStyle(Color.junoMutedForeground)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1016,7 +1021,7 @@ public struct JunoLearningBlockView: View {
         JunoLessonShell {
             HStack(spacing: 12) {
                 JunoThinkingMatrix()
-                    .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
+                    .foregroundStyle(Color.junoMutedForeground)
                 JunoLessonMicrocap(text: "Building \(kind.label)")
             }
         }
@@ -1031,16 +1036,16 @@ public struct JunoLearningBlockView: View {
     /// answer is the failure looking worse than it is.
     private func fallback(kind: JunoLearningBlocks.Kind, error: String?) -> some View {
         let claim = Text("This \(kind.label.lowercased()) couldn't be rendered")
-            .font(.system(size: 14))
-            .foregroundStyle(Color.primary.opacity(0.85))
+            .font(.junoBody)
+            .foregroundStyle(Color.junoForeground.opacity(0.85))
         let reason = Text(error.map { ". \($0)" } ?? ".")
-            .font(.system(size: 14))
+            .font(.junoBody)
             .foregroundStyle(Color.junoMutedForeground)
 
         return JunoLessonShell {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 13))
+                    .junoFont(size: 13, relativeTo: .subheadline)
                     .foregroundStyle(Color.junoCaution)
                 (claim + reason)
                     .lineSpacing(4)

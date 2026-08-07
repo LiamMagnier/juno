@@ -140,14 +140,14 @@ struct DesktopConnectionsScreen: View {
                     "Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
                 )
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: JunoSpace.snug)
             if model.connectedCount > 0 {
                 Text("\(model.connectedCount) connected")
                     .font(.junoCodeSmall)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .padding(.horizontal, JunoSpace.cozy)
                     .padding(.vertical, JunoSpace.tight)
                     .background(Capsule(style: .continuous).fill(Color.junoMuted))
@@ -202,7 +202,7 @@ struct DesktopConnectionsScreen: View {
     private var searchField: some View {
         HStack(spacing: JunoSpace.tight) {
             JunoIconView(.search, size: DesktopConnectorGrid.searchGlyphSize)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .accessibilityHidden(true)
             // The web's placeholder, which names three apps rather than repeating
             // the label: what a reader needs to know here is that the field
@@ -219,7 +219,7 @@ struct DesktopConnectionsScreen: View {
                     model.query = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                 }
                 .buttonStyle(.plain)
                 .help("Clear the search")
@@ -290,7 +290,7 @@ struct DesktopConnectionsScreen: View {
                         .foregroundStyle(active ? Color.junoCanvasWarm : Color.junoMutedForeground)
                 }
             }
-            .foregroundStyle(active ? Color.junoCanvasWarm : Color.primary)
+            .foregroundStyle(active ? Color.junoCanvasWarm : Color.junoForeground)
             .padding(.horizontal, JunoSpace.cozy)
             .frame(height: DesktopConnectorGrid.chipHeight)
             .background(

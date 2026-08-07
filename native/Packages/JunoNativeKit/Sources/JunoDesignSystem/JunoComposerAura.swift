@@ -117,12 +117,17 @@ public struct JunoComposerAura: View {
 
     // MARK: - Timing, from the web's own tokens
 
-    /// `--dur-slow` on `--ease-out-soft`.
-    private static let tintEase = Animation.timingCurve(0.33, 1, 0.68, 1, duration: 0.36)
+    /// `--dur-slow` on `--ease-out-soft`. Written through ``JunoMotion`` rather
+    /// than as a bare `timingCurve` so the curve and the duration both stay on
+    /// the ladder — an inline `(0.33, 1, 0.68, 1, duration: 0.36)` is
+    /// indistinguishable from an inline `0.34` at a glance, and near-misses of
+    /// that size are what a motion ladder exists to catch.
+    private static let tintEase = JunoMotion.outSoft(JunoMotion.Duration.slow)
     /// 520ms on `--ease-out-expo`. Effort eases a touch slower than colour:
     /// moving the slider should feel like light coming up, not like a value
-    /// changing.
-    private static let effortEase = Animation.timingCurve(0.16, 1, 0.3, 1, duration: 0.52)
+    /// changing. Deliberately off the ladder's top rung — this is the web's own
+    /// keyframe duration, not a rounding of `slow`.
+    private static let effortEase = JunoMotion.outExpo(0.52)
     /// `composer-aura-send`: 1 → 2.3 at 16% of 1100ms → 1.
     private static let swellPeak: Double = 2.3
     private static let swellRise: TimeInterval = 0.176
@@ -131,8 +136,8 @@ public struct JunoComposerAura: View {
     private static let swellClear = Duration.milliseconds(1150 - 176)
     /// `composer-aura-breathe`: 11s for the whole 1 → 1.06 → 1 cycle, which is
     /// half that each way once SwiftUI is doing the reversing.
-    private static let breatheEase = Animation
-        .timingCurve(0.33, 1, 0.68, 1, duration: 5.5)
+    private static let breatheEase = JunoMotion
+        .outSoft(5.5)
         .repeatForever(autoreverses: true)
 
     public var body: some View {
@@ -164,7 +169,14 @@ public struct JunoComposerAura: View {
                 .position(x: proxy.size.width / 2, y: proxy.size.height / 2 - 8)
         }
         .opacity(focused ? 1 : 0.85)
-        .animation(JunoMotion.reduced(Self.tintEase, when: reduceMotion), value: focused)
+        // `.tint`: the aura's focus response is an opacity change on a
+        // non-interactive backdrop, with no geometry moving. Reduce Motion asks
+        // for less movement, not for less feedback, so this rung survives the
+        // preference where the swell and the breathe below do not.
+        .animation(
+            JunoMotion.reduced(Self.tintEase, when: reduceMotion, tier: .tint),
+            value: focused
+        )
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .onChange(of: JunoComposerAuraRamp.clamped(think)) { _, value in
@@ -173,7 +185,7 @@ public struct JunoComposerAura: View {
             }
         }
         .onChange(of: tint) { _, value in
-            withAnimation(JunoMotion.reduced(Self.tintEase, when: reduceMotion)) {
+            withAnimation(JunoMotion.reduced(Self.tintEase, when: reduceMotion, tier: .tint)) {
                 tintRed = value.red
                 tintGreen = value.green
                 tintBlue = value.blue
@@ -263,13 +275,13 @@ public struct JunoComposerAura: View {
         // motion the preference is asking us not to make.
         guard swellCount > 0, !reduceMotion else { return }
 
-        withAnimation(.timingCurve(0.16, 1, 0.3, 1, duration: Self.swellRise)) {
+        withAnimation(JunoMotion.outExpo(Self.swellRise)) {
             pulse = Self.swellPeak
         }
         try? await Task.sleep(for: .milliseconds(Int(Self.swellRise * 1000)))
         guard !Task.isCancelled else { return }
 
-        withAnimation(.timingCurve(0.16, 1, 0.3, 1, duration: Self.swellFall)) {
+        withAnimation(JunoMotion.outExpo(Self.swellFall)) {
             pulse = 1
         }
         try? await Task.sleep(for: Self.swellClear)
@@ -362,19 +374,19 @@ enum JunoComposerAuraRamp {
         private let providers = ["anthropic", "openai", "google", "moonshot", "xai"]
 
         var body: some View {
-            VStack(spacing: JunoSpacing.section) {
+            VStack(spacing: JunoSpace.section) {
                 Spacer()
 
-                RoundedRectangle(cornerRadius: JunoCornerRadius.composer, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
                     .fill(.background.secondary)
                     .overlay {
                         Text("Ask Juno anything")
                             .font(.callout)
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                     }
                     .frame(height: 56)
-                    .padding(.horizontal, JunoSpacing.comfortable)
-                    .padding(.bottom, JunoSpacing.content)
+                    .padding(.horizontal, JunoSpace.roomy)
+                    .padding(.bottom, JunoSpace.regular)
                     .background {
                         JunoComposerAura(
                             tint: JunoProviderGlow.glow(providerID: provider),
@@ -385,7 +397,7 @@ enum JunoComposerAuraRamp {
                         )
                     }
 
-                VStack(alignment: .leading, spacing: JunoSpacing.control) {
+                VStack(alignment: .leading, spacing: JunoSpace.cozy) {
                     Picker("Lab", selection: $provider) {
                         ForEach(providers, id: \.self) { Text($0.capitalized).tag($0) }
                     }
@@ -394,11 +406,11 @@ enum JunoComposerAuraRamp {
                     HStack {
                         Text("Thinking")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                         Slider(value: $think, in: 0...1)
                         Text(String(format: "%.2f", think))
                             .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                     }
 
                     Toggle("Focused", isOn: $focused)
@@ -413,7 +425,7 @@ enum JunoComposerAuraRamp {
                     }
                 }
                 .font(.caption)
-                .padding(JunoSpacing.content)
+                .padding(JunoSpace.regular)
             }
             .frame(width: 460, height: 620)
         }

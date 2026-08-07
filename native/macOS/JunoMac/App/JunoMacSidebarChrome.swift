@@ -48,7 +48,7 @@ struct JunoMacNavigationRow: View {
         } icon: {
             Image(systemName: systemImage)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(isAccented ? Color.junoAccent : Color.secondary)
+                .foregroundStyle(isAccented ? Color.junoAccent : Color.junoSidebarForeground)
                 .frame(width: 16)
         }
         .labelStyle(.titleAndIcon)
@@ -77,8 +77,10 @@ struct JunoMacSidebarFooter<Trailing: View>: View {
                 } label: {
                     HStack(spacing: JunoSpace.tight) {
                         Image(systemName: "person.crop.circle.fill")
-                            .font(.system(size: 15))
-                            .foregroundStyle(.secondary)
+                            // Unframed, so it tracks the account name beside
+                            // it instead of staying 15pt while that grows.
+                            .junoFont(size: 15, relativeTo: .body)
+                            .junoSecondaryInk()
                         Text(accountName)
                             .font(.system(.caption, weight: .medium))
                             .lineLimit(1)
@@ -107,7 +109,7 @@ struct JunoMacSidebarFooter<Trailing: View>: View {
 struct JunoMacIconButton: View {
     let title: LocalizedStringKey
     let systemImage: String
-    var tint: Color = .secondary
+    var tint: Color = .junoMutedForeground
     let action: () -> Void
 
     var body: some View {

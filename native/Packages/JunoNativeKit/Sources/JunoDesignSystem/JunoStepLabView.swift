@@ -70,7 +70,7 @@ public struct JunoStepLabView: View {
                 .fixedSize(horizontal: false, vertical: true)
             if let description = lab.description, !compact {
                 Text(description)
-                    .font(.system(size: 15))
+                    .junoFont(size: 15, relativeTo: .body)
                     .lineSpacing(6)
                     .foregroundStyle(Color.junoMutedForeground)
                     .fixedSize(horizontal: false, vertical: true)
@@ -88,7 +88,7 @@ public struct JunoStepLabView: View {
                 } label: {
                     VStack(spacing: 2) {
                         Text(String(format: "%02d", index + 1))
-                            .font(.system(size: 12, design: .monospaced))
+                            .junoFont(size: 12, relativeTo: .footnote, design: .monospaced)
                             .monospacedDigit()
                             .foregroundStyle(railTint(index))
                         Capsule(style: .continuous)
@@ -99,7 +99,7 @@ public struct JunoStepLabView: View {
                     .padding(.horizontal, 5)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.junoPress)
                 .accessibilityLabel("Step \(index + 1): \(step.title)")
                 .accessibilityAddTraits(index == active ? [.isSelected] : [])
             }
@@ -120,9 +120,9 @@ public struct JunoStepLabView: View {
                     .font(JunoSerif.font(size: 18, relativeTo: .headline, face: .medium))
                     .fixedSize(horizontal: false, vertical: true)
                 Text(selected.summary)
-                    .font(.system(size: 15))
+                    .junoFont(size: 15, relativeTo: .body)
                     .lineSpacing(6)
-                    .foregroundStyle(Color.primary.opacity(0.8))
+                    .foregroundStyle(Color.junoForeground.opacity(0.8))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -138,7 +138,7 @@ public struct JunoStepLabView: View {
                     Text(notice)
                         .font(JunoSerif.font(size: 14, relativeTo: .subheadline, face: .mediumItalic))
                         .lineSpacing(5)
-                        .foregroundStyle(Color.primary.opacity(0.75))
+                        .foregroundStyle(Color.junoForeground.opacity(0.75))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -153,14 +153,14 @@ public struct JunoStepLabView: View {
                                 .frame(width: 1)
                                 .accessibilityHidden(true)
                             Text(detail)
-                                .font(.system(size: 14))
+                                .junoFont(size: 14, relativeTo: .body)
                                 .lineSpacing(7)
-                                .foregroundStyle(Color.primary.opacity(0.85))
+                                .foregroundStyle(Color.junoForeground.opacity(0.85))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.leading, 14)
                         }
                         .fixedSize(horizontal: false, vertical: true)
-                        .transition(.opacity)
+                        .transition(.junoInline)
                     }
                 }
                 .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: detailOpen)
@@ -199,11 +199,11 @@ public struct JunoStepLabView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(verbatim: "✓")
-                            .font(.system(size: 13, design: .monospaced))
+                            .junoFont(size: 13, relativeTo: .subheadline, design: .monospaced)
                             .foregroundStyle(Color.junoSuccess)
                         Text("Lab complete")
                             .font(JunoSerif.font(size: 15, relativeTo: .callout, face: .mediumItalic))
-                            .foregroundStyle(Color.primary.opacity(0.85))
+                            .foregroundStyle(Color.junoForeground.opacity(0.85))
                     }
                     if let takeaway = lab.takeaway {
                         HStack(alignment: .top, spacing: 0) {
@@ -214,7 +214,7 @@ public struct JunoStepLabView: View {
                             Text(takeaway)
                                 .font(JunoSerif.font(size: 16, relativeTo: .callout, face: .mediumItalic))
                                 .lineSpacing(6)
-                                .foregroundStyle(Color.primary.opacity(0.85))
+                                .foregroundStyle(Color.junoForeground.opacity(0.85))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.leading, 14)
                         }
@@ -237,7 +237,7 @@ public struct JunoStepLabView: View {
                         .frame(minHeight: JunoLessonMetrics.touchTarget, alignment: .leading)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.junoPress)
                 .disabled(active == 0)
                 .opacity(active == 0 ? 0.4 : 1)
 
@@ -257,7 +257,7 @@ public struct JunoStepLabView: View {
                         .frame(minHeight: JunoLessonMetrics.touchTarget, alignment: .trailing)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.junoPress)
                 .disabled(onLast)
                 .opacity(onLast ? 0.4 : 1)
             }
@@ -279,7 +279,7 @@ struct JunoLessonCaption: View {
 
     var body: some View {
         Text(reading ?? prompt)
-            .font(.system(size: 11, design: .monospaced))
+            .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
             .monospacedDigit()
             .italic(reading == nil)
             .foregroundStyle(Color.junoMutedForeground)
@@ -320,7 +320,7 @@ private struct JunoTokenizationVisual: View {
         let data = JunoStepLabData.tokens(step)
         VStack(alignment: .leading, spacing: 10) {
             Text(data.input)
-                .font(.system(size: 13))
+                .junoFont(size: 13, relativeTo: .subheadline)
                 .lineSpacing(4)
                 .foregroundStyle(Color.junoMutedForeground)
                 .fixedSize(horizontal: false, vertical: true)
@@ -334,7 +334,7 @@ private struct JunoTokenizationVisual: View {
                         // word" is exactly what this visual is teaching and the
                         // leading space is usually part of the token.
                         Text(token.text.replacingOccurrences(of: " ", with: "␣"))
-                            .font(.system(size: 13, design: .monospaced))
+                            .junoFont(size: 13, relativeTo: .subheadline, design: .monospaced)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 4)
                             .background(
@@ -347,9 +347,9 @@ private struct JunoTokenizationVisual: View {
                                         selected == index ? Color.junoAccent.opacity(0.5) : Color.junoHairline
                                     )
                             )
-                            .foregroundStyle(selected == index ? Color.junoAccent : Color.primary)
+                            .foregroundStyle(selected == index ? Color.junoAccent : Color.junoForeground)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.junoPress)
                     .accessibilityLabel("Token \(index + 1): \(token.text)")
                 }
             }
@@ -380,7 +380,7 @@ private struct JunoEmbeddingVisual: View {
                 ForEach(Array(examples.enumerated()), id: \.offset) { index, example in
                     Button { selected = index } label: {
                         Text(example.token)
-                            .font(.system(size: 12, design: .monospaced))
+                            .junoFont(size: 12, relativeTo: .footnote, design: .monospaced)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
                             .foregroundStyle(index == selected ? Color.junoAccent : Color.junoMutedForeground)
@@ -395,7 +395,7 @@ private struct JunoEmbeddingVisual: View {
                                     )
                             )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.junoPress)
                 }
             }
 
@@ -412,15 +412,15 @@ private struct JunoEmbeddingVisual: View {
                                 let half = proxy.size.height / 2
                                 let magnitude = min(1, abs(value)) * half
                                 Rectangle()
-                                    .fill(value >= 0 ? Color.junoAccent : Color.primary.opacity(0.35))
+                                    .fill(value >= 0 ? Color.junoAccent : Color.junoForeground.opacity(0.35))
                                     .frame(height: max(1, magnitude))
                                     .offset(y: value >= 0 ? half - magnitude : half)
                             }
                         }
                         .frame(height: 44)
                         Text("d\(index)")
-                            .font(.system(size: 9, design: .monospaced))
-                            .foregroundStyle(Color.junoMutedForeground.opacity(0.7))
+                            .junoFont(size: 9, relativeTo: .caption2, design: .monospaced)
+                            .foregroundStyle(Color.junoMutedForeground)
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -454,7 +454,7 @@ private struct JunoAttentionVisual: View {
                 ForEach(Array(data.tokens.enumerated()), id: \.offset) { row, token in
                     HStack(spacing: 2) {
                         Text(token)
-                            .font(.system(size: 10, design: .monospaced))
+                            .junoFont(size: 10, relativeTo: .caption, design: .monospaced)
                             .foregroundStyle(Color.junoMutedForeground)
                             .lineLimit(1)
                             .frame(width: compact ? 46 : 62, alignment: .trailing)
@@ -477,7 +477,7 @@ private struct JunoAttentionVisual: View {
                                             )
                                     )
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.junoPress)
                             .accessibilityLabel(
                                 "\(token) attends to \(data.tokens[column]), \(Int((weight * 100).rounded())) percent"
                             )
@@ -540,7 +540,7 @@ private struct JunoTransformerVisual: View {
         let layers = JunoStepLabData.layers(step)
         VStack(alignment: .leading, spacing: 10) {
             Text(tokens.joined(separator: " · "))
-                .font(.system(size: 11, design: .monospaced))
+                .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
                 .foregroundStyle(Color.junoMutedForeground)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -553,7 +553,7 @@ private struct JunoTransformerVisual: View {
                                     .font(JunoSerif.font(size: 14, relativeTo: .subheadline, face: .medium))
                                 Spacer(minLength: 0)
                                 Text(item.role)
-                                    .font(.system(size: 10, design: .monospaced))
+                                    .junoFont(size: 10, relativeTo: .caption, design: .monospaced)
                                     .foregroundStyle(Color.junoMutedForeground)
                             }
                             .padding(.horizontal, 12)
@@ -576,7 +576,7 @@ private struct JunoTransformerVisual: View {
                             )
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.junoPress)
                         .accessibilityAddTraits(stage == index ? [.isSelected] : [])
                     }
                 }
@@ -585,7 +585,7 @@ private struct JunoTransformerVisual: View {
                 VStack(spacing: 4) {
                     Rectangle().fill(Color.junoHairline).frame(width: 1, height: 22)
                     Text("×\(layers)")
-                        .font(.system(size: 11, design: .monospaced))
+                        .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
                         .foregroundStyle(Color.junoMutedForeground)
                     Rectangle().fill(Color.junoHairline).frame(width: 1, height: 22)
                 }
@@ -594,10 +594,10 @@ private struct JunoTransformerVisual: View {
             .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: stage)
 
             Text("enriched representations ↓")
-                .font(.system(size: 10, design: .monospaced))
+                .junoFont(size: 10, relativeTo: .caption, design: .monospaced)
                 .foregroundStyle(Color.junoMutedForeground)
             Text(Self.stages[min(stage, Self.stages.count - 1)].copy)
-                .font(.system(size: 14))
+                .junoFont(size: 14, relativeTo: .body)
                 .lineSpacing(5)
                 .foregroundStyle(Color.junoMutedForeground)
                 .fixedSize(horizontal: false, vertical: true)
@@ -636,7 +636,7 @@ private struct JunoProbabilityVisual: View {
                         .frame(minHeight: JunoLessonMetrics.touchTarget, alignment: .trailing)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.junoPress)
             }
         }
         .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: drawn)
@@ -655,22 +655,22 @@ private struct JunoProbabilityVisual: View {
         } label: {
             HStack(alignment: .center, spacing: 12) {
                 Text("\(index + 1)")
-                    .font(.system(size: 11, design: .monospaced))
+                    .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
                     .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 5) {
                     Text("\u{201C}\(item.token)\u{201D}")
-                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .junoFont(size: 13, relativeTo: .subheadline, weight: .medium, design: .monospaced)
                         .lineLimit(1)
                     GeometryReader { proxy in
                         Capsule(style: .continuous)
-                            .fill(isTop ? Color.junoAccent : Color.primary.opacity(0.2))
+                            .fill(isTop ? Color.junoAccent : Color.junoForeground.opacity(0.2))
                             .frame(width: max(2, proxy.size.width * (item.probability / peak)))
                     }
                     .frame(height: 3)
                 }
                 Text("\(Int((item.probability * 100).rounded()))%")
-                    .font(.system(size: 12, design: .monospaced))
+                    .junoFont(size: 12, relativeTo: .footnote, design: .monospaced)
                     .monospacedDigit()
                     .foregroundStyle(isTop || isDrawn ? Color.junoAccent : Color.junoMutedForeground)
                     .frame(width: 44, alignment: .trailing)
@@ -691,7 +691,7 @@ private struct JunoProbabilityVisual: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.junoPress)
         .accessibilityLabel(
             "\(item.token), \(Int((item.probability * 100).rounded())) percent" + (isDrawn ? ", sampled" : "")
         )
@@ -756,7 +756,7 @@ private struct JunoNextTokenVisual: View {
             VStack(alignment: .leading, spacing: 4) {
                 JunoLessonMicrocap(text: "Autoregression", tint: .junoAccent)
                 Text("\u{201C}\(data.token)\u{201D} joins the prompt; the whole forward pass runs again for the next token.")
-                    .font(.system(size: 14))
+                    .junoFont(size: 14, relativeTo: .body)
                     .lineSpacing(5)
                     .foregroundStyle(Color.junoMutedForeground)
                     .fixedSize(horizontal: false, vertical: true)

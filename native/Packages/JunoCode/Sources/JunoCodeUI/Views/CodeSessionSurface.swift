@@ -262,7 +262,7 @@ public struct CodeSessionCanvas: View {
                     .foregroundStyle(Color.junoCaution)
                 Text(message)
                     .junoCaption()
-                    .foregroundStyle(Color.primary)
+                    .foregroundStyle(Color.junoForeground)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                 Spacer(minLength: 0)
@@ -274,7 +274,7 @@ public struct CodeSessionCanvas: View {
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .accessibilityLabel("Dismiss")
             }
             .padding(.horizontal, JunoSpace.cozy)

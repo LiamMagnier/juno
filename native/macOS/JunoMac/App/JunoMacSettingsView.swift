@@ -1,5 +1,6 @@
 import JunoChatKit
 import JunoCore
+import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import SwiftUI
@@ -73,7 +74,7 @@ struct JunoMacSettingsView: View {
                         "Account settings have not finished synchronizing.",
                         systemImage: "clock.arrow.circlepath"
                     )
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 }
             }
             JunoMemorySections(model: model)
@@ -85,7 +86,7 @@ struct JunoMacSettingsView: View {
                         Label("diagnostics.title", systemImage: "stethoscope")
                         Spacer()
                         Text(JunoBuildInfo.current.displayVersion)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                     }
                     .contentShape(Rectangle())
                 }
@@ -108,6 +109,13 @@ struct JunoMacSettingsView: View {
                 }
             }
             .frame(minWidth: 460, minHeight: 560)
+            // Paints the warm ground *inside* the sheet's content. Without
+            // it this rendered on the system's neutral window grey while the
+            // app behind it was cream. Never `.presentationBackground` — that
+            // would replace the system's platter and throw away the Liquid
+            // Glass the sheet gets for free. `.fitted` because the frame above
+            // already states the size.
+            .junoSheetSurface(.fitted)
         }
     }
 
@@ -241,14 +249,16 @@ private struct JunoSettingsSections: View {
                             editingInstructions = false
                             update(NativeSettingsPatch(customInstructions: instructionsDraft))
                         }
-                        .buttonStyle(.borderedProminent)
+                        // Save is the primary action of this editor, and it sat
+                        // beside a plain Cancel drawing in the system accent.
+                        .junoProminentAction()
                         .disabled(disabled)
                     }
                 } else {
                     Text(settings.customInstructions.isEmpty
                         ? "No custom instructions" : settings.customInstructions)
                         .foregroundStyle(settings.customInstructions.isEmpty
-                            ? .secondary : .primary)
+                            ? .junoMutedForeground : .junoForeground)
                         .lineLimit(4)
                     Button("Edit instructions") {
                         instructionsDraft = settings.customInstructions
@@ -385,11 +395,11 @@ private struct JunoMemorySections: View {
                             ProgressView().controlSize(.small)
                         }
                         Text("\(summary.entryCount) memories")
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .font(.caption)
                     }
                     Text(summary.content)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .textSelection(.enabled)
                 }
             }
@@ -408,7 +418,7 @@ private struct JunoMemorySections: View {
 
             if model.memories.isEmpty {
                 Text("No saved memories yet. Facts Juno learns in chats appear here.")
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             } else {
                 ForEach(model.memories) { memory in
                     memoryRow(memory)
@@ -425,7 +435,7 @@ private struct JunoMemorySections: View {
             if model.isErasing {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Erasing memory…").foregroundStyle(.secondary)
+                    Text("Erasing memory…").junoSecondaryInk()
                 }
             }
         } header: {
@@ -472,7 +482,7 @@ private struct JunoMemorySections: View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: memory.kind == .suppression
                 ? "hand.raised" : "brain.head.profile")
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(memory.content)
@@ -484,7 +494,7 @@ private struct JunoMemorySections: View {
                     }
                 }
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
             }
             Spacer()
             Menu {

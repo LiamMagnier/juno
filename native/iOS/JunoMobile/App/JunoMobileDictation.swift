@@ -74,7 +74,7 @@ struct JunoMobileDictation: View {
     private var previewText: AttributedString {
         guard !transcript.isEmpty else {
             var listening = AttributedString("Listening…")
-            listening.foregroundColor = Color.junoMutedForeground.opacity(0.6)
+            listening.foregroundColor = Color.junoMutedForeground
             return listening
         }
         var result = AttributedString(speech.finalizedText)
@@ -142,7 +142,11 @@ struct JunoMobileDictation: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: glyphSize, weight: .semibold))
-                .foregroundStyle(style == .accent ? Color.white : Color.primary)
+                // `junoOnAccent`, not a literal white: the accent is an account
+                // setting, and white fails contrast on the amber and sage
+                // palettes. Off the accent the glyph is on a hairline outline or
+                // the muted fill, where the platform label colour is right.
+                .foregroundStyle(style == .accent ? Color.junoOnAccent : Color.primary)
                 .frame(width: 40, height: 40)
                 .background {
                     switch style {

@@ -463,7 +463,7 @@ private struct DesktopChatSidebar: View {
         // spends no accent here at all: one fill, one ink, resting on
         // `--sidebar-foreground` and lifting to `--foreground` when selected.
         let selected = selection == .destination(item)
-        let ink = selected ? Color.primary : Color.junoSidebarForeground
+        let ink = selected ? Color.junoForeground : Color.junoSidebarForeground
 
         return Label {
             Text(item.label)
@@ -483,17 +483,36 @@ private struct DesktopChatSidebar: View {
 
     private func conversationRow(_ conversation: NativeConversation) -> some View {
         HStack(spacing: JunoSpace.tight) {
-            if conversation.pinned {
-                // Juno's own pin, not SF's, and the one place coral is spent in
-                // this column. The web's sidebar is greyscale apart from exactly
-                // two `fill-primary` marks — the pinned conversation and the
-                // starred project — and the Code sidebar already draws this
-                // concept as `JunoIconView(.pin)`. Two clients drawing the same
-                // idea with two different glyphs is the drift this unifies.
-                JunoIconView(.pin, size: 12)
-                    .foregroundStyle(Color.junoAccent)
-                    .accessibilityLabel("Pinned")
-            }
+            // Juno's own pin, not SF's, and the one place coral is spent in this
+            // column. The web's sidebar is greyscale apart from exactly two
+            // `fill-primary` marks — the pinned conversation and the starred
+            // project — and the Code sidebar already draws this concept as
+            // `JunoIconView(.pin)`. Two clients drawing the same idea with two
+            // different glyphs is the drift that unified here.
+            //
+            // **The slot is reserved on every row, and that is the alignment fix.**
+            // This used to be `if conversation.pinned { … }`, so the mark was
+            // inserted into the row's leading edge only when it applied and the
+            // title behind it was pushed 12pt of glyph plus 6pt of spacing to the
+            // right. The result was measured at 35.0pt against 16.5pt on the rows
+            // immediately above and below it — an 18.5pt step inside one list,
+            // visible in both appearances, and worst on the pinned row because
+            // that is also usually the selected one, so the selection shape made
+            // the offset impossible to miss.
+            //
+            // A reserved gutter rather than a moved mark: the pin is a *leading*
+            // mark in the web's rail and in the Code sidebar, and keeping one
+            // text edge by holding the column open on rows that have no mark is
+            // how every list on the platform does this — Mail's unread dot and
+            // Finder's tag dot both occupy a slot that is always there.
+            // `accessibilityHidden` on the unpinned case so the reserved space
+            // stays silent to VoiceOver instead of announcing an empty image.
+            JunoIconView(.pin, size: 12)
+                .foregroundStyle(Color.junoAccent)
+                .opacity(conversation.pinned ? 1 : 0)
+                .frame(width: 12)
+                .accessibilityLabel(conversation.pinned ? "Pinned" : "")
+                .accessibilityHidden(!conversation.pinned)
             Text(conversation.title)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -960,12 +979,47 @@ struct DesktopConversationView: View {
 
 private struct DesktopChatDisclaimer: View {
     var body: some View {
+        // This line was `.foregroundStyle(.tertiary)` and measured **1.93:1** on
+        // the warm canvas in light appearance (2.27 dark) — not quiet, illegible,
+        // and less than half the 4.5:1 AA floor. It is also the app's only
+        // statement that the model can be wrong, so of everything on this screen
+        // it is the last text that should be unreadable. `junoMetaInk()` is the
+        // bottom of the ramp at 5.2:1 light / 7.2:1 dark; the line stays quiet
+        // through `caption2` and the absence of weight, which is how a tertiary
+        // role is expressed once contrast is off the table.
+        //
+        // `.accessibilityHidden(true)` came off with it. A safety notice that was
+        // both below the contrast floor *and* removed from the accessibility tree
+        // left a low-vision reader with no path to it at all — neither eyes nor
+        // VoiceOver. It is prose a person is meant to read, not decoration.
         Text("Juno can be wrong — worth a second look on anything that matters.")
             .font(.caption2)
-            .foregroundStyle(.tertiary)
+            .junoMetaInk()
             .padding(.vertical, 7)
-            .accessibilityHidden(true)
     }
+}
+
+/// The chat column's reading measure — **one number, read by both halves of it**.
+///
+/// The transcript clamped to 768 and the composer to 720. Because the composer
+/// also insets its field by `JunoSpace.snug`, the two text edges landed 32pt
+/// apart on every window wider than about 830pt: a reader's own sentence and the
+/// reply to it were typeset to two different columns, with the composer's the
+/// narrower of the two, so the eye had to reset its line start every time it
+/// moved between them. Nothing chose those numbers against each other — 768 is
+/// the web's `max-w-3xl` and 720 was freehand — which is exactly why they had to
+/// stop being two numbers.
+///
+/// The 8pt that remains between the composer's *field* and the transcript's text
+/// is the composer's own chrome inset, and that one is deliberate: the composer
+/// is a bordered control on a glass platter, so its text sits inside its rim the
+/// way any control's does. A measure and a control's padding are different
+/// things; only the measure was ever in disagreement.
+enum DesktopChatMeasure {
+    /// The web's `max-w-3xl`.
+    static let reading: CGFloat = 768
+    /// The gutter the column keeps from the window edge before the measure binds.
+    static let gutter: CGFloat = JunoSpace.region
 }
 
 private struct DesktopTranscript: View {
@@ -996,8 +1050,8 @@ private struct DesktopTranscript: View {
     /// The conversation whose count `animateFrom` was last seeded against.
     @State private var settledConversationID: String?
 
-    /// The web's `max-w-3xl` reading column.
-    static let readingWidth: CGFloat = 768
+    /// The web's `max-w-3xl` reading column. See ``DesktopChatMeasure``.
+    static let readingWidth: CGFloat = DesktopChatMeasure.reading
 
     private var lastAssistantMessageID: String? {
         model.selectedMessages.last(where: { $0.role == .assistant })?.id
@@ -1131,9 +1185,9 @@ private struct DesktopTranscript: View {
                         .frame(height: 1)
                         .id("transcript-bottom")
                 }
-                .frame(maxWidth: DesktopTranscript.readingWidth)
+                .frame(maxWidth: DesktopChatMeasure.reading)
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, JunoSpace.region)
+                .padding(.horizontal, DesktopChatMeasure.gutter)
                 .padding(.vertical, JunoSpace.section)
             }
             // `initial: true` so a conversation opens at its latest turn even when
@@ -1467,7 +1521,7 @@ private struct DesktopMessageRow: View {
                 )
                 .font(.caption.monospaced())
             }
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("juno.desktop.chat.message-expand")
@@ -1549,9 +1603,17 @@ private struct DesktopMessageRow: View {
                 }
 
                 if let footerLine, !isVoice {
+                    // The per-message meta line: model, token count, latency. It
+                    // was `.tertiary` and measured **1.89:1** in light appearance
+                    // — the worst contrast anywhere in the product, on text that
+                    // is offered as selectable and is therefore explicitly meant
+                    // to be read and copied. It is still the quietest thing in
+                    // the message: `caption2`, monospaced, no weight. Quiet is a
+                    // matter of size and weight; it was never a licence to go
+                    // below the AA floor.
                     Text(footerLine)
                         .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                         .textSelection(.enabled)
                 }
 
@@ -1613,14 +1675,14 @@ private struct DesktopMessageRow: View {
                             }
                         }
                     }
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 }
                 }
 
             case .system, .tool:
                 Text(message.content)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .textSelection(.enabled)
             }
         }
@@ -1635,7 +1697,7 @@ private struct DesktopMessageRow: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .frame(width: 22, height: 22)
-                .foregroundStyle(active ? Color.junoAccent : Color.secondary)
+                .foregroundStyle(active ? Color.junoAccent : Color.junoMutedForeground)
         }
         .buttonStyle(.plain)
         .help(label)
@@ -1691,7 +1753,7 @@ private struct DesktopInlineArtifactCard: View {
                 Image(systemName: glyph)
                     .font(.callout)
                     .foregroundStyle(
-                        artifact.streaming ? Color.junoAccent : Color.secondary
+                        artifact.streaming ? Color.junoAccent : Color.junoMutedForeground
                     )
                     .frame(width: 32, height: 32)
                     .background(
@@ -1705,11 +1767,11 @@ private struct DesktopInlineArtifactCard: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(artifact.title.isEmpty ? "Untitled artifact" : artifact.title)
                         .font(.callout.weight(.medium))
-                        .foregroundStyle(Color.primary)
+                        .junoInk()
                         .lineLimit(1)
                     Text(metadata)
                         .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .lineLimit(1)
                 }
 
@@ -1719,12 +1781,12 @@ private struct DesktopInlineArtifactCard: View {
                     // Juno's own dot matrix, which is what the web animates while
                     // an artifact writes — not a spinner, which says "blocked".
                     JunoThinkingMatrix(dot: 3, spacing: 2)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 } else if open != nil {
                     Label("Open", systemImage: "arrow.up.right")
                         .labelStyle(.titleAndIcon)
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
             }
             .padding(JunoSpace.cozy)
@@ -1807,17 +1869,17 @@ private struct DesktopMessageSources: View {
                 // one glyph rather than inventing placeholder logos.
                 Image(systemName: "globe")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 Text("Sources")
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(Color.primary)
+                    .junoInk()
                 Text(sources.count.formatted())
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .monospacedDigit()
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .rotationEffect(.degrees(expanded ? 180 : 0))
             }
             .padding(.horizontal, JunoSpace.cozy)
@@ -1840,18 +1902,18 @@ private struct DesktopMessageSources: View {
                 // above, so the two read as one numbering.
                 Text(index.formatted())
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
                     .monospacedDigit()
                     .frame(minWidth: JunoSpace.regular, alignment: .trailing)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(source.title.isEmpty ? host(of: source.url) : source.title)
                         .font(.callout)
-                        .foregroundStyle(Color.primary)
+                        .junoInk()
                         .lineLimit(1)
                     Text(host(of: source.url))
                         .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .lineLimit(1)
                 }
 
@@ -1859,7 +1921,7 @@ private struct DesktopMessageSources: View {
 
                 Image(systemName: "arrow.up.right")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
             }
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.snug)
@@ -2140,7 +2202,7 @@ struct DesktopComposer: View {
             {
                 Text(message)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.junoDanger)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -2240,13 +2302,18 @@ struct DesktopComposer: View {
             }
         }
         .padding(JunoSpace.snug)
-        .frame(maxWidth: 720)
+        // Was a freehand 720 against the transcript's 768 — see
+        // ``DesktopChatMeasure``. The composer and the transcript are one column
+        // and now read one number for it, gutter included, so they stay one
+        // column at every window width rather than only at the two where the old
+        // pair of numbers happened to cross.
+        .frame(maxWidth: DesktopChatMeasure.reading)
         // Real Liquid Glass, and nothing drawn on top of it. The previous
         // treatment stroked a hairline border over the glass, which flattened
         // the rim's light scatter — the thing that makes glass read as having
         // thickness — back into a translucent rounded rectangle.
         .junoFloatingChrome(cornerRadius: JunoCornerRadius.composer)
-        .padding(.horizontal, JunoSpace.roomy)
+        .padding(.horizontal, DesktopChatMeasure.gutter)
         .padding(.bottom, JunoSpace.tight)
         .fileImporter(
             isPresented: $showingFileImporter,
@@ -2384,7 +2451,7 @@ struct DesktopComposer: View {
         HStack(spacing: JunoSpace.snug) {
             Text("That's a long one — send it as a file to keep the chat tidy?")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
             Spacer(minLength: JunoSpace.tight)
             Button(action: attachDraftAsFile) {
                 Label("Attach as file", systemImage: "doc.badge.arrow.up")
@@ -2412,10 +2479,10 @@ struct DesktopComposer: View {
                         .font(.callout.weight(.medium))
                     Text("\(prompt.count.formatted(.number)) characters · sent in full · Return to send")
                         .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     Text(prompt.prefix(240) + (prompt.count > 240 ? "…" : ""))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .lineLimit(3)
                         .padding(.top, 2)
                 }
@@ -2614,7 +2681,7 @@ struct DesktopComposer: View {
         } label: {
             Image(systemName: "plus")
                 .font(.body.weight(.semibold))
-                .foregroundStyle(Color.primary)
+                .junoInk()
                 .frame(width: 34, height: 34)
                 .overlay(alignment: .topTrailing) {
                     if deepResearch || !selectedConnectors.isEmpty {
@@ -2646,12 +2713,12 @@ struct DesktopComposer: View {
                 )
                 Text(selectedModel?.displayName ?? "Choose model")
                     .font(.callout.weight(.medium))
-                    .foregroundStyle(Color.primary)
+                    .junoInk()
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Color.secondary)
+                    .junoSecondaryInk()
             }
             .padding(.horizontal, 10)
             .frame(height: 34)
@@ -2687,35 +2754,76 @@ struct DesktopComposer: View {
         }
     }
 
+    /// The glyph that says "this is about how hard the model thinks".
+    ///
+    /// It is the same symbol `JunoThinkingButton` uses in the shared design
+    /// system, and it now appears in **both** states of this control rather than
+    /// neither. See ``thinkingControl(_:)`` for why that matters.
+    private var thinkingSymbol: some View {
+        Image(systemName: "gauge.with.dots.needle.33percent")
+            .imageScale(.small)
+            .accessibilityHidden(true)
+    }
+
+    /// How much thinking the model does — a button when it is adjustable, a
+    /// readout when the router decides for itself.
+    ///
+    /// **What was wrong.** The automatic branch drew a bare `Text("Auto")` in a
+    /// monospaced caption, with no glyph, no chevron and no affordance of any
+    /// kind, immediately to the right of `modelControl` — which, for Juno's own
+    /// routing model, *also* says "Auto". So the composer showed the same word
+    /// twice, an inch apart, in two different typefaces, and only one of the two
+    /// was a control. A reader trying to change the model had two things to aim
+    /// at and no way to tell from looking which one would open.
+    ///
+    /// **What distinguishes them now.** The model control keeps its provider
+    /// mark and its up/down chevron and is drawn in the system face. This one
+    /// carries the gauge glyph in both states, so its subject is legible without
+    /// reading the word, and it drops the monospace — a typeface change between
+    /// two adjacent controls in one row reads as an accident, and there is
+    /// nothing tabular here for a mono face to align. The automatic state still
+    /// has no chevron, and that absence is now information rather than an
+    /// oversight: there is genuinely nothing to open, because a router that picks
+    /// its own depth is reporting a fact and not declining a choice. A `.help`
+    /// says so on hover, which is the affordance a readout is allowed to have.
     @ViewBuilder
     private func thinkingControl(_ scale: NativeThinkingScale) -> some View {
         if scale.isAutomatic {
-            Text("Auto")
-                .junoMono()
-                .foregroundStyle(Color.secondary)
-                .padding(.horizontal, 9)
-                .frame(height: 34)
-                .accessibilityLabel("Thinking")
-                .accessibilityValue("Automatic")
+            HStack(spacing: 5) {
+                thinkingSymbol
+                Text("Auto")
+                    .lineLimit(1)
+            }
+            .font(.callout)
+            .junoSecondaryInk()
+            .padding(.horizontal, 9)
+            .frame(height: 34)
+            .help("This model chooses how much to think before answering")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Thinking")
+            .accessibilityValue("Automatic, chosen by the model")
+            .accessibilityIdentifier("juno.desktop.chat-thinking")
         } else {
             Button {
                 showingThinking = true
             } label: {
                 HStack(spacing: 5) {
+                    thinkingSymbol
                     Text(currentThinkingLabel(in: scale))
-                        .junoMono()
                         .lineLimit(1)
                     Image(systemName: "chevron.up")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Color.secondary)
+                        .junoSecondaryInk()
                 }
-                .foregroundStyle(Color.primary)
+                .font(.callout)
+                .junoInk()
                 .padding(.horizontal, 9)
                 .frame(height: 34)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .fixedSize()
+            .help("How much thinking the model does before answering")
             .accessibilityLabel("Thinking")
             .accessibilityValue(currentThinkingLabel(in: scale))
             .accessibilityIdentifier("juno.desktop.chat-thinking")
@@ -2821,7 +2929,7 @@ struct DesktopComposer: View {
                         .font(.callout.weight(.bold))
                         .frame(width: 36, height: 36)
                         .foregroundStyle(
-                            canSend ? Color.junoOnAccent : Color.secondary
+                            canSend ? Color.junoOnAccent : Color.junoMutedForeground
                         )
                         .contentShape(.circle)
                 }
@@ -3109,8 +3217,17 @@ private struct DesktopVoiceGlyph: View {
     var body: some View {
         HStack(spacing: 2) {
             ForEach(Array(heights.enumerated()), id: \.offset) { _, height in
+                // `.foreground`, not `Color.white`. `primaryAction` states
+                // `.foregroundStyle(Color.junoOnAccent)` on this glyph and its two
+                // siblings are `Image`s that honour it — but a `Shape.fill` with an
+                // absolute colour silently overrode the inherited style, so the one
+                // variant of the button that is not an SF Symbol was the one that
+                // ignored the on-accent token the doc comment above `primaryAction`
+                // promises. That matters because the accent is an account setting:
+                // white bars on the amber and sage accents are the exact contrast
+                // failure the token exists to prevent.
                 Capsule()
-                    .fill(Color.white)
+                    .fill(.foreground)
                     .frame(width: 2, height: height)
             }
         }
@@ -3188,7 +3305,7 @@ private struct DesktopLibraryPicker: View {
                         .font(.title2.weight(.semibold))
                     Text("Choose files already shared with Juno.")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
                 Spacer()
                 Picker("Filter", selection: $model.filter) {
@@ -3232,12 +3349,12 @@ private struct DesktopLibraryPicker: View {
                 if let error = model.lastErrorDescription {
                     Text(error)
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Color.junoDanger)
                         .lineLimit(2)
                 } else {
                     Text("\(model.selection.count) of \(capacity) selected")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
                 Spacer()
                 Button("Cancel", action: cancel)
@@ -3251,7 +3368,11 @@ private struct DesktopLibraryPicker: View {
                         Text("Attach")
                     }
                 }
+                // Untinted, `.borderedProminent` fills with the system accent —
+                // system blue beside the coral selection stroke this same grid
+                // draws two dozen points away.
                 .buttonStyle(.borderedProminent)
+                .tint(Color.junoAccent)
                 .disabled(model.selection.isEmpty || model.isAttaching)
             }
             .padding(16)
@@ -3266,6 +3387,10 @@ private struct DesktopLibraryPicker: View {
         // which was the other view in this file declaring one. Nothing here
         // needs to grow, so nothing here asks to.
         .frame(width: 740, height: 560)
+        // Sheet contract: the warm ground inside the content, the platter left to
+        // the system. `.fitted` rather than `.form` precisely because the frame
+        // above is deliberate — see the note on it.
+        .junoSheetSurface(.fitted)
         .task {
             model.selection = []
             await model.refresh()
@@ -3312,10 +3437,10 @@ private struct DesktopAttachmentChip: View {
                 .controlSize(.mini)
         case .uploaded:
             Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+                .foregroundStyle(Color.junoSuccess)
         case .failed:
             Image(systemName: "exclamationmark.circle.fill")
-                .foregroundStyle(.red)
+                .foregroundStyle(Color.junoDanger)
         }
     }
 

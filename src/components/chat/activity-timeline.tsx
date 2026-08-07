@@ -20,10 +20,23 @@ import { toReasoningLines } from "@/lib/reasoning-lines";
 import { cn, truncate } from "@/lib/utils";
 import type { ClientActivityEvent } from "@/types/chat";
 
+/**
+ * WHAT THE RUN IS DOING, RIGHT NOW — one sentence, computed once.
+ *
+ * Exported in spirit but not in fact: the panel receives the RESULT of this as a
+ * prop rather than calling it a second time. It has no events of its own to call
+ * it with, and one value handed down cannot drift from itself, which is the same
+ * argument that keeps `useRunClock` to a single caller.
+ *
+ * `thinkMs` — NOT the total elapsed. The "Still thinking" ladder below is about
+ * a silent reasoning stretch, and passing the whole run's elapsed time fired it
+ * on a deep-research run that had spent its first hundred seconds visibly
+ * SEARCHING, with sources landing on screen the entire time.
+ */
 function liveCopy(
   activeLabel: string | undefined,
   latest: ClientActivityEvent | undefined,
-  elapsedMs: number | null
+  thinkMs: number | null
 ) {
   if (latest?.kind === "warning") {
     return { message: latest.title, warning: true };
@@ -50,7 +63,7 @@ function liveCopy(
 
   // Progressive copy so a long silent reasoning stretch (Kimi, Claude Max, …)
   // doesn't read as hung — and reminds people they can leave and come back.
-  const elapsed = elapsedMs ?? 0;
+  const elapsed = thinkMs ?? 0;
   if (elapsed >= 10 * 60_000) {
     return {
       message: "Still thinking deeply — safe to leave; the answer will be here when you return",
@@ -64,12 +77,6 @@ function liveCopy(
     };
   }
   return { message: "Thinking about your request", warning: false };
-}
-
-function formatLiveSpan(ms: number) {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
 /**
@@ -86,6 +93,15 @@ function formatLiveSpan(ms: number) {
  * eye tracks one continuous object from meter to receipt. Completion is four
  * discrete signals — the tick freezes, the number demotes, nouns appear, coral
  * leaves — and motion stopping is the least of them.
+ *
+ * IT IS ONE TRIGGER WHOSE TENSE CHANGES, not two controls. The live state is a
+ * present-tense sentence under a shimmer; the resting state is the same row
+ * rewritten in the past tense with the same number in the same slot. What the
+ * resting row does NOT say is "Thought for 2.7s": that string was the panel's
+ * old third opinion on the run's duration, printed next to the strip's and the
+ * ledger's, and all three could disagree because two formatters were involved.
+ * There is now one formatter (`formatSpan`) and one figure, and the label above
+ * it names the run rather than re-timing it.
  */
 export function ActivityTimeline({
   messageId,
@@ -93,6 +109,7 @@ export function ActivityTimeline({
   reasoning,
   reasoningParts,
   streaming,
+  finishNote,
 }: {
   /** Identifies THIS run's panel in the chat-scoped open state, so only one
    *  dock is open at a time across the whole thread. */
@@ -103,6 +120,11 @@ export function ActivityTimeline({
    *  through — this component derives nothing from them. */
   reasoningParts?: string[] | null;
   streaming?: boolean;
+  /** The finish-reason sentence message-item already resolved. Passed straight
+   *  through to the panel's Notice block; this row does not render it (the
+   *  strip already carries `run.note`, and two wordings of "it stopped early"
+   *  in one line is how a strip becomes a paragraph). */
+  finishNote?: string | null;
 }) {
   // Open/close lives in chat-view (see thought-panel-context): the panel is a
   // docked column and cannot be painted from inside this scrolling row. The RUN
@@ -122,7 +144,10 @@ export function ActivityTimeline({
   React.useEffect(() => {
     if (wasOpen.current && !open) {
       const active = document.activeElement;
-      if (!active || active === document.body) triggerRef.current?.focus();
+      // preventScroll, or the browser scrolls the transcript back up to this row
+      // the instant the dock closes — throwing the reader off the answer they
+      // had just scrolled down to read.
+      if (!active || active === document.body) triggerRef.current?.focus({ preventScroll: true });
     }
     wasOpen.current = open;
   }, [open]);
@@ -155,7 +180,8 @@ export function ActivityTimeline({
 
   const latest = hasEvents ? list[list.length - 1] : undefined;
   const active = run.phases.find((p) => p.active);
-  const live = liveCopy(active?.label, latest, run.elapsedMs);
+  // The THINK span, not the whole run — see liveCopy.
+  const live = liveCopy(active?.label, latest, run.phases.find((p) => p.key === "think")?.ms ?? null);
   const restingDetail = [
     run.searches ? `${run.searches} ${run.searches === 1 ? "search" : "searches"}` : null,
     run.sourceCount ? `${run.sourceCount} ${run.sourceCount === 1 ? "source" : "sources"}` : null,
@@ -232,14 +258,14 @@ export function ActivityTimeline({
               <span key={copyKey} aria-hidden="true" className="min-w-0 truncate text-body-lg leading-6 text-warning">
                 {live.message}
                 {run.elapsedMs !== null && (
-                  <span className="whitespace-nowrap tabular-nums"> · {formatLiveSpan(run.elapsedMs)}</span>
+                  <span className="whitespace-nowrap tabular-nums"> · {formatSpan(run.elapsedMs, { live: true })}</span>
                 )}
               </span>
             ) : (
               <ThinkingState key={copyKey} aria-hidden="true" className="min-w-0 truncate text-body-lg leading-6">
                 {live.message}
                 {run.elapsedMs !== null && (
-                  <span className="whitespace-nowrap tabular-nums"> · {formatLiveSpan(run.elapsedMs)}</span>
+                  <span className="whitespace-nowrap tabular-nums"> · {formatSpan(run.elapsedMs, { live: true })}</span>
                 )}
               </ThinkingState>
             )}
@@ -315,6 +341,12 @@ export function ActivityTimeline({
               reasoning={reasoning}
               reasoningParts={reasoningParts}
               streaming={streaming}
+              // Computed ONCE, above, and handed down — the same argument as
+              // `run`: the strip and the panel must be incapable of disagreeing
+              // about what the run is doing, and the only way to guarantee that
+              // is for there to be one value rather than two agreeing ones.
+              live={live}
+              finishNote={finishNote}
             />,
             panel.container
           )

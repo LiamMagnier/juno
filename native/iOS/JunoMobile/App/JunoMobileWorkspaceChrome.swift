@@ -264,7 +264,7 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(title)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier(identifier ?? "")
                 Spacer(minLength: 0)
@@ -289,7 +289,7 @@ struct JunoMobileWorkspaceSection<Content: View>: View {
             if let footnote {
                 Text(footnote)
                     .font(.system(size: 12))
-                    .foregroundStyle(Color.junoMutedForeground.opacity(0.8))
+                    .foregroundStyle(Color.junoMutedForeground)
             }
         }
     }

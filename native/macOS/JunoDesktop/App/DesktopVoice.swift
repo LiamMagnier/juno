@@ -428,8 +428,18 @@ struct DesktopVoiceDock: View {
         // The web lifts this pill further off the page than the composer below
         // it, and it has to: the dock is the transient thing, and depth is what
         // says so when the two surfaces are the same material.
-        .shadow(color: .black.opacity(0.1), radius: 1, y: 1)
-        .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
+        //
+        // The two rungs stay — the tight contact throw and the wide ambient one
+        // are what make the dock read as *floating* rather than as merely raised,
+        // and the dock is the app's one deliberate second elevation. What changed
+        // is the colour. Both were neutral `.black`, and the design system's own
+        // note on `cardShadowLight` says why that is wrong here: a grey shadow on
+        // a warm canvas reads as dirt, not as depth, because the pool it leaves
+        // sits off the hue family of everything around it. `junoCardShadow` is
+        // the same throw stated warm (`hsl(30 10% 20%)`), and it is adaptive, so
+        // the dark appearance stops carrying a light-mode alpha.
+        .shadow(color: .junoCardShadow, radius: 1, y: 1)
+        .shadow(color: .junoCardShadow, radius: 12, y: 8)
     }
 
     // MARK: - Words
@@ -596,7 +606,9 @@ struct DesktopVoiceDock: View {
             .background(tint.opacity(0.07), in: shape)
             .background(.regularMaterial, in: shape)
             .overlay(shape.strokeBorder(tint.opacity(0.3), lineWidth: 1))
-            .shadow(color: .black.opacity(0.08), radius: 5, y: 3)
+            // The third neutral-black throw in this file, and the same fix: warm,
+            // adaptive, from the one shadow token rather than a hand-picked alpha.
+            .shadow(color: .junoCardShadow, radius: 5, y: 3)
             .frame(maxWidth: Metric.messageWidth)
     }
 
@@ -751,7 +763,7 @@ struct DesktopVoiceDock: View {
                 // circle with a grey-looking glyph, which is precisely how the
                 // one enabled control in an errored session ended up reading as
                 // disabled.
-                .foregroundStyle(tone == .prominent ? Color.junoCanvas : Color.primary)
+                .foregroundStyle(tone == .prominent ? Color.junoCanvas : Color.junoForeground)
                 .frame(width: Metric.control, height: Metric.control)
                 .background(
                     tone == .prominent ? Color.primary : Color.junoMuted.opacity(0.65),

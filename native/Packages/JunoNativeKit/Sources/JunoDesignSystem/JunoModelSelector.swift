@@ -17,6 +17,8 @@ public struct JunoModelSelector: View {
     private let metrics: JunoModelSelectorMetrics
     private let select: (JunoModelDescriptor) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var query = ""
     @State private var providerID: String?
     @State private var previewModelID: String?
@@ -43,6 +45,20 @@ public struct JunoModelSelector: View {
             modelDetail
         }
         .frame(width: metrics.width, height: metrics.height)
+        // The one place in the design system that clamps Dynamic Type, and the
+        // clamp is a consequence of the fixed frame above rather than a
+        // preference about type size. AppKit cannot safely negotiate an
+        // unconstrained popover whose detail column changes with hover, so this
+        // control's size is not negotiable; at AX5 the three columns inside it
+        // would each need roughly twice the width they have and the catalog
+        // would truncate every model name to two words. `.accessibility1` is
+        // the largest step where all three columns still read.
+        //
+        // Everything the popover *contains* now scales up to that point, which
+        // it did not before — every label in here was a fixed `.system(size:)`.
+        // A clamp on a control that scales is a ceiling; a clamp on one that
+        // does not is a fiction.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         // No opaque fill. This used to paint `Color.junoCanvas` across the whole
         // popover, which is a flat sheet of cream laid over the one surface in
         // the app that the system is already rendering as Liquid Glass — the
@@ -83,7 +99,7 @@ public struct JunoModelSelector: View {
         }
         .scrollIndicators(.hidden)
         .frame(width: metrics.railWidth)
-        .background(Color.primary.opacity(0.025))
+        .background(Color.junoForeground.opacity(0.025))
     }
 
     private func providerButton(
@@ -93,7 +109,12 @@ public struct JunoModelSelector: View {
     ) -> some View {
         let active = providerID == id
         return Button {
-            withAnimation(JunoMotion.fast) {
+            // The rail's filter change is a content swap in the catalog
+            // column beside it, so it is spatial travel and collapses to a flat
+            // cross-fade under Reduce Motion. This site read the preference
+            // through neither `reduced(_:when:)` nor the environment before —
+            // it was one of the four in the package that never asked at all.
+            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
                 providerID = id
             }
         } label: {
@@ -102,8 +123,8 @@ public struct JunoModelSelector: View {
                     JunoProviderMark(providerID: id, providerName: name, size: 24)
                 } else {
                     Image(systemName: "square.grid.2x2")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(active ? Color.junoAccent : Color.secondary)
+                        .junoFont(size: 15, relativeTo: .body, weight: .medium)
+                        .foregroundStyle(active ? Color.junoAccent : Color.junoMutedForeground)
                 }
             }
             .frame(width: 40, height: 40)
@@ -119,7 +140,7 @@ public struct JunoModelSelector: View {
             }
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.junoPress)
         .help("\(name) · \(count)")
         .accessibilityLabel(name)
         .accessibilityValue("\(count) models")
@@ -129,7 +150,7 @@ public struct JunoModelSelector: View {
     private var modelCatalog: some View {
         VStack(spacing: 0) {
             JunoModelSearchField(query: $query)
-                .padding(JunoSpacing.control)
+                .padding(JunoSpace.cozy)
 
             Divider()
 
@@ -143,7 +164,7 @@ public struct JunoModelSelector: View {
                             sectionView(section)
                         }
                     }
-                    .padding(JunoSpacing.control)
+                    .padding(JunoSpace.cozy)
                 }
                 .scrollIndicators(.automatic)
             }
@@ -154,8 +175,8 @@ public struct JunoModelSelector: View {
     private func sectionView(_ section: CatalogSection) -> some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             Label(section.modality.sectionTitle, systemImage: section.modality.systemImage)
-                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .junoFont(size: 10.5, relativeTo: .caption, weight: .semibold, design: .monospaced)
+                .junoSecondaryInk()
                 .textCase(.uppercase)
                 .padding(.horizontal, 3)
 
@@ -175,14 +196,14 @@ public struct JunoModelSelector: View {
                     .padding(.top, 7)
                 } label: {
                     Text("Older models · \(section.legacy.count)")
-                        .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .junoFont(size: 11.5, relativeTo: .footnote, weight: .medium)
+                        .junoSecondaryInk()
                 }
                 .tint(.secondary)
                 .padding(JunoSpace.snug)
                 .background {
-                    RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
-                        .fill(Color.primary.opacity(0.025))
+                    RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                        .fill(Color.junoForeground.opacity(0.025))
                 }
             }
         }
@@ -202,7 +223,7 @@ public struct JunoModelSelector: View {
             }
             select(model)
         } label: {
-            HStack(alignment: .top, spacing: JunoSpacing.control) {
+            HStack(alignment: .top, spacing: JunoSpace.cozy) {
                 JunoProviderMark(
                     providerID: model.providerID,
                     providerName: model.providerName,
@@ -213,11 +234,11 @@ public struct JunoModelSelector: View {
                 VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                     HStack(spacing: JunoSpace.tight) {
                         Text(model.displayName)
-                            .font(.system(size: 13.5, weight: .semibold))
+                            .junoFont(size: 13.5, relativeTo: .subheadline, weight: .semibold)
                             .lineLimit(1)
                         if model.choosesThinkingAutomatically {
                             Text("SMART")
-                                .font(.system(size: 8.5, weight: .bold))
+                                .junoFont(size: 8.5, relativeTo: .caption2, weight: .bold)
                                 .foregroundStyle(Color.junoAccent)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 2)
@@ -228,19 +249,19 @@ public struct JunoModelSelector: View {
                         Spacer(minLength: JunoSpace.hairline)
                         if let cost = model.costGlyph {
                             Text(cost)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(.tertiary)
+                                .junoFont(size: 10, relativeTo: .caption, design: .monospaced)
+                                .junoMetaInk()
                         }
                         if selected {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .bold))
+                                .junoFont(size: 11, relativeTo: .caption, weight: .bold)
                                 .foregroundStyle(Color.junoAccent)
                         }
                     }
 
                     Text(model.summary ?? "\(model.shortProviderName) model")
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
+                        .junoFont(size: 11.5, relativeTo: .footnote)
+                        .junoSecondaryInk()
                         .lineLimit(2)
 
                     HStack(spacing: JunoSpace.tight) {
@@ -250,14 +271,14 @@ public struct JunoModelSelector: View {
                         )
                         if let unavailable {
                             Label(unavailable, systemImage: "lock")
-                                .font(.system(size: 9.5, weight: .medium))
+                                .junoFont(size: 9.5, relativeTo: .caption2, weight: .medium)
                                 .foregroundStyle(.orange)
                                 .lineLimit(1)
                         }
                     }
                 }
             }
-            .padding(JunoSpacing.control)
+            .padding(JunoSpace.cozy)
             .background {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(
@@ -278,7 +299,7 @@ public struct JunoModelSelector: View {
             .contentShape(.rect)
             .opacity(unavailable == nil ? 1 : 0.62)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.junoPress)
         .onHover { hovering in
             if hovering {
                 previewModelID = model.id
@@ -481,16 +502,16 @@ public struct JunoModelSelectorButton: View {
                 )
                 Text(label)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
             .contentShape(.rect)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.junoPress)
         .fixedSize()
         .disabled(models.isEmpty)
         .help("The model this conversation's next turn runs on")
@@ -541,8 +562,8 @@ struct JunoModelSearchField: View {
     var body: some View {
         HStack(spacing: JunoSpace.snug) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .junoFont(size: 12, relativeTo: .footnote)
+                .junoSecondaryInk()
             TextField("Search models", text: $query)
                 .textFieldStyle(.plain)
                 .focused($focused)
@@ -553,9 +574,9 @@ struct JunoModelSearchField: View {
                     focused = true
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.junoPress)
                 .accessibilityLabel("Clear search")
             }
         }

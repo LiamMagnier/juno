@@ -73,9 +73,9 @@ public struct JunoAIcssTodoList: View {
         .padding(.top, 6)
         .padding(.bottom, 12)
         .background(Color.junoSurface)
-        .clipShape(RoundedRectangle(cornerRadius: JunoCornerRadius.compactControl, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: JunoCornerRadius.compactControl, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
                 .strokeBorder(Color.junoHairline, lineWidth: 1)
         )
         .animation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion), value: open)
@@ -87,21 +87,21 @@ public struct JunoAIcssTodoList: View {
             HStack(spacing: 8) {
                 headerGlyph
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.primary)
+                    .junoFont(size: 13, relativeTo: .subheadline, weight: .medium)
+                    .foregroundStyle(Color.junoForeground)
                 Spacer(minLength: 0)
                 // The count rolls rather than cuts. `contentTransition(.numericText)`
                 // is the platform's own version of the web's per-digit roller, and
                 // it does the same thing: the changed digit moves, the rest hold.
                 Text("\(done)/\(items.count)")
-                    .font(.system(size: 13))
+                    .junoFont(size: 13, relativeTo: .subheadline)
                     .monospacedDigit()
                     .foregroundStyle(Color.junoMutedForeground)
                     .contentTransition(.numericText(value: Double(done)))
             }
             .frame(minHeight: 22)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.junoPress)
         #if os(macOS)
         .onHover { hovering = $0 }
         #endif
@@ -115,30 +115,37 @@ public struct JunoAIcssTodoList: View {
         ZStack {
             if hovering || !open {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
+                    .junoFont(size: 11, relativeTo: .caption, weight: .semibold)
                     .foregroundStyle(Color.junoMutedForeground)
                     .rotationEffect(.degrees(open ? 0 : -90))
             } else if allDone {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 14))
+                    .junoFont(size: 14, relativeTo: .body)
                     .foregroundStyle(Color.junoSuccess)
             } else if blocked > 0, !running {
                 // The plan has stopped and cannot continue on its own. A pie here
                 // would keep implying forward motion at whatever fraction it had
                 // reached when it stalled.
                 Image(systemName: "exclamationmark.circle")
-                    .font(.system(size: 13))
+                    .junoFont(size: 13, relativeTo: .subheadline)
                     .foregroundStyle(Color.junoCaution)
             } else if running {
                 pie
             } else {
                 Image(systemName: "list.bullet")
-                    .font(.system(size: 11, weight: .medium))
+                    .junoFont(size: 11, relativeTo: .caption, weight: .medium)
                     .foregroundStyle(Color.junoMutedForeground)
             }
         }
         .frame(width: 16, height: 16)
-        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: hovering)
+        // `.tint`: a hover fill is a colour change on the element the pointer
+        // is already touching. Nothing moves, so there is nothing for Reduce
+        // Motion to remove — flattening it to the cross-fade rung would cost the
+        // feedback and buy the preference nothing.
+        .animation(
+            JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+            value: hovering
+        )
     }
 
     /// A determinate wedge inside the same dotted ring the pending items wear, so
@@ -152,7 +159,7 @@ public struct JunoAIcssTodoList: View {
                 )
             Circle()
                 .trim(from: 0, to: fraction)
-                .fill(Color.primary)
+                .fill(Color.junoForeground)
                 .rotationEffect(.degrees(-90))
                 .padding(2.6)
         }
@@ -175,7 +182,7 @@ public struct JunoAIcssTodoList: View {
                 .foregroundStyle(Color.junoMutedForeground)
                 .opacity(state == .pending ? 1 : 0)
             Image(systemName: "arrow.right.circle")
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(Color.junoForeground)
                 .opacity(state == .active ? 1 : 0)
             Image(systemName: "checkmark.circle")
                 .foregroundStyle(Color.junoMutedForeground)
@@ -184,7 +191,7 @@ public struct JunoAIcssTodoList: View {
                 .foregroundStyle(Color.junoCaution)
                 .opacity(state == .blocked ? 1 : 0)
         }
-        .font(.system(size: 14))
+        .junoFont(size: 14, relativeTo: .body)
         .frame(width: 16, height: 16)
         .padding(.top, 1)
         .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: state)
@@ -197,25 +204,25 @@ public struct JunoAIcssTodoList: View {
             // The one shining line in the block, which is what makes "where the
             // agent is" findable in a list of ten without a colour or a badge.
             Text(item.label)
-                .font(.system(size: 13))
+                .junoFont(size: 13, relativeTo: .subheadline)
                 .junoAIcssShine(color: .primary)
                 .fixedSize(horizontal: false, vertical: true)
         case .done:
             Text(item.label)
-                .font(.system(size: 13))
+                .junoFont(size: 13, relativeTo: .subheadline)
                 .strikethrough()
                 .foregroundStyle(Color.junoMutedForeground)
                 .fixedSize(horizontal: false, vertical: true)
         case .pending:
             Text(item.label)
-                .font(.system(size: 13))
+                .junoFont(size: 13, relativeTo: .subheadline)
                 .foregroundStyle(Color.junoMutedForeground)
                 .fixedSize(horizontal: false, vertical: true)
         case .blocked:
             // Not shining: the shine means "being worked on", and a blocked step
             // is precisely the one that is not.
             Text(item.label)
-                .font(.system(size: 13))
+                .junoFont(size: 13, relativeTo: .subheadline)
                 .foregroundStyle(Color.junoCaution)
                 .fixedSize(horizontal: false, vertical: true)
         }

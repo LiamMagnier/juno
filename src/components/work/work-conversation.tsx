@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Markdown } from "@/components/chat/markdown";
 import type { ClientWorkEvent, ClientWorkSession } from "@/lib/work/serializers";
 import { readEvent, str } from "@/components/work/work-payload";
-import { cn } from "@/lib/utils";
+import {
+  WorkThreadComposer,
+  type WorkComposerMode,
+} from "@/components/work/composer/work-thread-composer";
 
 /*
  * The conversation half of a Work thread: what you asked for, what Juno has
@@ -16,7 +17,15 @@ import { cn } from "@/lib/utils";
  * `bg-secondary` bubbles, Juno's turns as full-width prose with no card, no
  * shadow and no glass. The depth in this page belongs to the composer and the
  * approval controls, which are chrome.
+ *
+ * The composer lives in `composer/work-thread-composer.tsx` and is pinned to
+ * the bottom of this column in every state. It used to be conditional, and the
+ * condition was the bug: a finished task, a draft and a refused dispatch all
+ * removed the field and left a sentence pointing at a button elsewhere.
  */
+
+/** Re-exported so the thread page keeps one import for the conversation. */
+export type { WorkComposerMode };
 
 interface Turn {
   id: string;
@@ -72,21 +81,6 @@ export function deriveTurns(events: readonly ClientWorkEvent[]): Turn[] {
   return turns;
 }
 
-/**
- * What the box at the bottom is for right now.
- *
- * Three states rather than a boolean and a reason, because the three do
- * genuinely different things: one answers a specific question and is checked
- * against its id, one records an instruction nobody asked for, and one is not a
- * box at all. Collapsing them left the composer permanently disabled whenever
- * Juno had not asked anything, which was every ordinary minute of every run.
- */
-export type WorkComposerMode =
-  | { kind: "answer"; question: string }
-  | { kind: "steer" }
-  /** No box, and the sentence that says why — never a greyed-out field. */
-  | { kind: "closed"; reason: string };
-
 export function WorkConversation({
   session,
   turns,
@@ -97,30 +91,11 @@ export function WorkConversation({
   session: ClientWorkSession;
   turns: readonly Turn[];
   sending: boolean;
-  /** What the box does right now, and whether there is one at all. */
+  /** What the box does right now. There is always one. */
   mode: WorkComposerMode;
-  onSend: (text: string) => void;
+  /** Resolves true when the words landed; false leaves them in the box. */
+  onSend: (text: string) => Promise<boolean>;
 }) {
-  const [draft, setDraft] = React.useState("");
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
-
-  const autoresize = React.useCallback(() => {
-    const element = textareaRef.current;
-    if (!element) return;
-    element.style.height = "auto";
-    element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
-  }, []);
-  React.useEffect(() => {
-    autoresize();
-  }, [draft, autoresize]);
-
-  const send = () => {
-    const text = draft.trim();
-    if (!text || sending || mode.kind === "closed") return;
-    setDraft("");
-    onSend(text);
-  };
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="space-y-5">
@@ -152,58 +127,18 @@ export function WorkConversation({
 
       </div>
 
-      <div className="sticky bottom-0 mt-6 pt-2">
-        {mode.kind === "closed" ? (
-          <p className="rounded-xl border border-dashed border-border/70 bg-background/80 px-3.5 py-3 text-[13px] leading-relaxed text-muted-foreground backdrop-blur">
-            {mode.reason}
-          </p>
-        ) : (
-          <div className="composer-surface flex flex-col gap-1 rounded-[20px] border border-border/65 bg-card/95 p-1.5 backdrop-blur transition-[border-color] duration-base ease-spring focus-within:border-foreground/15">
-            <p className="truncate px-2.5 pt-1 font-mono text-[10px] text-muted-foreground">
-              {mode.kind === "answer"
-                ? `Answering: ${mode.question}`
-                : // Said before the box rather than after the send, because the
-                  // difference matters: this goes on the task's record, and the
-                  // attempt already running was handed its instructions when it
-                  // started.
-                  "Not an answer to anything — this is kept on the task"}
-            </p>
-            <div className="flex items-end gap-1.5">
-              <textarea
-                ref={textareaRef}
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                    event.preventDefault();
-                    send();
-                  }
-                }}
-                rows={1}
-                disabled={sending}
-                placeholder={
-                  mode.kind === "answer" ? "Answer in your own words" : "Add context or an instruction"
-                }
-                aria-label={mode.kind === "answer" ? `Answer: ${mode.question}` : "Add an instruction"}
-                className="max-h-[180px] min-h-[38px] w-full resize-none bg-transparent px-2.5 py-2 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground/70 disabled:opacity-70"
-              />
-              <Button
-                type="button"
-                size="icon-sm"
-                onClick={send}
-                disabled={sending || draft.trim().length === 0}
-                aria-label={mode.kind === "answer" ? "Send answer" : "Add this to the task"}
-                className={cn("composer-primary-action h-8 w-8 shrink-0 rounded-[11px]")}
-              >
-                {sending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                ) : (
-                  <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
-                )}
-              </Button>
-            </div>
-          </div>
-        )}
+      {/* Pinned, in every state and at every width. `bg-background` on the
+          wrapper rather than on the composer alone, because the composer is a
+          rounded card and the transcript would otherwise scroll visibly through
+          the corners and through the gap below it. The fade above is one line
+          tall: enough to read as depth without borrowing a shadow, which this
+          surface does not use. */}
+      <div className="sticky bottom-0 z-10 mt-6 bg-background pb-2 pt-1">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-full h-8 bg-gradient-to-t from-background to-transparent"
+        />
+        <WorkThreadComposer mode={mode} sending={sending} onSend={onSend} />
       </div>
     </div>
   );

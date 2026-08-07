@@ -467,8 +467,14 @@ struct JunoMobileRootView: View {
             }
             .junoScreenCanvas()
         }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
+        // Settings is a page of sustained text and controls — a reading surface,
+        // not chrome — so it takes the full height it already had (`[.large]` is
+        // the default, so saying it was noise) and loses the grabber, which on a
+        // single-detent sheet promises a drag that does nothing. What it gains is
+        // `scrollContentBackground(.hidden)`: the `Form` inside supplies its own
+        // opaque grouped background, which was painting over the warm canvas the
+        // screen puts down.
+        .junoSheetSurface(.page)
         .tint(Color.junoAccent)
     }
 
@@ -1096,7 +1102,7 @@ private struct JunoMobileSidebarDrawer: View {
     private func sectionLabel(_ key: LocalizedStringKey) -> some View {
         Text(key)
             .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.top, 14)
@@ -1143,20 +1149,16 @@ private struct JunoMobileSidebarDrawer: View {
         .accessibilityLabel("Open settings for \(profileName)")
     }
 
+    /// The drawer's one primary action, and therefore the one tinted surface on
+    /// it — the HIG's rule on tinted glass is that colour is for emphasis, and
+    /// its own illustration of the mistake is several tinted controls at once.
     private var newChatButton: some View {
         Button(action: newChat) {
-            HStack(spacing: 7) {
-                Image(systemName: "square.and.pencil")
-                    .font(.system(size: 16, weight: .semibold))
-                Text("navigation.chat")
-                    .font(.system(size: 16, weight: .semibold))
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 20)
-            .frame(height: 46)
-            .modifier(JunoAccentGlassCapsule())
+            Label("navigation.chat", systemImage: "square.and.pencil")
+                .fontWeight(.semibold)
         }
-        .buttonStyle(.plain)
+        .junoProminentAction()
+        .controlSize(.large)
         .disabled(!canCreateChat)
         .opacity(canCreateChat ? 1 : 0.5)
         .accessibilityLabel("chat.new")
@@ -1236,7 +1238,7 @@ private struct JunoMobileConversationRow: View {
                 if pending {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
             }
             .padding(.horizontal, 10)
@@ -1278,11 +1280,11 @@ private struct JunoMobileSignInView: View {
                 Text("auth.welcome.title")
                     .junoPageHeading()
                 Text("auth.welcome.description")
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .multilineTextAlignment(.center)
                 if let error = authModel.lastErrorDescription {
                     Text(error)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Color.junoDanger)
                         .multilineTextAlignment(.center)
                         .accessibilityIdentifier("juno.mobile.auth-error")
                 }
@@ -1303,7 +1305,7 @@ private struct JunoMobileSignInView: View {
 
                     Text("auth.divider.or")
                         .junoCaption()
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
 
                     Button {
                         Task { await authModel.signIn() }
@@ -1317,7 +1319,7 @@ private struct JunoMobileSignInView: View {
 
                     Text("auth.password.disclaimer")
                         .junoCaption()
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .multilineTextAlignment(.center)
                 }
             }

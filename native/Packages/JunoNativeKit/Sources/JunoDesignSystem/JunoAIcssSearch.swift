@@ -82,7 +82,7 @@ public struct JunoAIcssWebSearch: View {
     private func labelRow(_ query: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 12, weight: .medium))
+                .junoFont(size: 12, relativeTo: .footnote, weight: .medium)
                 .foregroundStyle(Color.junoMutedForeground)
             JunoAIcssThinkingLabel(
                 "\(settled ? "Searched" : "Searching") “\(query)”",
@@ -94,12 +94,12 @@ public struct JunoAIcssWebSearch: View {
             if !sites.isEmpty {
                 Button { open.toggle() } label: {
                     Image(systemName: "chevron.up")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Color.junoMutedForeground.opacity(0.7))
+                        .junoFont(size: 9, relativeTo: .caption2, weight: .semibold)
+                        .foregroundStyle(Color.junoMutedForeground)
                         .rotationEffect(.degrees(open ? 0 : 180))
                         .frame(width: 16, height: 16)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.junoPress)
                 .accessibilityLabel(open ? "Hide results" : "Show results")
             }
             Spacer(minLength: 0)
@@ -133,7 +133,7 @@ public struct JunoAIcssWebSearch: View {
         // guess as a destination.
         if site.state == .done {
             Link(destination: site.url) { rowBody(site) }
-                .buttonStyle(.plain)
+                .buttonStyle(.junoPress)
         } else {
             rowBody(site)
         }
@@ -143,15 +143,15 @@ public struct JunoAIcssWebSearch: View {
         HStack(spacing: 6) {
             bullet(site.state)
             Text(site.title)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(site.state == .pending ? Color.junoMutedForeground : Color.primary)
+                .junoFont(size: 12, relativeTo: .footnote, weight: .regular)
+                .foregroundStyle(site.state == .pending ? Color.junoMutedForeground : Color.junoForeground)
                 .lineLimit(1)
                 .layoutPriority(1)
             Text("·")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.junoMutedForeground.opacity(0.7))
+                .junoFont(size: 12, relativeTo: .footnote)
+                .foregroundStyle(Color.junoMutedForeground)
             Text(site.label)
-                .font(.system(size: 12))
+                .junoFont(size: 12, relativeTo: .footnote)
                 .foregroundStyle(Color.junoMutedForeground)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -164,16 +164,16 @@ public struct JunoAIcssWebSearch: View {
     private func bullet(_ state: JunoAIcssSearchSite.State) -> some View {
         ZStack {
             Image(systemName: "circle.dotted")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.junoMutedForeground.opacity(0.7))
+                .junoFont(size: 11, relativeTo: .caption)
+                .foregroundStyle(Color.junoMutedForeground)
                 .opacity(state == .pending ? 1 : 0)
             Image(systemName: "globe")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.junoMutedForeground.opacity(0.7))
+                .junoFont(size: 11, relativeTo: .caption)
+                .foregroundStyle(Color.junoMutedForeground)
                 .opacity(state == .loading ? 1 : 0)
                 .scaleEffect(state == .loading ? 1 : 0.85)
             Image(systemName: "checkmark.circle")
-                .font(.system(size: 11))
+                .junoFont(size: 11, relativeTo: .caption)
                 .foregroundStyle(Color.junoSuccess)
                 .opacity(state == .done ? 1 : 0)
                 .scaleEffect(state == .done ? 1 : 1.175)

@@ -16,6 +16,12 @@ public struct TranscriptView: View {
     let modelDisplayNames: [String: String]
     var focus: FocusState<Bool>.Binding?
 
+    /// The auto-scroll below is the only motion this view owns, and it is
+    /// travel — the transcript is the largest moving surface in the window, so
+    /// it is exactly the kind of animation Reduce Motion exists for. Nothing in
+    /// this file read the setting before.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     /// The transcript's measure. Long-form agent prose past roughly 90
     /// characters is measurably harder to read, and a full-screen window is
     /// otherwise 1800pt of single-column text.
@@ -63,7 +69,13 @@ public struct TranscriptView: View {
             // the same place — and so this stays correct without re-deriving the
             // visible list inside the handler.
             .onChange(of: controller.events.count) {
-                withAnimation(.easeOut(duration: 0.15)) {
+                // `fast` (0.12), not the 0.15 literal that was here: a
+                // near-miss off the ladder, close enough to look intentional
+                // and far enough to desynchronise from every other 0.12 in the
+                // window.
+                withAnimation(
+                    JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)
+                ) {
                     proxy.scrollTo(TranscriptTail.id, anchor: .bottom)
                 }
             }
@@ -176,7 +188,7 @@ struct TranscriptTail: View {
                 .frame(width: 18)
             Text(title)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
             if showsElapsed {
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
                     if let elapsed = controller.elapsedSeconds {

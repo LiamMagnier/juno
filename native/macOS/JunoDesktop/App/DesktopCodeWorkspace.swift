@@ -329,6 +329,12 @@ struct DesktopCodeWorkspace: View {
                     reviewVisible = true
                     Task { await controller.review.open(path, using: controller) }
                 }
+                // Sheet contract, applied at the presentation site because the
+                // sheet's root lives in the JunoCode package. Open Quickly is a
+                // file browser over a list, so it read as the coldest of the
+                // eight groundless sheets — a grey pane over a warm workspace.
+                // The platter, its material and its radius stay the system's.
+                .junoSheetSurface(.fitted)
             }
         }
         .alert("Rename Session", isPresented: renameBinding) {
@@ -1979,9 +1985,9 @@ private struct DesktopRemoteDetailStyle: ViewModifier {
 
     func body(content: Content) -> some View {
         if usesMono {
-            content.junoMono().foregroundStyle(.secondary)
+            content.junoMono().junoSecondaryInk()
         } else {
-            content.junoCaption().foregroundStyle(.secondary)
+            content.junoCaption().junoSecondaryInk()
         }
     }
 }
@@ -2020,7 +2026,7 @@ private struct DesktopCodeRelayApproval: View {
             Text(summary).junoBody()
 
             if let toolName {
-                Text(toolName).junoMono().foregroundStyle(.secondary)
+                Text(toolName).junoMono().junoSecondaryInk()
             }
             if let detail {
                 Text(detail).junoCaption().textSelection(.enabled)

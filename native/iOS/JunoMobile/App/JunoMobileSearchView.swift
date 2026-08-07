@@ -105,7 +105,7 @@ struct JunoMobileSearchView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 16))
-                        .foregroundStyle(Color.junoMutedForeground.opacity(0.7))
+                        .foregroundStyle(Color.junoMutedForeground)
                         // A glyph is not a touch target: the 16pt symbol was the
                         // whole of it, and a tap that missed by two points went
                         // to the field instead and cleared nothing.
@@ -227,7 +227,7 @@ struct JunoMobileSearchView: View {
 
                 Text(result.updatedAt, style: .relative)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.junoMutedForeground.opacity(0.7))
+                    .foregroundStyle(Color.junoMutedForeground)
                     .lineLimit(1)
             }
             .padding(.horizontal, 14)
@@ -328,7 +328,7 @@ struct JunoMobileSearchView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(date, style: .relative)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.junoMutedForeground.opacity(0.7))
+                    .foregroundStyle(Color.junoMutedForeground)
                     .lineLimit(1)
             }
             .padding(.horizontal, 14)

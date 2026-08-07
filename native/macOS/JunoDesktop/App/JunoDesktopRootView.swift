@@ -314,7 +314,7 @@ private struct JunoDesktopLoadingView: View {
                 .controlSize(.small)
             Text("Preparing Juno…")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.junoCanvasWarm)
@@ -450,7 +450,7 @@ private struct JunoDesktopSignInView: View {
                     .font(JunoSerif.pageHeading())
                 Text("Sign in to continue to Juno.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
             .multilineTextAlignment(.center)
 

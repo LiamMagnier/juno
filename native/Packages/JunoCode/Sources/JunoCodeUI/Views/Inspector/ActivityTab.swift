@@ -112,7 +112,7 @@ struct ActivityTab: View {
                     if blockingApproval.others > 0 {
                         Text("\(blockingApproval.others) more waiting")
                             .junoCaption()
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                     }
                 }
             } label: {

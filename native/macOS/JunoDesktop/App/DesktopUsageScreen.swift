@@ -319,7 +319,7 @@ private struct DesktopUsageActivityCard: View {
                 let label = monthLabel(startingWeek: week, at: index)
                 Text(label ?? " ")
                     .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .frame(width: DesktopUsageMetrics.activityCell, alignment: .leading)
                     .fixedSize()
                     .accessibilityHidden(true)
@@ -397,7 +397,7 @@ private struct DesktopUsageSurfacesCard: View {
                     HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                         Image(systemName: row.symbol)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .frame(width: 16)
                             .accessibilityHidden(true)
                         Text(row.displayName)
@@ -406,7 +406,7 @@ private struct DesktopUsageSurfacesCard: View {
                         Text(DesktopUsageFormat.tokens(row.totalTokens))
                             .junoMono()
                             .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                     }
                     DesktopUsageBar(fraction: Double(row.totalTokens) / Double(maximum))
                     Text("\(DesktopUsageFormat.count(row.requests)) requests")
@@ -451,7 +451,7 @@ private struct DesktopUsageTokenMixCard: View {
                 Spacer(minLength: JunoSpace.snug)
                 Text(DesktopUsageFormat.tokens(value))
                     .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
             DesktopUsageBar(fraction: Double(value) / Double(peak))
         }
@@ -539,7 +539,7 @@ private struct DesktopUsageModelsCard: View {
                         Spacer(minLength: JunoSpace.snug)
                         Text(DesktopUsageFormat.tokens(model.totalTokens))
                             .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                     }
                     DesktopUsageBar(fraction: Double(model.totalTokens) / Double(maximum))
                 }
@@ -627,7 +627,7 @@ private struct DesktopUsagePlanCard: View {
                 Spacer(minLength: JunoSpace.snug)
                 Text("\(percent)% used")
                     .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
             DesktopUsageBar(
                 fraction: window.fraction,
@@ -732,7 +732,7 @@ private extension View {
     /// The small caps label above a page title, matching the web's `eyebrow`.
     func junoEyebrow() -> some View {
         font(.system(.caption, design: .monospaced, weight: .medium))
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
             .textCase(.uppercase)
     }
 }

@@ -82,85 +82,313 @@ public extension Color {
     }
 }
 
-/// The shared spacing scale. Screens compose from these rather than carrying
-/// their own numbers, so rhythm stays consistent when a layout is rewritten.
+/// The superseded spacing scale. **Use ``JunoSpace``.**
+///
+/// Two spacing scales shipped side by side — this one and `JunoSpace`, which
+/// carries 723 references in the macOS screens against these 47. Every rung
+/// below re-points at its `JunoSpace` equivalent, so a call site that keeps
+/// compiling also keeps its exact gap; the one exception is spelled out on it.
+///
+/// | was | is now | delta |
+/// |---|---|---|
+/// | `compact` 6 | ``JunoSpace/tight`` 6 | — |
+/// | `small` 8 | ``JunoSpace/snug`` 8 | — |
+/// | `control` 10 | ``JunoSpace/cozy`` 12 | +2 |
+/// | `content` 16 | ``JunoSpace/regular`` 16 | — |
+/// | `comfortable` 20 | ``JunoSpace/roomy`` 20 | — |
+/// | `section` 24 | ``JunoSpace/section`` 24 | — |
+/// | `page` 32 | ``JunoSpace/region`` 32 | — |
 public enum JunoSpacing {
     /// Between tightly-coupled parts: an icon and its label.
-    public static let compact: Double = 6
+    @available(*, deprecated, renamed: "JunoSpace.tight")
+    public static let compact: CGFloat = JunoSpace.tight
     /// Between controls in a row.
-    public static let small: Double = 8
+    @available(*, deprecated, renamed: "JunoSpace.snug")
+    public static let small: CGFloat = JunoSpace.snug
     /// The default gap inside a control or between adjacent rows.
-    public static let control: Double = 10
+    ///
+    /// The only rung that moves: 10 is the one number in either scale that is
+    /// off the 4-point grid, so it has no exact counterpart. `cozy` (12) is the
+    /// role match — "a control's internal padding; a row's horizontal inset".
+    @available(*, deprecated, renamed: "JunoSpace.cozy")
+    public static let control: CGFloat = JunoSpace.cozy
     /// Standard content inset — the left edge of most text.
-    public static let content: Double = 16
+    @available(*, deprecated, renamed: "JunoSpace.regular")
+    public static let content: CGFloat = JunoSpace.regular
     /// A roomier inset for cards and reading surfaces.
-    public static let comfortable: Double = 20
+    @available(*, deprecated, renamed: "JunoSpace.roomy")
+    public static let comfortable: CGFloat = JunoSpace.roomy
     /// Between sections of a screen.
-    public static let section: Double = 24
+    @available(*, deprecated, renamed: "JunoSpace.section")
+    public static let section: CGFloat = JunoSpace.section
     /// A page's outer breathing room, above a first heading.
-    public static let page: Double = 32
+    @available(*, deprecated, renamed: "JunoSpace.region")
+    public static let page: CGFloat = JunoSpace.region
 
-    @available(*, deprecated, renamed: "page")
-    public static let spacious: Double = 32
+    @available(*, deprecated, renamed: "JunoSpace.region")
+    public static let spacious: CGFloat = JunoSpace.region
 }
 
-/// The shared corner-radius scale, ordered smallest to largest. Naming these by
-/// *role* rather than by number keeps a message bubble and a sheet from
-/// accidentally sharing a radius when one of them is retuned.
+/// The superseded corner-radius scale. **Use ``JunoRadius``.**
+///
+/// This enum and `JunoRadius` gave *different numbers to the same four role
+/// names* — `control` 10 here against 6 there, `row` 12 against 8, `panel` 16
+/// against 12, `floating` 22 against 18 — which made every new call site a coin
+/// flip decided by which type name the author happened to reach for. `JunoRadius`
+/// won on adoption (156 references against 61) and absorbed the three roles only
+/// this enum named: `card`, `message` and `composer`.
+///
+/// Read side by side the two were one ladder offset by a rung, so most of the
+/// mapping is exact:
+///
+/// | was | is now | delta |
+/// |---|---|---|
+/// | `compactControl` 8 | ``JunoRadius/row`` 8 | — |
+/// | `control` 10 | ``JunoRadius/row`` 8 | −2 |
+/// | `row` 12 | ``JunoRadius/panel`` 12 | — |
+/// | `panel` 16 | ``JunoRadius/card`` 16 | — |
+/// | `card` 16 | ``JunoRadius/card`` 16 | — |
+/// | `message` 18 | ``JunoRadius/message`` 18 | — |
+/// | `floating` 22 | ``JunoRadius/floating`` 18 | −4 (1 call site) |
+/// | `composer` 24 | ``JunoRadius/composer`` 24 | — |
+///
+/// `popover` and `sheet` are **gone rather than re-pointed**, and that is not an
+/// oversight. Both had zero call sites, and both name a corner the app is not
+/// allowed to set: on OS 26 the system draws popovers and sheets in Liquid Glass
+/// and varies a sheet's radius with the device's display corner and with the
+/// active detent, so any fixed value breaks the concentric nesting on some
+/// device. Adopting them would have been a regression dressed as consistency.
+/// See ``SwiftUI/View/junoSheetSurface(_:)`` for what a sheet may set.
 public enum JunoCornerRadius {
     /// A compact control: a chip, a small pill, a tag.
-    public static let compactControl: Double = 8
+    @available(*, deprecated, renamed: "JunoRadius.row")
+    public static let compactControl: CGFloat = JunoRadius.row
     /// A standard control or a list row.
-    public static let control: Double = 10
+    @available(*, deprecated, renamed: "JunoRadius.row")
+    public static let control: CGFloat = JunoRadius.row
     /// A selectable row in a sidebar or list.
-    public static let row: Double = 12
+    @available(*, deprecated, renamed: "JunoRadius.panel")
+    public static let row: CGFloat = JunoRadius.panel
     /// A chat message bubble.
-    public static let message: Double = 18
+    @available(*, deprecated, renamed: "JunoRadius.message")
+    public static let message: CGFloat = JunoRadius.message
     /// A content card (a project, an artifact).
-    public static let card: Double = 16
+    @available(*, deprecated, renamed: "JunoRadius.card")
+    public static let card: CGFloat = JunoRadius.card
     /// A grouped panel.
-    public static let panel: Double = 16
-    /// Floating chrome: the composer, a floating toolbar.
-    public static let floating: Double = 22
+    @available(*, deprecated, renamed: "JunoRadius.card")
+    public static let panel: CGFloat = JunoRadius.card
+    /// Floating chrome: a floating toolbar, a transient control group.
+    @available(*, deprecated, renamed: "JunoRadius.floating")
+    public static let floating: CGFloat = JunoRadius.floating
     /// The composer's outer container.
-    public static let composer: Double = 24
-    /// An anchored popover.
-    public static let popover: Double = 16
-    /// A presented sheet's top corners.
-    public static let sheet: Double = 20
+    @available(*, deprecated, renamed: "JunoRadius.composer")
+    public static let composer: CGFloat = JunoRadius.composer
 }
 
 /// The shared motion language for JunoMobile and JunoDesktop. A small, named set of
 /// durations/springs so every surface animates with the same intent instead of
 /// ad-hoc per-call values. All are short and purposeful; spatial motion is
-/// dropped under Reduce Motion via ``reduced(_:when:)``.
+/// dropped under Reduce Motion via ``reduced(_:when:tier:)``.
 public enum JunoMotion {
+
+    // MARK: - The ladder
+
     /// A press. Below the direct-manipulation threshold: anything slower than
     /// ~70ms on a transform is *felt* as lag on the one interaction where
     /// latency is most obvious.
-    public static let press = Animation.easeOut(duration: 0.07)
+    ///
+    /// Its home is ``JunoPressButtonStyle`` — the rung had zero call sites until
+    /// there was a button style that owned it, because no view author reaches
+    /// for a 70ms animation by hand.
+    public static let press = Animation.easeOut(duration: Duration.press)
     /// Immediate feedback: taps, toggles, icon morphs (e.g. + → ×), Send/Stop.
-    public static let fast = Animation.easeOut(duration: 0.12)
+    public static let fast = Animation.easeOut(duration: Duration.fast)
     /// A dismissal. Entrances decelerate, exits accelerate — the product had no
     /// accelerate curve at all, which is why every dismissal read as the UI
     /// being reluctant to let go. Exit is ~0.65 × its entrance.
-    public static let exit = Animation.easeIn(duration: 0.16)
+    ///
+    /// Its home is ``SwiftUI/AnyTransition/junoOverlay`` and
+    /// ``SwiftUI/AnyTransition/junoInline``: an exit curve is only reachable
+    /// through the removal half of an asymmetric transition, which is why a rung
+    /// whose own doc comment described the bug it fixes still had zero uses.
+    public static let exit = Animation.easeIn(duration: Duration.exit)
     /// Standard transitions: selection, disclosure, popovers, sheets.
-    public static let standard = Animation.spring(duration: 0.22, bounce: 0.05)
+    public static let standard = Animation.spring(duration: Duration.base, bounce: 0.05)
     /// Emphasized transitions: larger spatial moves like the sidebar reveal.
-    public static let emphasized = Animation.spring(duration: 0.36, bounce: 0.10)
+    public static let emphasized = Animation.spring(duration: Duration.slow, bounce: 0.10)
     /// Interactive, gesture-following spring for drag-driven surfaces.
     public static let spring = Animation.interactiveSpring(response: 0.32, dampingFraction: 0.85)
 
-    /// Returns `animation` normally, or a short flat fade when Reduce Motion is
-    /// on, so spatial transitions collapse instead of sliding.
+    /// The ladder's rungs as raw seconds, for the handful of places that need a
+    /// duration rather than an `Animation` — a `Task.sleep`, a `TimelineView`
+    /// phase, a `.timingCurve` the web pins by keyframe.
     ///
-    /// Deliberately *not* `nil`. Reduce Motion asks for less movement, not for
-    /// the loss of feedback: returning nil made all 117 call sites snap, so a
-    /// user who enables it stops being told that anything happened at all. A
-    /// flat 160ms ease-out carries the state change with no spatial travel.
-    public static func reduced(_ animation: Animation, when reduceMotion: Bool) -> Animation? {
-        reduceMotion ? .easeOut(duration: 0.16) : animation
+    /// Named because the near-misses are the damaging ones. An audit found 35
+    /// inline curve constructors across 16 files carrying 21 distinct durations,
+    /// and the harm was not the outliers: it was 0.15 sitting beside `fast`
+    /// 0.12, 0.2 beside `base` 0.22, and 0.3/0.32/0.34 beside `slow` 0.36. Four
+    /// values that close read as one intention executed inconsistently, which is
+    /// exactly what a ladder exists to prevent.
+    public enum Duration {
+        /// 70ms — a press dip.
+        public static let press: TimeInterval = 0.07
+        /// 120ms — a property changing on the element already under the pointer.
+        public static let fast: TimeInterval = 0.12
+        /// 160ms — a dismissal.
+        public static let exit: TimeInterval = 0.16
+        /// 220ms — the default. Something small moving a short distance.
+        public static let base: TimeInterval = 0.22
+        /// 360ms — a whole region changing.
+        public static let slow: TimeInterval = 0.36
+    }
+
+    /// The web's `--ease-out-soft`, for entrances. Deceleration: fast off the
+    /// mark, settling at the end.
+    public static func outSoft(_ duration: TimeInterval = Duration.slow) -> Animation {
+        .timingCurve(0.33, 1, 0.68, 1, duration: duration)
+    }
+
+    /// The web's `--ease-out-expo`. A harder deceleration than ``outSoft(_:)``,
+    /// for a value that should read as *arriving* rather than as changing.
+    public static func outExpo(_ duration: TimeInterval = Duration.slow) -> Animation {
+        .timingCurve(0.16, 1, 0.3, 1, duration: duration)
+    }
+
+    // MARK: - Reduce Motion
+
+    /// What a given animation is *doing*, which is what decides how Reduce
+    /// Motion should treat it.
+    ///
+    /// The preference was previously answered by one flat rule — everything
+    /// became a 160ms ease-out — and one rule cannot be right for three
+    /// different things. It over-served colour changes, which were never a
+    /// vestibular problem and lost their character for nothing; and it
+    /// under-served ambient loops, which do not want a shorter duration, they
+    /// want to stop.
+    public enum Tier: Sendable {
+        /// Something moves, resizes, or crosses the layout: a sheet rising, a
+        /// row sliding, a panel revealing. **Collapses to a flat cross-fade.**
+        /// This is the tier the preference exists for.
+        case travel
+        /// Colour, opacity or a tint crossfading in place, with no geometry
+        /// change. **Survives unchanged.** Reduce Motion asks for less movement,
+        /// not for less feedback, and a fill that changes colour is not moving.
+        case tint
+        /// A continuous loop with no state behind it: a breathing glow, a
+        /// shimmer, a pulsing dot. **Stops.** Returning `nil` here is the point
+        /// — an ambient loop that is merely slowed is still unbidden motion in
+        /// the reader's periphery, which is precisely what the preference is
+        /// asking us not to make.
+        case ambient
+    }
+
+    /// Returns the animation Reduce Motion should get for a given ``Tier``.
+    ///
+    /// The default tier is ``Tier/travel``, which is the behaviour every
+    /// existing call site already had — a flat 160ms ease-out, deliberately not
+    /// `nil`, because returning nil made 117 sites snap and a user who enables
+    /// the preference stopped being told that anything had happened at all.
+    /// Pass `.tint` or `.ambient` where the animation is genuinely one of those.
+    public static func reduced(
+        _ animation: Animation,
+        when reduceMotion: Bool,
+        tier: Tier = .travel
+    ) -> Animation? {
+        guard reduceMotion else { return animation }
+        switch tier {
+        case .travel: return .easeOut(duration: Duration.exit)
+        case .tint: return animation
+        case .ambient: return nil
+        }
+    }
+
+    /// A continuous loop, or nothing at all under Reduce Motion.
+    ///
+    /// Sugar over `reduced(_:when:tier: .ambient)` so the ambient case reads as
+    /// a decision at the call site rather than as an argument. Use it for
+    /// anything driven by `repeatForever`; `TimelineView(.animation(paused:))`
+    /// is the better tool where the loop is frame-driven.
+    public static func ambient(_ animation: Animation, when reduceMotion: Bool) -> Animation? {
+        reduced(animation, when: reduceMotion, tier: .ambient)
+    }
+}
+
+// MARK: - Press
+
+/// The button style that owns ``JunoMotion/press``.
+///
+/// A 70ms dip and a small opacity drop, and nothing else — no fill, no border,
+/// no shape. It is a drop-in for `.buttonStyle(.plain)` on anything that draws
+/// its own affordance, which is most of Juno's controls, and it is the reason
+/// the press rung is no longer dead: `.plain` on macOS gives no press feedback
+/// whatsoever, so every custom control in the app was silent under the pointer.
+///
+/// It reads Reduce Motion itself. A scale change is spatial travel, so under the
+/// preference the dip is dropped and the opacity carries the press alone.
+public struct JunoPressButtonStyle: ButtonStyle {
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        // The body is a real `View` rather than modifiers applied straight to
+        // `configuration.label`, because `@Environment` read from a `ButtonStyle`
+        // itself is not re-evaluated when the environment changes — the style is
+        // not a `DynamicProperty` container. A style that reads Reduce Motion
+        // the obvious way would answer whatever the preference was when the
+        // style value was created, which for a preference the user toggles mid
+        // session is the same as not reading it.
+        PressBody(configuration: configuration)
+    }
+
+    private struct PressBody: View {
+        let configuration: ButtonStyleConfiguration
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        var body: some View {
+            configuration.label
+                .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
+                .opacity(configuration.isPressed ? 0.72 : 1)
+                .animation(
+                    JunoMotion.reduced(JunoMotion.press, when: reduceMotion, tier: .tint),
+                    value: configuration.isPressed
+                )
+        }
+    }
+}
+
+public extension ButtonStyle where Self == JunoPressButtonStyle {
+    /// `.buttonStyle(.junoPress)` — a plain button that answers the pointer.
+    static var junoPress: JunoPressButtonStyle { JunoPressButtonStyle() }
+}
+
+// MARK: - Transitions
+
+/// The two transitions that make ``JunoMotion/exit`` reachable.
+///
+/// Both are asymmetric on purpose, and the asymmetry *is* the design: entrances
+/// decelerate (`ease-out-soft`), exits accelerate (`ease-in`). Juno had no
+/// accelerate curve in use anywhere, which is why every dismissal in the product
+/// read as the UI being reluctant to let go.
+public extension AnyTransition {
+    /// Something arriving over the content: a popover's inner content, a toast,
+    /// an inspector card, an inline confirmation.
+    static var junoOverlay: AnyTransition {
+        .asymmetric(
+            insertion: .opacity
+                .combined(with: .scale(scale: 0.98))
+                .animation(JunoMotion.outSoft(JunoMotion.Duration.base)),
+            removal: .opacity.animation(JunoMotion.exit)
+        )
+    }
+
+    /// Something appearing *within* a column of content: a disclosure body, a
+    /// validation message, a streamed line. No scale — it must not push the text
+    /// around it sideways.
+    static var junoInline: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.animation(JunoMotion.outSoft(JunoMotion.Duration.base)),
+            removal: .opacity.animation(JunoMotion.exit)
+        )
     }
 }
 

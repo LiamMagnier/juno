@@ -25,7 +25,7 @@ struct FileContextMenu: View {
                 HStack(spacing: JunoSpace.tight) {
                     Label("Workspace files", systemImage: "doc.text.magnifyingglass")
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     Spacer(minLength: JunoSpace.snug)
                     if isSearching {
                         ProgressView()
@@ -77,13 +77,13 @@ struct FileContextMenu: View {
         } label: {
             HStack(spacing: JunoSpace.snug) {
                 Image(systemName: entry.isDirectory ? "folder" : "doc")
-                    .foregroundStyle(entry.isDirectory ? Color.junoAccent : .secondary)
+                    .foregroundStyle(entry.isDirectory ? Color.junoAccent : Color.junoMutedForeground)
                     .frame(width: 16)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(entry.path.lastComponent)
                         .junoMono()
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(Color.junoForeground)
                         .lineLimit(1)
                     HStack(spacing: JunoSpace.tight) {
                         Text(parentPath(for: entry))
@@ -95,14 +95,14 @@ struct FileContextMenu: View {
                             .fixedSize()
                     }
                     .junoCaption()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 }
 
                 Spacer(minLength: JunoSpace.snug)
                 if isHighlighted {
                     Image(systemName: "return")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                         .accessibilityHidden(true)
                 }
             }

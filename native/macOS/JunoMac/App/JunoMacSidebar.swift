@@ -222,8 +222,11 @@ struct JunoMacSidebar: View {
         HStack(spacing: JunoSpace.tight) {
             if conversation.pinned {
                 Image(systemName: "pin.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+                    // 9pt fixed was well under the legibility floor and did
+                    // not move with Dynamic Type. No enclosing frame, so it
+                    // is free to scale with the row label beside it.
+                    .junoFont(size: 9, relativeTo: .caption2)
+                    .junoSecondaryInk()
                     .accessibilityHidden(true)
             }
             Text(conversation.title)
@@ -233,8 +236,9 @@ struct JunoMacSidebar: View {
             Spacer(minLength: JunoSpace.hairline)
             if conversation.isPending {
                 Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+                    // As above — unframed, so it scales with its row.
+                    .junoFont(size: 9, relativeTo: .caption2)
+                    .junoSecondaryInk()
                     .accessibilityLabel("sync.pending")
             }
         }
@@ -339,9 +343,13 @@ struct JunoMacSyncIndicator: View {
         _ phase: NativeSyncModel<SQLiteAccountRepository>.Phase
     ) -> Color {
         switch phase {
-        case .offline: Color.orange
-        case .failed: Color.red
-        case .idle, .synchronizing, .live: Color.secondary
+        // The status ramp, not the system palette. These three sit side by side
+        // in the sidebar footer against the warm column, where system orange
+        // and red read as borrowed chrome; `Color.secondary` was additionally
+        // platform-neutral ink on a warm ground.
+        case .offline: Color.junoCaution
+        case .failed: Color.junoDanger
+        case .idle, .synchronizing, .live: Color.junoMutedForeground
         }
     }
 

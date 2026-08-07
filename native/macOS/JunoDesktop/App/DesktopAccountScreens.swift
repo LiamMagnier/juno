@@ -261,7 +261,7 @@ struct DesktopMemoryScreen: View {
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 Text("Memory")
                     .junoCodeSmall()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .textCase(.uppercase)
                 Text("What Juno remembers")
                     .font(JunoSerif.pageHeading())
@@ -336,7 +336,7 @@ struct DesktopMemoryScreen: View {
                         // it is marked.
                         if memory.kind == .suppression {
                             Image(systemName: "hand.raised")
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                                 .help("Juno has been told never to remember this")
                                 .accessibilityLabel("Never remember")
                         }
@@ -350,12 +350,12 @@ struct DesktopMemoryScreen: View {
                 }
                 TableColumn("Source") { memory in
                     Text(memory.source == .manual ? "Added by you" : "Learned from chats")
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
                 .width(min: 110, ideal: 130)
                 TableColumn("Added") { memory in
                     Text(memory.createdAt.formatted(date: .abbreviated, time: .omitted))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
                 .width(min: 90, ideal: 100)
             }
@@ -456,6 +456,9 @@ struct DesktopMemoryScreen: View {
         }
         .padding(JunoSpace.roomy)
         .frame(width: DesktopSettingsMetrics.confirmWidth)
+        // Sheet contract: the warm ground inside the content, the platter left to
+        // the system. `.fitted` honours the explicit width above.
+        .junoSheetSurface(.fitted)
     }
 
     // MARK: - Privacy

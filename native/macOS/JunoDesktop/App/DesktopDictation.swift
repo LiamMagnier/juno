@@ -124,7 +124,7 @@ struct DesktopDictation: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: glyphSize, weight: .semibold))
-                .foregroundStyle(style == .accent ? Color.white : Color.primary)
+                .foregroundStyle(style == .accent ? Color.junoOnAccent : Color.junoForeground)
                 .frame(width: 38, height: 38)
                 .background {
                     switch style {

@@ -181,9 +181,9 @@ struct JunoDesktopConfiguration {
             )
             // How a question raised by a run on this Mac gets answered from
             // this Mac's window. See `DesktopWorkLocalRuntime.observeApprovals`.
-            workHostModel.localApprovalDecider = { id, decision, digest, risk in
+            workHostModel.localApprovalDecider = { id, decision, digest in
                 workLocalRuntime.decideLocalApproval(
-                    id: id, decision: decision, actionDigest: digest, risk: risk
+                    id: id, decision: decision, actionDigest: digest
                 )
             }
             workHostModel.systemPermissions = { .current }

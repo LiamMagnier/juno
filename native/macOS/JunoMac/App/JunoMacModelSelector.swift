@@ -38,8 +38,11 @@ struct JunoMacModelControl: View {
                     .font(.caption)
                     .lineLimit(1)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 7, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    // 7pt fixed — the smallest mark in the composer and, at
+                    // that size, the one most in need of scaling. Unframed,
+                    // so it grows with the model name beside it.
+                    .junoFont(size: 7, relativeTo: .caption2, weight: .semibold)
+                    .junoSecondaryInk()
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -101,11 +104,13 @@ struct JunoMacThinkingControl: View {
                         .lineLimit(1)
                     if scale.isAdjustable {
                         Image(systemName: "chevron.up")
-                            .font(.system(size: 7, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                            // As the model chip's chevron: 7pt, unframed,
+                            // now scaling with its label.
+                            .junoFont(size: 7, relativeTo: .caption2, weight: .semibold)
+                            .junoSecondaryInk()
                     }
                 }
-                .foregroundStyle(scale.isAutomatic ? Color.secondary : Color.primary)
+                .foregroundStyle(scale.isAutomatic ? Color.junoMutedForeground : Color.junoForeground)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .modifier(JunoMacComposerChip())
@@ -172,8 +177,18 @@ struct JunoMacComposerChip: ViewModifier {
         if #available(macOS 26.0, *) {
             content.glassEffect(.regular.interactive(), in: Capsule())
         } else {
+            // `.regularMaterial`, not the `.quaternary.opacity(0.5)` this used
+            // to carry. `.quaternary` is a *fill*, not a material: it does not
+            // blur what is behind it, so on the warm canvas it landed as a flat
+            // translucent grey — the "shadow reads as dirt" problem in fill
+            // form. A material actually samples the composer behind it, which
+            // is the closest pre-26 analogue of the glass above.
+            //
+            // The hairline is deliberate here and only here: a plain material
+            // has no rim of its own, where real Liquid Glass does — which is
+            // why the 26+ branch above must never be given one.
             content
-                .background(.quaternary.opacity(0.5), in: Capsule())
+                .background(.regularMaterial, in: Capsule())
                 .overlay(Capsule().strokeBorder(Color.junoHairline, lineWidth: 1))
         }
     }
@@ -207,6 +222,13 @@ struct JunoMacModelSelectorView: View {
             detail
         }
         .frame(width: 720, height: 460)
+        // A ceiling, not a fiction. The frame above is fixed because a
+        // self-sizing AppKit popover recurses to death (see the thinking
+        // popover below), and the text inside it now scales — so past
+        // accessibility1 this three-column layout would clip rather than
+        // reflow. Before the Dynamic Type pass the content did not move at
+        // all and a clamp here would have meant nothing.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         .onAppear { if detailModelID == nil { detailModelID = selectedModelID } }
     }
 
@@ -270,7 +292,7 @@ struct JunoMacModelSelectorView: View {
     private var searchField: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
             TextField("Search models", text: $query)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
@@ -279,7 +301,7 @@ struct JunoMacModelSelectorView: View {
                     query = ""
                     searchFocused = true
                 } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                    Image(systemName: "xmark.circle.fill").junoMetaInk()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
@@ -297,7 +319,7 @@ struct JunoMacModelSelectorView: View {
     private func sectionView(_ section: JunoMacModelSection) -> some View {
         Label(section.title, systemImage: section.systemImage)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
             .padding(.horizontal, 4)
             .padding(.top, JunoSpace.tight)
 
@@ -309,7 +331,7 @@ struct JunoMacModelSelectorView: View {
             } label: {
                 Text("Older models (\(section.legacy.count))")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
             .padding(.horizontal, 4)
             .accessibilityIdentifier("juno.mac.model-legacy.\(section.key)")
@@ -334,7 +356,9 @@ struct JunoMacModelSelectorView: View {
                         Text(model.displayName).font(.subheadline.weight(.medium))
                         if model.choosesReasoningAutomatically {
                             Text("SMART")
-                                .font(.system(size: 8, weight: .semibold))
+                                // A word, not a glyph, and it was the one
+                                // string in this popover pinned below 9pt.
+                                .junoFont(size: 8, relativeTo: .caption2, weight: .semibold)
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 1)
                                 .foregroundStyle(Color.junoAccent)
@@ -342,25 +366,29 @@ struct JunoMacModelSelectorView: View {
                         }
                         if selected {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 10, weight: .semibold))
+                                .junoFont(size: 10, relativeTo: .caption, weight: .semibold)
                                 .foregroundStyle(Color.junoAccent)
                         }
                         Spacer(minLength: 0)
                         if let cost = NativeModelPresentation.costGlyph(model.pricing) {
-                            Text(cost).font(.caption2.monospaced()).foregroundStyle(.tertiary)
+                            Text(cost).font(.caption2.monospaced()).junoMetaInk()
                         }
                     }
                     if let summary = model.summary {
                         Text(summary)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if let reason {
                         Label(reason, systemImage: "lock")
                             .font(.caption2.weight(.medium))
-                            .foregroundStyle(.orange)
+                            // A locked model is a caution, not a failure, so
+                            // this is the ramp's warning rung. `junoCaution`
+                            // also clears AA as text, which system orange does
+                            // not at caption2 on the warm popover ground.
+                            .foregroundStyle(Color.junoCaution)
                     } else {
                         JunoCapabilityChips(model: model, compact: true)
                     }
@@ -396,11 +424,11 @@ struct JunoMacModelSelectorView: View {
                     Image(systemName: "square.grid.2x2")
                         .font(.system(size: 12))
                         .frame(width: 16, height: 16)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
                 Text(name).font(.callout).lineLimit(1)
                 Spacer(minLength: 4)
-                Text("\(count)").font(.caption.monospacedDigit()).foregroundStyle(.tertiary)
+                Text("\(count)").font(.caption.monospacedDigit()).junoMetaInk()
             }
             .contentShape(Rectangle())
         }

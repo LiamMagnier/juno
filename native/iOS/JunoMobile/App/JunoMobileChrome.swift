@@ -73,21 +73,27 @@ struct JunoGlassCircle: ViewModifier {
     }
 }
 
-/// An accent-tinted Liquid Glass capsule (OS 26+) with an opaque accent fallback,
-/// used for a screen's one primary action.
-struct JunoAccentGlassCapsule: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            content
-                .glassEffect(
-                    .regular.tint(Color.junoAccent.opacity(0.72)).interactive(), in: Capsule()
-                )
-        } else {
-            content
-                .background(Color.junoAccent.opacity(0.82), in: Capsule())
-        }
-    }
-}
+// `JunoAccentGlassCapsule` used to live here: a hand-drawn capsule that painted
+// `.regular.tint(Color.junoAccent.opacity(0.72))` behind a `.white` label, with
+// an `opacity(0.82)` accent fill below OS 26.
+//
+// The dilution was the whole bug. `Glass.tint(_:)` honours its colour's alpha,
+// so `.opacity(0.72)` does not "soften" the glass — it removes the tint's
+// ability to establish a predictable luminance under the label, and the label's
+// contrast becomes a function of whatever the capsule happens to be floating
+// over at that moment. A white label on a card at 0.72 measured ~2.6:1 against
+// coral-over-cream; at full strength the same label sits on the accent's own
+// luminance and measures 4.6:1 (coral, `Color.junoOnAccent`), which is what the
+// design system's `junoOnAccent` pairing is calibrated for.
+//
+// The replacement is not a fixed capsule at all. Every one of the nine call
+// sites was a `Button` wrapped in `.buttonStyle(.plain)`, so the right answer is
+// the system's own primary-action treatment — `junoProminentAction()` in the
+// design system, which is `.glassProminent` + `.tint(Color.junoAccent)` above 26
+// and `.borderedProminent` + the same tint below. That brings Apple's tinted-glass
+// contrast handling, its Increase Contrast substitution, its press flex and its
+// metrics, and the explicit tint stops the button drawing in the *system* accent.
+// It is also how the Mac already draws the same role, so the two apps converge.
 
 /// A neutral Liquid Glass capsule for a secondary control in a floating row.
 struct JunoGlassCapsule: ViewModifier {
@@ -103,12 +109,17 @@ struct JunoGlassCapsule: ViewModifier {
 }
 
 /// A subtle pressed-state wash shared by sidebar and list rows.
+///
+/// The wash is the warm ink at 6%, not `Color.primary` at 6%: the platform label
+/// colour is a pure neutral, and a pure-neutral scrim over a canvas whose whole
+/// identity is that red is its highest channel reads as grey dirt rather than as
+/// the row darkening.
 struct JunoSidebarPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(configuration.isPressed ? Color.primary.opacity(0.06) : .clear)
+                    .fill(configuration.isPressed ? Color.junoForeground.opacity(0.06) : .clear)
             )
     }
 }
@@ -149,7 +160,7 @@ struct JunoPageTitle: View {
             if let subtitle {
                 Text(subtitle)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -162,8 +173,8 @@ struct JunoGroupLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.secondary)
+            .junoFont(size: 13, relativeTo: .subheadline, weight: .semibold)
+            .junoSecondaryInk()
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 6)
     }
@@ -171,6 +182,14 @@ struct JunoGroupLabel: View {
 
 /// The recurring "this went wrong, here is the one thing to do about it" strip.
 /// Always carries the server's own sentence — never a generic apology.
+///
+/// The colour is `Color.junoCaution`, not `.orange`. `.orange` is the system
+/// palette's orange — a hue this app never chose, tuned for a neutral grey
+/// background, and it landed here on a warm cream canvas next to the coral
+/// accent looking like a third brand colour. `junoCaution` is the ramp's own
+/// amber, contrast-checked against the canvas in both appearances (4.54:1
+/// light), and it is the token every other "recoverable error, awaiting a
+/// retry" state in the product already uses.
 struct JunoInlineError: View {
     let message: String
     var retry: (() -> Void)?
@@ -178,26 +197,37 @@ struct JunoInlineError: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.junoCaution)
                 .font(.caption)
             Text(message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .junoCaption()
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let retry {
-                Button("Retry", action: retry)
-                    .font(.caption.weight(.semibold))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.junoAccent)
+                // 44pt of target, not the ~17pt the bare `Text` label had. This
+                // is the recovery control on a failed screen — the one place in
+                // a flow where a missed tap costs the most — and it was the
+                // smallest button on it.
+                Button(action: retry) {
+                    Text("Retry")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.junoAccent)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
-                .fill(Color.orange.opacity(0.10))
+                .fill(Color.junoCaution.opacity(0.10))
         )
-        .accessibilityElement(children: .combine)
+        // `.contain`, not `.combine`. Combining flattened the strip into a
+        // single static label and took the Retry button's action with it, so a
+        // VoiceOver user could hear that something had failed but had no way to
+        // ask for it again.
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -210,13 +240,11 @@ struct JunoStatusPill: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(filled ? tint : Color.secondary)
+            .junoFont(size: 12, relativeTo: .footnote, weight: .semibold)
+            .foregroundStyle(filled ? tint : Color.junoMutedForeground)
             .padding(.horizontal, 9)
-            .frame(height: 22)
-            .background(
-                Capsule().fill(filled ? tint.opacity(0.14) : Color.primary.opacity(0.06))
-            )
+            .frame(minHeight: 22)
+            .background(Capsule().fill(filled ? tint.opacity(0.14) : Color.junoMuted))
             .accessibilityLabel(text)
     }
 }
@@ -267,11 +295,33 @@ extension View {
         }
     }
 
-    /// Marks this glass element so the system can animate it as glass —
-    /// materialising rather than cross-fading. Without an id the container has
-    /// nothing to track the element by across the transition.
+    /// Marks this glass element so the system can track it across a transition.
+    /// Without an id the container has nothing to match the element by, and the
+    /// material cross-fades instead of moving.
+    ///
+    /// It deliberately does **not** set a transition. The default is
+    /// `matchedGeometry`, which is the one that makes the material *stretch*
+    /// between an element's old and new position — the whole reason to give a
+    /// glass element an id in the first place. This used to chain
+    /// `.glassEffectTransition(.materialize)` unconditionally, which explicitly
+    /// opts out of geometry matching; `materialize` is for elements farther
+    /// apart than their container's spacing, where there is no meaningful path
+    /// to stretch along. Use ``junoGlassMaterialize(_:in:)`` for that case.
     @ViewBuilder
     func junoGlassID(_ id: some Hashable & Sendable, in namespace: Namespace.ID) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.glassEffectID(id, in: namespace)
+        } else {
+            self
+        }
+    }
+
+    /// The same, for two glass elements far enough apart that stretching between
+    /// them would read as a smear rather than as one thing moving.
+    @ViewBuilder
+    func junoGlassMaterialize(
+        _ id: some Hashable & Sendable, in namespace: Namespace.ID
+    ) -> some View {
         if #available(iOS 26.0, macOS 26.0, *) {
             self.glassEffectID(id, in: namespace)
                 .glassEffectTransition(.materialize)

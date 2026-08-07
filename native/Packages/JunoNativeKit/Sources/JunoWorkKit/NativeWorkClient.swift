@@ -482,6 +482,9 @@ public struct NativeWorkClient: Sendable {
             throw WorkRemoteError.unsupportedCommand(decision.rawValue)
         }
         guard approval.isAnswerable(at: now) else { throw WorkRemoteError.approvalExpired }
+        if decision == .allowedAlways, !approval.allowsStandingGrant {
+            throw WorkRemoteError.standingApprovalForbidden
+        }
         var body: [String: JunoJSONValue] = [
             "decision": .string(decision.rawValue),
             "actionDigest": .string(approval.actionDigest),

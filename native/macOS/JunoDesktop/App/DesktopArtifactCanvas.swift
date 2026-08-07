@@ -483,7 +483,7 @@ struct DesktopArtifactCanvas: View {
                 // read instead of one.
                 Text(metadata)
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -558,7 +558,7 @@ struct DesktopArtifactCanvas: View {
     private func headerGlyph(_ symbol: String) -> some View {
         Image(systemName: symbol)
             .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
             .frame(width: 24, height: 24)
             .contentShape(.rect)
     }

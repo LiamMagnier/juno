@@ -192,22 +192,20 @@ final class DesktopWorkLocalRuntime {
     ///
     /// **"Always allow" is a second, separate act.** The coordinator's
     /// `resolve` only knows approved and denied; a standing grant is
-    /// `setAllowance`, and `WorkAlwaysAllowance` has a failable initialiser that
-    /// refuses anything above `command` — so a sensitive or irreversible action
-    /// *cannot* be turned into a standing yes, by construction. The allowance is
-    /// set before the answer so the run's next question is already covered by
-    /// it, and a risk the allowance refuses falls back to a one-time approval
-    /// rather than silently granting less than the button promised. The window
-    /// does not offer the button in that case — see
-    /// `DesktopWorkApprovalCard.allowsStandingGrant` — so this is the belt to
-    /// that surface's braces.
+    /// `setAllowance`. The shared native rule checks both the risk ceiling and
+    /// the always-confirm action identity. Reading those values from the pending
+    /// coordinator request, rather than accepting them back from the view, keeps
+    /// a stale or tampered presentation from widening authority. The window also
+    /// hides the button when the same rule refuses it.
     func decideLocalApproval(
         id: String,
         decision: JunoWorkApprovalDecision,
-        actionDigest: String,
-        risk: String
+        actionDigest: String
     ) {
         Task { [approvals] in
+            // Capture the coordinator-owned request before `resolve` removes it.
+            // It is the authoritative action/risk pair that produced the card.
+            let request = await approvals.pendingApprovals.first { $0.id == id }
             // Resolve first. `WorkApprovalCoordinator` invalidates a receipt
             // when authority narrows; changing the standing allowance before
             // resolving would make the approval that the user just accepted
@@ -235,7 +233,14 @@ final class DesktopWorkLocalRuntime {
             //
             // An allowance that already covers this risk is left exactly as it
             // is, so the button can only ever add authority.
-            if decision == .allowedAlways, let level = WorkRiskLevel(rawValue: risk) {
+            if decision == .allowedAlways,
+                let request,
+                JunoWorkApprovalRules.allowsStandingGrant(
+                    action: request.action,
+                    risk: request.risk.rawValue
+                )
+            {
+                let level = request.risk
                 let existing = await approvals.standingAllowance
                 if existing?.covers(level) != true,
                     let allowance = WorkAlwaysAllowance(upTo: level)

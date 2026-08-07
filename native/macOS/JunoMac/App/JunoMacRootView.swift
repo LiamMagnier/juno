@@ -268,12 +268,15 @@ private struct JunoMacSignInView: View {
             Text("auth.welcome.title")
                 .junoPageHeading()
             Text("auth.welcome.description")
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
             if let error = authModel.lastErrorDescription {
                 Text(error)
-                    .foregroundStyle(.red)
+                    // `junoDanger` rather than system red — the ramp is tuned
+                    // against the warm canvas, system red is tuned against the
+                    // platform's neutral grey.
+                    .foregroundStyle(Color.junoDanger)
                     .multilineTextAlignment(.center)
                     .accessibilityIdentifier("juno.mac.auth-error")
             }
@@ -288,7 +291,11 @@ private struct JunoMacSignInView: View {
                         Text("auth.sign-in")
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                // Was drawing in the system accent, not Juno's — an untinted
+                // `.borderedProminent` always does. This is the sign-in screen's
+                // single primary action, so it is exactly the one button per
+                // surface the tinted treatment is meant for.
+                .junoProminentAction()
                 .disabled(authModel.phase == .signingIn)
                 .accessibilityIdentifier("juno.mac.sign-in")
             }
@@ -385,13 +392,18 @@ private struct JunoMacProjectsView: View {
                         HStack {
                             if project.starred {
                                 Image(systemName: "star.fill")
-                                    .foregroundStyle(.yellow)
+                                    // A star is a favourite, not a warning, so
+                                    // it takes the brand accent rather than a
+                                    // status-ramp rung. System yellow was the
+                                    // one cool-adjacent mark in this list and
+                                    // sat badly against the warm rows.
+                                    .foregroundStyle(Color.junoAccent)
                             }
                             Text(project.name).lineLimit(1)
                             Spacer(minLength: 4)
                             if project.isPending {
                                 Image(systemName: "arrow.triangle.2.circlepath")
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                                     .accessibilityLabel("Waiting to sync")
                             }
                         }
@@ -408,7 +420,7 @@ private struct JunoMacProjectsView: View {
                             Text(project.updatedAt, style: .relative)
                         }
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     }
                     .tag(project.id)
                 }
@@ -543,10 +555,10 @@ private struct JunoMacProjectDetail: View {
                     }
                     if project.instructions.isEmpty {
                         Text("No project instructions")
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                     } else {
                         Text(project.instructions)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .textSelection(.enabled)
                     }
                 }
@@ -570,7 +582,7 @@ private struct JunoMacProjectDetail: View {
                                         Text(conversation.title).lineLimit(1)
                                         Spacer()
                                         Text(conversation.lastMessageAt, style: .relative)
-                                            .foregroundStyle(.secondary)
+                                            .junoSecondaryInk()
                                     }
                                     .contentShape(Rectangle())
                                 }
@@ -718,7 +730,7 @@ private struct JunoMacProjectDetail: View {
                 Text(file.fileName).lineLimit(1)
                 Text(ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
             Spacer()
             if model.isPerformingFileAction { ProgressView().controlSize(.small) }
@@ -833,7 +845,7 @@ private struct JunoMacLibraryView: View {
                                         else if file.conversationID != nil { Text("Conversation file") }
                                     }
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                                 }
                                 .contentShape(Rectangle())
                             }
@@ -841,7 +853,7 @@ private struct JunoMacLibraryView: View {
                             Spacer()
                             Text(file.createdAt, style: .relative)
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                             if model.isPerformingFileAction {
                                 ProgressView().controlSize(.small)
                             }
@@ -949,7 +961,7 @@ private struct JunoMacArtifactsView: View {
                             Spacer()
                             Text("v\(artifact.currentVersion)")
                                 .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                         }
                         HStack {
                             Text(artifact.conversationTitle).lineLimit(1)
@@ -957,7 +969,7 @@ private struct JunoMacArtifactsView: View {
                             Text(artifact.updatedAt, style: .relative)
                         }
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     }
                     .tag(artifact.id)
                 }
@@ -1192,6 +1204,9 @@ private struct JunoMacArtifactDetail: View {
                     .padding(8)
             }
             .frame(minWidth: 680, minHeight: 520)
+            // The warm ground the sheet was missing; the system keeps the
+            // platter, its rim and its corner radius.
+            .junoSheetSurface(.fitted)
         }
     }
 

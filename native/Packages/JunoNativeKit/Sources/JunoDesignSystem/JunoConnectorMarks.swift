@@ -119,16 +119,16 @@ public struct JunoConnectorMark: View {
         Image(assetName)
             .resizable()
             .scaledToFit()
-            .foregroundStyle(Color.primary)
+            .foregroundStyle(Color.junoForeground)
     }
 
     private var monogram: some View {
         RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
-            .fill(.quaternary)
+            .fill(Color.junoMuted)
             .overlay {
                 Text(String(connectorName.prefix(1)).uppercased())
                     .font(.system(size: size * 0.55, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
     }
 

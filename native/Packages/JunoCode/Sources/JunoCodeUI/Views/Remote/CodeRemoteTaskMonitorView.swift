@@ -117,11 +117,11 @@ public struct CodeRemoteTaskMonitorView: View {
                     .lineLimit(1)
                 Text(task.whereItRuns.isEmpty ? task.target.label : task.whereItRuns)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .lineLimit(1)
                 Text(task.updatedAt, style: .relative)
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
             }
             Spacer(minLength: 0)
         }
@@ -188,7 +188,7 @@ public struct CodeRemoteTaskMonitorView: View {
         switch status {
         case .queued:
             Image(systemName: "clock")
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .accessibilityLabel("Queued")
         case .running:
             ProgressView()
@@ -209,7 +209,7 @@ public struct CodeRemoteTaskMonitorView: View {
                 .accessibilityLabel("Failed")
         case .cancelled:
             Image(systemName: "stop.circle")
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .accessibilityLabel("Cancelled")
         }
     }
@@ -256,7 +256,7 @@ public struct CodeRemoteTaskDetailView: View {
                             Divider().overlay(Color.junoSeparator)
                             if model.events.isEmpty {
                                 Text("Waiting for the first event…")
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             } else {
                                 ForEach(model.events) { event in
@@ -268,10 +268,10 @@ public struct CodeRemoteTaskDetailView: View {
                                     ProgressView().controlSize(.small)
                                     Text("Reconnecting to this run…")
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .junoSecondaryInk()
                                     Text("attempt \(model.streamReconnectAttempt)")
                                         .font(.caption2)
-                                        .foregroundStyle(.tertiary)
+                                        .junoMetaInk()
                                         .monospacedDigit()
                                 }
                             } else if model.isStreaming {
@@ -279,7 +279,7 @@ public struct CodeRemoteTaskDetailView: View {
                                     ProgressView().controlSize(.small)
                                     Text("Following this run")
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .junoSecondaryInk()
                                 }
                             }
                         }
@@ -329,7 +329,7 @@ public struct CodeRemoteTaskDetailView: View {
                 }
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
             Text(task.prompt)
                 .font(.body)
                 .fixedSize(horizontal: false, vertical: true)
@@ -358,14 +358,14 @@ public struct CodeRemoteTaskDetailView: View {
                 if let detail = event.detail {
                     Text(detail)
                         .font(.system(.caption, design: event.kind.isTechnical ? .monospaced : .default))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .textSelection(.enabled)
                 }
             }
             Spacer(minLength: JunoSpace.snug)
             Text(event.createdAt, style: .time)
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
                 .monospacedDigit()
         }
     }
@@ -383,7 +383,7 @@ public struct CodeRemoteTaskDetailView: View {
                     if let detail = approval.detail {
                         Text(detail)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .textSelection(.enabled)
                     }
                     HStack {
@@ -423,7 +423,7 @@ public struct CodeRemoteTaskDetailView: View {
                         "Start a fresh run with the same durable transcript and workspace target."
                     )
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     TextField("Ask Juno to continue…", text: $followUpDraft, axis: .vertical)
                         .lineLimit(2...5)
                         .textFieldStyle(.roundedBorder)
@@ -520,7 +520,7 @@ private extension NativeCodeTaskStatus {
         case .awaitingApproval: Color.junoCaution
         case .done: Color.junoSuccess
         case .failed: Color.junoDanger
-        default: .secondary
+        default: .junoMutedForeground
         }
     }
 }
@@ -545,7 +545,7 @@ private extension NativeCodeEvent.Kind {
         switch self {
         case .error: Color.junoDanger
         case .approvalRequest, .approvalResponse: Color.junoCaution
-        default: .secondary
+        default: .junoMutedForeground
         }
     }
 

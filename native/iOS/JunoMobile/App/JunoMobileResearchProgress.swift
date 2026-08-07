@@ -81,7 +81,7 @@ struct JunoMobileResearchProgress: View {
                 .lineLimit(2)
             Spacer()
         }
-        .foregroundStyle(.orange)
+        .foregroundStyle(Color.junoCaution)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("juno.mobile.research-degraded")
     }

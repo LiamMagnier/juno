@@ -38,7 +38,7 @@ public struct JunoSettingsTile<Content: View>: View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             Text(eyebrow)
                 .junoCodeSmall()
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .textCase(nil)
                 .accessibilityAddTraits(.isHeader)
             content
@@ -123,9 +123,9 @@ public struct JunoChoiceCard<Trailing: View>: View {
                 // and under Increase Contrast.
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .bold))
+                        .junoFont(size: 11, relativeTo: .caption, weight: .bold)
                         .foregroundStyle(Color.junoAccent)
-                        .transition(.opacity)
+                        .transition(.junoInline)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -144,7 +144,7 @@ public struct JunoChoiceCard<Trailing: View>: View {
             )
             .contentShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.junoPress)
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.5)
         // One radio button to VoiceOver, not "button, Concise, Answer first…":

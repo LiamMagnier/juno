@@ -214,10 +214,10 @@ struct JunoMobileConnectionsView: View {
         VStack(spacing: 8) {
             Image(systemName: "app.dashed")
                 .font(.system(size: 28))
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
             Text("connections.empty")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -237,17 +237,17 @@ struct JunoMobileConnectionsView: View {
                     if connector.connected, let account = connector.accountLabel, !account.isEmpty {
                         Text(account)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .lineLimit(1)
                     } else if let blocked = connector.blockedReason {
                         Text(blocked)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .lineLimit(2)
                     } else if !connector.detail.isEmpty {
                         Text(connector.detail)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .lineLimit(2)
                     }
                 }
@@ -265,10 +265,10 @@ struct JunoMobileConnectionsView: View {
                 disconnectTarget = connector
             } label: {
                 Text("connections.connected")
-                    .font(.system(size: 14, weight: .semibold))
+                    .junoFont(size: 14, relativeTo: .footnote, weight: .semibold)
                     .foregroundStyle(Color.junoAccent)
                     .padding(.horizontal, 13)
-                    .frame(height: 32)
+                    .frame(minHeight: 32)
                     .background(Capsule().fill(Color.junoAccent.opacity(0.13)))
             }
             .buttonStyle(.plain)
@@ -280,14 +280,10 @@ struct JunoMobileConnectionsView: View {
             Button {
                 connectURL = connectURL(for: connector)
             } label: {
-                Text("connections.connect")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 15)
-                    .frame(height: 32)
-                    .modifier(JunoAccentGlassCapsule())
+                Text("connections.connect").fontWeight(.semibold)
             }
-            .buttonStyle(.plain)
+            .junoProminentAction()
+            .controlSize(.regular)
             .accessibilityLabel(
                 Text(String(format: String(localized: "connections.connect.label"), connector.label))
             )
@@ -297,7 +293,7 @@ struct JunoMobileConnectionsView: View {
             // row's own subtitle, which `blockedReason` already supplies.
             Image(systemName: "lock")
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
                 .accessibilityHidden(true)
         }
     }

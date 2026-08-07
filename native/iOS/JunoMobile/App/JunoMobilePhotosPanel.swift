@@ -133,11 +133,18 @@ struct JunoMobilePhotosPanel: View {
     }
 
     /// Out, without choosing anything.
+    ///
+    /// `.primary`, not `.white`, and this is one of the few places the *system*
+    /// style is right: the glyph sits on untinted `.regular` glass, which
+    /// rebalances its own luminosity against whatever photograph is behind it,
+    /// and `.primary` is the vibrant label colour that moves with it. A hard
+    /// white disappears the moment a pale photograph scrolls under the control.
+    /// Juno's absolute inks are for the warm canvas, not for glass.
     private var backButton: some View {
         Button(action: dismiss) {
             Image(systemName: "chevron.left")
                 .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .frame(width: 52, height: 52)
                 .junoGlass(in: Circle(), interactive: true)
                 .contentShape(Circle())
@@ -149,24 +156,27 @@ struct JunoMobilePhotosPanel: View {
 
     /// The whole library, when the recents the grid opens on are not enough.
     ///
-    /// Coral through glass rather than on top of it: the tint is half strength,
-    /// so the photographs behind still come through and it reads as the one
-    /// *lit* control on the panel rather than as a solid button dropped onto a
-    /// picture. Full-strength accent here would be a third opaque rectangle in a
-    /// grid of them.
+    /// The one tinted control on the panel — the back and confirm circles either
+    /// side of it are neutral glass, which is what makes this one read as the
+    /// primary.
+    ///
+    /// It used to tint the glass with `Color.junoAccent.opacity(0.5)` and set a
+    /// `.white` label, on the reasoning that a half-strength coral let the
+    /// photographs behind come through. That reasoning is the bug: `Glass.tint`
+    /// honours alpha, so half strength does not soften the coral, it stops the
+    /// tint establishing any predictable luminance under the label at all — and
+    /// this control floats over an arbitrary grid of photographs, which is the
+    /// worst possible backdrop to leave a white label's contrast to. At full
+    /// strength `.regular` glass adjusts the background's luminosity to protect
+    /// the label, which is the whole reason `.regular` exists.
     private var allPhotosButton: some View {
         Button {
             showingFullLibrary = true
         } label: {
-            Text("attachments.photos.all")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 22)
-                .frame(height: 52)
-                .modifier(JunoPhotosAccentGlass())
-                .contentShape(Capsule())
+            Text("attachments.photos.all").fontWeight(.semibold)
         }
-        .buttonStyle(.plain)
+        .junoProminentAction()
+        .controlSize(.large)
         .accessibilityIdentifier("juno.mobile.photos-all")
     }
 
@@ -176,7 +186,7 @@ struct JunoMobilePhotosPanel: View {
         Button(action: confirmSelection) {
             Image(systemName: "checkmark")
                 .font(.system(size: 19, weight: .bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .frame(width: 52, height: 52)
                 .junoGlass(in: Circle(), interactive: true)
                 .contentShape(Circle())
@@ -200,16 +210,8 @@ struct JunoMobilePhotosPanel: View {
     }
 }
 
-/// Half-tinted Liquid Glass: enough coral to be Juno's, clear enough to still be
-/// glass. Falls back to a translucent accent fill below OS 26.
-private struct JunoPhotosAccentGlass: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(
-                .regular.tint(Color.junoAccent.opacity(0.5)).interactive(), in: Capsule()
-            )
-        } else {
-            content.background(Color.junoAccent.opacity(0.62), in: Capsule())
-        }
-    }
-}
+// `JunoPhotosAccentGlass` used to live here — a `.tint(Color.junoAccent.opacity(0.5))`
+// capsule, the third of three accent-tinted glass treatments this app carried at
+// three different dilutions (0.72 in the chrome, 0.5 here, 0.95/0.32 on the
+// composer's send). All three are gone: the primary action on a surface is the
+// system's `.glassProminent` at full tint, reached through `junoProminentAction()`.

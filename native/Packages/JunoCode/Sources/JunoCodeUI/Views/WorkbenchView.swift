@@ -121,6 +121,9 @@ public struct WorkbenchView<SidebarHeader: View>: View {
                 model: model,
                 onRemoteTaskStarted: { remoteTaskModel?.refreshSoon() }
             )
+            // A form sheet on the warm canvas rather than on system grey.
+            // `.fitted`: the sheet states its own 460pt width.
+            .junoSheetSurface(.fitted)
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -175,6 +178,10 @@ public struct WorkbenchView<SidebarHeader: View>: View {
                     description: Text("Sign in to follow Cloud and Remote runs.")
                 )
             }
+            // Applied to the sheet's content as a whole so the unavailable state
+            // stands on the same warm ground the monitor does — otherwise the
+            // empty case alone fell through to system window grey.
+            .junoSheetSurface(.fitted)
         }
     }
 

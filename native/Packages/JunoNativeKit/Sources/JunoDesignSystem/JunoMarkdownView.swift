@@ -105,7 +105,7 @@ private struct JunoMarkdownBlockView: View {
             // selected thing, and the accent is reserved for what is — a coral
             // bar down every blockquote made the model quoting itself the
             // brightest mark on the screen.
-            HStack(alignment: .top, spacing: JunoSpacing.content) {
+            HStack(alignment: .top, spacing: JunoSpace.regular) {
                 Capsule(style: .continuous)
                     .fill(Color.junoHairline)
                     .frame(width: 3)
@@ -118,7 +118,7 @@ private struct JunoMarkdownBlockView: View {
             .fixedSize(horizontal: false, vertical: true)
 
         case .thematicBreak:
-            Divider().padding(.vertical, JunoSpacing.compact)
+            Divider().padding(.vertical, JunoSpace.tight)
         }
     }
 
@@ -206,9 +206,9 @@ private struct JunoMarkdownList: View {
     let items: [JunoMarkdownBlock.Item]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpacing.compact) {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
             ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                HStack(alignment: .firstTextBaseline, spacing: JunoSpacing.compact) {
+                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
                     marker(index: index, item: item)
                         .frame(minWidth: 18, alignment: .trailing)
                         .accessibilityHidden(item.isChecked == nil)
@@ -217,7 +217,7 @@ private struct JunoMarkdownList: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.leading, Double(item.depth) * JunoSpacing.content)
+                .padding(.leading, Double(item.depth) * JunoSpace.regular)
             }
         }
     }
@@ -227,18 +227,18 @@ private struct JunoMarkdownList: View {
         if let isChecked = item.isChecked {
             Image(systemName: isChecked ? "checkmark.square.fill" : "square")
                 .font(.callout)
-                .foregroundStyle(isChecked ? Color.junoAccent : Color.secondary)
+                .foregroundStyle(isChecked ? Color.junoAccent : Color.junoMutedForeground)
                 .accessibilityLabel(isChecked ? "Done" : "Not done")
         } else if ordered {
             Text("\(start + index).")
                 .font(.body.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
         } else {
             // Nesting changes the glyph the way a printed document would, so
             // depth stays legible even when the indent is subtle.
             Text(item.depth == 0 ? "•" : (item.depth == 1 ? "◦" : "▪"))
                 .font(.body)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
         }
     }
 }
@@ -255,7 +255,7 @@ private struct JunoMarkdownTable: View {
 
     var body: some View {
         ScrollView(.horizontal) {
-            Grid(alignment: .leading, horizontalSpacing: JunoSpacing.content, verticalSpacing: 0) {
+            Grid(alignment: .leading, horizontalSpacing: JunoSpace.regular, verticalSpacing: 0) {
                 GridRow {
                     ForEach(0..<columnCount, id: \.self) { column in
                         Text(cell(header, column))
@@ -263,7 +263,7 @@ private struct JunoMarkdownTable: View {
                             .textSelection(.enabled)
                     }
                 }
-                .padding(.vertical, JunoSpacing.compact)
+                .padding(.vertical, JunoSpace.tight)
 
                 Divider().gridCellUnsizedAxes(.horizontal)
 
@@ -275,20 +275,20 @@ private struct JunoMarkdownTable: View {
                                 .textSelection(.enabled)
                         }
                     }
-                    .padding(.vertical, JunoSpacing.compact)
+                    .padding(.vertical, JunoSpace.tight)
                     if index < rows.count - 1 {
                         Divider().gridCellUnsizedAxes(.horizontal)
                     }
                 }
             }
-            .padding(.horizontal, JunoSpacing.control)
+            .padding(.horizontal, JunoSpace.cozy)
         }
         .background(
-            RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
                 .fill(Color.junoCanvas)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
                 .strokeBorder(Color.junoHairline)
         )
     }

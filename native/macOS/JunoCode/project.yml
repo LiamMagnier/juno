@@ -52,6 +52,13 @@ targets:
         product: JunoCodeKit
       - package: JunoNativeKit
         product: JunoCore
+      # Declared explicitly rather than leaned on transitively through
+      # JunoCodeUI. The app's own views reach for `Color.juno…` and the ink
+      # modifiers directly, and a module that is only importable because some
+      # other dependency happened to link it breaks the moment that dependency
+      # stops needing it.
+      - package: JunoNativeKit
+        product: JunoDesignSystem
       - package: JunoNativeKit
         product: JunoStorage
       - package: JunoNativeKit
