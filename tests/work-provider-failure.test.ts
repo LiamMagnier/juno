@@ -107,6 +107,54 @@ test("a lab that is out of credit says so, and is worth failing over from", () =
   assert.doesNotMatch(classified.message, /does not recognise/);
 });
 
+test("three labs, three statuses, one condition: out of credit", () => {
+  // Every one of these was captured from the live API on 2026-08-07, on a
+  // deployment whose four keys were all unfunded at once. The statuses disagree;
+  // the condition does not.
+  const cases = [
+    { label: "DeepSeek", status: 402, message: "402 Insufficient Balance" },
+    {
+      label: "OpenAI",
+      status: 429,
+      message: "429 You have no credits remaining. Add credits to continue using the API.",
+    },
+    {
+      label: "Anthropic",
+      status: 400,
+      message:
+        '400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API."}}',
+    },
+  ];
+
+  for (const { label, status, message } of cases) {
+    const classified = classifyProviderError(
+      Object.assign(new Error(message), { status }),
+      label,
+    );
+    assert.equal(classified.kind, "insufficient_balance", `${label} (${status})`);
+    // The one that matters most: OpenAI's is a 429, and treating it as a rate
+    // limit means four backed-off retries — up to 90s — waiting out a limit
+    // that clears only when somebody pays an invoice.
+    assert.equal(classified.retryable, false, `${label} must not be retried`);
+    assert.equal(classified.worthFailingOver, true, `${label} should try another lab`);
+    assert.match(classified.message, /run out of credit/);
+  }
+});
+
+test("a genuine rate limit is still a rate limit", () => {
+  // The guard above must not swallow the case the retry exists for.
+  const real = classifyProviderError(
+    Object.assign(new Error("429 status code (no body)"), {
+      status: 429,
+      headers: { "retry-after": "3" },
+    }),
+    "Mistral",
+  );
+  assert.equal(real.kind, "rate_limit");
+  assert.equal(real.retryable, true);
+  assert.equal(real.retryAfterMs, 3_000);
+});
+
 test("classification is idempotent, so a nested adapter cannot wrap twice", () => {
   const once = classifyProviderError(
     Object.assign(new Error("x"), { status: 429 }),

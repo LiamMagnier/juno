@@ -155,7 +155,46 @@ function retryAfterFrom(error: { headers?: unknown }): number | null {
   return null;
 }
 
+/**
+ * "You have run out of money", in the words three different labs actually use.
+ *
+ * Read before the status is, because the status is not where the labs agree.
+ * Measured against the live APIs on 2026-08-07, one deployment, all four keys
+ * unfunded on the same afternoon:
+ *
+ *   DeepSeek   402  "Insufficient Balance"
+ *   OpenAI     429  "You have no credits remaining. Add credits to continue…"
+ *   Anthropic  400  "Your credit balance is too low to access the Anthropic API"
+ *
+ * Three statuses for one condition, and two of them are actively misleading if
+ * taken at face value. OpenAI's 429 would be classified `rate_limit` — so the
+ * loop would sit through four backed-off retries, up to ninety seconds, waiting
+ * out a limit that clears when somebody pays an invoice. Anthropic's 400 would
+ * be `invalid_request`, whose sentence blames a retired or renamed model and
+ * sends the reader to change something that was never wrong.
+ *
+ * So the phrase wins over the number. Deliberately narrow and quoted from real
+ * responses rather than guessed, in the spirit of `NO_AGENTIC_TOOLS_RE` in
+ * src/lib/models.ts — a loose pattern here would silently turn a genuine rate
+ * limit into a permanent failure and stop the retry that was working.
+ */
+const OUT_OF_CREDIT_RE =
+  /insufficient balance|no credits remaining|credit balance is too low|insufficient credit|exceeded your current quota|billing hard limit/i;
+
+/** The provider's own words, from wherever this SDK happened to put them. */
+function messageOf(error: unknown): string {
+  if (error == null || typeof error !== 'object') return '';
+  const source = error as { message?: unknown; error?: { message?: unknown } };
+  const parts: string[] = [];
+  if (typeof source.message === 'string') parts.push(source.message);
+  if (typeof source.error?.message === 'string') parts.push(source.error.message);
+  return parts.join(' ');
+}
+
 function kindForStatus(status: number | null, error: unknown): ProviderFailureKind {
+  // Before the status, for the reason above.
+  if (OUT_OF_CREDIT_RE.test(messageOf(error))) return 'insufficient_balance';
+
   if (status === 429) return 'rate_limit';
   if (status === 401) return 'auth';
   if (status === 402) return 'insufficient_balance';
