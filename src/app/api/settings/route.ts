@@ -8,6 +8,7 @@ import { isModelId } from "@/lib/models";
 import { PERSONALITY_IDS } from "@/lib/personalities";
 import { AUTO_LOCALE, normalizeWebLocale } from "@/lib/i18n";
 import { BACKGROUND_PROVIDER_MODES } from "@/lib/background-provider-policy";
+import { ACTION_PERMISSION_POLICIES } from "@/lib/action-approval";
 
 const schema = z.object({
   theme: z.enum(["light", "dark", "system"]).optional(),
@@ -30,6 +31,18 @@ const schema = z.object({
   favoriteModels: z.array(z.string().max(120)).max(200).optional(),
   emailBudgetAlerts: z.boolean().optional(),
   emailWeeklyDigest: z.boolean().optional(),
+  // How much Juno must ask before an action leaves the account. Enumerated for
+  // the same reason as backgroundProviderMode: the column is TEXT, and an
+  // unrecognised value falls back to the default at read time, so a typo stored
+  // here would silently loosen or tighten permissions with nothing to show for
+  // it. It is also an input to the policy digest, so accepting free text would
+  // let a client invalidate every pending approval by writing nonsense.
+  actionApprovalPolicy: z.enum(ACTION_PERMISSION_POLICIES).optional(),
+  lockdownMode: z.boolean().optional(),
+  // Bounded because this list is read on every connector call and hashed into
+  // the policy digest; an unbounded array turns one settings write into a slow
+  // path for every subsequent action.
+  blockedConnectors: z.array(z.string().max(120)).max(200).optional(),
 });
 
 /**
@@ -56,6 +69,14 @@ export async function GET() {
       backgroundProviderSelected: true,
       defaultModel: true,
       favoriteModels: true,
+      // The approval policy is enforced server-side on every connector call, so
+      // a client cannot weaken it by not reading it. It is exposed so macOS and
+      // iOS can draw the same permission state the web shows, rather than each
+      // one guessing and then surprising the user with a prompt it said would
+      // not appear.
+      actionApprovalPolicy: true,
+      lockdownMode: true,
+      blockedConnectors: true,
     },
   });
   if (!settings) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -105,6 +126,15 @@ export async function PATCH(req: Request) {
       ...(d.favoriteModels !== undefined ? { favoriteModels: d.favoriteModels } : {}),
       ...(d.emailBudgetAlerts !== undefined ? { emailBudgetAlerts: d.emailBudgetAlerts } : {}),
       ...(d.emailWeeklyDigest !== undefined ? { emailWeeklyDigest: d.emailWeeklyDigest } : {}),
+      ...(d.actionApprovalPolicy !== undefined ? { actionApprovalPolicy: d.actionApprovalPolicy } : {}),
+      ...(d.lockdownMode !== undefined ? { lockdownMode: d.lockdownMode } : {}),
+      // Deduplicated on the way in. `resolveActionPolicy` sorts and de-dupes
+      // before hashing, so a list that differs only by repeats would produce an
+      // identical digest — storing the repeats would just make the settings UI
+      // show the same connector twice.
+      ...(d.blockedConnectors !== undefined
+        ? { blockedConnectors: [...new Set(d.blockedConnectors)] }
+        : {}),
     },
   });
 

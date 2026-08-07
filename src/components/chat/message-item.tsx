@@ -14,6 +14,7 @@ import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { VisualLearningBlockRenderer } from "@/components/chat/learning/visual-learning-renderer";
 import { ThinkingState } from "@/components/aicss/thinking-state";
 import { ActivityTimeline } from "@/components/chat/activity-timeline";
+import { ApprovalCard } from "@/components/chat/approval-card";
 import { SourcesPill } from "@/components/chat/sources-pill";
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 import { ImageEditOverlay } from "@/components/chat/image-edit-overlay";
@@ -702,7 +703,23 @@ export function MessageItem({
           reasoning={view.reasoning}
           reasoningParts={view.reasoningParts}
           streaming={message.streaming}
+          // Threaded down to the panel's Notice block. Resolved here, once, so
+          // the inline finish row below and the panel cannot word it differently.
+          finishNote={finishNote}
         />
+        {/*
+          Above the answer, not below it. The turn is BLOCKED on this — the tool
+          loop in src/lib/mcp.ts is holding — so the question has to sit where
+          the reader's eye already is rather than under a partial answer they
+          would have to scroll past to find out why nothing is happening.
+        */}
+        {message.approvals?.length ? (
+          <div className="mb-3 space-y-2">
+            {message.approvals.map((approval) => (
+              <ApprovalCard key={approval.id} approval={approval} />
+            ))}
+          </div>
+        ) : null}
         {message.progress && !message.error ? (
           <GenerationPlaceholder progress={message.progress} />
         ) : showCursor && !hasRunTrace ? (

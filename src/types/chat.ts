@@ -1,3 +1,4 @@
+import type { ClientActionApproval } from "@/lib/action-approval";
 import type { ArtifactType } from "@/lib/message-content";
 import type { ChatOrigin } from "@/lib/chat-origin";
 
@@ -63,6 +64,16 @@ export interface ClientMessage {
   attachments: ClientAttachment[];
   sources?: ClientSource[];
   activity?: ClientActivityEvent[];
+  /**
+   * Connector actions this turn asked the person to approve, newest state per id.
+   *
+   * Client-transient while the turn runs, and re-fetchable afterwards from
+   * /api/approvals — the receipt, not this array, is the record. It lives on the
+   * message rather than in a global queue because an approval only makes sense
+   * next to the turn that wants it: the person is being asked "should THIS
+   * answer do THIS", and a detached notification loses the question.
+   */
+  approvals?: ClientActionApproval[];
   finishReason?: ChatFinishReason | null;
   errorMessage?: string | null;
   /** Client-transient: live /api/generate progress (set by use-chat while a generation runs; never persisted). */
@@ -200,6 +211,14 @@ export type StreamChunk =
     }
   | { type: "title"; conversationId: string; title: string; titleSource?: TitleSource }
   | { type: "activity"; event: ClientActivityEvent }
+  /**
+   * A connector action is waiting on the person. The stream stays open and the
+   * generation is genuinely blocked until they answer at /api/approvals or the
+   * receipt expires, so this is not an advisory notice — it is the turn asking
+   * a question. `receiptDigest` must be echoed back with the decision: it binds
+   * the answer to the exact action that was shown.
+   */
+  | { type: "approval"; approval: ClientActionApproval }
   | { type: "sources"; sources: ClientSource[] }
   /** `part` mirrors LlmEvent's: the ordinal of the discrete summary part this
    *  delta belongs to, or absent when the provider streams unbroken prose. */

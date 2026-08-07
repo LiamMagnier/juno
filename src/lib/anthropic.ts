@@ -7,6 +7,13 @@ import { personalitySystemPrompt } from "@/lib/personalities";
 import { providerApiKey } from "@/lib/providers";
 import { UNTRUSTED_CONTENT_RULE } from "@/lib/untrusted-content";
 import { getObjectBytes } from "@/lib/storage";
+import {
+  addAnthropicUsage,
+  emptyAnthropicUsage,
+  readAnthropicRound,
+  safeToolInput,
+} from "@/lib/anthropic-round";
+import type { McpToolset } from "@/lib/mcp";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
@@ -424,13 +431,14 @@ function markConversationCacheBreakpoint(messages: Anthropic.MessageParam[]): vo
   if (block) (block as { cache_control?: typeof cacheControl }).cache_control = cacheControl;
 }
 
-/** Stream a completion from Anthropic, yielding text + usage events. */
-export interface AnthropicMcpServer {
-  type: "url";
-  url: string;
-  name: string;
-  authorization_token: string;
-}
+/**
+ * How many times Claude may call tools before it must answer.
+ *
+ * Matches the OpenAI adapters so a connector-heavy question behaves the same
+ * whichever model serves it — the round budget is a product decision about how
+ * long a turn may take, not a provider detail.
+ */
+const MAX_TOOL_ROUNDS = 6;
 
 /** True when a `speed:"fast"` request failed specifically because fast mode is
  *  unavailable to this account/right now (not enrolled in the research preview,
@@ -453,7 +461,7 @@ export async function* streamAnthropic(
   signal?: AbortSignal,
   reasoningEffort?: ReasoningEffort,
   webSearch?: boolean,
-  mcpServers?: AnthropicMcpServer[],
+  toolset?: McpToolset,
   dynamicContext?: string,
   fastMode?: boolean
 ): AsyncGenerator<LlmEvent> {
@@ -473,7 +481,31 @@ export async function* streamAnthropic(
     ...(dynamicContext ? [{ type: "text" as const, text: dynamicContext }] : []),
   ];
   const thinkingBits = buildAnthropicThinkingBits(model.providerModel, maxTokens, reasoningEffort);
-  const useMcp = !!mcpServers && mcpServers.length > 0;
+  const hasTools = !!toolset && toolset.tools.length > 0;
+
+  /*
+   * Connector tools, declared to Claude as ordinary client tools.
+   *
+   * Claude therefore returns `tool_use` blocks that Juno executes through
+   * `toolset.execute`, which is the brokered chokepoint. The previous native
+   * `mcp_servers` route had Claude call the connector itself — faster, but it
+   * put the call outside Juno entirely, where no approval could be required.
+   */
+  const connectorTools = hasTools
+    ? toolset!.tools.map((t) => ({
+        name: t.function.name,
+        description: t.function.description,
+        input_schema: (t.function.parameters ?? { type: "object", properties: {} }) as Anthropic.Messages.Tool.InputSchema,
+      }))
+    : [];
+  const tools = [
+    // Claude's native web search server tool — searches + cites inline. It runs
+    // inside Anthropic and reaches no account of the user's, so it is not a
+    // connector action and does not pass the broker.
+    ...(webSearch ? [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] : []),
+    ...connectorTools,
+  ];
+
   const baseParams = {
     model: model.providerModel,
     max_tokens: thinkingBits.maxTokens,
@@ -482,10 +514,7 @@ export async function* streamAnthropic(
     stream: true,
     ...(thinkingBits.thinking ? { thinking: thinkingBits.thinking } : {}),
     ...(thinkingBits.outputConfig ? { output_config: thinkingBits.outputConfig } : {}),
-    // Claude's native web search server tool — searches + cites inline.
-    ...(webSearch ? { tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] } : {}),
-    // Native MCP connector: Claude calls the linked servers (GitHub/Figma…) itself.
-    ...(useMcp ? { mcp_servers: mcpServers } : {}),
+    ...(tools.length ? { tools } : {}),
   } as Anthropic.Messages.MessageCreateParamsStreaming;
 
   // Open the stream at the requested speed. Fast mode (`speed:"fast"`) streams
@@ -493,105 +522,99 @@ export async function* streamAnthropic(
   // fast-mode research-preview beta. If the account isn't enrolled or fast
   // capacity is exhausted, fall back to standard speed once rather than failing
   // the whole turn — switching speed only costs a one-off prompt-cache miss.
-  const openStream = (fast: boolean) => {
-    const betas = [
-      ...(useMcp ? ["mcp-client-2025-04-04"] : []),
-      ...(fast ? ["fast-mode-2026-02-01"] : []),
-    ];
+  const openStream = (fast: boolean, params: Anthropic.Messages.MessageCreateParamsStreaming) => {
+    const betas = fast ? ["fast-mode-2026-02-01"] : [];
     return getAnthropic().messages.create(
-      (fast ? { ...baseParams, speed: "fast" } : baseParams) as Anthropic.Messages.MessageCreateParamsStreaming,
+      (fast ? { ...params, speed: "fast" } : params) as Anthropic.Messages.MessageCreateParamsStreaming,
       { signal, ...(betas.length ? { headers: { "anthropic-beta": betas.join(",") } } : {}) }
     );
   };
 
   let servedFast = !!fastMode;
-  let stream: Awaited<ReturnType<typeof openStream>>;
-  try {
-    stream = await openStream(!!fastMode);
-  } catch (err) {
-    if (fastMode && isFastModeUnavailable(err)) {
-      servedFast = false;
-      stream = await openStream(false);
-    } else {
-      throw err;
-    }
-  }
   const seen = new Set<string>();
-  // Accumulate across the whole stream. Never emit partial mid-stream usage that
-  // could wipe earlier input/cache with a delta that only has output_tokens.
-  type RawU = {
-    input_tokens?: number | null;
-    output_tokens?: number | null;
-    cache_read_input_tokens?: number | null;
-    cache_creation_input_tokens?: number | null;
-    cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number } | null;
-    output_tokens_details?: { thinking_tokens?: number } | null;
-    server_tool_use?: { web_search_requests?: number } | null;
-    speed?: string | null;
-  };
 
-  const acc = {
-    input: 0,
-    output: 0,
-    cacheRead: 0,
-    cacheWrite: 0,
-    cacheWrite5m: 0,
-    cacheWrite1h: 0,
-    reasoning: 0,
-    webSearchRequests: 0,
-    fast: servedFast,
-  };
+  /*
+   * Usage is accumulated in two tiers, and the distinction is a billing one:
+   * maximum WITHIN a round (Anthropic repeats cumulative counters, and a partial
+   * delta must not wipe what message_start already reported), sum ACROSS rounds
+   * (each tool round is a separately billed request). Both live in
+   * anthropic-round.ts so a test can pin the arithmetic.
+   */
+  const acc = emptyAnthropicUsage();
+  let servedSpeed: string | null = null;
 
-  const fold = (u: RawU | null | undefined) => {
-    if (!u) return;
-    // Prefer higher values so a partial delta never zeros out message_start.
-    if (u.input_tokens != null && u.input_tokens > acc.input) acc.input = u.input_tokens;
-    if (u.output_tokens != null && u.output_tokens > acc.output) acc.output = u.output_tokens;
-    if (u.cache_read_input_tokens != null && u.cache_read_input_tokens > acc.cacheRead) {
-      acc.cacheRead = u.cache_read_input_tokens;
-    }
-    const write5m = u.cache_creation?.ephemeral_5m_input_tokens ?? 0;
-    const write1h = u.cache_creation?.ephemeral_1h_input_tokens ?? 0;
-    const writeAgg = u.cache_creation_input_tokens ?? 0;
-    if (write5m > acc.cacheWrite5m) acc.cacheWrite5m = write5m;
-    if (write1h > acc.cacheWrite1h) acc.cacheWrite1h = write1h;
-    const split = acc.cacheWrite5m + acc.cacheWrite1h;
-    if (split > acc.cacheWrite) acc.cacheWrite = split;
-    else if (writeAgg > acc.cacheWrite) acc.cacheWrite = writeAgg;
-    const thinking = u.output_tokens_details?.thinking_tokens ?? 0;
-    if (thinking > acc.reasoning) acc.reasoning = thinking;
-    const searches = u.server_tool_use?.web_search_requests ?? 0;
-    if (searches > acc.webSearchRequests) acc.webSearchRequests = searches;
-    if (u.speed != null) acc.fast = servedFast && u.speed !== "standard";
-  };
+  /*
+   * The tool loop.
+   *
+   * One extra round past the tool budget, with tools present but `tool_choice`
+   * set to none, so a run that keeps reaching for tools still ends in a real
+   * sentence rather than a dangling tool_use. Anthropic documents none (and
+   * auto) as the two choices compatible with manual extended thinking, which is
+   * why the final round narrows the choice instead of dropping `tools` — a
+   * history containing tool_use blocks still needs the definitions present.
+   */
+  const maxRounds = hasTools ? MAX_TOOL_ROUNDS + 1 : 1;
+  let lastStopReason: string | null = null;
 
-  for await (const event of stream as AsyncIterable<Anthropic.RawMessageStreamEvent>) {
-    if (event.type === "message_start") {
-      fold(event.message.usage as RawU);
-    } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-      yield { type: "text", text: event.delta.text };
-    } else if (event.type === "content_block_delta" && event.delta.type === "thinking_delta") {
-      yield { type: "reasoning", text: event.delta.thinking };
-    } else if (event.type === "content_block_start" && (event.content_block as { type?: string }).type === "mcp_tool_use") {
-      const block = event.content_block as { name?: string; server_name?: string };
-      yield { type: "tool", server: block.server_name || "connector", name: block.name || "tool", phase: "call" };
-    } else if (event.type === "content_block_start" && event.content_block.type === "web_search_tool_result") {
-      const content = (event.content_block as { content?: unknown }).content;
-      if (Array.isArray(content)) {
-        const sources = content
-          .filter((c: { type?: string; url?: string }) => c?.type === "web_search_result" && c?.url && !seen.has(c.url))
-          .map((c: { url: string; title?: string }) => {
-            seen.add(c.url);
-            return { title: c.title || c.url, url: c.url, snippet: "" };
-          });
-        if (sources.length) yield { type: "sources", sources };
+  for (let roundIndex = 0; roundIndex < maxRounds; roundIndex++) {
+    const isFinalRound = roundIndex === maxRounds - 1;
+    const params = {
+      ...baseParams,
+      messages,
+      ...(hasTools ? { tool_choice: { type: isFinalRound ? "none" : "auto" } } : {}),
+    } as Anthropic.Messages.MessageCreateParamsStreaming;
+
+    let stream: Awaited<ReturnType<typeof openStream>>;
+    try {
+      stream = await openStream(servedFast, params);
+    } catch (err) {
+      // Only the first round can discover that fast mode is unavailable; later
+      // rounds have already been downgraded, so this stays a one-shot fallback.
+      if (servedFast && isFastModeUnavailable(err)) {
+        // The turn is no longer served fast. `servedFast` is what the final
+        // `fast` flag is computed from, so downgrading it here is what stops a
+        // provider that never reports `speed` from being billed the premium rate.
+        servedFast = false;
+        stream = await openStream(false, params);
+      } else {
+        throw err;
       }
-    } else if (event.type === "message_delta") {
-      fold(event.usage as RawU);
-      const stopReason = (event.delta as { stop_reason?: string | null }).stop_reason;
-      if (stopReason) yield { type: "finish", reason: normalizeFinishReason(stopReason), raw: stopReason };
     }
+
+    // Delegated so the block reassembly can be exercised by a test without an
+    // API key or a network. See src/lib/anthropic-round.ts.
+    const round = yield* readAnthropicRound(stream as AsyncIterable<Anthropic.RawMessageStreamEvent>, {
+      labelFor: toolset ? (name) => toolset.labelFor(name) : undefined,
+      seen,
+    });
+    const { blocks, toolUses, stopReason } = round;
+
+    lastStopReason = stopReason;
+    addAnthropicUsage(acc, round.usage);
+    if (round.usage.speed != null) servedSpeed = round.usage.speed;
+
+    // Claude asked for tools and the budget allows another round: run them
+    // through the broker and feed the results back.
+    if (hasTools && !isFinalRound && stopReason === "tool_use" && toolUses.length > 0) {
+      messages.push({ role: "assistant", content: blocks });
+      const results: Anthropic.Messages.ToolResultBlockParam[] = [];
+      for (const call of toolUses) {
+        const label = toolset!.labelFor(call.name);
+        const text = await toolset!.execute(call.name, safeToolInput(call.json), signal, call.id);
+        results.push({ type: "tool_result", tool_use_id: call.id, content: text });
+        yield { type: "tool", server: label, name: call.name, phase: "result" };
+      }
+      messages.push({ role: "user", content: results });
+      continue;
+    }
+    break;
   }
+
+  // A trailing `tool_use` means even the forced-answer round wanted more tools.
+  // Report it as a length stop so the UI offers Continue rather than showing a
+  // clean finish over a turn that never actually answered.
+  const finalStop = lastStopReason === "tool_use" ? "max_tokens" : lastStopReason;
+  if (finalStop) yield { type: "finish", reason: normalizeFinishReason(finalStop), raw: finalStop };
 
   // Single authoritative usage event after the stream completes.
   const hasAny =
@@ -614,7 +637,10 @@ export async function* streamAnthropic(
       cacheWrite1h: acc.cacheWrite1h || undefined,
       reasoning: acc.reasoning || undefined,
       webSearchRequests: acc.webSearchRequests || undefined,
-      fast: acc.fast,
+      // Fast only when it was asked for AND the provider did not quietly serve
+      // the standard tier. A provider that reports no `speed` at all leaves
+      // servedSpeed null, and the request's own outcome decides.
+      fast: servedFast && servedSpeed !== "standard",
     } satisfies LlmEvent;
   }
 }

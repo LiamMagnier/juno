@@ -7,9 +7,9 @@ import Foundation
 
 public enum JunoCapabilityContract {
     /// Bumped whenever a capability is added or its meaning changes.
-    public static let version = 2
+    public static let version = 3
     /// SHA-256 of the manifest this was generated from.
-    public static let digest = "4b87b80f73e7b1ba85f76092033355400aa906f85ab60f92752f7dbe93359432"
+    public static let digest = "8230f22d5bf8e81f3fcae5caac3db709006c032645807bcd29a82147c79f40c3"
 }
 
 /// A thinking effort, lowest to highest.
@@ -46,6 +46,8 @@ public enum JunoCapability: String, Codable, CaseIterable, Sendable {
     case vision = "vision"
     /// Call connector tools during the turn.
     case connectors = "connectors"
+    /// Show a connector action that needs a person's decision and answer it with the receipt digest it was shown with. A client without this surface cannot complete a turn that reaches one, because the broker holds the tool call until somebody answers.
+    case actionApproval = "actionApproval"
 }
 
 /// Why what ran differs from what was asked for.
@@ -67,6 +69,9 @@ public enum JunoDegradationKind: String, Codable, CaseIterable, Sendable {
     case visionUnavailable = "vision_unavailable"
     /// Connectors were requested but did not run.
     case connectorsUnavailable = "connectors_unavailable"
+    /// An action needed a person's approval and this client has nowhere to ask, so the action did not run.
+    /// The one kind here that is a refusal rather than a lesser answer: the others still produce a reply, this one leaves a connector call unexecuted. A client that cannot render the approval has to say that the action was dropped, because the alternative it would otherwise fall into is a turn that reads as finished while the send, the delete or the calendar invite silently never happened.
+    case actionApprovalUnavailable = "action_approval_unavailable"
 }
 
 /// One difference between the requested and the effective execution.

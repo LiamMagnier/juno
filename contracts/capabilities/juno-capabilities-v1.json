@@ -1,6 +1,6 @@
 {
   "$comment": "Canonical capability manifest. The TypeScript module (src/lib/effective-capabilities.ts) and the generated Swift contract (native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoCapabilityContract.swift) BOTH derive from this file, so the two cannot drift apart by construction — there is nothing to keep in sync, only one thing to change. Regenerate Swift with: node scripts/generate-capability-contract.mjs --output=native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoCapabilityContract.swift",
-  "version": 2,
+  "version": 3,
   "reasoningLevels": ["minimal", "low", "medium", "high", "xhigh", "max"],
   "capabilities": [
     { "key": "reasoning", "kind": "level", "summary": "A thinking effort the model applies before answering." },
@@ -8,7 +8,8 @@
     { "key": "fastMode", "kind": "flag", "summary": "A provider's priority/fast serving tier." },
     { "key": "proMode", "kind": "flag", "summary": "Deeper 'pro' execution on the same model id, independent of reasoning effort." },
     { "key": "vision", "kind": "flag", "summary": "Read images supplied with the message." },
-    { "key": "connectors", "kind": "flag", "summary": "Call connector tools during the turn." }
+    { "key": "connectors", "kind": "flag", "summary": "Call connector tools during the turn." },
+    { "key": "actionApproval", "kind": "flag", "summary": "Show a connector action that needs a person's decision and answer it with the receipt digest it was shown with. A client without this surface cannot complete a turn that reaches one, because the broker holds the tool call until somebody answers." }
   ],
   "degradationKinds": [
     {
@@ -22,6 +23,11 @@
     { "key": "fast_mode_unavailable", "summary": "Fast mode was requested but the model has no faster tier." },
     { "key": "pro_mode_unavailable", "summary": "Pro mode was requested but the model has no pro execution mode." },
     { "key": "vision_unavailable", "summary": "Images were supplied but the model cannot read them." },
-    { "key": "connectors_unavailable", "summary": "Connectors were requested but did not run." }
+    { "key": "connectors_unavailable", "summary": "Connectors were requested but did not run." },
+    {
+      "key": "action_approval_unavailable",
+      "summary": "An action needed a person's approval and this client has nowhere to ask, so the action did not run.",
+      "note": "The one kind here that is a refusal rather than a lesser answer: the others still produce a reply, this one leaves a connector call unexecuted. A client that cannot render the approval has to say that the action was dropped, because the alternative it would otherwise fall into is a turn that reads as finished while the send, the delete or the calendar invite silently never happened."
+    }
   ]
 }

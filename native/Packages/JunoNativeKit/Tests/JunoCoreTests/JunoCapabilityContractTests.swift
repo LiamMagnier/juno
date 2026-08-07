@@ -37,6 +37,12 @@ final class JunoCapabilityContractTests: XCTestCase {
             "fast_mode_unavailable",
             "vision_unavailable",
             "connectors_unavailable",
+            "pro_mode_unavailable",
+            // A connector action needed a person and this client had nowhere to
+            // ask. The broker holds the tool call until somebody answers, so a
+            // client that cannot name this degradation shows a turn that simply
+            // stopped, with no reason a reader could act on.
+            "action_approval_unavailable",
         ] {
             XCTAssertTrue(kinds.contains(expected), "missing degradation kind \(expected)")
         }
@@ -110,7 +116,8 @@ final class JunoCapabilityContractTests: XCTestCase {
         XCTAssertNil(result.reasoning)
     }
 
-    /// v2 added `proMode` and `pro_mode_unavailable`.
+    /// v2 added `proMode` and `pro_mode_unavailable`; v3 added `actionApproval`
+    /// and `action_approval_unavailable`.
     ///
     /// Pinned to an exact number rather than `>= 1` on purpose: the version is
     /// the one thing a client can gate a feature on, so it must move when the
@@ -118,8 +125,12 @@ final class JunoCapabilityContractTests: XCTestCase {
     /// the point at which someone editing the manifest is made to notice they
     /// changed a cross-platform contract.
     func testTheContractReportsTheManifestItWasBuiltFrom() {
-        XCTAssertEqual(JunoCapabilityContract.version, 2)
+        XCTAssertEqual(JunoCapabilityContract.version, 3)
         XCTAssertEqual(JunoCapabilityContract.digest.count, 64, "a SHA-256 hex digest")
+        XCTAssertTrue(
+            JunoCapabilityContract.digest.allSatisfy { $0.isHexDigit },
+            "the digest must be hex, not a placeholder"
+        )
     }
 
     /// The capability added in v2. Present here so the enum and the manifest

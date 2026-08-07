@@ -3,7 +3,7 @@ import { streamAnthropic } from "@/lib/anthropic";
 import { streamOpenAICompat } from "@/lib/openai-compat";
 import { streamOpenAIResponses } from "@/lib/openai-responses";
 import { streamGeminiSearch } from "@/lib/gemini-search";
-import { anthropicMcpServers, openMcpToolset, type ActiveConnector, type McpToolset } from "@/lib/mcp";
+import { openMcpToolset, type ActiveConnector, type McpToolset, type McpToolsetContext } from "@/lib/mcp";
 import { reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { normalizeProviderError } from "@/lib/provider-error";
 import type { ModelInfo } from "@/lib/models";
@@ -66,12 +66,13 @@ export async function* streamChat(opts: {
    *  id. The route only sets this on models that support it. */
   proMode?: boolean;
   /**
-   * Who connector tool calls are attributed to in the audit trail, and which
-   * conversation they belong to. Required whenever `connectors` is non-empty:
-   * a tool call acting with a user's own credentials that cannot be traced back
-   * to that user is precisely the call worth refusing.
+   * Who connector tool calls are attributed to in the audit trail and in the
+   * approval broker, and which conversation they belong to. Required whenever
+   * `connectors` is non-empty: a tool call acting with a user's own credentials
+   * that cannot be traced back to that user is precisely the call worth
+   * refusing — and a receipt with no owner is one nobody can be asked to sign.
    */
-  audit?: { userId: string; conversationId?: string | null };
+  audit?: McpToolsetContext;
 }): AsyncGenerator<LlmEvent> {
   const { model, system, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey, fastMode } = opts;
   const proMode = !!opts.proMode && supportsProMode(model);
@@ -96,15 +97,9 @@ export async function* streamChat(opts: {
     yield* streamGeminiSearch(model, system, history, maxTokens, signal, dynamicContext);
     return;
   }
-  if (model.provider === "anthropic") {
-    // Claude reaches MCP servers itself via the native connector.
-    yield* streamAnthropic(
-      model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-      active.length ? anthropicMcpServers(active) : undefined, dynamicContext, fastMode
-    );
-    return;
-  }
-  // Everyone else: we open the MCP tools here and run the tool loop ourselves.
+  // Every provider now runs the tool loop here. Anthropic used to be handed the
+  // connectors as native `mcp_servers` and call them itself — see the note at
+  // the top of mcp.ts for why that route had to go.
   let toolset: McpToolset | undefined;
   if (active.length) {
     if (!opts.audit) {
@@ -124,6 +119,13 @@ export async function* streamChat(opts: {
     }
   }
   try {
+    if (model.provider === "anthropic") {
+      yield* streamAnthropic(
+        model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+        toolset, dynamicContext, fastMode
+      );
+      return;
+    }
     // gpt-*-pro and Responses-only Codex snapshots aren't served on
     // /chat/completions — they take the Responses API adapter instead.
     //

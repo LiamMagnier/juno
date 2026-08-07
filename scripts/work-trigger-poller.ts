@@ -292,7 +292,16 @@ async function callConnectorTool(
 
   let toolset: McpToolset | null = null;
   try {
-    toolset = await openMcpToolset(active, { userId });
+    toolset = await openMcpToolset(active, {
+      userId,
+      surface: "trigger",
+      sessionId: `trigger:${connectorId}:${tool}`,
+      // Nobody is watching a poll. A trigger is only ever meant to READ — those
+      // classify read_only and never reach an approval — but a trigger pointed
+      // at a write tool must fail fast and loudly rather than hold this worker
+      // for the receipt's whole lifetime waiting for an answer.
+      unattended: true,
+    });
     const suffix = `__${tool}`;
     const named = toolset.tools.find((entry) => entry.function.name.endsWith(suffix));
     if (!named) {

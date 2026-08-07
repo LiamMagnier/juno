@@ -1,4 +1,5 @@
 import type { Attachment, Role } from "@prisma/client";
+import type { ClientActionApproval } from "@/lib/action-approval";
 import type { ChatFinishReason, ClientSource } from "@/types/chat";
 
 /** A persisted message reduced to what model adapters need. */
@@ -25,6 +26,16 @@ export type LlmEvent =
   | { type: "reasoning"; text: string; part?: number }
   | { type: "sources"; sources: ClientSource[] }
   | { type: "tool"; server: string; name: string; phase: "call" | "result"; detail?: string }
+  /**
+   * A connector action is waiting for the person to answer.
+   *
+   * Emitted by the toolset the moment a receipt enters `pending`, BEFORE the
+   * broker starts waiting on it — the stream is blocked on the answer, so an
+   * event that arrived after the wait would arrive after the deadline it exists
+   * to beat. The payload is the redacted client projection: the raw arguments
+   * that the digest is taken over never leave the server.
+   */
+  | { type: "approval"; approval: ClientActionApproval }
   | {
       type: "usage";
       input?: number;

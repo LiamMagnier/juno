@@ -21,7 +21,7 @@ export default function CguPage() {
     <>
       <p className="font-mono text-xs font-medium text-muted-foreground">Juno · Conditions</p>
       <h1 className="mt-3">Conditions générales d&apos;utilisation et de vente</h1>
-      <p className="text-muted-foreground">Dernière mise à jour : 5 juillet 2026.</p>
+      <p className="text-muted-foreground">Dernière mise à jour : 7 août 2026.</p>
 
       <h2>1. Objet</h2>
       <p>
@@ -50,11 +50,22 @@ export default function CguPage() {
       </p>
 
       <h2>4. Plans et tarifs</h2>
+      {/*
+        The monthly API-budget figures used to be a third column here (15 € /
+        75 € / 150 €) and did not match what src/lib/spend.ts actually enforces
+        (11 € / 55 € / 110 €), so the contract promised an allowance the Service
+        did not grant. The prices are unchanged and stay published; the budget is
+        described qualitatively and its current value is shown in the app, where
+        it is read from the same constant that enforces it and therefore cannot
+        drift out of agreement again.
+      */}
       <p>
         Le Service est proposé selon les plans suivants. Les prix sont exprimés <strong>hors taxes
         (HT)</strong>, par mois ; la TVA applicable est ajoutée au moment du paiement. Chaque plan
-        inclut un budget mensuel de consommation des API des modèles ; au-delà, l&apos;accès aux modèles
-        peut être suspendu jusqu&apos;au cycle suivant.
+        inclut un budget mensuel de consommation des API des modèles, dont le montant en vigueur et
+        la consommation en cours sont affichés dans le Service, sur la page Réglages (section
+        Utilisation) ; au-delà, l&apos;accès aux modèles peut être suspendu jusqu&apos;au cycle
+        suivant.
       </p>
       <div className="overflow-x-auto">
         <table>
@@ -62,24 +73,20 @@ export default function CguPage() {
             <tr>
               <th scope="col">Plan</th>
               <th scope="col">Prix (HT / mois)</th>
-              <th scope="col">Budget API mensuel</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td>Pro</td>
               <td>20 €</td>
-              <td>15 €</td>
             </tr>
             <tr>
               <td>Max x5</td>
               <td>100 €</td>
-              <td>75 €</td>
             </tr>
             <tr>
               <td>Max x20</td>
               <td>200 €</td>
-              <td>150 €</td>
             </tr>
           </tbody>
         </table>

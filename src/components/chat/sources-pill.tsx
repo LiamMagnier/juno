@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { ArrowUpRight, ChevronDown } from "lucide-react";
-import { SourceFavicon, hostOf, titleOf } from "@/components/chat/source-chip";
+import { SourceFavicon, hostOf, isRenderableSourceUrl, titleOf } from "@/components/chat/source-chip";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
 
@@ -10,12 +10,19 @@ import type { ClientSource } from "@/types/chat";
 const CLUSTER_MAX = 3;
 
 function SourceRow({ source, index }: { source: ClientSource; index: number }) {
+  // Same rule as the inline chip: a non-http(s) source is still listed, because
+  // the answer used it and hiding it would misrepresent what the answer rests
+  // on — but it is not made clickable. See isRenderableSourceUrl.
+  const Row = isRenderableSourceUrl(source.url) ? "a" : "span";
+  const linkProps =
+    Row === "a" ? ({ href: source.url, target: "_blank", rel: "noopener noreferrer" } as const) : ({} as const);
   return (
     <li>
-      <a
-        href={source.url}
-        target="_blank"
-        rel="noopener noreferrer"
+      <Row
+        {...linkProps}
+        {...(Row === "span"
+          ? { title: "Juno did not link this: it is not a web address." }
+          : {})}
         className={cn(
           "group/row relative z-0 flex items-center gap-2.5 rounded-[14px] border border-transparent p-2",
           "transition-[transform,box-shadow,border-color,background-color] duration-base ease-out-soft motion-reduce:transition-none",
@@ -39,7 +46,7 @@ function SourceRow({ source, index }: { source: ClientSource; index: number }) {
           aria-hidden="true"
           className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-base ease-out-soft group-hover/row:opacity-100 motion-reduce:transition-none"
         />
-      </a>
+      </Row>
     </li>
   );
 }
