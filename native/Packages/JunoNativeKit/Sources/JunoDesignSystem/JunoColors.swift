@@ -16,38 +16,51 @@ import AppKit
 /// Anything not listed here defers to the system semantic colors so the apps
 /// track platform conventions automatically.
 public extension JunoColorToken {
-    /// `--primary: 15 54% 51%`, identical in both appearances.
+    /// `--primary: 15 54% 46%`, identical in both appearances.
     static let accentLight = JunoColorToken.coral
     static let accentDark = JunoColorToken.coral
 
-    /// `--background`: `48 33% 97%` / `28 9% 9%`.
+    /// `--background`: `54 18% 97%` / `48 7% 9%`.
     static let canvasLight = JunoColorToken.warmWhite
     static let canvasDark = JunoColorToken.warmBlack
 
-    /// `--card`: `0 0% 100%` / `28 7% 12.5%`. One step above the canvas.
-    static let surfaceLight = JunoColorToken(unchecked: 1, 1, 1)
-    static let surfaceDark = JunoColorToken(unchecked: 0.1337, 0.1244, 0.1162)
+    /// `--card`: `54 44% 99%` / `48 7% 12.5%`. One step above the canvas.
+    ///
+    /// Light was a literal pure white floating on warm paper — the one pairing
+    /// that reads as somebody else's brand rather than Juno's. `54 44% 99%` is
+    /// a 1% step, indistinguishable as a surface, but it puts the float on the
+    /// same hue family as the paper it sits on.
+    static let surfaceLight = JunoColorToken(unchecked: 0.9944, 0.9935, 0.9856)
+    static let surfaceDark = JunoColorToken(unchecked: 0.1337, 0.1303, 0.1162)
 
-    /// `--popover`: `0 0% 100%` / `28 6% 18%`. Transient surfaces sit higher
+    /// `--popover`: `54 44% 99%` / `48 6% 18%`. Transient surfaces sit higher
     /// still, so a menu stays legible over a card.
-    static let popoverLight = JunoColorToken(unchecked: 1, 1, 1)
-    static let popoverDark = JunoColorToken(unchecked: 0.1908, 0.1793, 0.1692)
+    static let popoverLight = JunoColorToken(unchecked: 0.9944, 0.9935, 0.9856)
+    static let popoverDark = JunoColorToken(unchecked: 0.1908, 0.1865, 0.1692)
 
-    /// `--muted`: `50 23% 95%` / `30 7% 15%`. Selected rows and quiet fills.
+    /// `--muted`: `50 23% 95%` / `48 7% 15%`. Selected rows and quiet fills.
     static let mutedLight = JunoColorToken(unchecked: 0.9615, 0.9577, 0.9385)
-    static let mutedDark = JunoColorToken(unchecked: 0.1605, 0.15, 0.1395)
+    static let mutedDark = JunoColorToken(unchecked: 0.1605, 0.1563, 0.1395)
 
-    /// `--muted-foreground`: `40 4% 40%` / `37 7% 63%`.
-    static let mutedForegroundLight = JunoColorToken(unchecked: 0.416, 0.4053, 0.384)
-    static let mutedForegroundDark = JunoColorToken(unchecked: 0.6559, 0.636, 0.6041)
+    /// `--muted-foreground`: `48 4% 40%` / `48 7% 63%`.
+    static let mutedForegroundLight = JunoColorToken(unchecked: 0.416, 0.4096, 0.384)
+    static let mutedForegroundDark = JunoColorToken(unchecked: 0.6559, 0.6455, 0.6041)
 
-    /// `--sidebar`: `50 23% 95%` / `28 10% 7.5%`.
+    /// `--foreground`: `48 3% 12%` / `48 24% 93%`. The most-read ink in the
+    /// product, and until now it had no native counterpart at all — which is
+    /// why 400-odd `.foregroundStyle(.secondary)` sites fall through to the
+    /// platform's pure-neutral label colour on a warm canvas. Use
+    /// ``Color/junoForeground`` where that neutrality shows.
+    static let foregroundLight = JunoColorToken(unchecked: 0.1236, 0.1222, 0.1164)
+    static let foregroundDark = JunoColorToken(unchecked: 0.9468, 0.9401, 0.9132)
+
+    /// `--sidebar`: `50 23% 95%` / `48 10% 7.5%`.
     ///
     /// This is intentionally distinct from `--muted` in dark appearance: the
     /// web shell's sidebar is a shade deeper than the reading canvas, so the
     /// content opens up instead of being boxed by a lighter grey slab.
     static let sidebarLight = JunoColorToken(unchecked: 0.9615, 0.9577, 0.9385)
-    static let sidebarDark = JunoColorToken(unchecked: 0.0825, 0.0756, 0.0675)
+    static let sidebarDark = JunoColorToken(unchecked: 0.0825, 0.0795, 0.0675)
 
     // Border, success, danger and caution are deliberately *not* redefined here.
     // `JunoSurfaces.swift` already owns `borderLight`/`borderDark` and
@@ -113,6 +126,14 @@ public extension Color {
 
     /// A quiet fill: the selected sidebar row, a resting chip, a user message.
     static let junoMuted = Color.junoAdaptive(light: .mutedLight, dark: .mutedDark)
+
+    /// Primary text — the web's `--foreground`, which had no native counterpart
+    /// until now. Prefer `.primary` where the system's own label colour is
+    /// right; use this where the warmth shows, which is anywhere a long run of
+    /// ink sits on ``junoCanvas`` or ``junoSurface``.
+    static let junoForeground = Color.junoAdaptive(
+        light: .foregroundLight, dark: .foregroundDark
+    )
 
     /// Secondary text. Prefer `.secondary` where the system's own ramp is right;
     /// use this where the warm brand tint matters, as in large calm surfaces.

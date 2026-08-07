@@ -12,8 +12,13 @@ const cardVariants = cva(
         default: "surface-raised",
         elevated: "surface-raised shadow-float",
         flat: "shadow-none",
+        // Hover lifts one rung to --shadow-lift, not --shadow-float: float is the
+        // OUT-OF-FLOW token, so a hovered tile was outranking every dropdown in
+        // the product. The ladder is soft < lift < glass < float, monotonic.
+        // The ambient --glow-primary halo goes with it — it was retired
+        // product-wide for reading as a smudge; this call site never got the memo.
         interactive:
-          "surface-raised hover:-translate-y-0.5 hover:border-primary/45 hover:shadow-float hover:[box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--glow-primary)] focus-within:border-primary/45 active:translate-y-0",
+          "surface-raised hover:-translate-y-0.5 hover:border-primary/45 hover:[box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-lift)] focus-within:border-primary/45 active:translate-y-0",
       },
     },
     defaultVariants: { variant: "default" },
@@ -44,8 +49,7 @@ CardTitle.displayName = "CardTitle";
 /** Mono eyebrow for card sections — the Juno label voice. */
 const CardEyebrow = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLParagraphElement>>(
   ({ className, ...props }, ref) => (
-    // text-label metrics spelled out — twMerge misreads `text-label` as a color and drops it next to text-muted-foreground.
-    <p ref={ref} className={cn("font-mono text-xs font-medium text-muted-foreground", className)} {...props} />
+    <p ref={ref} className={cn("font-mono text-label text-muted-foreground", className)} {...props} />
   )
 );
 CardEyebrow.displayName = "CardEyebrow";

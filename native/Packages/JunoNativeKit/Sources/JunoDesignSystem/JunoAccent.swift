@@ -1,16 +1,17 @@
 import Observation
 import SwiftUI
 
-/// The five accents the account can choose between, converted from the web's
+/// The six accents the account can choose between, converted from the web's
 /// `[data-accent]` blocks in `src/app/globals.css`.
 ///
-/// Each one drives `--primary` and `--ring` there, and four of the five carry a
-/// *different* value in dark mode — a teal that reads at 33% lightness on paper
-/// disappears on a warm near-black. Both values are kept here for that reason;
-/// taking the light one for both is what makes a themed app look like it only
-/// half-supports its own themes.
+/// Each one drives `--primary` and `--ring` there, and four of the six carry a
+/// *different* value in dark mode — a teal that reads at 31.5% lightness on
+/// paper disappears on a warm near-black. Both values are kept here for that
+/// reason; taking the light one for both is what makes a themed app look like it
+/// only half-supports its own themes.
 public enum JunoAccent: String, CaseIterable, Sendable, Identifiable {
     case coral
+    case juniper
     case teal
     case violet
     case amber
@@ -22,6 +23,7 @@ public enum JunoAccent: String, CaseIterable, Sendable, Identifiable {
     public var displayName: String {
         switch self {
         case .coral: "Coral"
+        case .juniper: "Juniper"
         case .teal: "Teal"
         case .violet: "Violet"
         case .amber: "Amber"
@@ -36,13 +38,21 @@ public enum JunoAccent: String, CaseIterable, Sendable, Identifiable {
     }
 
     /// `--primary` in light mode, as HSL degrees / percent / percent.
+    ///
+    /// Four of these moved down in lightness so that white on the fill clears
+    /// 4.5:1 with the accent's own button label — sage was worst, at 3.20:1.
+    /// Hue and saturation are untouched on every one, so each accent keeps its
+    /// character exactly; only the value changed. Recomputed: coral 46% =
+    /// 4.85:1 · teal 31.5% = 4.54:1 · violet 60% = 5.00:1 · sage 42.5% = 4.52:1.
+    /// Amber already passed at 7.13:1 because its ``onAccent`` is dark ink.
     private var light: (h: Double, s: Double, l: Double) {
         switch self {
-        case .coral: (15, 0.54, 0.51)
-        case .teal: (180, 0.63, 0.33)
-        case .violet: (249, 0.59, 0.64)
+        case .coral: (15, 0.54, 0.46)
+        case .juniper: (152, 0.44, 0.31)
+        case .teal: (180, 0.63, 0.315)
+        case .violet: (249, 0.59, 0.60)
         case .amber: (39, 0.67, 0.55)
-        case .sage: (120, 0.18, 0.52)
+        case .sage: (120, 0.18, 0.425)
         }
     }
 
@@ -50,7 +60,8 @@ public enum JunoAccent: String, CaseIterable, Sendable, Identifiable {
     /// on the web; the others lift.
     private var dark: (h: Double, s: Double, l: Double) {
         switch self {
-        case .coral: (15, 0.54, 0.51)
+        case .coral: (15, 0.54, 0.46)
+        case .juniper: (152, 0.42, 0.54)
         case .teal: (187, 0.58, 0.49)
         case .violet: (249, 0.66, 0.71)
         case .amber: (38, 0.73, 0.63)
@@ -64,6 +75,14 @@ public enum JunoAccent: String, CaseIterable, Sendable, Identifiable {
     public var onAccent: Color {
         switch self {
         case .coral: .white
+        case .juniper:
+            // `0 0% 100%` / `150 30% 9%` — juniper's dark value lifts to 54%,
+            // so white on it fails; the ink is a near-black in juniper's own
+            // hue rather than the warm one the other lifted accents use.
+            Color.junoAdaptive(
+                light: JunoColorToken(unchecked: 1, 1, 1),
+                dark: JunoColorToken(unchecked: 0.0630, 0.1170, 0.0900)
+            )
         case .teal, .violet, .sage:
             Color.junoAdaptive(
                 light: JunoColorToken(unchecked: 1, 1, 1),

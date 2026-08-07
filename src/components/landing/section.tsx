@@ -1,8 +1,16 @@
+import { PageHeader } from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
 
 /**
- * Shared shell for landing-page sections: mono eyebrow → serif display
- * heading → optional one-line lede, then whatever the section renders.
+ * Shared shell for landing-page sections. The eyebrow/heading/lede stack that
+ * used to live here now IS the app's PageHeader — same component the signed-in
+ * pages open with — so this is the container and nothing else.
+ *
+ * Gutter note: `px-4 sm:px-6` matches every app screen (projects, settings,
+ * upgrade, artifacts, work). The landing used to indent 24px on a phone where
+ * the app indents 16px, so crossing the sign-in wall shifted the whole left
+ * edge by 8px — the first thing a new account sees.
+ *
  * Pure server markup — the landing ships zero client JS of its own.
  */
 export function Section({
@@ -21,10 +29,8 @@ export function Section({
   className?: string;
 }) {
   return (
-    <section id={id} className={cn("mx-auto w-full max-w-6xl px-6 py-14 sm:py-16", className)}>
-      <p className="font-mono text-label text-muted-foreground">{eyebrow}</p>
-      <h2 className="mt-3 max-w-2xl text-balance font-serif text-display font-medium tracking-tight">{heading}</h2>
-      {lede && <p className="mt-3 max-w-2xl text-pretty text-body-lg text-muted-foreground">{lede}</p>}
+    <section id={id} className={cn("mx-auto w-full max-w-6xl px-4 py-14 sm:px-6 sm:py-16", className)}>
+      <PageHeader eyebrow={eyebrow} heading={heading} lede={lede} />
       {children}
     </section>
   );

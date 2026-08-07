@@ -1,3 +1,4 @@
+import SwiftUI
 import XCTest
 @testable import JunoDesignSystem
 
@@ -36,7 +37,7 @@ final class JunoDesignTokensTests: XCTestCase {
     }
 
     /// The accent is the one token that must *not* differ. `--primary` is
-    /// `15 54% 51%` in both `:root` and `.dark` in `src/app/globals.css`; the
+    /// `15 54% 46%` in both `:root` and `.dark` in `src/app/globals.css`; the
     /// native palette used to brighten it in dark mode, which drifted the brand.
     func testAccentIsTheSameCoralInBothAppearances() {
         XCTAssertEqual(JunoColorToken.accentLight, JunoColorToken.accentDark)
@@ -46,11 +47,39 @@ final class JunoDesignTokensTests: XCTestCase {
     /// Juno's neutrals are warm in both appearances — red is the highest channel
     /// and blue the lowest. A neutral or blue-leaning grey is the single most
     /// visible way the native app stops looking like Juno.
+    ///
+    /// The list is deliberately exhaustive over the neutral ramp, including the
+    /// light surfaces. It used to cover five tokens, and every one it skipped is
+    /// where the drift accumulated: `JunoSurfaces` had grown a second, *cool*
+    /// dark ground (blue highest) sitting beside `warmBlack`, and three
+    /// separate pure whites, none of which this test could see.
     func testBrandNeutralsAreWarmInBothAppearances() {
-        for token in [JunoColorToken.canvasLight, .canvasDark, .surfaceDark, .mutedDark, .popoverDark] {
+        let tokens: [JunoColorToken] = [
+            .canvasLight, .canvasDark,
+            .surfaceLight, .surfaceDark,
+            .popoverLight, .popoverDark,
+            .mutedLight, .mutedDark,
+            .mutedForegroundLight, .mutedForegroundDark,
+            .foregroundLight, .foregroundDark,
+            .sidebarLight, .sidebarDark,
+            .sidebarSelectionLight, .sidebarSelectionDark,
+            .sidebarForegroundLight, .sidebarForegroundDark,
+        ]
+        for token in tokens {
             XCTAssertGreaterThan(token.red, token.blue, "expected a warm neutral")
             XCTAssertGreaterThanOrEqual(token.green, token.blue)
         }
+    }
+
+    /// The desktop shell's canvas and the phone's are the same ground.
+    ///
+    /// `junoCanvasWarm` and `junoRaised` were once independently authored
+    /// surfaces in `JunoSurfaces.swift`; they are now aliases. Asserting the
+    /// identity is what stops someone re-forking them the next time the desktop
+    /// wants a slightly different cream.
+    func testWarmCanvasAndRaisedAliasTheSharedGround() {
+        XCTAssertEqual(Color.junoCanvasWarm, Color.junoCanvas)
+        XCTAssertEqual(Color.junoRaised, Color.junoSurface)
     }
 
     func testDarkCanvasIsDarkerThanEverySurfaceAboveIt() {

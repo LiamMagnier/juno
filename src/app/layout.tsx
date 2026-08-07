@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono, Newsreader } from "next/font/google";
+import { Archivo, JetBrains_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
 import "katex/dist/katex.min.css";
 import { Providers } from "@/components/providers";
@@ -9,10 +9,18 @@ import { auth } from "@/lib/auth";
 import { directionOf, isAutoLocale } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
 
-// Newsreader: an editorial serif used as the overall UI typeface (variable font
-// with optical sizing, so it reads cleanly from 11px labels to display headings).
+// Two faces, two jobs. Archivo is the interface voice — a grotesque with a
+// variable weight axis and real tabular figures, for controls, menus, tables and
+// anything at UI size. Newsreader is now reserved for display and continuous
+// reading: hero, headings, page titles, greetings and the assistant's prose.
+//
+// `axes: ["opsz"]` on Newsreader is REQUIRED, not decorative: Google Fonts serves
+// the default axis set unless axes are requested, so the `font-optical-sizing:
+// auto` that globals.css has always declared was a silent no-op.
+//
 // JetBrains Mono stays for labels/metadata + the dot/ASCII signature layer.
-const serif = Newsreader({ subsets: ["latin"], variable: "--font-serif", display: "swap", style: ["normal", "italic"] });
+const sans = Archivo({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
+const serif = Newsreader({ subsets: ["latin"], variable: "--font-serif", display: "swap", style: ["normal", "italic"], axes: ["opsz"] });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
 const APP_DESCRIPTION =
@@ -60,7 +68,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       dir={directionOf(locale)}
       data-accent={accent}
       suppressHydrationWarning
-      className={`${serif.variable} ${mono.variable}`}
+      className={`${sans.variable} ${serif.variable} ${mono.variable}`}
     >
       <body className="min-h-dvh antialiased">
         <Providers defaultTheme={theme} session={session} locale={locale} autoDetect={isAutoLocale(uiLocale)}>

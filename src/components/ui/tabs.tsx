@@ -12,8 +12,10 @@ const TabsList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <TabsPrimitive.List
     ref={ref}
-    // 14px outer radius − 4px padding = concentric with the 10px triggers; recessed track.
-    className={cn("inline-flex h-9 items-center justify-center rounded-[14px] bg-muted/70 p-1 text-muted-foreground field-well", className)}
+    // rounded-menu (14) − 4px padding = concentric with the rounded-control (10)
+    // triggers; recessed track. Geometry is unchanged — the arbitrary values are
+    // just named now, so SegmentedControl can share the same two rungs.
+    className={cn("inline-flex h-9 items-center justify-center rounded-menu bg-muted/70 p-1 text-muted-foreground field-well", className)}
     {...props}
   />
 ));
@@ -26,7 +28,10 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-3 py-1 text-sm font-medium ring-offset-background transition-all duration-base ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:[box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)] [&_svg]:size-4",
+      // Scoped transition, not transition-all: the latter puts width, height,
+      // padding and font-size on the compositor's critical path for a change that
+      // only ever touches colour and the thumb's shadow (same reasoning as card.tsx).
+      "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control px-3 py-1 text-sm font-medium transition-[color,background-color,box-shadow] duration-base ease-out-soft hover:text-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:[box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)] [&_svg]:size-4",
       className
     )}
     {...props}
@@ -41,7 +46,7 @@ const TabsContent = React.forwardRef<
   <TabsPrimitive.Content
     ref={ref}
     className={cn(
-      "ring-offset-background data-[state=active]:animate-fade-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+      "data-[state=active]:animate-fade-in",
       className
     )}
     {...props}

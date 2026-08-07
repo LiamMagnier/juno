@@ -107,8 +107,11 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
       {(error || note) && (
         <div
           className={cn(
-            "mb-2 rounded-[12px] border px-3 py-2 text-xs leading-5",
-            error ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-border/70 bg-popover/95 text-foreground backdrop-blur-xl"
+            "mb-2 rounded-menu border px-3 py-2 text-xs leading-5",
+            // The neutral strip is a floating layer like any other, so it takes the
+            // shared material rather than a fourth hand-mixed one (/95 fill, /70
+            // hairline, blur-xl, no shadow). The error strip keeps its own tint.
+            error ? "border-destructive/30 bg-destructive/10 text-destructive" : "overlay-glass"
           )}
           role={error ? "alert" : "status"}
         >
@@ -121,7 +124,11 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
           event.preventDefault();
           void submit();
         }}
-        className="flex items-center gap-2 rounded-[16px] border border-border/70 bg-popover/95 p-1.5 pl-2.5 shadow-soft backdrop-blur-xl"
+        // The design editor's floating surfaces were the furthest drift in the
+        // product — /95 fills, /70 hairlines and shadow-soft, which is the IN-FLOW
+        // card shadow worn by an out-of-flow layer. Same material and same radius
+        // rung as every other popover now.
+        className="flex items-center gap-2 rounded-popover overlay-glass p-1.5 pl-2.5"
       >
         {/* No leading glyph. The sparkle that used to sit here said nothing the
             placeholder does not already say in words, and it was the one piece

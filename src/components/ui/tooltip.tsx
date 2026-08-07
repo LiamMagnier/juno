@@ -19,7 +19,11 @@ const TooltipContent = React.forwardRef<
       collisionPadding={collisionPadding}
       className={cn(
         // instant-open (hopping between adjacent triggers) intentionally skips the entrance.
-        "z-50 max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-md bg-foreground px-2.5 py-1 text-xs text-background shadow-soft data-[state=delayed-open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        // The one deliberately INVERTED tier: a transient micro-label has to stay
+        // legible over arbitrary content, so it keeps the solid inked fill and does
+        // NOT take .overlay-glass. It is still out-of-flow though, so it belongs on
+        // the float ramp — shadow-soft was the in-flow card shadow on a floating layer.
+        "z-50 max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-md bg-foreground px-2.5 py-1 text-xs text-background shadow-float data-[state=delayed-open]:animate-pop-in data-[state=closed]:animate-pop-out",
         className
       )}
       {...props}

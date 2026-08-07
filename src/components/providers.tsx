@@ -40,12 +40,17 @@ export function Providers({
             The offsets clear the composer. Sonner ignores the x-position below
             600px and goes full-bleed, so the mobile offset has to be set
             explicitly or the toast sits on the input.
+
+            No `richColors`: it emits sonner's own success/error/warning background
+            and border custom properties at equal specificity to ours, so any of the
+            ~237 toast.success() calls could render in stock green instead of Juno's
+            glass — the toast surface was effectively indeterminate. The semantics
+            now come from Juno's own ink ramps (sonner.tsx).
           */}
           <Toaster
             position="bottom-center"
             offset={{ bottom: "8rem" }}
             mobileOffset={{ bottom: "7rem", left: "0.75rem", right: "0.75rem" }}
-            richColors
             closeButton
           />
         </TooltipProvider>

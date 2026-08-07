@@ -158,7 +158,17 @@ function PaletteShell({
         // `transform`, and the palette stays reachable above the mobile keyboard.
         // Surface/radius/border come from DialogContent; only the position,
         // size and the pop-in keyframes are the palette's own.
-        className="left-0 right-0 top-[9svh] mx-auto w-[calc(100%-2rem)] max-w-[560px] origin-top translate-x-0 translate-y-0 gap-0 overflow-hidden p-0 data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out"
+        //
+        // `[translate:none]` is load-bearing: DialogContent centres itself on the
+        // independent `translate` property now, and a translate-x/y utility writes
+        // `transform`, so it can no longer cancel it. The palette is not centred
+        // vertically, so it has to switch that property off outright.
+        //
+        // The 180/120 tier stays: Cmd+K is keyboard-initiated and opened dozens of
+        // times a day, so it is rightly the fastest overlay in the product. Only the
+        // `!` goes, now that DialogContent no longer ships a competing
+        // tailwindcss-animate chain for it to beat.
+        className="left-0 right-0 top-[9svh] mx-auto w-[calc(100%-2rem)] max-w-[560px] origin-top [translate:none] translate-x-0 translate-y-0 gap-0 overflow-hidden p-0 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           (e.currentTarget as HTMLElement).querySelector("input")?.focus();

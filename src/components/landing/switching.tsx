@@ -38,15 +38,17 @@ export function Switching() {
       heading="Move in without leaving anything behind."
       lede="Your old conversations are yours. Import a ChatGPT or Claude export and pick up where you left off — no retyping, no second tab open for the archive."
     >
+      {/* Dotted rules — the product's rule motif (DottedDivider), which the landing
+          already uses for the flagship divider and the receipt leader. */}
       <dl className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-3">
         {STEPS.map((step) => (
-          <div key={step.term} className="border-t border-border/60 pt-5">
+          <div key={step.term} className="border-t border-dotted border-border pt-5">
             <dt className="font-serif text-heading font-medium">{step.term}</dt>
-            <dd className="mt-2 text-sm text-muted-foreground">{step.body}</dd>
+            <dd className="mt-2 text-body text-muted-foreground">{step.body}</dd>
           </div>
         ))}
       </dl>
-      <p className="mt-8 text-sm text-muted-foreground">
+      <p className="mt-8 text-body text-muted-foreground">
         Exports up to 100 MB. Nothing is sent to a third party — the archive is read on Juno&apos;s own server and
         discarded once its conversations are stored.
       </p>

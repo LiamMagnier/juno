@@ -43,8 +43,10 @@
 @property --aura-tint {
   syntax: "<color>";
   inherits: true;
-  /* Never used — .composer-aura-host always sets a real one. */
-  initial-value: #d97859;
+  /* Never used — .composer-aura-host always sets a real one. Kept in step with
+     --primary at light value: a raw brand-family hex has no business in a token
+     file that tells components to keep raw hex out of themselves. */
+  initial-value: #b64f2e;
 }
 @property --aura-pulse {
   syntax: "<number>";
@@ -91,28 +93,42 @@
 @layer base {
   :root {
     /* fonts provided by next/font (see layout.tsx): --font-sans, --font-serif, --font-mono */
-    --background: 48 33% 97%;
-    --foreground: 30 3% 12%;
+    /* The neutral ramp is ONE hue family (48). Saturation and lightness are the
+       values this palette has always had — only the hue was ever inconsistent,
+       and four unrelated hue families with no rule is what let the native and
+       Windows clients each author a second palette. */
+    --background: 54 18% 97%;
+    --foreground: 48 3% 12%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 30 3% 12%;
+    /* Not pure white. A pure-white float over warm paper is the one pairing that
+       reads as somebody else's product; 99% is a 1% step, indistinguishable as a
+       surface, and it keeps `0 0% 100%` out of the token file. */
+    --card: 54 44% 99%;
+    --card-foreground: 48 3% 12%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 30 3% 12%;
+    --popover: 54 44% 99%;
+    --popover-foreground: 48 3% 12%;
 
-    --primary: 15 54% 51%;
+    /* 46%, not 51%: white on the old fill measured 4.08:1, under the 4.5:1 bar
+       for the 14px medium label the primary CTA actually carries. Hue and
+       saturation are untouched, so the warm coral character is exactly as it was. */
+    --primary: 15 54% 46%;
     --primary-foreground: 0 0% 100%;
+    /* The AA text ramp for the accent, mirroring --success-ink /
+       --warning-foreground / --destructive-ink. The fill tone is for fills; text
+       that happens to be the accent (prose links, soft badges) uses this. */
+    --primary-ink: 15 54% 44%;
 
     --secondary: 50 23% 95%;
-    --secondary-foreground: 30 3% 18%;
+    --secondary-foreground: 48 3% 18%;
 
     --muted: 50 23% 95%;
-    --muted-foreground: 40 4% 40%;
+    --muted-foreground: 48 4% 40%;
 
     --accent: 48 28% 92%;
-    --accent-foreground: 30 3% 18%;
+    --accent-foreground: 48 3% 18%;
 
-    --destructive: 11 51% 50%;
+    --destructive: 11 51% 48%;
     --destructive-foreground: 0 0% 100%;
     --destructive-ink: 11 55% 41%;
 
@@ -122,7 +138,9 @@
        (the fill tones only reach ~3:1 as small light-mode text). */
     --success-ink: 140 38% 33%;
 
-    --warning: 40 57% 51%;
+    /* 45%, not 51%: --warning is a graphical state indicator (dots, chips), so
+       its bar is 3:1, and the old value only reached 2.44:1 against the paper. */
+    --warning: 40 57% 45%;
     /* --warning is a FILL (dots, borders, tinted chips). As text on --background
        it only reaches 2.4:1, so warning *text* uses this darker value instead:
        5.2:1 on --background and 4.8:1 on a bg-warning/10 chip. */
@@ -135,76 +153,187 @@
     --ultra-from: 252 100% 68%;
     --ultra-to: 271 91% 65%;
 
-    --border: 43 23% 88%;
-    --input: 43 23% 85%;
-    --ring: 15 54% 51%;
+    --border: 48 23% 88%;
+    /* --input is the only thing that says a text field EXISTS: the field is
+       `bg-background` on a `bg-card` surface, a 1.05:1 difference, so the 1px
+       border carries the whole affordance and owes SC 1.4.11 its 3:1. The old
+       value measured 1.29:1. Saturation drops to 12% so the darker value reads
+       as a neutral hairline rather than olive. --border above is the DECORATIVE
+       rim (dividers, card edges), outside 1.4.11, and is deliberately untouched. */
+    --input: 48 12% 53%;
+    --ring: 15 54% 46%;
 
     --sidebar: 50 23% 95%;
-    --sidebar-foreground: 40 4% 30%;
-    --sidebar-border: 43 23% 88%;
+    --sidebar-foreground: 48 4% 30%;
+    --sidebar-border: 48 23% 88%;
     --sidebar-accent: 48 28% 91%;
 
     --radius: 24px;
 
-    /* Motion tokens — mirror tailwind ease-* / duration-* (Slice 0). */
-    --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+    /* ---- Motion tokens ------------------------------------------------------
+       One vocabulary, mirrored as ease-* / duration-* in tailwind.config.ts.
+
+       There is no micro / small / medium / large ladder below, because there is
+       already one here under different names: --dur-fast IS the micro/small
+       rung, --dur-base the small/medium one, --dur-slow the large one. A second
+       set of names for the same three numbers would only mean that two files
+       animating "the same" way no longer agree. What was genuinely missing is
+       one rung above --dur-slow (emphasis) and one curve that three keyframes
+       were already writing out by hand (breathe); those two are new, and that
+       is the whole extension.
+
+       DURATIONS. The number follows how far something travels and how much of
+       the screen changes underneath it — not how important it is.
+
+         --dur-fast 120ms — a property changing on the element the pointer is
+           already touching: a hover fill, a text colour, a press dip. Past
+           roughly 150ms this reads as lag rather than as motion, because the
+           user is already looking at the thing that owes them a response.
+
+         --dur-base 220ms — something small moving a short distance under its
+           own steam: a menu opening, a thumb sliding between segments, a row
+           settling into place. The default. An animation with no argument for a
+           different number should be this one.
+
+         --dur-slow 360ms — a whole region changing: a panel, a page's worth of
+           content, an element crossing the layout. Long enough to follow, short
+           enough that a second one starting straight after it does not feel
+           queued behind the first.
+
+         --dur-emphasis 560ms — a one-shot that has to be NOTICED without being
+           chased, and the only rung reserved for a change the user did not
+           cause. Deliberately more than double --dur-base: at 250-350ms an
+           unannounced change reads as a glitch, because the eye arrives in time
+           to catch the end of it and not the start. 560ms is about the shortest
+           window in which a passive change can begin, be seen beginning, and
+           still be over before it is being waited on.
+
+         --dur-press 70ms — transform only, on the element under the finger.
+           120ms is fine for a colour but it is above the direct-manipulation
+           threshold for movement: a press that takes 120ms to reach scale(0.97)
+           is felt as lag on the one interaction where latency is most obvious.
+
+         --dur-exit 160ms — the exit rung. An exit runs at roughly 0.65 of its
+           entrance, snapped to a rung: the user has already decided, so the only
+           job left is to show them where the thing went.
+
+       (--dur-flash, a 4000ms dwell timeout, used to live here. It was never a
+       rung — it is how long a highlight PERSISTS, a different axis entirely —
+       and it had no consumer outside its own declaration, so sitting inside the
+       motion scale only invited someone to use it as a duration.)
+
+       EASINGS.
+         --ease-out-soft   The default decelerate, for things arriving on their own.
+         --ease-out-strong Front-loaded and overshoot-free — for things the user
+                           is moving, which should leave under the finger.
+                           (--ease-spring is the old name, kept as an alias.)
+         --ease-out-expo   The hardest decelerate, for long travel that must not
+                           feel slow. Below ~440ms it front-loads so hard the
+                           motion appears instantly and then hangs.
+         --ease-in         The accelerate curve. Entrances decelerate, exits
+                           accelerate: the product had no accelerate curve at
+                           all, so every dismissal ran an entrance curve and felt
+                           like the UI was reluctant to let go.
+         --ease-in-out     Symmetric, for A-to-B moves where BOTH endpoints are
+                           on screen — a chevron rotating, an accordion, the
+                           sidebar changing width. Running those on a decelerate
+                           makes them look like they arrived from off-screen.
+         --ease-breathe    The only symmetric LOOP curve: equal in and out, so a
+                          loop has no seam where it turns around. An ease-out loop
+                          visibly pulses at the join, which is exactly what makes
+                          a slow breath read as a flash. Already inlined verbatim
+                          in three tailwind keyframes (status-glow, gen-sweep,
+                          pulse-ring); this names it so the fourth does not have
+                          to guess. */
     --ease-out-soft: cubic-bezier(0.33, 1, 0.68, 1);
-    /* The only symmetric LOOP curve: equal in and out, so a breathing element
-       has no snap at the turn. Was inlined verbatim in three tailwind
-       keyframes before it had a name. */
-    --ease-breathe: cubic-bezier(0.45, 0, 0.55, 1);
+    --ease-out-strong: cubic-bezier(0.32, 0.72, 0, 1);
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+    --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+    --ease-breathe: cubic-bezier(0.45, 0, 0.55, 1);
+    /* Deprecated alias of --ease-out-strong, kept so existing sites keep
+       resolving; delete once they have migrated. */
+    --ease-spring: var(--ease-out-strong);
+    --dur-press: 70ms;
     --dur-fast: 120ms;
+    --dur-exit: 160ms;
     --dur-base: 220ms;
+    --dur-slow: 360ms;
     /* The one rung reserved for a change the user did NOT cause — a background
        run finishing while they were reading something else. Long enough to be
        noticed without reading as a page transition. */
     --dur-emphasis: 560ms;
-    --dur-slow: 360ms;
-    --dur-flash: 4000ms;
 
     /* Dot/ASCII signature atom. */
     --dot-size: 5px;
     --dot-gap: 3px;
 
-    /* Elevation (light) — warm, soft, low-throw + 1px inner top-highlight on floats. */
-    --shadow-soft: 0 1px 2px hsl(30 10% 20% / 0.05), 0 4px 12px -4px hsl(30 10% 20% / 0.08);
-    --shadow-float: 0 4px 14px -4px hsl(30 10% 16% / 0.12), 0 14px 36px -10px hsl(30 10% 16% / 0.14), inset 0 1px 0 hsl(0 0% 100% / 0.65);
-    --shadow-glass: 0 8px 32px -10px hsl(30 12% 12% / 0.18), inset 0 1px 0 hsl(0 0% 100% / 0.55);
+    /* Elevation (light) — warm, soft, low-throw + 1px inner top-highlight on floats.
+       The shadow ink is hue 48 like everything else, so a shadow reads as a
+       darker version of the paper it falls on rather than a separate warm tint.
+       Geometry, blur, spread and alpha are all exactly as they were. */
+    --shadow-soft: 0 1px 2px hsl(48 10% 20% / 0.05), 0 4px 12px -4px hsl(48 10% 20% / 0.08);
+    --shadow-float: 0 4px 14px -4px hsl(48 10% 16% / 0.12), 0 14px 36px -10px hsl(48 10% 16% / 0.14), inset 0 1px 0 hsl(0 0% 100% / 0.65);
+    --shadow-glass: 0 8px 32px -10px hsl(48 12% 12% / 0.18), inset 0 1px 0 hsl(0 0% 100% / 0.55);
+    /* The missing rung. The ladder is soft < lift < glass < float, and it has to
+       be monotonic: an element that has not left the flow cannot out-elevate one
+       that has. Hover states on in-flow cards reached for --shadow-float for want
+       of anything between soft and glass, which put a hovered tile above every
+       dropdown in the product. */
+    --shadow-lift: 0 2px 6px -2px hsl(48 10% 18% / 0.09), 0 8px 20px -8px hsl(48 10% 16% / 0.12);
 
     /* Depth kit (Awwwards-lean): a top sheen for raised surfaces, a crisp pop shadow
        for small interactive elements, a colored halo for the primary, and an inset
        "well" for recessed inputs. Tuned separately for light/dark below. */
     --sheen: 0 0% 100% / 0.55;
-    --hairline: 30 12% 18% / 0.06;
-    --shadow-pop: 0 1px 1px hsl(30 12% 18% / 0.05), 0 2px 4px -1px hsl(30 12% 18% / 0.09), 0 8px 18px -8px hsl(30 12% 18% / 0.12);
+    --hairline: 48 12% 18% / 0.06;
+    --shadow-pop: 0 1px 1px hsl(48 12% 18% / 0.05), 0 2px 4px -1px hsl(48 12% 18% / 0.09), 0 8px 18px -8px hsl(48 12% 18% / 0.12);
     --glow-primary: 0 1px 2px hsl(var(--primary) / 0.32), 0 5px 14px -5px hsl(var(--primary) / 0.42), 0 14px 30px -14px hsl(var(--primary) / 0.34);
-    --well-inset: inset 0 1px 2px hsl(30 12% 18% / 0.07);
+    --well-inset: inset 0 1px 2px hsl(48 12% 18% / 0.07);
+
+    /* The dim behind a modal. A raw `black` literal is the most-seen surface in
+       the product and no token change can reach it, so a retheme leaves it
+       behind; warm ink from the same family as --shadow-* follows. */
+    --scrim: 48 12% 8% / 0.42;
+
+    /* Stacking order for out-of-flow layers, so a new one has somewhere to look
+       up its answer instead of picking a number. */
+    --z-popper: 50;
+    --z-modal: 50;
+    --z-toolbar: 60;
+    --z-toast: 70;
   }
 
   .dark {
-    --background: 28 9% 9%;
-    --foreground: 45 24% 93%;
+    /* Same one hue family (48) as light, and for the same reason. Every
+       saturation and lightness is the value it already was, so the four-step
+       dark elevation ladder (9 → 12.5 → 18 → 21) is untouched. */
+    --background: 48 7% 9%;
+    --foreground: 48 24% 93%;
 
-    --card: 28 7% 12.5%;
-    --card-foreground: 45 24% 93%;
+    --card: 48 7% 12.5%;
+    --card-foreground: 48 24% 93%;
 
-    --popover: 28 6% 18%;
-    --popover-foreground: 45 24% 93%;
+    --popover: 48 6% 18%;
+    --popover-foreground: 48 24% 93%;
 
-    --primary: 15 54% 51%;
+    /* Light/dark parity on the accent, as today. */
+    --primary: 15 54% 46%;
     --primary-foreground: 0 0% 100%;
+    /* Dark fills already pass as text (see --success-ink), but the accent's text
+       ramp is lifted so a link inside a run of body copy stays legible. */
+    --primary-ink: 15 62% 66%;
 
-    --secondary: 30 7% 15%;
-    --secondary-foreground: 45 22% 90%;
+    --secondary: 48 7% 15%;
+    --secondary-foreground: 48 22% 90%;
 
-    --muted: 30 7% 15%;
-    --muted-foreground: 37 7% 63%;
+    --muted: 48 7% 15%;
+    --muted-foreground: 48 7% 63%;
 
-    --accent: 28 6% 18%;
-    --accent-foreground: 45 22% 90%;
+    --accent: 48 6% 18%;
+    --accent-foreground: 48 22% 90%;
 
-    --destructive: 11 51% 56%;
+    --destructive: 11 51% 49.5%;
     --destructive-foreground: 0 0% 100%;
     --destructive-ink: 11 51% 56%;
 
@@ -224,45 +353,73 @@
     --ultra-from: 252 100% 76%;
     --ultra-to: 271 93% 73%;
 
-    --border: 30 6% 21%;
-    --input: 30 6% 24%;
-    --ring: 15 54% 51%;
+    --border: 48 6% 21%;
+    /* 1.67:1 against the background was not enough to say a field exists; see
+       the light --input note. --border stays where it is. */
+    --input: 48 6% 42%;
+    --ring: 15 54% 46%;
 
-    --sidebar: 28 10% 7.5%;
-    --sidebar-foreground: 37 7% 70%;
-    --sidebar-border: 28 7% 16%;
-    --sidebar-accent: 30 8% 14%;
+    --sidebar: 48 10% 7.5%;
+    --sidebar-foreground: 48 7% 70%;
+    --sidebar-border: 48 7% 16%;
+    --sidebar-accent: 48 8% 14%;
 
     /* Elevation (dark) — deeper throw + faint warm top inner-highlight for real lift,
        not an inverted light shadow. */
     --shadow-soft: 0 1px 2px hsl(0 0% 0% / 0.3), 0 4px 12px -4px hsl(0 0% 0% / 0.4);
     --shadow-float: 0 4px 16px -4px hsl(0 0% 0% / 0.45), 0 16px 40px -12px hsl(0 0% 0% / 0.5), inset 0 1px 0 hsl(45 24% 93% / 0.06);
     --shadow-glass: 0 8px 32px -10px hsl(0 0% 0% / 0.55), inset 0 1px 0 hsl(45 24% 93% / 0.07);
+    /* The rung between soft and glass, so the ladder stays monotonic on dark too. */
+    --shadow-lift: 0 2px 8px -2px hsl(0 0% 0% / 0.38), 0 10px 26px -10px hsl(0 0% 0% / 0.45);
 
     /* Depth kit (dark) — a fainter warm top sheen reads as real lift, not an inverted
        light shadow; shadows deepen; the primary halo carries the accent hue. */
-    --sheen: 45 40% 96% / 0.06;
-    --hairline: 45 24% 93% / 0.08;
+    --sheen: 48 40% 96% / 0.06;
+    --hairline: 48 24% 93% / 0.08;
     --shadow-pop: 0 1px 2px hsl(0 0% 0% / 0.4), 0 3px 8px -2px hsl(0 0% 0% / 0.5), 0 10px 22px -10px hsl(0 0% 0% / 0.5);
     --glow-primary: 0 1px 3px hsl(var(--primary) / 0.4), 0 6px 18px -6px hsl(var(--primary) / 0.5), 0 18px 36px -16px hsl(var(--primary) / 0.42);
     --well-inset: inset 0 1px 2px hsl(0 0% 0% / 0.38);
   }
 
-  /* ---- Accent overrides (coral is the default; drive --primary + --ring) ---- */
-  :root[data-accent="coral"]  { --primary: 15 54% 51%;  --ring: 15 54% 51%;  --primary-foreground: 0 0% 100%; }
-  .dark[data-accent="coral"]  { --primary: 15 54% 51%;  --ring: 15 54% 51%;  --primary-foreground: 0 0% 100%; }
+  /* ---- Accent overrides (coral is the default; drive --primary + --ring) ----
+     The light fills are set so white-on-fill clears 4.5:1 — four of the five
+     accents failed with their own button label, sage worst at 3.20:1. Hue and
+     saturation are held on every one; only lightness moves.
 
-  :root[data-accent="teal"]   { --primary: 180 63% 33%; --ring: 180 63% 33%; --primary-foreground: 0 0% 100%; }
-  .dark[data-accent="teal"]   { --primary: 187 58% 49%; --ring: 187 58% 49%; --primary-foreground: 40 6% 10%; }
+     Amber is the exception in both directions. Its fill already passes at 7.13:1
+     because its --primary-foreground is dark ink, so the fill is left alone — but
+     its RING is decoupled, because `39 67% 55%` measures 2.14:1 against the page
+     and a focus indicator nobody can see is an SC 1.4.11 failure for everyone
+     using that accent.
 
-  :root[data-accent="violet"] { --primary: 249 59% 64%; --ring: 249 59% 64%; --primary-foreground: 0 0% 100%; }
-  .dark[data-accent="violet"] { --primary: 249 66% 71%; --ring: 249 66% 71%; --primary-foreground: 40 6% 10%; }
+     --primary-ink is the text ramp, one per accent, mirroring --success-ink.
+     In DARK the ink equals the fill for every accent except coral: measured
+     against the 9%-lightness ground, teal/violet/amber/sage/juniper all land
+     between 5.7:1 and 9.3:1 as text, while coral's fill reaches only 3.66:1 and
+     has to be lifted to 66% for 6.93:1. Without these six declarations the dark
+     blocks inherited the base coral ink, so a teal or sage dark theme rendered
+     every prose link and text-primary in coral. */
+  :root[data-accent="coral"]   { --primary: 15 54% 46%;   --ring: 15 54% 46%;   --primary-foreground: 0 0% 100%;  --primary-ink: 15 54% 44%; }
+  .dark[data-accent="coral"]   { --primary: 15 54% 46%;   --ring: 15 54% 46%;   --primary-foreground: 0 0% 100%;  --primary-ink: 15 62% 66%; }
 
-  :root[data-accent="amber"]  { --primary: 39 67% 55%;  --ring: 39 67% 55%;  --primary-foreground: 30 40% 12%; }
-  .dark[data-accent="amber"]  { --primary: 38 73% 63%;  --ring: 38 73% 63%;  --primary-foreground: 30 40% 10%; }
+  /* Juniper is ADDED, not substituted: nobody loses the accent they chose and no
+     data migration is needed. It is the one hue that clears every neighbour —
+     141° from --destructive, 35° from --source, 32° from sage — and passes AA in
+     both directions from a single value. */
+  :root[data-accent="juniper"] { --primary: 152 44% 31%;  --ring: 152 44% 31%;  --primary-foreground: 0 0% 100%;  --primary-ink: 152 44% 31%; }
+  .dark[data-accent="juniper"] { --primary: 152 42% 54%;  --ring: 152 42% 54%;  --primary-foreground: 150 30% 9%; --primary-ink: 152 42% 54%; }
 
-  :root[data-accent="sage"]   { --primary: 120 18% 52%; --ring: 120 18% 52%; --primary-foreground: 0 0% 100%; }
-  .dark[data-accent="sage"]   { --primary: 120 23% 61%; --ring: 120 23% 61%; --primary-foreground: 40 6% 10%; }
+  :root[data-accent="teal"]    { --primary: 180 63% 31.5%; --ring: 180 63% 31.5%; --primary-foreground: 0 0% 100%; --primary-ink: 180 63% 30.5%; }
+  .dark[data-accent="teal"]    { --primary: 187 58% 49%;  --ring: 187 58% 49%;  --primary-foreground: 40 6% 10%;  --primary-ink: 187 58% 49%; }
+
+  :root[data-accent="violet"]  { --primary: 249 59% 60%;  --ring: 249 59% 60%;  --primary-foreground: 0 0% 100%;  --primary-ink: 249 59% 60%; }
+  .dark[data-accent="violet"]  { --primary: 249 66% 71%;  --ring: 249 66% 71%;  --primary-foreground: 40 6% 10%;  --primary-ink: 249 66% 71%; }
+
+  :root[data-accent="amber"]   { --primary: 39 67% 55%;   --ring: 39 67% 44%;   --primary-foreground: 30 40% 12%; --primary-ink: 39 67% 35%; }
+  .dark[data-accent="amber"]   { --primary: 38 73% 63%;   --ring: 38 73% 63%;   --primary-foreground: 30 40% 10%; --primary-ink: 38 73% 63%; }
+
+  :root[data-accent="sage"]    { --primary: 120 18% 42.5%; --ring: 120 18% 42.5%; --primary-foreground: 0 0% 100%; --primary-ink: 120 18% 41%; }
+  .dark[data-accent="sage"]    { --primary: 120 23% 61%;  --ring: 120 23% 61%;  --primary-foreground: 40 6% 10%;  --primary-ink: 120 23% 61%; }
 
   * {
     border-color: hsl(var(--border));
@@ -279,8 +436,13 @@
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
-    font-family: var(--font-serif), ui-serif, Georgia, "Times New Roman", serif;
+    /* The interface voice. Serif is no longer inherited — it is asked for, by
+       `font-serif` or by .prose-juno below. Anything that reads at UI size
+       (controls, menus, tables, metadata) gets the grotesque. */
+    font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
     font-optical-sizing: auto;
+    /* Both families now carry a real weight axis, so never let a client fake one. */
+    font-synthesis: none;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
@@ -288,9 +450,26 @@
   /* One optical weight for interface glyphs. Product/connector marks use their
      own SVGs and are intentionally outside this Lucide-only rule. */
   svg.lucide {
-    stroke-width: 1.75;
+    stroke-width: 1.75;               /* 24px reference — the house weight, unchanged */
     shape-rendering: geometricPrecision;
   }
+  /* Optical sizing. A single stroke-width on a 24 viewBox does the exact opposite
+     of what optical sizing is for: the number is in viewBox units, so it scales
+     down with the box and the smallest icons draw the thinnest. At the sizes
+     actually used that meant size-4 → 1.167px, size-3.5 → 1.021px and size-3 →
+     0.875px, i.e. sub-pixel. Effective stroke has to grow sub-linearly as the box
+     shrinks; the 24px row keeps today's exact value so the weight is not being
+     redefined, only held steady across sizes. */
+  svg.lucide.h-3,    svg.lucide.size-3    { stroke-width: 2.50; }  /* 12px → 1.25px  */
+  svg.lucide.h-3\.5, svg.lucide.size-3\.5 { stroke-width: 2.36; }  /* 14px → 1.375px */
+  svg.lucide.h-4,    svg.lucide.size-4    { stroke-width: 2.25; }  /* 16px → 1.50px  */
+  svg.lucide.h-5,    svg.lucide.size-5    { stroke-width: 1.95; }  /* 20px → 1.625px */
+  svg.lucide.h-6,    svg.lucide.size-6    { stroke-width: 1.75; }  /* reference      */
+  svg.lucide.h-7,    svg.lucide.size-7    { stroke-width: 1.60; }
+  svg.lucide.h-8,    svg.lucide.size-8    { stroke-width: 1.50; }
+  svg.lucide.h-9,    svg.lucide.size-9    { stroke-width: 1.42; }
+  svg.lucide.h-10,   svg.lucide.size-10   { stroke-width: 1.35; }
+  svg.lucide.h-12,   svg.lucide.size-12   { stroke-width: 1.25; }
 
   /* App-wide film grain (2–3%), quiet and non-interactive. */
   body::after {
@@ -303,13 +482,44 @@
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
+  /*
+   * Reduced motion, in tiers rather than as a kill switch.
+   *
+   * The blanket universal-selector clamp this replaces (0.001ms on every
+   * duration, !important) read the preference as "no motion at all". It is not:
+   * the preference asks for non-essential motion to be reduced or replaced.
+   * Clamping everything took away every hover colour transition, every press
+   * response and every fade — including the ones that were already safe — and
+   * the `!important` meant no component could opt back in even where the motion
+   * carried meaning.
+   *
+   *   Tier A  opacity, colour, background-color and anything carrying real state
+   *           (thinking-matrix, status-glow, gen-sweep, the stream tail) are NOT
+   *           touched. Removing feedback is not an accessibility win.
+   *   Tier B  transforms collapse to identity via the two vars below, so an
+   *           entrance keeps its fade and loses its travel. Long and overshooting
+   *           curves flatten; opacity and colour keep their timing.
+   *   Tier C  decorative loops stop outright, enumerated one by one — never
+   *           blanket, or Tier A goes with them.
+   *
+   * Tier B only works if every keyframe that translates, scales or rotates reads
+   * --motion-shift / --motion-scale-from. Any keyframe that does not keeps its
+   * full transform here, which is worse than the clamp it replaced.
+   */
   @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
-      animation-duration: 0.001ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.001ms !important;
-      scroll-behavior: auto !important;
+    :root {
+      --motion-shift: 0;
+      --motion-scale-from: 1;
+      --ease-out-strong: var(--ease-out-soft);
+      --ease-out-expo: var(--ease-out-soft);
+      --dur-slow: var(--dur-base);
     }
+    .composer-aura,
+    .skeleton::after,
+    [class*="animate-icon-breathe"],
+    [class*="animate-gen-"],
+    [class*="animate-ultra-"] { animation: none; }
+    html { scroll-behavior: auto; }
   }
 
   /* Focus visibility for keyboard users */
@@ -345,9 +555,17 @@
      common transition properties itself, so drop `transition-colors` when adding it
      (a later transition-* utility would override this shorthand and un-animate the press). */
   .pressable {
-    transition-property: transform, color, background-color, border-color, opacity, box-shadow;
-    transition-duration: var(--dur-fast);
-    transition-timing-function: var(--ease-out-soft);
+    /* transform is split onto its own rung. 120ms is fine for a colour but it is
+       above the direct-manipulation threshold for movement: a press taking 120ms
+       to reach scale(0.97) is felt as lag on the one interaction where latency is
+       most obvious. Everything else keeps the hover timing it always had. */
+    transition:
+      transform        var(--dur-press) var(--ease-out-soft),
+      color            var(--dur-fast)  var(--ease-out-soft),
+      background-color var(--dur-fast)  var(--ease-out-soft),
+      border-color     var(--dur-fast)  var(--ease-out-soft),
+      opacity          var(--dur-fast)  var(--ease-out-soft),
+      box-shadow       var(--dur-fast)  var(--ease-out-soft);
   }
   .pressable:active {
     transform: scale(0.97);
@@ -380,7 +598,13 @@
      Every dropdown / submenu / select / command-palette row gets a short,
      intentional icon gesture on hover/focus/active. Lucide stamps `lucide-*`
      classes on each SVG, so we can specialize pin/pencil/trash without
-     touching call sites. Default = calm lift for anything unspecified. */
+     touching call sites. Default = calm lift for anything unspecified.
+
+     The gestures themselves are unchanged — the keyframes below are not edited.
+     Only their DURATION is: at 380-520ms every one of them outlived the 180ms
+     pop-in of the menu that contains them, so the icon was still moving after the
+     surface it sits on had fully arrived. They also fire on menu rows, the
+     highest-repetition targets in the product. All of them now run --dur-base. */
 
   .menu-item > svg,
   .menu-item > a > svg,
@@ -393,7 +617,7 @@
     transform-box: fill-box;
     transform-origin: center;
     transition:
-      transform 340ms var(--ease-spring),
+      transform var(--dur-base) var(--ease-out-strong),
       opacity var(--dur-fast) var(--ease-out-soft);
   }
 
@@ -419,11 +643,11 @@
     /* Pin — press into the board. */
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-pin,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-pin {
-      animation: menu-icon-pin 420ms var(--ease-spring) both;
+      animation: menu-icon-pin var(--dur-base) var(--ease-out-strong) both;
     }
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-pin-off,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-pin-off {
-      animation: menu-icon-pin-off 400ms var(--ease-spring) both;
+      animation: menu-icon-pin-off var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Pencil / edit — a short write stroke. */
@@ -434,7 +658,7 @@
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-pencil,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-square-pen,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-pen-line {
-      animation: menu-icon-write 460ms var(--ease-spring) both;
+      animation: menu-icon-write var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Trash — lid tip. */
@@ -442,7 +666,7 @@
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-trash,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-trash-2,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-trash {
-      animation: menu-icon-trash 440ms var(--ease-spring) both;
+      animation: menu-icon-trash var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Plus — resolve into a creation mark. */
@@ -454,7 +678,7 @@
     /* Check — confirm settle. */
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-check,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-check {
-      animation: menu-icon-check 380ms var(--ease-spring) both;
+      animation: menu-icon-check var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Copy — double-up. */
@@ -462,13 +686,13 @@
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-clipboard,
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-clipboard-copy,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-copy {
-      animation: menu-icon-copy 420ms var(--ease-spring) both;
+      animation: menu-icon-copy var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Download — drop. */
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-download,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-download {
-      animation: menu-icon-download 440ms var(--ease-spring) both;
+      animation: menu-icon-download var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Share / external — cast out. */
@@ -479,7 +703,7 @@
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-share-2,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-external-link,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-arrow-up-right {
-      animation: menu-icon-share 420ms var(--ease-spring) both;
+      animation: menu-icon-share var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Settings / gear — quarter turn. */
@@ -489,7 +713,7 @@
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-settings,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-settings-2,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-sliders-horizontal {
-      animation: menu-icon-spin-quarter 480ms var(--ease-spring) both;
+      animation: menu-icon-spin-quarter var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Refresh / rotate — spin. */
@@ -498,20 +722,20 @@
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-rotate-cw,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-refresh-cw,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-rotate-ccw {
-      animation: menu-icon-spin 520ms var(--ease-spring) both;
+      animation: menu-icon-spin var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Log out — slide out. */
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-log-out,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-log-out {
-      animation: menu-icon-logout 400ms var(--ease-spring) both;
+      animation: menu-icon-logout var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* User / profile — nod. */
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-user,
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-user-round,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-user {
-      animation: menu-icon-bob 400ms var(--ease-spring) both;
+      animation: menu-icon-bob var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Star / heart — pop. */
@@ -519,7 +743,7 @@
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-heart,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-star,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-heart {
-      animation: menu-icon-pop 420ms var(--ease-spring) both;
+      animation: menu-icon-pop var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Box / folder / project — open lift. */
@@ -530,14 +754,14 @@
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-box,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-folder,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-library {
-      animation: menu-icon-bob 400ms var(--ease-spring) both;
+      animation: menu-icon-bob var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Link / chain. */
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-link,
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-link-2,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-link {
-      animation: menu-icon-link 420ms var(--ease-spring) both;
+      animation: menu-icon-link var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Message / chat. */
@@ -546,7 +770,7 @@
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-messages-square,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-message-square,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-message-circle {
-      animation: menu-icon-bob 400ms var(--ease-spring) both;
+      animation: menu-icon-bob var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Attach / paperclip / image / file. */
@@ -560,31 +784,31 @@
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-image-plus,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-file-up,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-file-text {
-      animation: menu-icon-attach 420ms var(--ease-spring) both;
+      animation: menu-icon-attach var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Globe / search / plug / sparkles / notebook. */
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-globe,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-globe {
-      animation: menu-icon-spin-quarter 520ms var(--ease-spring) both;
+      animation: menu-icon-spin-quarter var(--dur-base) var(--ease-out-strong) both;
     }
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-search,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-search,
     [role="option"]:is(:hover, [aria-selected="true"]) .lucide-search {
-      animation: menu-icon-search 420ms var(--ease-spring) both;
+      animation: menu-icon-search var(--dur-base) var(--ease-out-strong) both;
     }
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-plug,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-plug {
-      animation: menu-icon-plug 440ms var(--ease-spring) both;
+      animation: menu-icon-plug var(--dur-base) var(--ease-out-strong) both;
     }
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-sparkles,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-sparkles {
-      animation: menu-icon-pop 460ms var(--ease-spring) both;
+      animation: menu-icon-pop var(--dur-base) var(--ease-out-strong) both;
     }
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-notebook-pen,
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-book-open,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-notebook-pen {
-      animation: menu-icon-write 460ms var(--ease-spring) both;
+      animation: menu-icon-write var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Ban / X — tuck. */
@@ -592,21 +816,21 @@
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-x,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-ban,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-x {
-      animation: menu-icon-tuck 380ms var(--ease-spring) both;
+      animation: menu-icon-tuck var(--dur-base) var(--ease-out-strong) both;
     }
 
     /* Keyboard / sun / moon. */
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-sun,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-sun {
-      animation: menu-icon-spin-quarter 520ms var(--ease-spring) both;
+      animation: menu-icon-spin-quarter var(--dur-base) var(--ease-out-strong) both;
     }
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-moon,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-moon {
-      animation: menu-icon-bob 400ms var(--ease-spring) both;
+      animation: menu-icon-bob var(--dur-base) var(--ease-out-strong) both;
     }
     .menu-item:is(:hover, :focus, :focus-visible) .lucide-keyboard,
     [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-keyboard {
-      animation: menu-icon-bob 380ms var(--ease-spring) both;
+      animation: menu-icon-bob var(--dur-base) var(--ease-out-strong) both;
     }
   }
 
@@ -1270,6 +1494,13 @@
   .composer-aura-host:has(.composer-surface:focus-within) .composer-aura {
     opacity: 1;
   }
+  /* The landing's composer preview is not focusable — it is aria-hidden and
+     pointer-events-none — so it pins the aura to the state a real composer only
+     reaches when you type in it. Without this the front door shows the surface
+     with its light off. */
+  .composer-aura-host.is-preview .composer-aura {
+    opacity: 1;
+  }
   /*
    * In an open conversation the same bloom sits behind the docked composer, but
    * it has messages above it to stay out of the way of: a third of the light,
@@ -1560,6 +1791,24 @@
   /* Floating glass layers (menus/popovers/selects) — a crisp top-edge highlight over
      the frosted glass shadow, so they catch light at the rim. */
   .glass-raised {
+    box-shadow: inset 0 1px 0 hsl(var(--sheen)), var(--shadow-glass);
+  }
+
+  /* The whole floating-surface material in one name — the hairline, the frosted
+     fill, the ink, the blur and the rim light that .glass-raised above supplies.
+     It is the SAME recipe ~25 surfaces already open-code as an eight-class string;
+     this only gives it somewhere to live so the copies cannot drift apart, and so
+     a retheme reaches all of them at once.
+
+     Trap worth knowing before migrating a call site: this is a components-layer
+     class, and Tailwind emits utilities after components at equal specificity, so
+     a competing `shadow-*` or `bg-*` utility on the same element silently wins.
+     Check each call site for one. */
+  .overlay-glass {
+    border: 1px solid hsl(var(--border) / 0.6);
+    background-color: hsl(var(--popover) / 0.9);
+    color: hsl(var(--popover-foreground));
+    backdrop-filter: blur(24px);
     box-shadow: inset 0 1px 0 hsl(var(--sheen)), var(--shadow-glass);
   }
 
@@ -2457,9 +2706,26 @@
 
   /* Markdown prose used in chat messages */
   .prose-juno {
+    /* The assistant's reply is the one long-form reading surface in the product,
+       so it keeps the serif that `body` no longer hands down. This declaration
+       must never be separated from the body change above: without it, flipping
+       body silently demotes the core reading experience to sans. */
+    font-family: var(--font-serif), ui-serif, Georgia, "Times New Roman", serif;
     line-height: 1.65;
     word-break: break-word;
+    /* 45–75ch is the readability band and the transcript runs about 104ch, so
+       this is the smallest compliant move rather than a comfortable one. Applied
+       here and not to the transcript container on purpose: the shell, the user
+       bubbles, code blocks and artifact cards all stay exactly where they are —
+       only the assistant's paragraphs stop running long. `ch` rather than px so
+       the constraint survives any future change to the type scale. */
+    max-inline-size: 75ch;
   }
+  /* Anything that has to stay full-bleed inside prose opts back out. */
+  .prose-juno pre,
+  .prose-juno table,
+  .prose-juno img,
+  .prose-juno .aicss-cb { max-inline-size: none; }
   .prose-juno > * + * { margin-top: 0.85em; }
   .prose-juno h1, .prose-juno h2, .prose-juno h3, .prose-juno h4 {
     font-weight: 600;
@@ -2470,7 +2736,10 @@
   .prose-juno h2 { font-size: 1.3em; }
   .prose-juno h3 { font-size: 1.12em; }
   .prose-juno p { margin: 0; }
-  .prose-juno a { color: hsl(var(--primary)); text-decoration: underline; text-underline-offset: 2px; }
+  /* The ink ramp, not the fill tone: a link here sits inside a continuous run of
+     body text, which is the one place the difference actually decides whether it
+     can be read. */
+  .prose-juno a { color: hsl(var(--primary-ink)); text-decoration: underline; text-underline-offset: 2px; }
   .prose-juno ul, .prose-juno ol { padding-left: 1.4em; }
   .prose-juno ul { list-style: disc; }
   .prose-juno ol { list-style: decimal; }
@@ -2659,6 +2928,118 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .stream-tail { -webkit-mask-image: none; mask-image: none; }
+  }
+
+  /* ---- Work ----------------------------------------------------------------
+     Work is the one surface a person opens and then leaves open. Its list moves
+     because a machine somewhere finished something, not because anybody
+     clicked, so every rule here answers the same question: how does a change
+     nobody asked for become legible without becoming an interruption?
+
+     Three of these are one-shots that fire on a change and then stop. The
+     fourth is the only loop, and it is slow on purpose. Nothing here spins. A
+     spinner is a promise that the wait is nearly over, and a Work task can run
+     for an hour — `animate-spin` belongs on the button you just pressed, not on
+     a row you are going to walk away from.
+
+     There is no entrance keyframe below, deliberately. A row arriving uses
+     `animate-rise-in`, the same entrance every other list in the app uses; what
+     Work was missing was never another curve but the right DELAY on that one,
+     and a delay is a number, not a stylesheet (see use-work-arrivals.ts). */
+
+  /* A status pill whose status has just changed — swapped, rather than quietly
+     re-lettered under the reader.
+
+     Colour-free on purpose. The pill already carries its tone's colours, so the
+     same treatment has to serve queued -> running and running -> failed; a
+     tinted bloom here would end up congratulating the user on a failure. Scale
+     and opacity say "this word is not the word that was here" and say nothing
+     about whether that is good news.
+
+     It does not start from opacity 0. A status is a fact about the task and
+     should never be *missing* from the row, only unsettled — 0.35 is faint
+     enough to read as a change and solid enough to still be a status. */
+  .work-status-shift {
+    animation: work-status-shift var(--dur-emphasis) var(--ease-spring) both;
+  }
+  @keyframes work-status-shift {
+    from {
+      opacity: 0.35;
+      transform: scale(0.94);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* The row of a task that is executing right now: a slow breath along its own
+     edge, drawn as an inset ring so it lies over the border without fighting
+     the `border-*` utilities the row already carries (or its hover state).
+
+     5.2 seconds because the thing it describes takes minutes. A breath at
+     1-2s is a heartbeat — it implies something is about to happen, and then
+     nothing does, over and over, for half an hour. At this period the row is
+     merely alive, which is the entire claim being made.
+
+     --ease-breathe, not an ease-out: an asymmetric loop snaps at the turn, and
+     a ring that snaps is a ring that flashes. */
+  .work-breathing {
+    animation: work-breathing 5.2s var(--ease-breathe) infinite;
+  }
+  @keyframes work-breathing {
+    0%,
+    100% {
+      box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.05);
+    }
+    50% {
+      box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.22);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* Held at the middle of the breath rather than switched off. The ring is not
+       decoration — it is the row's only mark for "running right now" — and the
+       global reduce rule would otherwise freeze it on the 100% frame, which is
+       the invisible one. */
+    .work-breathing {
+      animation: none;
+      box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.16);
+    }
+  }
+
+  /* Skeleton -> content. The placeholder is held for one more beat and fades
+     out ON TOP of the real rows rather than being unmounted the frame before
+     they appear: at this size a hard swap reads as a flicker even though
+     nothing has moved.
+
+     The outgoing placeholder is taken out of flow so the arriving content owns
+     the height immediately. It cannot be otherwise — the content's height is
+     not knowable before it renders — so the honest version of this is that the
+     layout resolves in one frame, exactly as it does today, and the fade is
+     there to stop the *pixels* snapping while it does.
+
+     Pinned top/left/right and NOT bottom, so the ghost keeps its own natural
+     height. `inset: 0` would stretch three 86px placeholder rows down over a
+     700px list for the length of the fade, which is a distortion the reader
+     has never seen before and would read as a glitch — worse than the snap
+     this exists to hide. Overflowing the short direction instead is invisible:
+     it is already fading and already `pointer-events: none`. */
+  .work-crossfade {
+    position: relative;
+  }
+  .work-crossfade-ghost {
+    position: absolute;
+    inset: 0 0 auto 0;
+    pointer-events: none;
+    animation: work-crossfade-out var(--dur-base) var(--ease-out-soft) both;
+  }
+  @keyframes work-crossfade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
   }
 }
 

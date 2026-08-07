@@ -1970,6 +1970,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Sort by:"
   },
   {
+    "id": "27b3d5975940c42d",
+    "source": "font-mono text-label text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+  },
+  {
     "id": "27b80374e1151af6",
     "source": "Reconnecting…"
   },
@@ -6954,6 +6958,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The model requested tools, but no tool flow is enabled for this request."
   },
   {
+    "id": "89db19f651b18285",
+    "source": "(required)"
+  },
+  {
     "id": "89dd748442c19485",
     "source": "Apps"
   },
@@ -7080,6 +7088,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8c4cbcf98941fc6e",
     "source": "Opposition et limitation"
+  },
+  {
+    "id": "8c5f6de6be48f91f",
+    "source": "font-serif text-heading leading-none"
   },
   {
     "id": "8c810a20dafc31b6",
@@ -7998,10 +8010,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "frame"
   },
   {
-    "id": "9e0e82c0de07f250",
-    "source": "font-mono text-xs font-medium text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-  },
-  {
     "id": "9e201a47ea0c08fd",
     "source": "This model replies instantly."
   },
@@ -8766,6 +8774,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno · Conditions"
   },
   {
+    "id": "ac576a66d4563e60",
+    "source": "Skip to content"
+  },
+  {
     "id": "acae3040216c72df",
     "source": "· not confirmed to open"
   },
@@ -8972,10 +8984,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b0aea993aa995d99",
     "source": "Classic multimodal GPT-4o."
-  },
-  {
-    "id": "b0b8501dae19422f",
-    "source": "text-lg font-semibold leading-none tracking-tight"
   },
   {
     "id": "b0b9fe24ffa96291",
@@ -10930,6 +10938,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Line"
   },
   {
+    "id": "d78b8c5f38e3bf3d",
+    "source": "group-[.toaster]:text-destructive-ink"
+  },
+  {
     "id": "d796288eeb38b8dd",
     "source": "Any of my Macs"
   },
@@ -11344,6 +11356,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "de74965831a25264",
     "source": "SpaceXAI's smartest model — coding, agents and knowledge work."
+  },
+  {
+    "id": "de781187cbfb16ef",
+    "source": "Ask anything…"
   },
   {
     "id": "de97042844bf60d9",

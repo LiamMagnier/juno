@@ -1,9 +1,43 @@
 import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
+
+/*
+ * Juno's fontSize keys are words, not t-shirt sizes, so stock tailwind-merge has
+ * no way to know `text-label` is a SIZE. It classifies it as a colour and drops
+ * it whenever a real `text-*` colour follows: cn("text-label","text-muted-foreground")
+ * emitted only the colour, discarding the size, its 1.4 leading and its tracking.
+ *
+ * Every type token passed through cn() next to a colour has therefore been dead
+ * for the life of the codebase. Registering the keys in the font-size group is
+ * what makes the type scale usable at all — see the hand-rolled workarounds this
+ * replaces in card.tsx and label.tsx.
+ */
+const merge = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      "font-size": [{ text: ["hero", "display", "title", "heading", "body", "body-lg", "label", "caption"] }],
+    },
+  },
+});
 
 export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
+  return merge(clsx(inputs));
 }
+
+/**
+ * Per-item entrance delay for a staggered list, with a hard index cap.
+ *
+ * Nine different formulas had grown across twelve files, several of them capped
+ * at 12 — a 480–660ms tail before the last item lands, which stops reading as
+ * choreography and starts reading as slow loading. Capping the index at 5 holds
+ * the whole stagger under ~200ms; 40ms is kept because it sits inside the
+ * 40–60ms range Juno already used, so the felt rhythm is unchanged.
+ *
+ * Never stagger something the user is about to aim at — a model-picker row that
+ * has not faded in yet is a row that cannot be clicked. The cap guarantees
+ * everything past index 5 is live on the same frame.
+ */
+export const stagger = (i: number, step = 40) => ({ animationDelay: `${Math.min(i, 5) * step}ms` });
 
 export function formatBytes(bytes: number, decimals = 1): string {
   if (bytes === 0) return "0 B";

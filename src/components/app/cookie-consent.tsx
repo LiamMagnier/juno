@@ -13,17 +13,37 @@ import { getConsent, onConsentChange, setConsent } from "@/lib/consent";
  */
 export function CookieConsent() {
   const [visible, setVisible] = React.useState(false);
+  // Mounted-but-leaving. `visible` used to flip straight to false, so the banner
+  // disappeared in a single frame; the exit needs the element to survive it.
+  const [closing, setClosing] = React.useState(false);
 
   React.useEffect(() => {
     // Read after mount so SSR markup never flashes the banner for users who chose.
     setVisible(getConsent() === null);
-    // Hide if another tab (or future settings UI) records a choice.
-    return onConsentChange((state) => setVisible(state === null));
+    // Hide if another tab (or future settings UI) records a choice. Note this also
+    // fires synchronously for our own setConsent() below, which is why `choose`
+    // does not unmount directly — it would cut the exit off at the knees.
+    return onConsentChange((state) => {
+      if (state === null) {
+        setClosing(false);
+        setVisible(true);
+      } else {
+        setClosing(true);
+      }
+    });
   }, []);
+
+  React.useEffect(() => {
+    if (!closing) return;
+    // Backstop, not the normal path: motion-reduce:animate-none means no animation
+    // runs, so `animationend` never fires and the banner would stay pinned forever.
+    const t = setTimeout(() => setVisible(false), 400);
+    return () => clearTimeout(t);
+  }, [closing]);
 
   const choose = (analytics: boolean) => {
     setConsent(analytics);
-    setVisible(false);
+    setClosing(true);
   };
 
   if (!visible) return null;
@@ -32,7 +52,14 @@ export function CookieConsent() {
     <section
       role="region"
       aria-label="Cookie preferences"
-      className="fixed bottom-4 left-4 z-50 w-[min(21rem,calc(100vw-2rem))] rounded-panel border border-border/60 bg-popover/90 p-4 text-popover-foreground glass-raised backdrop-blur-xl motion-safe:animate-rise-in"
+      // The only overlay a signed-out visitor ever sees, so it has to be on the
+      // shared contract: the popover radius (rounded-panel is the 28px MODAL
+      // radius, on a 21rem corner banner), the shared material, and the same
+      // pop-in/out pair as every other floating layer instead of a fifth
+      // entrance curve of its own.
+      data-state={closing ? "closed" : "open"}
+      onAnimationEnd={() => closing && setVisible(false)}
+      className="fixed bottom-4 left-4 z-50 w-[min(21rem,calc(100vw-2rem))] rounded-popover overlay-glass p-4 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out motion-reduce:animate-none"
     >
       <p className="font-mono text-xs font-medium text-muted-foreground">Cookies</p>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">

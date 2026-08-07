@@ -1100,7 +1100,6 @@ function ModeToggle({
       ariaLabel="Sidebar mode"
       orientation={compact ? "vertical" : "horizontal"}
       labelHidden={compact}
-      ringOffsetClassName="focus-visible:ring-offset-sidebar"
       // At the 240px minimum sidebar width three segments of `px-3` overflow
       // the track, so the padding stays tightened; with Design gone the labels
       // get their size back.
@@ -1586,7 +1585,10 @@ function ConversationRow({
             <SidebarMotionIcon kind="more" className="size-4" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
+        {/* Width only. The origin and the pop-in/out pair are already on the
+            primitive; re-declaring them here (with `!` to win a specificity fight
+            that no longer exists) is how the other ~30 menus quietly drifted. */}
+        <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem onSelect={() => patch({ pinned: !conversation.pinned })}>
             <Pin className={cn("h-4 w-4", conversation.pinned ? "fill-primary text-primary" : "")} />
             <span>{conversation.pinned ? "Unpin" : "Pin"}</span>
@@ -1606,7 +1608,7 @@ function ConversationRow({
                 <DropdownMenuSubTrigger>
                   <AppIcons.projects className="h-4 w-4" /> Add to project
                 </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="w-56 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
+                <DropdownMenuSubContent className="w-56">
                   <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
                     {conversation.projectId == null ? <Check className="h-4 w-4" /> : <span className="h-4 w-4" />} No project
                   </DropdownMenuItem>
@@ -1723,7 +1725,7 @@ function ProjectRow({
             <SidebarMotionIcon kind="more" className="size-4" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
+        <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem onSelect={onNewChat}>
             <Plus className="h-4 w-4" /> New chat in project
           </DropdownMenuItem>

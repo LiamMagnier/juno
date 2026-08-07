@@ -20,7 +20,11 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-black/40 backdrop-blur-sm data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out motion-reduce:animate-none",
+      // The dim is a token, not a raw black literal, so a retheme reaches it and
+      // the onboarding scrim can be reconciled with this one. Timing lives in the
+      // overlay-in/out pair: the scrim leads on open and trails on close, because
+      // a scrim that finishes first leaves a frame of undimmed app behind the panel.
+      "fixed inset-0 z-50 bg-scrim backdrop-blur-sm data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out motion-reduce:animate-none",
       className
     )}
     {...props}
@@ -37,9 +41,22 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        // Same warm-glass chrome as popovers/menus — not a second card material.
-        // Zoom stays at a subtle 0.98; large surfaces shouldn't visibly scale.
-        "fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto rounded-panel border border-border/60 bg-popover/90 p-6 text-popover-foreground glass-raised backdrop-blur-xl duration-slow ease-out-expo data-[state=closed]:duration-fast data-[state=closed]:ease-out-soft data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-[0.98] data-[state=open]:zoom-in-[0.98] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-1/2 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-1/2 motion-reduce:animate-none motion-reduce:duration-0",
+        // Same warm-glass chrome as popovers/menus — not a second card material,
+        // and now the shared .overlay-glass recipe rather than a sixth copy of it.
+        //
+        // Centring lives on the INDEPENDENT `translate` property, not on a
+        // translate-x/y utility, so the keyframe can own `transform` outright.
+        // This is mandatory rather than tidy: the old slide-in-from-*-1/2 pair
+        // existed only to cancel the -50%/-50% transform, and a scale-only
+        // keyframe writing `transform` would otherwise fling the dialog to the
+        // top-left corner mid-animation.
+        //
+        // A centred dialog has no origin to fly in from, so it scales in place on
+        // the modal pair (220 in / 160 out) instead of claiming a direction it
+        // does not have. The old 360ms on ease-out-expo spent ~80% of its travel
+        // in the first quarter of the time — a lunge, then a crawl; expo needs
+        // 440ms or more to read as intended.
+        "fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] gap-4 overflow-y-auto rounded-panel overlay-glass p-6 data-[state=open]:animate-modal-in data-[state=closed]:animate-modal-out motion-reduce:animate-none",
         className
       )}
       {...props}
@@ -61,14 +78,20 @@ function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
 }
 
 function DialogFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2", className)} {...props} />;
+  // gap-2, not sm:space-x-2: the spacing was scoped to sm and up, so the STACKED
+  // mobile layout had none at all — every destructive confirm in the product put
+  // Cancel and Delete edge to edge on a phone.
+  return <div className={cn("flex flex-col-reverse gap-2 sm:flex-row sm:justify-end", className)} {...props} />;
 }
 
 const DialogTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Title ref={ref} className={cn("text-lg font-semibold leading-none tracking-tight", className)} {...props} />
+  // font-serif here rather than at 19 call sites: a primitive every consumer has
+  // to correct is not a primitive. `text-heading` is the token that the old
+  // `text-lg font-semibold tracking-tight` triple was approximating by hand.
+  <DialogPrimitive.Title ref={ref} className={cn("font-serif text-heading leading-none", className)} {...props} />
 ));
 DialogTitle.displayName = DialogPrimitive.Title.displayName;
 

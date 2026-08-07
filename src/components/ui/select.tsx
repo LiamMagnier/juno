@@ -38,8 +38,10 @@ const SelectContent = React.forwardRef<
       ref={ref}
       className={cn(
         // pop-in/out fill `both`, which would permanently cancel translate-y utilities —
-        // the trigger gap comes from sideOffset instead. 12px radius matches dropdown menus.
-        "relative z-50 max-h-[min(24rem,var(--radix-select-content-available-height,24rem))] min-w-[8rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-[14px] border border-border/60 bg-popover/90 text-popover-foreground glass-raised backdrop-blur-xl data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        // the trigger gap comes from sideOffset instead. 14px shell − p-1.5, exactly
+        // as DropdownMenu: the two open side by side (model picker beside the
+        // download menu) and must be the same object.
+        "relative z-50 max-h-[min(24rem,var(--radix-select-content-available-height,24rem))] min-w-[8rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-menu overlay-glass data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
         className
       )}
       position={position}
@@ -50,7 +52,9 @@ const SelectContent = React.forwardRef<
         <ChevronUp className="h-4 w-4" />
       </SelectPrimitive.ScrollUpButton>
       <SelectPrimitive.Viewport
-        className={cn("p-1", position === "popper" && "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]")}
+        // p-1.5, not p-1: 8 (item) + 6 = the 14 of the shell. At p-1 the identical
+        // item sat 2px closer to the rim here than in a DropdownMenu.
+        className={cn("p-1.5", position === "popper" && "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]")}
       >
         {children}
       </SelectPrimitive.Viewport>

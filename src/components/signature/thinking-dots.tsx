@@ -8,8 +8,14 @@ const MATRIX_SEQUENCE = [0, 1, 2, 5, 8, 7, 6, 3, 4];
 
 /**
  * Compact 3×3 thinking matrix. Nine quiet points establish the mark while one
- * darker point and its faint trail travel through the grid. Reduced motion
- * leaves the centre point emphasized without changing the footprint.
+ * darker point and its faint trail travel through the grid.
+ *
+ * Reduced motion does NOT freeze this. It is an indeterminate progress
+ * indicator: it carries state, and a frozen centre point tells a user nothing
+ * is happening when in fact the model is still thinking. Reduce-or-replace, not
+ * eliminate — the centre point falls back to an opacity-only pulse, which is
+ * safe for vestibular users (no translate, no scale) while preserving the
+ * signal. The footprint is unchanged either way.
  */
 export function ThinkingDots({ className }: { className?: string }) {
   return (
@@ -24,8 +30,10 @@ export function ThinkingDots({ className }: { className?: string }) {
             <span className="absolute inset-0 rounded-full bg-current opacity-25" />
             <span
               className={cn(
-                "absolute inset-0 rounded-full bg-foreground opacity-0 motion-safe:animate-thinking-matrix",
-                gridIndex === 4 ? "motion-reduce:opacity-90" : "motion-reduce:opacity-0"
+                "absolute inset-0 rounded-full bg-foreground opacity-0 animate-thinking-matrix",
+                gridIndex === 4
+                  ? "motion-reduce:animate-thinking-pulse motion-reduce:opacity-100"
+                  : "motion-reduce:animate-none motion-reduce:opacity-0"
               )}
               // Start mid-cycle so the matrix is already alive on first paint.
               style={{ animationDelay: `${sequenceIndex * 0.2 - 1.8}s` }}

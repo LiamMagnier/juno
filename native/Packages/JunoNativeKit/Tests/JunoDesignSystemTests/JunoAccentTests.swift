@@ -25,9 +25,9 @@ final class JunoAccentTests: XCTestCase {
     }
 
     func testConvertsTheBrandCoralFromHSL() {
-        // `--primary: 15 54% 51%` — the same triple JunoColorToken.coral was
+        // `--primary: 15 54% 46%` — the same triple JunoColorToken.coral was
         // hand-converted from, so this is a cross-check of both.
-        let converted = JunoColorToken(hsl: (15, 0.54, 0.51))
+        let converted = JunoColorToken(hsl: (15, 0.54, 0.46))
         assertToken(
             converted,
             red: JunoColorToken.coral.red,
@@ -67,7 +67,7 @@ final class JunoAccentTests: XCTestCase {
 
     func testResolvesEveryAccentTheWebPublishes() {
         // The exact strings the server stores, per `settings.accent`.
-        for raw in ["coral", "teal", "violet", "amber", "sage"] {
+        for raw in ["coral", "juniper", "teal", "violet", "amber", "sage"] {
             XCTAssertEqual(JunoAccent(setting: raw).rawValue, raw)
         }
     }

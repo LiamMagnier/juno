@@ -189,10 +189,15 @@ export function ComposerClarificationPopover({
     }
   };
 
+  // One radius across both placements (18px = the popover rung; the inline variant
+  // was also stepping to 20px at sm for no reason), and the floating placement takes
+  // the shared overlay material instead of a sixth hand-copied version of it. This
+  // surface is anchored to the composer exactly like a popover, so it should not
+  // have been shipping two radii and two materials depending on where it sits.
   const shellClass =
     variant === "inline"
-      ? "relative flex w-full flex-col overflow-hidden rounded-[18px] border border-border/55 bg-card/40 text-foreground sm:rounded-[20px]"
-      : "relative mb-2 flex w-full flex-col overflow-hidden rounded-panel border border-border/60 bg-popover/90 text-popover-foreground glass-raised backdrop-blur-xl";
+      ? "relative flex w-full flex-col overflow-hidden rounded-popover border border-border/55 bg-card/40 text-foreground"
+      : "relative mb-2 flex w-full flex-col overflow-hidden rounded-popover overlay-glass";
 
   return (
     <div
@@ -201,7 +206,10 @@ export function ComposerClarificationPopover({
       aria-describedby="clarification-question"
       className={cn(
         shellClass,
-        "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-slow motion-safe:ease-out-expo motion-reduce:animate-none"
+        // The floating-layer entrance, same as every other one. The old chain ran
+        // 360ms on ease-out-expo, which needs ~440ms to read as anything but a
+        // lunge-then-crawl. It grows out of the composer edge it is pinned to.
+        "origin-bottom motion-safe:animate-pop-in motion-reduce:animate-none"
       )}
     >
       {/* Header */}
@@ -421,7 +429,10 @@ export function ComposerClarificationPopover({
       {variant === "card" ? (
         <span
           aria-hidden
-          className="absolute -bottom-1.5 left-1/2 size-3 -translate-x-1/2 rotate-45 border-b border-r border-border/60 bg-card"
+          // bg-popover/90 + the blur, not bg-card: the caret has to be made of the
+          // same material as the panel it points out of, and bg-card is a different
+          // fill at a different opacity.
+          className="absolute -bottom-1.5 left-1/2 size-3 -translate-x-1/2 rotate-45 border-b border-r border-border/60 bg-popover/90 backdrop-blur-xl"
         />
       ) : null}
     </div>

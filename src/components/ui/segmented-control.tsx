@@ -38,7 +38,6 @@ export function SegmentedControl<T extends string>({
   labelHidden = false,
   className,
   optionClassName,
-  ringOffsetClassName = "focus-visible:ring-offset-background",
 }: {
   value: T;
   onChange: (value: T) => void;
@@ -51,8 +50,6 @@ export function SegmentedControl<T extends string>({
   className?: string;
   /** Extra classes on each segment button (sizing/typography). */
   optionClassName?: string;
-  /** The focus ring's offset color — match the surface the control sits on. */
-  ringOffsetClassName?: string;
 }) {
   const refs = React.useRef<Partial<Record<T, HTMLButtonElement | null>>>({});
   const trackRef = React.useRef<HTMLDivElement>(null);
@@ -116,15 +113,18 @@ export function SegmentedControl<T extends string>({
       aria-label={ariaLabel}
       className={cn(
         // The track is a shadow cast into its surface, so it darkens the parent
-        // in both themes. It deliberately doesn't use --muted (identical to the
-        // sidebar in light, lighter in dark — which would invert the lighting
-        // model the thumb depends on). No border: the thumb is positioned from
+        // in both themes. It shares TabsList's material and geometry — this and
+        // the tab strip are two renderings of one idiom, and shipping them with
+        // two concentric systems and two track colours is the drift. The track
+        // used to be a raw `bg-black/[0.055] dark:bg-black/25` literal, which no
+        // retheme can reach. No border: the thumb is positioned from
         // offsetLeft/offsetTop, which agree with left-0/top-0 only while the
         // padding edge and border edge coincide.
         // Concentric corners: the track's outer radius = the thumb's inner
-        // radius + the padding that separates them (12 = 8 + 4), and the padding
-        // is uniform (p-1) so the thumb's inset is identical on all four sides.
-        "field-well relative gap-1 rounded-[12px] bg-black/[0.055] p-1 dark:bg-black/25",
+        // radius + the padding that separates them (menu 14 = control 10 + 4),
+        // and the padding is uniform (p-1) so the thumb's inset is identical on
+        // all four sides.
+        "field-well relative gap-1 rounded-menu bg-muted/70 p-1",
         orientation === "vertical" ? "flex flex-col items-center" : "grid",
         className,
       )}
@@ -137,7 +137,7 @@ export function SegmentedControl<T extends string>({
       <span
         ref={thumbRef}
         aria-hidden="true"
-        className="pointer-events-none absolute left-0 top-0 z-0 rounded-[8px] bg-card transition-[transform,width,height] duration-base ease-spring [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)] motion-reduce:transition-none"
+        className="pointer-events-none absolute left-0 top-0 z-0 rounded-control bg-card transition-[transform,width,height] duration-base ease-spring [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)] motion-reduce:transition-none"
       />
       {options.map((opt) => (
         <button
@@ -158,8 +158,7 @@ export function SegmentedControl<T extends string>({
           className={cn(
             // Press dips the label/icon (the fill under them is the thumb),
             // matching the Button component's active:scale language.
-            "group relative z-10 flex items-center justify-center rounded-[8px] font-medium transition-[color,transform] duration-fast ease-out-soft active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100",
-            ringOffsetClassName,
+            "group relative z-10 flex items-center justify-center rounded-control font-medium transition-[color,transform] duration-fast ease-out-soft active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100",
             labelHidden ? "h-8 w-8" : "gap-1.5 px-3 py-1 text-[13px]",
             value === opt.value ? "text-foreground" : "text-muted-foreground hover:text-foreground",
             optionClassName,

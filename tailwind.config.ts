@@ -8,7 +8,8 @@ import animate from "tailwindcss-animate";
  * Type scale ............ text-{display,title,heading,body,body-lg,label,caption} (+ legacy `hero`)
  *                         serif = human moments · sans = UI body · mono = labels/metadata
  * Motion ................ ease-{spring,out-soft,out-expo,breathe} · duration-{fast,base,slow,emphasis}
- *                         (mirrored as --ease-* / --dur-* in globals.css)
+ *                         (mirrored as --ease-* / --dur-* in globals.css, where the
+ *                          reasoning behind each value lives — read it before adding a fifth)
  * Overlays .............. animate-{pop-in,pop-out} (floating layers) · animate-{overlay-in,overlay-out}
  *                         (backdrops) — pair with Radix data-[state=open/closed]
  * Touch ................. p{t,b,l,r}-safe (env safe-area insets) · .pressable (press feedback, globals.css)
@@ -95,13 +96,29 @@ const config: Config = {
           border: "hsl(var(--sidebar-border) / <alpha-value>)",
           accent: "hsl(var(--sidebar-accent) / <alpha-value>)",
         },
+        // The one dim value every modal backdrop shares. Four different scrim
+        // treatments existed before this.
+        scrim: "hsl(var(--scrim))",
       },
       borderRadius: {
+        // Legacy scale — values UNCHANGED so no existing surface moves. `lg` stays
+        // 24px; renumbering it would shift 77 live surfaces.
         lg: "var(--radius)",
         md: "8px",
         sm: "4px",
         // Floating layers (composer, command palette, canvas sheet) — softer, bigger.
         panel: "28px",
+        // Semantic steps, named after what they wrap. These replace the arbitrary
+        // rounded-[Npx] values 1:1, so the compiled CSS is identical — the point is
+        // that there is now somewhere to look up the right answer. Eleven different
+        // overlay radii existed before this.
+        xs: "6px",        // chips, dots, tiny badges
+        control: "10px",  // sm buttons, menu items, list rows
+        field: "12px",    // inputs, wells, segmented thumbs
+        menu: "14px",     // dropdown / select / tabs shells
+        card: "16px",     // cards, toasts, tiles
+        popover: "18px",  // popovers, transcripts
+        composer: "22px", // the composer shell
       },
       boxShadow: {
         // Theme-aware elevation (values live in globals.css so light/dark differ).
@@ -120,39 +137,111 @@ const config: Config = {
         "dot-gap": "var(--dot-gap)",
       },
       transitionTimingFunction: {
-        spring: "cubic-bezier(0.32, 0.72, 0, 1)",
         "out-soft": "cubic-bezier(0.33, 1, 0.68, 1)",
+        "out-strong": "cubic-bezier(0.32, 0.72, 0, 1)",
         "out-expo": "cubic-bezier(0.16, 1, 0.3, 1)",
+        // The product had NO accelerate curve, so every exit ran an entrance
+        // curve — which is why dismissals felt like the UI was reluctant to let
+        // go. `in-out` is for A-to-B moves where both endpoints are visible
+        // (chevron rotate, accordion, sidebar width); running those on an
+        // ease-out makes them look like they arrive from off-screen.
+        in: "cubic-bezier(0.4, 0, 1, 1)",
+        "in-out": "cubic-bezier(0.65, 0, 0.35, 1)",
+        // Deprecated alias of out-strong, kept so the 39 existing `ease-spring`
+        // sites keep compiling. Delete after migration.
+        spring: "cubic-bezier(0.32, 0.72, 0, 1)",
         // The only symmetric curve here, and the only one meant for a LOOP:
+        // loops have a seam that an ease-out visibly pulses at. Already inlined
+        // verbatim in the pulse-ring / status-glow / gen-sweep keyframes below;
         // see the reasoning beside --ease-breathe in globals.css.
         breathe: "cubic-bezier(0.45, 0, 0.55, 1)",
       },
       transitionDuration: {
+        press: "70ms",
         fast: "120ms",
+        exit: "160ms",
         base: "220ms",
         slow: "360ms",
-        // For a change the user did not cause; see --dur-emphasis in globals.css.
+        // One rung above slow, reserved for a change the user did not cause —
+        // see the reasoning beside --dur-emphasis in globals.css.
         emphasis: "560ms",
       },
       fontFamily: {
-        // Overall UI typeface is the editorial serif (Newsreader). `font-sans`
-        // and the body both resolve to it; mono stays for labels/code.
-        sans: ["var(--font-serif)", "Newsreader", "Georgia", "serif"],
-        serif: ["var(--font-serif)", "Newsreader", "Source Serif 4", "Georgia", "serif"],
+        // Two-face system. `sans` is the interface voice (controls, menus, tables,
+        // metadata — anything at or below ~15px). `serif` is reserved for display
+        // and for continuous reading: headings, greetings, assistant prose. Mono is
+        // labels, model ids, code and the dot/ASCII signature layer.
+        //
+        // Archivo's x-height ratio (~0.52) is within 5% of Newsreader's, so no
+        // `size-adjust` is needed and every existing px size still holds.
+        sans: ["var(--font-sans)", "Archivo", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+        // "Source Serif 4" MUST stay quoted. Unquoted, its last component is the
+        // number 4, which is not a valid CSS custom-ident — that makes the whole
+        // font-family declaration invalid and the browser drops it, so every
+        // `font-serif` element silently falls back to inheriting body. It went
+        // unnoticed for as long as body was itself serif.
+        serif: ["var(--font-serif)", "Newsreader", "'Source Serif 4'", "Georgia", "serif"],
         mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       fontSize: {
         // Legacy hero (empty-state) — kept.
-        hero: ["clamp(2.4rem, 5vw, 4rem)", { lineHeight: "1.1", letterSpacing: "-0.02em" }],
+        //
+        // The rem intercept in these two clamps is NOT stylistic. A pure-vw
+        // preferred value ignores the user's base font size, so browser text zoom
+        // has no effect at all on the largest type in the product (WCAG 1.4.4).
+        // Anchored 360px → 1280px; min and max are unchanged, so rendered sizes
+        // match the old values to within a rounding error at every viewport.
+        //   hero    38.4px → 64px : m = 2.7826vw, b = 28.38px = 1.7739rem
+        //   display 32px   → 48px : m = 1.7391vw, b = 25.74px = 1.6087rem
+        hero: ["clamp(2.4rem, 1.7739rem + 2.7826vw, 4rem)", { lineHeight: "1.1", letterSpacing: "-0.02em" }],
         // Type scale. Contrast comes from family (serif/sans/mono) + 3x size jumps, not timid weights.
-        display: ["clamp(2rem, 4vw, 3rem)", { lineHeight: "1.08", letterSpacing: "-0.02em", fontWeight: "500" }],
+        display: ["clamp(2rem, 1.6087rem + 1.7391vw, 3rem)", { lineHeight: "1.08", letterSpacing: "-0.02em", fontWeight: "500" }],
         title: ["1.375rem", { lineHeight: "1.25", letterSpacing: "-0.012em", fontWeight: "600" }],
         heading: ["1.125rem", { lineHeight: "1.3", letterSpacing: "-0.006em", fontWeight: "600" }],
         "body-lg": ["1.0625rem", { lineHeight: "1.6" }],
         body: ["0.9375rem", { lineHeight: "1.6" }],
         // Eyebrow/metadata — sizing only; pair with `font-mono` + `uppercase`.
-        label: ["0.75rem", { lineHeight: "1.4", letterSpacing: "0.14em", fontWeight: "500" }],
+        // 0.10em is the editorial maximum for caps: above ~0.12em uppercase
+        // micro-labels stop grouping into words and read as decoration. It is also
+        // the most likely SC 1.4.12 failure in the tree, since tracking stacks with
+        // a user-forced 0.12em on fixed-height chips. AsciiWordmark keeps its own
+        // 0.12em — that is a logotype, not a label.
+        label: ["0.75rem", { lineHeight: "1.4", letterSpacing: "0.10em", fontWeight: "500" }],
         caption: ["0.6875rem", { lineHeight: "1.45", letterSpacing: "0.02em" }],
+      },
+      /*
+       * Text colour is NOT the same ramp as fill colour.
+       *
+       * `colors` drives bg-*, text-* and border-* alike, so `text-warning` resolved
+       * to the FILL token --warning, which measures 2.36:1 on its own chip. The
+       * AA text ramps (--warning-foreground, --success-ink, --destructive-ink,
+       * --primary-ink) already existed and were only reached by hand at a minority
+       * of call sites.
+       *
+       * This block is ADDITIVE — every bg-* and border-* utility resolves exactly
+       * as before. Only text-* moves onto the ink ramps, which fixes ~219 call
+       * sites with zero component edits. Where a fill tone is genuinely wanted as
+       * text, the *-foreground keys are preserved.
+       */
+      textColor: {
+        primary: {
+          DEFAULT: "hsl(var(--primary-ink) / <alpha-value>)",
+          foreground: "hsl(var(--primary-foreground) / <alpha-value>)",
+        },
+        destructive: {
+          DEFAULT: "hsl(var(--destructive-ink) / <alpha-value>)",
+          foreground: "hsl(var(--destructive-foreground) / <alpha-value>)",
+          ink: "hsl(var(--destructive-ink) / <alpha-value>)",
+        },
+        success: {
+          DEFAULT: "hsl(var(--success-ink) / <alpha-value>)",
+          foreground: "hsl(var(--success-foreground) / <alpha-value>)",
+          ink: "hsl(var(--success-ink) / <alpha-value>)",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning-foreground) / <alpha-value>)",
+          foreground: "hsl(var(--warning-foreground) / <alpha-value>)",
+        },
       },
       keyframes: {
         "accordion-down": {
@@ -182,10 +271,6 @@ const config: Config = {
         blink: {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0.2" },
-        },
-        drift: {
-          "0%, 100%": { transform: "translate(0,0) rotate(0deg)" },
-          "50%": { transform: "translate(-12px,8px) rotate(-1.5deg)" },
         },
         "dot-wave": {
           "0%, 60%, 100%": { transform: "translateY(0)", opacity: "0.4" },
@@ -314,8 +399,11 @@ const config: Config = {
         },
       },
       animation: {
-        "accordion-down": "accordion-down 0.2s ease-out",
-        "accordion-up": "accordion-up 0.2s ease-out",
+        // A-to-B moves with both endpoints visible run in-out, not ease-out; and
+        // the collapse is faster than the expand, like every other exit here.
+        // These two previously used the raw `ease-out` keyword — off-token entirely.
+        "accordion-down": "accordion-down var(--dur-base) var(--ease-in-out)",
+        "accordion-up": "accordion-up var(--dur-exit) var(--ease-in-out)",
         "fade-in": "fade-in 0.2s ease-out",
         "fade-in-up": "fade-in-up 0.25s ease-out",
         "pulse-ring": "pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite",
@@ -326,7 +414,6 @@ const config: Config = {
         "pulse-ring-once": "pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) 1 both",
         shimmer: "shimmer 1.5s infinite",
         blink: "blink 1.1s steps(1) infinite",
-        drift: "drift 18s ease-in-out infinite",
         "rise-in": "rise-in 0.32s cubic-bezier(0.32,0.72,0,1)",
         // Learning blocks: direction-aware step navigation (spring), one-shot
         // wrong-answer nudge (soft), one-shot SVG path draw (expo).
@@ -339,20 +426,30 @@ const config: Config = {
         "status-glow": "status-glow 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite",
         "icon-breathe": "icon-breathe 2.6s cubic-bezier(0.33, 1, 0.68, 1) infinite",
         "title-in": "title-in 240ms cubic-bezier(0.33,1,0.68,1)",
-        "title-out": "title-out 180ms cubic-bezier(0.33,1,0.68,1)",
+        "title-out": "title-out var(--dur-exit) var(--ease-in)",
         // Floating layers: data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out
         // (pair with .origin-popper on Radix popper content so scale anchors to the trigger).
         // Enter on ease-out-soft — out-expo front-loaded so hard here that the
         // pop read as an instant snap; exit reverses faster, as leaving should.
-        "pop-in": "pop-in 180ms cubic-bezier(0.33, 1, 0.68, 1) both",
-        "pop-out": "pop-out 120ms cubic-bezier(0.33, 1, 0.68, 1) both",
+        "pop-in": "pop-in 180ms var(--ease-out-soft) both",
+        "pop-out": "pop-out 120ms var(--ease-in) both",
+        // Dialogs travel further than a popper, so they get the next rung up.
+        // Replaces the tailwindcss-animate utility chain on DialogContent.
+        "modal-in": "pop-in 220ms var(--ease-out-soft) both",
+        "modal-out": "pop-out 160ms var(--ease-in) both",
         // Route changes (page-transition.tsx). Reuses the opacity-only `fade-in`
         // keyframe on purpose — a transform here would create a containing block
         // and break the `fixed` model-selector / canvas panel.
-        "page-in": "fade-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both",
-        // Dialog/sheet backdrops.
-        "overlay-in": "fade-in 220ms cubic-bezier(0.33, 1, 0.68, 1) both",
-        "overlay-out": "fade-out 150ms cubic-bezier(0.33, 1, 0.68, 1) both",
+        // 280ms on out-expo front-loaded so hard that an opacity-only fade appeared
+        // instantly and then hung; base on out-soft reads as one move.
+        "page-in": "fade-in var(--dur-base) var(--ease-out-soft) both",
+        // Dialog/sheet backdrops. The scrim LEADS on open (the dim establishes
+        // context before the panel arrives) and TRAILS on close (it must outlast
+        // the panel it dims). Previously the scrim cleared in 150ms while
+        // SheetContent took 220ms to leave, so the drawer finished sliding over an
+        // already-undimmed page.
+        "overlay-in": "fade-in 120ms var(--ease-out-soft) both",
+        "overlay-out": "fade-out 220ms var(--ease-in) both",
         // Reasoning slider's top tier (reasoning-slider.tsx).
         // 24s, not 6s: the gradient should read as a slow luminous drift, not a
         // sweep. `linear` is deliberate — an eased loop visibly pulses at the

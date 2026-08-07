@@ -20,6 +20,8 @@ import {
 import { DotField } from "@/components/signature/dot-field";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useApp } from "@/components/app/app-provider";
 import { ACCENTS } from "@/lib/accents";
 import { resolveModel, type ModelInfo } from "@/lib/models";
@@ -42,8 +44,12 @@ const IMPORT_PROMPT =
   "Preserve my words verbatim where possible, especially for instructions and preferences. " +
   "Return each as a short, standalone bullet point — one fact per line.";
 
-/** Inline, self-contained model picker — lives inside the card (the composer's
- * popover selector is z-50 and would hide behind this z-[60] overlay). */
+/** Model picker for the welcome card. This used to be a hand-rolled dropdown with
+ * a `fixed inset-0` click-catcher, because the old onboarding overlay was a bespoke
+ * z-[60] layer that a z-50 popover could not escape. Now that the card is a real
+ * Dialog the escape hatch is gone — and it had to go: DialogContent sets the
+ * `translate` property, which makes it a containing block for `fixed` children, so
+ * the catcher would have covered the panel rather than the page. */
 function ModelField({
   models,
   valueId,
@@ -68,67 +74,69 @@ function ModelField({
   })).filter((g) => g.items.length > 0);
 
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex w-full items-center justify-between rounded-2xl border px-3.5 py-2.5 text-left transition-colors duration-fast hover:bg-accent"
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          {current && <ProviderLogo provider={current.provider} className="h-4 w-4 rounded" />}
-          <span className="truncate font-mono text-[13px]">{current?.name ?? "Select a model"}</span>
-        </span>
-        <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft", open && "rotate-180")} />
-      </button>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between rounded-2xl border px-3.5 py-2.5 text-left transition-colors duration-fast hover:bg-accent"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            {current && <ProviderLogo provider={current.provider} className="h-4 w-4 rounded" />}
+            <span className="truncate font-mono text-[13px]">{current?.name ?? "Select a model"}</span>
+          </span>
+          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft", open && "rotate-180")} />
+        </button>
+      </PopoverTrigger>
 
-      {open && (
-        <>
-          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          {/* opens upward — the field sits low in the card, which clips overflow */}
-          <div className="absolute bottom-full left-0 right-0 z-30 mb-2 origin-bottom overflow-hidden rounded-[14px] border border-border/60 bg-popover/90 glass-raised backdrop-blur-xl motion-safe:animate-pop-in">
-            <div className="relative border-b p-2">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search models…"
-                autoFocus
-                className="h-8 w-full rounded-md bg-transparent pl-9 pr-2 text-[13px] outline-none placeholder:text-muted-foreground"
-              />
-            </div>
-            <div className="max-h-56 overflow-y-auto p-1.5">
-              {groups.length === 0 ? (
-                <p className="px-2 py-8 text-center text-caption text-muted-foreground">No models found.</p>
-              ) : (
-                groups.map((g) => (
-                  <div key={g.p} className="mb-1.5 last:mb-0">
-                    <p className="px-2 pb-1 pt-1.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground/70">
-                      {PROVIDERS[g.p]?.label ?? g.p}
-                    </p>
-                    {g.items.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => {
-                          onPick(m.id);
-                          setOpen(false);
-                        }}
-                        className="pressable flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
-                      >
-                        <ProviderLogo provider={m.provider} className="h-4 w-4 rounded" />
-                        <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{m.name}</span>
-                        {m.id === valueId && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
-                      </button>
-                    ))}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
+      {/* Opens upward — the field sits low in the card. 14px shell, the same menu
+          radius the model picker uses everywhere else; the material and the
+          pop-in/out pair come from PopoverContent. */}
+      <PopoverContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        className="w-[var(--radix-popover-trigger-width)] overflow-hidden rounded-menu p-0"
+      >
+        <div className="relative border-b p-2">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search models…"
+            autoFocus
+            className="h-8 w-full rounded-md bg-transparent pl-9 pr-2 text-[13px] outline-none placeholder:text-muted-foreground"
+          />
+        </div>
+        <div className="max-h-56 overflow-y-auto p-1.5">
+          {groups.length === 0 ? (
+            <p className="px-2 py-8 text-center text-caption text-muted-foreground">No models found.</p>
+          ) : (
+            groups.map((g) => (
+              <div key={g.p} className="mb-1.5 last:mb-0">
+                <p className="px-2 pb-1 pt-1.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                  {PROVIDERS[g.p]?.label ?? g.p}
+                </p>
+                {g.items.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => {
+                      onPick(m.id);
+                      setOpen(false);
+                    }}
+                    className="pressable flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
+                  >
+                    <ProviderLogo provider={m.provider} className="h-4 w-4 rounded" />
+                    <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{m.name}</span>
+                    {m.id === valueId && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                  </button>
+                ))}
+              </div>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -190,18 +198,15 @@ export function Onboarding() {
     }
   }, []);
 
+  // No window keydown listener and no open-focus effect any more: Dialog supplies
+  // Escape, the focus trap, the scroll lock, focus restoration to whatever was
+  // focused before the card appeared, and a real exit animation. What Radix does
+  // NOT cover is the step-to-step move, where the button that had focus unmounts —
+  // so this narrows to `step` only, and the open case is handled by
+  // onOpenAutoFocus below.
   React.useEffect(() => {
-    if (!show) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") finish();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [show, finish]);
-
-  React.useEffect(() => {
-    if (show) primaryRef.current?.focus();
-  }, [show, step]);
+    primaryRef.current?.focus();
+  }, [step]);
 
   const save = (patch: Partial<ClientSettings>) => {
     setSettings(patch);
@@ -275,8 +280,8 @@ export function Onboarding() {
     if (ok > 0) setImportText("");
   };
 
-  if (!show) return null;
-
+  // No early `return null` on !show: the Dialog has to stay mounted through the
+  // close so the exit animation can run. Radix renders nothing while it is shut.
   const firstName = user.name?.split(" ")[0];
   const currentModelId = resolveModel(settings.defaultModel)?.id ?? settings.defaultModel;
   const labCount = new Set(models.map((m) => m.provider)).size;
@@ -297,17 +302,30 @@ export function Onboarding() {
   const STEP_LABELS = ["Welcome", "Make it yours", "Choose a plan", "Memory · optional"];
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Welcome to Juno"
-      className="fixed inset-0 z-[60] grid place-items-center overflow-hidden bg-background/80 p-4 backdrop-blur-sm motion-safe:animate-fade-in"
-    >
-      <div className="pointer-events-none absolute inset-0 -z-0 opacity-40">
-        <DotField spacing={26} />
-      </div>
+    // The first modal a new user ever meets used to dim by LIGHTENING
+    // (bg-background/80) while every later modal dims by darkening, and it had no
+    // focus trap, no scroll lock and no focus restore — it also vanished on a hard
+    // cut. On the shared primitive it dims, traps, locks, restores and animates out
+    // like the rest of the product, and `finish()` still runs on Escape and on a
+    // backdrop click because both route through onOpenChange.
+    <Dialog open={show} onOpenChange={(o) => { if (!o) finish(); }}>
+      <DialogContent
+        hideClose
+        aria-label="Welcome to Juno"
+        className="w-full max-w-[460px] gap-0 overflow-hidden p-0"
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          primaryRef.current?.focus();
+        }}
+      >
+        <DialogTitle className="sr-only">Welcome to Juno</DialogTitle>
 
-      <div className="relative w-full max-w-[460px] overflow-hidden rounded-panel border border-border/60 bg-popover/90 text-popover-foreground glass-raised backdrop-blur-xl motion-safe:animate-rise-in">
+        {/* The dot motif stays — it is the product signature; it just sits inside
+            the panel now that there is no bespoke full-screen layer to paint on. */}
+        <div className="pointer-events-none absolute inset-0 opacity-40">
+          <DotField spacing={26} />
+        </div>
+
         {/* header: step label + dot pager */}
         <div className="relative flex items-center justify-between px-7 pt-6">
           <span className="font-mono text-label uppercase text-muted-foreground">
@@ -649,7 +667,7 @@ export function Onboarding() {
             </button>
           </div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

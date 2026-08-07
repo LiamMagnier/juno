@@ -10,9 +10,9 @@ const Label = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <LabelPrimitive.Root
     ref={ref}
-    // Juno label voice (mono eyebrow) — explicit size/tracking, not text-label, so twMerge keeps them next to color overrides.
+    // Juno label voice (mono eyebrow).
     className={cn(
-      "font-mono text-xs font-medium text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
+      "font-mono text-label text-muted-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-70",
       className
     )}
     {...props}

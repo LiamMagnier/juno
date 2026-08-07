@@ -41,26 +41,33 @@ public struct JunoColorToken: Hashable, Sendable {
     // `src/app/globals.css` so the two platforms cannot drift. The comment on
     // each token is the HSL triple it was derived from.
 
-    /// `--primary: 15 54% 51%`. Juno's coral. Deliberately the *same* value in
+    /// `--primary: 15 54% 46%`. Juno's coral. Deliberately the *same* value in
     /// light and dark — the web does not brighten it, and neither should we.
+    ///
+    /// Darkened from 51%: white on `15 54% 51%` computes to 4.081:1, below the
+    /// 4.5:1 the primary CTA's 14px medium label needs. Hue and saturation are
+    /// untouched, so the warm coral character is exactly as before.
     public static let coral = JunoColorToken(
-        uncheckedRed: 0.7746,
-        green: 0.3777,
-        blue: 0.2454
+        uncheckedRed: 0.7084,
+        green: 0.3358,
+        blue: 0.2116
     )
-    /// `--background` (light): `48 33% 97%`. A warm off-white, not a pure grey.
+    /// `--background` (light): `54 18% 97%`. A warm off-white, not a pure grey.
+    ///
+    /// Lightness is unchanged at 97% — only hue and chroma moved, so no surface
+    /// relationship or elevation step shifts. Still warm: R > G > B.
     public static let warmWhite = JunoColorToken(
-        uncheckedRed: 0.9799,
-        green: 0.9759,
-        blue: 0.9601
+        uncheckedRed: 0.9754,
+        green: 0.9743,
+        blue: 0.9646
     )
-    /// `--background` (dark): `28 9% 9%`. Warm — red highest, blue lowest. The
+    /// `--background` (dark): `48 7% 9%`. Warm — red highest, blue lowest. The
     /// previous value was cool (blue highest), which read as a generic graphite
     /// rather than as Juno.
     public static let warmBlack = JunoColorToken(
-        uncheckedRed: 0.0981,
-        green: 0.0895,
-        blue: 0.0819
+        uncheckedRed: 0.0963,
+        green: 0.0938,
+        blue: 0.0837
     )
 }
 
@@ -128,20 +135,32 @@ public enum JunoCornerRadius {
 /// ad-hoc per-call values. All are short and purposeful; spatial motion is
 /// dropped under Reduce Motion via ``reduced(_:when:)``.
 public enum JunoMotion {
+    /// A press. Below the direct-manipulation threshold: anything slower than
+    /// ~70ms on a transform is *felt* as lag on the one interaction where
+    /// latency is most obvious.
+    public static let press = Animation.easeOut(duration: 0.07)
     /// Immediate feedback: taps, toggles, icon morphs (e.g. + → ×), Send/Stop.
-    public static let fast = Animation.snappy(duration: 0.18)
+    public static let fast = Animation.easeOut(duration: 0.12)
+    /// A dismissal. Entrances decelerate, exits accelerate — the product had no
+    /// accelerate curve at all, which is why every dismissal read as the UI
+    /// being reluctant to let go. Exit is ~0.65 × its entrance.
+    public static let exit = Animation.easeIn(duration: 0.16)
     /// Standard transitions: selection, disclosure, popovers, sheets.
-    public static let standard = Animation.snappy(duration: 0.26)
+    public static let standard = Animation.spring(duration: 0.22, bounce: 0.05)
     /// Emphasized transitions: larger spatial moves like the sidebar reveal.
-    public static let emphasized = Animation.snappy(duration: 0.32)
+    public static let emphasized = Animation.spring(duration: 0.36, bounce: 0.10)
     /// Interactive, gesture-following spring for drag-driven surfaces.
     public static let spring = Animation.interactiveSpring(response: 0.32, dampingFraction: 0.85)
 
-    /// Returns `animation` normally, or `nil` (instant) when Reduce Motion is on
-    /// so spatial transitions collapse instead of sliding. Use as the value for
-    /// `.animation(_:value:)` and `withAnimation(_:)`.
+    /// Returns `animation` normally, or a short flat fade when Reduce Motion is
+    /// on, so spatial transitions collapse instead of sliding.
+    ///
+    /// Deliberately *not* `nil`. Reduce Motion asks for less movement, not for
+    /// the loss of feedback: returning nil made all 117 call sites snap, so a
+    /// user who enables it stops being told that anything happened at all. A
+    /// flat 160ms ease-out carries the state change with no spatial travel.
     public static func reduced(_ animation: Animation, when reduceMotion: Bool) -> Animation? {
-        reduceMotion ? nil : animation
+        reduceMotion ? .easeOut(duration: 0.16) : animation
     }
 }
 

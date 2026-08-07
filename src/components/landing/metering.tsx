@@ -1,5 +1,6 @@
 import { getModel } from "@/lib/models";
 import { estimateCostUsd } from "@/lib/pricing";
+import { Card } from "@/components/ui/card";
 import { Section } from "@/components/landing/section";
 
 /**
@@ -59,21 +60,23 @@ export function Metering() {
       <div className="mt-10 grid items-start gap-10 lg:grid-cols-2">
         <dl>
           {POINTS.map(({ term, body }) => (
-            <div key={term} className="border-t border-border/60 py-4">
+            <div key={term} className="border-t border-dotted border-border py-4">
               <dt className="font-serif text-heading font-medium">{term}</dt>
-              <dd className="mt-1 max-w-prose text-sm text-muted-foreground">{body}</dd>
+              <dd className="mt-1 max-w-prose text-body text-muted-foreground">{body}</dd>
             </div>
           ))}
         </dl>
 
-        {/* The receipt — live numbers, recomputed on every build/deploy. */}
-        <div className="rounded-[24px] border border-border/60 bg-card p-6 shadow-soft">
-          <p className="font-mono text-[10px] text-muted-foreground">One message, priced</p>
+        {/* The receipt — live numbers, recomputed on every build/deploy. Card
+            resolves to the same 24px this used to hardcode, and adds the sheen
+            the in-app cards are lit by. */}
+        <Card className="p-6">
+          <p className="font-mono text-caption text-muted-foreground">One message, priced</p>
           <p className="mt-1.5 text-caption text-muted-foreground">
             The same exchange — about {SAMPLE.input.toLocaleString("en-US")} tokens in,{" "}
             {SAMPLE.output.toLocaleString("en-US")} out — at today&rsquo;s list prices.
           </p>
-          <ul className="mt-5 space-y-3 font-mono text-[13px]">
+          <ul className="mt-5 space-y-3 font-mono text-caption">
             {ROWS.map(({ name, cost }) => (
               <li key={name} className="flex items-baseline gap-2.5">
                 <span className="whitespace-nowrap">{name}</span>
@@ -85,7 +88,7 @@ export function Metering() {
           <p className="mt-5 border-t border-dotted border-border pt-4 text-caption text-muted-foreground">
             This is the exact math your usage meter runs in the app — shown on every reply, tallied on your plan.
           </p>
-        </div>
+        </Card>
       </div>
     </Section>
   );

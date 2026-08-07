@@ -144,6 +144,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="relative flex h-dvh overflow-hidden">
+      {/* Bypass Blocks (SC 2.4.1, Level A). The sidebar puts a mode toggle, three
+          nav destinations and the entire conversation list ahead of <main> in DOM
+          order, so without this a keyboard user tabs the whole history again on
+          every navigation. tabIndex={-1} on the target is required for Safari and
+          Firefox to actually move focus there rather than only scrolling. */}
+      <a
+        href="#juno-main"
+        className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:left-3 focus-visible:top-3 focus-visible:z-[100] focus-visible:rounded-field focus-visible:border focus-visible:border-border focus-visible:bg-popover focus-visible:px-4 focus-visible:py-2 focus-visible:text-sm focus-visible:shadow-float"
+      >
+        Skip to content
+      </a>
       <div className="pointer-events-none fixed inset-0 -z-10">
         <DotField />
       </div>
@@ -153,11 +164,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           user-resizable (drag handle below); --juno-sidebar-width carries it to the
           sidebar's inner column, which must NOT track the aside mid-collapse. The
           width transition is dropped while dragging so resize follows the pointer
-          1:1 instead of lagging through the ease. */}
+          1:1 instead of lagging through the ease.
+
+          ease-in-out, not ease-out-soft: both endpoints of a collapse are on
+          screen, so this is an A-to-B move. A decelerate curve makes the edge look
+          like it arrived from somewhere off-screen. */}
       <aside
         className={cn(
           "relative hidden shrink-0 overflow-hidden border-r border-sidebar-border bg-sidebar md:block",
-          !resizing && "transition-[width] duration-base ease-out-soft"
+          !resizing && "transition-[width] duration-base ease-in-out"
         )}
         style={
           {
@@ -214,6 +229,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </Sheet>
 
       <main
+        id="juno-main"
+        tabIndex={-1}
         className="flex min-w-0 flex-1 flex-col"
         style={{ "--juno-sidebar-width": collapsed ? "64px" : `${sidebarWidth}px` } as React.CSSProperties}
       >

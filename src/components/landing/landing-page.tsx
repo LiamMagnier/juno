@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { JunoMark } from "@/components/brand/logo";
 import { AsciiWordmark, DotMatrixMark } from "@/components/signature/dot-matrix";
 import { DottedDivider } from "@/components/signature/dotted-divider";
+import { ComposerPreview, HERO_MODEL } from "@/components/landing/composer-preview";
 import { FlagshipStrip, ModelLineup } from "@/components/landing/model-lineup";
 import { Metering } from "@/components/landing/metering";
 import { Features } from "@/components/landing/features";
@@ -26,14 +27,20 @@ const LEGAL_LINKS = [
 const PRODUCT_LINKS = [
   { href: "/sign-in", label: "Sign in" },
   { href: "/sign-up", label: "Create account" },
-  { href: "/roadmap", label: "Roadmap" },
+  // /roadmap lives under the (app) route group, whose layout calls requireUser():
+  // a signed-out visitor clicking it is silently bounced to a login form with no
+  // explanation. `?next=` keeps the nav item and makes the redirect intentional.
+  { href: "/sign-in?next=/roadmap", label: "Roadmap" },
   { href: "/downloads/Juno.dmg", label: "Download for macOS" },
 ];
 
 export function LandingPage() {
   return (
     <div className="min-h-dvh bg-background text-foreground">
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5">
+      {/* px-4 sm:px-6 throughout: every app screen indents 16px on a phone, and
+          the landing used to indent 24px, so crossing the sign-in wall shifted
+          the whole left edge by 8px. */}
+      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-5 sm:px-6">
         <Link href="/" aria-label="Juno" className="inline-flex items-center gap-2.5 rounded-md">
           <JunoMark className="h-7 w-7" />
           <AsciiWordmark />
@@ -55,17 +62,27 @@ export function LandingPage() {
             aria-hidden
             className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(55%_45%_at_50%_0%,hsl(var(--primary)/0.1),transparent_70%)]"
           />
+          {/* CSS twin of DotField's resting frame (dot-field.tsx: --foreground at
+              0.05, r 0.7, 24px spacing). The same dot motif already appears on the
+              other side of the sign-in wall — app shell, auth, onboarding — but as
+              a canvas painting near-black dots, while this painted the warm --border
+              at 1px, so the two read as visibly different fields. Matching costs one
+              class string and keeps the landing at zero client JS. */}
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 -z-10 opacity-60 [background-image:radial-gradient(hsl(var(--border))_1px,transparent_1.5px)] [background-size:24px_24px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]"
+            className="pointer-events-none absolute inset-0 -z-10 [background-image:radial-gradient(hsl(var(--foreground)/0.05)_0.7px,transparent_0.8px)] [background-size:24px_24px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]"
           />
-          <div className="mx-auto w-full max-w-6xl px-6 pb-16 pt-14 sm:pb-20 sm:pt-20">
+          <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-14 sm:px-6 sm:pb-20 sm:pt-20">
             <p className="flex items-center gap-2 font-mono text-label text-muted-foreground motion-safe:animate-fade-in">
               <DotMatrixMark className="h-4 w-4" />
               Multi-model AI chat
             </p>
             <h1 className="mt-4 max-w-3xl text-balance font-serif text-hero font-medium tracking-tight motion-safe:animate-rise-in [animation-fill-mode:backwards]">
-              Every frontier model. <span className="text-primary">One honest subscription.</span>
+              {/* Italic accent on the key phrase — the most consistent typographic
+                  gesture Juno has (empty states, /work, /upgrade, /roadmap, code/new,
+                  onboarding) and until now absent from the one page where a visitor
+                  learns the voice. */}
+              Every frontier model. <span className="italic text-primary">One honest subscription.</span>
             </h1>
             <p className="mt-5 max-w-2xl text-pretty text-body-lg text-muted-foreground motion-safe:animate-rise-in [animation-delay:60ms] [animation-fill-mode:backwards]">
               Juno puts Claude, GPT, Gemini and a dozen more labs in one calm workspace — voice, artifacts, projects
@@ -82,7 +99,10 @@ export function LandingPage() {
                 <Link href="/sign-in">Sign in</Link>
               </Button>
             </div>
-            <div className="mt-14 motion-safe:animate-fade-in [animation-delay:200ms] [animation-fill-mode:backwards]">
+            <div className="mt-12 motion-safe:animate-rise-in [animation-delay:200ms] [animation-fill-mode:backwards]">
+              <ComposerPreview model={HERO_MODEL} />
+            </div>
+            <div className="mt-14 motion-safe:animate-fade-in [animation-delay:260ms] [animation-fill-mode:backwards]">
               <DottedDivider label="In the picker today" className="mb-5" />
               <FlagshipStrip />
             </div>
@@ -97,7 +117,7 @@ export function LandingPage() {
       </main>
 
       <footer className="border-t border-border/60">
-        <div className="mx-auto w-full max-w-6xl px-6 py-10">
+        <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
           <div className="flex flex-col justify-between gap-8 sm:flex-row">
             <div>
               <Link href="/" aria-label="Juno" className="inline-flex items-center gap-2.5 rounded-md">
@@ -108,9 +128,9 @@ export function LandingPage() {
                 Every frontier model, one honest subscription. Operated from France.
               </p>
             </div>
-            <nav aria-label="Footer" className="grid grid-cols-2 gap-x-16 gap-y-1.5 text-sm">
+            <nav aria-label="Footer" className="grid grid-cols-2 gap-x-16 gap-y-1.5 text-body">
               <div className="space-y-1.5">
-                <p className="font-mono text-[10px] text-muted-foreground/80">Product</p>
+                <p className="font-mono text-caption text-muted-foreground/80">Product</p>
                 {PRODUCT_LINKS.map(({ href, label }) => (
                   <Link
                     key={href}
@@ -122,7 +142,7 @@ export function LandingPage() {
                 ))}
               </div>
               <div className="space-y-1.5">
-                <p className="font-mono text-[10px] text-muted-foreground/80">Legal</p>
+                <p className="font-mono text-caption text-muted-foreground/80">Legal</p>
                 {LEGAL_LINKS.map(({ href, label }) => (
                   <Link
                     key={href}

@@ -35,25 +35,33 @@ export function Pricing() {
             : "mt-10 grid gap-x-10 sm:grid-cols-2 lg:grid-cols-3"
         }
       >
+        {/* Dotted rules — the product's rule motif (DottedDivider), which the
+            landing already uses for the flagship divider and the receipt leader. */}
         {plans.map((plan) => (
-          <li key={plan.id} className="border-t border-border/60 pb-6 pt-5">
+          <li key={plan.id} className="border-t border-dotted border-border pb-6 pt-5">
             <div className="flex items-baseline justify-between gap-2">
               <h3 className="font-serif text-heading font-medium">{plan.name}</h3>
               {plan.id === "PRO" && (
-                <span className="font-mono text-[10px] text-primary">Most popular</span>
+                <span className="font-mono text-caption text-primary">Most popular</span>
               )}
             </div>
             <p className="mt-3 flex items-baseline gap-1.5">
-              <span className="font-serif text-3xl font-medium tabular-nums tracking-tight">{plan.price} €</span>
+              {/* The same step the in-app PlanCard sets this exact figure at
+                  (/upgrade) — it is the most-read number on the page and used to
+                  be the only one off Juno's scale. */}
+              <span className="font-serif text-display font-medium tabular-nums">{plan.price} €</span>
               {plan.price > 0 && <span className="font-mono text-caption text-muted-foreground">HT / mo</span>}
             </p>
-            <p className="mt-2 text-sm text-muted-foreground">{ONE_LINERS[plan.id] ?? plan.tagline}</p>
+            <p className="mt-2 text-body text-muted-foreground">{ONE_LINERS[plan.id] ?? plan.tagline}</p>
           </li>
         ))}
       </ul>
-      <p className="mt-6 text-sm text-muted-foreground">
+      <p className="mt-6 text-body text-muted-foreground">
         Upgrade, downgrade or cancel any time — changes apply instantly.{" "}
-        <Link href="/upgrade" className="underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary">
+        {/* /upgrade is behind requireUser(), so a signed-out visitor following this
+            was bounced to a login form with no explanation. The copy is unchanged;
+            only the destination moves to the page that can actually answer it. */}
+        <Link href="/sign-up" className="underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary">
           Full plan details
         </Link>
       </p>

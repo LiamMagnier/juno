@@ -11,13 +11,16 @@ import SwiftUI
 /// sidebar (turning a vibrant native source list into a grey slab) and left the
 /// content areas structureless.
 public extension JunoColorToken {
-    // Canvas — the reading surface. Warm off-white, warm graphite.
-    static let canvasLightWarm = JunoColorToken(unchecked: 0.980, 0.978, 0.972)
-    static let canvasDarkWarm = JunoColorToken(unchecked: 0.086, 0.086, 0.094)
-
-    // Raised — cards, code blocks, tables: one step off the canvas.
-    static let raisedLight = JunoColorToken(unchecked: 1, 1, 1)
-    static let raisedDark = JunoColorToken(unchecked: 0.129, 0.129, 0.141)
+    // The canvas and the raised surface are NOT redefined here. They used to be:
+    // this file carried its own `canvasLightWarm`/`canvasDarkWarm` and
+    // `raisedLight`/`raisedDark`, a second ground living beside the one in
+    // `JunoColors.swift`. The dark one had drifted outright — `0.086, 0.086,
+    // 0.094` puts *blue* highest, so the "warm" canvas the doc comment promised
+    // was in fact cool, and the desktop shell was painting a cool graphite next
+    // to `warmBlack`'s warm one. `raisedLight` was a third pure white. There is
+    // now one ground: `junoCanvasWarm` and `junoRaised` below are aliases, and
+    // `JunoDesignTokensTests.testBrandNeutralsAreWarmInBothAppearances` asserts
+    // the warmth of both so this cannot silently happen a second time.
 
     // Row states. Deliberately low-contrast: a source list should whisper.
     static let rowHoverLight = JunoColorToken(unchecked: 0, 0, 0, 0.045)
@@ -26,16 +29,16 @@ public extension JunoColorToken {
     static let rowSelectedDark = JunoColorToken(unchecked: 1, 1, 1, 0.10)
 
     // The navigation column's selected row, from the web's `--sidebar-accent`:
-    // `48 28% 91%` / `30 8% 14%`. Opaque, not an alpha wash, because it is fed to
+    // `48 28% 91%` / `48 8% 14%`. Opaque, not an alpha wash, because it is fed to
     // the platform as a *tint* and the system composites it itself.
     static let sidebarSelectionLight = JunoColorToken(unchecked: 0.9352, 0.9251, 0.8848)
-    static let sidebarSelectionDark = JunoColorToken(unchecked: 0.1512, 0.14, 0.1288)
+    static let sidebarSelectionDark = JunoColorToken(unchecked: 0.1512, 0.1467, 0.1288)
 
     // The navigation column's resting ink, from the web's `--sidebar-foreground`:
-    // `40 4% 30%` / `37 7% 70%`. Barely off neutral — the same warm cast the rest
+    // `48 4% 30%` / `48 7% 70%`. Barely off neutral — the same warm cast the rest
     // of the palette carries, so a grey column does not read as a cold one.
-    static let sidebarForegroundLight = JunoColorToken(unchecked: 0.312, 0.304, 0.288)
-    static let sidebarForegroundDark = JunoColorToken(unchecked: 0.721, 0.705, 0.679)
+    static let sidebarForegroundLight = JunoColorToken(unchecked: 0.312, 0.3072, 0.288)
+    static let sidebarForegroundDark = JunoColorToken(unchecked: 0.721, 0.7126, 0.679)
 
     // The ambient throw under a raised card, from the web's `--shadow-soft`
     // (`hsl(30 10% 20% / 0.05…0.08)`). Warm rather than neutral black: a grey
@@ -56,12 +59,12 @@ public extension JunoColorToken {
 }
 
 public extension Color {
-    /// The reading surface.
-    static let junoCanvasWarm = Color.junoAdaptive(
-        light: .canvasLightWarm, dark: .canvasDarkWarm
-    )
-    /// One step above the canvas: code blocks, tables, cards.
-    static let junoRaised = Color.junoAdaptive(light: .raisedLight, dark: .raisedDark)
+    /// The reading surface. An alias of ``junoCanvas`` — the desktop shell and
+    /// the phone now stand on the same ground rather than two that had drifted.
+    static let junoCanvasWarm = Color.junoCanvas
+    /// One step above the canvas: code blocks, tables, cards. An alias of
+    /// ``junoSurface``, for the same reason.
+    static let junoRaised = Color.junoSurface
     /// Pointer-over state for a list row.
     static let junoRowHover = Color.junoAdaptive(light: .rowHoverLight, dark: .rowHoverDark)
     /// Selected state for a list row that is not the focused selection.

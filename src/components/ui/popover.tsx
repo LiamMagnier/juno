@@ -19,7 +19,11 @@ const PopoverContent = React.forwardRef<
       sideOffset={sideOffset}
       collisionPadding={collisionPadding}
       className={cn(
-        "z-50 w-72 max-w-[calc(100vw-1rem)] origin-popper rounded-[18px] border border-border/60 bg-popover/90 p-4 text-popover-foreground glass-raised backdrop-blur-xl outline-none data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        // 18px, unchanged — `rounded-popover` IS 18px; it only gives the value a
+        // name so the other popover-tier surfaces can reach it. Same for the
+        // material: .overlay-glass is the identical eight-class string this and
+        // five siblings each open-coded.
+        "z-50 w-72 max-w-[calc(100vw-1rem)] origin-popper rounded-popover overlay-glass p-4 outline-none data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
         className
       )}
       {...props}

@@ -10,7 +10,12 @@ const Switch = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SwitchPrimitives.Root
     className={cn(
-      "peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-base ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 data-[state=unchecked]:bg-input data-[state=unchecked]:[box-shadow:var(--well-inset)] data-[state=checked]:btn-glossy data-[state=checked]:bg-primary data-[state=checked]:[box-shadow:inset_0_1px_2px_hsl(0_0%_0%/0.16),0_1px_2px_hsl(var(--primary)/0.4)]",
+      // The rendered switch is 20×36, well under the 24×24 pointer-target minimum
+      // (SC 2.5.8) in the dense settings rows it lives in. A centred pseudo-element
+      // grows the HIT AREA to 24×44 (44×44 on touch) while the control itself stays
+      // pixel-identical — the same trick as empty-state.tsx.
+      // Focus is left to the global :focus-visible outline; see button.tsx.
+      "peer relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-base ease-out-soft before:absolute before:left-1/2 before:top-1/2 before:h-6 before:w-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] coarse:before:h-11 coarse:before:w-11 disabled:cursor-not-allowed disabled:opacity-50 data-[state=unchecked]:bg-input data-[state=unchecked]:[box-shadow:var(--well-inset)] data-[state=checked]:btn-glossy data-[state=checked]:bg-primary data-[state=checked]:[box-shadow:inset_0_1px_2px_hsl(0_0%_0%/0.16),0_1px_2px_hsl(var(--primary)/0.4)]",
       className
     )}
     {...props}

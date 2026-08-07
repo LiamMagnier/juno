@@ -53,17 +53,22 @@ export function FlagshipStrip() {
   return (
     <div>
       <ul className="flex flex-wrap items-center gap-2">
+        {/* The strip is labelled "In the picker today", so it has to look like
+            the picker: same geometry and voice as the composer's trigger
+            (model-selector.tsx) — 10px radius, size-4 logo, model name in mono.
+            The product treats model ids as machine metadata; the landing must
+            too, or the claim is decoration. */}
         {LABS.map(({ provider, label, flagships }) => (
           <li
             key={provider}
-            className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/70 py-1.5 pl-2 pr-3.5 text-[13px]"
+            className="inline-flex h-8 items-center gap-1.5 rounded-control border border-border/60 bg-card/70 px-2 text-[13px] font-medium text-foreground/80"
           >
-            <ProviderLogo provider={provider} label={label} className="h-5 w-5" />
-            <span className="whitespace-nowrap">{flagships[0]}</span>
+            <ProviderLogo provider={provider} label={label} className="size-4 shrink-0 rounded" />
+            <span className="whitespace-nowrap font-mono">{flagships[0]}</span>
           </li>
         ))}
       </ul>
-      <p className="mt-4 font-mono text-[10px] text-muted-foreground">
+      <p className="mt-4 font-mono text-caption text-muted-foreground">
         {MODELS_FLOOR}+ models · {TOTAL_LABS} labs · synced nightly
       </p>
     </div>
@@ -78,19 +83,22 @@ export function ModelLineup() {
       heading={`${MODELS_FLOOR}+ models across ${TOTAL_LABS} labs.`}
       lede="Curated and synced nightly from each provider's own catalog, so new flagships appear without waiting on us. Pick per message — the conversation carries on."
     >
+      {/* Dotted rules: the product's rule motif is DottedDivider (roadmap, submit
+          dialog) and the landing already uses it for the flagship divider and the
+          receipt's leader. */}
       <ul className="mt-10 grid gap-x-10 sm:grid-cols-2">
         {LABS.map(({ provider, label, flagships, count }) => (
-          <li key={provider} className="flex items-center gap-3 border-t border-border/60 py-3.5">
+          <li key={provider} className="flex items-center gap-3 border-t border-dotted border-border py-3.5">
             <ProviderLogo provider={provider} label={label} className="h-6 w-6" />
             <div className="min-w-0 flex-1">
-              <span className="block text-sm font-medium">{label}</span>
+              <span className="block text-body font-medium">{label}</span>
               <span className="block truncate text-caption text-muted-foreground">{flagships.join(" · ")}</span>
             </div>
             <span className="font-mono text-caption tabular-nums text-muted-foreground">×{count}</span>
           </li>
         ))}
       </ul>
-      <p className="mt-6 max-w-2xl text-sm text-muted-foreground">
+      <p className="mt-6 max-w-2xl text-body text-muted-foreground">
         Beyond chat: image and video generation (GPT Image, Nano Banana, Veo, Grok Imagine, Seedance) and realtime
         voice — all under the same subscription, all metered the same way.
       </p>
