@@ -253,13 +253,123 @@ const MAX_FETCH_CHARS = 40_000;
  * checking: a page under an attacker's control answers 302 to the metadata
  * endpoint and the platform's own redirect handling never asks again.
  *
- * It is emphatically not a containment boundary. A hostname that resolves to a
- * private address passes this and is refused by nothing, because the process
- * that would refuse it — the egress proxy `tools/egress-policy.ts` is written
- * for — has not been built. That gap is stated in docs/native/WORK.md and this
- * function is not the place it gets closed; a check that claimed to be one
- * would stop anybody closing it.
+ * It is emphatically not a DNS containment boundary. The cloud executor must
+ * resolve a hostname, apply `blockedFetchAddress` to every answer, and pin the
+ * approved answer into the socket; that is the part a pure URL helper cannot
+ * do. Keeping this function honest prevents a caller from mistaking a lexical
+ * hostname check for an egress firewall.
  */
+/**
+ * Returns a refusal reason for an IP address that is not a public web target.
+ *
+ * This is deliberately separate from `blockedFetchTarget`: the URL check is
+ * useful at the tool boundary, while the cloud executor also applies the same
+ * predicate to every address returned by DNS immediately before it connects.
+ * Keeping the address classifier here prevents those two checks from slowly
+ * acquiring different definitions of "private".
+ */
+export function blockedFetchAddress(rawAddress: string): string | null {
+  const address = rawAddress.trim().replace(/^\[|\]$/g, '').toLowerCase();
+
+  const ipv4 = parseIpv4(address);
+  if (ipv4) {
+    const [a, b, c] = ipv4;
+    const privateRange =
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 0 && c === 0) ||
+      (a === 192 && b === 0 && c === 2) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && b >= 18 && b <= 19) ||
+      (a === 198 && b === 51 && c === 100) ||
+      (a === 203 && b === 0 && c === 113) ||
+      a >= 224;
+    return privateRange ? 'that address is inside Juno\'s own network, not on the web.' : null;
+  }
+
+  const ipv6 = parseIpv6(address);
+  if (!ipv6) return null;
+
+  // IPv4-mapped IPv6 addresses are still IPv4 addresses. Without this branch,
+  // ::ffff:127.0.0.1 would look like an ordinary public IPv6 literal.
+  if (
+    ipv6.length === 8 &&
+    ipv6.slice(0, 5).every((group) => group === 0) &&
+    ipv6[5] === 0xffff
+  ) {
+    const mapped = [ipv6[6] >> 8, ipv6[6] & 0xff, ipv6[7] >> 8, ipv6[7] & 0xff];
+    const [a, b, c] = mapped;
+    const privateRange =
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 0 && c === 0) ||
+      (a === 192 && b === 0 && c === 2) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && b >= 18 && b <= 19) ||
+      (a === 198 && b === 51 && c === 100) ||
+      (a === 203 && b === 0 && c === 113) ||
+      a >= 224;
+    return privateRange ? 'that address is inside Juno\'s own network, not on the web.' : null;
+  }
+
+  const first = ipv6[0];
+  const isUnspecified = ipv6.every((group) => group === 0);
+  const isLoopback = ipv6.slice(0, 7).every((group) => group === 0) && ipv6[7] === 1;
+  const isUniqueLocal = (first & 0xfe00) === 0xfc00;
+  const isLinkLocal = (first & 0xffc0) === 0xfe80;
+  const isMulticast = (first & 0xff00) === 0xff00;
+  const isDocumentation = ipv6[0] === 0x2001 && ipv6[1] === 0x0db8;
+  return isUnspecified || isLoopback || isUniqueLocal || isLinkLocal || isMulticast || isDocumentation
+    ? 'that address is inside Juno\'s own network, not on the web.'
+    : null;
+}
+
+function parseIpv4(value: string): [number, number, number, number] | null {
+  const parts = value.split('.');
+  if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part))) return null;
+  const octets = parts.map(Number);
+  return octets.every((octet) => octet >= 0 && octet <= 255)
+    ? (octets as [number, number, number, number])
+    : null;
+}
+
+function parseIpv6(value: string): number[] | null {
+  if (!value.includes(':') || value.includes('%')) return null;
+
+  // Expand a dotted-quad tail before splitting into hextets.
+  let normalized = value;
+  const tail = value.slice(value.lastIndexOf(':') + 1);
+  if (tail.includes('.')) {
+    const octets = parseIpv4(tail);
+    if (!octets) return null;
+    const [a, b, c, d] = octets;
+    normalized = `${value.slice(0, value.lastIndexOf(':') + 1)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+
+  const double = normalized.indexOf('::');
+  let groups: string[];
+  if (double >= 0) {
+    if (normalized.indexOf('::', double + 2) >= 0) return null;
+    const left = normalized.slice(0, double).split(':').filter(Boolean);
+    const right = normalized.slice(double + 2).split(':').filter(Boolean);
+    const missing = 8 - left.length - right.length;
+    if (missing < 1) return null;
+    groups = [...left, ...Array.from({ length: missing }, () => '0'), ...right];
+  } else {
+    groups = normalized.split(':');
+  }
+  if (groups.length !== 8 || groups.some((group) => !/^[0-9a-f]{1,4}$/.test(group))) return null;
+  return groups.map((group) => Number.parseInt(group, 16));
+}
+
 export function blockedFetchTarget(rawUrl: string): string | null {
   let url: URL;
   try {
@@ -283,17 +393,7 @@ export function blockedFetchTarget(rawUrl: string): string | null {
   ) {
     return 'that address is on the machine Juno is running on, not on the web.';
   }
-  // IPv4 literals in the ranges RFC 1918 and RFC 3927 reserve, plus the
-  // loopback block. 169.254.169.254 is the one that matters and it is the one
-  // a page will name.
-  if (/^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.)/.test(host)) {
-    return 'that address is inside Juno\'s own network, not on the web.';
-  }
-  // IPv6 unique-local and link-local.
-  if (/^(fc|fd|fe8|fe9|fea|feb)/.test(host) && host.includes(':')) {
-    return 'that address is inside Juno\'s own network, not on the web.';
-  }
-  return null;
+  return blockedFetchAddress(host);
 }
 
 /**

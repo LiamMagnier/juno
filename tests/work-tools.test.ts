@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   asWorkTool,
+  blockedFetchAddress,
   blockedFetchTarget,
   cloudFilesTool,
   connectorActionFor,
@@ -299,6 +300,26 @@ test("web_fetch refuses Juno's own network and anything that is not http", () =>
   }
   for (const url of ["https://example.com/a?b=c", "http://example.com", "https://sub.example.co.uk/x"]) {
     assert.equal(blockedFetchTarget(url), null, `${url} was refused`);
+  }
+});
+
+test("web_fetch's address check catches mapped IPv4 and reserved ranges", () => {
+  for (const address of [
+    "127.0.0.1",
+    "100.64.0.1",
+    "192.0.2.10",
+    "198.18.0.1",
+    "::1",
+    "::ffff:127.0.0.1",
+    "::ffff:169.254.169.254",
+    "fc00::1",
+    "fe80::1",
+    "2001:db8::1",
+  ]) {
+    assert.notEqual(blockedFetchAddress(address), null, `${address} was allowed`);
+  }
+  for (const address of ["8.8.8.8", "1.1.1.1", "2606:4700:4700::1111"]) {
+    assert.equal(blockedFetchAddress(address), null, `${address} was refused`);
   }
 });
 

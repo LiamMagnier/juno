@@ -31,6 +31,9 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import { lookup as dnsLookup } from "node:dns/promises";
+import * as http from "node:http";
+import * as https from "node:https";
 
 import { prisma, prismaUnguarded } from "@/lib/db";
 import {
@@ -41,6 +44,7 @@ import {
   reclaimStalledRuns,
   saveRunCheckpoint,
   setSessionAttention,
+  type WorkRunUsage,
 } from "@/lib/work/store";
 import { verifyApproval } from "@/lib/work/digests";
 import { recordWorkAudit } from "@/lib/work/audit";
@@ -437,10 +441,24 @@ type ConnectorToolDeps = import("../runner/agent-core/src/work/index.js").Connec
 type ConnectorAccess = import("../runner/agent-core/src/work/index.js").ConnectorAccess;
 type WorkArtifactRef = import("../runner/agent-core/src/work/index.js").WorkArtifactRef;
 type WorkCheckpoint = import("../runner/agent-core/src/work/index.js").WorkCheckpoint;
+type WorkRuntimeUsage = import("../runner/agent-core/src/work/index.js").BudgetUsage;
 type WorkSessionOptions = import("../runner/agent-core/src/work/index.js").WorkSessionOptions;
 type ProviderSpec = import("../runner/agent-core/src/work/index.js").ProviderSpec;
 type ReasoningEffort = import("../runner/agent-core/src/work/index.js").ReasoningEffort;
 type WorkSession = InstanceType<WorkRuntime["WorkAgentSession"]>;
+
+/** Converts the runtime's cumulative counters to the database's shape. */
+function persistedUsage(usage: WorkRuntimeUsage): WorkRunUsage {
+  const integer = (value: number | undefined): number =>
+    Number.isFinite(value) ? Math.max(0, Math.floor(value as number)) : 0;
+  const inputTokens = integer(usage.inputTokens);
+  const outputTokens = integer(usage.outputTokens ?? Math.max(0, usage.tokens - inputTokens));
+  return {
+    costMicroUsd: integer(usage.costMicroUsd),
+    inputTokens,
+    outputTokens,
+  };
+}
 
 /**
  * A late reference to the session a tool's effect needs.
@@ -1269,6 +1287,123 @@ const MAX_WEB_FETCH_BYTES = 5_000_000;
 /** Hops a fetch may take before the run gives up on where it is being sent. */
 const MAX_WEB_FETCH_REDIRECTS = 5;
 
+interface PinnedWebResponse {
+  status: number;
+  statusText: string;
+  contentType: string;
+  location: string | null;
+  body: Buffer;
+}
+
+/**
+ * Fetches one URL with a DNS answer pinned to the socket that is opened.
+ *
+ * Checking a hostname and then calling the platform's ordinary `fetch` leaves
+ * a rebinding window: DNS can answer with a public address for the check and a
+ * private address when the socket is created. Resolving once, rejecting every
+ * private answer, and supplying that approved address through Node's lookup
+ * hook makes the check and connection one decision. The original hostname is
+ * still used for HTTP Host and TLS SNI, so virtual-hosted HTTPS keeps working.
+ */
+async function fetchPinnedWebPage(
+  target: string,
+  signal: AbortSignal,
+  runtime: Pick<WorkRuntime, "blockedFetchTarget" | "blockedFetchAddress">
+): Promise<PinnedWebResponse> {
+  const parsed = new URL(target);
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
+  const blockedTarget = runtime.blockedFetchTarget(target);
+  if (blockedTarget) throw new Error(blockedTarget);
+
+  const addresses = await dnsLookup(hostname, { all: true, verbatim: true });
+  if (addresses.length === 0) throw new Error("the hostname did not resolve to an address");
+  for (const address of addresses) {
+    const blockedAddress = runtime.blockedFetchAddress(address.address);
+    if (blockedAddress) throw new Error(blockedAddress);
+  }
+  const selected = addresses[0];
+
+  return new Promise<PinnedWebResponse>((resolve, reject) => {
+    let settled = false;
+    const finish = (error: Error | null, response?: PinnedWebResponse) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", onAbort);
+      if (error) reject(error);
+      else if (response) resolve(response);
+      else reject(new Error("the web response ended without a result"));
+    };
+    const onAbort = () => {
+      request.destroy();
+      finish(new Error("the web request was aborted"));
+    };
+
+    const options: http.RequestOptions = {
+      hostname,
+      port: parsed.port || undefined,
+      path: `${parsed.pathname || "/"}${parsed.search}`,
+      method: "GET",
+      headers: {
+        "User-Agent": "Juno Work (+https://chat.liams.dev)",
+        Accept: "text/html,text/plain,application/json;q=0.9,*/*;q=0.1",
+        "Accept-Encoding": "identity",
+      },
+      // The callback returns the already-approved answer instead of allowing
+      // the client to perform a second DNS lookup at connection time.
+      lookup: (_hostname, _options, callback) => {
+        callback(null, selected.address, selected.family);
+      },
+      signal,
+    };
+
+    const onResponse = (response: http.IncomingMessage) => {
+      const rawLength = response.headers["content-length"];
+      const declared = Number(Array.isArray(rawLength) ? rawLength[0] : rawLength ?? "0");
+      if (Number.isFinite(declared) && declared > MAX_WEB_FETCH_BYTES) {
+        response.resume();
+        finish(new Error(`${target} is ${declared} bytes, which is more than Juno will download.`));
+        request.destroy();
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      response.on("data", (chunk: Buffer | string) => {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        bytes += buffer.byteLength;
+        if (bytes > MAX_WEB_FETCH_BYTES) {
+          finish(new Error(`${target} is larger than Juno will download.`));
+          request.destroy();
+          return;
+        }
+        chunks.push(buffer);
+      });
+      response.on("end", () => {
+        finish(null, {
+          status: response.statusCode ?? 0,
+          statusText: response.statusMessage ?? "",
+          contentType:
+            typeof response.headers["content-type"] === "string"
+              ? response.headers["content-type"]
+              : "",
+          location:
+            typeof response.headers.location === "string" ? response.headers.location : null,
+          body: Buffer.concat(chunks),
+        });
+      });
+      response.on("error", (error) => finish(error instanceof Error ? error : new Error(String(error))));
+    };
+
+    const request = parsed.protocol === "https:"
+      ? https.request({ ...options, servername: hostname }, onResponse)
+      : http.request(options, onResponse);
+    request.on("error", (error) => finish(error instanceof Error ? error : new Error(String(error))));
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
+    else request.end();
+  });
+}
+
 /**
  * Everything the run can do, assembled.
  *
@@ -1321,14 +1456,10 @@ function buildTools(input: {
         let target = url;
         try {
           for (let hop = 0; hop <= MAX_WEB_FETCH_REDIRECTS; hop++) {
-            const response = await fetch(target, {
-              signal: controller.signal,
-              redirect: "manual",
-              headers: { "User-Agent": "Juno Work (+https://chat.liams.dev)" },
-            });
+            const response = await fetchPinnedWebPage(target, controller.signal, runtime);
 
             if (response.status >= 300 && response.status < 400) {
-              const location = response.headers.get("location");
+              const location = response.location;
               if (!location) {
                 return { ok: false, message: `${target} redirected without saying where to.` };
               }
@@ -1341,19 +1472,10 @@ function buildTools(input: {
               continue;
             }
 
-            if (!response.ok) {
+            if (response.status < 200 || response.status >= 300) {
               return { ok: false, message: `${target} answered ${response.status} ${response.statusText}.` };
             }
-            const contentType = response.headers.get("content-type") ?? "";
-            const declared = Number(response.headers.get("content-length") ?? "0");
-            if (Number.isFinite(declared) && declared > MAX_WEB_FETCH_BYTES) {
-              return { ok: false, message: `${target} is ${declared} bytes, which is more than Juno will download.` };
-            }
-            const buffer = await response.arrayBuffer();
-            if (buffer.byteLength > MAX_WEB_FETCH_BYTES) {
-              return { ok: false, message: `${target} is larger than Juno will download.` };
-            }
-            return { ok: true, contentType, body: new TextDecoder().decode(buffer) };
+            return { ok: true, contentType: response.contentType, body: response.body.toString("utf8") };
           }
           return { ok: false, message: `${url} redirected more than ${MAX_WEB_FETCH_REDIRECTS} times.` };
         } catch (error) {
@@ -2063,7 +2185,7 @@ async function drive(runId: string, userId: string): Promise<void> {
       // written the latest checkpoint; this conditional park releases its
       // lease only if this worker still owns it, so a fast Resume cannot be
       // overwritten by a late pause completion.
-      await parkRun({ runId, userId, executorId: EXECUTOR_ID });
+      await parkRun({ runId, userId, executorId: EXECUTOR_ID, usage: outcome.usage });
       return;
     }
 
@@ -2072,6 +2194,8 @@ async function drive(runId: string, userId: string): Promise<void> {
       userId,
       reason: outcome.reason,
       detail: outcome.detail,
+      executorId: EXECUTOR_ID,
+      usage: outcome.usage,
     });
     if (!emittedRunFinished) {
       await emit("run_finished", { reason: outcome.reason, detail: outcome.detail });
@@ -2080,7 +2204,13 @@ async function drive(runId: string, userId: string): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     log("run failed", { runId, error: message });
     await emit("error", { message });
-    await finishRun({ runId, userId, reason: "failed", detail: message }).catch(
+    await finishRun({
+      runId,
+      userId,
+      reason: "failed",
+      detail: message,
+      executorId: EXECUTOR_ID,
+    }).catch(
       (finishError: unknown) => {
         // The last line of defence has itself failed. Nothing further can be
         // done in-process; the lease will expire and the sweep will end the run.
@@ -2099,6 +2229,7 @@ interface ExecuteInput {
 interface ExecuteOutcome {
   reason: WorkTerminalReason;
   detail: string;
+  usage?: WorkRunUsage;
   /** The session stopped at a resumable checkpoint rather than terminating. */
   paused?: boolean;
 }
@@ -2121,14 +2252,17 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   });
   if (!run) return { reason: "failed", detail: "The run disappeared after it was claimed." };
 
+  const started = await prisma.workRun.updateMany({
+    where: { id: input.runId, userId: input.userId, claimedBy: EXECUTOR_ID, status: "preparing" },
+    data: { status: "running" },
+  });
+  if (started.count !== 1) throw new Error("The cloud executor lost this run's lease before starting it.");
   await setSessionAttention({
     sessionId: run.sessionId,
     userId: input.userId,
+    runId: input.runId,
+    executorId: EXECUTOR_ID,
     status: "running",
-  });
-  await prisma.workRun.updateMany({
-    where: { id: input.runId, userId: input.userId },
-    data: { status: "running" },
   });
 
   // Typed through `unknown`: the compiled surface and the source surface
@@ -2302,7 +2436,10 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // land after a newer one. Every write is lease-fenced in the store as well.
   let checkpointWrite = Promise.resolve();
   let lastCheckpointWriteSucceeded = true;
-  const queueCheckpoint = (snapshot: WorkCheckpoint): void => {
+  const queueCheckpoint = (
+    snapshot: WorkCheckpoint,
+    usage = persistedUsage({ ...snapshot.budget, runtimeMs: snapshot.budget.accumulatedMs })
+  ): void => {
     // The value is only considered safe once the newest queued write has
     // completed. Parking a run with an unpersisted snapshot would make Resume
     // restart from an older transcript and could repeat an external side
@@ -2315,6 +2452,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           userId: input.userId,
           executorId: EXECUTOR_ID,
           checkpoint: snapshot as unknown as Prisma.InputJsonValue,
+          usage,
         });
         lastCheckpointWriteSucceeded = saved;
         if (!saved) {
@@ -2392,13 +2530,21 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
       },
       onCheckpoint: (snapshot: WorkCheckpoint) => queueCheckpoint(snapshot),
       askQuestion: async (question) => {
-        await prisma.workRun.updateMany({
-          where: { id: input.runId, userId: input.userId },
+        const waiting = await prisma.workRun.updateMany({
+          where: {
+            id: input.runId,
+            userId: input.userId,
+            claimedBy: EXECUTOR_ID,
+            status: "running",
+          },
           data: { status: "waiting_input" },
         });
+        if (waiting.count !== 1) throw new Error("The cloud executor lost this run's lease while asking a question.");
         await setSessionAttention({
           sessionId: run.sessionId,
           userId: input.userId,
+          runId: input.runId,
+          executorId: EXECUTOR_ID,
           status: "waiting_input",
         });
         const waited = await waitFor(
@@ -2412,13 +2558,29 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           activeSession().pause("Waiting for an answer.");
           throw new Error("paused-waiting-for-answer");
         }
-        await prisma.workRun.updateMany({
-          where: { id: input.runId, userId: input.userId },
+        const resumed = await prisma.workRun.updateMany({
+          where: {
+            id: input.runId,
+            userId: input.userId,
+            claimedBy: EXECUTOR_ID,
+            status: "waiting_input",
+          },
           data: { status: "running" },
         });
+        if (resumed.count !== 1) throw new Error("The cloud executor lost this run's lease after the answer arrived.");
         return waited.value;
       },
       requestApproval: async (request) => {
+        const waiting = await prisma.workRun.updateMany({
+          where: {
+            id: input.runId,
+            userId: input.userId,
+            claimedBy: EXECUTOR_ID,
+            status: "running",
+          },
+          data: { status: "waiting_approval" },
+        });
+        if (waiting.count !== 1) throw new Error("The cloud executor lost this run's lease before an approval.");
         const approval = await prisma.workApproval.create({
           data: {
             runId: input.runId,
@@ -2432,13 +2594,11 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
             expiresAt: new Date(request.expiresAt),
           },
         });
-        await prisma.workRun.updateMany({
-          where: { id: input.runId, userId: input.userId },
-          data: { status: "waiting_approval" },
-        });
         await setSessionAttention({
           sessionId: run.sessionId,
           userId: input.userId,
+          runId: input.runId,
+          executorId: EXECUTOR_ID,
           status: "waiting_approval",
         });
 
@@ -2468,10 +2628,16 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
           now: new Date(),
         });
 
-        await prisma.workRun.updateMany({
-          where: { id: input.runId, userId: input.userId },
+        const resumed = await prisma.workRun.updateMany({
+          where: {
+            id: input.runId,
+            userId: input.userId,
+            claimedBy: EXECUTOR_ID,
+            status: "waiting_approval",
+          },
           data: { status: "running" },
         });
+        if (resumed.count !== 1) throw new Error("The cloud executor lost this run's lease after approval.");
 
         if (!verdict.ok) {
           await recordWorkAudit({
@@ -2550,22 +2716,25 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
 
   try {
     const result = await session.run();
-    if (result.state === "paused") queueCheckpoint(result.checkpoint);
+    const usage = persistedUsage(result.usage);
+    if (result.state === "paused") queueCheckpoint(result.checkpoint, usage);
     await checkpointWrite;
     if (result.state === "paused") {
       if (!lastCheckpointWriteSucceeded) {
         return {
           reason: "failed",
           detail: "Juno could not safely save this paused run. Please try again.",
+          usage,
         };
       }
       return {
         reason: "interrupted",
         detail: "Paused while waiting for the user.",
+        usage,
         paused: true,
       };
     }
-    return { reason: result.terminalReason, detail: result.detail };
+    return { reason: result.terminalReason, detail: result.detail, usage };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.startsWith("paused-waiting-for")) {

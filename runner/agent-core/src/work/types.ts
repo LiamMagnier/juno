@@ -259,6 +259,9 @@ export interface BudgetUsage {
   costMicroUsd: number;
   tokens: number;
   runtimeMs: number;
+  /** Provider split, retained for billing and post-run cost inspection. */
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 export function budgetExceeded(

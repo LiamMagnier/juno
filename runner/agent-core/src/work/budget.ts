@@ -72,6 +72,9 @@ export interface WorkBudgetState {
   tokens: number;
   accumulatedMs: number;
   warned: Array<'cost' | 'tokens' | 'runtime'>;
+  /** Optional so checkpoints written before this field shipped still restore. */
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 /**
@@ -92,6 +95,8 @@ export class WorkBudgetGuard {
   private readonly onWarning?: (warning: WorkBudgetWarning) => void;
   private costMicroUsd = 0;
   private tokens = 0;
+  private inputTokens = 0;
+  private outputTokens = 0;
   /** Runtime already banked from earlier running spells. */
   private accumulatedMs = 0;
   /** When the current running spell began; null while stopped or paused. */
@@ -123,6 +128,8 @@ export class WorkBudgetGuard {
   restore(state: WorkBudgetState): void {
     this.costMicroUsd = state.costMicroUsd;
     this.tokens = state.tokens;
+    this.inputTokens = state.inputTokens ?? 0;
+    this.outputTokens = state.outputTokens ?? 0;
     this.accumulatedMs = state.accumulatedMs;
     this.warned = new Set(state.warned);
   }
@@ -151,6 +158,8 @@ export class WorkBudgetGuard {
       costMicroUsd: this.costMicroUsd,
       tokens: this.tokens,
       runtimeMs: this.accumulatedMs + live,
+      inputTokens: this.inputTokens,
+      outputTokens: this.outputTokens,
     };
   }
 
@@ -167,11 +176,15 @@ export class WorkBudgetGuard {
       tokens: usage.tokens,
       accumulatedMs: usage.runtimeMs,
       warned: [...this.warned],
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
     };
   }
 
   /** Add one provider request's usage, priced if pricing was supplied. */
   record(step: Usage): void {
+    this.inputTokens += step.inputTokens;
+    this.outputTokens += step.outputTokens;
     this.tokens += step.inputTokens + step.outputTokens;
     if (!this.pricing) return;
     // Rounded once per step rather than once at the end: the run's recorded

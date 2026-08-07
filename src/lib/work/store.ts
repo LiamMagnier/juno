@@ -168,6 +168,9 @@ export async function createWorkSession(input: CreateWorkSessionInput): Promise<
 export interface SetSessionAttentionInput {
   sessionId: string;
   userId: string;
+  /** Optional lease fence for executor-owned mirrors. */
+  runId?: string;
+  executorId?: string;
   /** The current run's status, which the session mirrors. */
   status: WorkStatus;
   /**
@@ -190,7 +193,13 @@ export interface SetSessionAttentionInput {
  */
 export async function setSessionAttention(input: SetSessionAttentionInput): Promise<void> {
   await prisma.workSession.updateMany({
-    where: { id: input.sessionId, userId: input.userId },
+    where: {
+      id: input.sessionId,
+      userId: input.userId,
+      ...(input.runId && input.executorId
+        ? { runs: { some: { id: input.runId, claimedBy: input.executorId } } }
+        : {}),
+    },
     data: {
       status: input.status,
       needsAttention: input.needsAttention ?? statusNeedsAttention(input.status),
@@ -862,6 +871,8 @@ export async function claimRun(input: ClaimRunInput): Promise<ClaimRunResult> {
   await setSessionAttention({
     sessionId: run.sessionId,
     userId: input.userId,
+    runId: run.id,
+    executorId: input.executorId,
     status: "preparing",
     now,
   });
@@ -872,12 +883,36 @@ export async function claimRun(input: ClaimRunInput): Promise<ClaimRunResult> {
 // Checkpoints and parking
 // ---------------------------------------------------------------------------
 
+/** Provider usage persisted on a Work attempt, in the database's integer units. */
+export interface WorkRunUsage {
+  costMicroUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+const MAX_PRISMA_INT = 2_147_483_647;
+
+function usageData(usage: WorkRunUsage | undefined): Prisma.WorkRunUpdateManyMutationInput {
+  if (!usage) return {};
+  const integer = (value: number): number => {
+    if (!Number.isFinite(value)) return 0;
+    return Math.min(Math.max(Math.floor(value), 0), MAX_PRISMA_INT);
+  };
+  return {
+    costMicroUsd: integer(usage.costMicroUsd),
+    inputTokens: integer(usage.inputTokens),
+    outputTokens: integer(usage.outputTokens),
+  };
+}
+
 export interface SaveRunCheckpointInput {
   runId: string;
   userId: string;
   /** Only the executor holding the lease may advance the snapshot. */
   executorId: string;
   checkpoint: Prisma.InputJsonValue;
+  /** The same snapshot's cumulative provider usage, when available. */
+  usage?: WorkRunUsage;
 }
 
 /**
@@ -896,7 +931,7 @@ export async function saveRunCheckpoint(input: SaveRunCheckpointInput): Promise<
       claimedBy: input.executorId,
       status: { in: ["preparing", "running", "waiting_input", "waiting_approval", "paused"] },
     },
-    data: { checkpoint: input.checkpoint },
+    data: { checkpoint: input.checkpoint, ...usageData(input.usage) },
   });
   return saved.count === 1;
 }
@@ -906,6 +941,8 @@ export interface ParkRunInput {
   userId: string;
   /** The worker that produced the checkpoint and still owns the lease. */
   executorId: string;
+  /** Cumulative usage at the pause boundary. */
+  usage?: WorkRunUsage;
 }
 
 /**
@@ -926,6 +963,7 @@ export async function parkRun(input: ParkRunInput): Promise<boolean> {
       },
       data: {
         status: "paused",
+        ...usageData(input.usage),
         claimedBy: null,
         claimedAt: null,
         leaseExpiresAt: null,
@@ -973,6 +1011,10 @@ export interface FinishRunInput {
   /** Operator-facing detail behind the reason. Never the model's text. */
   detail?: string | null;
   now?: Date;
+  /** Fences executor-owned terminal writes to the current lease holder. */
+  executorId?: string;
+  /** Cumulative provider usage at the terminal boundary. */
+  usage?: WorkRunUsage;
 }
 
 export type FinishRunResult =
@@ -1006,12 +1048,14 @@ export async function finishRun(input: FinishRunInput): Promise<FinishRunResult>
         id: input.runId,
         userId: input.userId,
         status: { notIn: [...WORK_TERMINAL_STATUSES] },
+        ...(input.executorId ? { claimedBy: input.executorId } : {}),
       },
       data: {
         status,
         terminalReason: input.reason,
         terminalDetail: input.detail ? input.detail.slice(0, MAX_TERMINAL_DETAIL_CHARS) : null,
         finishedAt: now,
+        ...usageData(input.usage),
         // A terminal run must not leave a provider transcript and tool context
         // resident in the database indefinitely. A paused run never reaches
         // finishRun; it is parked explicitly above and keeps its checkpoint.

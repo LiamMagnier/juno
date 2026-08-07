@@ -63,6 +63,23 @@ test('the step that trips the ceiling is still counted', () => {
   assert.equal(guard.usage.tokens, 120);
 });
 
+test('provider input and output totals survive a checkpoint round-trip', () => {
+  const guard = new WorkBudgetGuard({ budget: NO_BUDGET });
+  guard.start();
+  guard.onStep({ inputTokens: 37, outputTokens: 11 });
+  guard.onStep({ inputTokens: 5, outputTokens: 2 });
+  assert.deepEqual(
+    { inputTokens: guard.usage.inputTokens, outputTokens: guard.usage.outputTokens },
+    { inputTokens: 42, outputTokens: 13 },
+  );
+
+  const resumed = WorkBudgetGuard.fromJSON(guard.toJSON(), { budget: NO_BUDGET });
+  assert.deepEqual(
+    { inputTokens: resumed.usage.inputTokens, outputTokens: resumed.usage.outputTokens },
+    { inputTokens: 42, outputTokens: 13 },
+  );
+});
+
 test('cost is priced per step in integer micro-USD', () => {
   const guard = new WorkBudgetGuard({
     budget: { maxCostMicroUsd: 3_000_000, maxTokens: 0, maxRuntimeMs: 0 },

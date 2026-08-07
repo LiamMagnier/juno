@@ -175,6 +175,7 @@ export { DEFAULT_REQUEST_TIMEOUT_MS } from '../providers/timeouts.js';
 
 export {
   asWorkTool,
+  blockedFetchAddress,
   blockedFetchTarget,
   cloudFilesTool,
   connectorActionFor,
