@@ -78,7 +78,13 @@ export type DegradationKind =
   | "fast_mode_unavailable"
   | "pro_mode_unavailable"
   | "vision_unavailable"
-  | "connectors_unavailable";
+  | "connectors_unavailable"
+  // Unlike every kind above it, this one does not describe a lesser answer: the
+  // turn's connector call never executed, because the approval broker held it
+  // and the surface that had to ask nobody could ask on. It is resolved outside
+  // `resolveEffectiveCapabilities` — that function sees a model and a plan, not
+  // which client is on the other end of the stream — so nothing here pushes it.
+  | "action_approval_unavailable";
 
 export interface Degradation {
   kind: DegradationKind;

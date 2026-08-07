@@ -521,10 +521,18 @@ async function handleChat(req: Request) {
             sendActivity({ kind: "warning", title: "Model changed", detail: routingWarning });
           }
           if (activeConnectors.length) {
+            // Private chats reach no connector. An approval receipt is a durable
+            // security record — it names the connector, the tool, and redacted
+            // arguments — and writing one is exactly the persistence a private
+            // chat promises not to do. Rather than persist it anyway or run the
+            // call unbrokered, private mode declines the capability and says so.
+            // (`streamChat` also refuses tools without an audit identity, so this
+            // is the honest label on a refusal that already happens, not a new
+            // restriction.)
             sendActivity({
-              kind: "tool",
-              title: "Connected tools ready",
-              detail: activeConnectors.map((c) => c.label).join(" · "),
+              kind: "warning",
+              title: "Connected tools are off in private chat",
+              detail: `${activeConnectors.map((c) => c.label).join(" · ")} — approving an action would have to be recorded.`,
             });
           }
           const reasoningEffort = effectiveReasoningEffort(
@@ -581,7 +589,10 @@ async function handleChat(req: Request) {
             signal: generationController.signal,
             reasoningEffort,
             webSearch: useWebSearch,
-            connectors: activeConnectors,
+            // Deliberately empty — see the warning above. Passing them would only
+            // reach `streamChat`'s "connectors without an audit identity" branch,
+            // which logs the same refusal as an internal bug.
+            connectors: [],
             dynamicContext: buildDynamicContext(),
             // Private chats have no stable conversation id; group the cache by
             // user (their system prompt is the shared prefix).
@@ -1705,7 +1716,25 @@ async function handleChat(req: Request) {
           cacheKey: conversationId,
           fastMode: useFastMode,
           proMode: useProMode,
-          audit: { userId: user.id, conversationId },
+          audit: {
+            userId: user.id,
+            conversationId,
+            surface: "chat",
+            // The generation id, not a fresh value: with the provider's own call
+            // id it forms the broker's idempotency key, so a reconnected or
+            // resumed generation recognises an action it already asked about
+            // instead of asking twice and executing twice.
+            sessionId: generationId,
+            projectId: conversation.projectId,
+            onApprovalRequest: (approval) => {
+              sendActivity({
+                kind: "tool",
+                title: `${approval.connectorLabel} needs approval`,
+                detail: approval.preview,
+              });
+              send({ type: "approval", approval });
+            },
+          },
         })) {
           stallWatchdog.touch();
           const effect = acc.apply(ev);

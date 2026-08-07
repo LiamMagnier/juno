@@ -37,6 +37,12 @@ final class JunoCapabilityContractTests: XCTestCase {
             "fast_mode_unavailable",
             "vision_unavailable",
             "connectors_unavailable",
+            "pro_mode_unavailable",
+            // A connector action needed a person and this client had nowhere to
+            // ask. The broker holds the tool call until somebody answers, so a
+            // client that cannot name this degradation shows a turn that simply
+            // stopped, with no reason a reader could act on.
+            "action_approval_unavailable",
         ] {
             XCTAssertTrue(kinds.contains(expected), "missing degradation kind \(expected)")
         }
@@ -110,8 +116,21 @@ final class JunoCapabilityContractTests: XCTestCase {
         XCTAssertNil(result.reasoning)
     }
 
+    /// Deliberately not pinned to a literal version.
+    ///
+    /// It was, and it went stale twice without anyone noticing — the manifest
+    /// reached 2 and then 3 while this still asserted 1, so the one test meant
+    /// to prove the generated contract is current was itself the thing out of
+    /// date. A literal here tests nothing about the contract: the number is
+    /// generated from the manifest and cannot disagree with it. What is worth
+    /// asserting is that the generator ran and stamped a real manifest, which
+    /// `npm run capabilities:check` enforces byte-for-byte on the other side.
     func testTheContractReportsTheManifestItWasBuiltFrom() {
-        XCTAssertEqual(JunoCapabilityContract.version, 1)
+        XCTAssertGreaterThanOrEqual(JunoCapabilityContract.version, 1)
         XCTAssertEqual(JunoCapabilityContract.digest.count, 64, "a SHA-256 hex digest")
+        XCTAssertTrue(
+            JunoCapabilityContract.digest.allSatisfy { $0.isHexDigit },
+            "the digest must be hex, not a placeholder"
+        )
     }
 }

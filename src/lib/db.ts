@@ -85,6 +85,8 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // Added by the tool-audit work; its only unscoped write is a settle-by-primary-key
   // that deliberately uses prismaUnguarded (see src/lib/tool-audit.ts).
   ["ToolInvocation", "userId"],
+  ["ActionApprovalReceipt", "userId"],
+  ["ActionApprovalGrant", "userId"],
   // The last eight. Each had call sites that reached the database without a
   // userId — not leaks (every one was already behind an ownership check, an
   // owner-only admin gate, or a capability like a share token), but nothing

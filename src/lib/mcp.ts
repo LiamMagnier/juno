@@ -8,15 +8,26 @@ import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { composioSlugFromId, isComposioAppId } from "@/lib/composio";
 import { env, isComposioConfigured } from "@/lib/env";
 import { wrapUntrusted } from "@/lib/untrusted-content";
+import { truncateConnectorResult, type TruncatedForModel } from "@/lib/work/connectors";
 import { classifyToolAccess, type ToolAccess, type ToolAccessHints } from "@/lib/tool-access";
 import { recordToolInvocation, settleToolInvocation } from "@/lib/tool-audit";
+import { authorizeExternalAction, completeExternalAction } from "@/lib/action-approval-store";
+import type { ClientActionApproval } from "@/lib/action-approval";
 import type { Connection } from "@prisma/client";
 
 /*
- * Bridges linked connectors (see connectors.ts) to the model at generation time:
- *  - Anthropic: passed as native `mcp_servers` (Claude calls them server-side).
- *  - Everyone else: connected here over MCP so we can expose their tools as
- *    OpenAI-style function tools and run the tool loop ourselves.
+ * Bridges linked connectors (see connectors.ts) to the model at generation time.
+ *
+ * Every provider now takes the same route: Juno connects to the MCP servers
+ * here, exposes their tools as OpenAI-style function tools, and runs the tool
+ * loop itself. Anthropic used to be the exception — its connectors were passed
+ * as native `mcp_servers` and Claude called them server-side, holding a
+ * Juno-minted bearer token. That path was fast and gave Juno no seam: the call
+ * happened between Anthropic and the connector, so no permission check, no
+ * approval receipt, and no audit row could sit in front of it. One provider
+ * being able to act on a user's accounts without passing the broker makes the
+ * broker advisory, so the native path is gone. `scripts/check-approval-dispatch.mjs`
+ * fails the build if any part of it returns.
  */
 
 export interface ActiveConnector {
@@ -119,20 +130,6 @@ export async function getActiveConnectors(userId: string, requestedIds?: string[
   return out;
 }
 
-/** Native Anthropic MCP connector entries (Claude connects to these itself). */
-export function anthropicMcpServers(active: ActiveConnector[]) {
-  return active.flatMap((c) => {
-    const authorization = c.headers.Authorization ?? c.headers.authorization;
-    if (!authorization) return [];
-    return [{
-      type: "url" as const,
-      url: c.mcpUrl,
-      name: c.id.replace(/[^a-zA-Z0-9_-]/g, "_"),
-      authorization_token: authorization.replace(/^Bearer\s+/i, ""),
-    }];
-  });
-}
-
 /**
  * Read/write metadata a server declares on its tools, carried on our own tool
  * objects so callers can tell a read from a write.
@@ -160,7 +157,20 @@ export interface McpToolset {
   labelFor(toolName: string): string;
   /** Whether a namespaced tool name reads, writes, or can't be told apart. */
   accessFor(toolName: string): ToolAccess;
-  execute(toolName: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<string>;
+  /**
+   * @param callId the provider's own id for this tool call. It is half of the
+   *        broker's idempotency key, so a stream that reconnects and replays the
+   *        same call reuses the receipt instead of asking a second time — and,
+   *        more importantly, cannot execute the action twice. A caller with no
+   *        id from the provider must synthesise a stable one; a random value per
+   *        attempt would defeat replay protection rather than merely skip it.
+   */
+  execute(
+    toolName: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+    callId?: string
+  ): Promise<string>;
   close(): Promise<void>;
 }
 
@@ -195,26 +205,55 @@ function uniqueToolName(base: string, taken: (name: string) => boolean): string 
   return name;
 }
 
-function stringifyToolResult(res: unknown): string {
+/**
+ * Flatten an MCP tool result into the text the model reads, cut to the cap.
+ *
+ * The cut is `truncateConnectorResult`'s rather than a bare slice, so that a
+ * result the model only half-received says so in the result itself. This used to
+ * be a bare 30,000-character slice on both branches and nothing else, which is
+ * how a run came to narrate a third of a connector's answer as the whole of it.
+ *
+ * Whole-result length is measured after the parts are joined, not per part: what
+ * the model is missing is measured in the text it was actually going to read.
+ */
+function stringifyToolResult(res: unknown): TruncatedForModel {
   const content = (res as { content?: unknown })?.content;
-  if (Array.isArray(content)) {
-    return content
-      .map((p) => {
-        const part = p as { type?: string; text?: string; resource?: unknown };
-        if (part?.type === "text") return part.text ?? "";
-        if (part?.type === "resource") return JSON.stringify(part.resource);
-        return JSON.stringify(part);
-      })
-      .join("\n")
-      .slice(0, 30_000);
-  }
-  return JSON.stringify(res).slice(0, 30_000);
+  const text = Array.isArray(content)
+    ? content
+        .map((p) => {
+          const part = p as { type?: string; text?: string; resource?: unknown };
+          if (part?.type === "text") return part.text ?? "";
+          if (part?.type === "resource") return JSON.stringify(part.resource);
+          return JSON.stringify(part);
+        })
+        .join("\n")
+    : JSON.stringify(res);
+  return truncateConnectorResult(text);
 }
 
-/** Who a toolset's calls belong to. Every dispatch is logged against this. */
+/** Who a toolset's calls belong to. Every dispatch is logged and brokered
+ *  against this. */
 export interface McpToolsetContext {
   userId: string;
   conversationId?: string | null;
+  /** Which product surface is acting: `chat`, `work`, `trigger`, `schedule`.
+   *  Recorded on the receipt so an approval names the thing that asked. */
+  surface?: string;
+  /** Stable id for this generation/run. With `callId` it forms the broker's
+   *  idempotency key; defaulting it per-toolset (rather than per-call) is what
+   *  makes a mid-stream reconnect replay rather than re-execute. */
+  sessionId?: string;
+  projectId?: string | null;
+  /**
+   * Called once, synchronously, when an action starts waiting on a person.
+   * The adapter forwards it to the client so the approval card can render while
+   * the tool loop is blocked. Never called for an auto-allowed action.
+   */
+  onApprovalRequest?: (approval: ClientActionApproval) => void;
+  /** No person is attached — a trigger poll or background sweep. Actions that
+   *  would need an approval are refused immediately rather than waiting for one
+   *  that can never arrive. */
+  unattended?: boolean;
 }
 
 /**
@@ -225,7 +264,16 @@ export interface McpToolsetContext {
 export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetContext): Promise<McpToolset> {
   const clients = new Map<string, Client>();
   const tools: McpFunctionTool[] = [];
-  const routing = new Map<string, { connectorId: string; toolName: string; label: string; access: ToolAccess }>();
+  const routing = new Map<
+    string,
+    { connectorId: string; toolName: string; label: string; access: ToolAccess; annotations?: ToolAccessHints }
+  >();
+  // Fallback identity for the broker's idempotency key. Per-toolset rather than
+  // per-call so that repeated calls within one generation stay distinguishable
+  // while a caller that supplies no provider call id still gets a stable pair.
+  const brokerSessionId = ctx.sessionId ?? `toolset-${crypto.randomUUID()}`;
+  let callOrdinal = 0;
+  const nextCallOrdinal = () => ++callOrdinal;
 
   await Promise.all(
     active.map(async (c) => {
@@ -255,6 +303,10 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
             toolName: t.name,
             label: c.label,
             access: classifyToolAccess(t.name, hasAnnotations ? annotations : undefined),
+            // Kept alongside the coarse read/write verdict: the broker's risk
+            // classifier reads the raw hints itself, and needs to be able to
+            // tell "server said nothing" from "server said read-only".
+            ...(hasAnnotations ? { annotations } : {}),
           });
           tools.push({
             type: "function",
@@ -287,11 +339,13 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
      * EVERY return path is wrapped, including the error strings: a hostile MCP
      * server controls its own error messages just as much as its successes.
      *
-     * The wrapper is applied AFTER stringifyToolResult's 30,000-char truncation,
-     * so content can never grow large enough to push the closing marker out of
-     * the window and leave the envelope unterminated.
+     * The wrapper is applied AFTER stringifyToolResult's truncation, so content
+     * can never grow large enough to push the closing marker out of the window
+     * and leave the envelope unterminated. The truncation notice is paid for out
+     * of that same budget, so it cannot reopen the gap it closes — and it lands
+     * inside the envelope, describing the block it belongs to.
      */
-    async execute(toolName, args, signal) {
+    async execute(toolName, args, signal, callId) {
       const route = routing.get(toolName);
       // An unroutable name never reached a connector, so there is nothing to
       // audit: this is the model hallucinating a tool, not a call happening.
@@ -315,14 +369,79 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
         await settleToolInvocation(auditId, { status: "failed", error: "connector unavailable" });
         return wrapUntrusted(label, `Connector ${route.connectorId} is not available.`);
       }
+
+      /*
+       * The permission and receipt gate, in front of the network sink.
+       *
+       * It runs AFTER the audit row so a refused call is still a call that was
+       * attempted and is still visible in the trail — the refusals are the rows
+       * most worth having. It runs BEFORE `client.callTool` because everything
+       * after that point has already left Juno.
+       *
+       * `authorizeExternalAction` blocks here while the person decides. That is
+       * the intended shape: the tool loop cannot proceed without a result, and a
+       * fabricated "pending" result handed back to the model would be a lie the
+       * model then reasons from. Stop aborts the signal, which resolves the wait
+       * as a refusal.
+       */
+      const authorization = await authorizeExternalAction({
+        userId: ctx.userId,
+        surface: ctx.surface ?? "chat",
+        sessionId: ctx.sessionId ?? brokerSessionId,
+        conversationId: ctx.conversationId ?? null,
+        projectId: ctx.projectId ?? null,
+        connectorId: route.connectorId,
+        connectorLabel: route.label,
+        toolName: route.toolName,
+        functionName: toolName,
+        annotations: route.annotations,
+        args,
+        callId: callId ?? `${toolName}:${nextCallOrdinal()}`,
+        provenance: {
+          source: ctx.conversationId ? `conversation:${ctx.conversationId}` : `session:${ctx.sessionId ?? brokerSessionId}`,
+          sourceKind: "model_tool_call",
+          // The model composed these arguments, and by this point in a tool loop
+          // it has already read connector output — untrusted text that can try
+          // to steer the next call. Treat every model-authored argument as
+          // untrusted rather than only the ones we can prove tainted.
+          derivedFromUntrusted: true,
+        },
+        signal,
+        onApprovalRequest: ctx.onApprovalRequest,
+        unattended: ctx.unattended,
+      });
+
+      if (authorization.kind === "refused") {
+        await settleToolInvocation(auditId, { status: "failed", error: authorization.reason });
+        return wrapUntrusted(label, `Action not permitted: ${authorization.reason}`);
+      }
+      if (authorization.kind === "replay") {
+        await settleToolInvocation(auditId, {
+          status: authorization.failed ? "failed" : "executed",
+          error: authorization.failed ? authorization.result : undefined,
+        });
+        return wrapUntrusted(label, authorization.result);
+      }
+
       const startedAt = Date.now();
       try {
         const res = await client.callTool({ name: route.toolName, arguments: args }, undefined, signal ? { signal } : undefined);
+        const result = stringifyToolResult(res);
         await settleToolInvocation(auditId, { status: "executed", durationMs: Date.now() - startedAt });
-        return wrapUntrusted(label, stringifyToolResult(res));
+        // The receipt stores what the model was actually given, notice included:
+        // a replay of this call returns the stored string verbatim, so a receipt
+        // holding the untruncated text would hand a replayed call more than the
+        // first attempt got — and one holding the prefix without the notice
+        // would hand it the silent version.
+        await completeExternalAction({ userId: ctx.userId, receiptId: authorization.receiptId, ok: true, result: result.text });
+        return wrapUntrusted(label, result.text);
       } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err);
+        // An error message is the connector's text too, and nothing bounds it:
+        // a server that answers a failed call with a megabyte of prose gets the
+        // same cap and the same sentence as one that succeeds with it.
+        const detail = truncateConnectorResult(err instanceof Error ? err.message : String(err)).text;
         await settleToolInvocation(auditId, { status: "failed", error: detail, durationMs: Date.now() - startedAt });
+        await completeExternalAction({ userId: ctx.userId, receiptId: authorization.receiptId, ok: false, result: detail });
         return wrapUntrusted(label, `Tool error: ${detail}`);
       }
     },

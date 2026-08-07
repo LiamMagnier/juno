@@ -28,6 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useApp } from "@/components/app/app-provider";
+import { PermissionsSection } from "@/components/settings/permissions-section";
 import { resolveModel } from "@/lib/models";
 import { PROVIDERS, type Provider } from "@/lib/providers";
 import { PLANS, canUseModel } from "@/lib/plans";
@@ -851,10 +852,14 @@ export default function SettingsPage() {
             </div>
           </Tile>
 
+          {/* Connector permissions — owns its own tile (it loads its state from
+              the server rather than from bootstrap settings). */}
+          <PermissionsSection index={11} />
+
           {/* Danger zone — same calm container as every other section; the
               danger lives in the buttons (destructive-outline fills red on
               hover), not in a shouting border. */}
-          <Tile eyebrow="Danger zone" i={11} span className="border-destructive/20">
+          <Tile eyebrow="Danger zone" i={12} span className="border-destructive/20">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/40">
                 <div>

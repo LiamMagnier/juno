@@ -1,0 +1,179 @@
+{
+  "$comment": "Machine-readable execution ledger for the Juno completion program. States: missing | in_progress | blocked | implemented | verified. 'verified' requires a named test. Prose and evidence live in JUNO_PRODUCT_COMPLETION.md.",
+  "schemaVersion": 1,
+  "auditCommit": "57f2734e",
+  "auditDate": "2026-08-07",
+  "branch": "feat/juno-work",
+  "slices": [
+    {
+      "id": "approval-broker",
+      "title": "Universal trust, permissions and approval broker",
+      "program": "§4, §19",
+      "priority": "P0",
+      "state": "implemented",
+      "dependsOn": [],
+      "acceptance": [
+        { "id": "risk-classes", "state": "verified", "text": "Five risk classes; 'unknown' carries the external_write policy floor and can never auto-allow." },
+        { "id": "receipt-binding", "state": "verified", "text": "Receipt binds user, session, connector+version, tool, normalized args hash, preview, risk, provenance, policy digest, expiry, scope." },
+        { "id": "args-invalidation", "state": "verified", "text": "Any argument or policy change between approval and execution supersedes the receipt." },
+        { "id": "one-time-spend", "state": "verified", "text": "Allowed receipts are consumed atomically; a second presenter loses." },
+        { "id": "chokepoint", "state": "verified", "text": "Every production connector dispatch passes the broker; enforced by scripts/check-approval-dispatch.mjs at AST level." },
+        { "id": "no-provider-bypass", "state": "verified", "text": "Anthropic native mcp_servers path removed; forbidden by name in the static gate." },
+        { "id": "unattended-refusal", "state": "verified", "text": "Callers with no person attached refuse immediately instead of waiting out the TTL." },
+        { "id": "policies", "state": "implemented", "text": "always_ask / ask_for_any_change / ask_for_important_actions / allow_selected_low_risk / block, plus lockdown and per-connector blocklist." },
+        { "id": "approval-api", "state": "implemented", "text": "GET /api/approvals and POST /api/approvals/[id], digest-bound, typed refusal codes." },
+        { "id": "approval-ui", "state": "implemented", "text": "Approval card shows exact redacted arguments, untrusted provenance, live expiry; scope-allow only where permitted." },
+        { "id": "settings-ui", "state": "implemented", "text": "Permissions settings section for policy, lockdown and blocked connectors." },
+        { "id": "native-surface", "state": "in_progress", "text": "Work approval plane exists natively; chat approval parity is contract-declared, not yet rendered." },
+        { "id": "skill-scanning", "state": "missing", "text": "§4.4 security scanning of skills/plugins on upload, edit, install and version change." },
+        { "id": "egress-allowlist", "state": "missing", "text": "§4.4 network egress policy and domain allowlisting; CSP is currently Report-Only." }
+      ]
+    },
+    {
+      "id": "personal-budget-ceiling",
+      "title": "One cost ledger and one hard ceiling across every spending path",
+      "program": "§15.4",
+      "priority": "P0",
+      "state": "missing",
+      "dependsOn": [],
+      "nextUp": true,
+      "acceptance": [
+        { "id": "owner-ceiling", "state": "missing", "text": "The personal/OWNER account has a hard monthly ceiling defaulting to EUR 15, configurable downward, raised only by explicit user action. BUDGET_EUR.OWNER is currently null." },
+        { "id": "work-on-ledger", "state": "missing", "text": "Work runs call recordSpend and are counted by checkBudget. Today cost lands only on WorkRun.costMicroUsd, which checkBudget never reads." },
+        { "id": "voice-on-ledger", "state": "missing", "text": "Voice sessions are metered to the ledger during the session, not only checked at token mint." },
+        { "id": "research-fees", "state": "missing", "text": "Deep research bills its per-search vendor fees, not only the planner model." },
+        { "id": "retry-accounting", "state": "missing", "text": "Provider SDK auto-retries (maxRetries: 2 on all three adapters) are accounted for." },
+        { "id": "reservation", "state": "missing", "text": "checkBudget reserves rather than read-then-acts, so concurrent turns cannot both pass the same remaining budget." },
+        { "id": "per-unit-ceilings", "state": "missing", "text": "Per-research-run, per-work-run and per-voice-session ceilings." },
+        { "id": "preflight-estimate", "state": "missing", "text": "Preflight estimate and confirmation for unusually expensive work." }
+      ]
+    },
+    {
+      "id": "knowledge-ingestion",
+      "title": "Provider-independent knowledge engine and structured document ingestion",
+      "program": "§5",
+      "priority": "P0",
+      "state": "missing",
+      "dependsOn": [],
+      "acceptance": [
+        { "id": "pdf", "state": "missing", "text": "PDF text, tables, page images and outline extracted structurally. Today only Anthropic sees a PDF at all." },
+        { "id": "office", "state": "missing", "text": "DOCX, PPTX, XLSX and CSV extracted with headings, slides, sheets and cell ranges preserved." },
+        { "id": "ocr", "state": "missing", "text": "OCR as a fallback only, with recorded confidence, never blurred with verified embedded text." },
+        { "id": "entities", "state": "missing", "text": "KnowledgeDocument / Version / Block / Asset / Chunk / IndexJob / CitationTarget persisted with owner and scope." },
+        { "id": "retrieval", "state": "missing", "text": "Hybrid lexical + vector retrieval with metadata filters, reranking and duplicate-aware context packing." },
+        { "id": "citations", "state": "missing", "text": "Inline citations that open a source inspector at the exact page, slide, sheet range or code lines." },
+        { "id": "index-states", "state": "missing", "text": "Real indexing states: queued, extracting, ocr, indexing, ready, degraded, failed, stale." },
+        { "id": "remove-fake-progress", "state": "missing", "text": "Delete the cosmetic 1.9s extraction progress bar in the projects UI that has no server call behind it." },
+        { "id": "honest-pdf-degradation", "state": "missing", "text": "A PDF sent to a model that cannot read it must say so, not vanish (Gemini) or become a filename placeholder." },
+        { "id": "versioning", "state": "missing", "text": "Replacement creates a version and reindexes; deletion tombstones every derived chunk, embedding, preview and citation." }
+      ]
+    },
+    {
+      "id": "unified-search",
+      "title": "Unified global search and Library 2.0",
+      "program": "§6",
+      "priority": "P0",
+      "state": "missing",
+      "dependsOn": ["knowledge-ingestion"],
+      "acceptance": [
+        { "id": "corpus", "state": "missing", "text": "One backend over messages, projects, files, parsed contents, artifacts and versions, memories, saved prompts, Work runs and Code sessions." },
+        { "id": "server-search", "state": "missing", "text": "Server-side conversation search is wired to the palette; today it exists but nothing calls it." },
+        { "id": "snippets", "state": "missing", "text": "Meaningful snippets with highlighted matched terms." },
+        { "id": "jump-to", "state": "missing", "text": "Jump to the exact message, artifact version, source page, cell, run event or code location." },
+        { "id": "degraded-honesty", "state": "missing", "text": "Partial indexes surface an honest degraded state rather than silently short results." },
+        { "id": "library-versions", "state": "missing", "text": "File versions, origin, parser state, storage use, quotas, bulk operations and restore-from-deleted." },
+        { "id": "isolation", "state": "verified", "text": "Cross-account isolation is already proven by test on web and native. Must stay proven." }
+      ]
+    },
+    {
+      "id": "memory-v2",
+      "title": "Memory that is inspectable, scoped and correctable",
+      "program": "§7",
+      "priority": "P0",
+      "state": "missing",
+      "dependsOn": [],
+      "acceptance": [
+        { "id": "suppression-everywhere", "state": "missing", "text": "Suppression is enforced on every write path, not only extraction. Manual create and the NL-edit apply route currently bypass it, so 'forget this' does not hold." },
+        { "id": "consolidation-policy", "state": "missing", "text": "Consolidation respects the background-provider policy; the production path currently calls streamChat with no policy check." },
+        { "id": "nl-edit-works", "state": "missing", "text": "'Regenerate summary' and natural-language memory edits work under the default same_provider policy, and report the real cause when they cannot." },
+        { "id": "categories", "state": "missing", "text": "Typed categories: identity, preferences, goals, studies, workflows, projects, relationships, temporary-with-expiry, suppression." },
+        { "id": "lifecycle", "state": "missing", "text": "Semantic dedup, contradiction detection, supersession, automatic expiry." },
+        { "id": "context-receipt", "state": "missing", "text": "Per-response receipt naming the memories used, with a remove control and a source trail." },
+        { "id": "import", "state": "missing", "text": "Branches, attachments and project structure on import; Gemini support; open versioned export/import." }
+      ]
+    },
+    {
+      "id": "research-durable",
+      "title": "Durable research job with citation integrity",
+      "program": "§8",
+      "priority": "P0",
+      "state": "missing",
+      "dependsOn": ["knowledge-ingestion"],
+      "acceptance": [
+        { "id": "durable", "state": "missing", "text": "Persisted state machine that survives process restart with its audit trail intact." },
+        { "id": "steering", "state": "missing", "text": "Editable plan before an expensive run; pause, resume, cancel, steer without restarting." },
+        { "id": "claim-graph", "state": "missing", "text": "Claims with supporting and contradicting passage ids, support strength and verification status." },
+        { "id": "validator", "state": "missing", "text": "Post-synthesis validator; unsupported claims removed, qualified or explicitly marked unverified. Benchmark: >=95% of 100 factual claims correctly supported." },
+        { "id": "snapshots", "state": "missing", "text": "Source snapshots or hashes so a report stays auditable after a page changes." },
+        { "id": "url-safety", "state": "verified", "text": "Third-party source URLs cannot become clickable links unless http(s). Fixed 2026-08-07 at the render chokepoint." }
+      ]
+    },
+    {
+      "id": "artifact-verification",
+      "title": "Every generated file is opened and checked before it is presented",
+      "program": "§10, rule 15",
+      "priority": "P1",
+      "state": "missing",
+      "dependsOn": [],
+      "acceptance": [
+        { "id": "canvas-export-validated", "state": "missing", "text": "The chat canvas export route validates like the Work pipeline does. It currently streams Office bytes nobody re-opened." },
+        { "id": "overflow-checks", "state": "missing", "text": "Overflow, clipping, unreadable charts, broken formulas, missing assets and empty pages are detected." },
+        { "id": "revise-loop", "state": "missing", "text": "A failed verification triggers an automatic revision, and the verification report is retained." },
+        { "id": "xlsx-depth", "state": "missing", "text": "Formulas, charts, named ranges, validation and conditional formatting." },
+        { "id": "sandbox-egress", "state": "missing", "text": "Real egress controls on sandboxed execution; the app CSP is Report-Only and does not reach the artifact frame." }
+      ]
+    },
+    {
+      "id": "skill-trust",
+      "title": "Skills and plugins cannot smuggle instructions or expand permissions silently",
+      "program": "§12, §4.4",
+      "priority": "P1",
+      "state": "missing",
+      "dependsOn": ["approval-broker"],
+      "acceptance": [
+        { "id": "untrusted-instructions", "state": "missing", "text": "Imported skill instructions are wrapped as untrusted content instead of concatenated verbatim into the system prompt." },
+        { "id": "scanning", "state": "missing", "text": "Manifests, code, prompts, declared domains, dependencies and tool schemas scanned on upload, edit, install and version change, with stored evidence and a trust badge." },
+        { "id": "consent-on-expansion", "state": "missing", "text": "A version that widens permissions requires new consent before it can run." },
+        { "id": "requested-tools", "state": "missing", "text": "The product UI can actually set requestedTools, so applying a skill narrows a run's connectors as designed." },
+        { "id": "schedule-pinning", "state": "missing", "text": "Schedules pin a skill version so an edit cannot change an unattended run." }
+      ]
+    },
+    {
+      "id": "model-governance",
+      "title": "No model reaches production without a human",
+      "program": "§15.3, §15.5",
+      "priority": "P1",
+      "state": "missing",
+      "dependsOn": [],
+      "acceptance": [
+        { "id": "no-bot-deploy", "state": "missing", "text": "The nightly sync opens a PR instead of committing and pushing to main, which today deploys a bot-discovered model straight to production." },
+        { "id": "probes", "state": "missing", "text": "Capability probes per routable model with stored evidence and expiry; a discovered model stays opt-in until they pass." },
+        { "id": "route-away", "state": "missing", "text": "Routing avoids a capability that has regressed." }
+      ]
+    },
+    {
+      "id": "product-e2e",
+      "title": "Synthetic journeys and visual regression",
+      "program": "§13.10, §15.5",
+      "priority": "P2",
+      "state": "missing",
+      "dependsOn": ["approval-broker"],
+      "acceptance": [
+        { "id": "e2e-layer", "state": "missing", "text": "A Playwright or equivalent layer exists. There is none today." },
+        { "id": "journeys", "state": "missing", "text": "Chat, document citation, search, connector write with approval, denied approval, budget boundary, disconnect and recovery." },
+        { "id": "states", "state": "missing", "text": "Desktop/tablet/phone, light/dark, reduced motion, empty/loading/error/partial/success, long and localized strings." },
+        { "id": "restore-drill", "state": "missing", "text": "Tested database and object-storage backups with an exercised restore drill." }
+      ]
+    }
+  ]
+}

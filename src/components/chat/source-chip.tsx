@@ -21,6 +21,29 @@ export function titleOf(source: ClientSource): string {
   return title && title !== source.url && !/^https?:\/\//i.test(title) ? title : hostOf(source.url);
 }
 
+/**
+ * Whether a source URL may become a clickable link.
+ *
+ * Source URLs are untrusted: they arrive from a search vendor's JSON, from a
+ * provider's citation payload, or from a page the model read — never from
+ * Juno. `javascript:` and `data:` in an `href` are script execution on Juno's
+ * own origin, one click away, wearing the costume of a citation.
+ *
+ * This sits at the RENDER chokepoint rather than at each producer on purpose.
+ * There are several producers (deep research via Tavily, native provider
+ * citations on Anthropic/OpenAI/xAI, Gemini grounding) and only one place they
+ * all become an anchor, so validating here is the version that cannot be
+ * bypassed by adding a fourth producer later.
+ */
+export function isRenderableSourceUrl(url: string): boolean {
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === "https:" || protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 /*
  * Favicons are loaded from the SOURCE's OWN origin (`https://host/favicon.ico`).
  *
@@ -131,6 +154,33 @@ export function SourceFavicon({
 export function SourceChip({ source, index }: { source: ClientSource; index: number }) {
   const host = hostOf(source.url);
   const title = titleOf(source);
+  // A source whose scheme is not http(s) still gets shown — hiding it would
+  // silently drop a citation the answer leaned on, and the reader has a right
+  // to know it was used — but it is rendered as inert text, not as something
+  // they can click.
+  const linkable = isRenderableSourceUrl(source.url);
+  if (!linkable) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            aria-label={`Source ${index}: ${title} — link withheld, it is not a web address`}
+            className={cn(
+              "relative z-0 mx-[0.15em] inline-flex h-[1.3em] items-center gap-[0.3em] rounded-full",
+              "border border-dashed border-border/70 bg-card px-[0.4em] align-middle text-[0.72em] leading-none"
+            )}
+          >
+            <Globe aria-hidden className="size-[0.9em] opacity-50" />
+            <span className="font-mono tabular-nums text-muted-foreground">{index}</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[20rem]">
+          <span className="block truncate font-medium">{title}</span>
+          <span className="block text-[0.9em] opacity-65">Juno did not link this: it is not a web address.</span>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
   return (
     <Tooltip>
       <TooltipTrigger asChild>

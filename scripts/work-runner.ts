@@ -1120,7 +1120,13 @@ async function openConnectors(input: {
       mcpUrl: entry.mcpUrl,
       headers: entry.headers,
     })),
-    { userId: input.userId }
+    {
+      userId: input.userId,
+      surface: "work",
+      // The run id, so a resumed run recognises actions it already brokered
+      // rather than re-asking (and re-executing) after a restart.
+      sessionId: input.runId,
+    }
   );
 
   const byConnector = new Map(authorized.map((entry) => [entry.connectorId, entry]));
