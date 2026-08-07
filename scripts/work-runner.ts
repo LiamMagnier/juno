@@ -60,6 +60,7 @@ import {
 import { getConnector, isConnectorConfigured, listConnectors } from "@/lib/connectors";
 import { isComposioConfigured } from "@/lib/env";
 import { MODEL_LIST, parseModelRef, resolveModel, type ModelInfo } from "@/lib/models";
+import { tokenRate } from "@/lib/pricing";
 import { clampReasoningEffort } from "@/lib/model-metrics";
 import {
   PROVIDERS,
@@ -443,6 +444,7 @@ type WorkArtifactRef = import("../runner/agent-core/src/work/index.js").WorkArti
 type WorkCheckpoint = import("../runner/agent-core/src/work/index.js").WorkCheckpoint;
 type WorkRuntimeUsage = import("../runner/agent-core/src/work/index.js").BudgetUsage;
 type WorkSessionOptions = import("../runner/agent-core/src/work/index.js").WorkSessionOptions;
+type WorkModelPricing = import("../runner/agent-core/src/work/index.js").WorkModelPricing;
 type ProviderSpec = import("../runner/agent-core/src/work/index.js").ProviderSpec;
 type ReasoningEffort = import("../runner/agent-core/src/work/index.js").ReasoningEffort;
 type WorkSession = InstanceType<WorkRuntime["WorkAgentSession"]>;
@@ -2098,6 +2100,30 @@ function reasoningEffortFor(
  * session saved months ago names a model the provider no longer serves, and a
  * bare split hands that dead id straight to the API.
  */
+/**
+ * What this model's tokens cost, in the integer units the budget guard uses.
+ *
+ * `tokenRate` is the catalog's own rate in USD per million tokens and is the
+ * same function the chat surfaces bill against, so a Work run and a chat turn
+ * on the same model cannot come to two different numbers.
+ *
+ * Micro-USD per million, because `WorkBudgetGuard` accumulates in integers
+ * against `WorkRun.maxCostMicroUsd`, which is an Int column: floating-point
+ * currency summed over a few hundred steps drifts away from the ceiling it is
+ * compared against.
+ *
+ * The base rate, not the cache-adjusted or fast-mode one. A Work run makes
+ * ordinary requests, and pricing a cache read it never performs would make the
+ * ceiling fire early on a run that had spent less than it was charged for.
+ */
+function pricingFor(model: ModelInfo): WorkModelPricing {
+  const rate = tokenRate(model);
+  return {
+    inputMicroUsdPerMillion: Math.round(rate.input * 1_000_000),
+    outputMicroUsdPerMillion: Math.round(rate.output * 1_000_000),
+  };
+}
+
 function runModelChoice(canonicalModelId: string): RunModelChoice {
   const id = canonicalModelId.trim();
   if (!id) {
@@ -2528,6 +2554,24 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     tools: effectiveTools,
     plan,
     budget,
+    // What a token costs, so the run's spend is a number and its ceiling is a
+    // ceiling.
+    //
+    // `WorkBudgetGuard.record()` returns before the cost arithmetic when it has
+    // no pricing (`if (!this.pricing) return;`), and this literal never set the
+    // field — so every cloud run counted its tokens correctly and reported
+    // `costMicroUsd: 0`. Two consequences, and the second is the
+    // serious one: the usage line read "$0.00" for a run that had spent real
+    // money, and `budgetExceeded` compares `maxCostMicroUsd` against that same
+    // zero, so the per-run spend ceiling could never fire. Only the token and
+    // runtime limits could stop a run.
+    //
+    // Absent for a model the catalog does not know: `runModelChoice` lets an
+    // unrecognised id through so a rolling deploy can run a model this build
+    // has not heard of, and inventing a price for one would be worse than
+    // admitting there isn't one. That run keeps the old behaviour — tokens
+    // counted, cost zero — which is now the exception rather than every run.
+    ...(choice.info ? { pricing: pricingFor(choice.info) } : {}),
     ...(skill ? { systemSuffix: skill.systemSuffix } : {}),
     // The thinking tier the reader chose, on every request this run makes.
     //
