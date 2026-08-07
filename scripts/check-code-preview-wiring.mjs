@@ -47,9 +47,14 @@ requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Views/Preview/CodePrevi
 requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Views/Preview/CodePreviewInspectionTool.swift", [
   "let name = \"inspect_preview\"",
   "CodePreviewModel.inspectActive(",
+  "let name = \"open_preview\"",
+  "let name = \"preview_browser\"",
+  "CodePreviewModel.runBrowserAction(",
 ]);
 requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Models/SessionController.swift", [
+  "tools.append(CodePreviewOpenTool(workspaceRoot: context.access.rootURL))",
   "tools.append(CodePreviewInspectTool())",
+  "tools.append(CodePreviewBrowserTool())",
 ]);
 requireText("native/macOS/JunoDesktop/App/JunoDesktopApp.swift", ["CodePreviewScene()"]);
 
