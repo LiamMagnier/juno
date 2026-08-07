@@ -1,4 +1,5 @@
 import "server-only";
+import { Prisma } from "@prisma/client";
 import type { Plan } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolveModel } from "@/lib/models";
@@ -130,6 +131,13 @@ export interface RecordSpendInput {
    * the ledger.
    */
   costUsd?: number;
+  /**
+   * Set only by a writer that can legitimately retry the same charge — today,
+   * the voice relay, which re-sends any delta it could not confirm. The unique
+   * index on (userId, idempotencyKey) turns that retry into a no-op instead of
+   * a second bill. Leave undefined for a caller that speaks once.
+   */
+  idempotencyKey?: string;
 }
 
 /**
@@ -195,17 +203,30 @@ export async function recordSpend(input: RecordSpendInput): Promise<void> {
       }
     }
 
-    await prisma.apiSpend.create({
-      data: {
-        userId: input.userId,
-        model: input.model,
-        kind: input.kind,
-        source: input.source ?? "web",
-        promptTokens,
-        completionTokens,
-        costMicroUsd: Math.max(0, costMicroUsd),
-      },
-    });
+    const data = {
+      userId: input.userId,
+      model: input.model,
+      kind: input.kind,
+      source: input.source ?? "web",
+      promptTokens,
+      completionTokens,
+      costMicroUsd: Math.max(0, costMicroUsd),
+    };
+
+    if (input.idempotencyKey) {
+      // A retry of a charge that already landed must be a no-op, not a second
+      // bill. `create` inside a unique constraint is the only version of this
+      // that is safe against two relay ticks racing — a read-then-create would
+      // let both observe "absent" and both insert.
+      await prisma.apiSpend
+        .create({ data: { ...data, idempotencyKey: input.idempotencyKey } })
+        .catch((error: unknown) => {
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return;
+          throw error;
+        });
+    } else {
+      await prisma.apiSpend.create({ data });
+    }
   } catch (err) {
     console.error("[spend] failed to record spend", {
       userId: input.userId,

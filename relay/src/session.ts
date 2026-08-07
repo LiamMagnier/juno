@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type WebSocket from "ws";
 import { resamplePcm16 } from "./audio.js";
 import type { ClientMessage, ServerMessage, VoiceHistoryEntry, VoiceProviderId } from "./protocol.js";
@@ -7,6 +8,7 @@ import {
   VOICE_HISTORY_MAX_TURN_CHARS,
   VOICE_HISTORY_MAX_TURNS,
 } from "./protocol.js";
+import { mintRelayCallbackToken } from "./auth.js";
 import { PROVIDERS } from "./providers/registry.js";
 import type { ProviderEvents, TranscriptEntry, VoiceProviderSession } from "./providers/types.js";
 
@@ -40,12 +42,37 @@ export class RelaySession {
   private switching = false;
   private closed = false;
   private historySeeded = false;
+  /*
+   * How much of `usage` Juno has already been told about, in dollars.
+   *
+   * Voice used to be billed exactly once — at token mint, before the socket
+   * existed — and everything after that was free as far as the ledger was
+   * concerned. A session could run to the provider's session cap without
+   * moving the account's spend by a cent.
+   *
+   * The DELTA is what gets reported, not the running total, and it only moves
+   * after a post Juno acknowledged. A dropped request therefore re-sends the
+   * same money next tick instead of losing it, and a killed relay loses at most
+   * one interval's worth rather than the whole session.
+   */
+  private reportedCostUsd = 0;
+  private spendSeq = 0;
+  private reporting = false;
+  /** Set when Juno answers that the account is out of budget. */
+  private budgetExhausted = false;
+
+  /** Identifies this call to Juno's ledger. Paired with `seq` it makes a spend
+   *  report idempotent, so a retried post cannot bill the same seconds twice. */
+  readonly sessionId: string = randomUUID();
 
   constructor(
     private ws: WebSocket,
     readonly userId: string
   ) {
-    this.usageTimer = setInterval(() => this.pushUsage(), 5000);
+    this.usageTimer = setInterval(() => {
+      this.pushUsage();
+      void this.reportSpend(false);
+    }, 5000);
   }
 
   async handleText(raw: string): Promise<void> {
@@ -251,11 +278,74 @@ export class RelaySession {
     });
   }
 
+  /**
+   * Report the unbilled cost so far to Juno, and stop the session if Juno says
+   * the account is out of budget.
+   *
+   * Runs on the same 5s tick as the client-facing usage push, so it adds no
+   * timer of its own and the ledger is never more than one interval stale.
+   * `reporting` guards re-entry: a slow post must not be joined by the next
+   * tick, or the same delta would be sent twice.
+   *
+   * Every failure path here is deliberately silent about money: if the post
+   * fails, `reportedCostUsd` is not advanced, so the same delta is retried on
+   * the next tick. Failing to reach Juno must not end a call the user is in the
+   * middle of — but it also must not quietly forgive the spend.
+   */
+  private async reportSpend(final: boolean): Promise<void> {
+    if (this.reporting) return;
+    const appUrl = process.env.JUNO_APP_URL;
+    if (!appUrl) return; // Not configured: behave exactly as before.
+    const total = this.usage.costInUsd + this.usage.costOutUsd;
+    const delta = total - this.reportedCostUsd;
+    // Below a tenth of a cent there is nothing worth a round trip, unless this
+    // is the last word on the session.
+    if (delta <= 0 || (!final && delta < 0.001)) return;
+
+    this.reporting = true;
+    const seq = ++this.spendSeq;
+    try {
+      const res = await fetch(`${appUrl.replace(/\/$/, "")}/api/voice/spend`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${mintRelayCallbackToken(this.userId)}`,
+        },
+        body: JSON.stringify({
+          sessionId: this.sessionId,
+          seq,
+          provider: this.providerId ?? "unknown",
+          costUsd: delta,
+          audioInSec: this.usage.audioInSec,
+          audioOutSec: this.usage.audioOutSec,
+          final,
+        }),
+        signal: AbortSignal.timeout(4000),
+      });
+      if (!res.ok) return;
+      // Only now is the money considered delivered.
+      this.reportedCostUsd = total;
+      const body = (await res.json().catch(() => null)) as { allowed?: boolean } | null;
+      if (body?.allowed === false && !this.budgetExhausted) {
+        this.budgetExhausted = true;
+        this.send({ type: "error", message: "Voice stopped: this month's usage budget is spent." });
+        await this.destroy();
+      }
+    } catch {
+      // Network or timeout. reportedCostUsd stays put, so the next tick retries.
+    } finally {
+      this.reporting = false;
+    }
+  }
+
   private send(msg: ServerMessage): void {
     if (!this.closed && this.ws.readyState === this.ws.OPEN) this.ws.send(JSON.stringify(msg));
   }
 
   async destroy(): Promise<void> {
+    // Bill the tail BEFORE latching closed: reportSpend's own send() is a
+    // no-op once closed, and the last interval of a call is real money.
+    if (!this.closed) await this.reportSpend(true).catch(() => {});
     this.closed = true;
     if (this.usageTimer) clearInterval(this.usageTimer);
     if (this.sessionTimer) clearTimeout(this.sessionTimer);

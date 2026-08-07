@@ -902,10 +902,16 @@ model ApiSpend {
   promptTokens     Int      @default(0)
   completionTokens Int      @default(0)
   costMicroUsd     Int // request cost in micro-USD (1e-6 $) — integer math only
+  // Set only by writers that can legitimately retry the same charge. The voice
+  // relay reports a delta every few seconds and re-sends any post it could not
+  // confirm, so without this a dropped acknowledgement would bill the same
+  // seconds twice. Null for every writer that speaks once.
+  idempotencyKey   String?
   createdAt        DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
   // The platform-wide daily total (platform-budget.ts) filters on createdAt with
   // no userId, and Postgres cannot range-scan a composite index whose leading
