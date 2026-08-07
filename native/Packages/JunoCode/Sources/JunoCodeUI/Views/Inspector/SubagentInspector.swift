@@ -203,6 +203,8 @@ private struct SubagentDetailPane: View {
     @State private var confirmDiscard = false
     @State private var actionMessage: String?
     @State private var actionFailed = false
+    @State private var pendingApprovals: [ApprovalRequest] = []
+    @State private var isStopping = false
 
     private var activity: String {
         guard run.isActive, let child = run.childSessionID else { return "" }
@@ -218,6 +220,7 @@ private struct SubagentDetailPane: View {
                     if !activity.isEmpty {
                         field("Now", text: activity)
                     }
+                    liveControls
                     field("Task", text: run.task)
                     if let error = run.error {
                         field("Problem", text: error, tint: SubagentFormatting.tint(run.status))
@@ -241,6 +244,7 @@ private struct SubagentDetailPane: View {
         .task(id: SubagentLoadKey(agentID: run.agentID, activity: activity, status: run.status)) {
             guard let child = run.childSessionID else {
                 load = .missing
+                pendingApprovals = []
                 return
             }
             if let detail = await controller.subAgentDetail(child) {
@@ -252,6 +256,24 @@ private struct SubagentDetailPane: View {
                 worktreeReview = await controller.subagentWorktreeReview(child)
             } else {
                 worktreeReview = nil
+            }
+        }
+        // A child approval is a live capability, not a transcript event. Poll
+        // only while this detail is open so the inspector reacts promptly
+        // without adding a second event stream to the parent session.
+        .task(id: SubagentApprovalLoadKey(
+            agentID: run.agentID,
+            childSessionID: run.childSessionID,
+            status: run.status
+        )) {
+            guard let child = run.childSessionID else {
+                pendingApprovals = []
+                return
+            }
+            while !Task.isCancelled {
+                pendingApprovals = await controller.subagentPendingApprovals(child)
+                if !run.isActive && pendingApprovals.isEmpty { break }
+                try? await Task.sleep(for: .milliseconds(400))
             }
         }
         .confirmationDialog(
@@ -297,13 +319,18 @@ private struct SubagentDetailPane: View {
                     Text(run.title)
                         .junoRowLabel()
                         .lineLimit(2)
-                    Text(SubagentFormatting.label(run.status))
+                    Text(pendingApprovals.isEmpty
+                        ? SubagentFormatting.label(run.status)
+                        : "Waiting for approval")
                         .junoCaption()
-                        .foregroundStyle(SubagentFormatting.tint(run.status))
+                        .foregroundStyle(pendingApprovals.isEmpty
+                            ? SubagentFormatting.tint(run.status)
+                            : Color.junoCaution)
                 }
                 Spacer(minLength: JunoSpace.tight)
                 SubagentElapsed(run: run)
             }
+            liveActionBar
             if run.executionMode == .workspaceWrite {
                 worktreeActions
             }
@@ -340,6 +367,62 @@ private struct SubagentDetailPane: View {
         .help("Back to every sub-agent")
         .accessibilityLabel("Back to every sub-agent")
         .accessibilityIdentifier("juno.code.subagents.back")
+    }
+
+    @ViewBuilder
+    private var liveControls: some View {
+        if let child = run.childSessionID, !pendingApprovals.isEmpty {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                Label("Waiting for approval", systemImage: "hand.raised.fill")
+                    .junoSidebarSection()
+                    .foregroundStyle(Color.junoCaution)
+                ForEach(pendingApprovals, id: \.id) { request in
+                    SubagentApprovalCard(
+                        request: request,
+                        childSessionID: child,
+                        controller: controller
+                    )
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var liveActionBar: some View {
+        if run.isActive, let child = run.childSessionID {
+            HStack(spacing: JunoSpace.tight) {
+                if pendingApprovals.isEmpty {
+                    Label("Agent is working", systemImage: "bolt.horizontal.fill")
+                        .junoCaption()
+                        .foregroundStyle(.secondary)
+                } else {
+                    Label("Agent is paused", systemImage: "pause.fill")
+                        .junoCaption()
+                        .foregroundStyle(Color.junoCaution)
+                }
+                Spacer(minLength: JunoSpace.tight)
+                Button {
+                    isStopping = true
+                    Task {
+                        await controller.stopSubagent(child)
+                        isStopping = false
+                    }
+                } label: {
+                    if isStopping {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Stop", systemImage: "stop.fill")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .tint(Color.junoDanger)
+                .disabled(isStopping)
+                .help("Stop this sub-agent and deny its pending approvals")
+                .accessibilityIdentifier("juno.code.subagents.stop")
+            }
+            .padding(.top, JunoSpace.hairline)
+        }
     }
 
     private var worktreePanel: some View {
@@ -619,6 +702,93 @@ private struct SubagentLoadKey: Equatable {
     let agentID: String
     let activity: String
     let status: SubagentStatus
+}
+
+private struct SubagentApprovalLoadKey: Equatable {
+    let agentID: String
+    let childSessionID: CodeSessionID?
+    let status: SubagentStatus
+}
+
+/// Approval controls for a child live in the child inspector, beside the
+/// agent's own task. Reusing the parent card here would route the decision to
+/// the wrong permission coordinator, so this small card binds every action to
+/// the child session explicitly.
+private struct SubagentApprovalCard: View {
+    let request: ApprovalRequest
+    let childSessionID: CodeSessionID
+    let controller: SessionController
+
+    @State private var expired = false
+    @State private var actionInFlight = false
+
+    private var tint: Color {
+        request.risk == .destructive ? .junoDanger : .junoCaution
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            HStack(spacing: JunoSpace.tight) {
+                Image(systemName: "hand.raised.fill")
+                    .foregroundStyle(tint)
+                Text("Approval required")
+                    .font(.caption.weight(.semibold))
+                Spacer(minLength: JunoSpace.tight)
+                ApprovalCountdown(expiresAt: request.expiresAt)
+            }
+            Text(request.summary)
+                .font(.callout)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("(request.toolName) · (request.risk.rawValue.capitalized) risk")
+                .junoCaption()
+                .foregroundStyle(.secondary)
+            HStack(spacing: JunoSpace.tight) {
+                if expired {
+                    Text("Expired")
+                        .junoCaption()
+                        .foregroundStyle(Color.junoDanger)
+                }
+                Spacer(minLength: 0)
+                Button(expired ? "Dismiss" : "Deny") {
+                    actionInFlight = true
+                    Task {
+                        await controller.denySubagent(childSessionID, approvalID: request.id)
+                        actionInFlight = false
+                    }
+                }
+                .disabled(actionInFlight)
+                Button("Approve") {
+                    actionInFlight = true
+                    Task {
+                        await controller.approveSubagent(childSessionID, approvalID: request.id)
+                        actionInFlight = false
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.junoAccent)
+                .disabled(expired || actionInFlight)
+            }
+        }
+        .padding(JunoSpace.snug)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                .fill(Color.junoSurface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                .strokeBorder(tint.opacity(0.55), lineWidth: 1)
+        )
+        .task(id: request.id) {
+            let delay = request.expiresAt.timeIntervalSinceNow
+            if delay > 0 {
+                try? await Task.sleep(for: .seconds(delay))
+            }
+            guard !Task.isCancelled else { return }
+            expired = true
+            await controller.sweepSubagentApprovals(childSessionID)
+        }
+    }
 }
 
 // MARK: - Formatting

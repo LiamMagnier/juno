@@ -139,6 +139,8 @@ export {
   type WorkValidator,
 } from './session.js';
 
+export { goalValidator } from './judge.js';
+
 /*
  * The provider surface, re-exported through the Work entry point.
  *

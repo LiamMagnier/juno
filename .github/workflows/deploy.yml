@@ -93,6 +93,17 @@ jobs:
       - name: Work contract is not stale
         run: npm run work:contract:check
 
+      # A cloud Work run has no container to sandbox a host tool in — the
+      # `ToolContext.containerSandbox` field cannot even be reached from
+      # `WorkSessionOptions`. One call to `withoutHostWorkspaceTools` is what
+      # keeps read_file/write_file/bash off a worker that holds provider
+      # credentials, and nothing fails if a later change appends a tool after
+      # the filter or drops the call while adding a capability. Here rather
+      # than in a test because `scripts/work-runner.ts` ends in `void main()`
+      # and importing it would start a queue worker.
+      - name: The cloud Work toolset admits no host tool
+        run: npm run work:sandbox:check
+
       # The line between what a Mac may see and what everybody else may see is
       # two function names in src/lib/work/serializers.ts.
       # `serializeGrantForHost` adds the absolute path a folder grant resolved

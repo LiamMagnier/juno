@@ -216,6 +216,17 @@ async function waitFor<T>(
 const CONNECTOR_OPEN_TIMEOUT_MS = 45_000;
 
 /**
+ * How long a provider stream may say nothing before this run gives up on it.
+ *
+ * The loop's default is the interactive request timeout, which is written for
+ * somebody watching a spinner. A cloud Work run has nobody watching: silence
+ * costs it lease time and runtime ceiling and costs the worker its place in the
+ * queue. Short enough to notice a dead stream, long enough that a slow first
+ * token on a loaded provider is not mistaken for one.
+ */
+const STREAM_SILENCE_MS = 90_000;
+
+/**
  * Awaits something that has no timeout of its own, and stops waiting.
  *
  * Note what this does NOT do: it does not cancel the underlying work, because
@@ -2600,6 +2611,29 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     // lab with no such parameter drops it rather than refusing the request. See
     // `reasoningEffortFor` for the two narrowings between the column and here.
     ...(reasoning === undefined ? {} : { reasoningEffort: reasoning }),
+    // Read the deliverable against the goal before calling the run done.
+    //
+    // Without this the completion gate is `structuralValidation`, which is
+    // handed the goal and does not read it — so a run that ticked its own
+    // boxes and returned a paragraph about something else was reported as
+    // finished. `goalValidator` runs the same structural checks first and only
+    // then asks, so a run that failed its own record still fails for that
+    // reason rather than waiting on a model call.
+    //
+    // It is built to be hard to fail and it fails open: see the note on
+    // `goalValidator`. The run's own provider and model, so this adds no
+    // credential and no second catalog.
+    validate: runtime.goalValidator({ provider, model: choice.providerModel }),
+    // A headless run should not wait as long as a person would.
+    //
+    // Unset, this falls through to `DEFAULT_STREAM_SILENCE_MS`, which is the
+    // interactive chat timeout — two minutes of a dead stream, per attempt,
+    // while the worker holds the lease and the run's own runtime ceiling burns.
+    // Nobody is watching a Work run, so the only thing that silence costs is
+    // budget. Ninety seconds is still generous for a slow first token on a
+    // loaded provider and returns the worker to the queue sooner when the
+    // stream is simply gone.
+    providerSilenceMs: STREAM_SILENCE_MS,
     permissionPolicy: (run.permissionPolicy ?? {}) as Record<string, unknown>,
     // The mode the gate reads. The blob above is only ever hashed — it is what
     // pins a standing approval to the policy it was granted under — so the

@@ -600,7 +600,7 @@ export class WorkAgentSession {
     // sentence; one that has not says what it actually knows.
     return {
       terminalReason: 'completed',
-      detail: this.options.validate
+      detail: validation.judged
         ? 'The deliverable answers the goal.'
         : 'Every step finished and the run produced a result. Juno has not judged whether it is correct.',
     };
@@ -1041,5 +1041,12 @@ export function structuralValidation(input: {
   // a statement of what went wrong ("Still open: …", "No artifact and no
   // written answer."), so the sentence becomes true and specific by using it.
   const failed = checks.filter((check) => !check.satisfied);
-  return { satisfied: failed.length === 0, checks, unmet: failed.map((check) => check.evidence) };
+  // `judged: false` — see the field's note. This function is handed the goal
+  // and does not read it.
+  return {
+    satisfied: failed.length === 0,
+    checks,
+    unmet: failed.map((check) => check.evidence),
+    judged: false,
+  };
 }

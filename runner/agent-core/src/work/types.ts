@@ -594,6 +594,19 @@ export interface WorkValidationResult {
   checks: WorkValidationCheck[];
   /** The claims that failed, restated for the user. */
   unmet: string[];
+  /**
+   * Whether anything actually compared the result to the goal.
+   *
+   * `structuralValidation` is handed the goal and never reads it — it checks
+   * the record of the run, not the answer — so a run it passes has not been
+   * judged, and must not tell the user its deliverable answers the goal. A
+   * validator that did make that comparison sets this, and only then is the
+   * stronger sentence true.
+   *
+   * Optional and falsy-by-default on purpose: a validator that does not say is
+   * treated as not having judged, which is the safe direction.
+   */
+  judged?: boolean;
 }
 
 export interface WorkActionRecord {

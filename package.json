@@ -25,6 +25,7 @@
   "code:preview:check": "node scripts/check-code-preview-wiring.mjs",
   "code:remote:check": "node scripts/check-code-remote-wiring.mjs",
   "code:runtime:check": "node scripts/check-code-runtime-wiring.mjs",
+  "work:sandbox:check": "node scripts/check-work-sandbox.mjs",
   "capabilities:generate": "node scripts/generate-capability-contract.mjs --output=native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoCapabilityContract.swift",
     "capabilities:check": "node scripts/check-capability-contract.mjs",
     "work:contract:generate": "node scripts/generate-work-contract.mjs --output=native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoWorkContract.swift",

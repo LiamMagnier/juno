@@ -333,6 +333,12 @@ else
     info "native.yml is path filtered, so a commit touching only contracts/work/juno-work-v1.json"
     info "or src/lib/work/domain.ts would never be checked anywhere else."
 fi
+if grep -q "work:sandbox:check" .github/workflows/deploy.yml 2>/dev/null \
+    && npm run work:sandbox:check >/dev/null 2>&1; then
+    pass "cloud Work toolset is checked for host workspace tools"
+else
+    fail "cloud Work toolset safety check is missing or failing"
+fi
 if grep -q "runner/agent-core" .github/workflows/deploy.yml 2>/dev/null; then
     pass "deploy.yml builds and tests runner/agent-core, which holds the Work runtime"
 else

@@ -249,6 +249,10 @@ public final class SessionController {
         let context: WorkspaceContext?
         let store: CodeSessionStore
         let permissions: PermissionCoordinator
+        /// Live child-agent controls are kept separately from the parent
+        /// permission coordinator. A child must never be approved through the
+        /// parent's action digest or stopped by replacing the parent's run.
+        let subagentControls: SubagentControlRegistry
         let modelClient: any AgentModelClient
         let modelSupportsVision: (String) -> Bool
         /// Whether a thinking parameter may be sent for this model at all.
@@ -479,6 +483,7 @@ public final class SessionController {
                     ? .readOnly
                     : (behavior == .code ? session.configuration.permissionMode : .readOnly)
             ),
+            subagentControls: SubagentControlRegistry(),
             modelClient: modelClient,
             modelSupportsVision: modelSupportsVision,
             modelTakesThinkingParameter: modelTakesThinkingParameter
@@ -627,7 +632,8 @@ public final class SessionController {
                                 )
                             }
                         )
-                    }
+                    },
+                    controls: live.subagentControls
                 )
             )
         }
@@ -2294,6 +2300,47 @@ public final class SessionController {
             session: child,
             events: await live.store.events(for: childID)
         )
+    }
+
+    /// Reads approvals from the child that is actually running. The parent
+    /// coordinator is intentionally not consulted: its request ids and action
+    /// digests belong to the parent session only.
+    public func subagentPendingApprovals(_ childID: CodeSessionID) async -> [ApprovalRequest] {
+        guard let live else { return [] }
+        return await live.subagentControls.pendingApprovals(for: childID)
+    }
+
+    public func approveSubagent(_ childID: CodeSessionID, approvalID: String) async {
+        guard let live else { return }
+        await live.subagentControls.resolve(
+            childSessionID: childID,
+            approvalID: approvalID,
+            decision: .approved
+        )
+    }
+
+    public func denySubagent(_ childID: CodeSessionID, approvalID: String) async {
+        guard let live else { return }
+        await live.subagentControls.resolve(
+            childSessionID: childID,
+            approvalID: approvalID,
+            decision: .denied
+        )
+    }
+
+    public func sweepSubagentApprovals(_ childID: CodeSessionID) async {
+        guard let live else { return }
+        await live.subagentControls.sweepExpiredApprovals(for: childID)
+    }
+
+    public func stopSubagent(_ childID: CodeSessionID) async {
+        guard let live else { return }
+        await live.subagentControls.stop(childSessionID: childID)
+    }
+
+    public func canControlSubagent(_ childID: CodeSessionID) async -> Bool {
+        guard let live else { return false }
+        return await live.subagentControls.hasControl(for: childID)
     }
 
     /// Reads the isolated checkout associated with a write-capable sub-agent.

@@ -26,6 +26,10 @@ public struct DelegateTaskTool: CodeTool {
     private let modelID: String
     private let reasoningEffort: ReasoningEffort?
     private let parentSystemPrompt: String
+    /// Optional host-owned live controls. The runtime remains embeddable without
+    /// a UI, while Desktop Code can expose the child's real approval and stop
+    /// capabilities in its inspector.
+    private let controls: SubagentControlRegistry?
     /// Supplied by a host that can create a real isolated checkout. Without it
     /// delegation remains read-only, even if the model asks for writes.
     private let executionFactory: SubagentExecutionFactory?
@@ -57,7 +61,8 @@ public struct DelegateTaskTool: CodeTool {
         modelID: String,
         reasoningEffort: ReasoningEffort?,
         parentSystemPrompt: String,
-        executionFactory: SubagentExecutionFactory? = nil
+        executionFactory: SubagentExecutionFactory? = nil,
+        controls: SubagentControlRegistry? = nil
     ) {
         self.model = model
         self.registry = registry
@@ -68,6 +73,7 @@ public struct DelegateTaskTool: CodeTool {
         self.reasoningEffort = reasoningEffort
         self.parentSystemPrompt = parentSystemPrompt
         self.executionFactory = executionFactory
+        self.controls = controls
     }
 
     public let name = "delegate_task"
@@ -436,6 +442,12 @@ public struct DelegateTaskTool: CodeTool {
             modelID: childModelID,
             reasoningEffort: childReasoningEffort
         )
+        await controls?.register(
+            childSessionID: child.id,
+            parentSessionID: parentSessionID,
+            permissions: permissions,
+            orchestrator: orchestrator
+        )
         let usage = UsageTally()
         await orchestrator.observeUsage { input, output in
             Task { await usage.record(input: input, output: output) }
@@ -486,9 +498,11 @@ public struct DelegateTaskTool: CodeTool {
                 completedAt: Date(),
                 error: message
             )
+            await controls?.unregister(childSessionID: child.id)
             return Outcome(index: index, title: spec.title, status: .failed, answer: message)
         }
         await orchestrator.release()
+        await controls?.unregister(childSessionID: child.id)
 
         var finalizationError: String?
         if let finalize = environment.finalize {
