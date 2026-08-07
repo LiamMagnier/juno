@@ -107,6 +107,56 @@ export const BUDGET_CHECK_INTERVAL_MS = 5_000;
  */
 export const WORK_ASK_TOOL_NAME = 'ask_user';
 
+/**
+ * The tool the model calls to move the plan along.
+ *
+ * **Why this exists.** `WorkSession.startStep`, `finishStep` and `revisePlan`
+ * were written to be driven from somewhere, emit exactly the right events
+ * (`step_started`, `step_finished`, `plan_updated`), and were called by nothing
+ * — not by a tool, not by the runner, not by anything in the repository. So a
+ * cloud run's plan sat at three pending steps for its whole life, and
+ * `structuralValidation`'s first check ("Every planned step reached a
+ * conclusion") could never pass. Every cloud Work run therefore ended `failed`
+ * no matter what the model did, and the user was told the deliverable did not
+ * answer the goal when the real answer was that nothing could ever mark the
+ * work done.
+ *
+ * One tool with a status argument rather than three, because the model has to
+ * pick the step id either way and three names is three chances to call the
+ * wrong one. `revise` is deliberately not exposed here: re-planning is a
+ * bigger act than progressing, and the fixed scaffold the cloud runner
+ * installs is not the model's to rewrite mid-run.
+ */
+export const WORK_PLAN_TOOL_NAME = 'update_plan';
+
+export function updatePlanToolSpec(): ToolSpec {
+  return {
+    name: WORK_PLAN_TOOL_NAME,
+    description:
+      'Record progress against the plan. Call it with status "active" before you begin a step, and again with "done", "skipped" or "failed" when you stop working on it. The plan is what the user watches, and a run whose steps never move is reported as having done nothing.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        stepId: {
+          type: 'string',
+          description: 'The id of the step, exactly as given in the plan.',
+        },
+        status: {
+          type: 'string',
+          enum: ['active', 'done', 'skipped', 'failed'],
+          description: 'What is now true of the step.',
+        },
+        reason: {
+          type: 'string',
+          description:
+            'Why, when the status is "skipped" or "failed". A step that stops without one is reported as unexplained.',
+        },
+      },
+      required: ['stepId', 'status'],
+    },
+  };
+}
+
 export function askUserToolSpec(): ToolSpec {
   return {
     name: WORK_ASK_TOOL_NAME,
@@ -457,7 +507,7 @@ export class WorkAgentSession {
         model: this.options.model,
         system: this.buildSystemPrompt(),
         messages: this.messages,
-        tools: [...this.tools.map((tool) => tool.spec), askUserToolSpec()],
+        tools: [...this.tools.map((tool) => tool.spec), askUserToolSpec(), updatePlanToolSpec()],
         signal: this.aborter.signal,
         maxSteps: this.options.maxSteps ?? MAX_STEPS_PER_RUN,
         ...(this.options.reasoningEffort
@@ -594,6 +644,7 @@ export class WorkAgentSession {
     input: Record<string, unknown>;
   }): Promise<UserContent> {
     if (call.name === WORK_ASK_TOOL_NAME) return this.handleQuestion(call);
+    if (call.name === WORK_PLAN_TOOL_NAME) return this.handlePlanUpdate(call);
 
     const tool = this.toolsByName.get(call.name);
     if (!tool) {
@@ -745,6 +796,58 @@ export class WorkAgentSession {
   }
 
   /**
+   * Moves one step of the plan, from the model's own call.
+   *
+   * Not routed through `observeToolCall`. That accounting exists to catch a run
+   * looping on the same tool without getting anywhere, and marking a step done
+   * *is* getting somewhere — counting it as a call since progress would make
+   * the stall detector fire on the one tool that proves the run is advancing.
+   *
+   * An unknown step id is refused rather than ignored: the model has to be told
+   * it addressed a step that does not exist, or it carries on believing the
+   * plan moved and reports work the transcript never recorded.
+   */
+  private handlePlanUpdate(call: {
+    id: string;
+    name: string;
+    input: Record<string, unknown>;
+  }): UserContent {
+    const stepId = String(call.input.stepId ?? '').trim();
+    const status = String(call.input.status ?? '').trim();
+    const reason = String(call.input.reason ?? '').trim();
+
+    if (!stepId) return this.toolResult(call.id, 'A stepId is required.', true);
+    if (!this.plan.step(stepId)) {
+      const known = this.plan
+        .snapshot()
+        .steps.map((step) => step.id)
+        .join(', ');
+      return this.toolResult(
+        call.id,
+        `No step with id "${stepId}". The plan's steps are: ${known}.`,
+        true,
+      );
+    }
+
+    if (status === 'active') {
+      this.startStep(stepId);
+      return this.toolResult(call.id, `Step "${stepId}" is now active.`);
+    }
+    if (status === 'done' || status === 'skipped' || status === 'failed') {
+      // A step can be concluded without having been started — a model that
+      // does the work and then records it is describing what happened, and
+      // refusing that would teach it to narrate the ceremony instead.
+      this.finishStep(stepId, status, reason || undefined);
+      return this.toolResult(call.id, `Step "${stepId}" is ${status}.`);
+    }
+    return this.toolResult(
+      call.id,
+      `Unknown status "${status}". Use active, done, skipped or failed.`,
+      true,
+    );
+  }
+
+  /**
    * Put one action in front of the user and wait.
    *
    * The request carries `digestInput` as well as `actionDigest` so the
@@ -802,7 +905,8 @@ export class WorkAgentSession {
       '',
       '# Operating rules',
       '',
-      '- Work the plan in order. Say what you are doing before you do it, and what you found afterwards.',
+      `- Work the plan in order, and record it with ${WORK_PLAN_TOOL_NAME}: "active" before a step, then "done", "skipped" or "failed" when you leave it. The plan is what the user watches, and a run whose steps never move is reported as having done nothing regardless of what it wrote.`,
+      '- Say what you are doing before you do it, and what you found afterwards.',
       `- When only the user can decide something, call ${WORK_ASK_TOOL_NAME} rather than guessing. Guessing produces a deliverable that is confidently wrong.`,
       '- Cite the source of every fact that came from a tool, a connector or the web.',
       '- Report what you could not establish. An unmentioned gap reads as an answer.',

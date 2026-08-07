@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { structuralValidation } from '../work/session.js';
+import { WORK_PLAN_TOOL_NAME, structuralValidation, updatePlanToolSpec } from '../work/session.js';
 import { WorkPlan } from '../work/plan.js';
 
 /*
@@ -151,4 +151,61 @@ test('every unmet entry is evidence rather than a restated claim', () => {
   for (const entry of result.unmet) {
     assert.ok(failedEvidence.has(entry), `"${entry}" is not any failing check's evidence`);
   }
+});
+
+/*
+ * The tool that lets a run finish at all.
+ *
+ * `startStep`/`finishStep` existed on the session, emitted the right events,
+ * and were called by nothing anywhere in the repository. So a cloud run's plan
+ * stayed at its fixed three pending steps for its whole life, the first
+ * structural check could never pass, and *every* cloud Work run ended `failed`
+ * regardless of what the model did — while telling the user the deliverable did
+ * not answer the goal.
+ */
+
+test('the plan tool is offered to the model', () => {
+  const spec = updatePlanToolSpec();
+  assert.equal(spec.name, WORK_PLAN_TOOL_NAME);
+  const props = spec.inputSchema.properties as Record<string, { enum?: string[] }>;
+  // Every terminal step status the validator understands has to be reachable,
+  // or a run can start a step and never legally leave it.
+  assert.deepEqual(props.status?.enum, ['active', 'done', 'skipped', 'failed']);
+  assert.deepEqual(spec.inputSchema.required, ['stepId', 'status']);
+});
+
+test('a plan whose steps are concluded passes the check the tool exists to satisfy', () => {
+  // The end state the tool makes reachable. Before it, no code path could put
+  // a cloud run's plan into this shape.
+  const plan = planWith(
+    (p) => p.complete('a'),
+    (p) => p.skip('b', 'Nothing to reconcile.'),
+  );
+  const result = structuralValidation({
+    goal: 'Reconcile the invoices',
+    plan,
+    answer: 'One invoice reconciled; Reconcile them was skipped, nothing to do.',
+    artifacts: [],
+  });
+  assert.equal(result.satisfied, true, result.unmet.join(' | '));
+});
+
+test('a skipped step with no reason is still reported', () => {
+  // The tool makes `reason` optional, so the check that catches a silent skip
+  // has to keep working now that a model can produce one.
+  const plan = planWith(
+    (p) => p.complete('a'),
+    (p) => p.skip('b', ''),
+  );
+  const result = structuralValidation({
+    goal: 'Reconcile the invoices',
+    plan,
+    answer: 'Did the first, skipped Reconcile them.',
+    artifacts: [],
+  });
+  assert.equal(result.satisfied, false);
+  assert.ok(
+    result.unmet.some((entry) => entry.includes('No reason recorded')),
+    result.unmet.join(' | '),
+  );
 });
