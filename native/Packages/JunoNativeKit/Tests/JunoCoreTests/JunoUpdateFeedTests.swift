@@ -94,6 +94,28 @@ final class JunoUpdateFeedTests: XCTestCase {
         XCTAssertTrue(JunoUpdateFeed.isNewer("1.0.0-rc.2", than: "1.0.0-rc.1"))
     }
 
+    func testPrereleaseIdentifiersFollowSemverPrecedenceRules() {
+        // Numeric identifiers are compared numerically, not as strings.
+        XCTAssertTrue(JunoUpdateFeed.isNewer("1.0.0-rc.10", than: "1.0.0-rc.2"))
+
+        // Numeric identifiers always have lower precedence than non-numeric
+        // identifiers, regardless of their ASCII spelling.
+        XCTAssertTrue(JunoUpdateFeed.isNewer("1.0.0-alpha", than: "1.0.0-1"))
+        XCTAssertFalse(JunoUpdateFeed.isNewer("1.0.0-1", than: "1.0.0-alpha"))
+
+        // When the shared identifiers match, the longer prerelease wins.
+        XCTAssertTrue(JunoUpdateFeed.isNewer("1.0.0-alpha.1", than: "1.0.0-alpha"))
+        XCTAssertFalse(JunoUpdateFeed.isNewer("1.0.0-alpha", than: "1.0.0-alpha.1"))
+    }
+
+    func testLeadingZeroNumericPrereleaseIdentifiersAreRejected() {
+        // SemVer does not define precedence for `01`; do not reinterpret it as
+        // numeric `1` or compare it as an arbitrary non-numeric identifier.
+        XCTAssertFalse(JunoUpdateFeed.isNewer("1.0.0-01", than: "1.0.0-1"))
+        XCTAssertFalse(JunoUpdateFeed.isNewer("1.0.0-1", than: "1.0.0-01"))
+        XCTAssertFalse(JunoUpdateFeed.isNewer("1.0.0-rc.01", than: "1.0.0-rc.1"))
+    }
+
     func testALeadingVAndBuildMetadataAreIgnored() {
         XCTAssertFalse(JunoUpdateFeed.isNewer("v0.1.2+abc123", than: "0.1.2"))
         XCTAssertTrue(JunoUpdateFeed.isNewer("v0.1.3", than: "0.1.2"))

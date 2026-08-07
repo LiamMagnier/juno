@@ -125,8 +125,11 @@ public enum JunoUpdateFeed {
     }
 
     static func order(_ lhs: String, _ rhs: String) -> ComparisonResult {
-        let left = SemanticVersion(lhs)
-        let right = SemanticVersion(rhs)
+        // Invalid SemVer has no defined precedence. Treat it as equal so the
+        // updater fails closed instead of offering a malformed feed value.
+        guard let left = SemanticVersion(lhs), let right = SemanticVersion(rhs) else {
+            return .orderedSame
+        }
         return left.compare(to: right)
     }
 
@@ -142,14 +145,23 @@ public enum JunoUpdateFeed {
     /// semver says it must be.
     struct SemanticVersion {
         let numbers: [Int]
-        let prerelease: String?
+        private let prerelease: [PrereleaseIdentifier]?
 
-        init(_ raw: String) {
+        init?(_ raw: String) {
             var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if text.hasPrefix("v") || text.hasPrefix("V") { text = String(text.dropFirst()) }
             if let plus = text.firstIndex(of: "+") { text = String(text[..<plus]) }
             if let dash = text.firstIndex(of: "-") {
-                prerelease = String(text[text.index(after: dash)...])
+                let identifiers = text[text.index(after: dash)...]
+                    .split(separator: ".", omittingEmptySubsequences: false)
+                guard !identifiers.isEmpty else { return nil }
+                var parsedIdentifiers: [PrereleaseIdentifier] = []
+                parsedIdentifiers.reserveCapacity(identifiers.count)
+                for identifier in identifiers {
+                    guard let parsed = PrereleaseIdentifier(identifier) else { return nil }
+                    parsedIdentifiers.append(parsed)
+                }
+                prerelease = parsedIdentifiers
                 text = String(text[..<dash])
             } else {
                 prerelease = nil
@@ -168,8 +180,74 @@ public enum JunoUpdateFeed {
             case (nil, _): return .orderedDescending
             case (_, nil): return .orderedAscending
             case (let mine?, let theirs?):
-                if mine == theirs { return .orderedSame }
-                return mine < theirs ? .orderedAscending : .orderedDescending
+                for index in 0..<min(mine.count, theirs.count) {
+                    let result = mine[index].compare(to: theirs[index])
+                    if result != .orderedSame { return result }
+                }
+                if mine.count == theirs.count { return .orderedSame }
+                return mine.count < theirs.count ? .orderedAscending : .orderedDescending
+            }
+        }
+
+        /// A prerelease identifier is numeric only when it is a valid SemVer
+        /// numeric identifier. In particular, `01` is invalid rather than a
+        /// second spelling of `1`; returning nil makes the whole version
+        /// ineligible for update ordering.
+        private enum PrereleaseIdentifier {
+            case numeric(String)
+            case nonNumeric(String)
+
+            init?(_ raw: Substring) {
+                let value = String(raw)
+                let bytes = Array(value.utf8)
+                guard !bytes.isEmpty, bytes.allSatisfy({ Self.isAllowedByte($0) }) else { return nil }
+
+                if bytes.allSatisfy({ Self.isDigit($0) }) {
+                    guard value == "0" || !value.hasPrefix("0") else { return nil }
+                    self = .numeric(value)
+                } else {
+                    self = .nonNumeric(value)
+                }
+            }
+
+            func compare(to other: Self) -> ComparisonResult {
+                switch (self, other) {
+                case let (.numeric(left), .numeric(right)):
+                    // Numeric identifiers may be longer than Int.max. Compare
+                    // their canonical decimal forms without overflowing.
+                    if left.utf8.count != right.utf8.count {
+                        return left.utf8.count < right.utf8.count
+                            ? .orderedAscending
+                            : .orderedDescending
+                    }
+                    return Self.compareASCII(left, right)
+                case (.numeric(_), .nonNumeric(_)):
+                    return .orderedAscending
+                case (.nonNumeric(_), .numeric(_)):
+                    return .orderedDescending
+                case let (.nonNumeric(left), .nonNumeric(right)):
+                    return Self.compareASCII(left, right)
+                }
+            }
+
+            private static func isDigit(_ byte: UInt8) -> Bool {
+                byte >= 48 && byte <= 57
+            }
+
+            private static func isAllowedByte(_ byte: UInt8) -> Bool {
+                isDigit(byte)
+                    || (byte >= 65 && byte <= 90)
+                    || (byte >= 97 && byte <= 122)
+                    || byte == 45
+            }
+
+            private static func compareASCII(_ left: String, _ right: String) -> ComparisonResult {
+                let leftBytes = Array(left.utf8)
+                let rightBytes = Array(right.utf8)
+                if leftBytes == rightBytes { return .orderedSame }
+                return leftBytes.lexicographicallyPrecedes(rightBytes)
+                    ? .orderedAscending
+                    : .orderedDescending
             }
         }
     }
