@@ -30,6 +30,26 @@ final class DevServerServiceTests: XCTestCase {
         return events
     }
 
+    private func collectUntilRunningThenStop(
+        from service: DevServerService,
+        command: String
+    ) async -> [DevServerEvent] {
+        var events: [DevServerEvent] = []
+        var iterator = service.start(command: command, workspaceRoot: workspaceURL)
+            .makeAsyncIterator()
+        while let event = await iterator.next() {
+            events.append(event)
+            if case .state(.running) = event {
+                service.stop()
+            }
+        }
+        return events
+    }
+
+    private func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
     func testEmptyCommandFailsWithoutStartingAProcess() async {
         let service = DevServerService()
 
@@ -60,9 +80,10 @@ final class DevServerServiceTests: XCTestCase {
         let events = await collectEvents(from: service, command: command)
 
         XCTAssertTrue(events.contains(.state(.starting)))
-        XCTAssertTrue(
-            events.contains(.state(.running(URL(string: "http://localhost:4567/")!)))
-        )
+        XCTAssertFalse(events.contains { event in
+            if case .state(.running) = event { return true }
+            return false
+        }, "a printed URL is not readiness without a live HTTP server")
         XCTAssertEqual(events.last, .state(.exited(code: 0)))
 
         let lines = events.compactMap { event -> DevServerLogLine? in
@@ -80,9 +101,15 @@ final class DevServerServiceTests: XCTestCase {
 
         let events = await collectEvents(
             from: service,
-            command: "printf 'Local: http://127.0.0.1:4568/'"
+            command: "printf 'stdout fragment'; printf 'Local: http://127.0.0.1:4568/' >&2"
         )
 
+        let lines = events.compactMap { event -> DevServerLogLine? in
+            guard case let .line(line) = event else { return nil }
+            return line
+        }
+        XCTAssertTrue(lines.contains { $0.text == "stdout fragment" })
+        XCTAssertTrue(lines.contains { $0.text.contains("http://127.0.0.1:4568/") })
         XCTAssertTrue(
             events.contains(.state(.exited(code: 0))),
             "a server that printed a usable URL before exiting must not be reported as a launch failure"
@@ -91,6 +118,85 @@ final class DevServerServiceTests: XCTestCase {
             if case .state(.failed) = event { return true }
             return false
         })
+    }
+
+    func testCRLFOutputIsNormalizedBeforeItReachesTheLogOrDetector() async {
+        let service = DevServerService()
+
+        let events = await collectEvents(
+            from: service,
+            command: "printf 'Local: http://127.0.0.1:4569/\\r\\n'"
+        )
+
+        let lines = events.compactMap { event -> DevServerLogLine? in
+            guard case let .line(line) = event else { return nil }
+            return line
+        }
+        let line = lines.first { $0.text.contains("http://127.0.0.1:4569/") }
+        XCTAssertEqual(
+            line?.text,
+            "Local: http://127.0.0.1:4569/",
+            "lines: \(lines.map(\.text))"
+        )
+        XCTAssertFalse(line?.text.contains("\r") == true)
+        XCTAssertFalse(events.contains { event in
+            if case .state(.running) = event { return true }
+            return false
+        })
+    }
+
+    func testRunningRequiresAResponseFromTheLiveProcess() async {
+        let service = DevServerService()
+        let command = "python3 -u -c 'import http.server,socketserver; s=socketserver.TCPServer((\"127.0.0.1\",0),http.server.SimpleHTTPRequestHandler); print(\"Local: http://127.0.0.1:%d/\" % s.server_address[1],flush=True); s.serve_forever()'"
+
+        let events = await collectUntilRunningThenStop(from: service, command: command)
+
+        XCTAssertTrue(events.contains(.state(.starting)))
+        XCTAssertTrue(
+            events.contains {
+                if case .state(.running) = $0 { return true }
+                return false
+            },
+            "the running state should be emitted only after the local HTTP server responds"
+        )
+        XCTAssertEqual(events.last, .state(.stopped))
+    }
+
+    func testReplacementWaitsForPreviousGroupCleanupAndFinishesItOnce() async {
+        let service = DevServerService()
+        let markerURL = workspaceURL.appendingPathComponent("descendant-cleaned")
+        let marker = shellQuote(markerURL.path)
+        let firstStream = service.start(
+            command: "(sleep 1; touch \(marker)) & printf 'first\\n'",
+            workspaceRoot: workspaceURL
+        )
+        var firstIterator = firstStream.makeAsyncIterator()
+        let firstEvent = await firstIterator.next()
+        XCTAssertEqual(firstEvent, .state(.starting))
+        try? await Task.sleep(for: .milliseconds(100))
+
+        let replacementStartedAt = Date()
+        _ = await collectEvents(from: service, command: "printf 'replacement\\n'")
+        let replacementElapsed = Date().timeIntervalSince(replacementStartedAt)
+
+        var firstEvents: [DevServerEvent] = []
+        while let event = await firstIterator.next() {
+            firstEvents.append(event)
+        }
+        try? await Task.sleep(for: .milliseconds(1_200))
+        XCTAssertTrue(
+            !FileManager.default.fileExists(atPath: markerURL.path),
+            "replacement must clean the previous descendant; events=\(firstEvents)"
+        )
+        XCTAssertLessThan(replacementElapsed, 3.5)
+
+        let terminalStates = firstEvents.compactMap { event -> DevServerState? in
+            guard case let .state(state) = event,
+                  !state.isLive
+            else { return nil }
+            return state
+        }
+        XCTAssertEqual(terminalStates.count, 1, "a run must finish exactly once")
     }
 
     func testServerEnvironmentUsesAStableScrubbedPreviewEnvironment() {

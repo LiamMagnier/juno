@@ -69,6 +69,34 @@ final class CodePreviewHarnessTests: XCTestCase {
         }
     }
 
+    func testPreviewInspectionPolicyAllowsOnlyTheActiveLoopbackOrigin() {
+        XCTAssertTrue(CodePreviewInspectionPolicy.canInspectOrigin(URL(string: "http://localhost:5173/")!))
+        XCTAssertTrue(CodePreviewInspectionPolicy.canInspectOrigin(URL(string: "http://127.0.0.1:4173/")!))
+        XCTAssertTrue(CodePreviewInspectionPolicy.canInspectOrigin(URL(string: "http://[::1]:3000/")!))
+        XCTAssertFalse(CodePreviewInspectionPolicy.canInspectOrigin(URL(string: "https://example.com/")!))
+        XCTAssertFalse(CodePreviewInspectionPolicy.canInspectOrigin(URL(string: "http://192.168.1.5:3000/")!))
+
+        let preview = URL(string: "http://localhost:5173/")!
+        XCTAssertTrue(
+            CodePreviewInspectionPolicy.sharesInspectableOrigin(
+                URL(string: "http://localhost:5173/dashboard")!,
+                with: preview
+            )
+        )
+        XCTAssertFalse(
+            CodePreviewInspectionPolicy.sharesInspectableOrigin(
+                URL(string: "http://localhost:5174/")!,
+                with: preview
+            )
+        )
+        XCTAssertFalse(
+            CodePreviewInspectionPolicy.sharesInspectableOrigin(
+                URL(string: "https://example.com/")!,
+                with: preview
+            )
+        )
+    }
+
     func testPreviewTargetBindsTheOwningSessionAndReadsLegacySceneValues() throws {
         let owner = CodeSessionID(value: "preview-owner")
         let target = CodePreviewTarget(

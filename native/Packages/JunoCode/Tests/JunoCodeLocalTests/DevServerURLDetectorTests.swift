@@ -54,7 +54,7 @@ final class DevServerURLDetectorTests: XCTestCase {
     }
 
     func testOutputSanitizerPreservesCRLFLines() {
-        let raw = "Local: http://localhost:4568/\r"
+        let raw = "Local: http://localhost:4568/\r\n"
 
         XCTAssertEqual(
             DevServerOutputSanitizer.sanitize(raw),

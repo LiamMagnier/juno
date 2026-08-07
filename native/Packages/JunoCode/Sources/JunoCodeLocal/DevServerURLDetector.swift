@@ -145,12 +145,19 @@ enum DevServerOutputSanitizer {
                 withTemplate: ""
             )
         }
-        // Pipe framing keeps the byte before `\n`, so a CRLF line reaches this
-        // function with a trailing `\r`. Remove that delimiter before applying
-        // the progress-line rule; otherwise `split` selects the empty segment
-        // after the CR and silently drops the whole log line and its URL.
-        if value.last == "\r" {
-            value.removeLast()
+        // Pipe framing keeps the line delimiter in the fragment passed here.
+        // Normalize both CRLF and a bare CR before applying the progress-line
+        // rule; otherwise `split` can select an empty segment and drop the URL.
+        var scalars = value.unicodeScalars
+        if scalars.last?.value == 0x0A {
+            scalars.removeLast()
+            if scalars.last?.value == 0x0D {
+                scalars.removeLast()
+            }
+            value = String(scalars)
+        } else if scalars.last?.value == 0x0D {
+            scalars.removeLast()
+            value = String(scalars)
         }
         // A progress line rewrites itself with a carriage return; keep only what
         // it settled on rather than showing the overwritten fragments.

@@ -78,6 +78,15 @@ public final class DevServerService: @unchecked Sendable {
     private var run: DevServerRun?
     private let classifier = CommandClassifier()
     private let redactor = SecretRedactor()
+    /// A descendant can inherit one of the output pipes after the leader exits.
+    /// Never let that keep the stream (or a replacement start) blocked forever.
+    private static let drainTimeout: TimeInterval = 1.0
+    /// Give a cooperative process a chance to leave before escalating the whole
+    /// process group. This is deliberately independent of leader liveness.
+    private static let processGroupKillDelay: TimeInterval = 2.0
+    /// The synchronous `start`/`stop` API waits for the old stream to finish, but
+    /// still has a hard upper bound if a platform pipe or child misbehaves.
+    private static let cleanupWaitTimeout: TimeInterval = 4.0
     /// Optional kernel containment for the long-lived child. The preview
     /// service cannot reuse the one-shot executor, but it should still inherit
     /// its filesystem and network boundary.
@@ -140,7 +149,10 @@ public final class DevServerService: @unchecked Sendable {
     /// into one. It ends when the process is gone; cancelling the consuming task
     /// terminates the process group, so closing the window stops the server.
     public func start(command: String, workspaceRoot: URL) -> AsyncStream<DevServerEvent> {
-        stop()
+        // `start` is intentionally synchronous for API compatibility. Waiting
+        // here is what makes a replacement safe: the previous process group and
+        // its inherited pipes are cleaned up before a new server is launched.
+        stopAndWait()
 
         let commandLine = command.trimmingCharacters(in: .whitespacesAndNewlines)
         let redactor = self.redactor
@@ -167,14 +179,13 @@ public final class DevServerService: @unchecked Sendable {
                 return
             }
 
-            let process = Process()
             let invocation = sandbox?.wrap(command: commandLine)
                 ?? (executable: "/bin/zsh", arguments: ["-c", commandLine])
+            let process = Process()
             process.executableURL = URL(fileURLWithPath: invocation.executable)
             process.arguments = invocation.arguments
             process.currentDirectoryURL = workspaceRoot
             process.environment = Self.serverEnvironment(workspaceRoot: workspaceRoot.path)
-
             let stdoutPipe = Pipe()
             let stderrPipe = Pipe()
             process.standardOutput = stdoutPipe
@@ -184,14 +195,27 @@ public final class DevServerService: @unchecked Sendable {
             // the log rather than hidden behind a stalled pipe.
             process.standardInput = FileHandle.nullDevice
 
-            let run = DevServerRun(process: process, command: commandLine, redactor: redactor)
+            let drainGroup = DispatchGroup()
+            let termination = DevServerTermination(
+                drainGroup: drainGroup,
+                drainTimeout: Self.drainTimeout
+            )
+
+            let run = DevServerRun(
+                process: process,
+                command: commandLine,
+                redactor: redactor,
+                termination: termination,
+                processGroupKillDelay: Self.processGroupKillDelay
+            )
             self.lock.lock()
             self.run = run
             self.lock.unlock()
 
-            continuation.yield(.state(.starting))
+            let publishReadiness: @Sendable (URL) -> Void = { url in
+                continuation.yield(.state(.running(url)))
+            }
 
-            let drainGroup = DispatchGroup()
             for (handle, channel) in [
                 (stdoutPipe.fileHandleForReading, ToolOutputChannel.stdout),
                 (stderrPipe.fileHandleForReading, ToolOutputChannel.stderr),
@@ -199,8 +223,12 @@ public final class DevServerService: @unchecked Sendable {
                 drainGroup.enter()
                 DispatchQueue.global(qos: .userInitiated).async {
                     defer {
-                        for line in run.flush(channel: channel) {
+                        let flushed = run.flush(channel: channel)
+                        for line in flushed.lines {
                             continuation.yield(.line(line))
+                        }
+                        if let url = flushed.url {
+                            run.startReadinessProbe(for: url, onReady: publishReadiness)
                         }
                         drainGroup.leave()
                     }
@@ -211,12 +239,11 @@ public final class DevServerService: @unchecked Sendable {
                         for line in ingested.lines {
                             continuation.yield(.line(line))
                         }
-                        // The address is published the moment the server prints
-                        // it — nothing here waits for a heuristic "ready" line,
-                        // because different frameworks print readiness before,
-                        // after, or instead of the URL.
                         if let url = ingested.url {
-                            continuation.yield(.state(.running(url)))
+                            // A printed URL is only a hint. The process must still
+                            // be alive and answer an HTTP request before it can
+                            // become the public `.running` state.
+                            run.startReadinessProbe(for: url, onReady: publishReadiness)
                         }
                     }
                 }
@@ -228,7 +255,9 @@ public final class DevServerService: @unchecked Sendable {
             run.setSilenceNotice(
                 Task {
                     try? await Task.sleep(for: .seconds(25))
-                    guard !Task.isCancelled, run.isProcessRunning, run.detectedURL == nil
+                    guard !Task.isCancelled,
+                          run.isProcessRunning,
+                          run.detectedURL == nil
                     else { return }
                     continuation.yield(
                         .line(
@@ -242,11 +271,26 @@ public final class DevServerService: @unchecked Sendable {
 
             process.terminationHandler = { finished in
                 run.cancelSilenceNotice()
+                run.cancelReadinessProbe()
+                // The leader may already be gone by the time this callback runs.
+                // Signal its recorded process group anyway so descendants that
+                // inherited the pipes cannot keep the run alive.
+                run.terminateGroup()
                 let status = finished.terminationStatus
                 // Reduced to a Bool here rather than captured: the enum crosses a
                 // concurrency boundary into the notify block.
                 let wasSignal = finished.terminationReason == .uncaughtSignal
-                drainGroup.notify(queue: .global(qos: .userInitiated)) {
+                termination.finishAfterDrain(onTimeout: { run.forceKillGroup() }) {
+                    // The normal reader path already flushed both channels. This
+                    // second flush is the bounded-timeout path: it preserves a
+                    // final unterminated URL/log fragment even if a descendant
+                    // kept a pipe open after the leader exited.
+                    for channel in [ToolOutputChannel.stdout, .stderr] {
+                        let flushed = run.flush(channel: channel)
+                        for line in flushed.lines {
+                            continuation.yield(.line(line))
+                        }
+                    }
                     let snapshot = run.snapshot()
                     let final: DevServerState
                     if snapshot.stopRequested {
@@ -281,24 +325,40 @@ public final class DevServerService: @unchecked Sendable {
                 guard case .cancelled = termination else { return }
                 run.markStopRequested()
                 run.cancelSilenceNotice()
+                run.cancelReadinessProbe()
                 run.terminateGroup()
-                self.forget(run)
             }
 
             do {
+                // Launch before publishing `.starting`. AsyncStream may resume
+                // its iterator synchronously from `yield`; publishing first
+                // allowed a replacement start to call `stop()` before the
+                // process had a PID or a private process group to terminate.
                 try process.run()
+                run.didLaunch()
+                continuation.yield(.state(.starting))
             } catch {
                 run.cancelSilenceNotice()
+                run.cancelReadinessProbe()
                 // Unblock the drain readers before finishing, or they sit on a
                 // pipe that will never see EOF.
                 try? stdoutPipe.fileHandleForWriting.close()
                 try? stderrPipe.fileHandleForWriting.close()
-                self.forget(run)
-                continuation.yield(
-                    .state(.failed(reason: "\(commandLine) could not be launched: \(error.localizedDescription)"))
-                )
-                continuation.finish()
+                termination.finishAfterDrain {
+                    for channel in [ToolOutputChannel.stdout, .stderr] {
+                        let flushed = run.flush(channel: channel)
+                        for line in flushed.lines {
+                            continuation.yield(.line(line))
+                        }
+                    }
+                    self.forget(run)
+                    continuation.yield(
+                        .state(.failed(reason: "\(commandLine) could not be launched: \(error.localizedDescription)"))
+                    )
+                    continuation.finish()
+                }
             }
+
         }
     }
 
@@ -308,16 +368,34 @@ public final class DevServerService: @unchecked Sendable {
     /// makes at least three processes, and killing only the shell leaves the node
     /// server holding the port.
     public func stop() {
+        _ = requestStop()
+    }
+
+    private func stopAndWait() {
+        guard let current = requestStop() else { return }
+        _ = current.waitForCleanup(timeout: Self.cleanupWaitTimeout)
+        if !current.waitForCleanup(timeout: 0) {
+            // The normal escalation is scheduled by `terminateGroup`. This is a
+            // final bounded fallback for a leader whose termination callback was
+            // delayed by the platform.
+            current.forceKillGroup()
+            _ = current.waitForCleanup(timeout: Self.drainTimeout)
+        }
+        forget(current)
+    }
+
+    private func requestStop() -> DevServerRun? {
         lock.lock()
         let current = run
-        run = nil
         lock.unlock()
-        guard let current else { return }
+        guard let current else { return nil }
         // Recorded before the signal so the termination handler reports `.stopped`
         // rather than mistaking a requested stop for a crash.
         current.markStopRequested()
         current.cancelSilenceNotice()
+        current.cancelReadinessProbe()
         current.terminateGroup()
+        return current
     }
 
     private func forget(_ finished: DevServerRun) {
@@ -384,6 +462,54 @@ public final class DevServerService: @unchecked Sendable {
     }
 }
 
+/// Owns the one-shot completion gate for one server run.
+///
+/// The process termination callback, stream cancellation, and launch failure can
+/// all race. The gate is also what makes the drain wait bounded: a descendant
+/// that inherited a pipe cannot prevent the stream from finishing forever.
+private final class DevServerTermination: @unchecked Sendable {
+    private let drainGroup: DispatchGroup
+    private let drainTimeout: TimeInterval
+    private let completion = DispatchGroup()
+    private let lock = NSLock()
+    private var didFinish = false
+
+    init(drainGroup: DispatchGroup, drainTimeout: TimeInterval) {
+        self.drainGroup = drainGroup
+        self.drainTimeout = drainTimeout
+        completion.enter()
+    }
+
+    func finishAfterDrain(
+        onTimeout: @escaping @Sendable () -> Void = {},
+        _ action: @escaping @Sendable () -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            if drainGroup.wait(timeout: .now() + drainTimeout) == .timedOut {
+                onTimeout()
+            }
+            finishOnce(action)
+        }
+    }
+
+    func wait(timeout: TimeInterval) -> Bool {
+        completion.wait(timeout: .now() + timeout) == .success
+    }
+
+    private func finishOnce(_ action: @escaping @Sendable () -> Void) {
+        lock.lock()
+        guard !didFinish else {
+            lock.unlock()
+            return
+        }
+        didFinish = true
+        lock.unlock()
+
+        action()
+        completion.leave()
+    }
+}
+
 /// One server's mutable state, shared between the two drain queues, the
 /// termination handler and `stop()`.
 ///
@@ -398,6 +524,8 @@ private final class DevServerRun: @unchecked Sendable {
 
     private let process: Process
     private let redactor: SecretRedactor
+    private let termination: DevServerTermination
+    private let processGroupKillDelay: TimeInterval
     private let lock = NSLock()
     private var nextLineID = 0
     private var partials: [ToolOutputChannel: String] = [:]
@@ -405,6 +533,10 @@ private final class DevServerRun: @unchecked Sendable {
     private var recent: [String] = []
     private var stopRequested = false
     private var silenceNotice: Task<Void, Never>?
+    private var readinessProbe: Task<Void, Never>?
+    private var didPublishHTTPReady = false
+    private var processGroupID: Int32 = 0
+    private var didSignalProcessGroup = false
 
     /// A minified bundle or a base64 payload printed to stdout arrives as one
     /// enormous "line"; past this it is truncated rather than held whole.
@@ -412,10 +544,18 @@ private final class DevServerRun: @unchecked Sendable {
     /// Enough context to explain a failure without keeping the whole session.
     private static let retainedLineCount = 40
 
-    init(process: Process, command: String, redactor: SecretRedactor) {
+    init(
+        process: Process,
+        command: String,
+        redactor: SecretRedactor,
+        termination: DevServerTermination,
+        processGroupKillDelay: TimeInterval
+    ) {
         self.process = process
         self.command = command
         self.redactor = redactor
+        self.termination = termination
+        self.processGroupKillDelay = processGroupKillDelay
     }
 
     var detectedURL: URL? {
@@ -428,20 +568,55 @@ private final class DevServerRun: @unchecked Sendable {
         process.isRunning
     }
 
+    func didLaunch() {
+        lock.lock()
+        processGroupID = process.processIdentifier
+        let shouldTerminate = stopRequested
+        lock.unlock()
+        if shouldTerminate { terminateGroup() }
+    }
+
     /// The whole process group, not the process: `zsh -c "npm run dev"` is a
     /// shell, a package manager and a server, and signalling only the shell
     /// leaves the server holding the port. `Process` spawns the child into its
     /// own group, so a negative pid reaches all three — the same mechanism
     /// ``CommandExecutionService`` uses on cancellation.
     func terminateGroup() {
-        guard process.isRunning else { return }
-        let pid = process.processIdentifier
-        kill(-pid, SIGTERM)
-        DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [process] in
-            if process.isRunning {
-                kill(-pid, SIGKILL)
-            }
+        lock.lock()
+        if processGroupID == 0 {
+            processGroupID = process.processIdentifier
         }
+        let groupID = processGroupID
+        guard groupID > 0, !didSignalProcessGroup else {
+            lock.unlock()
+            return
+        }
+        didSignalProcessGroup = true
+        lock.unlock()
+
+        _ = kill(-groupID, SIGTERM)
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(
+            deadline: .now() + processGroupKillDelay
+        ) { [weak self] in
+            self?.forceKillGroup(groupID: groupID)
+        }
+    }
+
+    /// Escalation intentionally does not inspect the leader. A process group can
+    /// remain populated after its group leader has already been reaped.
+    func forceKillGroup() {
+        lock.lock()
+        if processGroupID == 0 {
+            processGroupID = process.processIdentifier
+        }
+        let groupID = processGroupID
+        lock.unlock()
+        forceKillGroup(groupID: groupID)
+    }
+
+    private func forceKillGroup(groupID: Int32) {
+        guard groupID > 0 else { return }
+        _ = kill(-groupID, SIGKILL)
     }
 
     /// Written once at launch and cancelled from the termination handler, the
@@ -459,6 +634,91 @@ private final class DevServerRun: @unchecked Sendable {
         silenceNotice = nil
         lock.unlock()
         task?.cancel()
+    }
+
+    func startReadinessProbe(
+        for url: URL,
+        onReady: @escaping @Sendable (URL) -> Void
+    ) {
+        lock.lock()
+        guard !stopRequested,
+              !didPublishHTTPReady,
+              readinessProbe == nil,
+              process.isRunning
+        else {
+            lock.unlock()
+            return
+        }
+        let task: Task<Void, Never> = Task { [weak self] in
+            guard let self else { return }
+            await self.probeUntilHTTPReady(url: url, onReady: onReady)
+        }
+        readinessProbe = task
+        lock.unlock()
+    }
+
+    func cancelReadinessProbe() {
+        lock.lock()
+        let task = readinessProbe
+        readinessProbe = nil
+        lock.unlock()
+        task?.cancel()
+    }
+
+    private func probeUntilHTTPReady(
+        url: URL,
+        onReady: @escaping @Sendable (URL) -> Void
+    ) async {
+        defer {
+            clearReadinessProbe()
+        }
+
+        while !Task.isCancelled {
+            guard process.isRunning, !isStopRequested else { return }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.timeoutInterval = 0.75
+
+            do {
+                let (_, response) = try await URLSession.shared.data(for: request)
+                guard response is HTTPURLResponse else { return }
+                guard markHTTPReady(url) else { return }
+                onReady(url)
+                return
+            } catch {
+                // A server may announce its port before it finishes compiling.
+                // Keep polling while the process remains alive; the request
+                // timeout and cancellation path bound each attempt.
+            }
+
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
+    private func clearReadinessProbe() {
+        lock.lock()
+        readinessProbe = nil
+        lock.unlock()
+    }
+
+    private var isStopRequested: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return stopRequested
+    }
+
+    func markHTTPReady(_ url: URL) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !stopRequested,
+              !didPublishHTTPReady,
+              self.url == url,
+              process.isRunning
+        else { return false }
+        didPublishHTTPReady = true
+        return true
     }
 
     /// Splits `data` into complete lines, holding any trailing fragment until the
@@ -501,20 +761,24 @@ private final class DevServerRun: @unchecked Sendable {
 
     /// The last fragment, when a process exits without a trailing newline — which
     /// is exactly how a crash message usually arrives.
-    func flush(channel: ToolOutputChannel) -> [DevServerLogLine] {
+    func flush(channel: ToolOutputChannel) -> (lines: [DevServerLogLine], url: URL?) {
         lock.lock()
         defer { lock.unlock() }
-        guard let remainder = partials[channel], !remainder.isEmpty else { return [] }
+        guard let remainder = partials[channel], !remainder.isEmpty else {
+            return ([], nil)
+        }
         partials[channel] = ""
         let line = makeLine(remainder, channel: channel)
         // A short-lived server can print its complete ready line without a
         // trailing newline. It is still a real served address, so preserve that
         // fact before the termination handler snapshots the run; otherwise a
         // clean exit is incorrectly reported as "never served an address".
+        var found: URL?
         if url == nil, let detected = DevServerURLDetector.detect(in: line.text) {
             url = detected
+            found = detected
         }
-        return [line]
+        return ([line], found)
     }
 
     /// A line Juno wrote itself, marked `.log` so the view can tint it as
@@ -531,6 +795,10 @@ private final class DevServerRun: @unchecked Sendable {
         lock.lock()
         stopRequested = true
         lock.unlock()
+    }
+
+    func waitForCleanup(timeout: TimeInterval) -> Bool {
+        termination.wait(timeout: timeout)
     }
 
     func snapshot() -> (url: URL?, stopRequested: Bool, recent: [String]) {

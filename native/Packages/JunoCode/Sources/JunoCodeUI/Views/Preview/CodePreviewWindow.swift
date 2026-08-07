@@ -682,6 +682,11 @@ final class CodePreviewModel {
                 detail: "Juno did not start the server currently shown in the Preview"
             )
         }
+        guard CodePreviewInspectionPolicy.canInspectOrigin(address) else {
+            throw CodePreviewInspectionError.previewNotReady(
+                detail: "only a loopback development server can be inspected by the agent"
+            )
+        }
 
         let boundedText = min(max(maxText, 200), 12_000)
         let script = """
@@ -711,6 +716,16 @@ final class CodePreviewModel {
         }
 
         let rawPageURL = (page["url"] as? String) ?? address.absoluteString
+        guard let renderedPageURL = URL(string: rawPageURL),
+              CodePreviewInspectionPolicy.sharesInspectableOrigin(
+                  renderedPageURL,
+                  with: address
+              )
+        else {
+            throw CodePreviewInspectionError.previewNotReady(
+                detail: "the page navigated away from the active local preview"
+            )
+        }
         let safePageURL = diagnosticsRedactor.redact(rawPageURL)
         let pageURL = URL(string: safePageURL) ?? address
         let title = diagnosticsRedactor.redact(page["title"] as? String ?? "")
@@ -726,6 +741,11 @@ final class CodePreviewModel {
                 guard let png = Self.pngData(from: image) else {
                     throw CodePreviewInspectionError.screenshotFailed(
                         "WebKit returned an image Juno could not encode"
+                    )
+                }
+                guard png.count <= CodePreviewInspectionPolicy.maximumScreenshotBytes else {
+                    throw CodePreviewInspectionError.screenshotFailed(
+                        "the screenshot is larger than the safe 6 MB tool limit"
                     )
                 }
                 screenshot = ModelImage(mediaType: "image/png", data: png, detail: .high)

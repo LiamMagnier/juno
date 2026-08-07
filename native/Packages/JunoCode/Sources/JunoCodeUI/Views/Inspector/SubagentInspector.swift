@@ -740,7 +740,7 @@ private struct SubagentApprovalCard: View {
                 .font(.callout)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("(request.toolName) · (request.risk.rawValue.capitalized) risk")
+            Text("\(request.toolName) · \(request.risk.rawValue.capitalized) risk")
                 .junoCaption()
                 .foregroundStyle(.secondary)
             HStack(spacing: JunoSpace.tight) {

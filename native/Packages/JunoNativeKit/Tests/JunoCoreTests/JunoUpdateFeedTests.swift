@@ -45,6 +45,27 @@ final class JunoUpdateFeedTests: XCTestCase {
         XCTAssertTrue(JunoUpdateFeed.isNewer("1.0.0", than: "0.9.9"))
     }
 
+    /// Regression coverage for a release promoted from prerelease to stable:
+    /// the feed's real 0.11.0 shape must still compare newer than the installed
+    /// 0.10.1 build, including the published asset metadata.
+    func testPromotedStableReleaseIsDetectedAsNewer() throws {
+        let digest = String(repeating: "ab", count: 32)
+        let candidate = try XCTUnwrap(
+            JunoUpdateFeed.macOSCandidate(
+                from: feed(
+                    url: "https://github.com/LiamMagnier/juno/releases/download/v0.11.0/Juno-0.11.0.dmg",
+                    version: "0.11.0",
+                    size: 18_041_603,
+                    sha256: digest
+                )
+            )
+        )
+
+        XCTAssertTrue(JunoUpdateFeed.isNewer(candidate.version, than: "0.10.1"))
+        XCTAssertEqual(candidate.sizeBytes, 18_041_603)
+        XCTAssertEqual(candidate.sha256, digest)
+    }
+
     /// The reinstall loop: an equal version must never be offered, or the app
     /// downloads and installs itself every ten minutes forever.
     func testTheSameVersionIsNotAnUpdate() {

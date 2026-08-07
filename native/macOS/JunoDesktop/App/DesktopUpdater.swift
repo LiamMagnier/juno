@@ -114,9 +114,30 @@ final class DesktopUpdateModel {
     /// that it reports being up to date instead of staying quiet — a manual
     /// check that says nothing is indistinguishable from a broken one.
     func checkNow() {
-        guard ineligibilityReason == nil else { return }
-        guard work == nil else { return }
-        Task { await check(forceRefresh: true) }
+        if let reason = ineligibilityReason {
+            // The previous implementation returned silently here. That left a
+            // stale "up to date" line in the About menu when the app lived in a
+            // non-writable location such as a root-owned /Applications folder,
+            // which looked exactly like a failed release promotion.
+            phase = .unsupported(reason)
+            return
+        }
+
+        // A launch check starts at the same time as the menu becomes usable. A
+        // manual click must win over that in-flight, potentially cached check;
+        // otherwise the user can click "Check for Updates…" and nothing happens
+        // because `work` is non-nil. Cancellation is safe: runCheck translates
+        // it back to `.idle`, and the task below waits for the old task to clear
+        // before issuing the forced request.
+        work?.cancel()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            while self.work != nil {
+                guard !Task.isCancelled else { return }
+                await Task.yield()
+            }
+            await self.check(forceRefresh: true)
+        }
     }
 
     /// Why this build cannot be updated in place, or nil if it can.
