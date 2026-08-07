@@ -1013,6 +1013,8 @@ export default function WorkThreadPage() {
           <div className="min-w-0 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:h-full lg:overflow-y-auto lg:py-6">
             <WorkConversation
               session={session}
+              run={run}
+              events={events}
               turns={turns}
               sending={answering}
               mode={composerMode}

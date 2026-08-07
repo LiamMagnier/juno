@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { Markdown } from "@/components/chat/markdown";
-import type { ClientWorkEvent, ClientWorkSession } from "@/lib/work/serializers";
+import type { ClientWorkEvent, ClientWorkRun, ClientWorkSession } from "@/lib/work/serializers";
+import { WorkVoiceButton } from "@/components/work/voice";
 import { readEvent, str } from "@/components/work/work-payload";
 import {
   WorkThreadComposer,
@@ -83,27 +84,24 @@ export function deriveTurns(events: readonly ClientWorkEvent[]): Turn[] {
 
 export function WorkConversation({
   session,
+  run,
+  events,
   turns,
   sending,
   mode,
   onSend,
-  onStartVoice,
 }: {
   session: ClientWorkSession;
+  /** The newest attempt, or null when the task has never been dispatched. */
+  run: ClientWorkRun | null;
+  /** The transcript, for the spoken briefing. Already visibility-filtered. */
+  events: readonly ClientWorkEvent[];
   turns: readonly Turn[];
   sending: boolean;
   /** What the box does right now. There is always one. */
   mode: WorkComposerMode;
   /** Resolves true when the words landed; false leaves them in the box. */
   onSend: (text: string) => Promise<boolean>;
-  /**
-   * Opens a spoken conversation about this task, if this deployment has one.
-   *
-   * Forwarded rather than owned: Work has no realtime voice surface yet, and
-   * the composer draws the button only when a handler arrives. Passing it is
-   * one prop from the thread page the day one exists.
-   */
-  onStartVoice?: () => void;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -147,12 +145,37 @@ export function WorkConversation({
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-0 bottom-full h-8 bg-gradient-to-t from-background to-transparent"
         />
+        {/*
+          Voice sits above the box rather than inside it.
+
+          It is a different act from typing: it opens a conversation that reads
+          the task out and can speak back, so it gets its own affordance instead
+          of a third icon competing with attach and dictate on a control row —
+          where the two microphones would be one pixel apart and mean different
+          things. `WorkVoiceButton` renders nothing at all when the deployment
+          has no relay configured, so this costs a null on every install that
+          has not set one up.
+
+          It is handed `onSend` as its `send`, so anything decided out loud
+          lands on the task through exactly the same path a typed message takes,
+          in whichever of the four modes the thread is currently in.
+        */}
+        <WorkVoiceButton
+          session={session}
+          run={run}
+          events={events}
+          // `mode` IS the intent. `WorkVoiceSendIntent` is a deliberate
+          // structural copy of `WorkComposerMode` — the voice file explains why
+          // it copies rather than imports — so the two stay one decision here
+          // instead of a mapping that can disagree with the box beneath it.
+          send={{ intent: mode, sending, onSend }}
+          className="mb-2"
+        />
         <WorkThreadComposer
           session={session}
           mode={mode}
           sending={sending}
           onSend={onSend}
-          onStartVoice={onStartVoice}
         />
       </div>
     </div>
