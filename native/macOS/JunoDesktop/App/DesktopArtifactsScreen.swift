@@ -533,6 +533,20 @@ struct DesktopArtifactsScreen: View {
             .aspectRatio(4 / 3, contentMode: .fit)
             .overlay {
                 if let content = artifact.currentContent, !artifact.kind.isDesignDocument {
+                    /* INSET, so a rendered document reads as a document.
+                     *
+                     * A page artifact is usually a white HTML page, and it SHOULD
+                     * stay white — this thumbnail is the artifact as itself, and
+                     * re-tinting it to match the app would misreport what the
+                     * artifact looks like. But drawn edge to edge it stops being a
+                     * preview and becomes the tile: beside a Design card on the
+                     * warm plate it read as a colder tile in light mode, and on the
+                     * dark canvas it was a pure-white slab, the most conspicuous
+                     * thing on the screen.
+                     *
+                     * The inset lets the card's own surface frame it, which is what
+                     * every document thumbnail does — the page keeps its colour and
+                     * the grid keeps its rhythm. */
                     NativeArtifactPreview(
                         kind: artifact.kind,
                         content: content,
@@ -541,6 +555,8 @@ struct DesktopArtifactsScreen: View {
                     )
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
+                    .clipShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
+                    .padding(JunoSpace.snug)
                 } else {
                     VStack(spacing: JunoSpace.cozy) {
                         Image(systemName: DesktopArtifactKindName.symbol(artifact.kind))
