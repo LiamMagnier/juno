@@ -77,8 +77,9 @@ final class DesktopUpdateModel {
     private let build: JunoBuildInfo
     private let bundleURL: URL
 
-    /// Ten minutes. Matches the `revalidate` on `/api/downloads`, so a shorter
-    /// interval would only ask a CDN the same question twice.
+    /// Ten minutes. The server refreshes its upstream release list in one
+    /// minute; the longer poll keeps background network use small, while the
+    /// menu's manual check bypasses both caches immediately.
     private static let interval: Duration = .seconds(600)
 
     init(build: JunoBuildInfo = .current, bundleURL: URL = Bundle.main.bundleURL) {
@@ -219,8 +220,9 @@ final class DesktopUpdateModel {
         if forceRefresh {
             request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         }
-        // Scheduled checks use the ten-minute edge cache; manual checks carry a
-        // unique query value and additionally bypass URLSession's local cache.
+        // Scheduled checks use the server's one-minute upstream cache; manual
+        // checks carry a unique query value and additionally bypass
+        // URLSession's local cache.
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw UpdateError.feedUnavailable

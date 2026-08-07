@@ -31,9 +31,9 @@ public enum JunoUpdateFeed {
     }
 
     /// The manual menu action supplies a unique value so a CDN cannot replay
-    /// the previous ten-minute `/api/downloads` response. The channel is
-    /// explicit too: stable installs consume stable releases, while a `next`
-    /// build may see the prerelease stream intended for it.
+    /// the previous `/api/downloads` response. The channel is explicit too:
+    /// stable installs consume stable releases, while a `next` build may see
+    /// the prerelease stream intended for it.
     public static func url(cacheBust: String?, channel: String?) -> URL {
         var components = URLComponents(
             url: JunoBackend.productionURL.appending(path: "api/downloads"),
@@ -166,7 +166,16 @@ public enum JunoUpdateFeed {
             } else {
                 prerelease = nil
             }
-            numbers = text.split(separator: ".").map { Int($0) ?? 0 }
+            let components = text.split(separator: ".", omittingEmptySubsequences: false)
+            guard !components.isEmpty, components.count <= 3 else { return nil }
+            guard components.allSatisfy({ component in
+                let value = String(component)
+                return !value.isEmpty
+                    && value.allSatisfy(\.isNumber)
+                    && (value == "0" || !value.hasPrefix("0"))
+                    && Int(value) != nil
+            }) else { return nil }
+            numbers = components.compactMap { Int($0) }
         }
 
         func compare(to other: SemanticVersion) -> ComparisonResult {

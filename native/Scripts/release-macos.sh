@@ -81,6 +81,7 @@ require_command stat
 require_command xmllint
 require_command spctl
 require_command jq
+require_command curl
 
 if [ "$PUBLISH" = "--publish" ]; then
   require_command gh
@@ -493,4 +494,31 @@ RELEASE_STATE="$(gh api "repos/$REPO/releases/tags/v$VERSION")"
 [ "$(printf '%s' "$RELEASE_STATE" | jq -r '.prerelease')" = "false" ] || die \
   "GitHub marked the release as a prerelease; refusing to claim stable publication."
 
-printf '\n  Published. /api/downloads picks it up within ten minutes (its cache window).\n\n'
+# A GitHub release can be public before the backend's server-side release-feed
+# cache has observed it. Do not call a release complete until the exact version,
+# download URL and checksum are visible through the endpoint the installed Mac
+# actually uses. This is the final end-to-end guarantee against publishing a
+# release that the app cannot discover.
+step "Verify the live updater feed"
+FEED_URL="https://chat.liams.dev/api/downloads?refresh=release-${VERSION}-${SOURCE_SHORT_SHA}"
+for attempt in $(seq 1 18); do
+  FEED="$(curl --fail --silent --show-error --max-time 20 "$FEED_URL" 2>/dev/null || true)"
+  if [ -n "$FEED" ] && printf '%s' "$FEED" | jq -e \
+    --arg version "$VERSION" \
+    --arg sha "$SHA" \
+    '.downloads[]
+      | select(
+          .platform == "macos"
+          and .available == true
+          and .version == $version
+          and .url == ("https://github.com/LiamMagnier/juno/releases/download/v" + $version + "/Juno-" + $version + ".dmg")
+          and .sha256 == $sha
+        )' >/dev/null; then
+    printf '\n  Published and discoverable. The live updater feed serves Juno %s.\n\n' "$VERSION"
+    exit 0
+  fi
+  printf '  Waiting for /api/downloads to expose %s (attempt %s/18)\n' "$VERSION" "$attempt"
+  sleep 5
+done
+
+die "GitHub published v$VERSION, but https://chat.liams.dev/api/downloads did not expose the exact Mac artifact and checksum. The release is public; repair the feed before telling users to update."

@@ -121,6 +121,12 @@ final class JunoUpdateFeedTests: XCTestCase {
         XCTAssertTrue(JunoUpdateFeed.isNewer("v0.1.3", than: "0.1.2"))
     }
 
+    func testMalformedCoreVersionsFailClosed() {
+        XCTAssertFalse(JunoUpdateFeed.isNewer("1.0.x", than: "0.9.9"))
+        XCTAssertFalse(JunoUpdateFeed.isNewer("01.0.0", than: "0.9.9"))
+        XCTAssertFalse(JunoUpdateFeed.isNewer("1.0.0.1", than: "0.9.9"))
+    }
+
     // MARK: - Origin
 
     func testGitHubReleaseHostsAreAccepted() throws {

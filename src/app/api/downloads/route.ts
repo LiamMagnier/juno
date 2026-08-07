@@ -3,8 +3,10 @@ import {
   DOWNLOAD_REPOS,
   PLATFORM_LABELS,
   assetSha256,
+  compareReleaseVersions,
   isStableRelease,
   pickAsset,
+  releaseVersion,
   type AppDownload,
   type DownloadPlatform,
   type ReleaseAsset,
@@ -30,28 +32,6 @@ interface GitHubRelease {
   assets?: ReleaseAsset[];
 }
 
-function versionParts(release: GitHubRelease): number[] {
-  const raw = release.tag_name?.trim().replace(/^v/i, "") ?? "";
-  const core = raw.split(/[+-]/, 1)[0] ?? "";
-  return core.split(".").map((part) => {
-    const parsed = Number.parseInt(part, 10);
-    return Number.isFinite(parsed) ? parsed : 0;
-  });
-}
-
-function compareReleaseVersions(a: GitHubRelease, b: GitHubRelease): number {
-  const left = versionParts(a);
-  const right = versionParts(b);
-  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
-    const l = left[i] ?? 0;
-    const r = right[i] ?? 0;
-    if (l !== r) return r - l;
-  }
-  const leftDate = Date.parse(a.published_at ?? "") || 0;
-  const rightDate = Date.parse(b.published_at ?? "") || 0;
-  return rightDate - leftDate;
-}
-
 async function latestRelease(
   repo: string,
   platform: DownloadPlatform,
@@ -69,40 +49,18 @@ async function latestRelease(
       ? ({ cache: "no-store" as const })
       : ({ next: { revalidate } } as const);
 
-    // Stable clients need the release GitHub itself considers current. The
-    // old implementation always cached `/releases?per_page=100`; when a
-    // release was changed from prerelease to stable, that cache continued to
-    // serve the previous stable version until its full TTL elapsed. Using the
-    // `/latest` endpoint also makes the cache key change with this fix, so the
-    // already-published 0.11.0 becomes visible immediately after deployment.
-    const endpoint = includePrerelease
-      ? `https://api.github.com/repos/${repo}/releases?per_page=100`
-      // `per_page=1` is ignored by the object endpoint, but deliberately makes
-      // this a new cache key for deployments that previously cached the old
-      // stable list while a release was still marked prerelease.
-      : `https://api.github.com/repos/${repo}/releases/latest?per_page=1`;
-    const latestResponse = await fetch(endpoint, { headers, ...cache });
-    if (!latestResponse.ok) return null;
-    const payload = (await latestResponse.json()) as GitHubRelease | GitHubRelease[];
-    const releases = Array.isArray(payload) ? payload : [payload];
-    const candidate = releases
+    // Never trust GitHub's single `/releases/latest` pointer. It is based on
+    // publication order rather than the highest SemVer and can temporarily
+    // point at an older backport or a release without a Mac installer. A full
+    // page costs one cached API request and lets us choose the highest valid
+    // version that actually has this platform's asset.
+    const endpoint = `https://api.github.com/repos/${repo}/releases?per_page=100&juno_feed=semver-v2`;
+    const response = await fetch(endpoint, { headers, ...cache });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as GitHubRelease[];
+    return payload
       .filter((release) => (includePrerelease ? !release?.draft : isStableRelease(release)))
-      .filter((release) => Boolean(release.assets && pickAsset(release.assets, platform)))
-      .sort(compareReleaseVersions)[0];
-
-    if (candidate || includePrerelease) return candidate ?? null;
-
-    // A repository can publish a release without an installer for this
-    // platform. Keep the download row honest by falling back to the full list
-    // and finding the newest stable release that does have one.
-    const listResponse = await fetch(
-      `https://api.github.com/repos/${repo}/releases?per_page=100`,
-      { headers, ...cache },
-    );
-    if (!listResponse.ok) return null;
-    const list = (await listResponse.json()) as GitHubRelease[];
-    return list
-      .filter(isStableRelease)
+      .filter((release) => releaseVersion(release.tag_name) !== null)
       .filter((release) => Boolean(release.assets && pickAsset(release.assets, platform)))
       .sort(compareReleaseVersions)[0] ?? null;
   } catch {
@@ -111,9 +69,7 @@ async function latestRelease(
 }
 
 function version(release: GitHubRelease | null): string | null {
-  const tag = release?.tag_name?.trim();
-  if (!tag) return null;
-  return tag.startsWith("v") ? tag.slice(1) : tag;
+  return releaseVersion(release?.tag_name);
 }
 
 /**
@@ -128,7 +84,8 @@ export async function GET(req: Request) {
   const search = new URL(req.url).searchParams;
   // The public download page remains stable-only. Native `next` builds may ask
   // for prereleases explicitly, while a manual updater check adds a unique
-  // refresh value to avoid serving an edge-cached answer from ten minutes ago.
+  // refresh value to avoid serving an edge-cached answer from the previous
+  // release window.
   const includePrerelease = search.get("channel") === "next";
   const forceRefresh = search.has("refresh");
   const [apple, windows] = await Promise.all([

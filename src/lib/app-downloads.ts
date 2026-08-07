@@ -92,6 +92,104 @@ export interface ReleaseAsset {
   digest?: string | null;
 }
 
+/** The release fields used when choosing the newest downloadable build. */
+export interface ReleaseMetadata {
+  tag_name?: string;
+  published_at?: string;
+}
+
+interface ParsedReleaseVersion {
+  normalized: string;
+  core: [string, string, string];
+  prerelease: string[] | null;
+}
+
+const RELEASE_VERSION_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+
+function parseReleaseVersion(tag: string | null | undefined): ParsedReleaseVersion | null {
+  const raw = tag?.trim().replace(/^v/i, "");
+  if (!raw) return null;
+  const match = RELEASE_VERSION_PATTERN.exec(raw);
+  if (!match) return null;
+
+  const prerelease = match[4]?.split(".") ?? null;
+  if (prerelease?.some((identifier) => /^\d+$/.test(identifier) && identifier.length > 1 && identifier.startsWith("0"))) {
+    return null;
+  }
+
+  return {
+    normalized: raw,
+    core: [match[1], match[2], match[3]],
+    prerelease,
+  };
+}
+
+function compareDecimalStrings(left: string, right: string): number {
+  if (left.length !== right.length) return left.length < right.length ? -1 : 1;
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+function comparePrereleaseIdentifiers(left: string, right: string): number {
+  const leftNumeric = /^\d+$/.test(left);
+  const rightNumeric = /^\d+$/.test(right);
+  if (leftNumeric && rightNumeric) return compareDecimalStrings(left, right);
+  if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+/**
+ * Returns the normalized version for a release tag, or null for a tag the app
+ * cannot compare safely. Keeping malformed tags out of the feed matters: a
+ * newer-looking `latest` release with an invalid tag would otherwise hide a
+ * valid older release from the updater.
+ */
+export function releaseVersion(tag: string | null | undefined): string | null {
+  return parseReleaseVersion(tag)?.normalized ?? null;
+}
+
+/**
+ * Sorts releases newest first by SemVer, then by publication date.
+ *
+ * Stable and prerelease channels use the same ordering, so a `next` build sees
+ * `0.12.0-beta.2` after `0.12.0-beta.1`, while a published `0.12.0` always
+ * outranks its prereleases. Build metadata is deliberately ignored by SemVer.
+ */
+export function compareReleaseVersions(
+  leftRelease: ReleaseMetadata,
+  rightRelease: ReleaseMetadata,
+): number {
+  const left = parseReleaseVersion(leftRelease.tag_name);
+  const right = parseReleaseVersion(rightRelease.tag_name);
+
+  // Callers filter invalid tags before sorting. Keep this defensive ordering so
+  // the helper remains safe if a future caller forgets that precondition.
+  if (!left && !right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+
+  for (let index = 0; index < left.core.length; index += 1) {
+    const comparison = compareDecimalStrings(left.core[index], right.core[index]);
+    if (comparison !== 0) return -comparison;
+  }
+
+  if (left.prerelease === null && right.prerelease !== null) return -1;
+  if (left.prerelease !== null && right.prerelease === null) return 1;
+  if (left.prerelease && right.prerelease) {
+    for (let index = 0; index < Math.max(left.prerelease.length, right.prerelease.length); index += 1) {
+      if (index >= left.prerelease.length) return 1;
+      if (index >= right.prerelease.length) return -1;
+      const comparison = comparePrereleaseIdentifiers(left.prerelease[index], right.prerelease[index]);
+      if (comparison !== 0) return -comparison;
+    }
+  }
+
+  const leftDate = Date.parse(leftRelease.published_at ?? "") || 0;
+  const rightDate = Date.parse(rightRelease.published_at ?? "") || 0;
+  return rightDate - leftDate;
+}
+
 /** The asset's digest as lowercase hex, or null when it has none we can use. */
 export function assetSha256(asset: ReleaseAsset | null | undefined): string | null {
   const raw = asset?.digest?.toLowerCase();
