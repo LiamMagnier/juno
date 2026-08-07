@@ -698,6 +698,353 @@ final class CodePreviewModel {
         return try await model.inspect(includeScreenshot: includeScreenshot, maxText: maxText)
     }
 
+    /// Performs one bounded browser QA action against the active WebKit page.
+    ///
+    /// This intentionally shares the exact session and loopback checks used by
+    /// `inspect_preview`. A model cannot turn the preview into a general web
+    /// browser by asking for a DOM snapshot, and a stale element ref fails
+    /// closed after navigation.
+    static func runBrowserAction(
+        sessionID: CodeSessionID,
+        action: CodePreviewBrowserAction
+    ) async throws -> CodePreviewBrowserSnapshot {
+        guard let model = sessions.values.first(where: { model in
+            model.activeSurfaceCount > 0 && model.sessionID == sessionID
+        }) else {
+            throw CodePreviewBrowserError.noActivePreview
+        }
+        return try await model.performBrowserAction(action)
+    }
+
+    private func performBrowserAction(
+        _ action: CodePreviewBrowserAction
+    ) async throws -> CodePreviewBrowserSnapshot {
+        let (webView, address) = try browserSurface()
+
+        switch action {
+        case let .snapshot(includeScreenshot, maxText):
+            return try await browserSnapshot(
+                webView: webView,
+                address: address,
+                includeScreenshot: includeScreenshot,
+                maxText: maxText
+            )
+        case let .click(ref, settleMilliseconds):
+            try await evaluateBrowserAction(
+                Self.clickScript(for: ref),
+                on: webView
+            )
+            try await settle(milliseconds: settleMilliseconds)
+        case let .type(ref, text, settleMilliseconds):
+            try await evaluateBrowserAction(
+                Self.typeScript(for: ref, text: text),
+                on: webView
+            )
+            try await settle(milliseconds: settleMilliseconds)
+        case let .select(ref, value, settleMilliseconds):
+            try await evaluateBrowserAction(
+                Self.selectScript(for: ref, value: value),
+                on: webView
+            )
+            try await settle(milliseconds: settleMilliseconds)
+        case let .scroll(amount, settleMilliseconds):
+            try await evaluateBrowserAction(
+                Self.scrollScript(amount: amount),
+                on: webView
+            )
+            try await settle(milliseconds: settleMilliseconds)
+        case let .wait(milliseconds, includeScreenshot, maxText):
+            try await settle(milliseconds: milliseconds)
+            return try await browserSnapshot(
+                webView: webView,
+                address: address,
+                includeScreenshot: includeScreenshot,
+                maxText: maxText
+            )
+        case let .assertText(expected, maxText):
+            let snapshot = try await browserSnapshot(
+                webView: webView,
+                address: address,
+                includeScreenshot: false,
+                maxText: maxText
+            )
+            guard snapshot.visibleText.localizedCaseInsensitiveContains(expected) else {
+                throw CodePreviewBrowserError.assertionFailed(
+                    "Expected visible text \(String(reflecting: String(expected.prefix(200)))) was not found."
+                )
+            }
+            return snapshot
+        }
+
+        return try await browserSnapshot(
+            webView: webView,
+            address: address,
+            includeScreenshot: false,
+            maxText: 6_000
+        )
+    }
+
+    private func browserSurface() throws -> (WKWebView, URL) {
+        guard let webView = activeWebView else {
+            throw CodePreviewBrowserError.previewNotReady(
+                detail: "the WebKit page is still attaching"
+            )
+        }
+        guard let address else {
+            throw CodePreviewBrowserError.previewNotReady(
+                detail: "no local server address has been opened"
+            )
+        }
+        guard serverState.isLive, serverState.url == address else {
+            throw CodePreviewBrowserError.previewNotReady(
+                detail: "Juno did not start the server currently shown in the Preview"
+            )
+        }
+        guard CodePreviewInspectionPolicy.canInspectOrigin(address) else {
+            throw CodePreviewBrowserError.previewNotReady(
+                detail: "only a loopback development server can be controlled by the agent"
+            )
+        }
+        return (webView, address)
+    }
+
+    private func browserSnapshot(
+        webView: WKWebView,
+        address: URL,
+        includeScreenshot: Bool,
+        maxText: Int
+    ) async throws -> CodePreviewBrowserSnapshot {
+        let boundedText = min(max(maxText, 200), 12_000)
+        let script = """
+        (() => {
+          const selector = "a,button,input,textarea,select,[role='button'],[role='link'],[tabindex]:not([tabindex='-1'])";
+          document.querySelectorAll("[data-juno-preview-ref]").forEach((node) => node.removeAttribute("data-juno-preview-ref"));
+          const nodes = Array.from(document.querySelectorAll(selector)).slice(0, 80);
+          nodes.forEach((node, index) => node.setAttribute("data-juno-preview-ref", "e" + (index + 1)));
+          const clean = (value, limit = 240) => String(value || "").replace(/\\s+/g, " ").trim().slice(0, limit);
+          const accessibleName = (node) => clean(
+            node.getAttribute("aria-label") ||
+            node.getAttribute("title") ||
+            node.innerText ||
+            node.getAttribute("placeholder") ||
+            node.getAttribute("name") ||
+            ((node instanceof HTMLInputElement && node.type !== "password") ? node.value : "")
+          );
+          const roleFor = (node) => {
+            if (node.getAttribute("role")) return node.getAttribute("role");
+            if (node instanceof HTMLAnchorElement) return "link";
+            if (node instanceof HTMLButtonElement) return "button";
+            if (node instanceof HTMLSelectElement) return "combobox";
+            if (node instanceof HTMLTextAreaElement) return "textbox";
+            if (node instanceof HTMLInputElement) return node.type === "checkbox" ? "checkbox" : "textbox";
+            return "interactive";
+          };
+          const visible = (node) => {
+            const rect = node.getBoundingClientRect();
+            const style = window.getComputedStyle(node);
+            return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
+          };
+          return {
+            url: window.location.href || "",
+            title: document.title || "",
+            text: (document.body && document.body.innerText || "").slice(0, \(boundedText)),
+            elements: nodes.map((node, index) => ({
+              ref: "e" + (index + 1),
+              role: roleFor(node),
+              name: accessibleName(node),
+              tag: node.tagName.toLowerCase(),
+              value: (node instanceof HTMLInputElement && node.type === "password") ? "" : clean(node.value || "", 160),
+              disabled: Boolean(node.disabled),
+              visible: visible(node)
+            }))
+          };
+        })()
+        """
+
+        let value = try await evaluatePage(script, on: webView)
+        guard let page = value as? [String: Any] else {
+            throw CodePreviewBrowserError.pageEvaluationFailed(
+                "the page returned an unexpected snapshot shape"
+            )
+        }
+
+        let rawPageURL = (page["url"] as? String) ?? address.absoluteString
+        guard let renderedPageURL = URL(string: rawPageURL),
+              CodePreviewInspectionPolicy.sharesInspectableOrigin(
+                  renderedPageURL,
+                  with: address
+              )
+        else {
+            throw CodePreviewBrowserError.previewNotReady(
+                detail: "the page navigated away from the active local preview"
+            )
+        }
+
+        let elements = (page["elements"] as? [[String: Any]] ?? []).compactMap { raw -> CodePreviewBrowserElement? in
+            guard let ref = raw["ref"] as? String,
+                  let role = raw["role"] as? String,
+                  let tag = raw["tag"] as? String
+            else { return nil }
+            return CodePreviewBrowserElement(
+                ref: ref,
+                role: diagnosticsRedactor.redact(role),
+                name: diagnosticsRedactor.redact(raw["name"] as? String ?? ""),
+                tag: diagnosticsRedactor.redact(tag),
+                value: diagnosticsRedactor.redact(raw["value"] as? String ?? ""),
+                disabled: (raw["disabled"] as? Bool) ?? (raw["disabled"] as? NSNumber)?.boolValue ?? false
+            )
+        }
+
+        var screenshot: ModelImage?
+        if includeScreenshot {
+            screenshot = try await browserScreenshot(from: webView)
+        }
+        return CodePreviewBrowserSnapshot(
+            url: URL(string: diagnosticsRedactor.redact(rawPageURL)) ?? address,
+            title: diagnosticsRedactor.redact(page["title"] as? String ?? ""),
+            visibleText: diagnosticsRedactor.redact(page["text"] as? String ?? ""),
+            elements: elements,
+            screenshot: screenshot
+        )
+    }
+
+    private func evaluateBrowserAction(_ script: String, on webView: WKWebView) async throws {
+        let value = try await evaluatePage(script, on: webView)
+        guard let result = value as? [String: Any] else {
+            throw CodePreviewBrowserError.actionFailed("the page returned an unexpected action shape")
+        }
+        guard (result["ok"] as? Bool) == true else {
+            let error = result["error"] as? String ?? "the element was not available"
+            if error.contains("ref") {
+                throw CodePreviewBrowserError.invalidReference
+            }
+            throw CodePreviewBrowserError.actionFailed(error)
+        }
+    }
+
+    private func evaluatePage(_ script: String, on webView: WKWebView) async throws -> Any {
+        do {
+            guard let value = try await webView.evaluateJavaScript(script) else {
+                throw CodePreviewBrowserError.pageEvaluationFailed("the page returned no result")
+            }
+            return value
+        } catch let error as CodePreviewBrowserError {
+            throw error
+        } catch {
+            throw CodePreviewBrowserError.pageEvaluationFailed(error.localizedDescription)
+        }
+    }
+
+    private func browserScreenshot(from webView: WKWebView) async throws -> ModelImage {
+        do {
+            let image = try await webView.takeSnapshot(configuration: nil)
+            guard let png = Self.pngData(from: image) else {
+                throw CodePreviewBrowserError.screenshotFailed(
+                    "WebKit returned an image Juno could not encode"
+                )
+            }
+            guard png.count <= CodePreviewInspectionPolicy.maximumScreenshotBytes else {
+                throw CodePreviewBrowserError.screenshotFailed(
+                    "the screenshot is larger than the safe 6 MB tool limit"
+                )
+            }
+            return ModelImage(mediaType: "image/png", data: png, detail: .high)
+        } catch let error as CodePreviewBrowserError {
+            throw error
+        } catch {
+            throw CodePreviewBrowserError.screenshotFailed(error.localizedDescription)
+        }
+    }
+
+    private func settle(milliseconds: Int) async throws {
+        guard milliseconds > 0 else { return }
+        try await Task.sleep(for: .milliseconds(milliseconds))
+    }
+
+    private static func jsonLiteral(_ value: String) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: value, options: .fragmentsAllowed)
+        guard let literal = String(data: data, encoding: .utf8) else {
+            throw CodePreviewBrowserError.actionFailed("could not encode the browser action")
+        }
+        return literal
+    }
+
+    private static func referenceLookup(_ ref: String) throws -> String {
+        guard ref.range(of: #"^e[0-9]{1,3}$"#, options: .regularExpression) != nil else {
+            throw CodePreviewBrowserError.invalidReference
+        }
+        let literal = try jsonLiteral(ref)
+        return "Array.from(document.querySelectorAll('[data-juno-preview-ref]')).find(node => node.getAttribute('data-juno-preview-ref') === \(literal))"
+    }
+
+    private static func clickScript(for ref: String) throws -> String {
+        let lookup = try referenceLookup(ref)
+        return """
+        (() => {
+          const el = \(lookup);
+          if (!el) return {ok:false, error:"ref is expired or not present"};
+          if (el.disabled) return {ok:false, error:"the element is disabled"};
+          if (el instanceof HTMLAnchorElement) {
+            const destination = new URL(el.href, window.location.href);
+            const current = new URL(window.location.href);
+            if (destination.origin !== current.origin) return {ok:false, error:"external navigation is not allowed"};
+          }
+          el.scrollIntoView({block:"center", inline:"nearest"});
+          el.click();
+          return {ok:true};
+        })()
+        """
+    }
+
+    private static func typeScript(for ref: String, text: String) throws -> String {
+        let lookup = try referenceLookup(ref)
+        let literal = try jsonLiteral(text)
+        return """
+        (() => {
+          const el = \(lookup);
+          if (!el) return {ok:false, error:"ref is expired or not present"};
+          const value = \(literal);
+          el.scrollIntoView({block:"center", inline:"nearest"});
+          if (el instanceof HTMLInputElement) {
+            if (el.type === "password") return {ok:false, error:"password fields are not controlled by Preview QA"};
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+            setter.call(el, value);
+          } else if (el instanceof HTMLTextAreaElement) {
+            const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+            setter.call(el, value);
+          } else if (el.isContentEditable) {
+            el.textContent = value;
+          } else {
+            return {ok:false, error:"ref does not identify a text field"};
+          }
+          el.dispatchEvent(new Event("input", {bubbles:true}));
+          el.dispatchEvent(new Event("change", {bubbles:true}));
+          return {ok:true};
+        })()
+        """
+    }
+
+    private static func selectScript(for ref: String, value: String) throws -> String {
+        let lookup = try referenceLookup(ref)
+        let literal = try jsonLiteral(value)
+        return """
+        (() => {
+          const el = \(lookup);
+          if (!el) return {ok:false, error:"ref is expired or not present"};
+          if (!(el instanceof HTMLSelectElement)) return {ok:false, error:"ref does not identify a select"};
+          el.value = \(literal);
+          el.dispatchEvent(new Event("input", {bubbles:true}));
+          el.dispatchEvent(new Event("change", {bubbles:true}));
+          return {ok:true};
+        })()
+        """
+    }
+
+    private static func scrollScript(amount: Int) -> String {
+        let boundedAmount = min(max(amount, -3_000), 3_000)
+        return "window.scrollBy({top: \(boundedAmount), left: 0, behavior: 'instant'}); ({ok:true})"
+    }
+
     private func inspect(includeScreenshot: Bool, maxText: Int) async throws -> CodePreviewInspection {
         guard let webView = activeWebView else {
             throw CodePreviewInspectionError.previewNotReady(

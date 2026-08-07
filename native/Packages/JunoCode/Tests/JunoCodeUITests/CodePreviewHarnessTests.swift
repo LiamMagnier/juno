@@ -105,6 +105,36 @@ final class CodePreviewHarnessTests: XCTestCase {
         XCTAssertTrue(result.content.contains("Opened the local Preview"))
     }
 
+    func testPreviewBrowserIsScopedAndFailsClosedWithoutAnActiveSurface() async throws {
+        let tool = CodePreviewBrowserTool()
+
+        XCTAssertEqual(
+            tool.assessRisk(input: ["action": "snapshot"]),
+            .read
+        )
+        XCTAssertEqual(
+            tool.assessRisk(input: ["action": "click", "ref": "e1"]),
+            .critical
+        )
+
+        do {
+            _ = try await tool.execute(
+                input: ["action": "snapshot"],
+                context: ToolContext(
+                    sessionID: CodeSessionID(),
+                    toolCallID: "preview-browser-test",
+                    emitOutput: { _, _ in }
+                )
+            )
+            XCTFail("browser QA must not invent a page when no Preview is open")
+        } catch let error as ToolError {
+            guard case let .executionFailed(message) = error else {
+                return XCTFail("unexpected tool error: (error)")
+            }
+            XCTAssertTrue(message.contains("Use open_preview first"))
+        }
+    }
+
     func testPreviewInspectionPolicyAllowsOnlyTheActiveLoopbackOrigin() {
         XCTAssertTrue(CodePreviewInspectionPolicy.canInspectOrigin(URL(string: "http://localhost:5173/")!))
         XCTAssertTrue(CodePreviewInspectionPolicy.canInspectOrigin(URL(string: "http://127.0.0.1:4173/")!))

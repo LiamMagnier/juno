@@ -587,6 +587,7 @@ public final class SessionController {
             // cannot observe a UI surface they do not own.
             tools.append(CodePreviewOpenTool(workspaceRoot: context.access.rootURL))
             tools.append(CodePreviewInspectTool())
+            tools.append(CodePreviewBrowserTool())
             // Workspace-declared MCP tools are discovered through the same
             // session construction path as built-in tools. They remain
             // approval-pinned by MCPCodeTool, so discovery never broadens the
