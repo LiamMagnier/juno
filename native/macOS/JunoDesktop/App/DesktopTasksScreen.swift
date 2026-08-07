@@ -377,7 +377,7 @@ struct DesktopTasksScreen: View {
                 .lineLimit(1)
                 // A paused task keeps a computed next run that will not fire, so
                 // the date is stated quietly rather than as a promise.
-                .foregroundStyle(task.enabled ? Color.primary : Color.junoMutedForeground)
+                .foregroundStyle(task.enabled ? Color.junoForeground : Color.junoMutedForeground)
                 .help(
                     task.enabled
                         ? task.nextRunAt.formatted(date: .complete, time: .shortened)

@@ -118,6 +118,32 @@ final class NativeWorkClientTests: XCTestCase {
         XCTAssertEqual(count, 0)
     }
 
+    /// The action identity is a second safety boundary independent of risk. A
+    /// stale executor that labels a send as safe must not make a persistent
+    /// approval available or put one on the wire.
+    func testAMisgradedAlwaysConfirmActionRefusesStandingApprovalBeforeTheNetwork() async throws {
+        let transport = WorkTransport()
+        let client = NativeWorkClient(transport: transport)
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let request = approval(
+            action: JunoWorkAlwaysConfirmAction.workConnectorSendMessage.rawValue,
+            risk: JunoWorkRiskLevel.safe.rawValue,
+            at: now
+        )
+
+        XCTAssertFalse(request.allowsStandingGrant)
+        do {
+            _ = try await client.decide(
+                on: request, decision: .allowedAlways, at: now, for: account
+            )
+            XCTFail("an always-confirm action must never acquire a standing approval")
+        } catch let error as WorkRemoteError {
+            XCTAssertEqual(error, .standingApprovalForbidden)
+        }
+        let count = await transport.requests.count
+        XCTAssertEqual(count, 0)
+    }
+
     /// The digest is what stops an approval shown for one action authorising a
     /// different one, so it has to be on the wire.
     func testTheActionDigestTravelsWithTheDecision() async throws {
@@ -514,12 +540,14 @@ final class NativeWorkClientTests: XCTestCase {
     // MARK: - Fixtures
 
     private func approval(
+        action: String = "work.connector.send_message",
+        risk: String = JunoWorkRiskLevel.irreversible.rawValue,
         expiresIn seconds: TimeInterval = 600,
         at now: Date
     ) -> WorkApprovalRequest {
         WorkApprovalRequest(
-            approvalID: "appr_1", runID: "run_1", action: "work.connector.send_message",
-            risk: JunoWorkRiskLevel.irreversible.rawValue, summary: "Send the draft to Dana",
+            approvalID: "appr_1", runID: "run_1", action: action,
+            risk: risk, summary: "Send the draft to Dana",
             detail: [:], actionDigest: "digest-abc",
             expiresAt: now.addingTimeInterval(seconds),
             decision: JunoWorkApprovalDecision.pending.rawValue

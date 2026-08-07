@@ -140,7 +140,7 @@ struct JunoMobileDesignArtifactBody: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(page.name)
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                             .textCase(.uppercase)
                             .accessibilityAddTraits(.isHeader)
 
@@ -148,7 +148,7 @@ struct JunoMobileDesignArtifactBody: View {
                         if rows.isEmpty {
                             Text("This page is empty.")
                                 .font(.callout)
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                         } else {
                             ForEach(rows) { row in layer(row) }
                         }
@@ -168,7 +168,7 @@ struct JunoMobileDesignArtifactBody: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: row.glyph)
                 .font(.system(size: 12))
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name)
@@ -177,7 +177,7 @@ struct JunoMobileDesignArtifactBody: View {
                 if let characters = row.characters {
                     Text(characters)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -186,7 +186,7 @@ struct JunoMobileDesignArtifactBody: View {
             if row.hidden {
                 Image(systemName: "eye.slash")
                     .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
                     .accessibilityLabel("Hidden")
             }
         }

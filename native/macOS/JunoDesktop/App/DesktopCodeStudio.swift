@@ -486,7 +486,7 @@ private struct DesktopCodeAddProjectLabel: View {
 
             Text("Add project…")
                 .junoRowLabel()
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
         }
         .accessibilityElement(children: .combine)
     }
@@ -693,7 +693,6 @@ struct DesktopCodeSidebar: View {
                     VStack(alignment: .leading, spacing: JunoSpace.snug) {
                         Text("Add a project to let Juno read and change real files.")
                             .junoCaption()
-                            .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         Button(action: openRepository) {
                             DesktopCodeAddProjectLabel()
@@ -1223,7 +1222,7 @@ struct DesktopCodeSidebar: View {
                         Button("Dismiss") { workbench.dismissAccessPrompt() }
                             .controlSize(.small)
                             .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                         Spacer(minLength: 0)
                     }
                 }
@@ -1615,7 +1614,7 @@ struct DesktopCodeDraftDetail: View {
                                 : "Describe the outcome. Juno will inspect the repository before it edits."
                         )
                             .font(.callout)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                     }
                     .frame(maxWidth: 760, alignment: .leading)
                     .padding(.horizontal, JunoSpace.roomy)
@@ -1628,7 +1627,7 @@ struct DesktopCodeDraftDetail: View {
 
                     Text(footerNote)
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, JunoSpace.roomy)
@@ -1672,7 +1671,7 @@ struct DesktopCodeDraftDetail: View {
                     .font(.headline)
                 Text("Juno can answer and plan here, but cannot read or change files.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -1689,7 +1688,10 @@ struct DesktopCodeDraftDetail: View {
         .controlSize(.small)
         .padding(.horizontal, JunoSpace.cozy)
         .frame(minHeight: 52)
-        .background(Color(nsColor: .windowBackgroundColor))
+        // The system's neutral window grey against a warm page — the same
+        // cold-surface defect as the artifact command bar and the two search
+        // fields. The canvas is the ground these context bars sit on.
+        .background(Color.junoCanvas)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("juno.code.no-project-context")
     }
@@ -1710,8 +1712,8 @@ struct DesktopCodeDraftDetail: View {
     /// stands for a thing rather than labelling an action — a quiet fill with the
     /// glyph centred at roughly half the tile, which is the website's own row
     /// idiom and the sidebar's "Add project…" chip idiom in a square. `junoMuted`
-    /// is the resting-chip fill by definition, and it is one step off
-    /// `windowBackgroundColor` rather than a competing surface.
+    /// is the resting-chip fill by definition, and it is one step off the bar's
+    /// own ground rather than a competing surface.
     ///
     /// Identical in both bars on purpose. The tile is the *slot* a project
     /// occupies; whether one is open is said by the words beside it, which is
@@ -1719,7 +1721,7 @@ struct DesktopCodeDraftDetail: View {
     /// nothing legible and cost the pair their symmetry.
     private var projectMark: some View {
         JunoIconView(.projects, size: 14)
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
             .frame(width: 28, height: 28)
             .background(
                 RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
@@ -1741,7 +1743,7 @@ struct DesktopCodeDraftDetail: View {
                         .abbreviatingWithTildeInPath
                 )
                 .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .lineLimit(1)
                 .truncationMode(.middle)
             }
@@ -1750,12 +1752,16 @@ struct DesktopCodeDraftDetail: View {
 
             Text(record.descriptor.isGitRepository ? "Git repository" : "Folder")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .padding(.horizontal, JunoSpace.snug)
                 .padding(.vertical, JunoSpace.hairline)
                 .background(
+                    // `controlBackgroundColor` is pure white in light aqua, so
+                    // this badge was a small cold pill on the warm row. `junoMuted`
+                    // is the palette's quiet fill — the same one a resting chip
+                    // and a selected row use — which is the role this pill plays.
                     Capsule(style: .continuous)
-                        .fill(Color(nsColor: .controlBackgroundColor))
+                        .fill(Color.junoMuted)
                 )
 
             Button {
@@ -1773,7 +1779,10 @@ struct DesktopCodeDraftDetail: View {
         .controlSize(.small)
         .padding(.horizontal, JunoSpace.cozy)
         .frame(minHeight: 52)
-        .background(Color(nsColor: .windowBackgroundColor))
+        // The system's neutral window grey against a warm page — the same
+        // cold-surface defect as the artifact command bar and the two search
+        // fields. The canvas is the ground these context bars sit on.
+        .background(Color.junoCanvas)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("juno.code.repository-context")
     }
@@ -1844,7 +1853,7 @@ struct DesktopCodeDraftDetail: View {
                         if let issue = importError ?? launchIssue {
                             Label(issue, systemImage: "info.circle")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, JunoSpace.cozy)
                                 .padding(.bottom, JunoSpace.snug)
@@ -1943,12 +1952,12 @@ struct DesktopCodeDraftDetail: View {
             // primary actions and therefore none.
             if let junoIcon = target.junoIcon {
                 JunoIconView(junoIcon, size: 15)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .transition(.opacity)
                     .id(target)
             } else {
                 Image(systemName: target.symbol)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .contentTransition(.symbolEffect(.replace))
             }
             Text(destinationTitle)
@@ -1999,14 +2008,14 @@ struct DesktopCodeDraftDetail: View {
                 // `text-muted-foreground` and the coral in this row belongs to
                 // the send button.
                 JunoIconView(record == nil ? .conversation : .projects, size: 14)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 Text(destinationTitle)
                     .junoRowLabel()
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
             .padding(.vertical, JunoSpace.hairline)
             .contentShape(.rect)
@@ -2045,7 +2054,7 @@ struct DesktopCodeDraftDetail: View {
                     .font(.system(size: 8, weight: .bold))
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -2299,7 +2308,7 @@ struct DesktopCodeDraftDetail: View {
                                         .aspectRatio(contentMode: .fill)
                                 } else {
                                     Image(systemName: "photo")
-                                        .foregroundStyle(.secondary)
+                                        .junoSecondaryInk()
                                 }
                             }
                             .frame(width: 44, height: 44)
@@ -2316,7 +2325,7 @@ struct DesktopCodeDraftDetail: View {
                                 Image(systemName: "xmark.circle.fill")
                                     .font(.caption)
                                     .symbolRenderingMode(.palette)
-                                    .foregroundStyle(Color.junoOnAccent, Color.secondary)
+                                    .foregroundStyle(Color.junoOnAccent, Color.junoMutedForeground)
                             }
                             .buttonStyle(.plain)
                             .offset(x: 5, y: -5)
@@ -2337,7 +2346,7 @@ struct DesktopCodeDraftDetail: View {
         HStack(spacing: JunoSpace.tight) {
             Image(systemName: "doc.text")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(path.lastComponent)
@@ -2345,7 +2354,7 @@ struct DesktopCodeDraftDetail: View {
                     .lineLimit(1)
                 Text(path.value)
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -2357,7 +2366,7 @@ struct DesktopCodeDraftDetail: View {
                 Image(systemName: "xmark.circle.fill")
                     .font(.caption)
                     .symbolRenderingMode(.palette)
-                    .foregroundStyle(Color.junoOnAccent, Color.secondary)
+                    .foregroundStyle(Color.junoOnAccent, Color.junoMutedForeground)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Remove (path.lastComponent)")
@@ -2407,7 +2416,7 @@ struct DesktopCodeDraftDetail: View {
                 Image(systemName: "waveform")
                     .font(.system(size: 16, weight: .semibold))
                     .frame(width: 30, height: 30)
-                    .foregroundStyle(Color.primary)
+                    .junoInk()
                     .contentShape(.circle)
             }
             .buttonStyle(.plain)
@@ -2432,7 +2441,7 @@ struct DesktopCodeDraftDetail: View {
                     }
                 }
                 .frame(width: 30, height: 30)
-                .foregroundStyle(canSend ? Color.primary : Color.secondary)
+                .foregroundStyle(canSend ? Color.junoForeground : Color.junoMutedForeground)
                 .contentShape(.circle)
             }
             .buttonStyle(.plain)

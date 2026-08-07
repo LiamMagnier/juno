@@ -266,7 +266,7 @@ struct JunoMobileMemoryView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(Color.junoMutedForeground.opacity(0.5))
+                                .foregroundStyle(Color.junoMutedForeground)
                                 .rotationEffect(.degrees(showingFacts ? 180 : 0))
                         }
                         .padding(.horizontal, 16)
@@ -354,7 +354,7 @@ struct JunoMobileMemoryView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 15))
-                        .foregroundStyle(Color.junoMutedForeground.opacity(0.5))
+                        .foregroundStyle(Color.junoMutedForeground)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear filter")
@@ -385,7 +385,7 @@ struct JunoMobileMemoryView: View {
             Text(title)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .kerning(0.4)
-                .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
+                .foregroundStyle(Color.junoMutedForeground)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
@@ -425,7 +425,7 @@ struct JunoMobileMemoryView: View {
             // one, and it reads as a contradiction unless it is marked.
             Image(systemName: memory.kind == .suppression ? "hand.raised" : "circle.fill")
                 .font(.system(size: memory.kind == .suppression ? 12 : 5))
-                .foregroundStyle(Color.junoMutedForeground.opacity(0.5))
+                .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18, height: 20)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -442,7 +442,7 @@ struct JunoMobileMemoryView: View {
                     }
                 }
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(Color.junoMutedForeground.opacity(0.7))
+                .foregroundStyle(Color.junoMutedForeground)
             }
 
             Menu {
@@ -454,7 +454,7 @@ struct JunoMobileMemoryView: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.junoMutedForeground.opacity(0.6))
+                    .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 28, height: 28)
                     .contentShape(Rectangle())
             }
@@ -531,7 +531,7 @@ struct JunoMobileMemoryView: View {
                     Spacer(minLength: 6)
                     Image(systemName: "square.and.arrow.up")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.junoMutedForeground.opacity(0.6))
+                        .foregroundStyle(Color.junoMutedForeground)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 13)
@@ -615,7 +615,7 @@ struct JunoMobileMemoryView: View {
                 Button("Erase") { showingEraseAll = true }
                     .font(.system(size: 14, weight: .semibold))
                     .buttonStyle(.plain)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Color.junoDanger)
                     .accessibilityIdentifier("juno.mobile.settings-memory-erase-confirm")
             } else {
                 Button {
@@ -633,7 +633,7 @@ struct JunoMobileMemoryView: View {
                 } label: {
                     Text("Reset memory…")
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Color.junoDanger)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                 }

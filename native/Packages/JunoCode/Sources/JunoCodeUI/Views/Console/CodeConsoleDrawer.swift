@@ -330,11 +330,19 @@ public struct CodeConsoleDrawer: View {
             )
     }
 
+    /// The ink each channel draws in, on the ``Color/junoTerminal`` well.
+    ///
+    /// stdout and log were `.primary` and `.secondary` — platform-neutral ink,
+    /// so pure white and pure grey in dark mode. The well was recently corrected
+    /// from a cool value to a warm one, which left the terminal's own output as
+    /// the coldest text in the app sitting on one of its warmest surfaces. The
+    /// warm ramp keeps the same three-way hierarchy (output · error · chatter)
+    /// while belonging to the palette.
     private func channelStyle(_ channel: ToolOutputChannel) -> AnyShapeStyle {
         switch channel {
-        case .stdout: return AnyShapeStyle(.primary)
+        case .stdout: return AnyShapeStyle(Color.junoForeground)
         case .stderr: return AnyShapeStyle(Color.junoDanger)
-        case .log: return AnyShapeStyle(.secondary)
+        case .log: return AnyShapeStyle(Color.junoMutedForeground)
         }
     }
 
@@ -342,7 +350,7 @@ public struct CodeConsoleDrawer: View {
         HStack(spacing: JunoSpace.snug) {
             Text("$")
                 .junoCodeSmall()
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
                 .accessibilityHidden(true)
 
             TextField(
@@ -414,7 +422,7 @@ public struct CodeConsoleDrawer: View {
         HStack(spacing: JunoSpace.snug) {
             Text(controller.interactiveTerminalState.isRunning ? ">" : "$")
                 .junoCodeSmall()
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
                 .accessibilityHidden(true)
             TextField(
                 controller.interactiveTerminalState.isRunning
@@ -555,7 +563,7 @@ public struct CodeConsoleDrawer: View {
                         }
                         Text(suggestion.command)
                             .junoCode()
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .lineLimit(2)
                             .truncationMode(.middle)
                             .textSelection(.enabled)

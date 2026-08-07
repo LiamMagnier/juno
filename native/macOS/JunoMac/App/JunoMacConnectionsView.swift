@@ -87,12 +87,12 @@ struct JunoMacConnectionsView: View {
 
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 TextField("Search Slack, GitHub, Gmail...", text: $query)
                     .textFieldStyle(.plain)
                 if !query.isEmpty {
                     Button { query = "" } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                        Image(systemName: "xmark.circle.fill").junoMetaInk()
                     }
                     .buttonStyle(.plain)
                 }
@@ -122,7 +122,7 @@ struct JunoMacConnectionsView: View {
                     .font(.title3.weight(.bold))
                 Text("Link GitHub, Figma, Notion, Gmail, Slack, and hundreds of apps via native MCP & Composio toolkits.")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
 
             Spacer()
@@ -176,7 +176,7 @@ struct JunoMacConnectionsView: View {
                     Capsule()
                         .strokeBorder(isSelected ? Color.junoAccent.opacity(0.4) : Color.junoBorder)
                 )
-                .foregroundStyle(isSelected ? Color.junoAccent : Color.primary)
+                .foregroundStyle(isSelected ? Color.junoAccent : Color.junoForeground)
         }
         .buttonStyle(.plain)
     }
@@ -206,7 +206,7 @@ struct JunoMacConnectionsView: View {
                         .font(.headline)
                     Text(item.description)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .lineLimit(2)
                 }
 
@@ -267,7 +267,7 @@ struct JunoMacConnectionsView: View {
         } else {
             Text("Available")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(Capsule().fill(Color.junoRowHover))

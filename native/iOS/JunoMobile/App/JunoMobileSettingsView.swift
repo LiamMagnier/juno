@@ -361,7 +361,7 @@ struct JunoMobileSettingsView: View {
 
                 Text(settings.backgroundProviderMode.explanation)
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .fixedSize(horizontal: false, vertical: true)
 
                 // Only the one mode that can cross is flagged. A caution on
@@ -372,7 +372,7 @@ struct JunoMobileSettingsView: View {
                         systemImage: "exclamationmark.triangle"
                     )
                     .font(.system(size: 12))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.junoCaution)
                 }
             }
         }
@@ -892,7 +892,7 @@ private struct JunoMobileSettingsPreferences: View {
                 Button("Revert") { instructionsDraft = settings.customInstructions }
                     .buttonStyle(.plain)
                     .junoRowLabel()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .disabled(instructionsDraft == settings.customInstructions)
                 Spacer(minLength: 0)
                 Button("Save") {
@@ -929,7 +929,7 @@ private struct JunoMobileSettingsPreferences: View {
                 if instructionsDraft.isEmpty {
                     Text("E.g. I'm a product manager. Keep answers concise and use bullet points.")
                         .junoBody()
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                         // The extra 5 points is `TextEditor`'s own text inset,
                         // which is not exposed and has to be matched by hand or
                         // the placeholder sits left of the caret.
@@ -942,7 +942,7 @@ private struct JunoMobileSettingsPreferences: View {
             .overlay(alignment: .bottomTrailing) {
                 Text("\(instructionsDraft.count) chars")
                     .junoCodeSmall()
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
                     .padding(.trailing, JunoSpace.cozy)
                     .padding(.bottom, JunoSpace.snug)
                     .allowsHitTesting(false)
@@ -1188,7 +1188,7 @@ private struct JunoMobileSettingsSelect<Value: Hashable>: View {
                 Spacer(minLength: JunoSpace.tight)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.cozy)
@@ -1267,7 +1267,7 @@ private struct JunoMobileSettingsRowLabel: View {
             }
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
         }
         .contentShape(Rectangle())
     }

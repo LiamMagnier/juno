@@ -1066,8 +1066,13 @@ private struct JunoMobileConversationDetail: View {
                     close: { inlineArtifact = nil }
                 )
             }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
+            // No detents and no grabber. `[.large]` is what a sheet does anyway
+            // when you say nothing, and a grabber on a sheet with a single detent
+            // advertises a resize that cannot happen — the HIG's rule is that a
+            // grabber belongs on a *resizable* sheet. The artifact is reading
+            // material, so full height is right and the ground is ours; the
+            // system still owns the platter, its radius and its material edge.
+            .junoSheetSurface(.page)
             .tint(Color.junoAccent)
         }
         .onAppear { configureSelections() }
@@ -1090,8 +1095,9 @@ private struct JunoMobileConversationDetail: View {
                 openConversation: { _ in openArtifact = nil },
                 close: { openArtifact = nil }
             )
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
+            // Same as the inline sheet above: a canvas is not a chooser, so it
+            // goes full height with our ground under it and no grabber over it.
+            .junoSheetSurface(.page)
         }
         .onChange(of: streamingMessageID) { previous, current in
             trackRun(from: previous, to: current)
@@ -1344,7 +1350,16 @@ private struct JunoMobileMessageRow: View {
     /// whole message whatever the bubble is showing.
     private var bubbleBody: some View {
         Text(plainText)
-            .font(.system(size: 15))
+            // **Relative to `.body`, which is the whole point.** This was a flat
+            // `.font(.system(size: 15))`, so the reader's own words were the one
+            // thing in the transcript Dynamic Type could not move: the answer
+            // beside it renders through `JunoMarkdownText` at `.font(.body)` and
+            // scales all the way to AX5, so at the largest accessibility sizes
+            // one conversation was being drawn at two wildly different sizes —
+            // Juno at ~53pt and the person at 15pt. Anchoring to `.body` keeps
+            // the web's 15px metric at the default setting and keeps the ratio
+            // between the two sides constant at every setting above it.
+            .junoFont(size: 15, relativeTo: .body)
             // 15pt at the web's `leading-relaxed` (1.625) is ~24pt of line
             // box, so 9pt of extra leading on top of the glyph height.
             .lineSpacing(5)
@@ -1401,13 +1416,16 @@ private struct JunoMobileMessageRow: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
+                    .junoFont(size: 10, relativeTo: .caption2, weight: .semibold)
                 Text(expandLabel)
-                    .font(.system(size: 12, design: .monospaced))
+                    .junoFont(size: 12, relativeTo: .caption, design: .monospaced)
             }
             .foregroundStyle(Color.junoMutedForeground)
             .padding(.horizontal, 11)
-            .frame(height: 28)
+            // `minHeight`, not `height`: the capsule has to be able to grow with
+            // the label now that the label scales, or the text is clipped by its
+            // own control at the accessibility sizes.
+            .frame(minHeight: 28)
             .modifier(JunoGlassCapsule())
         }
         .buttonStyle(.plain)
@@ -1481,7 +1499,7 @@ private struct JunoMobileMessageRow: View {
             if let error = message.errorDescription {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.junoCaution)
             }
 
             if !message.isPending && !voice { actionRow }
@@ -1529,13 +1547,25 @@ private struct JunoMobileMessageRow: View {
     /// It appears a beat after the answer finishes rather than with the last
     /// token, because the cost is only known once the generation is billed — the
     /// browser has exactly the same gap.
+    ///
+    /// The ink is `junoMutedForeground` flat. It used to be that token times
+    /// `.opacity(0.6)`, and the multiplier was the whole legibility problem:
+    /// the token already sits at the contrast floor — 5.2:1 on the canvas in
+    /// light, which clears WCAG AA for body text with nothing to spare — so
+    /// scaling it down by hand puts this line at roughly 2.4:1, in a
+    /// monospaced 11pt face, which is the smallest and faintest text in the
+    /// product. A hand-scaled fixed colour also stops participating in the
+    /// system's Increase Contrast adaptation, so the one setting a low-vision
+    /// reader would reach for does nothing to it. There is no rung below the
+    /// muted token; a line that should be quieter gets less weight or less
+    /// size, never less contrast.
     @ViewBuilder
     private var footer: some View {
         if !message.isPending, let line = footerLine {
             Text(line)
-                .font(.system(size: 11, design: .monospaced))
+                .junoFont(size: 11, relativeTo: .caption2, design: .monospaced)
                 .kerning(0.22)
-                .foregroundStyle(Color.junoMutedForeground.opacity(0.6))
+                .junoMetaInk()
                 .padding(.top, 2)
                 .accessibilityLabel(footerAccessibilityLabel ?? line)
         }
@@ -1647,10 +1677,15 @@ private struct JunoMobileMessageRow: View {
         !plainText.isEmpty || regenerate != nil || branch != nil || setFeedback != nil
     }
 
-    /// 34pt of touch target around a 15pt glyph. The row reads as quiet
+    /// At least 34pt of touch target around a 14pt glyph. The row reads as quiet
     /// secondary chrome until one of its controls is *on*, which is the only
     /// time the accent appears — a rated answer and a reading in progress are
     /// both states worth seeing from across the screen.
+    ///
+    /// The frame is a minimum rather than a fixed size because the glyph now
+    /// scales: a fixed 34pt box around a glyph that reaches 40pt at AX5 clips
+    /// the symbol into a smear. Growing the row is the correct answer — the
+    /// whole point of a larger text setting is that the controls get larger too.
     private func actionButton(
         systemImage: String,
         label: LocalizedStringKey,
@@ -1660,9 +1695,9 @@ private struct JunoMobileMessageRow: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 14))
+                .junoFont(size: 14, relativeTo: .footnote)
                 .foregroundStyle(active ? Color.junoAccent : Color.junoMutedForeground)
-                .frame(width: 34, height: 34)
+                .frame(minWidth: 34, minHeight: 34)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1735,27 +1770,28 @@ private struct JunoMobileArtifactInlineCard: View {
     private var card: some View {
         HStack(spacing: 12) {
             Image(systemName: glyph)
-                .font(.system(size: 15))
+                .junoFont(size: 15, relativeTo: .subheadline)
                 .foregroundStyle(Color.junoMutedForeground)
-                .frame(width: 22)
+                .frame(minWidth: 22)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(artifact.title)
-                    .font(.system(size: 15, weight: .medium))
+                    .junoFont(size: 15, relativeTo: .subheadline, weight: .medium)
                     .lineLimit(1)
+                    .junoInk()
                 Text(subtitle)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.junoMutedForeground.opacity(0.7))
+                    .junoFont(size: 11, relativeTo: .caption2, design: .monospaced)
+                    .junoMetaInk()
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if artifact.streaming {
                 JunoThinkingMatrix(dot: 3, spacing: 2)
-                    .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
+                    .foregroundStyle(Color.junoMutedForeground)
             } else if open != nil {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.junoMutedForeground.opacity(0.35))
+                    .junoFont(size: 12, relativeTo: .caption, weight: .semibold)
+                    .foregroundStyle(Color.junoMutedForeground)
             }
         }
         .padding(.horizontal, 14)

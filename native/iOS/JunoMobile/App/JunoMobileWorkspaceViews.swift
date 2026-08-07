@@ -158,19 +158,15 @@ struct JunoMobileProjectsView: View {
     private var empty: some View {
         JunoCard {
             VStack(alignment: .leading, spacing: 10) {
-                Text("No projects yet").font(.system(size: 17, weight: .semibold))
+                Text("No projects yet").junoEmptyTitle()
                 Text("A project groups conversations and files, and gives every chat in it the same standing instructions.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 Button { startCreate() } label: {
-                    Text("New project")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 18)
-                        .frame(height: 40)
-                        .modifier(JunoAccentGlassCapsule())
+                    Text("New project").fontWeight(.semibold)
                 }
-                .buttonStyle(.plain)
+                .junoProminentAction()
+                .controlSize(.large)
                 .padding(.top, 2)
             }
         }
@@ -198,13 +194,13 @@ struct JunoMobileProjectsView: View {
                             if project.isPending {
                                 Image(systemName: "arrow.triangle.2.circlepath")
                                     .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                                     .accessibilityLabel("Waiting to sync")
                             }
                         }
                         Text("^[\(conversations) conversation](inflect: true) · ^[\(files) file](inflect: true)")
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                             .lineLimit(1)
                         if !project.instructions.isEmpty {
                             // Flattened to one run of text. Instructions are
@@ -217,7 +213,7 @@ struct JunoMobileProjectsView: View {
                                     .joined(separator: " ")
                             )
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                         }
@@ -225,7 +221,7 @@ struct JunoMobileProjectsView: View {
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                         .padding(.top, 4)
                 }
             }
@@ -308,7 +304,7 @@ private struct JunoMobileProjectFileRow: View {
                         }
                     }
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
                 }
                 Spacer(minLength: 0)
                 if busy { ProgressView().controlSize(.small) }
@@ -320,7 +316,7 @@ private struct JunoMobileProjectFileRow: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .frame(width: 30, height: 30)
                         .contentShape(Rectangle())
                 }
@@ -446,13 +442,13 @@ struct JunoMobileArtifactsView: View {
                             Text("No artifacts yet").font(.system(size: 17, weight: .semibold))
                             Text("When Juno builds a page, a component or a diagram in a chat, it is kept here — every version of it.")
                                 .font(.callout)
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                         }
                     }
                 } else if filteredArtifacts.isEmpty {
                     Text("Nothing matches this search.")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 40)
                 } else {
@@ -514,7 +510,7 @@ struct JunoMobileArtifactsView: View {
                         JunoWorkspaceGlyph(systemName: Self.kindIcon(artifact.kind), size: 32)
                         Text(Self.kindLabel(artifact.kind).uppercased())
                             .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                         Spacer(minLength: 4)
                         JunoStatusPill(
                             text: "v\(artifact.currentVersion)", tint: Color.junoAccent
@@ -528,15 +524,15 @@ struct JunoMobileArtifactsView: View {
                     HStack(spacing: 5) {
                         Image(systemName: "bubble.left")
                             .font(.caption2)
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                         Text(artifact.conversationTitle)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .lineLimit(1)
-                        Text("·").foregroundStyle(.tertiary)
+                        Text("·").junoMetaInk()
                         Text(artifact.updatedAt.formatted(.relative(presentation: .named)))
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .lineLimit(1)
                     }
                 }
@@ -614,7 +610,7 @@ struct JunoMobileWorkspaceStatus: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Label(conflictMessage, systemImage: "exclamationmark.arrow.triangle.2.circlepath")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     HStack(spacing: 10) {
                         Button("Keep mine", action: keepMine)
                         Spacer(minLength: 0)
@@ -763,12 +759,12 @@ private struct JunoMobileProjectDetail: View {
                         .lineLimit(1)
                     Text(conversation.lastMessageAt, style: .relative)
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Color.junoMutedForeground.opacity(0.75))
+                        .foregroundStyle(Color.junoMutedForeground)
                 }
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.junoMutedForeground.opacity(0.35))
+                    .foregroundStyle(Color.junoMutedForeground)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -931,7 +927,13 @@ private struct JunoMobileProjectDetail: View {
                         }
                     }
             }
-            .presentationDetents([.medium, .large])
+            // Full height, not `[.medium, .large]`. A partial detent is the
+            // switch that makes iOS draw a sheet as Liquid Glass chrome, and
+            // this is the opposite of chrome: a monospaced editor for a standing
+            // prompt, with the keyboard up. At `.medium` the field had about
+            // three visible lines above the keyboard, which is not enough of a
+            // document to edit one in.
+            .junoSheetSurface(.page)
         }
         .alert("Delete project?", isPresented: $showingDelete) {
             Button("Cancel", role: .cancel) {}
@@ -1456,6 +1458,7 @@ struct JunoMobileArtifactDetail: View {
                         }
                     }
             }
+            .junoSheetSurface(.page)
         }
     }
 

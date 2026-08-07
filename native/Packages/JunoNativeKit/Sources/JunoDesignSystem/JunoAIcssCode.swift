@@ -16,6 +16,8 @@ public struct JunoAIcssCodeBlock: View {
     private let label: String
     private let source: String
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var didCopy = false
 
     /// - Parameters:
@@ -36,19 +38,24 @@ public struct JunoAIcssCodeBlock: View {
             JunoAIcssBlockHeader(icon: "chevron.left.forwardslash.chevron.right", label: label) {
                 Button {
                     JunoPasteboard.copy(source)
-                    didCopy = true
+                    withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) { didCopy = true }
                     Task {
                         try? await Task.sleep(for: .seconds(1.5))
-                        didCopy = false
+                        // The confirmation *leaving* is a dismissal, so it takes
+                        // the exit rung rather than the same curve it arrived on.
+                        // Entrances decelerate, exits accelerate; a checkmark
+                        // that fades out on an ease-out reads as the control
+                        // being reluctant to give the button back.
+                        withAnimation(JunoMotion.reduced(JunoMotion.exit, when: reduceMotion)) { didCopy = false }
                     }
                 } label: {
                     Label(didCopy ? "Copied" : "Copy", systemImage: didCopy ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 12))
+                        .junoFont(size: 12, relativeTo: .footnote)
                         .labelStyle(.iconOnly)
                         .foregroundStyle(Color.junoMutedForeground)
                         .frame(width: 22, height: 22)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.junoPress)
                 .help(didCopy ? "Copied" : "Copy code")
                 .accessibilityLabel(didCopy ? "Code copied" : "Copy code")
             }
@@ -58,8 +65,8 @@ public struct JunoAIcssCodeBlock: View {
                     HStack(spacing: 0) {
                         JunoAIcssLineNumber(index + 1)
                         Text(line.isEmpty ? " " : line)
-                            .font(.system(size: 12.5, design: .monospaced))
-                            .foregroundStyle(Color.primary)
+                            .junoFont(size: 12.5, relativeTo: .footnote, design: .monospaced)
+                            .foregroundStyle(Color.junoForeground)
                             .textSelection(.enabled)
                             .padding(.leading, 8)
                             .padding(.trailing, 12)
@@ -130,7 +137,7 @@ public struct JunoAIcssDiff: View {
                     Text("+\(added)").foregroundStyle(Color.junoSuccess)
                     Text("-\(removed)").foregroundStyle(Color.junoDanger)
                 }
-                .font(.system(size: 12, design: .monospaced))
+                .junoFont(size: 12, relativeTo: .footnote, design: .monospaced)
             }
 
             JunoAIcssGutterBody(gutters: 2) {
@@ -139,12 +146,12 @@ public struct JunoAIcssDiff: View {
                         JunoAIcssLineNumber(row.old, tint: row.kind == .removed ? .junoDanger : nil)
                         JunoAIcssLineNumber(row.new, tint: row.kind == .added ? .junoSuccess : nil)
                         Text(sign(row.kind))
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(tint(row.kind) ?? Color.junoMutedForeground.opacity(0.8))
+                            .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
+                            .foregroundStyle(tint(row.kind) ?? Color.junoMutedForeground)
                             .frame(width: 18)
                         Text(row.text.isEmpty ? " " : row.text)
-                            .font(.system(size: 12.5, design: .monospaced))
-                            .foregroundStyle(row.kind == .context ? Color.junoMutedForeground : Color.primary)
+                            .junoFont(size: 12.5, relativeTo: .footnote, design: .monospaced)
+                            .foregroundStyle(row.kind == .context ? Color.junoMutedForeground : Color.junoForeground)
                             .textSelection(.enabled)
                             .padding(.leading, 8)
                             .padding(.trailing, 12)
@@ -280,11 +287,11 @@ struct JunoAIcssBlockHeader<Trailing: View>: View {
         VStack(spacing: 0) {
             HStack(spacing: 7) {
                 Image(systemName: icon)
-                    .font(.system(size: 11, weight: .medium))
+                    .junoFont(size: 11, relativeTo: .caption, weight: .medium)
                     .foregroundStyle(Color.junoMutedForeground)
                 Text(label)
-                    .font(.system(size: 12.5, design: .monospaced))
-                    .foregroundStyle(Color.primary)
+                    .junoFont(size: 12.5, relativeTo: .footnote, design: .monospaced)
+                    .foregroundStyle(Color.junoForeground)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 8)
@@ -341,9 +348,9 @@ struct JunoAIcssLineNumber: View {
 
     var body: some View {
         Text(number.map(String.init) ?? "")
-            .font(.system(size: 11, design: .monospaced))
+            .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
             .monospacedDigit()
-            .foregroundStyle(tint ?? Color.junoMutedForeground.opacity(0.8))
+            .foregroundStyle(tint ?? Color.junoMutedForeground)
             .frame(width: 32, alignment: .trailing)
             .padding(.trailing, 7)
             .frame(width: 32)

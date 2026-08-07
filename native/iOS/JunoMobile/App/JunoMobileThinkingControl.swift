@@ -51,7 +51,7 @@ struct JunoMobileThinkingControl: View {
                     if scale.isAdjustable {
                         Image(systemName: "chevron.up")
                             .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             // Turns over while the picker is up, as the web's
                             // chevron does.
                             .rotationEffect(.degrees(presented ? 180 : 0))

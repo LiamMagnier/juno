@@ -139,7 +139,7 @@ private struct GoalDetails: View {
                     VStack(alignment: .leading, spacing: JunoSpace.tight) {
                         Label("Verification", systemImage: "checkmark.seal")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                         ForEach(goal.verificationEvidence, id: \.id) { evidence in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(evidence.summary)
@@ -147,7 +147,7 @@ private struct GoalDetails: View {
                                     .fixedSize(horizontal: false, vertical: true)
                                 Text(evidenceMetadata(evidence))
                                     .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                             }

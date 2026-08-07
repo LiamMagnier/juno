@@ -11,42 +11,6 @@ import SwiftUI
 /// drift the shared contract exists to prevent.
 typealias DesktopWorkVocabulary = JunoWorkVocabulary
 
-// MARK: - What a standing yes may cover
-
-/// The consent rules the approval card has to agree with.
-///
-/// A free function on a namespace rather than a computed property on the view,
-/// because this is the one rule in the window whose being wrong is invisible:
-/// a button offered for a risk the model refuses does not fail, it silently
-/// degrades to a one-time approval, and the reader is asked the same question
-/// again on the next identical action with no explanation. A rule that fails
-/// that quietly has to be testable without instantiating a `View`.
-enum DesktopWorkApprovalRules {
-    /// Whether "Always allow this" can be honoured for this level of risk.
-    ///
-    /// Mirrors `WorkRisk.mayBeCoveredByStandingAllowance` (`risk <= .command`)
-    /// in JunoWorkCore, whose `WorkAlwaysAllowance(upTo:)` is a *failable*
-    /// initialiser returning nil above that ceiling — and which re-applies the
-    /// rule on decode, so even a stored allowance that claims to cover
-    /// `irreversible` cannot grant it.
-    ///
-    /// Stated here rather than imported because `JunoWorkCore` is the local
-    /// executor's layer and this window also renders cloud approvals, which
-    /// never pass through it. The contract enum is what both sides share, and
-    /// `tests/work-approval-plane.test.ts` pins the same ordering on the web so
-    /// the three copies cannot drift apart unnoticed.
-    ///
-    /// An unnamed level is uncoverable, matching the decoder's own fallback of
-    /// `irreversible` for a risk it cannot classify: a client that cannot name
-    /// the risk asks every time rather than quietly granting a standing yes.
-    static func allowsStandingGrant(_ risk: JunoWorkRiskLevel?) -> Bool {
-        switch risk {
-        case .safe, .edit, .command: true
-        case .sensitive, .irreversible, nil: false
-        }
-    }
-}
-
 // MARK: - Status pill
 
 /// A task's status, as a tinted capsule.
@@ -77,7 +41,7 @@ struct DesktopWorkStatusPill: View {
                 .imageScale(.small)
         }
         .font(.system(.caption, design: .default, weight: .medium))
-        .foregroundStyle(quiet ? Color.secondary : style.tint)
+        .foregroundStyle(quiet ? Color.junoMutedForeground : style.tint)
         .padding(.horizontal, quiet ? 0 : JunoSpace.snug)
         .padding(.vertical, quiet ? 0 : 3)
         .background {

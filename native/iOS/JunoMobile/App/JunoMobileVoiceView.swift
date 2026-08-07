@@ -148,7 +148,7 @@ struct JunoMobileVoiceDock: View {
             if let notice = controller.notice {
                 Label(notice, systemImage: "exclamationmark.circle")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Color.junoCaution)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
@@ -213,7 +213,7 @@ struct JunoMobileVoiceDock: View {
         VStack(spacing: 8) {
             Label(message, systemImage: "video.slash")
                 .font(.caption)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.junoCaution)
                 .multilineTextAlignment(.center)
             if camera.unavailability?.isRecoverableInSettings == true {
                 Button("attachments.camera.open-settings") {
@@ -234,7 +234,7 @@ struct JunoMobileVoiceDock: View {
     private func screenShareNotice(_ message: String) -> some View {
         Label(message, systemImage: "rectangle.dashed.badge.record")
             .font(.caption)
-            .foregroundStyle(.orange)
+            .foregroundStyle(Color.junoCaution)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
@@ -330,7 +330,7 @@ struct JunoMobileVoiceDock: View {
         VStack(spacing: 8) {
             Label(message, systemImage: "exclamationmark.triangle")
                 .font(.caption)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.junoCaution)
                 .multilineTextAlignment(.center)
 
             // A save that failed is a conversation that exists nowhere — the
@@ -550,17 +550,25 @@ struct JunoMobileVoiceDock: View {
         Button {
             hangUp()
         } label: {
+            // `junoDanger` rather than `Color.red`, and `junoCanvas` rather than
+            // `.white` on top of it. The ramp's red is the one this product uses
+            // for a failed run and a destructive confirm, so the hang-up matches
+            // them; and a hard white glyph clears AA on the light red (6.3:1)
+            // but only reaches 2.8:1 on the *dark* appearance's lifted red,
+            // which is exactly the case the ramp lifts for. The canvas colour
+            // inverts with the appearance, so it is near-white on the dark red
+            // and near-black on the light one: 5.8:1 and 6.4:1.
             Group {
                 if isSaving {
-                    ProgressView().tint(.white)
+                    ProgressView().tint(Color.junoCanvas)
                 } else {
                     Image(systemName: "phone.down.fill")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color.junoCanvas)
                 }
             }
             .frame(width: 34, height: 34)
-            .background(Color.red, in: Circle())
+            .background(Color.junoDanger, in: Circle())
             .frame(width: 38, height: 44)
             .contentShape(Rectangle())
         }

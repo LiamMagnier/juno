@@ -141,12 +141,15 @@ public extension View {
     /// An explicit colour set *inside* the row wins over the emphasis style the
     /// row container pushes in, which is why this cannot live on the `List`
     /// alongside the tint: applied there it would sit above the emphasis and lose.
-    /// `Color.primary` rather than the hierarchical `.primary` for the same
-    /// reason — the hierarchical level resolves against whatever style is current,
-    /// including the emphasised one. Nested `.secondary` glyphs still work: they
-    /// resolve as a quieter step off this colour.
+    /// `Color.junoForeground` rather than the hierarchical `.primary` for the
+    /// same reason — the hierarchical level resolves against whatever style is
+    /// current, including the emphasised one. It is also the warm ink the web
+    /// draws this row in (`--foreground`); `Color.primary` is a pure neutral,
+    /// and a column of pure-neutral labels on a warm sidebar is the single most
+    /// visible way the app stops looking like Juno. Nested `.secondary` glyphs
+    /// still work: they resolve as a quieter step off this colour.
     func junoSidebarRowInk() -> some View {
-        foregroundStyle(Color.primary)
+        junoInk()
     }
 
     /// A source-list row's mark, in the column's ink rather than the accent.
@@ -158,7 +161,7 @@ public extension View {
     /// glyphs nobody had asked for. The web's rail is greyscale: the mark rests
     /// on `--sidebar-foreground` and lifts to `--foreground` with its label.
     func junoSidebarMarkInk(selected: Bool = false) -> some View {
-        foregroundStyle(selected ? Color.primary : Color.junoSidebarForeground)
+        foregroundStyle(selected ? Color.junoForeground : Color.junoSidebarForeground)
     }
 
     /// The bottom of a source list, where a pinned footer meets the rows that
@@ -241,10 +244,33 @@ public extension View {
         )
     }
 
-    /// Marks a glass element so the system animates it *as glass* — materialising
-    /// rather than cross-fading. Without an id the container has nothing to track
-    /// the element by across the transition.
+    /// Marks a glass element so the container can track it across a transition.
+    ///
+    /// **This used to force `.glassEffectTransition(.materialize)` and that was
+    /// wrong for its main caller.** `matchedGeometry` — the system default this
+    /// now leaves in place — is the one where the material *stretches* between
+    /// an element's old and new positions, which is precisely the effect a
+    /// segmented control's knob exists to produce. `.materialize` explicitly
+    /// opts out of geometry matching and fades the material in and out instead,
+    /// so the helper was cancelling the behaviour every one of its call sites
+    /// wanted, under a name that gave no hint it was doing so.
+    ///
+    /// The distinction is about distance, not taste: `matchedGeometry` is for
+    /// elements *within* the container's `spacing`, `materialize` for elements
+    /// farther apart than that. Use ``junoGlassMaterialize(_:in:)`` for the
+    /// second case. Both are inert at rest — they only take effect during a
+    /// view-hierarchy transition.
     func junoGlassID(_ id: some Hashable & Sendable, in namespace: Namespace.ID) -> some View {
+        glassEffectID(id, in: namespace)
+    }
+
+    /// The same, for glass elements far enough apart that stretching the
+    /// material between them would read as a smear rather than as one surface
+    /// moving. Fades the content and animates the material in and out.
+    func junoGlassMaterialize(
+        _ id: some Hashable & Sendable,
+        in namespace: Namespace.ID
+    ) -> some View {
         glassEffectID(id, in: namespace)
             .glassEffectTransition(.materialize)
     }
@@ -260,6 +286,11 @@ public extension View {
     }
 
     /// The one primary action on a surface.
+    ///
+    /// Prefer the cross-platform ``SwiftUI/View/junoProminentAction()`` in new
+    /// code — it is the same treatment with a pre-26 fallback, so a shared view
+    /// can use it. This stays because macOS-only chrome reads better without the
+    /// availability branch.
     func junoProminentGlassButton() -> some View {
         buttonStyle(.glassProminent).tint(Color.junoAccent)
     }
@@ -267,16 +298,27 @@ public extension View {
     /// A circular accent-tinted glass action — the composer's send/stop/voice
     /// button, and anything else that is the single obvious next step.
     ///
-    /// The tint fades rather than the shape changing when the action is
-    /// unavailable, so the control keeps its position and the pointer does not
-    /// have to re-find it between states. Pair it with
+    /// The tint appears and disappears rather than the shape changing when the
+    /// action is unavailable, so the control keeps its position and the pointer
+    /// does not have to re-find it between states. Pair it with
     /// ``Color/junoOnAccent`` for the glyph, never a literal white: the accent is
     /// an account setting and white fails contrast on two of the five palettes.
+    ///
+    /// **The inactive state is untinted, not a faded accent.** It used to be
+    /// `Color.junoAccent.opacity(0.32)`, and a diluted tint is the one thing
+    /// `Glass.tint(_:)` must never be given: it honours the alpha, so the tint
+    /// stops establishing a predictable luminance under the glyph and the
+    /// glyph's contrast becomes a function of whatever is behind the window.
+    /// Passing `nil` gives plain `.regular` glass — which is the honest reading
+    /// of the state anyway, since an unavailable action is not the primary
+    /// action. The active value went to full strength from 0.95 for the same
+    /// reason. Note this is one expression rather than an `if`, so the control
+    /// keeps a single view identity and the change animates.
     func accentGlassAction(active: Bool) -> some View {
-        buttonStyle(.plain)
+        buttonStyle(.junoPress)
             .junoGlass(
                 in: Circle(),
-                tint: Color.junoAccent.opacity(active ? 0.95 : 0.32),
+                tint: active ? Color.junoAccent : nil,
                 interactive: true
             )
     }
@@ -401,23 +443,27 @@ public struct JunoEmptyState: View {
                     .frame(width: 72, height: 72)
                 if let junoIcon {
                     JunoIconView(junoIcon, size: 28)
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Color.junoMutedForeground)
                 } else {
                     Image(systemName: symbol)
+                        // Not scaled with Dynamic Type: this glyph is centred in
+                        // a fixed 72pt plate, so growing it at AX5 would push it
+                        // outside the circle. The empty state's *text* below
+                        // scales, which is where the reading is.
                         .font(.system(size: 30, weight: .regular))
-                        .foregroundStyle(Color.secondary)
+                        .foregroundStyle(Color.junoMutedForeground)
                 }
             }
 
             VStack(spacing: JunoSpace.snug) {
                 Text(title)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color.primary)
+                    .junoEmptyTitle()
+                    .junoInk()
 
                 if let message {
                     Text(message)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 440)
                 }
@@ -425,8 +471,7 @@ public struct JunoEmptyState: View {
 
             if let actionLabel, let perform {
                 Button(actionLabel, action: perform)
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.junoAccent)
+                    .junoProminentAction()
                     .controlSize(.regular)
             }
             Spacer()

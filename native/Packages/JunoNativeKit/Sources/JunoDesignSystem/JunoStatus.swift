@@ -22,7 +22,16 @@ public extension JunoColorToken {
     static let dangerDark = JunoColorToken(unchecked: 0.961, 0.443, 0.420)
 
     // Caution — awaiting approval, a recoverable error.
-    static let cautionLight = JunoColorToken(unchecked: 0.639, 0.435, 0.031)
+    //
+    // Darkened from `40 91% 33.5%` to `40 91% 31.5%`. The old value measured
+    // 4.11:1 against `canvasLight` — below the 4.5:1 that "Awaiting approval"
+    // needs as *text*, which is how this ramp is actually drawn. The file's own
+    // doc comment above claims these are chosen for contrast against the warm
+    // canvas; it was true of success and danger and had never been checked for
+    // this one. Hue and saturation are untouched, exactly as in the accent pass,
+    // so the amber character is unchanged and only the value moved. Now 4.54:1,
+    // asserted in `JunoInkContrastTests`.
+    static let cautionLight = JunoColorToken(unchecked: 0.6009, 0.4103, 0.0291)
     static let cautionDark = JunoColorToken(unchecked: 0.957, 0.741, 0.337)
 
     // Diff row fills. Deliberately low-chroma: the whole row is tinted, so the
@@ -47,27 +56,8 @@ public extension Color {
     static let junoDiffRemoved = Color.junoAdaptive(light: .diffRemovedLight, dark: .diffRemovedDark)
 }
 
-/// The monospaced type scale for machine output.
-///
-/// Two sizes only. `junoCode` is for content a person reads deliberately — a
-/// diff, a file name, a commit subject. `junoCodeSmall` is for content they
-/// scan — streamed terminal output, line numbers, hashes. Both are relative to
-/// a system text style so Dynamic Type still moves them.
-public extension View {
-    /// Monospaced content read deliberately: diffs, paths, commit subjects.
-    func junoCode() -> some View {
-        font(.system(.footnote, design: .monospaced))
-    }
-
-    /// Monospaced content that is scanned: terminal output, gutters, hashes.
-    func junoCodeSmall() -> some View {
-        font(.system(.caption, design: .monospaced))
-    }
-}
-
-public extension Font {
-    /// Monospaced content read deliberately.
-    static let junoCode = Font.system(.footnote, design: .monospaced)
-    /// Monospaced content that is scanned.
-    static let junoCodeSmall = Font.system(.caption, design: .monospaced)
-}
+// The monospaced pair — `junoCode` and `junoCodeSmall`, plus their `Font`
+// equivalents — used to live here, which put two rungs of the type scale in the
+// file named "Status". They now sit with the rest of the scale in
+// `JunoTypography.swift`, unchanged in value. Nothing about a diff's colour
+// needed to know what size its text was.

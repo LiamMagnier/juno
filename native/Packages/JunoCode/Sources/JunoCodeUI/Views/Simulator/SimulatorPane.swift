@@ -52,7 +52,7 @@ public struct SimulatorPane: View {
                     .font(.callout.weight(.semibold))
                 Text(model.statusLine)
                     .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(model.state.isFailed ? Color.junoDanger : .secondary)
+                    .foregroundStyle(model.state.isFailed ? Color.junoDanger : Color.junoMutedForeground)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -71,7 +71,7 @@ public struct SimulatorPane: View {
             Button(action: close) {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .frame(width: 24, height: 24)
                     .contentShape(.rect)
             }
@@ -96,7 +96,7 @@ public struct SimulatorPane: View {
         case .user:
             Label("You are controlling", systemImage: "hand.point.up.left")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
         case .none:
             EmptyView()
         }
@@ -234,7 +234,7 @@ public struct SimulatorPane: View {
         if model.state.isRunning, let reason = model.inputCapability.unavailableReason {
             HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                 Image(systemName: "hand.tap")
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 Text(reason)
                     .junoCaption()
                     .fixedSize(horizontal: false, vertical: true)
@@ -242,7 +242,7 @@ public struct SimulatorPane: View {
                     .buttonStyle(.borderless)
             }
             .padding(JunoSpace.snug)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous))
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
             .padding(JunoSpace.snug)
             .accessibilityIdentifier("juno.code.simulator-input-disclosure")
         }
@@ -261,7 +261,7 @@ public struct SimulatorPane: View {
                             if let file = diagnostic.file {
                                 Text("\((file as NSString).lastPathComponent)\(diagnostic.line.map { ":\($0)" } ?? "")")
                                     .junoMono()
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                             }
                         }
                         Spacer(minLength: 0)

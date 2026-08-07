@@ -77,7 +77,13 @@ public extension JunoColorToken {
     /// it marks *supplementary or sourced* material — a citation, a deep dive's
     /// quotation rule, a learning card's "Tip" — and reusing `junoSuccess` for it
     /// would say a tip had passed something.
-    static let sourceLight = JunoColorToken(unchecked: 0.1292, 0.5016, 0.5508)
+    ///
+    /// Darkened from `187 62% 34%` to `187 62% 33%`: the web's own value measured
+    /// 4.38:1 on `canvasLight`, and this token is read as text — a citation
+    /// label, a tip's heading — not painted as a fill. Hue and saturation are
+    /// untouched. Now 4.60:1. The dark value already cleared the floor and is
+    /// unchanged, so the two appearances still carry the same teal.
+    static let sourceLight = JunoColorToken(unchecked: 0.1254, 0.4869, 0.5346)
     static let sourceDark = JunoColorToken(unchecked: 0.2058, 0.7079, 0.7742)
 }
 
@@ -127,16 +133,35 @@ public extension Color {
     /// A quiet fill: the selected sidebar row, a resting chip, a user message.
     static let junoMuted = Color.junoAdaptive(light: .mutedLight, dark: .mutedDark)
 
-    /// Primary text — the web's `--foreground`, which had no native counterpart
-    /// until now. Prefer `.primary` where the system's own label colour is
-    /// right; use this where the warmth shows, which is anywhere a long run of
-    /// ink sits on ``junoCanvas`` or ``junoSurface``.
+    /// Primary text — the web's `--foreground`.
+    ///
+    /// **This is the default ink**, reached through ``SwiftUI/View/junoInk()``.
+    /// The advice here used to be the other way round — "prefer `.primary`, use
+    /// this where the warmth shows" — and the result was two call sites against
+    /// 129 for `Color.primary`, because "where the warmth shows" is not a test
+    /// anyone can apply at a call site. It shows everywhere: the canvas's whole
+    /// identity is that red is its highest channel, so a pure-neutral label on
+    /// it is off-brand by construction.
+    ///
+    /// Use `.primary` only where the *system* owns the surface — inside a
+    /// `Menu`, a toolbar, an alert — and its vibrancy is doing work an absolute
+    /// colour cannot.
     static let junoForeground = Color.junoAdaptive(
         light: .foregroundLight, dark: .foregroundDark
     )
 
-    /// Secondary text. Prefer `.secondary` where the system's own ramp is right;
-    /// use this where the warm brand tint matters, as in large calm surfaces.
+    /// Secondary text, reached through ``SwiftUI/View/junoSecondaryInk()``.
+    ///
+    /// Also the floor: it is what ``SwiftUI/View/junoMetaInk()`` resolves to,
+    /// because the rung below it does not clear WCAG AA and therefore does not
+    /// exist. Same caveat as above — `.secondary` only where the system owns the
+    /// surface.
+    ///
+    /// **Never multiply it by an opacity at the call site.** The token is
+    /// already at the contrast floor (~5.2:1 light on the canvas), so
+    /// `.junoMutedForeground.opacity(0.7)` is not a quieter grey, it is an
+    /// illegible one — and a fixed colour scaled down by hand also stops
+    /// participating in the system's Increase Contrast adaptation.
     static let junoMutedForeground = Color.junoAdaptive(
         light: .mutedForegroundLight, dark: .mutedForegroundDark
     )

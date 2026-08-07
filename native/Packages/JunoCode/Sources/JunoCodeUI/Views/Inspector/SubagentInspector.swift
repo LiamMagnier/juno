@@ -74,7 +74,7 @@ struct SubagentPane: View {
                 section(
                     "Done",
                     symbol: "checkmark.circle.fill",
-                    tint: .secondary,
+                    tint: .junoMutedForeground,
                     runs: done
                 )
             }
@@ -159,7 +159,7 @@ private struct SubagentEmptyState: View {
                     .junoEmptyTitle()
                 Text("Delegated work will appear here while it runs, then stay available as a report.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -213,7 +213,7 @@ private struct SubagentOverview: View {
                 SubagentMetric(
                     title: "Done",
                     value: doneCount,
-                    tint: .secondary
+                    tint: .junoMutedForeground
                 )
                 Spacer(minLength: 0)
             }
@@ -286,14 +286,14 @@ private struct SubagentListRow: View {
                         SubagentElapsed(run: run)
                         Image(systemName: "chevron.right")
                             .imageScale(.small)
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                     }
                     HStack(spacing: JunoSpace.tight) {
                         SubagentStatusBadge(status: run.status)
                         if let role = run.role {
                             Text("·")
                                 .junoCaption()
-                                .foregroundStyle(.tertiary)
+                                .junoMetaInk()
                             Text(role.rawValue.capitalized)
                                 .junoCaption()
                                 .lineLimit(1)
@@ -451,7 +451,7 @@ private struct SubagentDetailPane: View {
                                 ? "This sub-agent is still working and has not written a result yet."
                                 : "The sub-agent finished without a result summary.",
                             symbol: run.isActive ? "hourglass" : "doc.text.magnifyingglass",
-                            tint: run.isActive ? Color.junoAccent : .secondary,
+                            tint: run.isActive ? Color.junoAccent : .junoMutedForeground,
                             showsProgress: run.isActive
                         )
                     }
@@ -575,7 +575,7 @@ private struct SubagentDetailPane: View {
                         } else if pendingApprovals.isEmpty {
                             Image(systemName: "clock")
                                 .imageScale(.small)
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                         } else {
                             Image(systemName: "hand.raised.fill")
                                 .imageScale(.small)
@@ -667,7 +667,7 @@ private struct SubagentDetailPane: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        .tint(.secondary)
+        .tint(Color.junoMutedForeground)
         // Deliberately no Escape shortcut: the inspector is a permanently
         // visible column, and claiming Escape here would swallow it for the
         // composer and every sheet the window can present.
@@ -705,7 +705,7 @@ private struct SubagentDetailPane: View {
                 } else {
                     Label("Agent is working", systemImage: "bolt.horizontal.fill")
                         .junoCaption()
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
                 Spacer(minLength: JunoSpace.tight)
                 Button {
@@ -757,7 +757,7 @@ private struct SubagentDetailPane: View {
                                 : "\(changedPathCount) changed path\(pathSuffix) staged in the isolated branch."
                         )
                         .junoCaption()
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     } else {
                         Text(
                             run.isActive
@@ -765,12 +765,12 @@ private struct SubagentDetailPane: View {
                                 : "Reading the isolated branch…"
                         )
                         .junoCaption()
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     }
                     if let actionMessage {
                         Text(actionMessage)
                             .junoCaption()
-                            .foregroundStyle(actionFailed ? Color.junoDanger : Color.secondary)
+                            .foregroundStyle(actionFailed ? Color.junoDanger : Color.junoMutedForeground)
                             .textSelection(.enabled)
                     }
                 }
@@ -864,7 +864,7 @@ private struct SubagentDetailPane: View {
     private var worktreeLifecycleTint: Color {
         if canApply { return Color.junoAccent }
         if actionFailed { return Color.junoDanger }
-        return .secondary
+        return .junoMutedForeground
     }
 
     private func applyWorktree() {
@@ -921,7 +921,7 @@ private struct SubagentDetailPane: View {
                     ? "This sub-agent never opened a session, so it recorded no steps."
                     : "Juno could not read this sub-agent's session from the store.",
                 symbol: run.childSessionID == nil ? "doc.text" : "exclamationmark.triangle",
-                tint: run.childSessionID == nil ? .secondary : Color.junoDanger
+                tint: run.childSessionID == nil ? .junoMutedForeground : Color.junoDanger
             )
         case let .loaded(detail):
             detailCard {
@@ -992,7 +992,7 @@ private struct SubagentDetailPane: View {
                     HStack(spacing: JunoSpace.tight) {
                         Text(child.value)
                             .junoCodeSmall()
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .textSelection(.enabled)
@@ -1018,7 +1018,7 @@ private struct SubagentDetailPane: View {
             Text(label).junoSidebarSection()
             Text(text)
                 .font(.callout)
-                .foregroundStyle(tint ?? Color.primary)
+                .foregroundStyle(tint ?? Color.junoForeground)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1133,7 +1133,7 @@ private struct SubagentApprovalCard: View {
                 .fixedSize(horizontal: false, vertical: true)
             Text("\(request.toolName) · \(request.risk.rawValue.capitalized) risk")
                 .junoCaption()
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
             HStack(spacing: JunoSpace.tight) {
                 if expired {
                     Text("Expired")
@@ -1233,7 +1233,7 @@ enum SubagentFormatting {
         case .failed: .junoDanger
         case .waitingForApproval, .interrupted: .junoCaution
         case .running, .preparing: .junoAccent
-        case .queued, .cancelled: .secondary
+        case .queued, .cancelled: .junoMutedForeground
         }
     }
 
@@ -1266,7 +1266,7 @@ enum SubagentFormatting {
         case .succeeded: .junoSuccess
         case .failed: .junoDanger
         case .denied, .cancelled: .junoCaution
-        case nil: .secondary
+        case nil: .junoMutedForeground
         }
     }
 

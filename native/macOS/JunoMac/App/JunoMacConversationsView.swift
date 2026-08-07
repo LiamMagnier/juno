@@ -1,4 +1,5 @@
 import JunoChatKit
+import JunoDesignSystem
 import JunoStorage
 import SwiftUI
 
@@ -148,7 +149,7 @@ struct JunoMacConversationsView: View {
                 Spacer(minLength: 4)
                 if conversation.isPending {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .accessibilityLabel("Waiting to sync")
                 }
             }
@@ -158,7 +159,7 @@ struct JunoMacConversationsView: View {
                 Text(conversation.lastMessageAt, style: .relative)
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
         }
         .tag(conversation.id)
         .contextMenu {
@@ -248,15 +249,19 @@ private struct JunoMacMessageRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(message.role == .user ? "You" : "Juno")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 Text(plainText)
                     .textSelection(.enabled)
                 if let model = message.model, !model.isEmpty {
-                    Text(model).font(.caption2).foregroundStyle(.tertiary)
+                    Text(model).font(.caption2).junoMetaInk()
                 }
             }
             .padding(12)
-            .background(message.role == .user ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.10))
+            // `Color.accentColor` is the *system* accent, not Juno's — this bubble
+            // drew in whatever the user set in System Settings while the rest
+            // of the transcript was coral. The assistant's ground moves onto
+            // the warm muted surface for the same reason.
+            .background(message.role == .user ? Color.junoAccent.opacity(0.14) : Color.junoMuted)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             if message.role != .user { Spacer(minLength: 80) }
         }

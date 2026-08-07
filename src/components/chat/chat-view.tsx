@@ -93,13 +93,19 @@ function clampCanvasWidth(width: number, containerWidth?: number) {
  */
 const THOUGHT_WIDTH_KEY = "juno:thought-width";
 /* The FLOOR, not a new default. The panel's own widest fixed element is the
- * 4.5rem (72px) label column shared by the PROFILE, FACTS and steps rows, plus
- * the section's px-5 padding (40px both sides) and two 12px gaps. At 320 that
- * leaves ~150px for the flexible value column — which already truncates by
- * design (`minmax(0,1fr)`), so nothing clips or overflows; it just gets terse.
- * Below this the value column stops being readable at all. 320 is also
- * CHAT_MIN_WIDTH — the narrowest usable column this file already recognises. */
-const THOUGHT_MIN_WIDTH = 320;
+ * 5rem (80px) label column of its `LEDGER` grid, shared by the ELAPSED, COST,
+ * SETUP and TOOLS rows, plus the scroller's px-5 padding (40px both sides) and
+ * two 12px gaps. (This comment previously said 4.5rem, which was never true of
+ * any version of the panel — a rewrite that reads it as spec inherits a number
+ * that was always wrong. It is 5rem; check `LEDGER` in
+ * thought-process-panel.tsx before trusting this line again.)
+ *
+ * 400, not 320. The panel's largest surface is now the model's own reasoning
+ * prose in Newsreader, and below roughly 400px that column drops under ~45
+ * characters — the point at which continuous reading starts costing more in
+ * return sweeps than the narrow dock saves in chat width. The ledger was legible
+ * at 320; a reading column is not. */
+const THOUGHT_MIN_WIDTH = 400;
 /* 30rem at the default 16px root — the width the dock already has. Used ONLY as
  * the starting point for a keyboard nudge (which needs a number to add to) and
  * for the handle's aria-valuenow. It is never applied as a width: an undragged
@@ -1519,11 +1525,18 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   return (
     <ThoughtPanelProvider value={thoughtPanel}>
     <div ref={layoutRef} data-juno-chat-root className="relative flex h-full min-h-0 w-full overflow-hidden">
-      {/* Model parameters + incognito ghost, top-right in normal mode. */}
+      {/* Model parameters + incognito ghost, top-right in normal mode.
+          Below `lg` the canvas and the thought dock replace the chat column
+          entirely (it goes `display:none`, so nothing inside it is focusable).
+          This cluster and PrivateChatToggle live on the chat ROOT, not in that
+          column, so without this guard they stay tabbable and floating over a
+          panel that has taken the whole screen. Same guard, same breakpoint, no
+          ARIA gymnastics. */}
       <div
         className={cn(
           "absolute right-3 top-3 z-20 flex items-center gap-0.5 transition-[opacity,transform] duration-slow ease-out-soft md:right-4 md:top-4",
-          privateMode ? "pointer-events-none translate-y-1 opacity-0" : "translate-y-0 opacity-100"
+          privateMode ? "pointer-events-none translate-y-1 opacity-0" : "translate-y-0 opacity-100",
+          (openArtifact || thoughtOpenId) && "hidden lg:flex"
         )}
       >
         {/* Share — saved, non-private chats with at least one message. */}

@@ -7,6 +7,11 @@ struct AgentCanvasView: View {
     @Bindable var controller: SessionController
     let model: WorkbenchModel
 
+    /// Guards the auto-scroll below, which is travel across the tallest surface
+    /// in the window. This file read nothing from the accessibility environment
+    /// before, so the scroll animated regardless of the user's setting.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     /// The transcript's measure. Long-form agent prose past roughly 90
     /// characters is measurably harder to read, and a full-screen window is
     /// otherwise 1800pt of single-column text.
@@ -128,7 +133,7 @@ struct AgentCanvasView: View {
         case .completed:
             StatusChip("Completed", systemImage: "checkmark.circle.fill", tint: .junoSuccess)
         case .cancelled:
-            StatusChip("Stopped", systemImage: "stop.circle.fill", tint: .secondary)
+            StatusChip("Stopped", systemImage: "stop.circle.fill", tint: .junoMutedForeground)
         case .idle:
             EmptyView()
         }
@@ -157,7 +162,12 @@ struct AgentCanvasView: View {
                 }
                 .onChange(of: controller.events.count) {
                     if let last = visibleEvents.last {
-                        withAnimation(.easeOut(duration: 0.15)) {
+                        // The `fast` rung rather than the 0.15 literal, so this
+                        // canvas and `TranscriptView` — which do the same thing
+                        // in two windows — settle at the same speed.
+                        withAnimation(
+                            JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)
+                        ) {
                             proxy.scrollTo(last.id, anchor: .bottom)
                         }
                     }
@@ -509,7 +519,7 @@ struct ApprovalCard: View {
 
             Text(request.toolName)
                 .junoCodeSmall()
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
 
             HStack(spacing: JunoSpace.snug) {
                 Spacer(minLength: 0)

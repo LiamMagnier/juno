@@ -116,7 +116,6 @@ struct DesktopIncognitoChat: View {
                 .font(JunoSerif.font(size: 26, relativeTo: .title, face: .medium))
             Text("Nothing here is saved, synced, or titled. Closing this window erases it.")
                 .junoCaption()
-                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .padding(JunoSpace.region)
@@ -190,14 +189,22 @@ struct DesktopIncognitoChat: View {
                     .junoBody()
                     .onSubmit(send)
 
+                // `.borderedProminent` on its own fills with the *system* accent,
+                // not the app's: on a stock Mac that is blue, so the incognito
+                // composer put a blue send button on a coral page — and because
+                // Juno's accent is an account setting, an amber or sage account
+                // saw a third colour again. The tint has to be stated, exactly as
+                // the approval cards in Code and Work already state it.
                 if model.isStreaming {
                     Button("Stop", systemImage: "stop.fill") { model.stopGeneration() }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderedProminent)
+                        .tint(Color.junoAccent)
                 } else {
                     Button("Send", systemImage: "arrow.up") { send() }
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderedProminent)
+                        .tint(Color.junoAccent)
                         .disabled(sendDisabled)
                         .keyboardShortcut(.return, modifiers: [])
                 }
@@ -223,7 +230,6 @@ struct DesktopIncognitoChat: View {
                 Spacer(minLength: 0)
                 Label("Not saved", systemImage: "theatermasks")
                     .junoCaption()
-                    .foregroundStyle(.secondary)
             }
         }
         .padding(JunoSpace.region)

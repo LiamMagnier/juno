@@ -358,7 +358,11 @@ public struct Composer: View {
                 Button(action: beginDictation) {
                     Image(systemName: "mic")
                         .font(.body)
-                        .foregroundStyle(Color.primary.opacity(0.76))
+                        // The warm muted ink, which is what a 76%-strength primary was
+                        // reaching for — except an opacity on ink cannot
+                        // participate in contrast adaptation, and this token
+                        // is already measured at the floor.
+                        .foregroundStyle(Color.junoMutedForeground)
                         .frame(width: 30, height: 30)
                         .contentShape(.rect)
                 }
@@ -400,7 +404,7 @@ public struct Composer: View {
                 Button(action: send) {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(canSend ? Color.junoOnAccent : Color.secondary)
+                        .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
                         .frame(width: 30, height: 30)
                         .contentShape(.circle)
                 }
@@ -437,7 +441,7 @@ public struct Composer: View {
                     Circle()
                         .trim(from: 0, to: fraction)
                         .stroke(
-                            isTight ? Color.junoCaution : Color.secondary,
+                            isTight ? Color.junoCaution : Color.junoMutedForeground,
                             style: StrokeStyle(lineWidth: 2, lineCap: .round)
                         )
                         .rotationEffect(.degrees(-90))
@@ -479,7 +483,7 @@ public struct Composer: View {
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
             .disabled(isRunning)
             .help("Attach an image")
             .accessibilityLabel("Attach an image")
@@ -741,7 +745,7 @@ struct ComposerSurface<Controls: View>: View {
             // actually supports.
             .junoGlass(
                 in: RoundedRectangle(
-                    cornerRadius: CGFloat(JunoCornerRadius.composer),
+                    cornerRadius: JunoRadius.composer,
                     style: .continuous
                 ),
                 tint: isDropTargeted ? Color.junoAccent.opacity(0.28) : nil
@@ -784,7 +788,7 @@ struct ComposerSurface<Controls: View>: View {
                         .aspectRatio(contentMode: .fill)
                 } else {
                     Image(systemName: "photo")
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
             }
             .frame(width: 44, height: 44)
@@ -800,7 +804,7 @@ struct ComposerSurface<Controls: View>: View {
                 Image(systemName: "xmark.circle.fill")
                     .font(.caption)
                     .symbolRenderingMode(.palette)
-                    .foregroundStyle(Color.junoOnAccent, Color.secondary)
+                    .foregroundStyle(Color.junoOnAccent, Color.junoMutedForeground)
             }
             .buttonStyle(.plain)
             .offset(x: 5, y: -5)
@@ -868,7 +872,7 @@ struct ComposerSurface<Controls: View>: View {
     private var collapsedDraftCard: some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
             Image(systemName: "doc.plaintext")
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
             VStack(alignment: .leading, spacing: 1) {
                 Text("Large draft").junoRowLabel()
                 Text(NativePromptLimits.collapsedSummary(for: text))
@@ -1033,7 +1037,7 @@ struct TurnContractMenu: View {
                 .lineLimit(1)
             }
             .font(.caption)
-            .foregroundStyle(tint ?? .secondary)
+            .foregroundStyle(tint ?? Color.junoMutedForeground)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()

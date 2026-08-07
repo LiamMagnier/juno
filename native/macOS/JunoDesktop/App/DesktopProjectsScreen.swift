@@ -221,14 +221,14 @@ struct DesktopProjectsScreen: View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             HStack(alignment: .center, spacing: JunoSpace.cozy) {
                 JunoIconView(.projects, size: DesktopProjectMetrics.titleGlyphSize)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .accessibilityHidden(true)
                 Text("Projects")
                     .junoPageHeading()
                 if let indexSummary {
                     Text(indexSummary)
                         .junoCodeSmall()
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .accessibilityIdentifier("Projects count")
                 }
 
@@ -270,7 +270,7 @@ struct DesktopProjectsScreen: View {
     private var searchField: some View {
         HStack(spacing: JunoSpace.tight) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .accessibilityHidden(true)
             TextField("Search projects…", text: $query)
                 .textFieldStyle(.plain)
@@ -280,7 +280,7 @@ struct DesktopProjectsScreen: View {
                     query = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear project search")
@@ -289,8 +289,17 @@ struct DesktopProjectsScreen: View {
         .padding(.horizontal, JunoSpace.cozy)
         .frame(height: DesktopProjectMetrics.searchHeight)
         .background(
+            // `NSColor.controlBackgroundColor` resolves to literal #FFFFFF in
+            // light aqua, and this field runs the width of the screen — so
+            // Projects opened with a full-width band of pure white across the
+            // warmest page in the app, the single coldest surface anywhere in
+            // it. `junoSurface` is the card token (`--card`, 54 44% 99%): still
+            // a step above the canvas, so the field still reads as a control
+            // sunk into the page, but on the same hue family as the paper it
+            // sits on. It is also adaptive, which `controlBackgroundColor` was
+            // only accidentally.
             RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(Color.junoSurface)
         )
     }
 
@@ -781,7 +790,7 @@ private struct DesktopProjectCard<MenuContent: View>: View {
             menu()
         } label: {
             Image(systemName: "ellipsis")
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -799,7 +808,7 @@ private struct DesktopProjectCard<MenuContent: View>: View {
         HStack(spacing: JunoSpace.snug) {
             Text("Updated \(row.updatedAt.formatted(.relative(presentation: .named)))")
                 .junoCodeSmall()
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .lineLimit(1)
             Spacer(minLength: JunoSpace.snug)
             count(.conversation, row.conversationCount, "chats")
@@ -819,7 +828,7 @@ private struct DesktopProjectCard<MenuContent: View>: View {
                 .monospacedDigit()
         }
         .junoCodeSmall()
-        .foregroundStyle(.secondary)
+        .junoSecondaryInk()
         .accessibilityLabel("\(value) \(label)")
     }
 }
@@ -914,12 +923,47 @@ private struct DesktopProjectRow: Identifiable {
     /// Collapsed rather than truncated by `lineLimit` alone: a prompt usually
     /// opens with a heading or a blank line, so the first *visual* line of the
     /// raw text is frequently empty and the card would look broken.
+    ///
+    /// **And stripped of its structural markup, which is the rest of the fix.**
+    /// Juno's own prompt guidance tells people to bracket a system prompt into
+    /// sections, so a real project's instructions commonly begin `<role> You are
+    /// a research assistant… </role> <standing_context>…`. Two lines of that on a
+    /// card spends the entire preview on tag names — the reader sees `<role>` and
+    /// `<standing_context>` and learns nothing about which project this is, which
+    /// is the one job the preview has. The tags are scaffolding for the model,
+    /// not prose for a person, so the card shows the prose between them.
+    ///
+    /// The pattern is deliberately narrow: `<`, an optional `/`, an identifier
+    /// that starts with a letter, optional attributes containing no angle
+    /// bracket, and `>`. Prompts are full of ordinary text and this must not eat
+    /// `a < b`, `->` or `<= 3`, none of which match. Nothing is stripped from the
+    /// stored instructions — this is a display transform on the card alone, and
+    /// the detail page and the editor still show the prompt exactly as written,
+    /// because a prompt is source and a reader editing one needs its structure.
     var instructionsPreview: String {
         let collapsed = project.instructions
             .split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
             .joined(separator: " ")
+        let unwrapped = collapsed
+            .replacingOccurrences(
+                of: #"</?[A-Za-z][A-Za-z0-9_.:-]*(?:\s[^<>]*)?/?>"#,
+                with: " ",
+                options: .regularExpression
+            )
+            // The tags left gaps where they stood; one space, or the preview
+            // reads as a sentence with holes punched through it.
+            .replacingOccurrences(
+                of: #"\s{2,}"#,
+                with: " ",
+                options: .regularExpression
+            )
+            .trimmingCharacters(in: .whitespaces)
+        // A prompt that is *only* markup leaves nothing behind. Falling back to
+        // the collapsed original is more honest than an empty card: it at least
+        // says instructions exist.
+        if !unwrapped.isEmpty { return unwrapped }
         return collapsed.isEmpty ? "No instructions set." : collapsed
     }
 }
@@ -1032,7 +1076,7 @@ private struct DesktopProjectDetail: View {
                 .junoRowLabel()
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .junoSecondaryInk()
         .help("Back to every project")
         .accessibilityIdentifier("All projects")
     }
@@ -1041,7 +1085,7 @@ private struct DesktopProjectDetail: View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             Text("Project")
                 .junoCodeSmall()
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .accessibilityAddTraits(.isHeader)
 
             HStack(alignment: .center, spacing: JunoSpace.cozy) {
@@ -1053,7 +1097,7 @@ private struct DesktopProjectDetail: View {
                     Image(systemName: "pencil")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .disabled(project.isPending)
                 .help("Rename project")
                 .accessibilityLabel("Rename project")
@@ -1078,7 +1122,7 @@ private struct DesktopProjectDetail: View {
                 "^[\(conversations.count) chat](inflect: true) · ^[\(files.count) file](inflect: true) · Updated \(project.updatedAt.formatted(.relative(presentation: .named)))"
             )
             .junoCodeSmall()
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("Project detail header")
@@ -1087,7 +1131,7 @@ private struct DesktopProjectDetail: View {
     private var pinControl: some View {
         Button(action: togglePin) {
             JunoIconView(.pin, size: 16)
-                .foregroundStyle(project.starred ? Color.junoAccent : Color.secondary)
+                .foregroundStyle(project.starred ? Color.junoAccent : Color.junoMutedForeground)
         }
         .buttonStyle(.plain)
         .disabled(project.isPending || model.isMutating)
@@ -1190,7 +1234,7 @@ private struct DesktopProjectDetail: View {
         } label: {
             HStack(spacing: JunoSpace.cozy) {
                 JunoIconView(.conversation, size: 15)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                     Text(conversation.title)
@@ -1201,7 +1245,7 @@ private struct DesktopProjectDetail: View {
                         "Last message \(conversation.lastMessageAt.formatted(.relative(presentation: .named)))"
                     )
                     .junoCodeSmall()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 }
                 Spacer(minLength: JunoSpace.snug)
                 if conversation.pinned {
@@ -1211,7 +1255,7 @@ private struct DesktopProjectDetail: View {
                 }
                 Image(systemName: "chevron.right")
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
                     .accessibilityHidden(true)
             }
             .padding(.horizontal, JunoSpace.regular)
@@ -1250,7 +1294,7 @@ private struct DesktopProjectDetail: View {
                     Image(systemName: "pencil")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .disabled(project.isPending || model.isMutating)
                 .help("Edit this project's instructions")
                 .accessibilityLabel("Edit project instructions")
@@ -1269,13 +1313,13 @@ private struct DesktopProjectDetail: View {
                         // what the reader is checking.
                         Text(project.instructions)
                             .junoCode()
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .lineLimit(4)
                             .multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(instructionsFacts)
                             .junoCodeSmall()
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(JunoSpace.cozy)
@@ -1305,7 +1349,7 @@ private struct DesktopProjectDetail: View {
                     Image(systemName: "plus")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .disabled(project.isPending || model.isPerformingFileAction)
                 .help("Add files to this project")
                 .accessibilityLabel("Add project files")
@@ -1324,7 +1368,7 @@ private struct DesktopProjectDetail: View {
                 ForEach(files) { file in
                     HStack(spacing: JunoSpace.snug) {
                         Image(systemName: DesktopProjectFileFacts.symbol(for: file))
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .accessibilityHidden(true)
                         Text(file.fileName)
                             .junoCaption()
@@ -1334,7 +1378,7 @@ private struct DesktopProjectDetail: View {
                         Spacer(minLength: JunoSpace.snug)
                         Text(DesktopProjectFileFacts.size(of: file))
                             .junoCodeSmall()
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                     }
                 }
             }
@@ -1406,7 +1450,7 @@ private struct DesktopProjectDetail: View {
                     .junoPanel(cornerRadius: JunoRadius.control)
                 Text("\(instructionsFacts) · Updated \(project.updatedAt.formatted(.relative(presentation: .named)))")
                     .junoCodeSmall()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
 
             Text("These instructions are prepended to every chat in this project — Juno reads them before your first message, alongside the files below.")
@@ -1428,7 +1472,7 @@ private struct DesktopProjectDetail: View {
                     eyebrow("Referenced files")
                     Text("^[\(files.count) file](inflect: true) · \(DesktopProjectFileFacts.totalSize(of: files))")
                         .junoCodeSmall()
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
                 Spacer(minLength: JunoSpace.snug)
                 Button(action: addFiles) {
@@ -1453,7 +1497,7 @@ private struct DesktopProjectDetail: View {
 
             Text("Drag and drop anywhere on this page to add files.")
                 .junoCodeSmall()
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(JunoSpace.regular)
@@ -1479,7 +1523,7 @@ private struct DesktopProjectDetail: View {
     private func fileRow(_ file: NativeProjectFile) -> some View {
         HStack(spacing: JunoSpace.snug) {
             Image(systemName: DesktopProjectFileFacts.symbol(for: file))
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 // A link, because activating it opens the file outside Juno —
@@ -1496,7 +1540,7 @@ private struct DesktopProjectDetail: View {
                 .help("Open \(file.fileName)")
                 Text(DesktopProjectFileFacts.detail(for: file))
                     .junoCodeSmall()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
             Spacer(minLength: JunoSpace.snug)
             if model.isPerformingFileAction {
@@ -1531,7 +1575,7 @@ private struct DesktopProjectDetail: View {
     private func eyebrow(_ text: String) -> some View {
         Text(text)
             .junoCodeSmall()
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
             .accessibilityAddTraits(.isHeader)
     }
 
@@ -1576,7 +1620,7 @@ private struct DesktopProjectPlaceholder: View {
             if let symbol {
                 Image(systemName: symbol)
                     .font(.title2)
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
             }
             if let title {
                 Text(title)
@@ -1755,6 +1799,19 @@ private struct DesktopNewProjectSheet: View {
         }
         .padding(JunoSpace.section)
         .frame(width: 520)
+        // The sheet contract, from `JunoOverlays.swift`. This sheet painted no
+        // ground at all, so the system's neutral window grey showed through and a
+        // cold rectangle opened out of a warm cream window — eight of the app's
+        // nine macOS sheets had the same defect, and `DesktopTaskEditor` was the
+        // one that did not. `junoSheetSurface` is that pattern named: it puts the
+        // warm canvas down *inside* the content and touches nothing else. The
+        // platter, its Liquid Glass material, its corner radius and its shadow
+        // stay the system's — `.presentationBackground` would replace all four,
+        // which is why the contract forbids it.
+        //
+        // `.fitted` because the content already declares its own frame; `.form`
+        // would impose a standard width and fight it.
+        .junoSheetSurface(.fitted)
     }
 }
 
@@ -1840,5 +1897,8 @@ private struct DesktopProjectInstructionsSheet: View {
         }
         .padding(JunoSpace.section)
         .frame(width: 580, height: 460)
+        // Sheet contract: the warm ground inside the content, the platter left
+        // to the system. `.fitted` because the frame above is the size it wants.
+        .junoSheetSurface(.fitted)
     }
 }

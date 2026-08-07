@@ -1,4 +1,5 @@
 import JunoChatKit
+import JunoDesignSystem
 import JunoStorage
 import SwiftUI
 
@@ -13,7 +14,7 @@ struct JunoMacSearchView: View {
             VStack(spacing: 0) {
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .accessibilityHidden(true)
                     TextField(
                         "Search chats, messages, projects, files, artifacts and memory",
@@ -33,7 +34,7 @@ struct JunoMacSearchView: View {
                             model.setQuery("", debounced: false)
                         } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Clear search")
@@ -94,7 +95,7 @@ struct JunoMacSearchView: View {
                             HStack(spacing: 12) {
                                 Image(systemName: icon(result.kind))
                                     .frame(width: 24)
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                                     .accessibilityHidden(true)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(result.title).lineLimit(1)
@@ -103,14 +104,14 @@ struct JunoMacSearchView: View {
                                     {
                                         Text(result.snippet)
                                             .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                            .junoSecondaryInk()
                                             .lineLimit(2)
                                     }
                                 }
                                 Spacer()
                                 Text(result.updatedAt, style: .relative)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                             }
                             .contentShape(Rectangle())
                         }

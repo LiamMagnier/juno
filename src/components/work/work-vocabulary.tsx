@@ -35,10 +35,17 @@ const STATUS_META: Record<WorkStatus, StatusMeta> = {
     tone: "neutral",
     sentence: "This task has been written but never started, so nothing is running and nothing is queued.",
   },
+  // "Executor" is Juno's word for the thing that claims a run, and it was in
+  // this sentence for years. Nobody outside this repository knows what one is,
+  // and the reader does not need to: the fact they are being told is that
+  // nothing has started yet. A resumed run comes back through here too — the
+  // control route puts it back to `queued` with the lease released — so the
+  // sentence has to be true of a second start as well as a first, which is why
+  // it says nothing about this being the beginning.
   queued: {
     label: "Queued",
     tone: "neutral",
-    sentence: "Waiting for an executor to pick this up.",
+    sentence: "Waiting to be picked up. Nothing is running yet.",
   },
   preparing: {
     label: "Preparing",
@@ -68,17 +75,54 @@ const STATUS_META: Record<WorkStatus, StatusMeta> = {
   // classifying provider failures that detail is a sentence rather than an HTTP
   // status.
   failed: { label: "Failed", tone: "bad", sentence: "This stopped before it finished." },
-  cancelled: { label: "Cancelled", tone: "neutral", sentence: "This was cancelled before it finished." },
+  // The same correction as `failed`, one status along, and for the same reason:
+  // the old sentence — "This was cancelled before it finished" — named a decision
+  // that in several cases nobody made.
+  //
+  // `statusForTerminalReason` maps BOTH `cancelled` and `superseded` here, and
+  // `superseded` is written by `recordMarkerRun` in scripts/work-scheduler.ts for
+  // a scheduled fire the user's own missed-run policy told the schedule to drop.
+  // That run never started, so there was nothing to cancel; the marker run is
+  // also the newest attempt on its session, which is precisely the case where
+  // `finishRun` does denormalise the status onto the session — so this is the
+  // sentence the reader gets. Deleting a session or a schedule cancels the runs
+  // under it too, which is a third actor again.
+  //
+  // So it says what is true of all of them — something outside the work stopped
+  // it — and adds the one fact the reader acts on: `isResumableTerminalReason`
+  // returns false for both reasons, so the checkpoint is dropped and a retry
+  // starts from the goal rather than from where this got to.
+  cancelled: {
+    label: "Cancelled",
+    tone: "neutral",
+    sentence: "This was stopped rather than finished, and it will not be picked up where it left off.",
+  },
   interrupted: {
     label: "Interrupted",
     tone: "attention",
     sentence:
       "The executor stopped reporting and its lease expired. Juno does not restart an interrupted run on its own, because it may already have changed something.",
   },
+  // Two untrue clauses, both removed.
+  //
+  // "Went away mid-run" describes a run that was under way and lost its machine.
+  // Nothing produces that. Every `host_offline` ending in the codebase comes from
+  // `recordMarkerRun` — in scripts/work-scheduler.ts and scripts/work-trigger-poller.ts
+  // — which creates a run and finishes it in the same breath with
+  // `effectiveTarget: null` and the comment "nothing ran anywhere". The Mac was
+  // unreachable when the fire came due, so the work never started at all. Telling
+  // somebody their run was cut off half way sends them to check what it managed to
+  // change first, which is the wrong first move for a task that did nothing.
+  //
+  // "Or move the task to the cloud" named a control the browser does not have. The
+  // composer always requests `automatic` and Retry on the task page re-dispatches
+  // without a target, so there is no per-task switch to move; the target that CAN
+  // be changed belongs to the schedule, and its own editor is where that is said.
+  // The sentence now offers the move that exists here.
   host_offline: {
     label: "Mac unreachable",
     tone: "attention",
-    sentence: "The Mac this needed went away mid-run. Wake it and retry, or move the task to the cloud.",
+    sentence: "This had to run on a Mac and none was reachable, so it did not start. Wake the Mac and run it again.",
   },
   budget_exceeded: {
     label: "Hit its limit",
@@ -98,6 +142,82 @@ export function statusLabel(status: WorkStatus): string {
 
 export function statusSentence(status: WorkStatus): string {
   return STATUS_META[status].sentence;
+}
+
+/**
+ * How long a task that is supposed to be executing may record nothing before a
+ * row says so out loud.
+ *
+ * `appendEvents` bumps `WorkSession.lastActivityAt` on every batch it writes, so
+ * for a run in `preparing` or `running` that column is a genuine heartbeat of the
+ * transcript rather than a timestamp of the last status change. Silence on it is
+ * therefore real silence — but it is not by itself a fault, which is what the
+ * number has to respect. A single tool call can legitimately take minutes: a
+ * large fetch, a long shell command, a model thinking hard at high effort. Ten
+ * minutes is well past all of those and still well short of the point where
+ * somebody would have given up and reloaded the page.
+ *
+ * Deliberately unrelated to `RUN_LEASE_MS`. The lease is renewed on a timer by
+ * the executor and says only that a process is alive; this says whether the work
+ * is producing anything. A run can hold its lease perfectly while stuck.
+ */
+export const WORK_QUIET_AFTER_MS = 10 * 60 * 1000;
+
+/**
+ * What a task is doing right now, for a row in a list.
+ *
+ * `statusSentence` on its own answers "what state is this in", which the pill
+ * beside it has already said. The one thing a list row can add — from the
+ * session columns a list response actually carries, and without asking the
+ * server for anything more — is whether a task that claims to be executing has
+ * recorded anything lately. A run that has been quiet for half an hour and one
+ * that wrote an event four seconds ago render identically otherwise, and they
+ * are the two cases a reader most needs told apart.
+ *
+ * Stated as an observation and not as a diagnosis. Juno does not know that a
+ * quiet run is stuck — it may be inside one long tool call — so the row reports
+ * the silence and leaves the conclusion to the reader, who can open the task and
+ * see. Claiming a fault here would put a red flag on a run that is working.
+ *
+ * Reads the clock, like `workTimeAgo`, and is safe for the same reason: it is
+ * only ever called from a row that exists because a fetch resolved, which is
+ * always after mount, so no server render can disagree with it.
+ */
+export function statusActivity(status: WorkStatus, lastActivityAt: string): string {
+  const sentence = STATUS_META[status].sentence;
+  if (status !== "preparing" && status !== "running") return sentence;
+  const then = new Date(lastActivityAt).getTime();
+  if (Number.isNaN(then)) return sentence;
+  const quiet = Date.now() - then;
+  if (quiet < WORK_QUIET_AFTER_MS) return sentence;
+  return `${sentence} Nothing new has been recorded for ${quietFor(quiet)}.`;
+}
+
+/**
+ * A silence, in the coarsest unit that still says something.
+ *
+ * Not `formatDuration`, which is built for how long a tool call took and renders
+ * eleven minutes as "11m 4s". The seconds are meaningless at this scale and they
+ * make the row look like a stopwatch on a task nobody is timing.
+ */
+function quietFor(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 60) return `${minutes} minutes`;
+  const hours = Math.floor(minutes / 60);
+  return hours === 1 ? "an hour" : `${hours} hours`;
+}
+
+/**
+ * The files a finished task left behind, counted.
+ *
+ * Only ever rendered for a count of one or more. There is no "no files" form on
+ * purpose: the browser learns about deliverables from a list that is capped and
+ * ordered by recency, so an absent count means "none were seen", which is not
+ * the same claim as "none were made" — and a row is not the place to make the
+ * stronger one. See `fetchWorkOutputCounts`.
+ */
+export function outputsLabel(count: number): string {
+  return count === 1 ? "1 file" : `${count} files`;
 }
 
 const DOT_CLASS: Record<StatusTone, string> = {

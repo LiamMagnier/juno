@@ -59,8 +59,8 @@ export function WorkOutcomeDigest({
   if (performed.actions.length > 0) {
     lines.push(
       performed.actions.length === 1
-        ? "One action changed something outside Juno. It is listed under What it produced."
-        : `${performed.actions.length} actions changed something outside Juno. They are listed under What it produced.`
+        ? "One action changed something outside Juno. It is listed under Outputs."
+        : `${performed.actions.length} actions changed something outside Juno. They are listed under Outputs.`
     );
   } else if (performed.unclassified > 0) {
     // The honest middle case, and the reason this is not a yes/no. A local

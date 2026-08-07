@@ -9,34 +9,47 @@ import { cn } from "@/lib/utils";
 /*
  * The shape of the run-detail rail, and the rules that decide what is in it.
  *
- * The rail used to render eight panels unconditionally, each under an identical
- * mono heading, each with a one-to-three-line sentence explaining why it was
- * empty. A fourteen-second failed run therefore produced eight headings and six
- * paragraphs of apology, and because every panel had the same weight, none of
- * them had any: the reader could not tell which of the eight answered the
- * question they had actually come with.
+ * The rail used to render eight panels under four headings — Plan, Activity,
+ * Approvals, Files and sources, Documents, Skills and apps, Actions performed,
+ * Run settings — grouped as "What happened / Where it got to / Progress / What
+ * it produced / How it ran". Every one of those is a true label and none of them
+ * is a question anybody arrives with. A reader opens this page wanting three
+ * things, in this order: how far did it get, what did it make, and what could it
+ * see. Eight headings is what you build when you file the answers by their
+ * source instead of by the question.
  *
- * Three changes, and this file holds the machinery for all three.
+ * So the rail is now three named sections and a footnote:
  *
- * 1. A panel is omitted when it has nothing in it. An absent panel says "there
- *    is nothing here" faster and more honestly than a sentence saying so, and it
- *    costs the reader no scrolling. The exceptions are deliberate and named in
- *    the table below: an empty Activity panel on a live run means "waiting for
- *    the first step", which is worth reading, and an empty Actions-performed
- *    panel on a failed run means "nothing was left behind", which is the first
- *    thing anybody wants to know before pressing Try again.
+ *   Progress   the plan as a checklist being crossed off, with the feed and the
+ *              decisions underneath it rather than beside it.
+ *   Outputs N  what the run actually produced, counted in the heading so a
+ *              closed section still answers "did it make anything".
+ *   Context    what it could see and reach — the pages it read, the skills it
+ *              may apply, the apps the account has linked.
+ *   How it ran the model, the target, the attempt and the budget bars. Reference
+ *              rather than narrative, so it sits last and closed.
  *
- * 2. Panels have weight. `primary` is the one or two panels this run state is
- *    actually about; `standard` is supporting; `quiet` collapses to a single row
- *    the reader can open. Weight is carried by the heading's colour and by
- *    whether the panel is open, not by borders or cards — this is a reading
- *    surface, and the depth kit belongs to chrome and controls.
+ * Three rules hold the thing together, and this file holds the machinery for all
+ * three.
  *
- * 3. Weight follows the run's state. What matters while a task is running is not
- *    what matters after it has failed, and neither is what matters on a draft
- *    that has never been started. `RAIL_POLICY` is that judgement written down in
- *    one place rather than scattered through five branches of JSX, so the whole
- *    hierarchy can be read — and argued with — at a glance.
+ * 1. Every section is a disclosure with a chevron, and the reader's choice is
+ *    remembered for the rest of the browser session. Somebody who closes
+ *    Progress on one task has said something about how they read this page, not
+ *    about that task, and re-opening it on the next one is the rail overruling
+ *    them once per navigation.
+ *
+ * 2. A section with nothing in it is a heading and nothing else. Not a sentence
+ *    apologising for the emptiness — that was six paragraphs of apology on a
+ *    fourteen-second failed run, and it is the single thing this rewrite exists
+ *    to stop printing. The one exception is a finished run that produced no
+ *    files, where "it made nothing" is the answer rather than the absence of
+ *    one, and that line is written where it is known: in the Outputs section.
+ *
+ * 3. Order is fixed; only openness moves. The old rail reordered its groups per
+ *    phase, which meant the reader learned a layout that then changed under
+ *    them the moment a run finished. Progress, Outputs, Context, How it ran —
+ *    always, in that order — and `RAIL_POLICY` decides which of them arrive
+ *    open.
  */
 
 // ---------------------------------------------------------------------------
@@ -81,311 +94,294 @@ export function deriveRunPhase(input: {
 // The policy table
 // ---------------------------------------------------------------------------
 
-export type PanelTone = "primary" | "standard" | "quiet";
+export type RailSectionName = "progress" | "outputs" | "context" | "setup";
 
-export interface PanelPolicy {
-  tone: PanelTone;
-  /** Whether the panel starts open. Quiet panels usually do not. */
-  open: boolean;
-  /**
-   * Render the panel even with nothing in it.
-   *
-   * True only where the empty state is itself the answer — "waiting for the
-   * first step" on a live run, "nothing was changed" on a failed one. Everywhere
-   * else an empty panel is omitted, because a heading over a sentence about
-   * emptiness is the thing this rail was rebuilt to stop printing.
-   */
-  whenEmpty: boolean;
-  /** False removes the panel from this phase entirely, filled or not. */
+/** The reading order, and it does not vary. See rule 3 at the top of the file. */
+export const RAIL_ORDER: readonly RailSectionName[] = ["progress", "outputs", "context", "setup"];
+
+export interface SectionPolicy {
+  /** False removes the section from this phase entirely, filled or not. */
   shown: boolean;
+  /** Whether it arrives open. A reader's own choice, once made, outranks this. */
+  open: boolean;
 }
 
-export type PanelName =
-  | "plan"
-  | "activity"
-  | "approvals"
-  | "references"
-  | "documents"
-  | "toolbox"
-  | "performed"
-  | "settings"
-  | "attempts";
-
-const HIDDEN: PanelPolicy = { tone: "quiet", open: false, whenEmpty: false, shown: false };
-const PRIMARY: PanelPolicy = { tone: "primary", open: true, whenEmpty: false, shown: true };
-const STANDARD: PanelPolicy = { tone: "standard", open: true, whenEmpty: false, shown: true };
-const QUIET: PanelPolicy = { tone: "quiet", open: false, whenEmpty: true, shown: true };
-
 /**
- * Which panels matter, and how much, in each state a run can be in.
+ * Which sections a run in each state gets, and which of them arrive open.
  *
  * Read it as a table rather than as code. Every cell is a claim about what the
  * reader wants at that moment, and the claims are meant to be disagreed with in
- * one place instead of hunted for in nine.
+ * one place instead of hunted for through four branches of JSX.
  *
- * Two entries are worth their comment on the spot:
+ * Two of the claims are worth their comment on the spot:
  *
- *  - `documents` and `toolbox` are the only panels whose emptiness this page
- *    cannot know. Both fetch their own data — the artifact list and the account's
- *    skills and connectors — so "omit when empty" is not available to them and
- *    `quiet` is what they get instead: one collapsed row, opened on demand, which
- *    costs a line rather than a paragraph. `documents` is promoted on a finished
- *    run because what a task made is the whole point of having finished it.
- *  - `settings` is quiet almost everywhere and open on a failure, because that
- *    panel holds the budget bars and the degradation notes, and a run that
- *    stopped at its ceiling is explained there and nowhere else.
+ *  - Context arrives closed everywhere except on a draft, and the reason is
+ *    mechanical as well as editorial: the skills and apps it holds are fetched
+ *    when the section opens, so a rail that opened it by default would spend two
+ *    requests per page load on a list most readers never look at. On a draft it
+ *    is the point — what this task may reach is exactly what somebody checks
+ *    before pressing Start.
+ *  - Outputs arrives open in every phase that has it, even when the count is
+ *    zero. An open section holding nothing costs one line and a heading; a
+ *    closed one asks the reader to click to discover there was nothing to click
+ *    for.
  */
-export const RAIL_POLICY: Record<RunPhase, Record<PanelName, PanelPolicy>> = {
+export const RAIL_POLICY: Record<RunPhase, Record<RailSectionName, SectionPolicy>> = {
   draft: {
-    // Nothing has happened, so nothing can be reported. The rail shows what the
-    // task WILL run as and what it may reach for, which are the two things
-    // somebody checks before pressing Start.
-    plan: HIDDEN,
-    activity: HIDDEN,
-    approvals: HIDDEN,
-    references: HIDDEN,
-    documents: HIDDEN,
-    toolbox: { tone: "standard", open: true, whenEmpty: true, shown: true },
-    performed: HIDDEN,
-    settings: { tone: "primary", open: true, whenEmpty: true, shown: true },
-    attempts: HIDDEN,
+    // Nothing has happened, so nothing can be reported. What is worth showing is
+    // what the task WILL run as and what it may reach for.
+    progress: { shown: false, open: false },
+    outputs: { shown: false, open: false },
+    context: { shown: true, open: true },
+    setup: { shown: true, open: true },
   },
   attention: {
-    // Something is blocking on the reader. The plan says what the decision is
-    // for; the feed says how it got here. Everything else waits.
-    plan: PRIMARY,
-    activity: { tone: "primary", open: true, whenEmpty: true, shown: true },
-    approvals: PRIMARY,
-    references: STANDARD,
-    documents: QUIET,
-    toolbox: QUIET,
-    performed: STANDARD,
-    settings: QUIET,
-    attempts: STANDARD,
+    progress: { shown: true, open: true },
+    outputs: { shown: true, open: true },
+    context: { shown: true, open: false },
+    setup: { shown: true, open: false },
   },
   live: {
-    plan: PRIMARY,
-    activity: { tone: "primary", open: true, whenEmpty: true, shown: true },
-    approvals: STANDARD,
-    references: STANDARD,
-    documents: QUIET,
-    toolbox: QUIET,
-    performed: STANDARD,
-    settings: QUIET,
-    attempts: STANDARD,
+    progress: { shown: true, open: true },
+    outputs: { shown: true, open: true },
+    context: { shown: true, open: false },
+    setup: { shown: true, open: false },
   },
   failed: {
-    // A failure is a diagnosis, not a dead end. What it got through, what it
-    // left behind and what it ran as are the three questions, and the last of
-    // those lives in the settings panel with the budget bars.
-    plan: { tone: "standard", open: true, whenEmpty: false, shown: true },
-    activity: { tone: "primary", open: true, whenEmpty: true, shown: true },
-    approvals: STANDARD,
-    references: STANDARD,
-    documents: QUIET,
-    toolbox: QUIET,
-    performed: { tone: "primary", open: true, whenEmpty: true, shown: true },
-    settings: { tone: "standard", open: true, whenEmpty: true, shown: true },
-    attempts: PRIMARY,
+    progress: { shown: true, open: true },
+    outputs: { shown: true, open: true },
+    context: { shown: true, open: false },
+    // Opened by the page when the run recorded a degradation — see the note at
+    // its call site. A run that stopped at its ceiling is explained by the
+    // budget bars in here and nowhere else.
+    setup: { shown: true, open: false },
   },
   done: {
-    // It worked. What it produced outranks how it produced it, and the feed
-    // becomes a record to open rather than a thing to watch.
-    plan: QUIET,
-    activity: QUIET,
-    approvals: QUIET,
-    references: STANDARD,
-    documents: { tone: "primary", open: true, whenEmpty: true, shown: true },
-    toolbox: QUIET,
-    performed: STANDARD,
-    settings: QUIET,
-    attempts: STANDARD,
+    progress: { shown: true, open: true },
+    outputs: { shown: true, open: true },
+    context: { shown: true, open: false },
+    setup: { shown: true, open: false },
   },
 };
 
-/** Whether a panel with this policy, holding this much, is rendered at all. */
-export function panelVisible(policy: PanelPolicy, filled: boolean): boolean {
-  return policy.shown && (filled || policy.whenEmpty);
-}
-
-/**
- * A policy as the props `RailPanel` takes.
- *
- * The one rule folded in here rather than repeated at nine call sites: a quiet
- * panel is a disclosure. That is what "quiet" means on this rail — not a
- * lighter heading over the same paragraph, but a panel that has to be asked for.
- */
-export function panelProps(policy: PanelPolicy, count?: number | null) {
-  return {
-    tone: policy.tone,
-    collapsible: policy.tone === "quiet",
-    defaultOpen: policy.open,
-    count: count ?? null,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Groups
-// ---------------------------------------------------------------------------
-
-export type GroupName = "outcome" | "progress" | "produced" | "setup";
-
-/**
- * Which groups the rail shows and in what order.
- *
- * The order is the argument. A finished task leads with what it made; a failed
- * one leads with what happened; a live one leads with what it is doing. Same
- * panels, different first paragraph — which is the difference between a rail
- * that answers the reader's question and a rail that files it alphabetically.
- */
-export const RAIL_GROUPS: Record<RunPhase, readonly GroupName[]> = {
-  draft: ["setup"],
-  attention: ["progress", "produced", "setup"],
-  live: ["progress", "produced", "setup"],
-  failed: ["outcome", "progress", "produced", "setup"],
-  done: ["produced", "progress", "setup"],
-};
-
-const GROUP_TITLE: Record<GroupName, string> = {
-  outcome: "What happened",
+const SECTION_TITLE: Record<RailSectionName, string> = {
   progress: "Progress",
-  produced: "What it produced",
+  outputs: "Outputs",
+  context: "Context",
   setup: "How it ran",
 };
 
-/** `setup` is the one group whose title is a tense rather than a fact. */
-export function groupTitle(name: GroupName, phase: RunPhase): string {
-  if (name === "setup" && phase === "draft") return "How it will run";
-  if (name === "setup" && (phase === "live" || phase === "attention")) return "How it is running";
-  return GROUP_TITLE[name];
-}
-
-export function RailGroup({
-  title,
-  children,
-}: {
-  title: string;
-  /** Null children are expected: a group whose panels are all empty renders nothing. */
-  children: React.ReactNode;
-}) {
-  const headingId = React.useId();
-  // `toArray` drops null, undefined and booleans and flattens nested arrays, so
-  // this counts panels that will actually render rather than expressions that
-  // were written. A group whose every panel was omitted must not leave its
-  // heading and its rule behind — that is the same empty-heading problem one
-  // level up.
-  const filled = React.Children.toArray(children).length > 0;
-  if (!filled) return null;
-
-  return (
-    <section aria-labelledby={headingId}>
-      <h2
-        id={headingId}
-        className="mb-3.5 border-b border-border/60 pb-2 font-mono text-label text-foreground/80"
-      >
-        {title}
-      </h2>
-      <div className="space-y-6">{children}</div>
-    </section>
-  );
+/** `setup` is the one title that is a tense rather than a fact. */
+export function sectionTitle(name: RailSectionName, phase: RunPhase): string {
+  if (name !== "setup") return SECTION_TITLE[name];
+  if (phase === "draft") return "How it will run";
+  if (phase === "live" || phase === "attention") return "How it is running";
+  return SECTION_TITLE.setup;
 }
 
 // ---------------------------------------------------------------------------
-// One panel
+// Remembering which sections the reader keeps open
 // ---------------------------------------------------------------------------
 
-const HEADING_TONE: Record<PanelTone, string> = {
-  primary: "text-foreground",
-  standard: "text-muted-foreground",
-  quiet: "text-muted-foreground/70",
-};
+const DISCLOSURE_PREFIX = "juno.work.rail.";
 
 /**
- * One panel in the rail.
+ * Session storage rather than local storage, and deliberately.
  *
- * A quiet panel is a disclosure rather than a heading with a paragraph under it:
- * closed it costs one row, and the count beside its name is what tells the
- * reader whether opening it is worth doing. That is the whole mechanism by which
- * a panel earns its space — it has to say how much it holds before it is allowed
- * to hold the screen.
+ * How somebody reads this page is a mood, not a setting. A reader who collapses
+ * Progress while chasing a failure wants it collapsed for the next four tasks
+ * they open in that sitting; they do not want to come back next week to a rail
+ * they configured once and forgot about. `sessionStorage` expires exactly when
+ * that sitting does.
  *
- * The heading level is `h3` under the group's `h2` under the page's `h1`, so the
- * rail is navigable by headings rather than being a flat run of same-level
- * labels that a screen-reader user has to read through in order.
+ * Both accessors swallow their errors. Safari's private mode and a sandboxed
+ * frame throw on access rather than returning null, and a rail that cannot
+ * remember is a rail that opens on its defaults — which is where it was before
+ * any of this existed.
  */
-export function RailPanel({
+function readDisclosure(key: string): boolean | null {
+  try {
+    const raw = window.sessionStorage.getItem(DISCLOSURE_PREFIX + key);
+    return raw === null ? null : raw === "open";
+  } catch {
+    return null;
+  }
+}
+
+function writeDisclosure(key: string, open: boolean): void {
+  try {
+    window.sessionStorage.setItem(DISCLOSURE_PREFIX + key, open ? "open" : "closed");
+  } catch {
+    // Nothing to recover: the next render simply falls back to the default.
+  }
+}
+
+/**
+ * One disclosure's open state, with three inputs and a strict order of
+ * precedence between them.
+ *
+ * 1. The reader's own click, this render onwards. Always wins.
+ * 2. What they clicked earlier in this browser session, read back from storage.
+ * 3. The phase's default.
+ *
+ * The reason 1 and 2 have to outrank 3 is a bug that was live in the old rail: a
+ * run finishing moves the page from `live` to `done`, which flipped panels open
+ * and shut underneath a reader who had opened one thirty seconds earlier to
+ * watch it fill. The default is a starting position, not a standing instruction.
+ *
+ * And a default that changes while the page is open may OPEN a disclosure and
+ * may never close one. Both directions have a case: a run recording a
+ * degradation should open How it ran, because that is where the explanation
+ * lands; a plan arriving on a run that did not have one should NOT close the
+ * activity feed the reader has been watching for the last two minutes. Allowing
+ * only the opening direction gets both, and it is the same principle as the
+ * paragraph above — nothing the rail decides on its own takes something away
+ * from the reader.
+ *
+ * Storage is read in an effect rather than during render on purpose. This
+ * component is server-rendered, `sessionStorage` does not exist there, and a
+ * first paint that disagreed with the server's would be exactly the hydration
+ * mismatch this codebase keeps warning about. The cost is that a remembered
+ * section can flash its default for one frame; the alternative is a React
+ * hydration error on every load of the page.
+ */
+function useRailDisclosure(key: string, defaultOpen: boolean): [boolean, () => void] {
+  const [open, setOpen] = React.useState(defaultOpen);
+  const chosen = React.useRef(false);
+
+  // Declared before the default-tracking effect below so it runs first on mount:
+  // a remembered value marks the disclosure as chosen, which is what stops the
+  // phase default from immediately overwriting it.
+  React.useEffect(() => {
+    const stored = readDisclosure(key);
+    if (stored === null) return;
+    chosen.current = true;
+    setOpen(stored);
+  }, [key]);
+
+  React.useEffect(() => {
+    if (chosen.current) return;
+    if (defaultOpen) setOpen(true);
+  }, [defaultOpen]);
+
+  const toggle = React.useCallback(() => {
+    chosen.current = true;
+    setOpen((current) => {
+      const next = !current;
+      writeDisclosure(key, next);
+      return next;
+    });
+  }, [key]);
+
+  return [open, toggle];
+}
+
+// ---------------------------------------------------------------------------
+// One section
+// ---------------------------------------------------------------------------
+
+/**
+ * One of the rail's four sections.
+ *
+ * The heading is an `h2` under the page's `h1`, and the disclosures nested
+ * inside it are `h3`s — so the rail is navigable by heading rather than being a
+ * flat run of same-level labels a screen-reader user has to read through in
+ * order to find the one they want.
+ *
+ * `meta` is the count, or the tally, or whatever short mono fact makes a closed
+ * section still worth having: "Outputs 3" answers its own question without being
+ * opened, and that is the whole mechanism by which a section earns its space —
+ * it has to say how much it holds before it is allowed to hold the screen.
+ *
+ * Children are unmounted while closed, not merely hidden. Context fetches the
+ * account's skills and connectors when it mounts, and a rail that opened two
+ * requests nobody asked for on every page load is the cost this pays for.
+ */
+export function RailSection({
+  name,
   title,
-  tone = "standard",
-  count = null,
-  collapsible = false,
-  defaultOpen = true,
-  id,
+  meta = null,
+  defaultOpen,
   children,
 }: {
+  /** Doubles as the storage key, so the choice follows the section across tasks. */
+  name: RailSectionName;
   title: string;
-  tone?: PanelTone;
-  /** Shown beside the title, so a closed panel still says how much is behind it. */
-  count?: number | null;
-  collapsible?: boolean;
-  defaultOpen?: boolean;
-  /** Set where something needs to link to this panel. */
-  id?: string;
+  meta?: string | null;
+  defaultOpen: boolean;
   children: React.ReactNode;
 }) {
   const headingId = React.useId();
   const contentId = React.useId();
-  const [open, setOpen] = React.useState(defaultOpen);
-
-  /*
-   * The default changes underneath the reader, and their own choice must survive
-   * it.
-   *
-   * A run finishing moves the rail from `live` to `done`, which closes the
-   * Activity panel and opens Documents. That is right for a reader who has not
-   * touched anything — and wrong for one who opened Documents thirty seconds
-   * ago to watch it fill, only to have the panel they were reading collapse the
-   * instant the run ended. So the phase's default is applied until the reader
-   * overrules it, and never again after.
-   */
-  const touched = React.useRef(false);
-  React.useEffect(() => {
-    if (touched.current) return;
-    setOpen(defaultOpen);
-  }, [defaultOpen]);
-
-  const label = (
-    <>
-      <span className={cn("font-mono text-[11px] tracking-[0.1em]", HEADING_TONE[tone])}>
-        {title}
-      </span>
-      {count !== null && count > 0 && (
-        <span className="font-mono text-[10px] tabular-nums text-muted-foreground/60">{count}</span>
-      )}
-    </>
-  );
-
-  if (!collapsible) {
-    return (
-      <section id={id} aria-labelledby={headingId}>
-        <h3 id={headingId} className="mb-2.5 flex items-baseline gap-2">
-          {label}
-        </h3>
-        {children}
-      </section>
-    );
-  }
+  const [open, toggle] = useRailDisclosure(name, defaultOpen);
 
   return (
-    <section id={id} aria-labelledby={headingId}>
+    <section aria-labelledby={headingId}>
+      <h2 id={headingId} className="m-0">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={contentId}
+          onClick={toggle}
+          className="group flex w-full items-baseline gap-2 rounded border-b border-border/60 pb-2 text-left transition-colors duration-base ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ChevronRight
+            className={cn(
+              "h-3 w-3 shrink-0 translate-y-[1px] text-muted-foreground/50 transition-transform duration-base ease-out-soft group-hover:text-muted-foreground",
+              open && "rotate-90"
+            )}
+            aria-hidden="true"
+          />
+          <span className="font-mono text-label text-foreground/80">{title}</span>
+          {meta !== null && (
+            <span className="font-mono text-[10px] tabular-nums text-muted-foreground/60">
+              {meta}
+            </span>
+          )}
+        </button>
+      </h2>
+      <div id={contentId} hidden={!open} className={cn(open && "mt-3.5 space-y-5")}>
+        {open && children}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * A disclosure inside a section: the activity feed under the plan, the decided
+ * approvals under it, the actions performed under the outputs.
+ *
+ * These are the parts of the old rail that were true but subordinate. The feed
+ * is the record of every step, and it is not what somebody came for — the plan
+ * is. Keeping it one click away rather than one panel away is the difference
+ * between a rail that reads as a narrative and a rail that reads as a log.
+ */
+export function RailDisclosure({
+  storageKey,
+  title,
+  meta = null,
+  defaultOpen = false,
+  children,
+}: {
+  /** Null for a disclosure whose openness is not worth remembering. */
+  storageKey: string;
+  title: string;
+  meta?: string | null;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const headingId = React.useId();
+  const contentId = React.useId();
+  const [open, toggle] = useRailDisclosure(storageKey, defaultOpen);
+
+  return (
+    <section aria-labelledby={headingId}>
       <h3 id={headingId} className="m-0">
         <button
           type="button"
           aria-expanded={open}
           aria-controls={contentId}
-          onClick={() => {
-            touched.current = true;
-            setOpen((current) => !current);
-          }}
+          onClick={toggle}
           className="group flex w-full items-baseline gap-2 rounded py-0.5 text-left transition-colors duration-base ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight
@@ -395,16 +391,33 @@ export function RailPanel({
             )}
             aria-hidden="true"
           />
-          {label}
+          <span className="font-mono text-[11px] tracking-[0.1em] text-muted-foreground">
+            {title}
+          </span>
+          {meta !== null && (
+            <span className="font-mono text-[10px] tabular-nums text-muted-foreground/60">
+              {meta}
+            </span>
+          )}
         </button>
       </h3>
-      {/* Kept mounted only while open. Documents and the toolbox both fetch on
-          mount, and a rail that opened four requests nobody asked for on every
-          page load is the cost this collapse exists to avoid. */}
       <div id={contentId} hidden={!open} className={cn(open && "mt-2.5")}>
         {open && children}
       </div>
     </section>
+  );
+}
+
+/**
+ * A heading with no disclosure, for a part of a section that is always open.
+ *
+ * Used inside Context, where the read sources and the toolbox are two halves of
+ * one answer rather than two things to choose between. Same heading level as
+ * `RailDisclosure` so the outline stays consistent whichever a section uses.
+ */
+export function RailHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="mb-1.5 font-mono text-[10px] text-muted-foreground/70">{children}</h3>
   );
 }
 
@@ -453,6 +466,32 @@ export function WorkRunAnnouncer({
   return (
     <p aria-live="polite" aria-atomic="true" className="sr-only">
       {message}
+    </p>
+  );
+}
+
+/**
+ * A number in a heading, said out loud when it changes and not before.
+ *
+ * The visible count beside "Outputs" updates silently as a run writes files,
+ * which is right for a reader watching it and useless for one who is not. This
+ * is the same fact as a polite announcement — "2 outputs" — and it is the only
+ * thing in the rail besides the status that interrupts anybody.
+ *
+ * Same first-paint rule as `WorkRunAnnouncer`, for the same reason: text present
+ * when a live region is created is announced by some screen readers as though it
+ * had just changed, and "0 outputs" on page load is not news.
+ */
+export function RailLiveCount({ message }: { message: string }) {
+  const [announced, setAnnounced] = React.useState("");
+
+  React.useEffect(() => {
+    setAnnounced(message);
+  }, [message]);
+
+  return (
+    <p aria-live="polite" aria-atomic="true" className="sr-only">
+      {announced}
     </p>
   );
 }

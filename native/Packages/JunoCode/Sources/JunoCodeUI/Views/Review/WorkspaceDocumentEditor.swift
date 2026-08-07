@@ -56,7 +56,7 @@ struct WorkspaceDocumentEditor: View {
                     .junoRowLabel()
                 Text(document.path.value)
                     .junoCodeSmall()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .lineLimit(1)
                     .truncationMode(.head)
             }

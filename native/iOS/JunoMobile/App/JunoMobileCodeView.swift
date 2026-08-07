@@ -240,7 +240,7 @@ struct JunoMobileCodeView: View {
                                     .lineLimit(1)
                                 Text(session.profile.email)
                                     .font(.system(size: 11))
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                                     .lineLimit(1)
                             }
                             Spacer(minLength: 6)
@@ -249,7 +249,7 @@ struct JunoMobileCodeView: View {
                             }
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.tertiary)
+                                .junoMetaInk()
                         }
 
                         if let plan, !plan.isUnlimited, !plan.isBrowseOnly {
@@ -272,17 +272,17 @@ struct JunoMobileCodeView: View {
             HStack(spacing: 6) {
                 Text(title)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 Spacer(minLength: 4)
                 Text(window.fraction.formatted(.percent.precision(.fractionLength(0))))
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
             // Coral until it is nearly spent, then amber — the same rule the
             // usage page follows, so a meter means the same thing on both.
             JunoMobileUsageBar(
                 fraction: window.fraction,
-                tint: window.fraction >= 0.9 ? .orange : .junoAccent
+                tint: window.fraction >= 0.9 ? .junoCaution : .junoAccent
             )
         }
         .accessibilityElement(children: .combine)
@@ -297,7 +297,7 @@ struct JunoMobileCodeView: View {
             if let blocked = model.startBlockedReason, !prompt.isEmpty {
                 Label(blocked, systemImage: "info.circle")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 6)
                     .transition(.opacity)
@@ -325,7 +325,9 @@ struct JunoMobileCodeView: View {
                     } label: {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(
+                                canStart ? Color.junoOnAccent : Color.junoMutedForeground
+                            )
                             .frame(width: 34, height: 34)
                             .modifier(JunoComposerSendBackground(active: canStart))
                             .frame(width: 40, height: 44)
@@ -382,7 +384,7 @@ private struct JunoMobileCodeGreeting: View {
         VStack(spacing: 12) {
             Text("code.brand")
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
             HStack(spacing: 9) {
                 JunoMark(size: 20)
                 Text(phrase)
@@ -393,7 +395,7 @@ private struct JunoMobileCodeGreeting: View {
             }
             Text(targetless ? "code.greeting.detail.none" : "code.greeting.detail")
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
         }
@@ -557,13 +559,13 @@ private struct JunoMobileCodeTargetSheet: View {
                     } label: {
                         HStack(spacing: 10) {
                             JunoIconView(repo.isPrivate ? .lock : .branch, size: 14)
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                                 .frame(width: 20)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(repo.fullName).font(.system(size: 15, weight: .medium))
                                 Text(repo.defaultBranch)
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                             }
                             Spacer(minLength: 0)
                             if model.selectedRepository?.id == repo.id {
@@ -612,7 +614,7 @@ private struct JunoMobileCodeTargetSheet: View {
                         if device.workspaces.isEmpty {
                             Text("code.target.no-workspaces")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                         }
                         ForEach(device.workspaces) { workspace in
                             Button {
@@ -622,14 +624,14 @@ private struct JunoMobileCodeTargetSheet: View {
                             } label: {
                                 HStack(spacing: 10) {
                                     JunoIconView(.projects, size: 14)
-                                        .foregroundStyle(.secondary)
+                                        .junoSecondaryInk()
                                         .frame(width: 20)
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(workspace.name)
                                             .font(.system(size: 15, weight: .medium))
                                         Text(workspace.path)
                                             .font(.caption)
-                                            .foregroundStyle(.secondary)
+                                            .junoSecondaryInk()
                                             .lineLimit(1)
                                             .truncationMode(.head)
                                     }
@@ -652,7 +654,7 @@ private struct JunoMobileCodeTargetSheet: View {
                         if device.online, !device.servesQueuedTasks {
                             Text("code.device.not-hosting.detail")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .junoSecondaryInk()
                         }
                     } header: {
                         HStack(spacing: 6) {
@@ -661,7 +663,8 @@ private struct JunoMobileCodeTargetSheet: View {
                             Spacer(minLength: 4)
                             JunoStatusPill(
                                 text: deviceStatusText(device),
-                                tint: device.canAcceptWork ? .green : .secondary,
+                                tint: device.canAcceptWork
+                                    ? Color.junoSuccess : Color.junoMutedForeground,
                                 filled: device.canAcceptWork
                             )
                         }
@@ -689,10 +692,10 @@ private struct JunoMobileCodeTaskRow: View {
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 8) {
                     JunoIconView(task.target == .cloud ? .cloud : .device, size: 12)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     Text(task.whereItRuns)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                         .lineLimit(1)
                         .truncationMode(.head)
                     Spacer(minLength: 4)
@@ -706,9 +709,9 @@ private struct JunoMobileCodeTaskRow: View {
                 HStack(spacing: 6) {
                     Text(task.updatedAt.formatted(.relative(presentation: .named)))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     if task.pullRequestURL != nil {
-                        Text("·").foregroundStyle(.tertiary)
+                        Text("·").junoMetaInk()
                         JunoIconLabel("code.pull-request", icon: .pulls, size: 12)
                             .font(.caption)
                             .foregroundStyle(Color.junoAccent)
@@ -736,14 +739,21 @@ private struct JunoMobileCodeTaskRow: View {
     /// Code list read as a column of alerts, and it spent the accent on the most
     /// common state there is. The states that are genuinely exceptional — waiting
     /// on you, failed — keep their colour.
+    /// The ramp, not the system palette. `.orange`, `.green` and `.red` are
+    /// Apple's colours, tuned for a neutral grey background; on the warm canvas
+    /// they read as three foreign hues, and none of them had ever been checked
+    /// for contrast as *text*, which is how this pill draws them.
+    /// `junoCaution` / `junoSuccess` / `junoDanger` are the tokens Juno Code and
+    /// Juno Chat already share, so the same run status is the same colour on the
+    /// Mac, on the web and here.
     private var statusTint: Color {
         switch task.status {
-        case .queued: .secondary
-        case .running: .secondary
-        case .awaitingApproval: .orange
-        case .done: .green
-        case .failed: .red
-        case .cancelled: .secondary
+        case .queued: Color.junoMutedForeground
+        case .running: Color.junoMutedForeground
+        case .awaitingApproval: Color.junoCaution
+        case .done: Color.junoSuccess
+        case .failed: Color.junoDanger
+        case .cancelled: Color.junoMutedForeground
         }
     }
 }
@@ -810,10 +820,10 @@ private struct JunoMobileCodeSessionView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     JunoIconView(task.target == .cloud ? .cloud : .device, size: 12)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     Text(task.whereItRuns)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     if model.isStreaming {
@@ -823,7 +833,7 @@ private struct JunoMobileCodeSessionView: View {
                 if !task.prompt.isEmpty {
                     Text(task.prompt)
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .lineLimit(6)
                 }
                 if let url = task.pullRequestURL {
@@ -845,39 +855,45 @@ private struct JunoMobileCodeSessionView: View {
         if let approval = model.pendingApproval {
             VStack(alignment: .leading, spacing: 10) {
                 Label("code.approval.title", systemImage: "hand.raised.fill")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.orange)
+                    .junoFont(size: 15, relativeTo: .subheadline, weight: .semibold)
+                    .foregroundStyle(Color.junoCaution)
                 Text(approval.summary)
                     .font(.callout)
+                    .junoInk()
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if let detail = approval.detail, !detail.isEmpty {
                     Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoCaption()
                         .lineLimit(4)
                 }
+                // Neither of these is glass, and the panel behind them is why.
+                // The card carries `JunoGlassBackground`, so a glass capsule sat
+                // inside it had nothing to refract but the pane it was already
+                // standing on: glass cannot sample glass, and the result is that
+                // *both* surfaces collapse to a flat translucent wash and lose
+                // their lensing. The system's bordered pair is the correct
+                // vocabulary on a glass platter, and the explicit tint keeps
+                // Allow on Juno's accent instead of the device's.
                 HStack(spacing: 10) {
                     Button {
                         Task { await model.respondToApproval(approve: false) }
                     } label: {
                         Text("code.approval.deny")
-                            .font(.system(size: 15, weight: .semibold))
+                            .fontWeight(.semibold)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 42)
-                            .modifier(JunoGlassCapsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
                     Button {
                         Task { await model.respondToApproval(approve: true) }
                     } label: {
                         Text("code.approval.allow")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .fontWeight(.semibold)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 42)
-                            .modifier(JunoAccentGlassCapsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.junoAccent)
+                    .controlSize(.large)
                     .accessibilityIdentifier("juno.mobile.code-approve")
                 }
             }
@@ -910,12 +926,12 @@ private struct JunoMobileCodeEventRow: View {
                 JunoIconView(.error, size: 15)
             }
                 .font(.callout)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.junoCaution)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .status, .done, .cancelRequest:
             Text(event.title)
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
                 .frame(maxWidth: .infinity, alignment: .leading)
         default:
             HStack(alignment: .top, spacing: 8) {
@@ -926,7 +942,7 @@ private struct JunoMobileCodeEventRow: View {
                         Image(systemName: symbol).font(.caption2)
                     }
                 }
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .frame(width: 14)
                 .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 1) {
@@ -936,7 +952,7 @@ private struct JunoMobileCodeEventRow: View {
                     if let detail = event.detail, !detail.isEmpty {
                         Text(detail)
                             .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .lineLimit(2)
                     }
                 }

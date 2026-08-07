@@ -85,7 +85,7 @@ struct DesktopSidebarAccountRow: View {
                         .lineLimit(1)
                     Text(session.profile.email)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .lineLimit(1)
                 }
                 Spacer(minLength: JunoSpace.hairline)
@@ -94,7 +94,7 @@ struct DesktopSidebarAccountRow: View {
                 // the two the same way would say they behave the same way.
                 Image(systemName: "chevron.right")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
             }
             .padding(.horizontal, JunoSpace.snug)
             .padding(.vertical, JunoSpace.tight)
@@ -171,7 +171,7 @@ struct DesktopUpdateReadyRow: View {
                             .lineLimit(1)
                         Text("Version \(version)")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .lineLimit(1)
                     }
                     Spacer(minLength: JunoSpace.hairline)
@@ -223,7 +223,7 @@ struct DesktopSidebarQuotaMeter: View {
                 HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
                     Text(plan.planName)
                         .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     Spacer(minLength: JunoSpace.hairline)
                     Text(readout)
                         .font(.caption.monospaced())
@@ -372,7 +372,7 @@ struct DesktopSidebarSyncDot: View {
         case .live: Color.junoSuccess
         case .synchronizing: Color.junoCaution
         case .failed: Color.junoDanger
-        case .offline, .idle, .none: Color.secondary
+        case .offline, .idle, .none: Color.junoMutedForeground
         }
     }
 }

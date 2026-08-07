@@ -140,7 +140,7 @@ struct RepositoryTab: View {
         Section("Branch") {
             HStack(spacing: JunoSpace.snug) {
                 Image(systemName: "arrow.triangle.branch")
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 VStack(alignment: .leading, spacing: 1) {
                     Text(status.branch ?? "detached HEAD")
                         .junoCode()
@@ -148,7 +148,7 @@ struct RepositoryTab: View {
                         .truncationMode(.middle)
                     Text(status.upstream ?? "No upstream")
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -246,7 +246,7 @@ struct RepositoryTab: View {
                         }
                         Text(worktree.rootPath)
                             .junoCodeSmall()
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .textSelection(.enabled)
@@ -410,7 +410,7 @@ struct RepositoryTab: View {
             HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
                 Text("#\(pullRequest.number)")
                     .junoCodeSmall()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                 Text(pullRequest.title)
                     .junoRowLabel()
                     .lineLimit(2)
@@ -426,10 +426,10 @@ struct RepositoryTab: View {
             HStack(spacing: JunoSpace.snug) {
                 Text(pullRequest.isDraft ? "Draft" : pullRequest.state.capitalized)
                     .junoCaption()
-                    .foregroundStyle(pullRequest.isDraft ? Color.secondary : Color.junoSuccess)
+                    .foregroundStyle(pullRequest.isDraft ? Color.junoMutedForeground : Color.junoSuccess)
                 Text("\(pullRequest.headRefName) → \(pullRequest.baseRefName)")
                     .junoCodeSmall()
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if let review = pullRequest.reviewDecision, !review.isEmpty {
@@ -453,7 +453,7 @@ struct RepositoryTab: View {
                 if let workflow = check.workflow, !workflow.isEmpty {
                     Text(workflow)
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                         .lineLimit(1)
                 }
             }
@@ -489,7 +489,7 @@ struct RepositoryTab: View {
                             Text(commit.date, style: .relative)
                         }
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                     }
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("\(commit.subject), \(commit.author), \(commit.shortHash)")
@@ -518,7 +518,7 @@ struct RepositoryTab: View {
                         : "\(controller.hookDiscoveryResult.hooks.count) discovered"
                 )
                 .junoCaption()
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
             }
             HStack {
                 Label("MCP servers", systemImage: "puzzlepiece.extension")
@@ -530,7 +530,7 @@ struct RepositoryTab: View {
             ForEach(controller.mcpServerConfigurations, id: \.name) { server in
                 Label(server.name, systemImage: server.enabled ? "checkmark.circle" : "pause.circle")
                     .junoCaption()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
             if let error = controller.mcpConfigurationError {
                 Text("MCP configuration: \(error)")
@@ -554,7 +554,7 @@ struct RepositoryTab: View {
                 } else {
                     Text("Hooks remain off until explicitly trusted and allowlisted.")
                         .junoCaption()
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     Button("Trust & enable hooks") {
                         confirmingHookTrust = true
                     }
@@ -647,7 +647,7 @@ struct RepositoryTab: View {
         case "pass": .junoSuccess
         case "fail": .junoDanger
         case "pending": .junoCaution
-        default: .secondary
+        default: .junoMutedForeground
         }
     }
 }

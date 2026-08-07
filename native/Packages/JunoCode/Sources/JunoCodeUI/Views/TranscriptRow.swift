@@ -272,7 +272,7 @@ struct TranscriptRow: View {
             HStack(spacing: JunoSpace.snug) {
                 Image(systemName: "flag.checkered")
                     .imageScale(.small)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .frame(width: 18)
                     .accessibilityHidden(true)
                 Text("Run finished")
@@ -280,7 +280,7 @@ struct TranscriptRow: View {
                 Spacer(minLength: JunoSpace.snug)
                 Text(durationText(completed.durationSeconds))
                     .junoCodeSmall()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .monospacedDigit()
             }
 
@@ -434,7 +434,7 @@ extension EnvironmentValues {
 /// timeline, and forty stacked cards is a worse transcript than forty lines.
 struct ActivityRow<Accessory: View>: View {
     let glyph: String
-    var tint: Color = .secondary
+    var tint: Color = .junoMutedForeground
     let title: String
     var titleIsCode = false
     var subtitle: String?
@@ -464,7 +464,7 @@ struct ActivityRow<Accessory: View>: View {
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
                         .junoCodeSmall()
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                         .lineLimit(1)
                         .truncationMode(subtitleTruncation)
                 }
@@ -484,7 +484,7 @@ struct ActivityRow<Accessory: View>: View {
 extension ActivityRow where Accessory == EmptyView {
     init(
         glyph: String,
-        tint: Color = .secondary,
+        tint: Color = .junoMutedForeground,
         title: String,
         titleIsCode: Bool = false,
         subtitle: String? = nil,
@@ -642,7 +642,7 @@ struct ToolActivityRow: View {
                             .truncationMode(.middle)
                         Text(delegationSubtitle ?? proposed.toolName)
                             .junoCodeSmall()
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                             .lineLimit(1)
                     }
 
@@ -651,7 +651,7 @@ struct ToolActivityRow: View {
                     if let completion {
                         Text(String(format: "%.1fs", completion.durationSeconds))
                             .junoCodeSmall()
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                             .monospacedDigit()
                     } else {
                         ProgressView().controlSize(.mini)
@@ -660,7 +660,7 @@ struct ToolActivityRow: View {
                     if hasDetail {
                         Image(systemName: "chevron.right")
                             .imageScale(.small)
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                             .rotationEffect(.degrees(expanded ? 90 : 0))
                     }
                 }
@@ -692,7 +692,7 @@ struct ToolActivityRow: View {
             if let completion, !completion.resultSummary.isEmpty {
                 Text(completion.resultSummary)
                     .junoCodeSmall()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -724,7 +724,7 @@ struct ToolActivityRow: View {
             case .cancelled:
                 Image(systemName: "stop.circle.fill")
                     .imageScale(.small)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             }
         } else {
             ProgressView().controlSize(.mini)
@@ -798,7 +798,7 @@ struct SubAgentTranscript: View {
                         if !activity.isEmpty {
                             Text(activity)
                                 .junoCodeSmall()
-                                .foregroundStyle(.tertiary)
+                                .junoMetaInk()
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                         }
@@ -808,7 +808,7 @@ struct SubAgentTranscript: View {
                     if run.childSessionID != nil {
                         Image(systemName: "chevron.right")
                             .imageScale(.small)
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                             .rotationEffect(.degrees(expanded ? 90 : 0))
                     }
                 }
@@ -876,7 +876,7 @@ struct SubagentStatusGlyph: View {
         case .queued, .preparing:
             Image(systemName: "clock")
                 .imageScale(.small)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
         case .running:
             ProgressView().controlSize(.small)
         case .waitingForApproval:
@@ -894,7 +894,7 @@ struct SubagentStatusGlyph: View {
         case .cancelled:
             Image(systemName: "stop.circle.fill")
                 .imageScale(.small)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
         case .interrupted:
             Image(systemName: "bolt.horizontal.circle.fill")
                 .imageScale(.small)
@@ -927,7 +927,7 @@ struct SubagentElapsed: View {
     private func text(_ seconds: Double) -> some View {
         Text(SubagentFormatting.duration(max(0, seconds)))
             .junoCodeSmall()
-            .foregroundStyle(.tertiary)
+            .junoMetaInk()
             .monospacedDigit()
             .accessibilityHidden(true)
     }
@@ -952,7 +952,7 @@ struct OutputWell: View {
                         .foregroundStyle(
                             line.channel == .stderr
                                 ? AnyShapeStyle(Color.junoDanger)
-                                : AnyShapeStyle(.secondary)
+                                : AnyShapeStyle(Color.junoMutedForeground)
                         )
                         .textSelection(.enabled)
                         .lineLimit(1)
@@ -986,7 +986,7 @@ private func glyphName(for kind: FileChangeKind) -> String {
 }
 
 private func fileChangeTint(for kind: FileChangeKind) -> Color {
-    kind == .deleted ? .junoDanger : .secondary
+    kind == .deleted ? .junoDanger : .junoMutedForeground
 }
 
 private func accessibilityText(for change: FileChangedEvent) -> String {
@@ -1047,7 +1047,7 @@ private struct FileChangeRow: View {
                     HStack(spacing: JunoSpace.tight) {
                         if change.checkpointID != nil {
                             Image(systemName: "arrow.uturn.backward.circle")
-                                .foregroundStyle(.tertiary)
+                                .junoMetaInk()
                                 .help("Checkpointed before this edit — this change can be reverted")
                                 .accessibilityHidden(true)
                         }
@@ -1055,7 +1055,7 @@ private struct FileChangeRow: View {
                         if canOpen {
                             Image(systemName: "chevron.right")
                                 .imageScale(.small)
-                                .foregroundStyle(.tertiary)
+                                .junoMetaInk()
                                 .rotationEffect(.degrees(expanded ? 90 : 0))
                         }
                     }
@@ -1087,7 +1087,7 @@ private struct FileChangeRow: View {
                         // event and the content has none.
                         Text("No differences against the checkpoint.")
                             .junoCaption()
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                     } else {
                         ProgressView().controlSize(.small)
                     }

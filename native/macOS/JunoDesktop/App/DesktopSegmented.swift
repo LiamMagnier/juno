@@ -75,7 +75,7 @@ struct DesktopSegmented<Value: Hashable>: View {
                         Text(option.title)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(
-                                selected ? Color.primary : Color.junoMutedForeground
+                                selected ? Color.junoForeground : Color.junoMutedForeground
                             )
                             .padding(.horizontal, 12)
                             .frame(height: 28)

@@ -49,9 +49,13 @@
  *    the user as if it did.
  *
  * Deliberately free of `server-only`, Prisma and SDK imports, like domain.ts
- * and tool-access.ts: the cloud runner, the route handlers and the tests all
- * need these decisions, and the decisions are pure. Rows are returned as
- * intents for the caller to write, never written here.
+ * and tool-access.ts: the cloud runner, the route handlers, chat's own MCP
+ * chokepoint and the tests all need these decisions, and the decisions are pure.
+ * Rows are returned as intents for the caller to write, never written here.
+ * `truncateConnectorResult` is the reason mcp.ts reaches in here despite sitting
+ * a layer below Work — there is one cap on connector output and one sentence
+ * that declares it, and a chat copy of them would be a second one to keep in
+ * step, which in practice means one of the two stops being maintained.
  */
 
 import { UNTRUSTED_OPEN, wrapUntrusted } from "@/lib/untrusted-content";
@@ -674,6 +678,89 @@ export function tierRefusalAudit(intent: string, refusal: WorkToolRefusal): Work
 // ---------------------------------------------------------------------------
 
 /**
+ * How much of one connector result is put in front of the model.
+ *
+ * The cap is not new. `stringifyToolResult` in src/lib/mcp.ts has cut connector
+ * output at 30,000 characters since it was written, and it should: a tool result
+ * is the one input whose size nobody chose, and a single search against a busy
+ * repository can return more text than the whole context window holds.
+ *
+ * What was missing is the other half. The cut left no mark, so a run read the
+ * first third of an answer, had no way to know that was what it had, and
+ * summarised it as the whole thing — confidently and wrongly. The only reason
+ * anyone ever saw it happen is that one connector happened to say so itself, in
+ * its own payload, and the run repeated it.
+ *
+ * So the rule the rest of this codebase already follows applies here too: the
+ * text is cut and a line is left in its place saying so, in the result, where
+ * the model reads it, never silently. The sentence is deliberately the one
+ * `web_fetch` uses for a long page (runner/agent-core/src/work/tools.ts) and
+ * attachments use for a long document (scripts/work-runner.ts). A model that has
+ * learnt to respect it on one input should not have to recognise a second
+ * phrasing on another.
+ *
+ * There is deliberately no per-caller override. A caller asking for more would
+ * not reliably get more: `completeExternalAction` in
+ * src/lib/action-approval-store.ts stores the result for replay and slices it at
+ * 30,000 itself, so anything past this cap survives only until the call is
+ * replayed — and what sits at the end, first to be cut, is the notice. The cap
+ * belongs at the smallest limit that actually applies, and this is it. Raising
+ * it means raising that one first.
+ */
+export const MAX_CONNECTOR_RESULT_CHARS = 30_000;
+
+/**
+ * Room set aside inside the cap for the notice itself.
+ *
+ * The notice is paid for out of the budget rather than appended past it, for the
+ * same reason there is no override: something downstream cuts at 30,000, and a
+ * notice that hangs over that edge is the first thing to go — leaving exactly
+ * the silent prefix this exists to prevent. Fixed rather than measured because
+ * the sentence varies only by the digits in two numbers, and a few characters of
+ * slack cost nothing while an off-by-one here costs the whole guarantee.
+ */
+const TRUNCATION_NOTICE_CHARS = 200;
+
+export interface TruncatedForModel {
+  /** What the model is shown: the prefix, then the notice. Never over the cap. */
+  text: string;
+  /** True when `text` is a prefix rather than the whole result. */
+  truncated: boolean;
+  /** How long the result was before anything was cut. */
+  totalChars: number;
+  /** How much of that `text` actually carries. */
+  includedChars: number;
+}
+
+/**
+ * Cut a connector result to the cap and say so where the model will read it.
+ *
+ * Pure, and here rather than in mcp.ts, for two reasons. mcp.ts is `server-only`
+ * and so cannot be reached from a test at all, and the same cut has to be
+ * available to anything else that puts connector text in front of a model — one
+ * cap and one sentence, not a second pair that drifts from this one.
+ *
+ * The caller applies this BEFORE `wrapUntrusted`. Truncating an enveloped result
+ * would cut the closing marker off and leave the envelope unterminated, and the
+ * notice would land outside it rather than inside the block it describes.
+ */
+export function truncateConnectorResult(content: string): TruncatedForModel {
+  const totalChars = content.length;
+  if (totalChars <= MAX_CONNECTOR_RESULT_CHARS) {
+    return { text: content, truncated: false, totalChars, includedChars: totalChars };
+  }
+  const includedChars = Math.max(0, MAX_CONNECTOR_RESULT_CHARS - TRUNCATION_NOTICE_CHARS);
+  return {
+    text:
+      `${content.slice(0, includedChars)}\n\n[Cut off here. This result is ${totalChars} characters long and ` +
+      `only the first ${includedChars} are above. Do not describe the rest as though you have read it.]`,
+    truncated: true,
+    totalChars,
+    includedChars,
+  };
+}
+
+/**
  * Mirrored from runner/agent-core/src/work/types.ts, which cannot be imported:
  * the runner is vendored and built standalone, and tsconfig.json excludes
  * `runner` from this project entirely. Mirroring the three fields the caller
@@ -725,6 +812,18 @@ export interface ConnectorResultInput {
   exchangeId?: string;
   /** The result exactly as the connector returned it, including error text. */
   content: string;
+  /**
+   * True when `content` is only the front of what the connector returned,
+   * because the caller cut it to `MAX_CONNECTOR_RESULT_CHARS` and left the
+   * notice in it.
+   *
+   * Recorded because "the run read this" and "the run read the first 30,000
+   * characters of this" are different facts, and this row is the last place the
+   * difference can still be established. It sits beside `scanTruncated` for the
+   * same reason that one exists: a limit nobody wrote down is a limit that gets
+   * read later as completeness.
+   */
+  truncated?: boolean;
 }
 
 export interface AdmittedConnectorResult {
@@ -830,8 +929,11 @@ export function admitConnectorResult(
         tool: input.tool,
         access: input.access,
         locality: input.locality,
+        // The bytes that were admitted, which is not the same as the bytes the
+        // connector sent whenever `contentTruncated` is true.
         bytes: input.content.length,
         ...(input.exchangeId ? { exchangeId: input.exchangeId } : {}),
+        contentTruncated: input.truncated === true,
         injectionDetected: verdict.detected,
         /*
          * WorkRunIO.detail is not the compliance log and is not passed through

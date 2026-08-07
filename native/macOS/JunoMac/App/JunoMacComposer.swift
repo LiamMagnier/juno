@@ -29,7 +29,7 @@ struct JunoMacComposer: View {
     }
 
     var body: some View {
-        VStack(spacing: JunoSpacing.compact) {
+        VStack(spacing: JunoSpace.tight) {
             if let projectName {
                 contextChip(projectName)
             }
@@ -47,14 +47,22 @@ struct JunoMacComposer: View {
                     cornerRadius: JunoRadius.floating,
                     style: .continuous
                 )
-                // A focused composer states it: a visible ring rather than a
-                // hairline that never changes.
+                // A focused composer states it: a visible ring. The *resting*
+                // half of this used to be `Color.junoBorder`, a permanent
+                // hairline drawn over glass — and real Liquid Glass carries its
+                // own rim scatter, so a stroke on top flattens it back to a
+                // translucent rounded rectangle. Resting is now `.clear`, which
+                // keeps this as one expression (and so one view identity, so
+                // the ring animates) while letting the material's own edge show.
                 .strokeBorder(
-                    isFocused ? Color.junoAccent.opacity(0.55) : Color.junoBorder,
-                    lineWidth: isFocused ? 1.5 : 1
+                    isFocused ? Color.junoAccent : Color.clear,
+                    lineWidth: isFocused ? 1.5 : 0
                 )
             )
-            .shadow(color: .black.opacity(0.10), radius: 12, y: 4)
+            // `junoCardShadow`, not neutral black: a grey throw on the warm
+            // canvas reads as dirt. The token is warm in light and honest black
+            // only in dark, where there is nothing to muddy.
+            .shadow(color: Color.junoCardShadow, radius: 12, y: 4)
         }
         .frame(maxWidth: 820)
         .frame(maxWidth: .infinity)
@@ -78,7 +86,7 @@ struct JunoMacComposer: View {
             .overlay(alignment: .topLeading) {
                 if text.isEmpty {
                     Text("chat.composer.placeholder")
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                         .padding(.leading, 5)
                         .padding(.top, 8)
                         .allowsHitTesting(false)
@@ -120,7 +128,7 @@ struct JunoMacComposer: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .foregroundStyle(.secondary)
+        .junoSecondaryInk()
         .help(Text("chat.actions"))
         .accessibilityLabel(Text("chat.actions"))
         .accessibilityIdentifier("juno.mac.composer-actions")
@@ -158,7 +166,9 @@ struct JunoMacComposer: View {
                     .frame(width: 22, height: 22)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.white)
+            // `junoOnAccent`, never a literal white: the accent is an account
+            // setting, and white fails contrast on two of the five palettes.
+            .foregroundStyle(Color.junoOnAccent)
             .background(Circle().fill(Color.junoAccent))
             .help(Text("chat.stop"))
             .accessibilityIdentifier("juno.mac.chat-stop")
@@ -171,7 +181,10 @@ struct JunoMacComposer: View {
                     .frame(width: 22, height: 22)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(canSend ? Color.white : Color.secondary)
+            // Same reasoning as the stop button: the enabled glyph rides the
+            // accent so it takes `junoOnAccent`, and the disabled glyph takes
+            // the warm muted ink rather than platform-neutral `Color.secondary`.
+            .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
             .background(
                 Circle().fill(canSend ? Color.junoAccent : Color.junoHairline)
             )
@@ -191,7 +204,7 @@ struct JunoMacComposer: View {
                 .font(.caption)
                 .lineLimit(1)
         }
-        .padding(.horizontal, JunoSpacing.control)
+        .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, 4)
         .background(
             Capsule(style: .continuous).fill(Color.junoAccent.opacity(0.14))

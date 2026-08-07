@@ -207,21 +207,21 @@ struct JunoMobileComposer: View {
             // Above the composer, not below it: under the container it would sit
             // in the home-indicator strip and go unread.
             if let thinkingNotice {
-                notice(thinkingNotice, symbol: "info.circle", tint: Color.secondary)
+                notice(thinkingNotice, symbol: "info.circle", tint: Color.junoMutedForeground)
                     .accessibilityIdentifier("juno.mobile.thinking-notice")
             }
             if let attachmentError = attachmentModel?.lastErrorDescription {
-                notice(attachmentError, symbol: "exclamationmark.circle", tint: Color.orange)
+                notice(attachmentError, symbol: "exclamationmark.circle", tint: Color.junoCaution)
                     .accessibilityIdentifier("juno.mobile.attachment-error")
             }
             // A photo the picker accepted and the app could not read is its own
             // failure, separate from an upload that was refused.
             if let importError = attachmentCoordinator.importError {
-                notice(importError, symbol: "exclamationmark.circle", tint: Color.orange)
+                notice(importError, symbol: "exclamationmark.circle", tint: Color.junoCaution)
                     .accessibilityIdentifier("juno.mobile.attachment-import-error")
             }
             if let voiceTurnError {
-                notice(voiceTurnError, symbol: "exclamationmark.circle", tint: Color.orange)
+                notice(voiceTurnError, symbol: "exclamationmark.circle", tint: Color.junoCaution)
                     .accessibilityIdentifier("juno.mobile.voice-turn-error")
             }
 
@@ -721,8 +721,13 @@ struct JunoMobileComposer: View {
             setDictating(true)
         } label: {
             Image(systemName: "mic")
-                .font(.system(size: 16))
-                .foregroundStyle(Color.primary.opacity(0.75))
+                .junoFont(size: 16, relativeTo: .body)
+                // Was `Color.primary.opacity(0.75)`: a pure neutral, scaled down
+                // by hand, sitting on the warm composer bar with no material
+                // under it. The muted token is the design system's own answer
+                // for "quiet but still legible", and unlike a hand-scaled label
+                // colour it still responds to Increase Contrast.
+                .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 34, height: 34)
                 .frame(width: 40, height: 44)
                 .contentShape(Rectangle())
@@ -757,8 +762,7 @@ struct JunoMobileComposer: View {
             Text(phaseLabel)
                 .lineLimit(1)
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
+        .junoCaption()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(phaseLabel)
     }
@@ -766,10 +770,10 @@ struct JunoMobileComposer: View {
     private var retryBanner: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Color.junoCaution)
             Text(model.chatErrorDescription ?? "The response was interrupted.")
                 .lineLimit(2)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
             Spacer(minLength: 8)
             Button("Retry") {
                 guard let conversation else { return }
@@ -887,7 +891,13 @@ struct JunoMobileComposer: View {
         @ViewBuilder glyph: () -> Glyph
     ) -> some View {
         glyph()
-            .foregroundStyle(.white)
+            // The glyph follows the ground it is standing on. On the accent it
+            // is `junoOnAccent` — the accent is an account setting, and a
+            // literal white fails contrast on two of the five palettes, which is
+            // exactly the case the token exists for. Off the accent the circle
+            // is neutral glass, so the glyph takes the ink the rest of the
+            // composer's quiet chrome uses rather than staying white on clear.
+            .foregroundStyle(active ? Color.junoOnAccent : Color.junoMutedForeground)
             .frame(width: 34, height: 34)
             .modifier(JunoComposerSendBackground(active: active))
             .frame(width: 40, height: 44)
@@ -1157,9 +1167,23 @@ struct JunoMobileVoiceWave: View {
     }
 }
 
-/// A circular coral Liquid Glass background for the composer's send/stop button,
-/// with a material fallback below OS 26. When inactive the coral tint fades to a
-/// discreet level so the disabled state stays legible without shouting.
+/// A circular Liquid Glass background for the composer's send/stop button, coral
+/// when the control has something to do and plain glass when it does not.
+///
+/// **The inactive state is untinted, not a faded tint.** It used to pass
+/// `Color.junoAccent.opacity(0.32)`, which `Glass.tint(_:)` honours as alpha: a
+/// third-strength coral does not read as "a quiet coral", it reads as glass with
+/// no reliable luminance of its own, and the arrow on top of it was left with
+/// whatever contrast the transcript happened to be scrolling past. Passing `nil`
+/// gives the honest thing — plain `.regular` glass, the same neutral material
+/// the "+" beside it wears — and the *active* tint then goes in at full
+/// strength (it was 0.95, which was the same dilution one twentieth of the way
+/// in) so the accent establishes a predictable ground under the glyph.
+///
+/// Written as one expression rather than an `if active` branch on purpose: a
+/// runtime `if` around a modifier produces two view identities, so the send
+/// button would lose its state and its transition every time the prompt went
+/// from empty to non-empty. Animating the tint keeps one view.
 struct JunoComposerSendBackground: ViewModifier {
     let active: Bool
 
@@ -1167,12 +1191,12 @@ struct JunoComposerSendBackground: ViewModifier {
         if #available(iOS 26.0, macOS 26.0, *) {
             content
                 .glassEffect(
-                    .regular.tint(Color.junoAccent.opacity(active ? 0.95 : 0.32)).interactive(),
+                    .regular.tint(active ? Color.junoAccent : nil).interactive(),
                     in: Circle()
                 )
         } else {
             content
-                .background(Color.junoAccent.opacity(active ? 1 : 0.35), in: Circle())
+                .background(active ? Color.junoAccent : Color.junoMuted, in: Circle())
         }
     }
 }

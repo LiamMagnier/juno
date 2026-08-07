@@ -101,7 +101,7 @@ public struct ApprovalCard: View {
 
             Text(request.toolName)
                 .junoMono()
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
                 .lineLimit(1)
                 .truncationMode(.middle)
 
@@ -202,7 +202,7 @@ struct ApprovalCountdown: View {
             Group {
                 if remaining > 0 {
                     Text("Expires in \(remaining / 60):\(String(format: "%02d", remaining % 60))")
-                        .foregroundStyle(remaining <= 60 ? Color.junoCaution : Color.secondary)
+                        .foregroundStyle(remaining <= 60 ? Color.junoCaution : Color.junoMutedForeground)
                 } else {
                     Text("Expired")
                         .foregroundStyle(Color.junoDanger)

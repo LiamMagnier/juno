@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import JunoCodeCore
+import JunoDesignSystem
 
 /// Configuration sheet for a new code session.
 struct NewSessionSheet: View {
@@ -88,7 +89,7 @@ struct NewSessionSheet: View {
                     if location == .local {
                         Text("Runs locally inside the selected workspace.")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                     } else {
                         remoteTargetForm
                     }
@@ -169,7 +170,7 @@ struct NewSessionSheet: View {
                     ProgressView().controlSize(.small)
                     Text("Loading available targets…")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
             }
 
@@ -186,7 +187,7 @@ struct NewSessionSheet: View {
                 if remoteRepositories.isEmpty && !remoteTargetsLoading {
                     Text(remoteError ?? "No GitHub repositories are available to this account.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
 
             case .remote:
@@ -209,11 +210,11 @@ struct NewSessionSheet: View {
                             ? "Online, but this computer is not accepting queued work."
                             : "Offline. Start Juno Code on this computer first.")
                         .font(.caption)
-                        .foregroundStyle(device.canAcceptWork ? .secondary : Color.junoCaution)
+                        .foregroundStyle(device.canAcceptWork ? Color.junoMutedForeground : Color.junoCaution)
                 } else if !remoteTargetsLoading {
                     Text(remoteError ?? "No remote computers are available to this account.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
 
             case .local:
@@ -226,7 +227,7 @@ struct NewSessionSheet: View {
                 .frame(minHeight: 72, maxHeight: 120)
                 .overlay {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(Color.secondary.opacity(0.25))
+                        .stroke(Color.junoBorder)
                 }
 
             if let remoteError {
@@ -344,18 +345,18 @@ struct NewSessionSheet: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(Color.junoSuccess)
             Text("Juno accepted the task on \(task.location.displayName).")
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
             HStack(spacing: JunoCodeTheme.Spacing.tight) {
                 Text("Task ID")
                     .font(.caption.weight(.medium))
                 Text(task.taskID)
                     .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .textSelection(.enabled)
             }
             Text("The task remains server-owned and can be followed from your signed-in Juno Code clients.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             HStack {

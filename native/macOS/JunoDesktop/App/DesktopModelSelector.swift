@@ -78,7 +78,7 @@ struct DesktopModelSelector: View {
                 } else {
                     Image(systemName: "square.grid.2x2")
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(active ? Color.junoAccent : Color.secondary)
+                        .foregroundStyle(active ? Color.junoAccent : Color.junoMutedForeground)
                 }
             }
             .frame(width: 40, height: 40)
@@ -130,7 +130,7 @@ struct DesktopModelSelector: View {
         VStack(alignment: .leading, spacing: 8) {
             Label(section.title, systemImage: section.systemImage)
                 .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .textCase(.uppercase)
                 .padding(.horizontal, 3)
 
@@ -151,7 +151,7 @@ struct DesktopModelSelector: View {
                 } label: {
                     Text("Older models · \(section.legacy.count)")
                         .font(.system(size: 11.5, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
                 .tint(.secondary)
                 .padding(8)
@@ -202,7 +202,7 @@ struct DesktopModelSelector: View {
                         if let cost = NativeModelPresentation.costGlyph(model.pricing) {
                             Text(cost)
                                 .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(.tertiary)
+                                .junoMetaInk()
                         }
                         if selected {
                             Image(systemName: "checkmark")
@@ -216,7 +216,7 @@ struct DesktopModelSelector: View {
                             ?? "\(DesktopModelSelector.shortProviderName(model.providerName)) model"
                     )
                     .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .lineLimit(2)
 
                     HStack(spacing: 6) {
@@ -224,7 +224,7 @@ struct DesktopModelSelector: View {
                         if let unavailable {
                             Label(unavailable, systemImage: "lock")
                                 .font(.system(size: 9.5, weight: .medium))
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(Color.junoCaution)
                                 .lineLimit(1)
                         }
                     }
@@ -393,7 +393,7 @@ private struct DesktopModelSearchField: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
             TextField("Search models", text: $query)
                 .textFieldStyle(.plain)
                 .focused($focused)
@@ -404,7 +404,7 @@ private struct DesktopModelSearchField: View {
                     focused = true
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")

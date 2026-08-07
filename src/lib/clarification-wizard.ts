@@ -1,3 +1,33 @@
+/**
+ * The `:::clarification-wizard` block a chat answer can contain.
+ *
+ * This is a codec, not a clarification system, and the distinction is worth
+ * stating because the name suggests otherwise and has already sent one reader
+ * looking for a pre-flight step in here. What it does is parse and re-serialise
+ * a fenced block the assistant writes *into its own reply* mid-answer, mark it
+ * submitted once the reader fills it in, and format the follow-up turn. Its one
+ * caller is src/app/api/chat/route.ts. Nothing here decides whether to ask, and
+ * nothing here can run before a model has already started answering.
+ *
+ * The two neighbours it is easy to mistake for this file:
+ *
+ *  - `src/lib/preflight-clarification.ts` + `src/lib/preflight-triage.ts` are
+ *    the *chat* pre-flight: a fast model reads the message before Juno answers
+ *    and usually decides to ask nothing. That is the right shape for chat,
+ *    where a turn is cheap and only a model can tell a good question from a
+ *    generic one.
+ *  - `src/components/work/clarify/preflight.ts` is the *Work* pre-flight, and
+ *    it takes neither path. A Work run holds a $2, twenty-minute ceiling, so
+ *    the questions are worth asking by default; and because they are asked
+ *    before the button is pressed, they are read out of the goal with regexes
+ *    rather than a round trip — the argument `src/lib/work/inference.ts` makes
+ *    at length about capabilities, applied to questions.
+ *
+ * None of the three should grow into the others. This one is tied to the
+ * markdown stream, the second to a model call, the third to a composer that has
+ * to stay instant.
+ */
+
 export type ClarificationQuestionType = "single-choice" | "multi-choice" | "text" | "textarea" | "checkbox";
 export type ClarificationAnswerValue = string | string[] | boolean;
 

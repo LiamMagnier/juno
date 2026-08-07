@@ -263,6 +263,7 @@ final class WorkRemoteHostTests: XCTestCase {
         XCTAssertFalse(WorkRemoteError.hostNotEnabled.isRetryable)
         XCTAssertFalse(WorkRemoteError.approvalDigestMismatch.isRetryable)
         XCTAssertFalse(WorkRemoteError.approvalExpired.isRetryable)
+        XCTAssertFalse(WorkRemoteError.standingApprovalForbidden.isRetryable)
         XCTAssertFalse(WorkRemoteError.capabilityNotGranted("local_files").isRetryable)
     }
 
@@ -275,7 +276,7 @@ final class WorkRemoteHostTests: XCTestCase {
         let errors: [WorkRemoteError] = [
             .invalidIdentifier, .unsupportedCommand("x"), .malformedResponse,
             .hostRevoked, .hostNotEnabled, .capabilityNotGranted("local_files"),
-            .approvalDigestMismatch, .approvalExpired,
+            .approvalDigestMismatch, .approvalExpired, .standingApprovalForbidden,
             .server(statusCode: 500, message: "Juno could not finish that.", retryable: true),
         ]
         for error in errors {

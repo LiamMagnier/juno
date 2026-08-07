@@ -91,17 +91,17 @@ struct DesktopWorkApprovalPlaneTests {
 
     // MARK: - Routing the answer
 
-    @Test("The answer carries the digest and the risk of the question it answers")
-    func decisionCarriesDigestAndRisk() {
+    @Test("The answer carries the digest of the question it answers")
+    func decisionCarriesDigest() {
         let host = DesktopWorkHostModel()
         let asked = request(id: "a", risk: "sensitive")
         host.localApprovalRaised(asked)
 
-        var received: (String, JunoWorkApprovalDecision, String, String)?
-        host.localApprovalDecider = { id, decision, digest, risk in
-            received = (id, decision, digest, risk)
+        var received: (String, JunoWorkApprovalDecision, String)?
+        host.localApprovalDecider = { id, decision, digest in
+            received = (id, decision, digest)
         }
-        host.localApprovalDecider?("a", .allowed, asked.actionDigest, asked.risk)
+        host.localApprovalDecider?("a", .allowed, asked.actionDigest)
 
         #expect(received?.0 == "a")
         #expect(received?.1 == .allowed)
@@ -109,9 +109,6 @@ struct DesktopWorkApprovalPlaneTests {
         // action that replaced the one it described — `resolve` refuses a
         // mismatch rather than applying it.
         #expect(received?.2 == asked.actionDigest)
-        // The risk travels because a standing grant is only constructible for
-        // some levels; the runtime needs it to know whether to set an allowance.
-        #expect(received?.3 == "sensitive")
     }
 
     @Test("With no runtime attached, answering does nothing rather than crashing")
@@ -121,7 +118,7 @@ struct DesktopWorkApprovalPlaneTests {
         // `localApprovalDecider` is assigned by `DesktopWorkLocalRuntime`, which
         // only exists once this Mac is hosting. A window open before that must
         // not trap on the optional call.
-        host.localApprovalDecider?("a", .allowed, "digest", "edit")
+        host.localApprovalDecider?("a", .allowed, "digest")
         #expect(host.localApprovals.count == 1)
     }
 
@@ -129,23 +126,29 @@ struct DesktopWorkApprovalPlaneTests {
 
     @Test("A standing grant is offered only where one can actually be made")
     func standingGrantMatchesTheAllowanceRule() {
-        // Mirrors `WorkRisk.mayBeCoveredByStandingAllowance` (`risk <= .command`)
-        // and `WorkAlwaysAllowance(upTo:)`, whose initialiser is failable and
-        // returns nil above that ceiling. Offering the button for a level the
-        // model refuses would promise a permission that silently degrades to a
-        // one-time yes, and the reader would be asked the same question again
-        // with no explanation.
+        // The app cards and local runtime both consume this JunoWorkKit rule.
+        // It independently checks the risk and the action identity, so a bad
+        // risk classification cannot turn an always-confirm action into a
+        // standing permission.
         let coverable: [JunoWorkRiskLevel] = [.safe, .edit, .command]
         let refused: [JunoWorkRiskLevel] = [.sensitive, .irreversible]
 
         for level in coverable {
-            #expect(DesktopWorkApprovalRules.allowsStandingGrant(level))
+            #expect(JunoWorkApprovalRules.allowsStandingGrant(
+                action: "apply_changes", risk: level.rawValue
+            ))
         }
         for level in refused {
-            #expect(!DesktopWorkApprovalRules.allowsStandingGrant(level))
+            #expect(!JunoWorkApprovalRules.allowsStandingGrant(
+                action: "apply_changes", risk: level.rawValue
+            ))
         }
-        // An unnamed level is treated as uncoverable, matching the decoder's own
-        // fallback of `irreversible` for a risk it cannot classify.
-        #expect(!DesktopWorkApprovalRules.allowsStandingGrant(nil))
+        #expect(!JunoWorkApprovalRules.allowsStandingGrant(
+            action: JunoWorkAlwaysConfirmAction.workConnectorSendMessage.rawValue,
+            risk: JunoWorkRiskLevel.safe.rawValue
+        ))
+        #expect(!JunoWorkApprovalRules.allowsStandingGrant(
+            action: "apply_changes", risk: "unknown"
+        ))
     }
 }

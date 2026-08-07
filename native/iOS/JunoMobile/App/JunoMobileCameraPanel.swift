@@ -257,7 +257,7 @@ struct JunoMobileCameraPanel: View {
                 } else {
                     Image(systemName: "photo.on.rectangle")
                         .font(.system(size: 19, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .frame(width: Self.sideControlSize, height: Self.sideControlSize)
                 }
             }
@@ -265,6 +265,11 @@ struct JunoMobileCameraPanel: View {
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        // It had none. The label is either the last capture's thumbnail or a
+        // bare `photo.on.rectangle`, so VoiceOver announced it as "Button" or,
+        // worse, read the image's own filename — there was no way to know from
+        // audio alone that this is the way into the photo library.
+        .accessibilityLabel("Choose from photo library")
         .animation(
             JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
             value: camera.lastCapture
@@ -303,7 +308,7 @@ struct JunoMobileCameraPanel: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
                 .frame(width: Self.sideControlSize, height: Self.sideControlSize)
                 .junoGlass(in: Circle(), interactive: true)
                 .contentShape(Circle())
@@ -356,7 +361,7 @@ struct JunoMobileCameraPanel: View {
         VStack(spacing: 14) {
             Image(systemName: "camera.fill")
                 .font(.system(size: 30))
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
             Text(reason.message)
                 .font(.callout)
                 .foregroundStyle(.primary)

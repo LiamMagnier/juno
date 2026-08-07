@@ -327,6 +327,14 @@ public struct WorkApprovalRequest: Equatable, Sendable, Identifiable {
 
     public var isPending: Bool { decision == "pending" }
 
+    /// Whether native clients may offer or send a standing approval for this
+    /// request. The action check is independent of the reported risk so an
+    /// always-confirm action cannot acquire persistence when it is misgraded by
+    /// an older or faulty executor.
+    public var allowsStandingGrant: Bool {
+        JunoWorkApprovalRules.allowsStandingGrant(action: action, risk: risk)
+    }
+
     /// Whether this can still be answered. Expiry is closed rather than
     /// advisory: approving a send at 09:00 must not still authorise it at
     /// 17:00 after the draft has been rewritten.
@@ -410,6 +418,7 @@ public enum WorkRemoteError: Error, Equatable, LocalizedError, Sendable {
     case capabilityNotGranted(String)
     case approvalDigestMismatch
     case approvalExpired
+    case standingApprovalForbidden
     case server(statusCode: Int, message: String, retryable: Bool)
 
     public var errorDescription: String? {
@@ -432,6 +441,8 @@ public enum WorkRemoteError: Error, Equatable, LocalizedError, Sendable {
             "What Juno was about to do no longer matches what you approved, so it stopped."
         case .approvalExpired:
             "That approval expired before Juno could act on it. Approve it again if you still want it."
+        case .standingApprovalForbidden:
+            String(localized: "work.approval.standing-forbidden")
         case .server(_, let message, _):
             message
         }
@@ -447,7 +458,8 @@ public enum WorkRemoteError: Error, Equatable, LocalizedError, Sendable {
         case .server(_, _, let retryable): retryable
         case .hostRevoked, .hostNotEnabled, .capabilityNotGranted,
              .approvalDigestMismatch, .approvalExpired, .invalidIdentifier,
-             .hostNotRegistered, .unsupportedCommand, .malformedResponse:
+             .standingApprovalForbidden, .hostNotRegistered, .unsupportedCommand,
+             .malformedResponse:
             false
         }
     }

@@ -176,8 +176,28 @@ public enum JunoSpace {
     public static let region: CGFloat = 32
 }
 
-/// The radius scale. Three values, applied by role, so the window does not mix
-/// five different corner treatments the way the rejected build did.
+/// The radius scale, applied by role, so the window does not mix five different
+/// corner treatments the way the rejected build did.
+///
+/// **This is the only radius scale.** There used to be two, and they disagreed
+/// on the same four role names: this `control` was 6 while the other one's was
+/// 10, `row` 8 against 12, `panel` 12 against 16,
+/// `floating` 18 against 22. That is worse than either scale being wrong,
+/// because it made every new call site a coin flip — an author who wrote
+/// "control" got one of two corner treatments depending on which type name they
+/// happened to import, and neither answer was checkable by eye.
+///
+/// Read side by side, the two were the same ladder offset by one rung: its
+/// `compactControl` (8) is this `row`, its `row` (12) is this
+/// `panel`, its `panel` (16) is this `card`. So the collapse is mostly an exact
+/// re-pointing rather than a retune. `JunoCornerRadius` survives as deprecated
+/// aliases onto these values — see the mapping table on it in
+/// `JunoDesignTokens.swift` — so no existing call site breaks and the compiler
+/// tells its author what to write instead.
+///
+/// The three rungs below `panel` come from that collapse: `card`, `message` and
+/// `composer` name roles this scale had no word for, which is the honest reason
+/// a second enum got written in the first place.
 public enum JunoRadius {
     /// 6 — a compact control: a chip, a small button, a segment.
     public static let control: CGFloat = 6
@@ -185,51 +205,12 @@ public enum JunoRadius {
     public static let row: CGFloat = 8
     /// 12 — a panel: a code block, a table, an inspector card.
     public static let panel: CGFloat = 12
-    /// 18 — a floating surface: the composer.
+    /// 16 — a content card: a project tile, an artifact thumbnail.
+    public static let card: CGFloat = 16
+    /// 18 — a chat message bubble.
+    public static let message: CGFloat = 18
+    /// 18 — a floating surface: a floating toolbar, a transient control group.
     public static let floating: CGFloat = 18
-}
-
-/// The type scale.
-///
-/// Hierarchy is carried by weight and colour more than by size, so the window
-/// stays calm. Everything is Dynamic Type-aware via the system text styles.
-public extension View {
-    /// A window or conversation title in the toolbar.
-    func junoTitle() -> some View {
-        font(.system(.headline, design: .default, weight: .semibold))
-    }
-
-    /// A sidebar section header: quiet, small, secondary.
-    func junoSidebarSection() -> some View {
-        font(.system(.caption, design: .default, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .textCase(nil)
-    }
-
-    /// A navigation or list row label.
-    func junoRowLabel() -> some View {
-        font(.system(.callout, design: .default, weight: .regular))
-    }
-
-    /// Message body — the most-read text in the product.
-    func junoBody() -> some View {
-        font(.system(.body))
-            .lineSpacing(3)
-    }
-
-    /// Timestamps, counts, provenance.
-    func junoCaption() -> some View {
-        font(.system(.caption))
-            .foregroundStyle(.secondary)
-    }
-
-    /// Terminal, diff and code content.
-    func junoMono() -> some View {
-        font(.system(.callout, design: .monospaced))
-    }
-
-    /// An empty state's headline.
-    func junoEmptyTitle() -> some View {
-        font(.system(.title3, design: .default, weight: .semibold))
-    }
+    /// 24 — the composer's outer container, matching the web's `--radius: 24px`.
+    public static let composer: CGFloat = 24
 }

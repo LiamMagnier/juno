@@ -1495,7 +1495,7 @@ public struct CodePreviewWindowView: View {
                 ForEach(tail) { line in
                     Text(line.text)
                         .junoCodeSmall()
-                        .foregroundStyle(line.channel == .stderr ? Color.junoDanger : .secondary)
+                        .foregroundStyle(line.channel == .stderr ? Color.junoDanger : Color.junoMutedForeground)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -1548,12 +1548,12 @@ public struct CodePreviewWindowView: View {
         case .failed(let reason):
             return ("Failed · \(reason.split(separator: "\n").first.map(String.init) ?? reason)", .junoDanger, false)
         case .exited(let code):
-            return ("Server exited · code \(code)", code == 0 ? .secondary : .junoDanger, false)
+            return ("Server exited · code \(code)", code == 0 ? .junoMutedForeground : .junoDanger, false)
         case .stopped:
             // No process of Juno's. Whatever the pill says now is about the
             // request, and it says so.
             switch model.loadState {
-            case .idle: return ("Not opened", .secondary, false)
+            case .idle: return ("Not opened", .junoMutedForeground, false)
             case .loading: return ("Loading", .junoCaution, true)
             case .loaded: return ("Connected · not started by Juno", .junoSuccess, false)
             case .failed(let message): return ("Unavailable · \(message)", .junoDanger, false)
@@ -1657,7 +1657,7 @@ public struct CodePreviewWindowView: View {
             if let command = model.runningCommand {
                 Text(command)
                     .junoCodeSmall()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
@@ -1702,7 +1702,7 @@ public struct CodePreviewWindowView: View {
                     if model.discardedLineCount > 0 {
                         Text("\(model.discardedLineCount) earlier lines are no longer held")
                             .junoCodeSmall()
-                            .foregroundStyle(.tertiary)
+                            .junoMetaInk()
                     }
                     ForEach(model.log) { line in
                         Text(line.text.isEmpty ? " " : line.text)
@@ -1740,9 +1740,9 @@ public struct CodePreviewWindowView: View {
 
     private func channelStyle(_ channel: ToolOutputChannel) -> AnyShapeStyle {
         switch channel {
-        case .stdout: AnyShapeStyle(.primary)
+        case .stdout: AnyShapeStyle(Color.junoForeground)
         case .stderr: AnyShapeStyle(Color.junoDanger)
-        case .log: AnyShapeStyle(.secondary)
+        case .log: AnyShapeStyle(Color.junoMutedForeground)
         }
     }
 
@@ -1969,7 +1969,7 @@ public struct CodePreviewDock: View {
                 } else {
                     Image(systemName: "macwindow")
                         .font(.title2)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     Text(
                         model.serverState == .stopped
                             ? "Preview is ready"
@@ -2014,7 +2014,7 @@ public struct CodePreviewDock: View {
             }
            Text(state.label)
                .junoCaption()
-               .foregroundStyle(.secondary)
+               .junoSecondaryInk()
                .lineLimit(1)
                .truncationMode(.middle)
             if model.isServerContained {
@@ -2076,7 +2076,7 @@ public struct CodePreviewDock: View {
         case .stopped:
             return (
                 model.loadState == .loaded ? "Connected" : "Not started",
-                model.loadState == .loaded ? Color.junoSuccess : Color.secondary,
+                model.loadState == .loaded ? Color.junoSuccess : Color.junoMutedForeground,
                 false
             )
         }
@@ -2088,13 +2088,17 @@ public struct CodePreviewDock: View {
                 if model.discardedLineCount > 0 {
                     Text("\(model.discardedLineCount) earlier lines are no longer held")
                         .junoCodeSmall()
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                 }
                 ForEach(Array(model.log.suffix(240))) { line in
                     Text(line.text.isEmpty ? " " : line.text)
                         .junoCodeSmall()
                         .foregroundStyle(
-                            line.channel == .stderr ? Color.junoDanger : Color.primary
+                            // stdout takes the warm ink, not platform-neutral `Color.primary`.
+                            // This log sits on the terminal well, which is now
+                            // a warm surface, and neutral white-on-warm was the
+                            // last cool note left in the developer surfaces.
+                            line.channel == .stderr ? Color.junoDanger : Color.junoForeground
                         )
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)

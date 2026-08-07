@@ -85,7 +85,7 @@ public struct JunoAIcssImageCanvas: View {
 
                 if let resolution {
                     Text(resolution)
-                        .font(.system(size: 11, design: .monospaced))
+                        .junoFont(size: 11, relativeTo: .caption, design: .monospaced)
                         .foregroundStyle(Color.junoMutedForeground)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
@@ -201,7 +201,7 @@ public struct JunoAIcssImageCanvas: View {
         VStack(alignment: .leading, spacing: 1) {
             JunoAIcssThinkingLabel("Generating image", tone: .strong, size: 14)
             Text("“a calm mountain lake at dawn”")
-                .font(.system(size: 13))
+                .junoFont(size: 13, relativeTo: .subheadline)
                 .foregroundStyle(Color.junoMutedForeground)
         }
     }

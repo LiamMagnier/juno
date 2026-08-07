@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Archive, ArchiveRestore, ChevronRight, MoreHorizontal, Pencil, Pin, PinOff } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronRight, FileText, MoreHorizontal, Pencil, Pin, PinOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,14 +24,26 @@ import { Skeleton } from "@/components/ui/skeleton";
 import type { WorkStatus } from "@/lib/work/domain";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import { patchWorkSession, WORK_SYNC_EVENT } from "@/components/work/work-transport";
-import { WorkStatusPill, statusSentence, workTimeAgo } from "@/components/work/work-vocabulary";
+import {
+  WorkStatusPill,
+  outputsLabel,
+  statusActivity,
+  workTimeAgo,
+} from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
 
 /*
  * One task in a list, and the list itself.
  *
- * The row says three things and stops: what was asked for, what state it is in,
- * and when it last moved. It deliberately does NOT say where the task ran —
+ * The row says what was asked for, what state it is in, and when it last moved.
+ * Two of those are a status word and a timestamp, which between them do not
+ * answer the question a person actually arrives with — what is this task doing —
+ * so the row can say two more things when the caller knows them: what the state
+ * MEANS as a sentence (`explain`), and how many files a finished task left
+ * behind (`outputCount`). Both are opt-in per row rather than always on, because
+ * a list where every row carries three lines of prose is a list nobody scans.
+ *
+ * It deliberately does NOT say where the task ran —
  * the session row only knows the target that was *requested*, and a row reading
  * "Cloud" for a task that was actually substituted onto a Mac (or refused
  * outright) is the kind of confident wrong detail this whole surface exists to
@@ -75,8 +87,26 @@ const EXECUTING = new Set<WorkStatus>(["preparing", "running"]);
 
 export function WorkSessionRow({
   session,
-  /** Renders the status as prose underneath — used by "Needs you". */
+  /**
+   * Renders what the task is doing as a sentence underneath.
+   *
+   * Set for the groups where the status word is not the whole story: the ones
+   * waiting on a person, and the ones that are supposed to be executing — where
+   * `statusActivity` will also say so if nothing has been recorded for a while.
+   * Left off for finished tasks, whose pill has already said everything a list
+   * row can honestly say about them.
+   */
   explain = false,
+  /**
+   * How many files this task produced, when that is known.
+   *
+   * Undefined and 0 both render nothing, and they are the same instruction on
+   * purpose: the count comes from a capped list (see `fetchWorkOutputCounts`),
+   * so "not in the list" and "none" are indistinguishable from here. The row is
+   * allowed to state a count it was given and is not allowed to state an
+   * absence, which is why there is no "no files" branch below.
+   */
+  outputCount,
   /**
    * How long this row should wait before it arrives, or `null` for a row that
    * was already on screen and must not animate at all.
@@ -97,6 +127,7 @@ export function WorkSessionRow({
 }: {
   session: ClientWorkSession;
   explain?: boolean;
+  outputCount?: number;
   enterDelayMs?: number | null;
   onChanged?: (session: ClientWorkSession) => void;
 }) {
@@ -220,12 +251,34 @@ export function WorkSessionRow({
             {session.goal}
           </span>
           {explain && (
-            <span className="mt-1.5 block text-[12.5px] leading-relaxed text-warning-foreground">
-              {statusSentence(session.status)}
+            <span
+              className={cn(
+                "mt-1.5 block text-[12.5px] leading-relaxed",
+                // The warning ink is spent only on the rows that are actually
+                // holding a decision. A running task explained in the same
+                // colour as a task that has stopped and cannot move would make
+                // the two look like one problem, and there are far more of the
+                // first kind.
+                session.needsAttention ? "text-warning-foreground" : "text-muted-foreground"
+              )}
+            >
+              {statusActivity(session.status, session.lastActivityAt)}
             </span>
           )}
-          <span className="mt-1.5 block font-mono text-[10px] text-muted-foreground/70">
-            {workTimeAgo(session.lastActivityAt)}
+          <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] text-muted-foreground/70">
+            <span>{workTimeAgo(session.lastActivityAt)}</span>
+            {outputCount !== undefined && outputCount > 0 && (
+              <>
+                {/* A separator rather than a second line: this is metadata about
+                    the same task at the same weight, and giving files a row of
+                    their own would rank them above the goal. */}
+                <span aria-hidden="true">·</span>
+                <span className="inline-flex items-center gap-1">
+                  <FileText className="h-3 w-3" aria-hidden="true" />
+                  {outputsLabel(outputCount)}
+                </span>
+              </>
+            )}
           </span>
         </span>
         <ChevronRight
@@ -384,15 +437,23 @@ export function WorkSection({
   title,
   hint,
   action,
+  /**
+   * Overrides the gap above. The default is the rhythm the Work home is set in
+   * and is what every caller should want; it is overridable because a stack of
+   * these under a shared heading needs a smaller first gap than a section
+   * standing on its own.
+   */
+  className,
   children,
 }: {
   title: string;
   hint?: string;
   action?: React.ReactNode;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="mt-9">
+    <section className={cn("mt-9", className)}>
       <div className="mb-2.5 flex flex-wrap items-end justify-between gap-2">
         <div className="min-w-0">
           <h2 className="font-mono text-label text-muted-foreground">{title}</h2>

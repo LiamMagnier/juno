@@ -47,7 +47,7 @@ struct JunoMacChatInspector: View {
                 }
                 if conversation.isArchived {
                     Label("chat.archived", systemImage: "archivebox")
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
             }
 
@@ -63,13 +63,13 @@ struct JunoMacChatInspector: View {
                         Button {
                             openArtifact(artifact.id)
                         } label: {
-                            HStack(spacing: JunoSpacing.compact) {
+                            HStack(spacing: JunoSpace.tight) {
                                 Image(systemName: symbol(for: artifact.kind))
                                     .foregroundStyle(Color.junoAccent)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(artifact.title).lineLimit(1)
                                     Text("inspector.artifact.version \(artifact.currentVersion)")
-                                        .junoMetadata()
+                                        .junoCaption()
                                 }
                                 Spacer(minLength: 0)
                             }
@@ -84,10 +84,10 @@ struct JunoMacChatInspector: View {
                 Section("chat.sources") {
                     ForEach(Array(sources.enumerated()), id: \.offset) { index, source in
                         Link(destination: source.url) {
-                            HStack(alignment: .firstTextBaseline, spacing: JunoSpacing.compact) {
+                            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
                                 Text("\(index + 1)")
                                     .font(.caption2.monospacedDigit())
-                                    .foregroundStyle(.secondary)
+                                    .junoSecondaryInk()
                                     .frame(minWidth: 14, alignment: .trailing)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(source.title).lineLimit(2)
@@ -95,7 +95,7 @@ struct JunoMacChatInspector: View {
                                     // wraps to three lines and tells the reader
                                     // less about whether to trust the source.
                                     if let host = source.url.host() {
-                                        Text(host).junoMetadata()
+                                        Text(host).junoCaption()
                                     }
                                 }
                             }

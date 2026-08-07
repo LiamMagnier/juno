@@ -66,11 +66,14 @@ public struct JunoThinkingMatrix: View {
 
     private func point(at index: Int, phase: Double?) -> some View {
         Circle()
-            .fill(.tertiary)
+            // Was `.fill(.tertiary)`: a pure-neutral platform fill on a warm
+            // canvas, next to an active dot that is now warm ink. The pair has
+            // to agree or the grid reads as two greys.
+            .fill(Color.junoForeground.opacity(0.25))
             .frame(width: dot, height: dot)
             .overlay {
                 Circle()
-                    .fill(Color.primary)
+                    .fill(Color.junoForeground)
                     .opacity(brightness(at: index, phase: phase))
             }
     }
@@ -103,7 +106,7 @@ public struct JunoThinkingMatrix: View {
     HStack(spacing: 20) {
         JunoThinkingMatrix()
         JunoThinkingMatrix(dot: 6, spacing: 4)
-            .foregroundStyle(.secondary)
+            .junoSecondaryInk()
     }
     .padding()
 }

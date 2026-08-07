@@ -157,7 +157,7 @@ struct DesktopLibraryScreen: View {
                     .junoPageHeading()
                 Text("Images and documents shared across your conversations.")
                     .junoRowLabel()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -368,10 +368,10 @@ struct DesktopLibraryScreen: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(Color.junoCanvasWarm, Color.primary)
+                        .foregroundStyle(Color.junoCanvasWarm, Color.junoForeground)
                 } else {
                     Image(systemName: "circle")
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
             }
             .font(.title2)
@@ -502,6 +502,11 @@ struct DesktopLibraryScreen: View {
                 close: { editing = nil }
             )
             .frame(minWidth: 560, minHeight: 640)
+            // Sheet contract, applied at the presentation site because the sheet's
+            // root lives in the shared package. Without it this editor stood on
+            // the system's neutral window grey while the Library page behind it
+            // was warm. The platter stays the system's.
+            .junoSheetSurface(.fitted)
         }
     }
 
@@ -602,7 +607,7 @@ struct DesktopLibraryScreen: View {
             JunoDesktopGlass(spacing: JunoSpace.snug) {
                 HStack(spacing: JunoSpace.snug) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Color.junoCaution)
                         .accessibilityHidden(true)
                     Text(error)
                         .junoCaption()

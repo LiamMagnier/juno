@@ -197,11 +197,11 @@ final class DesktopWorkHostModel {
     /// ``executorProvider`` is: the runtime is built after this model and owns
     /// the coordinator, and a model that reached into it directly would put the
     /// local execution graph inside the type the settings screen observes.
-    /// Called with the approval id, the decision, its digest, and its risk. The
-    /// risk travels because a standing grant is only constructible for some
-    /// levels — see `DesktopWorkLocalRuntime.decideLocalApproval`.
+    /// Called with the approval id, the decision, and its digest. The runtime
+    /// reads action and risk from the coordinator's pending request rather than
+    /// trusting presentation data when deciding whether persistence is allowed.
     var localApprovalDecider:
-        (@MainActor (String, JunoWorkApprovalDecision, String, String) -> Void)?
+        (@MainActor (String, JunoWorkApprovalDecision, String) -> Void)?
 
     // MARK: - The switches
 

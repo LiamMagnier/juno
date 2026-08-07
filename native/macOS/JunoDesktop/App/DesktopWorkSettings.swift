@@ -295,7 +295,7 @@ struct DesktopWorkHostTile: View {
             if host.grants.isEmpty {
                 Text("No folders have been granted on this Mac.")
                     .junoRowLabel()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(host.grants) { grant in
@@ -328,7 +328,7 @@ struct DesktopWorkHostTile: View {
                 if let lastUsed = grant.lastUsedAt {
                     Text("used \(lastUsed.formatted(.relative(presentation: .named)))")
                         .junoCodeSmall()
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
                 Menu("Change…") {
                     ForEach(Self.grantableModes, id: \.self) { mode in
@@ -353,7 +353,7 @@ struct DesktopWorkHostTile: View {
                     Image(systemName: "minus.circle")
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .help("Stop sharing \(grant.displayName) with Juno")
                 .accessibilityLabel("Stop sharing \(grant.displayName)")
             }
@@ -799,7 +799,7 @@ private struct DesktopWorkBundleList: View {
             if identifiers.isEmpty {
                 Text(emptyMessage)
                     .junoRowLabel()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(identifiers, id: \.self) { identifier in
@@ -816,7 +816,7 @@ private struct DesktopWorkBundleList: View {
                             Image(systemName: "minus.circle")
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                         .help("Remove \(identifier)")
                         .accessibilityLabel("Remove \(identifier)")
                     }

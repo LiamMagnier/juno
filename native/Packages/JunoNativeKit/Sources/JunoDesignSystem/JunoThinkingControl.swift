@@ -71,7 +71,7 @@ public struct JunoThinkingTrack: View {
                 ForEach(0..<count, id: \.self) { stop in
                     let stopFraction = count > 1 ? Double(stop) / Double(max(lastIndex, 1)) : 0
                     Circle()
-                        .fill(Color.primary.opacity(stop <= index ? 0.28 : 0.16))
+                        .fill(Color.junoForeground.opacity(stop <= index ? 0.28 : 0.16))
                         .frame(width: 3, height: 3)
                         .offset(x: pad + thumb / 2 - 1.5 + travel * stopFraction)
                 }
@@ -100,7 +100,7 @@ public struct JunoThinkingTrack: View {
         .frame(height: trackHeight)
         .overlay {
             if contrast == .increased {
-                Capsule().strokeBorder(Color.primary.opacity(0.4), lineWidth: 1)
+                Capsule().strokeBorder(Color.junoForeground.opacity(0.4), lineWidth: 1)
             }
         }
         // Native selection feedback at each detent, which respects the system
@@ -184,14 +184,14 @@ public struct JunoThinkingPanel: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpacing.control) {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             HStack {
                 Text("THINKING")
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .junoFont(size: 11, relativeTo: .caption, weight: .medium, design: .monospaced)
+                    .junoSecondaryInk()
                 Spacer(minLength: JunoSpace.cozy)
                 Text(ladder.label(for: stopID))
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .junoFont(size: 11, relativeTo: .caption, weight: .semibold, design: .monospaced)
                     .foregroundStyle(Color.junoAccent)
             }
             .accessibilityHidden(true)
@@ -201,7 +201,7 @@ public struct JunoThinkingPanel: View {
             if let caption = ladder.caption {
                 Text(caption)
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -236,7 +236,7 @@ public struct JunoThinkingButton: View {
         if ladder.isAutomatic {
             Text("Auto")
                 .font(.caption.monospaced())
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .accessibilityLabel("Thinking")
                 .accessibilityValue("Automatic")
                 .accessibilityIdentifier(accessibilityID)
@@ -252,10 +252,10 @@ public struct JunoThinkingButton: View {
                         .font(.caption2.weight(.semibold))
                 }
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .contentShape(.rect)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.junoPress)
             .fixedSize()
             .disabled(!ladder.isAdjustable)
             .help("How much thinking the model does before answering")

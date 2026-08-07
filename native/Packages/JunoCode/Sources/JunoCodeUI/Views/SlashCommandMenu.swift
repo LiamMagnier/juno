@@ -64,15 +64,17 @@ struct SlashCommandMenu: View {
                     HStack(spacing: JunoSpace.tight) {
                         Text("/\(command.name)")
                             .junoMono()
-                            .foregroundStyle(Color.primary)
+                            .foregroundStyle(Color.junoForeground)
                         if command.source.isWorkspace {
                             // The one distinction worth drawing in the menu: a
                             // command the repository defined behaves however the
                             // repository decided, and the reader should know
                             // which of the two they are about to run.
                             Text("workspace")
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundStyle(.secondary)
+                                // Text, not a glyph, and 9pt fixed — the
+                                // smallest unscaled string in this menu.
+                                .junoFont(size: 9, relativeTo: .caption2, weight: .medium)
+                                .junoSecondaryInk()
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
                                 .background(
@@ -88,7 +90,7 @@ struct SlashCommandMenu: View {
                 if let behavior = command.behavior {
                     Text(behavior.slashMenuLabel)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
             }
             .padding(.horizontal, JunoSpace.snug)

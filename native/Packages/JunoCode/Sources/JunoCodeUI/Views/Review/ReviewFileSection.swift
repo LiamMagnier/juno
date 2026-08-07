@@ -34,7 +34,7 @@ struct ReviewFileHeader: View {
                 if let directory = PathDisplay.directory(change.path) {
                     Text(directory)
                         .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                        .junoMetaInk()
                         .lineLimit(1)
                         .truncationMode(.head)
                 }
@@ -435,7 +435,7 @@ private struct HunkActionRow: View {
         HStack(spacing: JunoSpace.snug) {
             Text(hunk.header)
                 .junoCodeSmall()
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
             Spacer(minLength: JunoSpace.cozy)
             if isAccepted {
                 Label("Kept", systemImage: "checkmark")
@@ -485,7 +485,7 @@ private struct ReviewCommentEditor: View {
             if let quoted = target.quotedLine {
                 Text(quoted)
                     .junoCodeSmall()
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -550,7 +550,7 @@ private struct ReviewNoteRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(location)
                     .junoCodeSmall()
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
                 Text(comment.text)
                     .junoBody()
                     .textSelection(.enabled)
@@ -583,7 +583,7 @@ private struct ReviewNotice: View {
     var body: some View {
         HStack(spacing: JunoSpace.snug) {
             Image(systemName: symbol)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
             Text(text).junoCaption()
         }
         .padding(.horizontal, JunoSpace.regular)
@@ -599,7 +599,7 @@ struct ReviewStateGlyph: View {
         switch state {
         case .pending:
             Image(systemName: "circle.dotted")
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .help("Not reviewed")
                 .accessibilityLabel("Not reviewed")
         case .accepted:
@@ -609,7 +609,7 @@ struct ReviewStateGlyph: View {
                 .accessibilityLabel("Kept")
         case .rejected:
             Image(systemName: "arrow.uturn.backward.circle")
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
                 .help("Reverted")
                 .accessibilityLabel("Reverted")
         }

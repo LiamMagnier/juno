@@ -26,8 +26,25 @@ enum DiffLinePresentation {
         switch kind {
         case .added: .junoSuccess
         case .removed: .junoDanger
-        case .context, .none: .secondary
+        case .context, .none: .junoMutedForeground
         }
+    }
+
+    /// The ink a diff line's own text takes.
+    ///
+    /// Both of these were `.primary` / `.secondary` — platform-neutral ink,
+    /// which resolves to pure white in dark mode. The well underneath is
+    /// ``Color/junoTerminal``, and that token was recently corrected from a cool
+    /// value (blue channel highest) to a warm one, so neutral ink on it now
+    /// reads as a distinctly cold column against every warm surface around it.
+    /// This is the most-read text in the review surface, so it is the one place
+    /// the mismatch was most visible.
+    ///
+    /// Context lines stay quieter than changed ones — that hierarchy is the
+    /// point of a diff — but they step down to the muted *warm* ink rather than
+    /// to a lower-contrast neutral.
+    static func lineInk(_ kind: DiffLineKind?) -> Color {
+        kind == .context ? .junoMutedForeground : .junoForeground
     }
 
     static func fill(_ kind: DiffLineKind?) -> Color {
@@ -83,15 +100,15 @@ struct UnifiedHunkLines: View {
         HStack(spacing: 0) {
             Text(line.oldLineNumber.map(String.init) ?? "")
                 .frame(width: DiffLinePresentation.gutterWidth, alignment: .trailing)
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
             Text(line.newLineNumber.map(String.init) ?? "")
                 .frame(width: DiffLinePresentation.gutterWidth, alignment: .trailing)
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
             Text(DiffLinePresentation.marker(line.kind))
                 .frame(width: DiffLinePresentation.markerWidth)
                 .foregroundStyle(DiffLinePresentation.markerColor(line.kind))
             Text(DiffLinePresentation.text(line))
-                .foregroundStyle(line.kind == .context ? .secondary : .primary)
+                .foregroundStyle(DiffLinePresentation.lineInk(line.kind))
                 .textSelection(.enabled)
             Spacer(minLength: JunoSpace.cozy)
         }
@@ -137,12 +154,12 @@ struct PairedHunkLines: View {
         HStack(spacing: 0) {
             Text(lineNumber(line, isOld: isOld))
                 .frame(width: DiffLinePresentation.gutterWidth, alignment: .trailing)
-                .foregroundStyle(.tertiary)
+                .junoMetaInk()
             Text(DiffLinePresentation.marker(line?.kind))
                 .frame(width: DiffLinePresentation.markerWidth)
                 .foregroundStyle(DiffLinePresentation.markerColor(line?.kind))
             Text(DiffLinePresentation.text(line))
-                .foregroundStyle(line?.kind == .context ? .secondary : .primary)
+                .foregroundStyle(DiffLinePresentation.lineInk(line?.kind))
                 .textSelection(.enabled)
                 .truncationMode(.tail)
             Spacer(minLength: JunoSpace.snug)

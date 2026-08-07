@@ -81,7 +81,9 @@ struct JunoMacChatView: View {
                             }
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    // The empty state's only action, previously in the system
+                    // accent against a warm canvas.
+                    .junoProminentAction()
                 }
                 .background(Color.junoCanvas)
             }
@@ -239,11 +241,21 @@ struct JunoMacChatView: View {
                 Label("chat.scroll-to-latest", systemImage: "arrow.down")
                     .labelStyle(.iconOnly)
                     .font(.callout.weight(.semibold))
-                    .padding(JunoSpacing.control)
+                    .padding(JunoSpace.cozy)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.junoPress)
+            // 22 is not an off-ladder radius, it is half this control's ~44pt
+            // side — the value that makes the floating pill an actual circle.
             .junoFloatingGlass(cornerRadius: 22)
-            .overlay(Circle().strokeBorder(Color.junoHairline))
+            // The hairline belongs to the *fallback only*. `junoFloatingGlass`
+            // resolves to `.regularMaterial` below macOS 26, and a plain
+            // material carries no rim of its own, so it needs one. Real Liquid
+            // Glass already scatters light at its edge, and stroking over it
+            // flattens the material back into a translucent rounded rectangle —
+            // exactly what the design system's own note on this warns against.
+            // It used to be drawn unconditionally, so on 26+ the app was
+            // undoing its own glass.
+            .modifier(JunoMacFallbackRim())
             .padding(.bottom, 148)
             .transition(.scale.combined(with: .opacity))
             .help(Text("chat.scroll-to-latest"))
@@ -288,7 +300,7 @@ struct JunoMacChatView: View {
                 JunoMacBanner(
                     systemImage: "wifi.slash",
                     message: Text("chat.offline"),
-                    tint: .secondary
+                    tint: .junoMutedForeground
                 ) {
                     Button("common.retry") { Task { await model.reload() } }
                 }
@@ -411,7 +423,7 @@ private struct JunoMacMessageView: View {
     }
 
     var body: some View {
-        VStack(alignment: isUser ? .trailing : .leading, spacing: JunoSpacing.compact) {
+        VStack(alignment: isUser ? .trailing : .leading, spacing: JunoSpace.tight) {
             if isUser {
                 userContent
             } else {
@@ -425,12 +437,12 @@ private struct JunoMacMessageView: View {
     }
 
     private var userContent: some View {
-        VStack(alignment: .leading, spacing: JunoSpacing.compact) {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
             JunoMarkdownText(plainText)
             if message.isPending {
                 HStack(spacing: 4) {
                     ProgressView().controlSize(.small)
-                    Text("sync.pending").junoMetadata()
+                    Text("sync.pending").junoCaption()
                 }
             }
         }
@@ -449,16 +461,16 @@ private struct JunoMacMessageView: View {
     }
 
     private var assistantContent: some View {
-        VStack(alignment: .leading, spacing: JunoSpacing.control) {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             if let reasoning = message.reasoning, !reasoning.isEmpty {
                 DisclosureGroup(isExpanded: $showReasoning) {
                     JunoMarkdownText(reasoning)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, JunoSpacing.compact)
+                        .junoSecondaryInk()
+                        .padding(.top, JunoSpace.tight)
                 } label: {
                     Label("chat.reasoning", systemImage: "sparkles")
                         .font(.system(.caption, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                 }
                 .accessibilityIdentifier("juno.mac.message-reasoning")
             }
@@ -488,20 +500,28 @@ private struct JunoMacMessageView: View {
             if let error = message.errorDescription {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    // `errorDescription` means the turn actually failed, so
+                    // this is the danger rung, not caution. It was drawn in
+                    // system orange, which both under-stated a failure and
+                    // was the wrong hue for the warm transcript.
+                    .foregroundStyle(Color.junoDanger)
             }
 
-            HStack(spacing: JunoSpacing.compact) {
+            HStack(spacing: JunoSpace.tight) {
                 copyButton
                 Spacer(minLength: 0)
                 if let modelName = message.model, !modelName.isEmpty {
-                    Text(junoDisplayModelName(modelName)).junoMetadata()
+                    Text(junoDisplayModelName(modelName)).junoCaption()
                 }
             }
             // Actions stay reserved-but-invisible until hover, so the transcript
             // is quiet at rest and the layout never shifts when they appear.
             .opacity(isHovering ? 1 : 0)
-            .animation(.easeOut(duration: 0.12), value: isHovering)
+            // The ladder's `fast` rung, which is this exact curve and duration —
+            // the literal was already on-value, just spelled out. No Reduce
+            // Motion guard: nothing travels, this is a pure cross-fade, which is
+            // the `.tint` tier the ladder deliberately leaves untouched.
+            .animation(JunoMotion.fast, value: isHovering)
             .accessibilityHidden(false)
         }
     }
@@ -529,7 +549,7 @@ private struct JunoMacMessageView: View {
             .labelStyle(.iconOnly)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .junoSecondaryInk()
         // Keyed to what would actually be copied: a reply that is nothing but a
         // `<juno:memory>` tag has content but nothing a reader could paste.
         .disabled(plainText.isEmpty)
@@ -586,27 +606,27 @@ private struct JunoMacArtifactInlineCard: View {
     private var card: some View {
         HStack(spacing: JunoSpace.cozy) {
             Image(systemName: glyph)
-                .foregroundStyle(open == nil ? Color.secondary : Color.junoAccent)
+                .foregroundStyle(open == nil ? Color.junoMutedForeground : Color.junoAccent)
                 .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(artifact.title)
                     .font(.system(.body, weight: .medium))
                     .lineLimit(1)
-                Text(subtitle).junoMetadata()
+                Text(subtitle).junoCaption()
             }
 
             Spacer(minLength: 0)
 
             if artifact.streaming {
                 JunoThinkingMatrix(dot: 3, spacing: 2)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
             } else if open != nil {
                 // The affordance appears on hover, like the message actions
                 // above: at rest the transcript stays quiet.
                 Image(systemName: "arrow.up.forward")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .junoSecondaryInk()
                     .opacity(isHovering ? 1 : 0)
             }
         }
@@ -621,7 +641,9 @@ private struct JunoMacArtifactInlineCard: View {
                 .strokeBorder(Color.junoHairline)
         )
         .contentShape(.rect)
-        .animation(.easeOut(duration: 0.12), value: isHovering)
+        // As above: the `fast` rung by name, and a fill cross-fade rather than
+        // travel, so it survives Reduce Motion intact.
+        .animation(JunoMotion.fast, value: isHovering)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("chat.artifact.label \(artifact.title) \(subtitle)"))
     }
@@ -632,13 +654,13 @@ private struct JunoMacSourceList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("chat.sources").junoMetadata()
+            Text("chat.sources").junoCaption()
             ForEach(Array(sources.enumerated()), id: \.offset) { index, source in
                 Link(destination: source.url) {
-                    HStack(alignment: .firstTextBaseline, spacing: JunoSpacing.compact) {
+                    HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
                         Text("\(index + 1)")
                             .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
+                            .junoSecondaryInk()
                             .frame(minWidth: 14, alignment: .trailing)
                         Text(source.title)
                             .font(.caption)
@@ -649,7 +671,7 @@ private struct JunoMacSourceList: View {
                 .foregroundStyle(Color.junoAccent)
             }
         }
-        .padding(.top, JunoSpacing.compact)
+        .padding(.top, JunoSpace.tight)
     }
 }
 
@@ -660,11 +682,11 @@ private struct JunoMacThinkingRow: View {
     let phase: NativeChatGenerationPhase
 
     var body: some View {
-        HStack(spacing: JunoSpacing.compact) {
+        HStack(spacing: JunoSpace.tight) {
             JunoMacStreamingDots()
             Text(label)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .junoSecondaryInk()
         }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.updatesFrequently)
@@ -715,15 +737,37 @@ private struct JunoMacBanner<Actions: View>: View {
     @ViewBuilder let actions: () -> Actions
 
     var body: some View {
-        HStack(spacing: JunoSpacing.compact) {
+        HStack(spacing: JunoSpace.tight) {
             Image(systemName: systemImage).foregroundStyle(tint)
             message.font(.caption).lineLimit(2)
-            Spacer(minLength: JunoSpacing.compact)
+            Spacer(minLength: JunoSpace.tight)
             actions().font(.caption).buttonStyle(.link)
         }
-        .padding(.horizontal, JunoSpacing.content)
-        .padding(.vertical, JunoSpacing.compact + 2)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.tight + 2)
         .background(.bar)
         .accessibilityElement(children: .contain)
+    }
+}
+
+/// A rim for the pre-26 material fallback, and nothing at all on Liquid Glass.
+///
+/// JunoMac still deploys to macOS 15, where `junoFloatingGlass` resolves to
+/// `.regularMaterial`. A material has no edge of its own, so a floating control
+/// drawn in one dissolves into whatever is behind it without a hairline. Real
+/// glass has the opposite problem: it carries its own rim scatter, and a stroke
+/// laid over it flattens that into a flat translucent shape. One treatment
+/// cannot serve both, so the branch is explicit.
+///
+/// The availability predicate is constant for the life of the process, so the
+/// `_ConditionalContent` identity split this introduces never actually churns
+/// at runtime — unlike the same shape written against a `@State` condition.
+private struct JunoMacFallbackRim: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content
+        } else {
+            content.overlay(Circle().strokeBorder(Color.junoHairline))
+        }
     }
 }

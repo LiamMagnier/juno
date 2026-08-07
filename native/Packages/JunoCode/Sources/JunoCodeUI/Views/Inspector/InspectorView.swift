@@ -424,7 +424,7 @@ struct ChangesTab: View {
                     .lineLimit(1)
                 Text(subtitle(change))
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .junoMetaInk()
                     .lineLimit(1)
                     .truncationMode(.head)
             }
@@ -512,7 +512,7 @@ struct PreviewTab: View {
             if let root = controller.context?.access.rootURL {
                 HStack(spacing: JunoSpace.snug) {
                     Image(systemName: "folder")
-                        .foregroundStyle(.secondary)
+                        .junoSecondaryInk()
                     Text(root.lastPathComponent.isEmpty ? root.path : root.lastPathComponent)
                         .junoCode()
                         .lineLimit(1)
