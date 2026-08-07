@@ -35,7 +35,7 @@ import {
   type TransactionResult,
 } from "@/lib/design/operations";
 import { parseStoredDesignDocument } from "@/lib/design/migrations";
-import { subtreeIds } from "@/lib/design/document";
+import { isAncestorOf, subtreeIds } from "@/lib/design/document";
 import type { AssetRef, DesignDocument, NodeId, PageId } from "@/lib/design/types";
 
 export interface HistoryEntry {
@@ -476,17 +476,19 @@ export function useDesignDocument(opts: Options) {
   const selectNodes = React.useCallback(
     (ids: NodeId[], mode: "replace" | "add" | "toggle" = "replace") => {
       setSelection((current) => {
-        if (mode === "replace") return ids;
-        if (mode === "add") return [...new Set([...current, ...ids])];
-        const set = new Set(current);
-        for (const id of ids) {
-          if (set.has(id)) set.delete(id);
-          else set.add(id);
+        const next = new Set(mode === "replace" ? [] : current);
+        if (mode === "toggle") {
+          for (const id of ids) {
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+          }
+        } else {
+          for (const id of ids) next.add(id);
         }
-        return [...set];
+        return canonicalSelection(document, [...next]);
       });
     },
-    []
+    [document]
   );
 
   // The page on screen can go away underneath the editor — a deleted page, an
@@ -503,8 +505,8 @@ export function useDesignDocument(opts: Options) {
   React.useEffect(() => {
     if (!document) return;
     setSelection((current) => {
-      const alive = current.filter((id) => !!document.nodes[id]);
-      return alive.length === current.length ? current : alive;
+      const next = canonicalSelection(document, current);
+      return next.length === current.length && next.every((id, index) => id === current[index]) ? current : next;
     });
   }, [document]);
 
@@ -534,6 +536,19 @@ export function useDesignDocument(opts: Options) {
     rejectPending,
     saving,
   };
+}
+
+/**
+ * Mutable commands operate on roots, not on an ancestor and its descendant at
+ * the same time. Keeping that invariant at the selection boundary prevents a
+ * parent/child shift-selection from moving, nudging, duplicating or deleting
+ * the descendant twice. The visible tree can still show both layers; only the
+ * active edit set is reduced to the smallest safe antichain.
+ */
+function canonicalSelection(doc: DesignDocument | null, ids: NodeId[]): NodeId[] {
+  if (!doc) return [...new Set(ids)];
+  const live = [...new Set(ids)].filter((id) => !!doc.nodes[id]);
+  return live.filter((id) => !live.some((other) => other !== id && isAncestorOf(doc, other, id)));
 }
 
 export type DesignEditorState = ReturnType<typeof useDesignDocument>;

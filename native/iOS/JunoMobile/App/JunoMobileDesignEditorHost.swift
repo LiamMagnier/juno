@@ -2,7 +2,7 @@ import JunoDesignKit
 import SwiftUI
 import WebKit
 
-/// Hosts the bundled Juno Design editor in a `WKWebView`, read-only.
+/// Hosts the bundled Juno Design editor in a `WKWebView`.
 ///
 /// **The drawing on the phone is the same drawing.** The bundle loaded here is
 /// the one `scripts/build-design-editor.mjs` produces and the Mac hosts, so the
@@ -12,15 +12,11 @@ import WebKit
 /// and quietly disagree with all three; ``DesignDocument``'s rule that there is
 /// one engine is what that alternative violates.
 ///
-/// **Why this is not ``DesktopDesignEditorHost``.** That host owns an editing
-/// session: it accepts transactions, re-asserts the document when the editor and
-/// the store disagree, and pushes selection back into native chrome. None of
-/// that exists on the phone, because the phone does not edit a design — it opens
-/// one. So this host speaks the two messages a reader needs (`ready`, and
-/// whatever failure follows) and treats every other message as an error worth
-/// showing rather than silently accepting an edit it has nowhere to store.
-/// Validation itself is not duplicated: ``DesignBridgeValidator`` in
-/// `JunoDesignKit` is the same parser both hosts run.
+/// The same host serves the phone's reader and its editor. A read-only session
+/// still refuses writes; an editable session forwards each validated transaction
+/// to the artifact shell, which decides when to persist a new version. Keeping
+/// that boundary identical to Mac means layer deletion, z-order, undo and the
+/// inspector are the same editor rather than a mobile-only imitation.
 ///
 /// The boundary is the Mac's, unchanged:
 ///
@@ -55,13 +51,16 @@ final class JunoMobileDesignEditorHost: NSObject {
 
     private(set) var status: Status = .loading
 
-    private let document: DesignDocument
+    private(set) var document: DesignDocument
+    private let readOnly: Bool
     private let nonce = UUID().uuidString
     private var validator: DesignBridgeValidator
     private var webView: WKWebView?
+    var onTransaction: ((DesignDocument, String, String) -> Void)?
 
-    init(document: DesignDocument) {
+    init(document: DesignDocument, readOnly: Bool = true) {
         self.document = document
+        self.readOnly = readOnly
         validator = DesignBridgeValidator(nonce: nonce, revision: document.revision)
         super.init()
     }
@@ -142,20 +141,25 @@ final class JunoMobileDesignEditorHost: NSObject {
                 status = .ready(editorVersion: editorVersion)
                 // Only now is the document handed over: before `ready`, the
                 // bundle has not agreed on a protocol version.
-                send(.openDocument(nonce: nonce, document: document, readOnly: true))
+                send(.openDocument(nonce: nonce, document: document, readOnly: readOnly))
 
             case .selection:
-                // The phone has no inspector to drive, and the editor draws its
-                // own selection. Accepted and dropped rather than treated as an
-                // error the reader has to look at.
+                // The editor draws its own selection. The mobile shell does not
+                // need a second inspector selection model.
                 break
 
-            case .transaction, .save:
-                // Both mean the editor believes it is editable. It was opened
-                // read-only, so this is a disagreement about the session rather
-                // than a change to store, and storing it is exactly what must not
-                // happen here.
-                status = .failed("The design editor tried to change a document opened for reading.")
+            case .transaction(_, _, _, let transactionID, let summary, let next):
+                guard !readOnly else {
+                    status = .failed("The design editor tried to change a document opened for reading.")
+                    return
+                }
+                document = next
+                onTransaction?(next, transactionID, summary)
+
+            case .save:
+                // Transactions are forwarded as they happen; the native detail
+                // owns the explicit Save action and version creation.
+                break
 
             case .failure(_, let message):
                 status = .failed(message)

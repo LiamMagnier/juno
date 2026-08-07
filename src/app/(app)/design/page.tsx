@@ -16,8 +16,23 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { PenTool, Plus } from "lucide-react";
+import { MoreHorizontal, PenTool, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { AppIcons } from "@/lib/app-icons";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { cn } from "@/lib/utils";
@@ -45,6 +60,8 @@ export default function DesignPage() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [creating, setCreating] = React.useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = React.useState<DesignItem | null>(null);
+  const [deleting, setDeleting] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -86,6 +103,23 @@ export default function DesignPage() {
     },
     [router]
   );
+
+  const deleteDesign = React.useCallback(async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/artifacts/${deleteTarget.id}`, { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Could not delete this design.");
+      setItems((current) => current.filter((item) => item.id !== deleteTarget.id));
+      toast.success(`${deleteTarget.title} deleted.`);
+      setDeleteTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete this design.");
+    } finally {
+      setDeleting(false);
+    }
+  }, [deleteTarget, deleting]);
 
   const empty = !loading && !error && items.length === 0;
 
@@ -161,21 +195,44 @@ export default function DesignPage() {
             <ul className="space-y-1.5">
               {items.map((item) => (
                 <li key={item.id}>
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/design/${item.id}`)}
-                    className="pressable flex w-full items-center gap-3 rounded-[14px] border border-border/60 bg-card/40 px-4 py-3 text-left transition-colors duration-fast hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                  >
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <AppIcons.design className="size-4" aria-hidden />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{item.title}</span>
-                      <span className="block font-mono text-[10px] text-muted-foreground">
-                        v{item.version} · {timeAgo(item.updatedAt)}
+                  <div className="group flex items-center gap-1 rounded-[14px] border border-border/60 bg-card/40 p-1 transition-colors duration-fast hover:border-primary/40 hover:bg-accent">
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/design/${item.id}`)}
+                      className="pressable flex min-w-0 flex-1 items-center gap-3 rounded-[11px] px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    >
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <AppIcons.design className="size-4" aria-hidden />
                       </span>
-                    </span>
-                  </button>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium">{item.title}</span>
+                        <span className="block font-mono text-[10px] text-muted-foreground">
+                          v{item.version} · {timeAgo(item.updatedAt)}
+                        </span>
+                      </span>
+                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Actions for ${item.title}`}
+                          className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 coarse:opacity-100"
+                        >
+                          <MoreHorizontal className="size-4" aria-hidden />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onSelect={() => setDeleteTarget(item)}
+                        >
+                          <Trash2 className="size-4" aria-hidden />
+                          Delete design
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -190,6 +247,27 @@ export default function DesignPage() {
         </Button>{" "}
         alongside everything else Juno built with you.
       </p>
+
+      <Dialog open={deleteTarget !== null} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {deleteTarget?.title}?</DialogTitle>
+            <DialogDescription>
+              Every version of this design and its history will be permanently removed. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={deleting}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button variant="destructive" onClick={() => void deleteDesign()} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete design"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

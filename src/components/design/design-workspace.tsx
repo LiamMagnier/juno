@@ -16,9 +16,20 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, MessagesSquare } from "lucide-react";
+import { ArrowLeft, MessagesSquare, MoreHorizontal, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { AskJunoBar, type AskJunoBarHandle } from "@/components/design/ask-juno-bar";
 import { DesignAdjustments } from "@/components/design/design-adjustments";
 import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
@@ -39,6 +50,7 @@ interface Props {
 }
 
 export function DesignWorkspace({ artifactId, title, version, content, conversationId }: Props) {
+  const router = useRouter();
   const editorRef = React.useRef<DesignEditorHandle | null>(null);
   const barRef = React.useRef<AskJunoBarHandle | null>(null);
   const viewportRef = React.useRef<DesignViewportHandle | null>(null);
@@ -52,6 +64,8 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
   const [armed, setArmed] = React.useState<DesignAdjustment[]>([]);
   const [adjustments, setAdjustments] = React.useState<DesignAdjustment[]>([]);
   const [reviewing, setReviewing] = React.useState(false);
+  const [deleteOpen, setDeleteOpen] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
 
   const onSelectionChange = React.useCallback((_revision: number, ids: NodeId[]) => {
     const names = editorRef.current?.selectionNames() ?? [];
@@ -127,6 +141,21 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
     [artifactId, name]
   );
 
+  const deleteDesign = React.useCallback(async () => {
+    if (deleting) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/artifacts/${artifactId}`, { method: "DELETE" });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Could not delete this design.");
+      toast.success("Design deleted.");
+      router.replace("/design");
+    } catch (error) {
+      setDeleting(false);
+      toast.error(error instanceof Error ? error.message : "Could not delete this design.");
+    }
+  }, [artifactId, deleting, router]);
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <header className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
@@ -148,6 +177,20 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
             Chat
           </Link>
         </Button>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-sm" aria-label="Design actions" className="shrink-0 text-muted-foreground hover:text-foreground">
+              <MoreHorizontal className="size-4" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setDeleteOpen(true)}>
+              <Trash2 className="size-4" aria-hidden />
+              Delete design
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </header>
 
       <div className="min-h-0 flex-1">
@@ -180,6 +223,25 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
           }
         />
       </div>
+
+      <Dialog open={deleteOpen} onOpenChange={(open) => !open && !deleting && setDeleteOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete {name}?</DialogTitle>
+            <DialogDescription>
+              Every version of this design and its history will be permanently removed. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline" disabled={deleting}>Cancel</Button>
+            </DialogClose>
+            <Button variant="destructive" onClick={() => void deleteDesign()} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete design"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

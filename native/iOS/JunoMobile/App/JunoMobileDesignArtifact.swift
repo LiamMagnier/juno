@@ -36,6 +36,8 @@ import SwiftUI
 /// selectable in a way a canvas is not.
 struct JunoMobileDesignArtifactBody: View {
     let content: String
+    let readOnly: Bool
+    var onEdit: ((String) -> Void)?
 
     /// Which of the three readings is showing.
     private enum Reading: Hashable {
@@ -236,7 +238,20 @@ struct JunoMobileDesignArtifactBody: View {
         let result = Result { try DesignDocumentCodec.load(Data(content.utf8)) }
         decoded = result
         if case .success(let document) = result {
-            host = JunoMobileDesignEditorHost(document: document)
+            let editor = JunoMobileDesignEditorHost(document: document, readOnly: readOnly)
+            if !readOnly, let onEdit {
+                editor.onTransaction = { document, _, _ in
+                    do {
+                        let data = try DesignDocumentCodec.encode(document)
+                        onEdit(String(decoding: data, as: UTF8.self))
+                    } catch {
+                        // The host reports bridge failures over the same status
+                        // surface; a codec failure is surfaced by the native
+                        // document shell when it cannot produce a draft.
+                    }
+                }
+            }
+            host = editor
         }
     }
 
@@ -324,10 +339,26 @@ struct JunoMobileArtifactBody: View {
     let kind: NativeArtifactKind
     let content: String
     let mode: NativeArtifactDisplayMode
+    let readOnly: Bool
+    var onEdit: ((String) -> Void)? = nil
+
+    init(
+        kind: NativeArtifactKind,
+        content: String,
+        mode: NativeArtifactDisplayMode,
+        readOnly: Bool = true,
+        onEdit: ((String) -> Void)? = nil
+    ) {
+        self.kind = kind
+        self.content = content
+        self.mode = mode
+        self.readOnly = readOnly
+        self.onEdit = onEdit
+    }
 
     var body: some View {
         if kind.isDesignDocument {
-            JunoMobileDesignArtifactBody(content: content)
+            JunoMobileDesignArtifactBody(content: content, readOnly: readOnly, onEdit: onEdit)
         } else {
             NativeArtifactPreview(kind: kind, content: content, mode: mode)
         }

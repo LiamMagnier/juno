@@ -875,34 +875,104 @@ function applyOne(doc: DesignDocument, operation: DesignOperation, ctx: ApplyCon
 
     // --------------------------------------------------------------- reorder
     case "reorderNodes": {
+      /**
+       * Reorder a selection as a stable set.
+       *
+       * Moving selected layers one at a time looks correct for one layer but
+       * reverses a multi-selection when it is sent to the front or back. It
+       * also makes a non-contiguous selection behave differently depending on
+       * the order its ids happened to arrive in. Figma treats the selection as
+       * a stable set inside each parent: the selected layers keep their order
+       * while the set moves around them. Do that here so the toolbar, context
+       * menu, Layers panel and AI all share one z-order rule.
+       */
       const inverse: DesignOperation[] = [];
-      for (const id of operation.nodeIds) {
+      const captures = operation.nodeIds.map((id) => {
         const node = requireUnlocked(doc, id);
         const pageId = pageIdOf(doc, id);
         const list = siblingList(doc, node.parentId, pageId);
-        const from = list.indexOf(id);
-        if (from < 0) continue;
-        const to =
-          operation.to === "front"
-            ? list.length - 1
-            : operation.to === "back"
-              ? 0
-              : operation.to === "forward"
-                ? Math.min(from + 1, list.length - 1)
-                : Math.max(from - 1, 0);
-        if (to === from) continue;
-        list.splice(from, 1);
-        list.splice(to, 0, id);
-        ctx.touched.add(id);
-        inverse.unshift({
-          op: "reparentNodes",
-          nodeIds: [id],
-          newParentId: node.parentId,
-          pageId,
-          index: from,
-        });
+        return { id, parentId: node.parentId, pageId, list, from: list.indexOf(id) };
+      });
+      const groups = new Map<string, { parentId: NodeId | null; pageId: string; list: NodeId[]; ids: Set<NodeId> }>();
+
+      for (const capture of captures) {
+        if (capture.from < 0) continue;
+        const key = `${capture.pageId}\u0000${capture.parentId ?? ""}`;
+        const group = groups.get(key) ?? {
+          parentId: capture.parentId,
+          pageId: capture.pageId,
+          list: capture.list,
+          ids: new Set<NodeId>(),
+        };
+        group.ids.add(capture.id);
+        groups.set(key, group);
       }
-      return { inverse, summary: `Bring ${operation.to}` };
+
+      for (const group of groups.values()) {
+        const before = [...group.list];
+        const selected = group.ids;
+        const after = [...before];
+
+        if (operation.to === "front" || operation.to === "back") {
+          const chosen = before.filter((id) => selected.has(id));
+          const remaining = before.filter((id) => !selected.has(id));
+          after.splice(0, after.length, ...(operation.to === "front" ? [...remaining, ...chosen] : [...chosen, ...remaining]));
+        } else if (operation.to === "forward") {
+          // Walk from the front so adjacent selected layers move together and
+          // non-contiguous selections each cross at most one sibling.
+          for (let index = after.length - 2; index >= 0; index--) {
+            if (selected.has(after[index]) && !selected.has(after[index + 1])) {
+              [after[index], after[index + 1]] = [after[index + 1], after[index]];
+            }
+          }
+        } else {
+          // Walk from the back for the mirror image of the forward move.
+          for (let index = 1; index < after.length; index++) {
+            if (selected.has(after[index]) && !selected.has(after[index - 1])) {
+              [after[index], after[index - 1]] = [after[index - 1], after[index]];
+            }
+          }
+        }
+
+        group.list.splice(0, group.list.length, ...after);
+        for (const id of selected) {
+          if (before.indexOf(id) !== after.indexOf(id)) ctx.touched.add(id);
+        }
+
+        // Build the inverse against a working copy of the post-state. Using
+        // every node's original index directly is subtly wrong: each
+        // reparent detaches an item first, so the later indexes have shifted.
+        // Greedily restoring the desired item at each position gives a stable
+        // sequence for non-contiguous and multi-parent selections alike.
+        const current = [...after];
+        for (let index = 0; index < before.length; index++) {
+          if (current[index] === before[index]) continue;
+          const currentIndex = current.indexOf(before[index]);
+          if (currentIndex < 0) continue;
+          current.splice(currentIndex, 1);
+          current.splice(index, 0, before[index]);
+          inverse.push({
+            op: "reparentNodes",
+            nodeIds: [before[index]],
+            newParentId: group.parentId,
+            pageId: group.pageId,
+            index,
+          });
+        }
+      }
+
+      const summary =
+        operation.to === "front"
+          ? "Bring to front"
+          : operation.to === "back"
+            ? "Send to back"
+            : operation.to === "forward"
+              ? "Bring forward"
+              : "Send backward";
+      // `designTransactionSchema` quite deliberately requires at least one
+      // operation. A boundary reorder is a valid no-op, so give its inverse a
+      // valid no-op operation rather than making undo throw on an empty list.
+      return { inverse: inverse.length > 0 ? inverse : [{ op: "setSelection", nodeIds: [] }], summary };
     }
 
     // ----------------------------------------------------------------- group

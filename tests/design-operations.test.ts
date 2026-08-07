@@ -139,6 +139,39 @@ test("reorder moves z-order within the parent and inverts to the original index"
   assert.deepEqual("children" in back ? back.children : [], ["title", "email", "button"]);
 });
 
+test("reorder keeps a multi-selection stable and restores exact order on undo", () => {
+  for (const to of ["front", "back", "forward", "backward"] as const) {
+    const doc = signInDocument();
+    const source = transaction([{ op: "reorderNodes", nodeIds: ["button", "title"], to }], { baseRevision: doc.revision });
+    const moved = applyTransaction(doc, source);
+    const children = moved.document.nodes["card"];
+    assert.equal(children.type, "frame");
+
+    const expected = {
+      front: ["email", "title", "button"],
+      back: ["title", "button", "email"],
+      forward: ["email", "title", "button"],
+      backward: ["title", "button", "email"],
+    }[to];
+    assert.deepEqual(children.children, expected, `${to} preserves document order inside the selection`);
+
+    const undone = applyTransaction(moved.document, invertTransaction(moved, source, "2026-01-01T00:00:05.000Z"));
+    const restored = undone.document.nodes["card"];
+    assert.equal(restored.type, "frame");
+    assert.deepEqual(restored.children, ["title", "email", "button"], `${to} undo restores every sibling`);
+  }
+});
+
+test("a boundary reorder has a valid no-op inverse", () => {
+  const doc = signInDocument();
+  const source = transaction([{ op: "reorderNodes", nodeIds: ["title"], to: "back" }], { baseRevision: doc.revision });
+  const moved = applyTransaction(doc, source);
+  const undone = applyTransaction(moved.document, invertTransaction(moved, source, "2026-01-01T00:00:06.000Z"));
+  const card = undone.document.nodes["card"];
+  assert.equal(card.type, "frame");
+  assert.deepEqual(card.children, ["title", "email", "button"]);
+});
+
 test("group then ungroup returns the original geometry", () => {
   const doc = signInDocument();
   const grouped = run(doc, [{ op: "groupNodes", nodeIds: ["title", "email"], groupId: "grp" }]);

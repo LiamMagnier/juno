@@ -218,6 +218,7 @@ struct DesktopDesignScreen: View {
     /// grid can make.
     @State private var starting: DesktopDesignPreset?
     @State private var startErrorDescription: String?
+    @State private var deleteTarget: NativeArtifact?
     /// Bumped to re-read the document from storage. ``DesktopDesignSurface``
     /// reads its body once and treats the editor as the authority afterwards, so
     /// discarding an edit has to say so out loud or the canvas carries on drawing
@@ -261,6 +262,19 @@ struct DesktopDesignScreen: View {
                 if gone { closeDesign() }
             }
             .onAppear { closeDesign() }
+            .alert("Delete design?", isPresented: Binding(
+                get: { deleteTarget != nil },
+                set: { if !$0 { deleteTarget = nil } }
+            )) {
+                Button("Cancel", role: .cancel) { deleteTarget = nil }
+                Button("Delete", role: .destructive) {
+                    guard let target = deleteTarget else { return }
+                    deleteTarget = nil
+                    Task { await delete(target) }
+                }
+            } message: {
+                Text("Every version of this design and its history will be removed.")
+            }
             .accessibilityIdentifier("juno.desktop.design")
     }
 
@@ -373,7 +387,9 @@ struct DesktopDesignScreen: View {
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                     ForEach(designs) { design in
-                        DesktopDesignRow(design: design) { open(design.id) }
+                        DesktopDesignRow(design: design, open: { open(design.id) }) {
+                            requestDelete(design)
+                        }
                     }
                 }
                 .padding(.horizontal, JunoSpace.region)
@@ -466,6 +482,19 @@ struct DesktopDesignScreen: View {
             .keyboardShortcut("s", modifiers: .command)
             .help("Save your edit as a new version (⌘S)")
             .accessibilityIdentifier("juno.desktop.design.save")
+
+            Menu {
+                Button("Delete design", role: .destructive) {
+                    requestDelete(design)
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .frame(width: 28, height: 28)
+            }
+            .menuStyle(.borderlessButton)
+            .help("Delete this design")
+            .accessibilityLabel("Design actions")
+            .accessibilityIdentifier("juno.desktop.design.actions")
         }
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, JunoSpace.snug)
@@ -491,6 +520,16 @@ struct DesktopDesignScreen: View {
     private func closeDesign() {
         openDesignID = nil
         draft = nil
+    }
+
+    private func requestDelete(_ design: NativeArtifact) {
+        deleteTarget = design
+    }
+
+    private func delete(_ design: NativeArtifact) async {
+        await model.deleteArtifact(id: design.id)
+        guard model.lastErrorDescription == nil else { return }
+        if openDesignID == design.id { closeDesign() }
     }
 
     /// Start a design, then open it.
@@ -635,55 +674,70 @@ private struct DesktopDesignPresetTile: View {
 private struct DesktopDesignRow: View {
     let design: NativeArtifact
     let open: () -> Void
+    let delete: () -> Void
 
     @State private var isHovering = false
 
     var body: some View {
-        Button(action: open) {
-            HStack(spacing: JunoSpace.cozy) {
-                Image(systemName: "pencil.tip")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Color.junoAccent)
-                    .frame(width: 34, height: 34)
-                    .background(
-                        RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                            .fill(Color.junoAccent.opacity(0.12))
-                    )
-                    .accessibilityHidden(true)
+        HStack(spacing: JunoSpace.snug) {
+            Button(action: open) {
+                HStack(spacing: JunoSpace.cozy) {
+                    Image(systemName: "pencil.tip")
+                        .font(.system(size: 15))
+                        .foregroundStyle(Color.junoAccent)
+                        .frame(width: 34, height: 34)
+                        .background(
+                            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                                .fill(Color.junoAccent.opacity(0.12))
+                        )
+                        .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(design.title.isEmpty ? "Untitled design" : design.title)
-                        .junoRowLabel()
-                        .fontWeight(.medium)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Text(meta)
-                        .junoCaption()
-                        .monospacedDigit()
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(design.title.isEmpty ? "Untitled design" : design.title)
+                            .junoRowLabel()
+                            .fontWeight(.medium)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Text(meta)
+                            .junoCaption()
+                            .monospacedDigit()
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: JunoSpace.snug)
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                 }
-
-                Spacer(minLength: JunoSpace.snug)
-
-                Image(systemName: "chevron.right")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
+                .contentShape(.rect)
             }
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.vertical, JunoSpace.cozy)
+            .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .junoCard(cornerRadius: JunoRadius.panel)
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
-                    .strokeBorder(
-                        isHovering ? Color.junoAccent.opacity(0.4) : .clear,
-                        lineWidth: 1
-                    )
-            )
-            .contentShape(.rect)
+
+            Menu {
+                Button("Delete design", role: .destructive, action: delete)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .frame(width: 28, height: 28)
+            }
+            .menuStyle(.borderlessButton)
+            .help("Delete this design")
+            .accessibilityLabel("Actions for \(design.title.isEmpty ? "Untitled design" : design.title)")
+            .accessibilityIdentifier("juno.desktop.design.row.actions.\(design.id)")
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.cozy)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .junoCard(cornerRadius: JunoRadius.panel)
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                .strokeBorder(
+                    isHovering ? Color.junoAccent.opacity(0.4) : .clear,
+                    lineWidth: 1
+                )
+        )
         .onHover { isHovering = $0 }
         .animation(JunoMotion.fast, value: isHovering)
         .help(design.conversationTitle)

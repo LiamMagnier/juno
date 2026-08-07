@@ -108,7 +108,7 @@ public struct DesignBridgeValidator: Sendable {
             guard baseRevision == revision else {
                 throw DesignBridgeError.staleRevision(expected: revision, received: baseRevision)
             }
-            guard let nextRevision = body["revision"] as? Int, nextRevision > baseRevision else {
+            guard let nextRevision = body["revision"] as? Int, nextRevision == baseRevision + 1 else {
                 throw DesignBridgeError.badField("revision")
             }
             guard let transactionID = body["transactionId"] as? String, !transactionID.isEmpty else {

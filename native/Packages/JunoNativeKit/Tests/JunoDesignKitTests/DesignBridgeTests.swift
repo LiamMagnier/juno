@@ -85,6 +85,17 @@ final class DesignBridgeTests: XCTestCase {
         XCTAssertEqual(validator.revision, start, "a refused message must not advance the revision")
     }
 
+    func testRejectsATransactionThatSkipsARevision() throws {
+        let start = try baseRevision()
+        var validator = DesignBridgeValidator(nonce: nonce, revision: start)
+        let body = try transactionBody(baseRevision: start, revision: start + 2)
+
+        XCTAssertThrowsError(try validator.validate(body)) { error in
+            XCTAssertEqual(error as? DesignBridgeError, .badField("revision"))
+        }
+        XCTAssertEqual(validator.revision, start, "a skipped revision must not advance the validator")
+    }
+
     func testRejectsATransactionCarryingAnInvalidDocument() throws {
         let start = try baseRevision()
         var validator = DesignBridgeValidator(nonce: nonce, revision: start)

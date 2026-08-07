@@ -27,7 +27,30 @@
  */
 
 import * as React from "react";
-import { Activity, ChevronDown, ChevronRight, Eye, EyeOff, Lock, LockOpen, Plus, X, Zap } from "lucide-react";
+import {
+  Activity,
+  ArrowDown,
+  ArrowDownToLine,
+  ArrowUp,
+  ArrowUpToLine,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Lock,
+  LockOpen,
+  MoreHorizontal,
+  Plus,
+  X,
+  Zap,
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { isContainer, type DesignDocument, type NodeId } from "@/lib/design/types";
 import type { DesignOperation } from "@/lib/design/operations";
 import { cn } from "@/lib/utils";
@@ -80,6 +103,7 @@ export function LayersPanel({
 }) {
   const [collapsed, setCollapsed] = React.useState<Set<NodeId>>(new Set());
   const [dragId, setDragId] = React.useState<NodeId | null>(null);
+  const [dropTargetId, setDropTargetId] = React.useState<NodeId | null>(null);
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
 
   const page = doc.pages.find((p) => p.id === pageId) ?? doc.pages[0];
@@ -113,15 +137,55 @@ export function LayersPanel({
     const target = doc.nodes[targetId];
     if (!target) return;
 
+    // A selected set is moved together from the Layers panel, just like a
+    // canvas selection. Keep the document's sibling order rather than the
+    // order in which ids happened to be selected.
+    const moving = (selection.includes(dragId) ? selection : [dragId])
+      .map((id) => doc.nodes[id])
+      .filter((node): node is NonNullable<typeof node> => !!node && !node.locked)
+      .sort((a, b) => {
+        const parent = a.parentId === null ? page.children : (doc.nodes[a.parentId] as { children: NodeId[] } | undefined)?.children ?? [];
+        return parent.indexOf(a.id) - parent.indexOf(b.id);
+      })
+      .map((node) => node.id);
+    if (moving.length === 0 || moving.includes(targetId)) return;
+
     if (position === "inside" && isContainer(target)) {
-      onApply([{ op: "reparentNodes", nodeIds: [dragId], newParentId: targetId, pageId: page.id }], "Move into container");
+      onApply([{ op: "reparentNodes", nodeIds: moving, newParentId: targetId, pageId: page.id }], moving.length === 1 ? "Move into container" : "Move layers into container");
     } else {
       const siblings = target.parentId === null ? page.children : (doc.nodes[target.parentId] as { children: NodeId[] }).children;
       // "Above" in the panel means later in the array (nearer the front).
       const index = Math.min(siblings.indexOf(targetId) + 1, siblings.length);
-      onApply([{ op: "reparentNodes", nodeIds: [dragId], newParentId: target.parentId, pageId: page.id, index }], "Reorder layer");
+      onApply([{ op: "reparentNodes", nodeIds: moving, newParentId: target.parentId, pageId: page.id, index }], moving.length === 1 ? "Reorder layer" : "Reorder layers");
     }
     setDragId(null);
+    setDropTargetId(null);
+  };
+
+  /** Apply z-order commands from the row where the user is already looking. */
+  const reorder = (id: NodeId, to: "front" | "back" | "forward" | "backward") => {
+    if (readOnly) return;
+    const node = doc.nodes[id];
+    if (!node || node.locked) return;
+    const ids = (selection.includes(id) ? selection : [id]).filter((candidate) => {
+      const selectedNode = doc.nodes[candidate];
+      return !!selectedNode && !selectedNode.locked && selectedNode.parentId === node.parentId;
+    });
+    if (ids.length === 0) return;
+    const summary =
+      to === "front" ? "Bring to front" : to === "back" ? "Send to back" : to === "forward" ? "Bring forward" : "Send backward";
+    onApply([{ op: "reorderNodes", nodeIds: ids, to }], summary);
+  };
+
+  const deleteLayer = (id: NodeId) => {
+    if (readOnly) return;
+    const node = doc.nodes[id];
+    if (!node || node.locked) return;
+    const ids = (selection.includes(id) ? selection : [id]).filter((candidate) => {
+      const selectedNode = doc.nodes[candidate];
+      return !!selectedNode && !selectedNode.locked;
+    });
+    if (ids.length) onApply([{ op: "deleteNodes", nodeIds: ids }], ids.length === 1 ? "Delete layer" : "Delete layers");
   };
 
   const addPage = () => {
@@ -233,8 +297,16 @@ export function LayersPanel({
               aria-selected={selected}
               aria-level={depth + 1}
               draggable={!readOnly}
-              onDragStart={() => setDragId(id)}
-              onDragEnd={() => setDragId(null)}
+              onDragStart={(event) => {
+                setDragId(id);
+                setDropTargetId(null);
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", id);
+              }}
+              onDragEnd={() => {
+                setDragId(null);
+                setDropTargetId(null);
+              }}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault();
@@ -243,7 +315,8 @@ export function LayersPanel({
               className={cn(
                 "group flex items-center gap-1 rounded-[8px] pr-1 transition-colors duration-fast",
                 selected ? "bg-primary/10" : "hover:bg-muted/60",
-                dragId === id && "opacity-50"
+                dragId === id && "opacity-50",
+                dropTargetId === id && "ring-1 ring-inset ring-primary/60"
               )}
               style={{ paddingLeft: 4 + depth * 12 }}
             >
@@ -263,6 +336,7 @@ export function LayersPanel({
               <button
                 type="button"
                 onClick={(e) => onSelect([id], e.shiftKey ? "toggle" : "replace")}
+                onDragEnter={() => dragId && dragId !== id && setDropTargetId(id)}
                 className={cn(
                   "flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
                   !node.visible && "opacity-40"
@@ -297,6 +371,42 @@ export function LayersPanel({
                   <Zap className="size-3" aria-hidden />
                 </button>
               )}
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={readOnly}
+                    aria-label={`Layer actions for ${node.name}`}
+                    className="pressable shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100 disabled:pointer-events-none disabled:opacity-30"
+                  >
+                    <MoreHorizontal className="size-3.5" aria-hidden />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem disabled={node.locked} onSelect={() => reorder(id, "front")}>
+                    <ArrowUpToLine className="size-4" aria-hidden />
+                    Bring to front
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={node.locked} onSelect={() => reorder(id, "forward")}>
+                    <ArrowUp className="size-4" aria-hidden />
+                    Bring forward
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={node.locked} onSelect={() => reorder(id, "backward")}>
+                    <ArrowDown className="size-4" aria-hidden />
+                    Send backward
+                  </DropdownMenuItem>
+                  <DropdownMenuItem disabled={node.locked} onSelect={() => reorder(id, "back")}>
+                    <ArrowDownToLine className="size-4" aria-hidden />
+                    Send to back
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-destructive focus:text-destructive" disabled={node.locked} onSelect={() => deleteLayer(id)}>
+                    <X className="size-4" aria-hidden />
+                    Delete layer
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
               {/* Hidden on hover, shown for good once engaged.
                   These two are the only way back. The canvas cannot hit-test a

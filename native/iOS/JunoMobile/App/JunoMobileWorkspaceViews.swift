@@ -1035,6 +1035,7 @@ private struct JunoMobileProjectDetail: View {
 /// items: docked, it is a pane inside the *conversation's* navigation stack, and
 /// either one would rename the chat the reader is still looking at.
 struct JunoMobileArtifactDetail: View {
+    @Environment(\.dismiss) private var dismiss
     @Bindable var model: NativeArtifactModel<SQLiteAccountRepository>
     let artifact: NativeArtifact
     let openConversation: (String) -> Void
@@ -1051,10 +1052,21 @@ struct JunoMobileArtifactDetail: View {
     @State private var showingDelete = false
     @State private var exportURL: URL?
     @State private var localError: String?
+    @State private var designDraft: String?
+    @State private var designReloadToken = UUID()
 
     private var version: NativeArtifactVersion? {
         let target = selectedVersion == 0 ? artifact.currentVersion : selectedVersion
         return artifact.versions.first { $0.version == target }
+    }
+
+    private var isLatestVersion: Bool {
+        version?.version == artifact.currentVersion
+    }
+
+    private var isDesignDirty: Bool {
+        guard artifact.kind.isDesignDocument, let designDraft, let stored = version?.content else { return false }
+        return designDraft != stored
     }
 
     /// The one place the artifact's own identity is stated: the editorial serif
@@ -1158,6 +1170,8 @@ struct JunoMobileArtifactDetail: View {
 
             Spacer(minLength: 0)
 
+            designDraftControls
+
             ShareLink(item: version?.content ?? "") {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 15))
@@ -1204,6 +1218,7 @@ struct JunoMobileArtifactDetail: View {
                 if let version, version.version != artifact.currentVersion {
                     restoreButton
                 }
+                designDraftControls
                 actionsMenu
                 if let close {
                     Button(action: close) {
@@ -1279,8 +1294,11 @@ struct JunoMobileArtifactDetail: View {
                 JunoMobileArtifactBody(
                     kind: artifact.kind,
                     content: version.content,
-                    mode: displayMode
+                    mode: displayMode,
+                    readOnly: !isLatestVersion,
+                    onEdit: isLatestVersion ? { designDraft = $0 } : nil
                 )
+                .id("\(artifact.id)#\(version.version)#\(designReloadToken)")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(
                     RoundedRectangle(cornerRadius: JunoCornerRadius.card, style: .continuous)
@@ -1336,7 +1354,7 @@ struct JunoMobileArtifactDetail: View {
                 editValue = artifact.currentContent ?? ""
                 showingEditor = true
             }
-            .disabled(artifact.currentContent == nil)
+            .disabled(artifact.currentContent == nil || artifact.kind.isDesignDocument)
             Button("Rename") {
                 renameValue = artifact.title
                 showingRename = true
@@ -1373,10 +1391,17 @@ struct JunoMobileArtifactDetail: View {
         .onAppear {
             selectedVersion = artifact.currentVersion
             displayMode = artifact.kind.supportsRenderedPreview ? .preview : .source
+            designDraft = nil
             Task { await model.openArtifact(id: artifact.id) }
         }
         .onChange(of: artifact.currentVersion) { _, value in
             selectedVersion = value
+            designDraft = nil
+            designReloadToken = UUID()
+        }
+        .onChange(of: selectedVersion) { _, _ in
+            designDraft = nil
+            designReloadToken = UUID()
         }
         .alert("Rename artifact", isPresented: $showingRename) {
             TextField("Title", text: $renameValue)
@@ -1388,10 +1413,15 @@ struct JunoMobileArtifactDetail: View {
         .alert("Delete artifact?", isPresented: $showingDelete) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
-                Task { await model.deleteArtifact(id: artifact.id) }
+                Task {
+                    await model.deleteArtifact(id: artifact.id)
+                    if model.lastErrorDescription == nil {
+                        if let close { close() } else { dismiss() }
+                    }
+                }
             }
         } message: {
-            Text("All versions of this artifact will be removed.")
+            Text(isDesignDirty ? "All versions and these unsaved design edits will be removed." : "All versions of this artifact will be removed.")
         }
         .alert("Artifact unavailable", isPresented: Binding(
             get: { localError != nil },
@@ -1441,6 +1471,33 @@ struct JunoMobileArtifactDetail: View {
             } catch {
                 localError = error.localizedDescription
             }
+        }
+    }
+
+    @ViewBuilder
+    private var designDraftControls: some View {
+        if isDesignDirty {
+            Button("Discard") {
+                designDraft = nil
+                designReloadToken = UUID()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .accessibilityIdentifier("juno.mobile.design.discard")
+
+            Button("Save") {
+                guard let designDraft else { return }
+                Task {
+                    await model.saveArtifact(id: artifact.id, content: designDraft)
+                    if model.lastErrorDescription == nil {
+                        self.designDraft = nil
+                    }
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(model.isMutating)
+            .accessibilityIdentifier("juno.mobile.design.save")
         }
     }
 }
