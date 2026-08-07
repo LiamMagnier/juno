@@ -10,10 +10,10 @@ export interface DiscoveredModel {
 }
 
 /** ISO timestamp of the last successful `--write` sync (null = never synced). */
-export const SYNC_STAMP: string | null = "2026-08-06T06:48:39.664Z";
+export const SYNC_STAMP: string | null = "2026-08-07T05:52:33.750Z";
 
 /** Genuinely new chat models found on providers' live model APIs. Dumb data —
- *  plan/vision/reasoning/cost/webSearch are derived in models.ts via the
+ *  plan/vision/reasoning/agenticTools/cost/webSearch are derived in models.ts via the
  *  guess* helpers, pending hand-curation. */
 export const DISCOVERED: DiscoveredModel[] = [];
 
