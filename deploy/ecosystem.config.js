@@ -149,6 +149,38 @@ module.exports = {
       merge_logs: true,
     },
     {
+      // Event triggers: polls the sources a WorkTrigger watches and turns a
+      // match into a queued WorkRun (scripts/work-trigger-poller.ts).
+      //
+      // Its own app rather than a tick inside juno-work-scheduler, for the same
+      // reason those two are separate. The scheduler's work is arithmetic on a
+      // cron expression and finishes in milliseconds; this one makes network
+      // calls to Gmail and CalDAV that can hang for as long as those services
+      // let them. Sharing a process would mean one unresponsive mail server
+      // stops every cron schedule in the deployment from firing.
+      //
+      // Single instance, and it must stay that way: the poller claims a trigger
+      // with an optimistic lease, but the cursor that stops a restart re-firing
+      // history is per-trigger, not per-process.
+      //
+      // NOTE: inert until the account has an event trigger. With none
+      // configured the sweep finds nothing and costs one indexed query every
+      // two minutes.
+      name: "juno-work-triggers",
+      script: "npm",
+      args: "run work:trigger-poller",
+      watch: false,
+      max_memory_restart: "400M",
+      env: {
+        NODE_ENV: "production",
+        NODE_OPTIONS: "--conditions=react-server",
+      },
+      error_file: "logs/work-triggers-err.log",
+      out_file: "logs/work-triggers-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+    },
+    {
       // Reconciles Cloud Code tasks whose runner stopped reporting before it
       // could post a terminal event. This is intentionally a long-lived,
       // single-instance loop rather than a best-effort manual command: a task
