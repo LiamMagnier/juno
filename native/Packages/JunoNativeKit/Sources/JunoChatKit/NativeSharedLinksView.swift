@@ -56,7 +56,7 @@ public struct NativeSharedLinksView: View {
     }
 
     private func row(_ share: NativeShare) -> some View {
-        HStack(alignment: .top, spacing: JunoSpacing.control) {
+        HStack(alignment: .top, spacing: JunoSpace.cozy) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(share.title ?? "Untitled conversation")
                     .font(.system(size: 14, weight: .medium))
@@ -67,7 +67,7 @@ public struct NativeSharedLinksView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            Spacer(minLength: JunoSpacing.small)
+            Spacer(minLength: JunoSpace.snug)
 
             ShareLink(item: share.url) {
                 Image(systemName: "square.and.arrow.up")
