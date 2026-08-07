@@ -1,6 +1,7 @@
 import { discoverModels } from "@/lib/model-discovery";
 import { getModelMetrics, withSupersededMarked } from "@/lib/model-metrics";
 import { GEN_MODELS, type ModelInfo } from "@/lib/models";
+import { isWorkCapableModel } from "@/lib/work/models";
 import { configuredProviders, PROVIDERS } from "@/lib/providers";
 import { ensureProviderHealthFresh, providerHealthy } from "@/lib/provider-health";
 import { isVideoGenSupported } from "@/lib/video-gen";
@@ -86,7 +87,15 @@ export interface BackendAgentModel {
 
 export function backendAgentCatalog(models: ModelInfo[]): BackendAgentModel[] {
   return models
-    .filter((model) => model.modality === "chat" && model.api !== "responses" && !model.comingSoon)
+    // `isWorkCapableModel`, called rather than copied.
+    //
+    // These two filters were already documented as drawing the same line —
+    // Code and Work are both agent loops, and a model that will not call a
+    // tool is useless to either — but they were two literals, so when Work
+    // gained the `agenticTools` clause this one silently kept routing Code
+    // sessions to models that answer in prose. Sharing the function is what
+    // makes the next clause reach both without anybody remembering to.
+    .filter(isWorkCapableModel)
     .map((model) => {
       const metrics = getModelMetrics(model);
       return {

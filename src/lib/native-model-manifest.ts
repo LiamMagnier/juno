@@ -112,7 +112,16 @@ export function nativeModelCatalog(models: ModelInfo[], plan?: Plan) {
         automatic: auto,
       },
       capabilities: {
-        tools: model.modality === "chat",
+        // The catalog's answer, not "is it a chat model".
+        //
+        // This read `model.modality === "chat"`, which was the best available
+        // proxy while nothing recorded tool use — and became a false statement
+        // the moment `ModelInfo.agenticTools` did. Every native client reads
+        // this into `supportsTools`, which drives the Tools chip and gates
+        // Computer Use, so leaving it would have had every phone and Mac
+        // advertise agentic capability for exactly the model the catalog now
+        // excludes from Work.
+        tools: model.agenticTools,
         vision: model.vision,
         webSearch: model.webSearch,
         attachments: model.modality === "chat" || model.vision,

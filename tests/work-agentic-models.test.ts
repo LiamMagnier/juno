@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { MODEL_LIST, guessAgenticTools, resolveModel } from "@/lib/models";
 import { cheapestWorkModel, isWorkCapableModel } from "@/lib/work/models";
+// From `native-model-manifest` rather than `model-catalog-api`: the latter
+// pulls in `server-only` transitively and cannot be imported by a test.
+import { nativeModelCatalog } from "@/lib/native-model-manifest";
 
 /*
  * Whether a model can actually call the tools a Work run gives it.
@@ -119,4 +123,58 @@ test("image and video models were never work-capable and still are not", () => {
     assert.equal(model.agenticTools, false, `${model.id}`);
     assert.equal(isWorkCapableModel(model), false, `${model.id}`);
   }
+});
+
+/*
+ * The two places that publish the capability onward.
+ *
+ * Recording a flag nothing reads is not a fix. Both of these had their own
+ * answer to "can this model use tools" before the catalog had one, and both
+ * were wrong the moment it did.
+ */
+
+test("the native manifest publishes the catalog's answer, not a proxy for it", () => {
+  // `capabilities.tools` read `modality === "chat"`. Every native client reads
+  // it into `supportsTools`, which draws the Tools chip and gates Computer Use
+  // — so a model excluded from Work was still advertised as agentic on every
+  // phone and Mac.
+  const manifest = nativeModelCatalog(MODEL_LIST);
+  const entry = manifest.models.find((m) => m.id === "mistral:mistral-medium-latest");
+  if (entry) {
+    assert.equal(
+      entry.capabilities.tools,
+      false,
+      "the native clients are still told this model supports tools"
+    );
+  }
+  // And the flag must track the catalog for every model, not just that one.
+  for (const model of MODEL_LIST) {
+    const published = manifest.models.find((m) => m.id === model.id);
+    if (!published) continue;
+    assert.equal(
+      published.capabilities.tools,
+      model.agenticTools,
+      `${model.id}: manifest disagrees with the catalog`
+    );
+  }
+});
+
+test("Juno Code and Juno Work share one filter rather than two copies", () => {
+  // `backendAgentCatalog` used to inline the same three clauses
+  // `isWorkCapableModel` checks. Two literals meant Work could gain a clause
+  // and Code silently not, which is exactly what happened — so it now calls the
+  // function. Asserted as source rather than behaviour because importing
+  // `model-catalog-api` pulls in `server-only`.
+  const source = readFileSync(
+    new URL("../src/lib/model-catalog-api.ts", import.meta.url),
+    "utf8"
+  );
+  assert.ok(
+    /\.filter\(isWorkCapableModel\)/.test(source),
+    "backendAgentCatalog no longer shares Work's filter; the two can drift again"
+  );
+  assert.ok(
+    !/modality === "chat" && model\.api !== "responses"/.test(source),
+    "the inlined copy of the filter is back"
+  );
 });

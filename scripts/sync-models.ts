@@ -172,7 +172,7 @@ export interface DiscoveredModel {
 export const SYNC_STAMP: string | null = ${JSON.stringify(stamp)};
 
 /** Genuinely new chat models found on providers' live model APIs. Dumb data —
- *  plan/vision/reasoning/cost/webSearch are derived in models.ts via the
+ *  plan/vision/reasoning/agenticTools/cost/webSearch are derived in models.ts via the
  *  guess* helpers, pending hand-curation. */
 export const DISCOVERED: DiscoveredModel[] = [${rows.length ? `\n${rows.join("\n")}\n` : ""}];
 

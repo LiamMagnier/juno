@@ -114,6 +114,7 @@ else {
 for (const m of GEN_MODELS) {
   if (m.reasoning) errors.push(`${m.id}: generative model marked reasoning`);
   if (m.webSearch) errors.push(`${m.id}: generative model marked webSearch`);
+  if (m.agenticTools) errors.push(`${m.id}: generative model marked agenticTools`);
 }
 
 // 8. Generated sync file (src/lib/models.generated.ts) invariants.
