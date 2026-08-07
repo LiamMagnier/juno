@@ -1,11 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, Loader2, Mic, Plus } from "lucide-react";
+import { ArrowUp, AudioLines, Loader2, Mic, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ComposerDictation } from "@/components/chat/composer-dictation";
-import { WorkThreadReach } from "@/components/work/composer/work-thread-reach";
+import { WorkThreadAddPanel } from "@/components/work/composer/work-thread-add-panel";
+import {
+  WorkThreadControls,
+  WorkThreadControlsNote,
+} from "@/components/work/composer/work-thread-controls";
+import { useWorkThreadContext } from "@/components/work/composer/use-work-thread-context";
+import type { ClientWorkSession } from "@/lib/work/serializers";
 import { cn } from "@/lib/utils";
 
 /**
@@ -36,6 +42,22 @@ import { cn } from "@/lib/utils";
  * cleared on true — the same contract the chat composer keeps with its
  * `accepted: false`. Clearing on submit and hoping is how a refused send costs
  * somebody a paragraph they will not retype.
+ *
+ * ── The controls around it ─────────────────────────────────────────────────
+ *
+ * Everything the home composer offers before a task exists is offered here
+ * while it runs: which model, how deeply it thinks, how often it stops to ask,
+ * where it is filed, and — behind the [+] — its files, its apps and its skill.
+ * They were absent for as long as there was no route that could change them,
+ * which meant a task started on the wrong model or on Skip could only be
+ * corrected by starting a different task.
+ *
+ * They all write through `PATCH /sessions/[id]/context`, and every one of them
+ * obeys the same rule, stated in one place in `useWorkThreadContext`: a run's
+ * inputs were fixed when it was dispatched, so a change made mid-task takes
+ * effect on the NEXT attempt unless the server says otherwise. The line under
+ * the controls says so before the change and reports the server's own answer
+ * after it. Nothing here animates into a state the run has not got.
  *
  * ── It must not take focus while a run streams ─────────────────────────────
  *
@@ -100,20 +122,44 @@ function sendLabel(mode: WorkComposerMode): string {
 }
 
 export function WorkThreadComposer({
+  session,
   mode,
   sending,
   onSend,
+  onStartVoice,
 }: {
+  /** The task these controls change. Its own fields are the starting values. */
+  session: ClientWorkSession;
   mode: WorkComposerMode;
   /** A send is in flight. Locks the button, never the field. */
   sending: boolean;
   /** Resolves true when the words landed. False keeps them in the box. */
   onSend: (text: string) => Promise<boolean>;
+  /**
+   * Opens a spoken conversation about this task.
+   *
+   * The seam, and deliberately only a seam: Work has no realtime voice surface
+   * yet — chat's lives in `chat-view.tsx` and is wired to a conversation this
+   * page does not have. The button is drawn only when a caller passes a handler,
+   * so the day one lands it is one prop from the thread page and nothing here
+   * changes. A microphone that opened nothing would be the third control on this
+   * surface that promised something the runtime could not do.
+   */
+  onStartVoice?: () => void;
 }) {
   const [draft, setDraft] = React.useState("");
   const [dictating, setDictating] = React.useState(false);
-  const [reachOpen, setReachOpen] = React.useState(false);
+  const [addOpen, setAddOpen] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  /*
+   * A run is under way in exactly the two modes that describe one: `steer` is a
+   * run going, and `answer` is a run stopped mid-turn waiting to be told
+   * something. `restart` and `start` have no attempt in flight for a change to
+   * miss, which is the difference the note under the controls turns on.
+   */
+  const live = mode.kind === "steer" || mode.kind === "answer";
+  const context = useWorkThreadContext({ session, live });
 
   const autoresize = React.useCallback(() => {
     const element = textareaRef.current;
@@ -251,24 +297,36 @@ export function WorkThreadComposer({
         />
 
         <div className="flex items-center gap-1.5">
-          <Popover open={reachOpen} onOpenChange={setReachOpen}>
+          <Popover open={addOpen} onOpenChange={setAddOpen}>
             <PopoverTrigger asChild>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                aria-label="What this task can reach"
-                className="shrink-0 rounded-[11px] text-muted-foreground hover:text-foreground"
+                aria-label="Add a file, an app or a skill to this task"
+                className={cn(
+                  "composer-add-button group shrink-0 rounded-[11px] text-muted-foreground hover:text-foreground",
+                  addOpen && "bg-accent"
+                )}
               >
-                <Plus className="h-4 w-4" aria-hidden="true" />
+                <Plus
+                  aria-hidden="true"
+                  strokeWidth={1.75}
+                  className="composer-add-icon h-4 w-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                />
               </Button>
             </PopoverTrigger>
+            {/* The panel's three requests are made when it mounts, which Radix
+                does on open — so a reader who never opens the [+] never makes
+                any of them. */}
             <PopoverContent align="start" side="top" sideOffset={10} className="w-80 p-0">
-              <WorkThreadReach onNavigate={() => setReachOpen(false)} />
+              <WorkThreadAddPanel context={context} />
             </PopoverContent>
           </Popover>
 
-          <div className="ml-auto flex items-center gap-1.5">
+          <WorkThreadControls context={context} />
+
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
             <Button
               type="button"
               variant="ghost"
@@ -279,6 +337,18 @@ export function WorkThreadComposer({
             >
               <Mic className="h-4 w-4" aria-hidden="true" />
             </Button>
+            {onStartVoice && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                onClick={onStartVoice}
+                aria-label="Talk to Juno about this task"
+                className="shrink-0 rounded-[11px] text-muted-foreground hover:text-foreground"
+              >
+                <AudioLines className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            )}
             <Button
               type="button"
               size="icon-sm"
@@ -295,6 +365,11 @@ export function WorkThreadComposer({
             </Button>
           </div>
         </div>
+
+        {/* Under the row rather than beside any one control: it is true of all
+            of them, and a caveat that wrapped in among the chips would be read
+            as a label for whichever one it landed next to. */}
+        <WorkThreadControlsNote context={context} live={live} />
       </div>
     </div>
   );

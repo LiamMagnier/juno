@@ -87,6 +87,7 @@ export function WorkConversation({
   sending,
   mode,
   onSend,
+  onStartVoice,
 }: {
   session: ClientWorkSession;
   turns: readonly Turn[];
@@ -95,6 +96,14 @@ export function WorkConversation({
   mode: WorkComposerMode;
   /** Resolves true when the words landed; false leaves them in the box. */
   onSend: (text: string) => Promise<boolean>;
+  /**
+   * Opens a spoken conversation about this task, if this deployment has one.
+   *
+   * Forwarded rather than owned: Work has no realtime voice surface yet, and
+   * the composer draws the button only when a handler arrives. Passing it is
+   * one prop from the thread page the day one exists.
+   */
+  onStartVoice?: () => void;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -138,7 +147,13 @@ export function WorkConversation({
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-0 bottom-full h-8 bg-gradient-to-t from-background to-transparent"
         />
-        <WorkThreadComposer mode={mode} sending={sending} onSend={onSend} />
+        <WorkThreadComposer
+          session={session}
+          mode={mode}
+          sending={sending}
+          onSend={onSend}
+          onStartVoice={onStartVoice}
+        />
       </div>
     </div>
   );

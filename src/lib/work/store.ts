@@ -79,26 +79,21 @@ export interface CreateWorkSessionInput {
    * How much thinking the reader asked for: `minimal` … `max`, or null for
    * Instant.
    *
-   * Written to the column, and read by nothing. There is no seam in the runtime
-   * to hand it to. `WorkSessionOptions` in
-   * runner/agent-core/src/work/session.ts takes a provider, a model, a budget,
-   * a policy and a system suffix; `ProviderRequest` in
-   * runner/agent-core/src/providers/types.ts carries `model`, `system`,
-   * `messages`, `tools`, `maxTokens` and `signal`, and nothing else. The
-   * Anthropic adapter never sends a `thinking` block and the OpenAI-compatible
-   * one never sends `reasoning_effort`; both only read reasoning back off the
-   * stream as `thinking_delta`. `ModelCapabilities.reasoningLevels` describes
-   * what a model could be asked for and is wired to no request at all — the
-   * proxy adapter reports it empty.
+   * This docstring used to say the column was read by nothing, and that has
+   * stopped being true — it is corrected here rather than deleted, because the
+   * next person to wonder whether the control does anything deserves the answer
+   * and not a silence. `scripts/work-runner.ts` reads
+   * `run.session.reasoningEffort` through `reasoningEffortFor` when it builds
+   * the loop, and `WorkSessionOptions.reasoningEffort` now carries it into
+   * `ProviderRequest`.
    *
-   * Passing it through `systemSuffix` was the available alternative and is
-   * rejected here: a sentence asking a model to think harder is not the
-   * six-tier control the composer draws, and dressing one up as the other is
-   * exactly how a preference comes to look saved and have no effect. The two
-   * honest options are to give the runtime a reasoning parameter and thread it
-   * through every adapter, or to take the control out of the composer. Until
-   * one of them happens this column records a request nothing acts on, and the
-   * popover promises a reader something Juno does not do.
+   * Two narrowings still stand between this column and the request, and both
+   * matter to anything that reports on the field: a provider whose adapter does
+   * not speak the parameter drops it, and `clampReasoningEffort` bounds the tier
+   * to what the chosen model actually accepts. So a value here is a request, not
+   * a guarantee — and it is read once, when the attempt starts, which is why
+   * `PATCH /api/work/sessions/[id]/context` reports a change to it as taking
+   * effect from the next attempt rather than immediately.
    */
   reasoningEffort?: string | null;
   /** The session's requested policy. Runs intersect it with host and project. */
@@ -651,6 +646,111 @@ export async function reconcileSessionAttachments(
     }
 
     return { granted, revoked };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Connectors
+// ---------------------------------------------------------------------------
+
+export interface ReconcileSessionConnectorsInput {
+  userId: string;
+  sessionId: string;
+  /**
+   * The whole set the client last sent, not a delta. An empty array is a reader
+   * who switched every app off, and is honoured as such — see `connectorsChosen`.
+   */
+  connectorIds: readonly string[];
+}
+
+export interface ReconcileSessionConnectorsResult {
+  /** Apps this call handed to the task. A widening; it binds at the next dispatch. */
+  added: number;
+  /** Apps this call took away. A narrowing; it binds the moment this commits. */
+  removed: number;
+}
+
+/**
+ * Brings a session's connector grants in line with what the client last sent.
+ *
+ * Ownership of the ids must already have been re-checked against the account:
+ * a provider id in a request body is a claim that the account has linked that
+ * app, and the only thing that makes it true is a `Connection` row carrying the
+ * user's id. Not done here, for the same reason `attachmentGrantRows` does not
+ * do it — a store function that checked its own ids would make the check look
+ * optional at the call site where it is not.
+ *
+ * The twin of `reconcileSessionAttachments`, deliberately shaped the same way
+ * and living beside it: both answer "the reader edited a set of permissions on
+ * an existing task", and a second module for the second set is how the two come
+ * to disagree about what an empty array means.
+ *
+ * `connectorsChosen` is written in the same transaction as the rows, because the
+ * two are one fact. The flag alone says a reader answered; the rows alone say
+ * what they answered; a session carrying one without the other is read by
+ * `WorkConnectorAllowlist.taskAllowed` in ./connectors as a task that may reach
+ * everything the account can — the one outcome a reader who switched everything
+ * off did not ask for.
+ *
+ * Deleted rather than revoked, which is the one place this differs from the
+ * attachment reconcile, and it is a property of the table rather than a
+ * decision made twice: `WorkSessionConnector` has no `revokedAt` and a unique
+ * index on (sessionId, connectorId), so a re-added app has to be able to become
+ * the same row again. The history question — which apps a run could actually
+ * reach — is answered by the run's `WorkRunIO` rows and by the `policy_narrowed`
+ * audit rows `evaluateConnector` writes, both of which outlive this table.
+ *
+ * The counts come from the database rather than from set arithmetic on the
+ * input, so a row another writer removed in between is not reported to the
+ * reader as something this request took away.
+ *
+ * NOTE for whoever touches this next: `writeSessionConnectors` in
+ * src/app/api/work/sessions/route.ts does the same three writes inline for the
+ * create path. It predates this function and should be moved onto it; it was
+ * left alone here only because that route was outside the change that added
+ * this one.
+ */
+export async function reconcileSessionConnectors(
+  input: ReconcileSessionConnectorsInput
+): Promise<ReconcileSessionConnectorsResult> {
+  const wanted = [...new Set(input.connectorIds)];
+
+  return prisma.$transaction(async (tx) => {
+    const live = await tx.workSessionConnector.findMany({
+      where: { sessionId: input.sessionId, userId: input.userId },
+      select: { connectorId: true },
+    });
+    const held = new Set(live.map((row) => row.connectorId));
+    const stale = live.filter((row) => !wanted.includes(row.connectorId));
+    const missing = wanted.filter((connectorId) => !held.has(connectorId));
+
+    if (stale.length > 0) {
+      await tx.workSessionConnector.deleteMany({
+        where: {
+          sessionId: input.sessionId,
+          userId: input.userId,
+          connectorId: { in: stale.map((row) => row.connectorId) },
+        },
+      });
+    }
+    if (missing.length > 0) {
+      // `skipDuplicates` because the unique index is the arbiter, not this read:
+      // two saves racing must resolve to one row per app rather than to a 500.
+      await tx.workSessionConnector.createMany({
+        data: missing.map((connectorId) => ({
+          sessionId: input.sessionId,
+          userId: input.userId,
+          connectorId,
+        })),
+        skipDuplicates: true,
+      });
+    }
+    await tx.workSession.updateMany({
+      where: { id: input.sessionId, userId: input.userId },
+      data: { connectorsChosen: true },
+    });
+
+    return { added: missing.length, removed: stale.length };
   });
 }
 
