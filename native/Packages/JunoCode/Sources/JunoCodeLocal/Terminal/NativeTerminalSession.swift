@@ -80,9 +80,12 @@ public actor NativeTerminalSession {
             limits.maximumOutputBytes / limits.maximumOutputChunkBytes
             + (limits.maximumOutputBytes % limits.maximumOutputChunkBytes == 0 ? 0 : 1)
         let lifecycleEventCapacity = 6
+        let boundedOutputAndLifecycleCapacity = outputEventCapacity > Int.max - lifecycleEventCapacity
+            ? Int.max
+            : outputEventCapacity + lifecycleEventCapacity
         let streamCapacity = max(
             limits.maximumPendingEvents,
-            outputEventCapacity + lifecycleEventCapacity
+            boundedOutputAndLifecycleCapacity
         )
         let stream = AsyncThrowingStream<NativeTerminalEvent, Error>(
             bufferingPolicy: .bufferingNewest(streamCapacity)
