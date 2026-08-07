@@ -14,10 +14,15 @@
 # runs the same checks the updater runs, before spending twenty minutes on a
 # build, and adapts them to the certificate that is actually available.
 #
-#   Usage:  native/Scripts/release-macos.sh 0.2.0 [--publish]
+#   Usage:  native/Scripts/release-macos.sh 0.2.0 [--publish|--publish-dev]
 #
-# Without --publish it produces and verifies the artifact and stops, which is the
-# right default: publishing is the one step that cannot be taken back.
+# Without a publish flag it produces and verifies the artifact and stops, which
+# is the right default: publishing is the one step that cannot be taken back.
+# `--publish` is the public, Developer ID-signed and notarized path. The explicit
+# `--publish-dev` path preserves Juno's existing stable update channel for the
+# development-signed installs used by the team (including the shipped 0.11.0
+# build). It is intentionally not a general-distribution path: those builds are
+# not notarized and Gatekeeper will reject them on a fresh Mac.
 set -euo pipefail
 
 VERSION="${1:-}"
@@ -35,14 +40,20 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "Required command '$1' is not available on PATH."
 }
 
-[ "$#" -le 2 ] || die "Usage: native/Scripts/release-macos.sh <version> [--publish]"
-[ -n "$VERSION" ] || die "Usage: native/Scripts/release-macos.sh <version> [--publish]"
+[ "$#" -le 2 ] || die "Usage: native/Scripts/release-macos.sh <version> [--publish|--publish-dev]"
+[ -n "$VERSION" ] || die "Usage: native/Scripts/release-macos.sh <version> [--publish|--publish-dev]"
 [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || die \
   "Version must be MAJOR.MINOR.PATCH without leading zeroes, got '$VERSION'."
 case "$PUBLISH" in
-  ""|--publish) ;;
-  *) die "The second argument must be --publish when publishing, got '$PUBLISH'." ;;
+  ""|--publish|--publish-dev) ;;
+  *) die "The second argument must be --publish or --publish-dev when publishing, got '$PUBLISH'." ;;
 esac
+PUBLISHING=0
+PRODUCTION_PUBLISH=0
+DEVELOPMENT_PUBLISH=0
+if [ -n "$PUBLISH" ]; then PUBLISHING=1; fi
+if [ "$PUBLISH" = "--publish" ]; then PRODUCTION_PUBLISH=1; fi
+if [ "$PUBLISH" = "--publish-dev" ]; then DEVELOPMENT_PUBLISH=1; fi
 
 # Always resolve paths from the checkout containing this script. The workflow
 # invokes this file from the repository root, but making that assumption
@@ -83,7 +94,7 @@ require_command spctl
 require_command jq
 require_command curl
 
-if [ "$PUBLISH" = "--publish" ]; then
+if [ "$PUBLISHING" = 1 ]; then
   require_command gh
   require_command jq
   gh auth status --hostname github.com >/dev/null 2>&1 || die \
@@ -121,7 +132,7 @@ case "$ORIGIN_URL" in
   *) die "origin must be the canonical GitHub repository LiamMagnier/juno; got '$ORIGIN_URL'." ;;
 esac
 
-if [ "$PUBLISH" = "--publish" ]; then
+if [ "$PUBLISHING" = 1 ]; then
   MAIN_SHA="$(git rev-parse refs/remotes/origin/main 2>/dev/null)" || die \
     "Could not resolve origin/main; refusing to publish without a fetched main ref."
   [ "$SOURCE_SHA" = "$MAIN_SHA" ] || die \
@@ -148,47 +159,75 @@ if [ "$PUBLISH" = "--publish" ]; then
   fi
 fi
 
-# A Developer ID Application certificate is mandatory for publication. A local
-# dry run may still use Apple Development so developers can verify the archive,
-# but there is no command-line escape hatch that can turn that artifact into a
-# public release.
-IDENTITY="$(security find-identity -v -p codesigning \
-  | awk -F'"' '/Developer ID Application/{print $2; exit}')" || true
+# A Developer ID Application certificate is mandatory for the public production
+# path. The explicit development publication path is kept separate so the
+# already-shipped, development-signed stable channel can continue to update.
+IDENTITY=""
 NOTARIZE=1
 IDENTITY_CLASS="Developer ID Application"
-if [ -z "$IDENTITY" ]; then
-  if [ "$PUBLISH" = "--publish" ]; then
+if [ "$PRODUCTION_PUBLISH" = 1 ]; then
+  IDENTITY="$(security find-identity -v -p codesigning \
+    | awk -F'"' '/Developer ID Application/{print $2; exit}')" || true
+  if [ -z "$IDENTITY" ]; then
     AVAILABLE_IDENTITIES="$(security find-identity -v -p codesigning 2>&1 || true)"
     printf '%s\n' "$AVAILABLE_IDENTITIES" >&2
     die "Production publication requires a valid 'Developer ID Application' certificate for team $CONFIGURED_TEAM. No such identity is installed; an Apple Development certificate cannot publish a production release."
   fi
-  # No Developer ID. Fall back to a development certificate so a build can still
-  # be produced and installed by hand — but say plainly what that costs, because
-  # the two artifacts are not interchangeable and it is the difference between a
-  # release and a build.
+elif [ "$DEVELOPMENT_PUBLISH" = 1 ]; then
   NOTARIZE=0
   IDENTITY_CLASS="Apple Development"
   IDENTITY="$(security find-identity -v -p codesigning \
     | awk -F'"' '/Apple Development/{print $2; exit}')" || true
   [ -n "$IDENTITY" ] || {
     security find-identity -v -p codesigning >&2
-    die "No code-signing identity at all. Nothing can be built."
+    die "No Apple Development code-signing identity is installed. Nothing can be built for --publish-dev."
   }
   cat >&2 <<WARNING
 
-  ⚠  DEVELOPMENT BUILD, NOT A DISTRIBUTABLE RELEASE
+  ⚠  DEVELOPMENT-SIGNED STABLE RELEASE
 
-     No 'Developer ID Application' certificate is installed. This dry-run
-     artifact is for local verification only; it cannot be published.
+     This explicitly requested stable release is signed with Apple Development
+     so existing development-signed Juno installs can update. It is not
+     notarized and is not suitable for distribution to a fresh Mac; use
+     --publish with Developer ID and notarization for a public production build.
 
 WARNING
+else
+  IDENTITY="$(security find-identity -v -p codesigning \
+    | awk -F'"' '/Developer ID Application/{print $2; exit}')" || true
+  if [ -z "$IDENTITY" ]; then
+    # No Developer ID. Fall back to a development certificate so a build can
+    # still be produced and installed by hand — but say plainly what that costs,
+    # because the two artifacts are not interchangeable and it is the difference
+    # between a release and a build.
+    NOTARIZE=0
+    IDENTITY_CLASS="Apple Development"
+    IDENTITY="$(security find-identity -v -p codesigning \
+      | awk -F'"' '/Apple Development/{print $2; exit}')" || true
+    [ -n "$IDENTITY" ] || {
+      security find-identity -v -p codesigning >&2
+      die "No code-signing identity at all. Nothing can be built."
+    }
+    cat >&2 <<WARNING
+
+  ⚠  DEVELOPMENT BUILD, NOT A DISTRIBUTABLE RELEASE
+
+       No 'Developer ID Application' certificate is installed. This dry-run
+       artifact is for local verification only; it cannot be published.
+
+WARNING
+  fi
 fi
 printf '  identity      %s\n' "$IDENTITY"
 printf '  team          %s\n' "$CONFIGURED_TEAM"
-printf '  notarize      %s\n' "$([ "$NOTARIZE" = 1 ] && echo yes || echo 'no (local dry run)')"
+if [ "$NOTARIZE" = 1 ]; then
+  printf '  notarize      yes\n'
+elif [ "$DEVELOPMENT_PUBLISH" = 1 ]; then
+  printf '  notarize      no (explicit development-signed publication)\n'
+else
+  printf '  notarize      no (local dry run)\n'
+fi
 
-# A development artifact may be produced by a local dry run for verification,
-# but publication has no development-build override.
 if [ "$NOTARIZE" = 1 ]; then
   IDENTITY_TEAM="$(printf '%s' "$IDENTITY" | sed -n 's/.*(\([A-Z0-9][A-Z0-9]*\)).*/\1/p')"
   [ "$IDENTITY_TEAM" = "$CONFIGURED_TEAM" ] || die \
@@ -453,8 +492,8 @@ MANIFEST_SIZE="$(stat -f%z "$MANIFEST")"
 
 printf '\n  artifact   %s\n  sha256     %s\n  bytes      %s\n  source     %s\n' "$DMG" "$SHA" "$SIZE" "$SOURCE_SHA"
 
-if [ "$PUBLISH" != "--publish" ]; then
-  printf '\n  Verified and NOT published. A development artifact is local-only until Developer ID signing and notarization are available.\n\n'
+if [ "$PUBLISHING" != 1 ]; then
+  printf '\n  Verified and NOT published. Use --publish for a public release or --publish-dev to update existing development-signed stable installs.\n\n'
   exit 0
 fi
 
@@ -463,8 +502,31 @@ fi
 
 step "Publish v$VERSION to $REPO"
 [ -z "$(git tag --list "v$VERSION")" ] || die "Tag v$VERSION already exists. Choose a new version; releases are immutable."
-[ "$NOTARIZE" = 1 ] || die "A published release must be Developer ID signed and notarized."
+if [ "$PRODUCTION_PUBLISH" = 1 ]; then
+  [ "$NOTARIZE" = 1 ] || die "A public production release must be Developer ID signed and notarized."
+fi
 TITLE="Juno for Mac $VERSION"
+if [ "$DEVELOPMENT_PUBLISH" = 1 ]; then
+  RELEASE_NOTES="$(cat <<NOTES
+Source commit \`$(git rev-parse HEAD)\`
+DMG SHA-256 \`$SHA\` · $SIZE bytes
+Symbols and \`SHA256SUMS.txt\` are attached for crash diagnosis and independent verification.
+
+**This build is not notarized.** macOS Gatekeeper may refuse to open it after download. It updates existing Juno installs that are themselves development-signed by this team; on any other Mac, build from source or use a Developer ID-signed production release.
+
+Installs by drag-and-drop. Existing installs update themselves within ten minutes, or immediately from Juno → Install Update and Relaunch.
+NOTES
+)"
+else
+  RELEASE_NOTES="$(cat <<NOTES
+Source commit \`$(git rev-parse HEAD)\`
+DMG SHA-256 \`$SHA\` · $SIZE bytes
+Symbols and \`SHA256SUMS.txt\` are attached for crash diagnosis and independent verification.
+
+Installs by drag-and-drop. Existing installs update themselves within ten minutes, or immediately from Juno → Install Update and Relaunch.
+NOTES
+)"
+fi
 gh release create "v$VERSION" "$DMG" \
   "$DSYM" \
   "$CHECKSUMS" \
@@ -473,14 +535,7 @@ gh release create "v$VERSION" "$DMG" \
   --target "$SOURCE_SHA" \
   --draft \
   --title "$TITLE" \
-  --notes "$(cat <<NOTES
-Source commit \`$(git rev-parse HEAD)\`
-DMG SHA-256 \`$SHA\` · $SIZE bytes
-Symbols and \`SHA256SUMS.txt\` are attached for crash diagnosis and independent verification.
-
-Installs by drag-and-drop. Existing installs update themselves within ten minutes, or immediately from Juno → Install Update and Relaunch.
-NOTES
-)"
+  --notes "$RELEASE_NOTES"
 
 RELEASE_ID="$(gh api "repos/$REPO/releases/tags/v$VERSION" --jq '.id // empty')"
 [ -n "$RELEASE_ID" ] || die "GitHub created the draft release but returned no release ID; it remains draft-only."
