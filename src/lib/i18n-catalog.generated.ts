@@ -138,10 +138,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "JWT attacks · Web Security Academy"
   },
   {
-    "id": "017726611f0c3468",
-    "source": "Talk to Juno about this task"
-  },
-  {
     "id": "01792a33c228a70e",
     "source": "Add files"
   },
@@ -340,10 +336,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0559aadba9e29b9a",
     "source": "OWNER"
-  },
-  {
-    "id": "0561598087322961",
-    "source": "Juno was told this task&rsquo;s goal, plan and latest activity when you started talking. This is a separate conversation about the task: it can&rsquo;t see anything else, it can&rsquo;t change the task, and nothing said here reaches the run unless you send it."
   },
   {
     "id": "056a3c0be22d937d",
@@ -6902,6 +6894,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Getting started"
   },
   {
+    "id": "8328b332cbd08a87",
+    "source": "This is a separate conversation about the task: it can&rsquo;t see anything else, it can&rsquo;t change the task, and nothing said here reaches the run unless you send it."
+  },
+  {
     "id": "8335e4c92c40556a",
     "source": "Echo"
   },
@@ -9398,6 +9394,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "(Réglages → Compte) efface votre compte et vos conversations. Vous pouvez également supprimer chaque conversation individuellement."
   },
   {
+    "id": "b327acc8dc1f1726",
+    "source": "Juno was told this task’s goal, plan and latest activity when you started talking."
+  },
+  {
     "id": "b327b8b0cad151b0",
     "source": "This Mac asked for “"
   },
@@ -10228,10 +10228,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c4202cc1743bc854",
     "source": "— change"
-  },
-  {
-    "id": "c439de3db819c9a7",
-    "source": "Talk about this task"
   },
   {
     "id": "c461dbb2bab7d8bc",
@@ -12304,6 +12300,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e8892378638c8f90",
     "source": "Juno Work"
+  },
+  {
+    "id": "e893cc63a7ee8fe9",
+    "source": "Juno was told this task’s goal and where it has got to when you started talking."
   },
   {
     "id": "e8b0b8daf176b804",

@@ -1,11 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { AudioLines, RefreshCw, Send } from "lucide-react";
+import { RefreshCw, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
+import { VoiceAura, voiceAuraStatus } from "@/components/voice/voice-aura";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
-import { cn } from "@/lib/utils";
 import {
   buildWorkVoiceBriefing,
   workVoiceCatchUp,
@@ -47,12 +47,16 @@ import {
  *     has is `input.text` and that arrives at the model as something the USER
  *     said. Sending it behind the reader's back would put words in their mouth.
  *
- * ── Mounting it ───────────────────────────────────────────────────────────-
+ * ── There is no launcher in this file, and that is the point ───────────────
  *
- * Self-contained and unstyled beyond its own box: drop it next to the thread
- * composer and pass the same three objects the page already holds. It renders
- * nothing at all when `NEXT_PUBLIC_VOICE_RELAY_URL` is unset, matching how chat
- * hides its own voice control on a deployment with no relay.
+ * This used to export a `WorkVoiceButton` that drew its own "Talk about this
+ * task" button above the composer. That was a second entry point for the same
+ * conversation sitting a few pixels from the composer's own controls, and it is
+ * not how chat does it: chat's composer has ONE primary button that is the
+ * voice launcher while there is nothing to send and morphs into Send the moment
+ * there is (`showVoiceButton` in `chat/composer.tsx`). Work now does the same,
+ * so what is left here is the live session — the panel — plus `useWorkVoice`,
+ * which hands the composer the `onOpenVoiceMode` callback it expects.
  */
 
 /** True when this build has a relay to talk to. Inlined at build time. */
@@ -116,57 +120,62 @@ export interface WorkVoiceSend {
   onSend: (text: string) => Promise<boolean>;
 }
 
-export interface WorkVoiceButtonProps extends WorkVoiceBriefingInput {
+export interface WorkVoicePanelProps extends WorkVoiceBriefingInput {
   /** Omit to offer no way in at all: the conversation is then read-only. */
   send?: WorkVoiceSend;
-  className?: string;
+  /** Ends the session and unmounts this. Always offered; never automatic. */
+  onClose: () => void;
 }
 
-export function WorkVoiceButton({ session, run, events, send, className }: WorkVoiceButtonProps) {
+/**
+ * Open / closed for the voice conversation, in the shape the composer wants.
+ *
+ * `onOpenVoiceMode` is deliberately `undefined` — not a no-op — both when this
+ * deployment has no relay and while a session is already live. The composer's
+ * primary button reads that exact absence to decide whether it is a voice
+ * launcher or a plain Send, so a handler that existed but did nothing would
+ * leave a wave-bar button on a build with no voice, and a second launcher
+ * pointing at a panel already on screen. Chat gates its own `onOpenVoiceMode`
+ * the same way (`!voiceOpen && !!NEXT_PUBLIC_VOICE_RELAY_URL` in `chat-view`).
+ */
+export function useWorkVoice(): {
+  /** True when the panel should be mounted. */
+  open: boolean;
+  /** Pass straight to the composer. Undefined means "draw no voice affordance". */
+  onOpenVoiceMode: (() => void) | undefined;
+  /** Hand to the panel's `onClose`. */
+  close: () => void;
+} {
   const [open, setOpen] = React.useState(false);
-
-  if (!isWorkVoiceConfigured()) return null;
-
-  return (
-    <div className={cn("flex w-full flex-col items-stretch gap-2", className)}>
-      {!open && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setOpen(true)}
-          aria-expanded={false}
-          className="self-start gap-2"
-        >
-          <AudioLines className="size-4" aria-hidden="true" />
-          Talk about this task
-        </Button>
-      )}
-      {/* Mounted only while open, and that is not tidiness. `useRealtimeVoice`
-          runs a requestAnimationFrame loop for the whole of its life to smooth
-          the level meter; a Work thread already re-renders about once a second
-          while a run streams, and adding a permanent per-frame callback to that
-          page for a button nobody has pressed is a cost with no reader. */}
-      {open && (
-        <WorkVoiceSession
-          session={session}
-          run={run}
-          events={events}
-          send={send}
-          onClose={() => setOpen(false)}
-        />
-      )}
-    </div>
-  );
+  const configured = isWorkVoiceConfigured();
+  const openVoice = React.useCallback(() => setOpen(true), []);
+  const close = React.useCallback(() => setOpen(false), []);
+  return {
+    // A session can outlive the config check only if the env changed mid-page,
+    // which it cannot — but gating the mount too keeps the two in step.
+    open: open && configured,
+    onOpenVoiceMode: configured && !open ? openVoice : undefined,
+    close,
+  };
 }
 
-function WorkVoiceSession({
-  session,
-  run,
-  events,
-  send,
-  onClose,
-}: WorkVoiceButtonProps & { onClose: () => void }) {
+/**
+ * The live session.
+ *
+ * Mounted only while the conversation is open, and that is not tidiness.
+ * `useRealtimeVoice` runs a requestAnimationFrame loop for the whole of its
+ * life to smooth the level meter; a Work thread already re-renders about once a
+ * second while a run streams, and adding a permanent per-frame callback to that
+ * page for a conversation nobody has started is a cost with no reader.
+ *
+ * It returns a FRAGMENT, not a box, and the first thing in it is the aura. The
+ * field paints at `z-index: -1`, so it has to be a SIBLING of the composer
+ * inside `.composer-aura-host` for that to mean "behind the composer" — wrapped
+ * in this component's own `<section>` it would land behind the section instead,
+ * and the section's rise-in animation would trap it in a layer of its own. This
+ * is the same arrangement `chat-view.tsx` uses for exactly the same reason.
+ */
+export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoicePanelProps) {
   const voice = useRealtimeVoice();
   const briefingInput = React.useMemo<WorkVoiceBriefingInput>(
     () => ({ session, run, events }),
@@ -247,79 +256,95 @@ function WorkVoiceSession({
     onClose();
   }, [onClose]);
 
+  /*
+   * What the opening sentence is allowed to claim.
+   *
+   * The plan, the open questions and Juno's own words all come out of the event
+   * stream; with no events the briefing is the goal and the status and nothing
+   * else. Saying "goal, plan and latest activity" in that case would be the one
+   * thing this whole component exists to prevent — the panel asserting the
+   * model knows something it was never told.
+   */
+  const briefedFromStream = events.length > 0;
+
   return (
-    <section
-      aria-label="Voice conversation about this task"
-      className="flex w-full flex-col gap-3 rounded-2xl border border-border/70 bg-card/80 p-3 motion-safe:animate-rise-in"
-    >
-      {/* The arrangement, stated plainly and kept on screen. Not a tooltip and
-          not a one-time notice: the sentence has to be readable at the moment
-          somebody is deciding whether to believe what they just heard. */}
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        Juno was told this task&rsquo;s goal, plan and latest activity when you started talking.
-        This is a separate conversation about the task: it can&rsquo;t see anything else, it
-        can&rsquo;t change the task, and nothing said here reaches the run unless you send it.
-      </p>
+    <>
+      <VoiceAura status={voiceAuraStatus(voice)} levelRef={voice.levelRef} />
+      <section
+        aria-label="Voice conversation about this task"
+        className="mb-2 flex w-full flex-col gap-3 rounded-2xl border border-border/70 bg-card/80 p-3 motion-safe:animate-rise-in"
+      >
+        {/* The arrangement, stated plainly and kept on screen. Not a tooltip and
+            not a one-time notice: the sentence has to be readable at the moment
+            somebody is deciding whether to believe what they just heard. */}
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {briefedFromStream
+            ? "Juno was told this task’s goal, plan and latest activity when you started talking."
+            : "Juno was told this task’s goal and where it has got to when you started talking."}{" "}
+          This is a separate conversation about the task: it can&rsquo;t see anything else, it
+          can&rsquo;t change the task, and nothing said here reaches the run unless you send it.
+        </p>
 
-      {staleBy && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-muted/40 px-3 py-2">
-          <p className="font-mono text-label text-muted-foreground">
-            The task has moved on since Juno was briefed
-          </p>
-          <Button type="button" variant="outline" size="sm" onClick={catchUp} className="gap-2">
-            <RefreshCw className="size-3.5" aria-hidden="true" />
-            Bring Juno up to date
-          </Button>
-        </div>
-      )}
+        {staleBy && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-muted/40 px-3 py-2">
+            <p className="font-mono text-label text-muted-foreground">
+              The task has moved on since Juno was briefed
+            </p>
+            <Button type="button" variant="outline" size="sm" onClick={catchUp} className="gap-2">
+              <RefreshCw className="size-3.5" aria-hidden="true" />
+              Bring Juno up to date
+            </Button>
+          </div>
+        )}
 
-      {lines.length > 0 && (
-        <div className="max-h-56 space-y-3 overflow-y-auto pr-1">
-          {lines.map((line) =>
-            line.role === "user" ? (
-              <div key={line.id} className="flex justify-end">
-                <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-secondary px-3 py-2 text-[13px] leading-relaxed text-secondary-foreground">
+        {lines.length > 0 && (
+          <div className="max-h-56 space-y-3 overflow-y-auto pr-1">
+            {lines.map((line) =>
+              line.role === "user" ? (
+                <div key={line.id} className="flex justify-end">
+                  <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-secondary px-3 py-2 text-[13px] leading-relaxed text-secondary-foreground">
+                    {line.text}
+                  </p>
+                </div>
+              ) : (
+                <p key={line.id} className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">
                   {line.text}
                 </p>
-              </div>
-            ) : (
-              <p key={line.id} className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">
-                {line.text}
-              </p>
-            )
-          )}
-        </div>
-      )}
+              )
+            )}
+          </div>
+        )}
 
-      {send && sendable && (
-        <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-background/60 p-2.5">
-          {/* What the press does, before the press — the composer's own line,
-              for the composer's own reason: a steer and a restart are not the
-              same event and finding out afterwards is too late. */}
-          <p className="font-mono text-label text-muted-foreground">{intentSentence(send.intent)}</p>
-          <p className="text-[13px] leading-relaxed text-foreground">{sendable.text}</p>
-          <p className="text-caption text-muted-foreground/80">
-            These exact words go to the task. Juno&rsquo;s side of this call does not.
-          </p>
-          {sendFailed && (
-            <p role="alert" className="text-caption text-destructive">
-              Those words didn&rsquo;t land on the task. Try again, or type them in the box below.
+        {send && sendable && (
+          <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-background/60 p-2.5">
+            {/* What the press does, before the press — the composer's own line,
+                for the composer's own reason: a steer and a restart are not the
+                same event and finding out afterwards is too late. */}
+            <p className="font-mono text-label text-muted-foreground">{intentSentence(send.intent)}</p>
+            <p className="text-[13px] leading-relaxed text-foreground">{sendable.text}</p>
+            <p className="text-caption text-muted-foreground/80">
+              These exact words go to the task. Juno&rsquo;s side of this call does not.
             </p>
-          )}
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => void submit()}
-            disabled={sending || send.sending === true}
-            className="self-end gap-2"
-          >
-            <Send className="size-3.5" aria-hidden="true" />
-            {sending ? "Sending…" : sendButtonLabel(send.intent)}
-          </Button>
-        </div>
-      )}
+            {sendFailed && (
+              <p role="alert" className="text-caption text-destructive">
+                Those words didn&rsquo;t land on the task. Try again, or type them in the box below.
+              </p>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void submit()}
+              disabled={sending || send.sending === true}
+              className="self-end gap-2"
+            >
+              <Send className="size-3.5" aria-hidden="true" />
+              {sending ? "Sending…" : sendButtonLabel(send.intent)}
+            </Button>
+          </div>
+        )}
 
-      <RealtimeVoice voice={voice} onClose={close} />
-    </section>
+        <RealtimeVoice voice={voice} onClose={close} />
+      </section>
+    </>
   );
 }
