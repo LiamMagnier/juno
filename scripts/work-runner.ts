@@ -2542,6 +2542,24 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     if (!sessionRef.current) throw new Error("The Work session was used before it was created.");
     return sessionRef.current;
   };
+  // A model with no catalog price cannot be billed, and a ceiling that cannot
+  // be billed against cannot stop anything.
+  //
+  // `budgetExceeded` gates on `maxCostMicroUsd > 0 && costMicroUsd >= it`, and
+  // an unpriced run's cost stays at zero for its whole life — so the spend
+  // limit the reader set is silently not in force. Saying so is the difference
+  // between a limit that does not apply and a limit the reader believes is
+  // applying. The run still goes ahead: refusing it would ground every model
+  // this build has not heard of, which is the case `runModelChoice` exists to
+  // keep working.
+  if (!choice.info && budget.maxCostMicroUsd > 0) {
+    await input.emit("degraded", {
+      kind: "model_substituted",
+      subject: choice.providerModel,
+      explanation: `Juno has no price for ${choice.providerModel}, so this task's spending limit is not being enforced. Its time and token limits still are.`,
+    });
+  }
+
   const sessionOptions: WorkSessionOptions = {
     runId: input.runId,
     goal,

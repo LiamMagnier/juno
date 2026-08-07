@@ -581,7 +581,29 @@ export class WorkAgentSession {
         detail: `The deliverable does not yet answer the goal: ${validation.unmet.join(' ')}`,
       };
     }
-    return { terminalReason: 'completed', detail: 'The deliverable answers the goal.' };
+    // What "done" is allowed to claim depends on what actually checked.
+    //
+    // `structuralValidation` — the default, and the only validator the cloud
+    // deployment installs, because `WorkSessionOptions.validate` is never set —
+    // takes `goal` and does not read it. It checks that every step reached a
+    // terminal status, that skips and failures carry a reason, that something
+    // was produced, and that nothing unfinished went unmentioned. All of that
+    // is about the *record* of the run, not about whether the answer is right.
+    //
+    // Saying "The deliverable answers the goal" on that evidence is the same
+    // defect as the one `unmet` used to have in the other direction: a sentence
+    // asserting something nothing verified. It was unreachable until the plan
+    // tool was wired, because no cloud run could satisfy the first check at
+    // all — so wiring the tool is what made this claim start being made.
+    //
+    // A deployment that supplies a real validator has earned the stronger
+    // sentence; one that has not says what it actually knows.
+    return {
+      terminalReason: 'completed',
+      detail: this.options.validate
+        ? 'The deliverable answers the goal.'
+        : 'Every step finished and the run produced a result. Juno has not judged whether it is correct.',
+    };
   }
 
   private async validate(): Promise<WorkValidationResult> {

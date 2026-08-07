@@ -209,3 +209,57 @@ test('a skipped step with no reason is still reported', () => {
     result.unmet.join(' | '),
   );
 });
+
+/*
+ * What a finished run is allowed to claim.
+ *
+ * `structuralValidation` is handed the goal and never reads it: it checks the
+ * *record* of the run — every step terminal, skips explained, something
+ * produced, nothing unfinished left unmentioned. Declaring "The deliverable
+ * answers the goal" on that evidence asserts something nothing verified, the
+ * same defect `unmet` had in the other direction.
+ *
+ * It was unreachable while the plan tool was unwired, because no cloud run
+ * could satisfy the first check at all. Wiring the tool is what made the claim
+ * start being made, so the claim had to be made honest at the same time.
+ */
+
+test('the default validator is handed the goal and does not read it', () => {
+  // If this ever starts failing, the completion sentence below can be
+  // strengthened — but not before.
+  const seen: string[] = [];
+  const goal = 'UNIQUE-GOAL-STRING-NOT-IN-THE-ANSWER';
+  const plan = planWith(
+    (p) => p.complete('a'),
+    (p) => p.complete('b'),
+  );
+  const result = structuralValidation({
+    goal,
+    plan,
+    answer: 'Something entirely unrelated to what was asked.',
+    artifacts: [],
+  });
+  for (const check of result.checks) seen.push(check.claim, check.evidence);
+  assert.equal(result.satisfied, true);
+  assert.ok(
+    !seen.some((text) => text.includes(goal)),
+    'a check mentioned the goal — the validator may now be reading it',
+  );
+});
+
+test('a wrong answer with every box ticked still passes the structural gate', () => {
+  // Not a bug in the validator — it is structural by design and says so. The
+  // bug was the sentence the run reported afterwards, which claimed the goal
+  // had been answered.
+  const plan = planWith(
+    (p) => p.complete('a'),
+    (p) => p.complete('b'),
+  );
+  const result = structuralValidation({
+    goal: 'Reconcile the Q3 invoices',
+    plan,
+    answer: 'The capital of France is Paris.',
+    artifacts: [],
+  });
+  assert.equal(result.satisfied, true, result.unmet.join(' | '));
+});
