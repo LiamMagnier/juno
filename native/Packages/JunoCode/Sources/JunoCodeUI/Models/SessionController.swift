@@ -257,6 +257,10 @@ public final class SessionController {
         let modelSupportsVision: (String) -> Bool
         /// Whether a thinking parameter may be sent for this model at all.
         let modelTakesThinkingParameter: (String) -> Bool
+        /// The model's advertised context window, when the signed-in
+        /// manifest provides one. The runtime uses it to compact before a
+        /// provider rejects an oversized long-running session.
+        let modelContextWindowTokens: (String) -> Int?
     }
 
     /// The part of the configuration an orchestrator cannot be changed on: its
@@ -467,7 +471,8 @@ public final class SessionController {
         store: CodeSessionStore,
         modelClient: any AgentModelClient,
         modelSupportsVision: @escaping (String) -> Bool = { _ in false },
-        modelTakesThinkingParameter: @escaping (String) -> Bool = { _ in true }
+        modelTakesThinkingParameter: @escaping (String) -> Bool = { _ in true },
+        modelContextWindowTokens: @escaping (String) -> Int? = { _ in nil }
     ) {
         self.sessionID = session.id
         self.session = session
@@ -486,7 +491,8 @@ public final class SessionController {
             subagentControls: SubagentControlRegistry(),
             modelClient: modelClient,
             modelSupportsVision: modelSupportsVision,
-            modelTakesThinkingParameter: modelTakesThinkingParameter
+            modelTakesThinkingParameter: modelTakesThinkingParameter,
+            modelContextWindowTokens: modelContextWindowTokens
         )
         self.hookPolicy = context?.hookPolicyStore.load(
             permissionMode: context == nil
@@ -664,7 +670,10 @@ public final class SessionController {
             registry: ToolRegistry(tools: tools),
             permissions: live.permissions,
             store: live.store,
-            configuration: AgentOrchestrator.Configuration(systemPrompt: systemPrompt),
+            configuration: AgentOrchestrator.Configuration(
+                contextWindowTokens: live.modelContextWindowTokens(contract.modelID),
+                systemPrompt: systemPrompt
+            ),
             modelID: contract.modelID,
             reasoningEffort: contract.reasoningEffort,
             lifecycleHooks: lifecycleHooks
@@ -718,7 +727,10 @@ public final class SessionController {
             registry: ToolRegistry(tools: []),
             permissions: live.permissions,
             store: live.store,
-            configuration: AgentOrchestrator.Configuration(systemPrompt: systemPrompt),
+            configuration: AgentOrchestrator.Configuration(
+                contextWindowTokens: live.modelContextWindowTokens(contract.modelID),
+                systemPrompt: systemPrompt
+            ),
             modelID: contract.modelID,
             reasoningEffort: contract.reasoningEffort
         )

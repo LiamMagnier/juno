@@ -16,6 +16,14 @@ public actor AgentOrchestrator {
         public var maximumToolResultBytes: Int
         public var maximumToolImageBytes: Int
         public var maximumToolImages: Int
+        /// The provider's advertised context window. When usage reaches the
+        /// trigger fraction, older turns are compacted before the next request.
+        /// Nil keeps the byte guard as the fallback for incomplete manifests.
+        public var contextWindowTokens: Int?
+        public var contextCompactionTriggerFraction: Double
+        /// A provider-independent safety net for models that do not report
+        /// usage, or whose manifest has no context-window metadata.
+        public var maximumConversationBytes: Int
         public var systemPrompt: String
 
         public init(
@@ -23,12 +31,21 @@ public actor AgentOrchestrator {
             maximumToolResultBytes: Int = 512 * 1_024,
             maximumToolImageBytes: Int = 8 * 1_024 * 1_024,
             maximumToolImages: Int = 4,
+            contextWindowTokens: Int? = nil,
+            contextCompactionTriggerFraction: Double = 0.80,
+            maximumConversationBytes: Int = 4 * 1_024 * 1_024,
             systemPrompt: String
         ) {
             self.maximumIterations = maximumIterations
             self.maximumToolResultBytes = maximumToolResultBytes
             self.maximumToolImageBytes = maximumToolImageBytes
             self.maximumToolImages = maximumToolImages
+            self.contextWindowTokens = contextWindowTokens
+            self.contextCompactionTriggerFraction = min(
+                max(contextCompactionTriggerFraction, 0.50),
+                0.95
+            )
+            self.maximumConversationBytes = max(maximumConversationBytes, 16_384)
             self.systemPrompt = systemPrompt
         }
     }
@@ -278,6 +295,8 @@ public actor AgentOrchestrator {
                 )
                 return
             }
+
+            await compactConversationIfNeeded()
 
             let request = ModelTurnRequest(
                 sessionID: sessionID,
@@ -561,6 +580,52 @@ public actor AgentOrchestrator {
                 return
             }
         }
+    }
+
+    /// Compacts before a provider request, never in the middle of a tool turn.
+    /// This keeps the model-facing history valid while ensuring a resumed app
+    /// sees the same bounded memory because the compacted messages are persisted.
+    private func compactConversationIfNeeded() async {
+        let tokenTrigger: Bool
+        if let window = configuration.contextWindowTokens,
+           window > 0,
+           let contextTokens
+        {
+            tokenTrigger = Double(contextTokens)
+                >= Double(window) * configuration.contextCompactionTriggerFraction
+        } else {
+            tokenTrigger = false
+        }
+
+        let contextSizedMaximum: Int?
+        if let window = configuration.contextWindowTokens, window > 0 {
+            // JSON is intentionally used only as a conservative local proxy:
+            // provider tokenizers differ. Four bytes per token keeps a 128K
+            // model's request near its 80% trigger while the explicit byte cap
+            // still bounds models with very large windows.
+            let estimated = Double(window)
+                * configuration.contextCompactionTriggerFraction * 4
+            contextSizedMaximum = Int(min(
+                Double(configuration.maximumConversationBytes),
+                max(16_384, estimated)
+            ))
+        } else {
+            contextSizedMaximum = nil
+        }
+        let result = ConversationCompactor.compact(
+            conversation,
+            maximumBytes: contextSizedMaximum ?? configuration.maximumConversationBytes,
+            force: tokenTrigger
+        )
+        guard let result else { return }
+
+        conversation = result.messages
+        // The next request will report a new prompt size. Keeping the old
+        // number visible would make the UI claim the compacted request is still
+        // at the pre-compaction limit.
+        contextTokens = nil
+        usageObserver?(nil, lastOutputTokens)
+        try? await store.saveConversation(sessionID: sessionID, messages: conversation)
     }
 
     private struct ToolExecutionRecord {

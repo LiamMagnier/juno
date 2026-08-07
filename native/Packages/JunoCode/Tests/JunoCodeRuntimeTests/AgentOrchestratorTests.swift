@@ -839,6 +839,58 @@ final class AgentOrchestratorTests: XCTestCase {
         })
     }
 
+    func testLongSessionCompactsBeforeTheNextModelRequest() async throws {
+        let model = ScriptedModelClient(steps: [
+            .events([
+                .textDelta("First turn finished."),
+                .usage(inputTokens: 90, outputTokens: 4),
+                .turnCompleted(.endTurn),
+            ]),
+            .text("Follow-up answered."),
+        ])
+        let permissions = PermissionCoordinator(sessionID: session.id, mode: .fullAccess)
+        let orchestrator = AgentOrchestrator(
+            sessionID: session.id,
+            model: model,
+            registry: registry,
+            permissions: permissions,
+            store: store,
+            configuration: AgentOrchestrator.Configuration(
+                contextWindowTokens: 100,
+                maximumConversationBytes: 16_384,
+                systemPrompt: "sys"
+            ),
+            modelID: "test-model",
+            reasoningEffort: .medium
+        )
+
+        let longPrompt = String(repeating: "Keep this original requirement. ", count: 700)
+        try await orchestrator.submit(prompt: longPrompt)
+        await orchestrator.awaitCompletion()
+        try await orchestrator.submit(prompt: "Follow up")
+        await orchestrator.awaitCompletion()
+
+        XCTAssertEqual(model.receivedRequests.count, 2)
+        guard let secondRequest = model.receivedRequests.last else {
+            return XCTFail("expected the follow-up request")
+        }
+        guard case let .user(anchor) = secondRequest.messages.first else {
+            return XCTFail("expected a compacted user anchor")
+        }
+        XCTAssertTrue(anchor.contains("Keep this original requirement."))
+        XCTAssertTrue(anchor.contains("[Juno retained context]"))
+        XCTAssertTrue(secondRequest.messages.contains {
+            if case .user("Follow up") = $0 { return true }
+            return false
+        })
+
+        let persisted = await store.loadConversation(sessionID: session.id)
+        guard case let .user(persistedAnchor) = persisted.first else {
+            return XCTFail("compaction must be persisted for relaunch")
+        }
+        XCTAssertTrue(persistedAnchor.contains("[Juno retained context]"))
+    }
+
     func testInterruptedSessionMarkedFailedOnRestore() async throws {
         _ = try await store.updateSession(id: session.id) { session in
             session.status = .waitingForApproval

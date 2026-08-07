@@ -524,6 +524,12 @@ public final class WorkbenchModel {
                 self?.availableModels
                     .first(where: { $0.modelID == modelID })?
                     .takesThinkingParameter == true
+            },
+            modelContextWindowTokens: { [weak self] modelID in
+                self?.availableModels
+                    .first(where: { $0.modelID == modelID })?
+                    .catalog?
+                    .contextWindowTokens
             }
         )
         controllers[sessionID] = controller
