@@ -157,6 +157,68 @@ export function updatePlanToolSpec(): ToolSpec {
   };
 }
 
+/**
+ * The tool the model calls to replace the scaffold with a plan for *this* task.
+ *
+ * The comment above says re-planning "is not the model's to rewrite mid-run",
+ * and that was the right instinct aimed at the wrong thing. What it protected
+ * was a plan the cloud runner hard-codes identically for every task ever
+ * submitted — `Understand what is being asked` / `Do the work` / `Check the
+ * result against the request`. Those three lines are what a user watching a
+ * fourteen-second failure saw, and they say nothing about their task that was
+ * not already true of every other task in the product. For a surface whose
+ * whole premise is "show me the plan before you touch anything", a plan that
+ * cannot mention the goal is the largest thing missing.
+ *
+ * So the scaffold becomes a seed rather than a cage, and the model is asked to
+ * replace it once, up front, before it acts. Deliberately NOT the same tool as
+ * `update_plan`: writing the plan and marking a step done are different acts
+ * with different blast radii, and folding them together is how a model that
+ * meant to tick a box rewrites the list instead.
+ *
+ * Bounded by `MAX_PLAN_WRITES` for the reason the original comment gives. A
+ * model that may rewrite the plan whenever it likes can hide a step it failed
+ * by re-planning it away, and `structuralValidation`'s "every planned step
+ * reached a conclusion" would pass over work nobody did. Two writes is enough
+ * for "here is the plan" plus one genuine mid-run correction, and not enough to
+ * launder a failure.
+ */
+export const WORK_WRITE_PLAN_TOOL_NAME = 'write_plan';
+
+/** How many times one run may (re)write its plan. See the comment above. */
+const MAX_PLAN_WRITES = 2;
+
+export function writePlanToolSpec(): ToolSpec {
+  return {
+    name: WORK_WRITE_PLAN_TOOL_NAME,
+    description:
+      'Replace the plan with the real steps for this task. Call this ONCE, before you do anything else, as soon as you understand the goal — the placeholder plan you were given is generic and says nothing about this task. Write the steps you actually intend to take, in order, each one a concrete piece of work a person could check. You may call it a second time if what you learn genuinely changes the shape of the job; you may not call it to remove a step that did not go well.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        steps: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 12,
+          description: 'The steps, in the order you intend to do them.',
+          items: {
+            type: 'object',
+            properties: {
+              title: {
+                type: 'string',
+                description:
+                  'One short line naming a concrete piece of work, in the user\'s own terms rather than in tool names. "Find the repositories with no README" — not "call list_repos".',
+              },
+            },
+            required: ['title'],
+          },
+        },
+      },
+      required: ['steps'],
+    },
+  };
+}
+
 export function askUserToolSpec(): ToolSpec {
   return {
     name: WORK_ASK_TOOL_NAME,
@@ -191,6 +253,24 @@ export interface WorkSessionCallbacks {
   onAudit?(intent: WorkAuditIntent): void;
   /** Called whenever the run's resumable state changed. */
   onCheckpoint?(checkpoint: WorkCheckpoint): void;
+  /**
+   * Called when the loop is about to wait and try a step again.
+   *
+   * Operator-facing on purpose, and deliberately NOT an emitted event. The
+   * transcript's vocabulary is a generated cross-language contract — the Swift
+   * side decodes `JunoWorkDegradationKind` as a plain string enum with no
+   * unknown-case fallback — so a new kind invented here would throw inside
+   * every iOS and macOS build already in the field the first time a run was
+   * throttled. Saying it in the transcript is worth doing and is a change that
+   * ships with a native release, not ahead of one.
+   */
+  onProviderRetry?(info: {
+    attempt: number;
+    of: number;
+    delayMs: number;
+    kind: string;
+    reason: string;
+  }): void;
 }
 
 /**
@@ -310,6 +390,8 @@ export class WorkAgentSession {
   private cancelledReason: string | null = null;
   /** Set when the plan reported no progress; carries the sentence to report. */
   private haltReason: string | null = null;
+  /** How many times this run has written its plan. See `MAX_PLAN_WRITES`. */
+  private planWrites = 0;
   private started = false;
 
   constructor(options: WorkSessionOptions) {
@@ -507,7 +589,12 @@ export class WorkAgentSession {
         model: this.options.model,
         system: this.buildSystemPrompt(),
         messages: this.messages,
-        tools: [...this.tools.map((tool) => tool.spec), askUserToolSpec(), updatePlanToolSpec()],
+        tools: [
+          ...this.tools.map((tool) => tool.spec),
+          askUserToolSpec(),
+          updatePlanToolSpec(),
+          writePlanToolSpec(),
+        ],
         signal: this.aborter.signal,
         maxSteps: this.options.maxSteps ?? MAX_STEPS_PER_RUN,
         ...(this.options.reasoningEffort
@@ -520,6 +607,7 @@ export class WorkAgentSession {
         onStep: withBudget(this.budget),
         executeToolCall: (call) => this.executeToolCall(call),
         onMessagesChanged: () => this.options.callbacks.onCheckpoint?.(this.checkpoint()),
+        onProviderRetry: (info) => this.options.callbacks.onProviderRetry?.(info),
       });
       this.finalText = result.finalText || this.finalText;
     } catch (err) {
@@ -667,6 +755,7 @@ export class WorkAgentSession {
   }): Promise<UserContent> {
     if (call.name === WORK_ASK_TOOL_NAME) return this.handleQuestion(call);
     if (call.name === WORK_PLAN_TOOL_NAME) return this.handlePlanUpdate(call);
+    if (call.name === WORK_WRITE_PLAN_TOOL_NAME) return this.handlePlanWrite(call);
 
     const tool = this.toolsByName.get(call.name);
     if (!tool) {
@@ -829,6 +918,52 @@ export class WorkAgentSession {
    * it addressed a step that does not exist, or it carries on believing the
    * plan moved and reports work the transcript never recorded.
    */
+  /**
+   * Replaces the seeded plan with one written for this task.
+   *
+   * Ids are generated here rather than taken from the model. A model that
+   * supplies its own would have to keep them stable across a second write to
+   * keep `update_plan` working, and there is nothing it gains from choosing
+   * them — whereas a collision or a renamed id silently breaks every subsequent
+   * status call. Positional ids are stable by construction.
+   */
+  private handlePlanWrite(call: {
+    id: string;
+    name: string;
+    input: Record<string, unknown>;
+  }): UserContent {
+    if (this.planWrites >= MAX_PLAN_WRITES) {
+      return this.toolResult(
+        call.id,
+        `The plan has already been written ${this.planWrites} times, which is the limit. Record progress against the steps you have with ${WORK_PLAN_TOOL_NAME}, and say in your report what you would have changed.`,
+        true,
+      );
+    }
+
+    const raw = call.input.steps;
+    if (!Array.isArray(raw) || raw.length === 0) {
+      return this.toolResult(call.id, 'A non-empty "steps" array is required.', true);
+    }
+
+    const steps = raw.flatMap((entry, index) => {
+      if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return [];
+      const title = String((entry as { title?: unknown }).title ?? '').trim();
+      if (!title) return [];
+      return [{ id: `s${index + 1}`, title }];
+    });
+    if (steps.length === 0) {
+      return this.toolResult(call.id, 'Every step needs a non-empty "title".', true);
+    }
+
+    this.planWrites += 1;
+    this.revisePlan(steps);
+    const listed = steps.map((step) => `${step.id}: ${step.title}`).join('\n');
+    return this.toolResult(
+      call.id,
+      `The plan is now:\n${listed}\n\nUse these ids with ${WORK_PLAN_TOOL_NAME} as you go.`,
+    );
+  }
+
   private handlePlanUpdate(call: {
     id: string;
     name: string;
@@ -925,8 +1060,17 @@ export class WorkAgentSession {
       '',
       steps,
       '',
+      this.planWrites === 0
+        ? 'That plan is a placeholder. It is the same three lines every task in this product starts with and it says nothing about yours.'
+        : '',
+      '',
       '# Operating rules',
       '',
+      ...(this.planWrites === 0
+        ? [
+            `- FIRST, before any other tool: call ${WORK_WRITE_PLAN_TOOL_NAME} with the real steps for this goal. Name concrete pieces of work in the user's own terms, not tool names. This is what the user reads to decide whether you understood them, and it is the only chance to be corrected before anything is touched.`,
+          ]
+        : []),
       `- Work the plan in order, and record it with ${WORK_PLAN_TOOL_NAME}: "active" before a step, then "done", "skipped" or "failed" when you leave it. The plan is what the user watches, and a run whose steps never move is reported as having done nothing regardless of what it wrote.`,
       '- Say what you are doing before you do it, and what you found afterwards.',
       `- When only the user can decide something, call ${WORK_ASK_TOOL_NAME} rather than guessing. Guessing produces a deliverable that is confidently wrong.`,

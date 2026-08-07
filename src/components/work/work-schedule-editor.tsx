@@ -102,11 +102,39 @@ const MISSED_RUN_OPTIONS: readonly PolicyOption<WorkMissedRunPolicy>[] = [
   { value: "run_all", label: "Run every one", hint: "One run per missed fire. A weekend down is a Monday queue." },
 ];
 
+/**
+ * When a run writes to you.
+ *
+ * The four hints name the channel — email — rather than saying "notification",
+ * because that is what actually arrives and a reader who has not been told will
+ * go looking for a badge that does not exist. They also state the one exception
+ * the code really makes: a task blocked on a person is told about under every
+ * option including Never, since a run that stops to ask and never says so sits
+ * there until its approval expires, and from the reader's side it simply never
+ * finished. Silencing that is not a preference about noise, it is a way of
+ * breaking the schedule quietly.
+ */
 const NOTIFY_OPTIONS: readonly PolicyOption<WorkNotifyPolicy>[] = [
-  { value: "none", label: "Never", hint: "Nothing is sent. The task list is the only record." },
-  { value: "on_attention", label: "Only when it needs me", hint: "A question, an approval, a Mac that went away." },
-  { value: "on_finish", label: "When it finishes", hint: "One notification per completed run." },
-  { value: "all", label: "Everything", hint: "Both of the above." },
+  {
+    value: "none",
+    label: "Never",
+    hint: "No email, with one exception: a run that is stuck waiting for you still writes, or it waits for ever.",
+  },
+  {
+    value: "on_attention",
+    label: "Only when it needs me",
+    hint: "One email when a run has a question, wants an approval, or lost the Mac it needed. Nothing when it just finishes.",
+  },
+  {
+    value: "on_finish",
+    label: "When it finishes",
+    hint: "One email per run that ends, however it ended — plus the stuck-run exception above.",
+  },
+  {
+    value: "all",
+    label: "Everything",
+    hint: "Both of the above. On an hourly schedule that is an email an hour.",
+  },
 ];
 
 /** A draft of everything the form holds, before it becomes a request. */
@@ -451,6 +479,10 @@ export function WorkScheduleEditor({
           disabled={saving}
           onChange={(value) => set("notifyPolicy", value)}
         />
+        <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+          These arrive by email, at the address on your account, once per thing worth saying — a run
+          that finishes while a retry is still in flight does not write twice.
+        </p>
       </section>
 
       {refusal !== null && <WorkStateNote tone="error">{refusal}</WorkStateNote>}

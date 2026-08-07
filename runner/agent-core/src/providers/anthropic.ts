@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { resolveKey } from './credentials.js';
+import { classifyProviderError } from './errors.js';
 import { anthropicThinkingBits } from './thinking.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './timeouts.js';
 import type {
@@ -145,21 +146,32 @@ export class AnthropicAdapter implements ProviderAdapter {
       { signal: req.signal },
     );
 
-    for await (const event of stream) {
-      if (
-        event.type === 'content_block_delta' &&
-        event.delta.type === 'text_delta'
-      ) {
-        yield { type: 'text_delta', text: event.delta.text };
-      } else if (
-        event.type === 'content_block_delta' &&
-        event.delta.type === 'thinking_delta'
-      ) {
-        yield { type: 'thinking_delta', text: event.delta.thinking };
+    // Classified for the same reason the OpenAI-compatible adapter classifies —
+    // see providers/errors.ts. `messages.stream` defers its request, so a 429 or
+    // a 529 overload surfaces from the iteration rather than from the call
+    // above, and both live inside this one boundary.
+    let final: Anthropic.Message;
+    try {
+      for await (const event of stream) {
+        if (
+          event.type === 'content_block_delta' &&
+          event.delta.type === 'text_delta'
+        ) {
+          yield { type: 'text_delta', text: event.delta.text };
+        } else if (
+          event.type === 'content_block_delta' &&
+          event.delta.type === 'thinking_delta'
+        ) {
+          yield { type: 'thinking_delta', text: event.delta.thinking };
+        }
       }
+      final = await stream.finalMessage();
+    } catch (err) {
+      // A stop the user asked for is not a provider failure.
+      if (req.signal?.aborted) throw err;
+      throw classifyProviderError(err, this.name);
     }
 
-    const final = await stream.finalMessage();
     for (const block of final.content) {
       if (block.type === 'tool_use') {
         yield { type: 'tool_call', id: block.id, name: block.name, input: block.input };

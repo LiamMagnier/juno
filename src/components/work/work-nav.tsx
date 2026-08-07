@@ -24,6 +24,21 @@ import { cn } from "@/lib/utils";
  *
  * Links, not buttons: each of these is a URL somebody bookmarks, and a router
  * push behind a button loses that for nothing.
+ *
+ * THE THUMB. The four destinations sit side by side, so moving between them
+ * should look like moving — one fill that travels, not two fills cross-fading
+ * in place. Cross-fading is what the nav did, and it is the reason the switch
+ * read as a page load rather than as a step sideways: nothing on screen ever
+ * connected where you were to where you went.
+ *
+ * The geometry is measured (offsetLeft/offsetWidth) exactly as
+ * `SegmentedControl` measures its own, and deliberately not shared with it.
+ * SegmentedControl is a radiogroup of buttons over a value in React state; these
+ * are anchors over the URL, with browser history, middle-click, hover preview
+ * and Cmd-click behind them. Generalising it to take either would mean a
+ * component whose role, keyboard model and state owner all fork on a prop —
+ * more surface than the twenty lines it would save. What is worth sharing is
+ * the technique, so this reads the same way on purpose.
  */
 
 const DESTINATIONS = [
@@ -49,26 +64,112 @@ const SIBLING_PREFIXES = DESTINATIONS.filter((destination) => destination.href !
 
 export function WorkNav({ className }: { className?: string }) {
   const pathname = usePathname();
+
+  // `/work/schedules/abc` lights Schedules, and `/work/abc` — a task thread —
+  // lights Tasks. Exact matching alone would leave every detail page with
+  // nothing selected, which reads as "you have left Work".
+  const activeHref =
+    DESTINATIONS.find((destination) =>
+      destination.href === "/work"
+        ? pathname === "/work" || !SIBLING_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+        : pathname.startsWith(destination.href)
+    )?.href ?? null;
+
+  const links = React.useRef<Partial<Record<string, HTMLAnchorElement | null>>>({});
+  const thumbRef = React.useRef<HTMLSpanElement>(null);
+  // The thumb is placed from measured pixels, so it must SNAP into its first
+  // position and after any re-measure. Gliding on the first paint would animate
+  // it from the left edge to wherever the user already is, which announces a
+  // move they did not make — on the page they landed on.
+  const hasPlaced = React.useRef(false);
+
+  const place = React.useCallback(
+    (animate: boolean) => {
+      const thumb = thumbRef.current;
+      const link = activeHref === null ? null : links.current[activeHref];
+      if (!thumb) return;
+      if (!link) {
+        // No destination matches — not reachable from the current routes, but a
+        // thumb stranded under the wrong label is worse than no thumb, so it
+        // hides rather than guesses.
+        thumb.style.opacity = "0";
+        return;
+      }
+      if (!animate) thumb.style.transition = "none";
+      thumb.style.opacity = "1";
+      thumb.style.transform = `translate3d(${link.offsetLeft}px, ${link.offsetTop}px, 0)`;
+      thumb.style.width = `${link.offsetWidth}px`;
+      thumb.style.height = `${link.offsetHeight}px`;
+      if (!animate) {
+        void thumb.offsetHeight; // flush the jump before the class transition returns
+        thumb.style.transition = "";
+      }
+    },
+    [activeHref]
+  );
+
+  React.useLayoutEffect(() => {
+    place(hasPlaced.current);
+    hasPlaced.current = true;
+  }, [place]);
+
+  /*
+   * Re-measure when the labels change width. They are set in the mono face,
+   * which arrives after first paint and is not the width of its fallback;
+   * without this the thumb keeps the widths it measured against the fallback
+   * and sits a few pixels off its label, permanently, because nothing else
+   * re-measures until a navigation.
+   *
+   * Subscribed ONCE, at mount, reaching the current `place` through a ref —
+   * which is the whole reason this is not simply `[place]`. ResizeObserver
+   * reports an initial size the moment `observe` is called, so an effect that
+   * re-subscribed whenever `place` changed would deliver a measurement on every
+   * navigation, and that measurement snaps the thumb (`animate: false`) —
+   * cancelling the glide the layout effect above had just started. The observer
+   * is here for one event, the font swap, and a route change is not it.
+   */
+  const latest = React.useRef(place);
+  React.useLayoutEffect(() => {
+    latest.current = place;
+  });
+  React.useEffect(() => {
+    const nav = thumbRef.current?.parentElement;
+    if (!nav || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => latest.current(false));
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, []);
+
   return (
-    <nav className={cn("flex items-center gap-1", className)} aria-label="Juno Work">
+    <nav className={cn("relative flex items-center gap-1", className)} aria-label="Juno Work">
+      <span
+        ref={thumbRef}
+        aria-hidden="true"
+        // Starts at zero width and transparent so that the server-rendered
+        // markup, and the moment before the first measurement, show no thumb at
+        // all rather than a stray rectangle in the corner. The active
+        // destination is still legible in that window: `text-foreground` and
+        // `aria-current` are both plain attributes and both render server-side.
+        className="pointer-events-none absolute left-0 top-0 z-0 h-0 w-0 rounded-[10px] bg-accent opacity-0 transition-[transform,width,height] duration-base ease-spring motion-reduce:transition-none"
+      />
       {DESTINATIONS.map((destination) => {
-        // `/work/schedules/abc` lights Schedules, and `/work/abc` — a task
-        // thread — lights Tasks. Exact matching alone would leave every detail
-        // page with nothing selected, which reads as "you have left Work".
-        const active =
-          destination.href === "/work"
-            ? pathname === "/work" ||
-              !SIBLING_PREFIXES.some((prefix) => pathname.startsWith(prefix))
-            : pathname.startsWith(destination.href);
+        const active = destination.href === activeHref;
         return (
           <Link
             key={destination.href}
+            ref={(element) => {
+              links.current[destination.href] = element;
+            }}
             href={destination.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "rounded-[10px] px-2.5 py-1 font-mono text-[12px] transition-[background-color,color] duration-fast ease-out-soft",
+              // z-10 so the label rides over the thumb rather than under it.
+              // The colour change is `duration-fast` against the thumb's
+              // `duration-base` on purpose: the destination should read as
+              // selected the instant it is pressed, and the fill catches up.
+              "relative z-10 rounded-[10px] px-2.5 py-1 font-mono text-[12px] transition-[background-color,color] duration-fast ease-out-soft",
               active
-                ? "bg-accent text-foreground"
+                ? "text-foreground"
                 : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
             )}
           >

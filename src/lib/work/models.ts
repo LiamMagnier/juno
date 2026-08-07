@@ -29,9 +29,14 @@
  * picking a concrete model for Auto — lives in the route, not here.
  */
 
-import { AUTO_MODEL_ID, isAutoModelId } from "@/lib/auto-model";
+import { AUTO_MODEL_ID, classifyPromptComplexity, isAutoModelId } from "@/lib/auto-model";
 import { canUseModel, effectiveMinPlan, planRank } from "@/lib/plans";
 import { DEFAULT_MODEL, type ModelId, type ModelInfo } from "@/lib/models";
+// Pure scoring, no environment: `getModelMetrics` reads the generated benchmark
+// table and `averageRequestCostMicroUsd` is arithmetic over the catalog's own
+// prices, so importing them here keeps this module as browser-safe as its
+// header promises.
+import { averageRequestCostMicroUsd, getModelMetrics } from "@/lib/model-metrics";
 import type { Plan } from "@prisma/client";
 import type { Provider } from "@/lib/providers";
 
@@ -154,6 +159,200 @@ export function cheapestWorkModel(models: readonly ModelInfo[], plan: Plan): Mod
     .filter((model) => isWorkCapableModel(model) && canUseModel(plan, model.id))
     .sort((a, b) => a.cost - b.cost || a.name.localeCompare(b.name));
   return eligible[0] ?? null;
+}
+
+/**
+ * The intelligence floor a Work run adds on top of the one a chat turn asks for.
+ *
+ * `classifyPromptComplexity` grades a *sentence*, and it grades it for the job
+ * chat does: answer once, well enough. "clean my github & add readme on projects
+ * that doesn't have one" is sixty-two characters of ordinary English, so it
+ * scores `simple` / `minIntelligence: 4` — and on a floor of 4 the cheapest-first
+ * ranking in `pickAutoModel` hands an unbounded tool-calling loop the least
+ * capable model in the catalog that clears it. Measured on this catalog, that is
+ * a model billing an average of zero: a free tier, which is also the tier with
+ * the tightest rate limits, which is how that task died against a 429.
+ *
+ * The sentence is short; the job is not. It means: list every repository on an
+ * account, read each one's tree, decide what a README should say about code it
+ * has just met, write it, and open a commit or a pull request per repository —
+ * dozens of tool calls, each depending on the last, with nobody watching. The
+ * question that matters for a Work run is not "can it answer this sentence" but
+ * "will it still be following the thread forty tool calls from now", and no
+ * heuristic reading the goal text can see that difference, because the
+ * difference is not in the text.
+ *
+ * So Work states its own floor and takes whichever is higher. Six rather than a
+ * frontier number because this is a floor and not a preference — everything
+ * above it is still ranked cheapest-first, and pricing background work out of
+ * the product would be its own failure. The calibration is the one in
+ * `model-metrics.ts`, where Haiku 4.5 is a 5, Grok 4.3 a 6 and GLM-5.2 an 8, so
+ * six admits the small-but-competent tier and excludes the tier that narrates
+ * what it would do instead of calling the tool that would do it.
+ */
+export const WORK_MIN_INTELLIGENCE = 6;
+
+/**
+ * How far the floor may fall before Work would rather run nothing.
+ *
+ * A floor that cannot be met is not a reason to refuse: an account whose plan
+ * admits only small models is still owed its task attempted on the best it has.
+ * But it is a reason to *say so*, which is what `relaxed` on the result is for.
+ */
+const WORK_FLOOR_FLOOR = 4;
+
+export interface WorkModelPick {
+  model: ModelInfo;
+  /** The floor actually applied, after any relaxation. */
+  floor: number;
+  /** The floor Work asked for before relaxing. */
+  desiredFloor: number;
+  /** True when nothing cleared `desiredFloor` and the floor had to come down. */
+  relaxed: boolean;
+  /** How many models cleared the applied floor, for the log line. */
+  candidatesConsidered: number;
+}
+
+/**
+ * The model a Work run should start on.
+ *
+ * Replaces `pickAutoModel` on this path. Not a wrapper around it — a wrapper
+ * would inherit the two properties that made it wrong here — but it borrows the
+ * one part that is right, `classifyPromptComplexity`, because a hard goal should
+ * still lift the floor above Work's own minimum.
+ *
+ * Three differences from the chat router, each answering something that actually
+ * happened:
+ *
+ *   1. **The floor is Work's.** See `WORK_MIN_INTELLIGENCE`.
+ *   2. **The pool is the drivable, reachable one.** `workModelOptions` already
+ *      draws both lines — `isWorkCapableModel` for what the runtime can drive and
+ *      `providers` for what this deployment can reach. `cheapestWorkModel`, the
+ *      function this replaces at the fallback, consulted neither: it ranked the
+ *      whole catalog, so it could name a lab with no key configured and turn a
+ *      recoverable substitution into `UnrunnableModelError` at the executor.
+ *   3. **The tie-break is not the display name.** `cheapestWorkModel` sorts
+ *      `a.cost - b.cost || a.name.localeCompare(b.name)`, and eight models on
+ *      this catalog tie at `cost: 1` — so which model ran an account's
+ *      background work was decided by the first letter of its marketing name,
+ *      and "Claude Haiku 4.5" won because C sorts early. That is an accident,
+ *      not a policy. Ranking here is by real average request cost, then by
+ *      intelligence descending, then by id, which is deterministic without being
+ *      arbitrary: among models that cost the same, take the more capable one.
+ *
+ * `providers` is passed in rather than read, for the reason `workModelOptions`
+ * gives: this module is imported by the browser, `isProviderConfigured` answers
+ * false for every lab there, and a provider filter that ran client-side would
+ * empty the pool. Pass `null` to skip the check.
+ *
+ * Returns `null` when the account's plan admits no drivable model at all, which
+ * is a 403 the caller has a sentence for — not something to paper over.
+ */
+export function pickWorkModel(input: {
+  goal: string;
+  plan: Plan;
+  models: readonly ModelInfo[];
+  providers?: readonly Provider[] | null;
+}): WorkModelPick | null {
+  const pool = workModelOptions(input.models, { providers: input.providers ?? null }).filter(
+    (model) => canUseModel(input.plan, model.id)
+  );
+  if (pool.length === 0) return null;
+
+  const complexity = classifyPromptComplexity(input.goal);
+  const desiredFloor = Math.max(complexity.minIntelligence, WORK_MIN_INTELLIGENCE);
+
+  // Step the floor down rather than falling straight to "anything". A goal that
+  // wanted a 9 and can have an 8 should get the 8, not the cheapest thing on the
+  // account — the fallback that skipped the middle is what made a substitution
+  // feel like a punishment.
+  let floor = desiredFloor;
+  let candidates = pool.filter((model) => getModelMetrics(model).intelligence >= floor);
+  while (candidates.length === 0 && floor > WORK_FLOOR_FLOOR) {
+    floor -= 1;
+    candidates = pool.filter((model) => getModelMetrics(model).intelligence >= floor);
+  }
+  if (candidates.length === 0) {
+    floor = 0;
+    candidates = pool;
+  }
+
+  const ranked = candidates.slice().sort((a, b) => {
+    const costDelta = averageRequestCostMicroUsd(a) - averageRequestCostMicroUsd(b);
+    if (costDelta !== 0) return costDelta;
+    const intelDelta = getModelMetrics(b).intelligence - getModelMetrics(a).intelligence;
+    if (intelDelta !== 0) return intelDelta;
+    return a.id.localeCompare(b.id);
+  });
+
+  const model = ranked[0];
+  if (!model) return null;
+  return {
+    model,
+    floor,
+    desiredFloor,
+    relaxed: floor < desiredFloor,
+    candidatesConsidered: ranked.length,
+  };
+}
+
+/**
+ * The models a failed run may be retried on, best-first, excluding the ones
+ * already tried.
+ *
+ * Failover is a *run-boundary* decision — see the comment on `nextRunModel` in
+ * `scripts/work-runner.ts` for why it cannot be a mid-loop one — so this returns
+ * an ordered list rather than performing a swap. `exclude` carries every model
+ * this task has already burned an attempt on, so a task whose first two choices
+ * are both rate-limited walks down the list instead of oscillating between them.
+ *
+ * Ordered by the same rule as `pickWorkModel`, then filtered: a failover that
+ * moved to a *less* capable model would be trading the failure the user saw for
+ * one they will not understand. Provider diversity is preferred explicitly —
+ * the failure this exists for is a provider-wide rate limit, and the second
+ * choice on the same lab would meet the same quota.
+ */
+export function workFailoverModels(input: {
+  goal: string;
+  plan: Plan;
+  models: readonly ModelInfo[];
+  providers?: readonly Provider[] | null;
+  exclude: readonly string[];
+}): ModelInfo[] {
+  const spent = new Set(input.exclude);
+  const spentProviders = new Set(
+    input.exclude
+      .map((id) => input.models.find((model) => model.id === id)?.provider)
+      .filter((provider): provider is Provider => provider != null)
+  );
+
+  const pool = workModelOptions(input.models, { providers: input.providers ?? null }).filter(
+    (model) => canUseModel(input.plan, model.id) && !spent.has(model.id)
+  );
+  if (pool.length === 0) return [];
+
+  const complexity = classifyPromptComplexity(input.goal);
+  const floor = Math.max(complexity.minIntelligence, WORK_MIN_INTELLIGENCE);
+
+  return pool.slice().sort((a, b) => {
+    // A different lab first: the quota that stopped the last attempt belongs to
+    // the lab, not to the model.
+    const freshA = spentProviders.has(a.provider) ? 1 : 0;
+    const freshB = spentProviders.has(b.provider) ? 1 : 0;
+    if (freshA !== freshB) return freshA - freshB;
+
+    // Then the floor, as a partition rather than a filter — a task with nothing
+    // above the floor left should still be retried on the best thing below it.
+    const clearsA = getModelMetrics(a).intelligence >= floor ? 0 : 1;
+    const clearsB = getModelMetrics(b).intelligence >= floor ? 0 : 1;
+    if (clearsA !== clearsB) return clearsA - clearsB;
+
+    const costDelta = averageRequestCostMicroUsd(a) - averageRequestCostMicroUsd(b);
+    if (costDelta !== 0) return costDelta;
+    const intelDelta = getModelMetrics(b).intelligence - getModelMetrics(a).intelligence;
+    if (intelDelta !== 0) return intelDelta;
+    return a.id.localeCompare(b.id);
+  });
 }
 
 /**

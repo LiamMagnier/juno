@@ -34,71 +34,18 @@
 import { createHash } from "node:crypto";
 import type { WorkApprovalDecision } from "@/lib/work/domain";
 
-/**
- * Deterministic JSON: object keys sorted, `undefined` dropped, no whitespace.
+/*
+ * `canonicalize` now lives in canonical.ts, which imports nothing.
  *
- * `JSON.stringify` preserves insertion order, so `{a, b}` and `{b, a}` — the
- * same action, built by two code paths, or round-tripped through a JSONB column
- * that did not preserve the original order — hash differently. A digest that
- * changes when nothing about the action changed proves nothing: every mismatch
- * becomes noise, and the check gets disabled by whoever is on call the night it
- * starts firing.
+ * It moved because this module imports `node:crypto` and `triggers.ts` — which
+ * is client-safe by design, and which the schedule editor imports — needed only
+ * that one function. Importing it from here dragged `node:crypto` into the
+ * browser bundle and broke the production build. Re-exported rather than
+ * relocated-and-forgotten so every existing caller keeps working and the
+ * canonical form stays a single definition.
  */
-export function canonicalize(value: unknown): string {
-  return encode(value, new Set<object>());
-}
-
-function encode(value: unknown, ancestors: Set<object>): string {
-  if (value === null) return "null";
-
-  switch (typeof value) {
-    case "string":
-      return JSON.stringify(value);
-    case "number":
-      // JSON has no NaN or Infinity. Writing `null` for both is what
-      // JSON.stringify does, and matching it keeps the canonical form parseable.
-      return Number.isFinite(value) ? JSON.stringify(value) : "null";
-    case "boolean":
-      return value ? "true" : "false";
-    case "bigint":
-      // As a string, because a bigint large enough to matter cannot survive
-      // JSON.parse as a number and would come back a different value.
-      return JSON.stringify(value.toString());
-    case "undefined":
-    case "function":
-    case "symbol":
-      // Only reachable inside an array, where JSON writes a hole as `null`.
-      // As an object property these are dropped by the object branch below.
-      return "null";
-    default:
-      break;
-  }
-
-  const object = value as object;
-  if (ancestors.has(object)) {
-    // A cycle has no canonical form, and silently emitting a placeholder would
-    // make two genuinely different actions hash the same.
-    throw new TypeError("canonicalize: a cyclic value has no canonical form");
-  }
-  if (value instanceof Date) return JSON.stringify(value.toISOString());
-
-  ancestors.add(object);
-  try {
-    if (Array.isArray(value)) {
-      return `[${value.map((item) => encode(item, ancestors)).join(",")}]`;
-    }
-    const entries = Object.entries(value as Record<string, unknown>).filter(
-      ([, entry]) => entry !== undefined && typeof entry !== "function" && typeof entry !== "symbol"
-    );
-    // Compared by UTF-16 code unit, never `localeCompare`: a locale-aware sort
-    // orders keys differently on a host with a different ICU build, which would
-    // make the same action hash differently on two machines in the same fleet.
-    entries.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
-    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${encode(entry, ancestors)}`).join(",")}}`;
-  } finally {
-    ancestors.delete(object);
-  }
-}
+export { canonicalize } from "@/lib/work/canonical";
+import { canonicalize } from "@/lib/work/canonical";
 
 /**
  * Domain separation tags.

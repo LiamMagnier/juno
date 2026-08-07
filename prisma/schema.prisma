@@ -2157,6 +2157,33 @@ model WorkTrigger {
   lastFiredAt     DateTime?
   dedupeWindowSec Int @default(3600)
 
+  /// How far the poller has read into each source this trigger watches, as
+  /// `{ "<source>": "<position>" }` — e.g. `{ "apple-mail:INBOX": "48213" }`.
+  ///
+  /// One column rather than a row per source because the set of sources is the
+  /// trigger's own business and changes with its configuration, and because the
+  /// cursor is only ever read and written together with the row it belongs to.
+  ///
+  /// An absent entry means "never polled", and that is the case the column
+  /// exists for: the first poll of a source records its current high-water mark
+  /// and fires nothing. Without it, a poller restart — or a trigger created this
+  /// morning — reads the inbox, finds twenty-five messages it has never seen,
+  /// and starts twenty-five runs for mail the user read last week.
+  cursor Json @default("{}")
+
+  /// When the poller last read this trigger's source, whether or not anything
+  /// matched, and why the last read failed. `lastPollError` is cleared by the
+  /// first poll that succeeds, so a value in it always describes now.
+  lastPolledAt  DateTime?
+  lastPollError String?   @db.Text
+
+  /// The poller's clock and its lease — the pair `WorkSchedule.nextRunAt` and
+  /// `lockedUntil` are for the scheduler, kept separate because the two workers
+  /// are separate processes and neither may stall the other. `pollLockedUntil`
+  /// is held for the length of one poll, never for the length of a run.
+  nextPollAt      DateTime?
+  pollLockedUntil DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -2165,6 +2192,8 @@ model WorkTrigger {
 
   @@index([scheduleId, enabled])
   @@index([userId, kind])
+  /// The poller's sweep: enabled event triggers whose next poll is due.
+  @@index([enabled, nextPollAt])
 }
 
 /// What a run read and what it produced, as references rather than copies.

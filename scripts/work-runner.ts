@@ -36,7 +36,9 @@ import * as http from "node:http";
 import * as https from "node:https";
 
 import { prisma, prismaUnguarded } from "@/lib/db";
+import { deliverRunNotification } from "@/lib/work/notify/deliver";
 import {
+  WORK_LEASED_STATUSES,
   appendEvents,
   claimRun,
   finishRun,
@@ -157,7 +159,11 @@ function startLeaseRenewal(runId: string, userId: string): NodeJS.Timeout {
           id: runId,
           userId,
           claimedBy: EXECUTOR_ID,
-          status: { in: ["preparing", "running", "waiting_input", "waiting_approval"] },
+          // The same list the sweep uses. These were two inline arrays that
+          // disagreed — this one had four statuses, `reclaimStalledRuns` had
+          // two — so a run waiting on a person whose executor died was renewed
+          // by nobody and swept by nobody. See `WORK_LEASED_STATUSES`.
+          status: { in: [...WORK_LEASED_STATUSES] },
         },
         data: { leaseExpiresAt: new Date(now.getTime() + RUN_LEASE_MS) },
       })
@@ -2298,6 +2304,34 @@ async function drive(runId: string, userId: string): Promise<void> {
     // the session already wrote one. Both would otherwise leave the last
     // events of a run unwritten when this worker moves on to the next.
     await flushEvents();
+
+    /*
+     * Tell the owner, if the run's own policy says to.
+     *
+     * One call site, in `finally`, and both of those are deliberate. The whole
+     * premise of Work is that a task outlives the tab it was started in, and
+     * until now nothing closed that loop: `decideNotification`,
+     * `describeNotification` and `notificationKey` had no callers outside their
+     * own test file, so `WorkSchedule.notifyPolicy` was a four-option control
+     * the user could set and no code could read.
+     *
+     * `finally` rather than beside each `finishRun` because by the time control
+     * reaches here the row is already in its final state — terminal on both the
+     * normal and the catch path, parked on the paused one — and
+     * `deliverRunNotification` decides from the persisted row rather than from
+     * anything passed in. That makes one call correct for every exit, including
+     * the one where `finishRun` itself failed and the sweep will finish the job.
+     *
+     * It never throws (its own try/catch returns a reason instead), it is
+     * idempotent against a key derived from the run, and it is inert unless a
+     * delivery channel is configured. So it cannot turn a finished run into a
+     * failed one, which is the only thing that would make it not worth doing
+     * here.
+     */
+    const notified = await deliverRunNotification({ runId, userId });
+    if (!notified.delivered && notified.reason) {
+      log("no notification sent", { runId, reason: notified.reason });
+    }
   }
 }
 
@@ -2364,6 +2398,22 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
 
   const sink: SessionSink = {};
 
+  /*
+   * The seed plan, which the model is asked to replace before it acts.
+   *
+   * These three lines used to be the whole plan, on every run, for ever. They
+   * are generic by construction — they have to be, because this array is built
+   * before the goal has been read by anything — and a user watching their task
+   * saw the same three sentences that every other task in the product shows.
+   * For a surface whose premise is "Juno plans it, shows you every step", that
+   * was the largest missing thing in it.
+   *
+   * They remain as a seed rather than being removed for two reasons.
+   * `structuralValidation` requires a plan whose steps all reached a
+   * conclusion, so a run that dies before it writes one still has something
+   * coherent to be judged against; and a model that ignores `write_plan`
+   * degrades to the old behaviour rather than to no plan at all.
+   */
   const plan = new runtime.WorkPlan([
     { id: "understand", title: "Understand what is being asked" },
     { id: "work", title: "Do the work" },
@@ -2669,6 +2719,21 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         });
       },
       onCheckpoint: (snapshot: WorkCheckpoint) => queueCheckpoint(snapshot),
+      // Logged rather than emitted — see `WorkSessionCallbacks.onProviderRetry`
+      // for why the transcript cannot carry this until the native contract
+      // ships a vocabulary for it. It is still worth having: a run that spends
+      // ninety seconds waiting out a rate limit is otherwise indistinguishable
+      // in the logs from one that hung, and that was the first question asked
+      // when the incident this work came from was reported.
+      onProviderRetry: (info) => {
+        log("provider asked us to wait", {
+          runId: input.runId,
+          model: run.effectiveModel ?? run.requestedModel,
+          attempt: `${info.attempt}/${info.of}`,
+          delayMs: info.delayMs,
+          kind: info.kind,
+        });
+      },
       askQuestion: async (question) => {
         const waiting = await prisma.workRun.updateMany({
           where: {

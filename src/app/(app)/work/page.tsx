@@ -8,6 +8,8 @@ import { useApp } from "@/components/app/app-provider";
 import { JunoMark } from "@/components/brand/logo";
 import { WorkComposer } from "@/components/work/work-composer";
 import { WorkNav } from "@/components/work/work-nav";
+import { useWorkArrivals } from "@/components/work/motion/use-work-arrivals";
+import { WorkCrossfade } from "@/components/work/motion/work-crossfade";
 import {
   WorkSection,
   WorkSessionRow,
@@ -45,6 +47,14 @@ import { cn } from "@/lib/utils";
  * event — because a queued task becomes a running task without anybody
  * clicking, and a page that only loads on mount freezes on whatever it saw
  * first.
+ *
+ * WHICH IS ALSO WHY THE ENTRANCES ARE COMPUTED HERE. Polling means this list
+ * re-renders twice a minute whether or not anything changed, and a page that
+ * replayed its entrance on every response would twitch at the reader for the
+ * whole time they had it open. Only the list knows which rows are genuinely new,
+ * so only the list can say which ones have earned an entrance; `useWorkArrivals`
+ * turns each set of ids into "this one is new, and it is the nth new one",
+ * and hands every other row a `null` that the row reads as "do not move".
  */
 
 /** Which slice of the already-loaded sessions "Recent tasks" is showing. */
@@ -157,6 +167,22 @@ export default function WorkHomePage() {
     return recent;
   }, [activeFilter, recent]);
 
+  /*
+   * One arrival tracker per list, not one for the page.
+   *
+   * A task that stops for an answer moves from "Recent tasks" to "Needs you".
+   * That is a real arrival in the section it lands in — it also genuinely
+   * remounts, since the two sections are different parents — and a single
+   * page-wide tracker would have called it an old row and let it appear with no
+   * entrance at all, in the one section on the page that exists to be noticed.
+   *
+   * Passed a fresh array each render on purpose: the hook keys off the ids
+   * themselves, so memoising the array here would only be guarding a comparison
+   * it already does.
+   */
+  const attentionArrivals = useWorkArrivals(attention.map((session) => session.id));
+  const visibleArrivals = useWorkArrivals(visible.map((session) => session.id));
+
   /**
    * What to say when the filtered list is empty — which is never the same
    * sentence twice. "No tasks yet" is an invitation; "nothing is running" is a
@@ -231,12 +257,12 @@ export default function WorkHomePage() {
             hint="These have stopped and cannot move until you decide something."
           >
             <div className="space-y-2.5">
-              {attention.map((session, index) => (
+              {attention.map((session) => (
                 <WorkSessionRow
                   key={session.id}
                   session={session}
                   explain
-                  index={index}
+                  enterDelayMs={attentionArrivals.delayFor(session.id)}
                   onChanged={replaceSession}
                 />
               ))}
@@ -287,32 +313,38 @@ export default function WorkHomePage() {
               Couldn’t load your tasks. This list is empty because the request failed, not because
               there is nothing here.
             </WorkStateNote>
-          ) : sessions === null ? (
-            <WorkSessionSkeletons />
-          ) : visible.length === 0 && emptyNote === null ? (
-            <div className="rounded-xl border border-dashed border-border/70 px-4 py-8 text-center">
-              <p className="font-serif text-heading">No tasks yet</p>
-              <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-muted-foreground">
-                Ask for something with a finish line — a folder tidied, a spreadsheet reconciled, a
-                weekly summary written. Juno plans it, shows you every step, and asks before
-                anything it cannot undo.
-              </p>
-            </div>
-          ) : visible.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
-              {emptyNote}
-            </p>
           ) : (
-            <div className="space-y-2.5">
-              {visible.map((session, index) => (
-                <WorkSessionRow
-                  key={session.id}
-                  session={session}
-                  index={index}
-                  onChanged={replaceSession}
-                />
-              ))}
-            </div>
+            // The skeleton fades out over whatever the load turned out to be —
+            // rows, an empty note, or the invitation. All three are the answer
+            // to the same question, and only one of them being allowed to
+            // resolve gently would make the other two feel like errors.
+            <WorkCrossfade pending={sessions === null} placeholder={<WorkSessionSkeletons />}>
+              {visible.length === 0 && emptyNote === null ? (
+                <div className="rounded-xl border border-dashed border-border/70 px-4 py-8 text-center">
+                  <p className="font-serif text-heading">No tasks yet</p>
+                  <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-muted-foreground">
+                    Ask for something with a finish line — a folder tidied, a spreadsheet
+                    reconciled, a weekly summary written. Juno plans it, shows you every step, and
+                    asks before anything it cannot undo.
+                  </p>
+                </div>
+              ) : visible.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+                  {emptyNote}
+                </p>
+              ) : (
+                <div className="space-y-2.5">
+                  {visible.map((session) => (
+                    <WorkSessionRow
+                      key={session.id}
+                      session={session}
+                      enterDelayMs={visibleArrivals.delayFor(session.id)}
+                      onChanged={replaceSession}
+                    />
+                  ))}
+                </div>
+              )}
+            </WorkCrossfade>
           )}
         </WorkSection>
       </div>

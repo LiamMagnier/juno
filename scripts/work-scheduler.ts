@@ -44,7 +44,13 @@ import "server-only";
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget } from "@/lib/spend";
-import { createRun, createWorkSession, appendEvents, finishRun } from "@/lib/work/store";
+import {
+  createRun,
+  createWorkSession,
+  appendEvents,
+  finishRun,
+  sweepExpiredCheckpoints,
+} from "@/lib/work/store";
 import {
   WORK_LIVE_STATUSES,
   defaultVisibilityFor,
@@ -84,12 +90,21 @@ const MAX_SCHEDULES_PER_TICK = 25;
 const MIGRATION_SWEEP_MS = 5 * 60_000;
 /** Legacy tasks examined per sweep. */
 const MIGRATION_PAGE = 100;
+/**
+ * How often to expire the checkpoints of resumable runs nobody came back to.
+ *
+ * Hourly, against a retention window measured in days: the sweep only has to be
+ * frequent enough that the window is roughly the window, and every extra pass is
+ * a table scan bought for nothing.
+ */
+const CHECKPOINT_SWEEP_MS = 60 * 60_000;
 
 /** A stable identity for this scheduler, recorded on everything it decides. */
 const SCHEDULER_ID = `work-scheduler:${process.pid}:${process.env.HOSTNAME ?? "local"}`;
 
 let stopping = false;
 let nextMigrationSweepAt = 0;
+let nextCheckpointSweepAt = 0;
 /** Where the last migration sweep stopped. See `sweepMigrations`. */
 let migrationCursor: string | null = null;
 
@@ -657,6 +672,26 @@ async function tick(): Promise<void> {
   if (now.getTime() >= nextMigrationSweepAt) {
     nextMigrationSweepAt = now.getTime() + MIGRATION_SWEEP_MS;
     await sweepMigrations();
+  }
+
+  if (now.getTime() >= nextCheckpointSweepAt) {
+    nextCheckpointSweepAt = now.getTime() + CHECKPOINT_SWEEP_MS;
+    // Here rather than in `work-runner.ts`, and that placement is the point.
+    // The runner is the process whose absence produces most of the rows worth
+    // sweeping; a janitor that only runs when the thing it cleans up after is
+    // healthy is not a janitor. The scheduler is the long-lived process that
+    // does not hold runs, which makes it the right host for every sweep whose
+    // trigger is "something else stopped".
+    await sweepExpiredCheckpoints({ now }).then(
+      (result) => {
+        if (result.cleared > 0) log("checkpoints expired", { cleared: result.cleared });
+      },
+      (error: unknown) => {
+        // A failed sweep is not worth stopping the tick for: nothing downstream
+        // depends on it having run, and the next pass tries again.
+        log("checkpoint sweep failed", { error: String(error) });
+      }
+    );
   }
 
   const budgets = new Map<string, number | null>();

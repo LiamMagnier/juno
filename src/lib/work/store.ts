@@ -4,11 +4,13 @@ import type { WorkCommand, WorkRun, WorkSession } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/db";
 import type { EventVisibility } from "@/lib/event-envelope";
 import {
+  CHECKPOINT_RETENTION_MS,
   DEFAULT_WORK_PERMISSION_POLICY,
   NO_BUDGET,
   RUN_LEASE_MS,
   WORK_TERMINAL_STATUSES,
   defaultVisibilityFor,
+  isResumableTerminalReason,
   statusForTerminalReason,
   statusNeedsAttention,
   type WorkBudget,
@@ -1056,10 +1058,17 @@ export async function finishRun(input: FinishRunInput): Promise<FinishRunResult>
         terminalDetail: input.detail ? input.detail.slice(0, MAX_TERMINAL_DETAIL_CHARS) : null,
         finishedAt: now,
         ...usageData(input.usage),
-        // A terminal run must not leave a provider transcript and tool context
-        // resident in the database indefinitely. A paused run never reaches
-        // finishRun; it is parked explicitly above and keeps its checkpoint.
-        checkpoint: Prisma.JsonNull,
+        // Kept only where picking the run up again is a thing somebody would
+        // actually want — see `isResumableTerminalReason`, which carries the
+        // argument. This column used to be nulled on every ending, which read as
+        // tidiness and was in fact the reason resume did not exist: the restore
+        // path in `WorkAgentSession` is complete and was unreachable from the one
+        // ending it was written for. `sweepExpiredCheckpoints` bounds the
+        // retention, so "not indefinitely" is still true.
+        //
+        // A paused run never reaches finishRun; it is parked explicitly above and
+        // keeps its checkpoint regardless.
+        ...(isResumableTerminalReason(input.reason) ? {} : { checkpoint: Prisma.JsonNull }),
         // Released so a sweeper looking for abandoned leases does not find this
         // one and go looking for an executor that has already gone home.
         claimedBy: null,
@@ -1096,6 +1105,37 @@ export async function finishRun(input: FinishRunInput): Promise<FinishRunResult>
 // ---------------------------------------------------------------------------
 // Recovery
 // ---------------------------------------------------------------------------
+
+/**
+ * The statuses an executor holds a lease on, and therefore the exact set a lease
+ * sweep must cover.
+ *
+ * Written down once because it was written down twice and the two disagreed.
+ * `startLeaseRenewal` in `scripts/work-runner.ts` renewed all four of these;
+ * `reclaimStalledRuns` below swept only `preparing` and `running`. So a run
+ * blocked on a question or an approval, whose executor then died, held a lease
+ * nobody renewed and sat in a sweep nobody ran — permanently `waiting_input`,
+ * rendered for ever as a task still waiting for an answer that would never do
+ * anything. That is the endless spinner the sweep exists to prevent, reached
+ * through the one door the sweep did not cover.
+ *
+ * `draft` and `queued` are absent because nothing holds them: a draft has no
+ * executor and a queued run has not been claimed. `paused` is absent because a
+ * paused run is parked deliberately and its lease is released.
+ *
+ * Here rather than in `domain.ts` on purpose. `domain.ts` is the vocabulary the
+ * generated cross-language contract is built from, and `work-contract.test.ts`
+ * asserts — correctly — that every list it exports is a vocabulary a client can
+ * name. This is not one: no browser or Mac has any use for which statuses the
+ * server leases, and publishing it would put an implementation detail of the
+ * executor into a Swift enum.
+ */
+export const WORK_LEASED_STATUSES = [
+  "preparing",
+  "running",
+  "waiting_input",
+  "waiting_approval",
+] as const satisfies readonly WorkStatus[];
 
 export interface ReclaimStalledRunsInput {
   /** Scope to one account, or omit to sweep every account. */
@@ -1143,7 +1183,10 @@ export async function reclaimStalledRuns(
   const limit = Math.min(Math.max(input.limit ?? 100, 1), 1_000);
 
   const where: Prisma.WorkRunWhereInput = {
-    status: { in: ["preparing", "running"] },
+    // Every status a lease is renewed on, from the one list that defines them.
+    // This used to name `preparing` and `running` inline while the renewer kept
+    // four alive — see `WORK_LEASED_STATUSES` for what that cost.
+    status: { in: [...WORK_LEASED_STATUSES] },
     leaseExpiresAt: { lt: now },
     ...(input.userId ? { userId: input.userId } : {}),
   };
@@ -1179,4 +1222,63 @@ export async function reclaimStalledRuns(
   }
 
   return { reclaimed };
+}
+
+export interface SweepExpiredCheckpointsInput {
+  now?: Date;
+  /** Override the retention window. Defaults to `CHECKPOINT_RETENTION_MS`. */
+  retentionMs?: number;
+  /** Safety cap so one sweep cannot rewrite an unbounded number of rows. */
+  limit?: number;
+}
+
+/**
+ * Drops the checkpoints of resumable runs nobody came back to.
+ *
+ * The other half of the bargain `finishRun` now makes. Keeping a checkpoint past
+ * a terminal state is what makes resume possible; keeping it for ever is what
+ * the blanket null was rightly trying to prevent, because a checkpoint is the
+ * provider transcript — the goal, every tool result, and whatever the connectors
+ * handed back. This is the sweep that lets both be true: a failed run can be
+ * picked up for a week, and a failed run nobody picked up stops being a stored
+ * copy of the work.
+ *
+ * Runs still `paused` are untouched, however old. A pause is a live state the
+ * user chose and expects to return to, and expiring it would turn "I'll finish
+ * this later" into a silently broken resume. If that needs bounding it needs its
+ * own decision and its own sentence to the user, not this one's side effect.
+ *
+ * `prismaUnguarded`, and deliberately: this sweeps every account, which is the
+ * one thing the ownership guard exists to notice, so it says so rather than
+ * tripping it.
+ */
+export async function sweepExpiredCheckpoints(
+  input: SweepExpiredCheckpointsInput = {}
+): Promise<{ cleared: number }> {
+  const now = input.now ?? new Date();
+  const retentionMs = input.retentionMs ?? CHECKPOINT_RETENTION_MS;
+  const limit = Math.min(Math.max(input.limit ?? 500, 1), 5_000);
+  const cutoff = new Date(now.getTime() - retentionMs);
+
+  const stale = await prismaUnguarded.workRun.findMany({
+    where: {
+      status: { in: [...WORK_TERMINAL_STATUSES] },
+      finishedAt: { lt: cutoff },
+      // `not: Prisma.DbNull` rather than a bare truthiness test: the column is
+      // JSON, and a run finished before this sweep existed already has SQL NULL
+      // there. Re-writing those every pass would make the sweep's own cost grow
+      // with the age of the table rather than with the work there is to do.
+      checkpoint: { not: Prisma.DbNull },
+    },
+    select: { id: true },
+    orderBy: { finishedAt: "asc" },
+    take: limit,
+  });
+  if (stale.length === 0) return { cleared: 0 };
+
+  const cleared = await prismaUnguarded.workRun.updateMany({
+    where: { id: { in: stale.map((run) => run.id) } },
+    data: { checkpoint: Prisma.JsonNull },
+  });
+  return { cleared: cleared.count };
 }

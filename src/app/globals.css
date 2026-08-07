@@ -149,9 +149,17 @@
     /* Motion tokens — mirror tailwind ease-* / duration-* (Slice 0). */
     --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
     --ease-out-soft: cubic-bezier(0.33, 1, 0.68, 1);
+    /* The only symmetric LOOP curve: equal in and out, so a breathing element
+       has no snap at the turn. Was inlined verbatim in three tailwind
+       keyframes before it had a name. */
+    --ease-breathe: cubic-bezier(0.45, 0, 0.55, 1);
     --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
     --dur-fast: 120ms;
     --dur-base: 220ms;
+    /* The one rung reserved for a change the user did NOT cause — a background
+       run finishing while they were reading something else. Long enough to be
+       noticed without reading as a page transition. */
+    --dur-emphasis: 560ms;
     --dur-slow: 360ms;
     --dur-flash: 4000ms;
 
@@ -2664,3 +2672,117 @@
 .dark .hljs-number, .dark .hljs-symbol, .dark .hljs-bullet, .dark .hljs-meta, .dark .hljs-link { color: hsl(38 90% 60%); }
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 600; }
+
+@layer components {
+  /* ---- Work ----------------------------------------------------------------
+     Work is the one surface a person opens and then leaves open. Its list moves
+     because a machine somewhere finished something, not because anybody
+     clicked, so every rule here answers the same question: how does a change
+     nobody asked for become legible without becoming an interruption?
+
+     Three of these are one-shots that fire on a change and then stop. The
+     fourth is the only loop, and it is slow on purpose. Nothing here spins. A
+     spinner is a promise that the wait is nearly over, and a Work task can run
+     for an hour — `animate-spin` belongs on the button you just pressed, not on
+     a row you are going to walk away from.
+
+     There is no entrance keyframe below, deliberately. A row arriving uses
+     `animate-rise-in`, the same entrance every other list in the app uses; what
+     Work was missing was never another curve but the right DELAY on that one,
+     and a delay is a number, not a stylesheet (see use-work-arrivals.ts). */
+
+  /* A status pill whose status has just changed — swapped, rather than quietly
+     re-lettered under the reader.
+
+     Colour-free on purpose. The pill already carries its tone's colours, so the
+     same treatment has to serve queued -> running and running -> failed; a
+     tinted bloom here would end up congratulating the user on a failure. Scale
+     and opacity say "this word is not the word that was here" and say nothing
+     about whether that is good news.
+
+     It does not start from opacity 0. A status is a fact about the task and
+     should never be *missing* from the row, only unsettled — 0.35 is faint
+     enough to read as a change and solid enough to still be a status. */
+  .work-status-shift {
+    animation: work-status-shift var(--dur-emphasis) var(--ease-spring) both;
+  }
+  @keyframes work-status-shift {
+    from {
+      opacity: 0.35;
+      transform: scale(0.94);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* The row of a task that is executing right now: a slow breath along its own
+     edge, drawn as an inset ring so it lies over the border without fighting
+     the `border-*` utilities the row already carries (or its hover state).
+
+     5.2 seconds because the thing it describes takes minutes. A breath at
+     1-2s is a heartbeat — it implies something is about to happen, and then
+     nothing does, over and over, for half an hour. At this period the row is
+     merely alive, which is the entire claim being made.
+
+     --ease-breathe, not an ease-out: an asymmetric loop snaps at the turn, and
+     a ring that snaps is a ring that flashes. */
+  .work-breathing {
+    animation: work-breathing 5.2s var(--ease-breathe) infinite;
+  }
+  @keyframes work-breathing {
+    0%,
+    100% {
+      box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.05);
+    }
+    50% {
+      box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.22);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* Held at the middle of the breath rather than switched off. The ring is not
+       decoration — it is the row's only mark for "running right now" — and the
+       global reduce rule would otherwise freeze it on the 100% frame, which is
+       the invisible one. */
+    .work-breathing {
+      animation: none;
+      box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.16);
+    }
+  }
+
+  /* Skeleton -> content. The placeholder is held for one more beat and fades
+     out ON TOP of the real rows rather than being unmounted the frame before
+     they appear: at this size a hard swap reads as a flicker even though
+     nothing has moved.
+
+     The outgoing placeholder is taken out of flow so the arriving content owns
+     the height immediately. It cannot be otherwise — the content's height is
+     not knowable before it renders — so the honest version of this is that the
+     layout resolves in one frame, exactly as it does today, and the fade is
+     there to stop the *pixels* snapping while it does.
+
+     Pinned top/left/right and NOT bottom, so the ghost keeps its own natural
+     height. `inset: 0` would stretch three 86px placeholder rows down over a
+     700px list for the length of the fade, which is a distortion the reader
+     has never seen before and would read as a glitch — worse than the snap
+     this exists to hide. Overflowing the short direction instead is invisible:
+     it is already fading and already `pointer-events: none`. */
+  .work-crossfade {
+    position: relative;
+  }
+  .work-crossfade-ghost {
+    position: absolute;
+    inset: 0 0 auto 0;
+    pointer-events: none;
+    animation: work-crossfade-out var(--dur-base) var(--ease-out-soft) both;
+  }
+  @keyframes work-crossfade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}

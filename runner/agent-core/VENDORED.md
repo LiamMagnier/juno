@@ -19,6 +19,47 @@ Keep this list exhaustive so a re-sync is mechanical.
    vendored `tsconfig.json` inlines the identical `compilerOptions` so `tsc` builds
    standalone. No source/behaviour change.
 
+2. **`src/providers/errors.ts` — new file: the provider failure taxonomy.**
+   `ProviderCallError` / `classifyProviderError`, plus `Retry-After` parsing.
+   Called from `openai-compat.ts` and `anthropic.ts` at the two points where an
+   SDK error still carries an HTTP status, and re-exported from
+   `src/work/index.ts` (as a *value* — the executor's failover test is an
+   `instanceof`).
+
+   Why: an empty-bodied 429 reached a user as the literal string
+   `429 status code (no body)`, because nothing between the SDK and the database
+   ever asked what kind of failure it was. See the file header.
+
+3. **`src/loop.ts` — turn-level retry, and a tool throw no longer corrupts the
+   transcript.**
+   Two changes in `runAgentLoop`:
+   - The step is wrapped in a retry loop for `ProviderCallError.retryable`,
+     honouring `retryAfterMs`, with full jitter and an **abortable** wait
+     (`sleepUnlessAborted`). The wait races the caller's signal deliberately: a
+     bare `setTimeout` would make Stop take as long as the back-off, and would
+     let the run's own runtime ceiling overshoot by the same amount. Retry is
+     refused once anything has streamed, so a partial answer is never shown
+     twice. New optional `AgentLoopOptions.onProviderRetry`.
+   - `executeToolCall` throwing no longer escapes past
+     `opts.messages.push(results)`. Every outstanding `tool_call` still gets a
+     `tool_result` before the error propagates. Without this the Work runner's
+     `askQuestion` — which throws by design when its wait for a person expires —
+     checkpointed an assistant message carrying an unanswered `tool_call`, which
+     is the exact shape `work/session.ts`'s own header says every provider
+     rejects. The pause path, whose entire purpose is to be resumed, was the one
+     reliably writing a transcript that could not be.
+
+4. **`src/work/session.ts` — `WorkSessionCallbacks.onProviderRetry`.**
+   Optional, forwarded straight to `AgentLoopOptions.onProviderRetry`. Operator
+   -facing only: it is deliberately NOT an emitted event, because the transcript
+   vocabulary is a generated cross-language contract and
+   `JunoWorkDegradationKind` decodes on the Swift side as a plain string enum
+   with no unknown-case fallback. Adding a kind here would throw inside every
+   shipped iOS/macOS build the first time a run was throttled.
+
+   **All of 2–4 are bug fixes that belong upstream in `juno-app/core`.** Port
+   them rather than reverting them on the next re-sync.
+
 Former divergences #1 (proxy `authorization` bearer auth) and #3 (caller-provided
 child-process env) have been **merged upstream** — `src/` is now a byte-for-byte
 copy of `juno-app/core/src`, including the subagent orchestration layer

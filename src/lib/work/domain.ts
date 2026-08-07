@@ -130,6 +130,62 @@ export function statusForTerminalReason(reason: WorkTerminalReason): WorkTermina
   }
 }
 
+/**
+ * Whether a run that ended this way could sensibly be picked up where it
+ * stopped, rather than started again from the goal.
+ *
+ * This is the question `finishRun` needs answered before it decides whether to
+ * keep the checkpoint. It used to keep none: every terminal write nulled the
+ * column, on the reasonable ground that a finished run should not leave a
+ * provider transcript resident in the database for ever. The unreasonable part
+ * was applying that to *every* ending. `WorkAgentSession.restore` is a complete,
+ * working resume path, and nulling the checkpoint on `failed` is what made it
+ * unreachable from the one place it was written for — so a run that died forty
+ * tool calls in against a rate limit had to be re-run from nothing, paying for
+ * all forty again.
+ *
+ * The split is about whose decision the ending was:
+ *
+ *   - `cancelled` and `superseded` are somebody's *choice* to stop. Resuming is
+ *     not what was asked for, and keeping the transcript would retain data for a
+ *     continuation nobody wants.
+ *   - `completed` has nothing left to do.
+ *   - The rest — `failed`, `interrupted`, `timed_out`, `budget_exceeded`,
+ *     `host_offline` — all stopped a run that still had work in it, for a reason
+ *     outside the task itself. Each has an obvious next move (retry, wake the
+ *     Mac, raise the ceiling), and each of those moves is worth far more
+ *     starting from the checkpoint than from the goal.
+ *
+ * Retention is bounded rather than indefinite: `sweepExpiredCheckpoints` in
+ * `store.ts` drops these once the window to act on them has passed, which is
+ * what keeps the original privacy argument satisfied.
+ */
+export function isResumableTerminalReason(reason: WorkTerminalReason): boolean {
+  switch (reason) {
+    case "completed":
+    case "cancelled":
+    case "superseded":
+      return false;
+    case "failed":
+    case "interrupted":
+    case "timed_out":
+    case "budget_exceeded":
+    case "host_offline":
+      return true;
+  }
+}
+
+/**
+ * How long a resumable run keeps its checkpoint after it ends.
+ *
+ * Long enough that "I'll look at it in the morning" still works, short enough
+ * that an abandoned failure is not a transcript sitting in the database for
+ * ever. Seven days is the same order as the retry affordance's usefulness: past
+ * a week the world the run was reading has moved on, and resuming into it would
+ * produce a stranger result than starting again.
+ */
+export const CHECKPOINT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
 // ---------------------------------------------------------------------------
 // Execution target
 // ---------------------------------------------------------------------------

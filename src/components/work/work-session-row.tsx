@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { WorkStatus } from "@/lib/work/domain";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import { patchWorkSession, WORK_SYNC_EVENT } from "@/components/work/work-transport";
 import { WorkStatusPill, statusSentence, workTimeAgo } from "@/components/work/work-vocabulary";
@@ -47,13 +48,46 @@ import { cn } from "@/lib/utils";
  * navigating on the click that was meant to open the menu — which, on the
  * archive item, is the difference between "put this away" and "open the task
  * you were trying to put away".
+ *
+ * MOTION. The row is the one part of Work that moves on its own, because it is
+ * the part that changes on its own — the list behind it polls every thirty
+ * seconds and a task can go from queued to done while nobody is looking at it.
+ * Three treatments and no fourth:
+ *
+ *   arriving   `animate-rise-in` on a delay the LIST computed (see
+ *              use-work-arrivals.ts), and only for rows that were not on screen
+ *              a moment ago.
+ *   executing  a slow breath along the row's edge for as long as it is running.
+ *   changing   the status pill re-enters when the status underneath it changes.
+ *
+ * All three are declared in globals.css under "Work", which is also where the
+ * argument for each duration lives.
  */
+
+/**
+ * The statuses that mean a machine is doing something right now, which is
+ * narrower than `isLiveStatus` — that includes `draft`, `queued`, `paused` and
+ * both `waiting_*` states, none of which are running. A breathing ring on a task
+ * that is parked waiting for an answer would say the opposite of the truth, and
+ * "Needs you" is a section of rows in exactly that state.
+ */
+const EXECUTING = new Set<WorkStatus>(["preparing", "running"]);
 
 export function WorkSessionRow({
   session,
   /** Renders the status as prose underneath — used by "Needs you". */
   explain = false,
-  index = 0,
+  /**
+   * How long this row should wait before it arrives, or `null` for a row that
+   * was already on screen and must not animate at all.
+   *
+   * A delay, not an index. The row's position in the list is the wrong number:
+   * one new task landing at position seven is one thing arriving on an otherwise
+   * still page, and making it wait 210ms for six rows that are not moving reads
+   * as a dropped frame. Its position among the rows that just arrived is the
+   * right number, and only the list can know that — see `useWorkArrivals`.
+   */
+  enterDelayMs = 0,
   /**
    * The row after a change, so the list it lives in can re-render without
    * waiting for its own poll. Optional: a caller with no list to update — the
@@ -63,11 +97,40 @@ export function WorkSessionRow({
 }: {
   session: ClientWorkSession;
   explain?: boolean;
-  index?: number;
+  enterDelayMs?: number | null;
   onChanged?: (session: ClientWorkSession) => void;
 }) {
   const [renaming, setRenaming] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+
+  /*
+   * The entrance is decided once, at mount, and never revisited.
+   *
+   * `enterDelayMs` goes to `null` on the first poll after this row arrived,
+   * which is correct as an answer to "is this row new" and wrong as a class to
+   * put on the element: removing the animation from a row still playing it
+   * snaps it to its final frame mid-flight. Polls are thirty seconds apart so
+   * this would be rare, but WORK_SYNC_EVENT fires whenever any Work surface
+   * changes anything, and "I archived something and the row above it flinched"
+   * is the sort of bug nobody reports and everybody feels. Arriving is a fact
+   * about mounting; freezing it in a ref is what makes it one.
+   */
+  const entrance = React.useRef(enterDelayMs);
+
+  /*
+   * A status pill only animates for a status that changed WHILE THE ROW WAS
+   * WATCHED. On first mount the pill is not a change, it is the initial fact,
+   * and playing it inside a row that is itself rising in is two entrances for
+   * one arrival.
+   *
+   * The `key` on the pill is what replays it: the class alone would be added
+   * once and then sit there inert through every later change, because a CSS
+   * animation runs when an element mounts, not when its className is
+   * recomputed. Remounting on the status is both the trigger and the truth —
+   * a different status genuinely is a different pill.
+   */
+  const firstStatus = React.useRef(session.status);
+  const statusChanged = session.status !== firstStatus.current;
 
   const apply = React.useCallback(
     async (
@@ -100,22 +163,58 @@ export function WorkSessionRow({
   return (
     <div
       className={cn(
-        "group relative flex items-start rounded-xl border border-border/60 bg-card/60 transition-[background-color,border-color,transform] duration-base ease-out-soft hover:border-border hover:bg-card motion-safe:animate-rise-in",
-        "[animation-fill-mode:backwards]",
-        session.needsAttention && "border-warning/40 bg-warning/[0.04] hover:border-warning/60"
+        "group relative flex items-start rounded-xl border border-border/60 bg-card/60 transition-[background-color,border-color,transform,opacity] duration-base ease-out-soft hover:border-border hover:bg-card",
+        // The lift is a single pixel. The row is the full width of the column,
+        // and a card that wide moving any further stops reading as "under your
+        // pointer" and starts reading as "leaving the page".
+        "motion-safe:hover:-translate-y-px",
+        // Press feedback comes off the LINK specifically, not the card, so that
+        // pressing the options button — a sibling in its own div, deliberately
+        // outside the anchor — does not dip the whole row as if it had been
+        // opened. `.pressable`'s 0.97 is for chips and buttons; at this width it
+        // is a wobble, so the row gets a tenth of it and gives back the lift.
+        "[&:has(>a:active)]:translate-y-0 motion-safe:[&:has(>a:active)]:scale-[0.997]",
+        entrance.current !== null && "[animation-fill-mode:backwards] motion-safe:animate-rise-in",
+        // A row whose change is still in flight. Not a spinner and not a
+        // disabled state — the row is still a link, and the request usually
+        // lands before this is consciously seen; it exists so a slow network
+        // shows that the press was received rather than ignored.
+        busy && "opacity-60",
+        session.needsAttention && "border-warning/40 bg-warning/[0.04] hover:border-warning/60",
+        // The breath is a box-shadow, and it lives in @layer components — so a
+        // `shadow-*` utility added to this row later would win the cascade and
+        // silently switch it off, wherever in this list it were written. If this
+        // row ever needs elevation, the breath has to move into the shadow.
+        EXECUTING.has(session.status) && "work-breathing"
       )}
-      style={{ animationDelay: `${index * 30}ms` }}
+      style={entrance.current === null ? undefined : { animationDelay: `${entrance.current}ms` }}
     >
       <Link href={`/work/${session.id}`} className="flex min-w-0 flex-1 items-start gap-3 px-3.5 py-3">
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {session.pinned && (
-              <Pin className="h-3 w-3 shrink-0 text-muted-foreground" aria-label="Pinned" />
+              // The pop plays exactly when the icon appears and never again,
+              // because that is when this element mounts — pinning is the only
+              // thing that brings it into existence. No state needed.
+              <Pin
+                className="h-3 w-3 shrink-0 text-muted-foreground motion-safe:animate-pop-in"
+                aria-label="Pinned"
+              />
             )}
             <span className="min-w-0 truncate text-sm font-medium text-foreground">
               {session.title || "Untitled task"}
             </span>
-            <WorkStatusPill status={session.status} />
+            <WorkStatusPill
+              key={session.status}
+              status={session.status}
+              // Not `motion-safe:` — that variant only exists for classes
+              // Tailwind generates, and this one is hand-written in globals.css,
+              // so the prefix would silently produce nothing at all. The
+              // keyframe uses `both` fill mode, which means the app-wide reduce
+              // rule (animation-duration: 0.001ms) leaves it parked on its final
+              // frame — a settled, fully opaque pill — which is exactly right.
+              className={cn(statusChanged && "work-status-shift")}
+            />
           </span>
           <span className="mt-1 block truncate text-[13px] leading-relaxed text-muted-foreground">
             {session.goal}

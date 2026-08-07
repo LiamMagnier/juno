@@ -7,7 +7,7 @@ import animate from "tailwindcss-animate";
  * -----------------------------------------
  * Type scale ............ text-{display,title,heading,body,body-lg,label,caption} (+ legacy `hero`)
  *                         serif = human moments · sans = UI body · mono = labels/metadata
- * Motion ................ ease-{spring,out-soft,out-expo} · duration-{fast,base,slow}
+ * Motion ................ ease-{spring,out-soft,out-expo,breathe} · duration-{fast,base,slow,emphasis}
  *                         (mirrored as --ease-* / --dur-* in globals.css)
  * Overlays .............. animate-{pop-in,pop-out} (floating layers) · animate-{overlay-in,overlay-out}
  *                         (backdrops) — pair with Radix data-[state=open/closed]
@@ -123,11 +123,16 @@ const config: Config = {
         spring: "cubic-bezier(0.32, 0.72, 0, 1)",
         "out-soft": "cubic-bezier(0.33, 1, 0.68, 1)",
         "out-expo": "cubic-bezier(0.16, 1, 0.3, 1)",
+        // The only symmetric curve here, and the only one meant for a LOOP:
+        // see the reasoning beside --ease-breathe in globals.css.
+        breathe: "cubic-bezier(0.45, 0, 0.55, 1)",
       },
       transitionDuration: {
         fast: "120ms",
         base: "220ms",
         slow: "360ms",
+        // For a change the user did not cause; see --dur-emphasis in globals.css.
+        emphasis: "560ms",
       },
       fontFamily: {
         // Overall UI typeface is the editorial serif (Newsreader). `font-sans`

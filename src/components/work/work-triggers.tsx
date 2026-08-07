@@ -16,6 +16,12 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { WORK_TRIGGER_KINDS, type WorkTriggerKind } from "@/lib/work/domain";
 import { TIME_TRIGGER_KINDS, isTimeTriggerKind } from "@/lib/work/schedule";
+import {
+  TRIGGER_KIND_LIMITS,
+  TRIGGER_OPTION_LIMITS,
+  isEventTriggerKind,
+  type EventTriggerKind,
+} from "@/lib/work/triggers";
 import type { ClientWorkGrant } from "@/lib/work/serializers";
 import type { WorkTriggerDraft } from "@/components/work/work-transport";
 import { cn } from "@/lib/utils";
@@ -41,6 +47,22 @@ import { cn } from "@/lib/utils";
  * validation message — it is a schedule that saves without complaint and then
  * never fires. Numbers are numbers here for exactly that reason: `{ hour: "9" }`
  * is refused by `parseTimeTrigger` with "this trigger needs an hour, 0 to 23".
+ *
+ * COVERING ALL FOURTEEN IS NOT THE SAME AS OFFERING ALL FOURTEEN
+ *
+ * Three event kinds have no producer in this build and two more have options
+ * their source cannot answer, and both facts are read from the server's own
+ * tables — `TRIGGER_KIND_LIMITS` and `TRIGGER_OPTION_LIMITS` in triggers.ts —
+ * rather than restated here. That import is the point of the arrangement: the
+ * poller refuses the same rows for the same reasons, `normalizeTriggerDrafts`
+ * refuses to store them, and this file cannot drift into offering a control the
+ * other two have already decided will never do anything. The sentence a reader
+ * sees at the field is the sentence the server would have refused them with.
+ *
+ * A limited kind is still rendered when a schedule already holds one, because a
+ * row stored by an older build has to be visible to be removed. What it is not
+ * given is its form: a folder picker on a trigger nothing will ever fire is the
+ * exact control this whole arrangement exists to stop.
  */
 
 interface TriggerMeta {
@@ -71,6 +93,22 @@ export function triggerLabel(kind: string): string {
 }
 
 const EVENT_TRIGGER_KINDS = WORK_TRIGGER_KINDS.filter((kind) => !isTimeTriggerKind(kind));
+
+/**
+ * Why this build cannot fire a kind at all, or null when it can.
+ *
+ * A plain string is checked rather than the kind being tested against a list of
+ * supported ones, so a kind that gains a producer needs no edit here: the entry
+ * leaves `TRIGGER_KIND_LIMITS`, this returns null, and the control appears.
+ */
+function kindLimit(kind: string): string | null {
+  return isEventTriggerKind(kind) ? (TRIGGER_KIND_LIMITS[kind] ?? null) : null;
+}
+
+/** Why one option of a servable kind cannot be honoured, or null. */
+function optionLimit(kind: EventTriggerKind, field: string): string | null {
+  return TRIGGER_OPTION_LIMITS[kind]?.find((limit) => limit.field === field)?.message ?? null;
+}
 
 // ---------------------------------------------------------------------------
 // Reading and writing an untyped config
@@ -314,10 +352,18 @@ export function TriggerListEditor({
               // The last one cannot go: `createScheduleSchema` requires at least
               // one trigger, so an empty list is a save that 400s. Refusing the
               // removal is a clearer answer than accepting it and then failing.
+              //
+              // The advice changes when the last one is a kind this build cannot
+              // fire, because "change this one instead" is then advice the reader
+              // cannot follow — there is no form to change. Such a schedule also
+              // cannot be saved at all until the trigger goes, so the order of
+              // the two steps is the whole of what they need to know.
               title={
-                triggers.length === 1
-                  ? "A schedule needs at least one trigger. Change this one instead."
-                  : "Remove this trigger"
+                triggers.length !== 1
+                  ? "Remove this trigger"
+                  : kindLimit(trigger.kind)
+                    ? "A schedule needs at least one trigger. Add one that works, then remove this."
+                    : "A schedule needs at least one trigger. Change this one instead."
               }
               aria-label="Remove this trigger"
               className="text-muted-foreground/60 hover:text-destructive"
@@ -375,14 +421,27 @@ function AddTriggerMenu({
         ))}
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="font-mono text-label">On something happening</DropdownMenuLabel>
-        {EVENT_TRIGGER_KINDS.map((kind) => (
-          <DropdownMenuItem key={kind} onSelect={() => onAdd(kind)} className="flex-col items-start gap-0.5">
-            <span className="text-[13px]">{TRIGGER_META[kind].label}</span>
-            <span className="text-[11.5px] leading-relaxed text-muted-foreground">
-              {TRIGGER_META[kind].hint}
-            </span>
-          </DropdownMenuItem>
-        ))}
+        {EVENT_TRIGGER_KINDS.map((kind) => {
+          // The kind's own limit replaces its hint rather than joining it. The
+          // hint describes what the kind is for, and reading "fires when enough
+          // sources mention your terms" directly above "Juno has nowhere to
+          // watch for a topic" is how somebody concludes the entry is a bug and
+          // goes looking for the setting that turns it on.
+          const limit = kindLimit(kind);
+          return (
+            <DropdownMenuItem
+              key={kind}
+              disabled={limit !== null}
+              onSelect={() => onAdd(kind)}
+              className="flex-col items-start gap-0.5"
+            >
+              <span className="text-[13px]">{TRIGGER_META[kind].label}</span>
+              <span className="text-[11.5px] leading-relaxed text-muted-foreground">
+                {limit ?? TRIGGER_META[kind].hint}
+              </span>
+            </DropdownMenuItem>
+          );
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -558,6 +617,52 @@ function SwitchField({
   );
 }
 
+/**
+ * An option the source cannot answer, said where its control would have been.
+ *
+ * A disabled control was the other candidate and is worse: a switch that will
+ * not move reads as a permission problem, or as something a higher plan unlocks,
+ * when the truth is that the reader's mail is fetched by something that never
+ * sees an attachment. There is nothing here to switch on, so there is no switch.
+ *
+ * `asked` is the case that makes this more than a note. A trigger stored before
+ * this build knew better can still carry the condition, and `triggerSupport`
+ * refuses that trigger — the poller records it and it matches nothing — so
+ * without a way to withdraw the condition the reader would be looking at a
+ * trigger that cannot work and cannot be fixed.
+ */
+function UnservableOption({
+  label,
+  message,
+  asked,
+  disabled,
+  onClear,
+}: {
+  label: string;
+  message: string;
+  asked: boolean;
+  disabled: boolean;
+  onClear: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-border/50 bg-muted/20 px-3 py-2.5">
+      <p className="font-mono text-xs font-medium text-muted-foreground">{label}</p>
+      <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">{message}</p>
+      {asked && (
+        <>
+          <p className="mt-1.5 text-[11.5px] leading-relaxed text-warning-foreground">
+            This trigger still asks for it, so it will not start a run until the condition is
+            removed.
+          </p>
+          <Button variant="outline" size="sm" disabled={disabled} onClick={onClear} className="mt-2">
+            Remove this condition
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 const WEEKDAY_OPTIONS = WEEKDAY_NAMES.map((label, value) => ({ value, label }));
 const MONTH_OPTIONS = MONTH_NAMES.map((label, index) => ({ value: index + 1, label }));
 
@@ -577,6 +682,34 @@ function TriggerConfigFields({
   const config = trigger.config;
   const set = (patch: Config) => onChange({ ...config, ...patch });
   const setList = (key: string, raw: string) => set({ [key]: parseList(raw) });
+
+  // Before the switch, so no kind can acquire a form by being added below and
+  // forgetting this. A kind with no producer gets its sentence and nothing else:
+  // filling in a folder picker, or a list of terms, on a trigger that nothing
+  // will ever fire is the precise thing this arrangement exists to stop, and it
+  // is worse than an absent control because the reader finishes it and waits.
+  //
+  // The stored config is left untouched. It is not this editor's to discard, it
+  // is what the reader would need if the kind ever gains a producer, and the one
+  // action that helps — removing the trigger — is on the row above.
+  //
+  // The forms for these three kinds are still written out below, unreachable
+  // while their entry is in `TRIGGER_KIND_LIMITS` and deliberately kept. The
+  // work of adding a producer is in the poller and in that table; the editor
+  // then needs no edit at all, which is the property that stops "we shipped the
+  // watcher" and "you can configure the watcher" from being two releases apart.
+  const limit = kindLimit(trigger.kind);
+  if (limit) {
+    return (
+      <div className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2.5">
+        <p className="text-[12.5px] leading-relaxed text-warning-foreground">{limit}</p>
+        <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
+          The schedule cannot be saved while this trigger is on it. Remove it, and everything else
+          you have set up here is kept.
+        </p>
+      </div>
+    );
+  }
 
   switch (trigger.kind) {
     case "manual":
@@ -780,7 +913,14 @@ function TriggerConfigFields({
         />
       );
 
-    case "email_filter":
+    case "email_filter": {
+      // Read once, and each one decides between a control and a sentence rather
+      // than being assumed absent. When the mail reader gains labels, the entry
+      // leaves `TRIGGER_OPTION_LIMITS`, this reads null, and the field comes
+      // back — which is the only way the two stay in step without somebody
+      // remembering that this file also has an opinion.
+      const labelsLimit = optionLimit("email_filter", "labels");
+      const attachmentLimit = optionLimit("email_filter", "requireAttachment");
       return (
         <div className="space-y-3">
           <TextField
@@ -812,23 +952,45 @@ function TriggerConfigFields({
             disabled={disabled}
             onChange={(raw) => setList("excludeSubjectContains", raw)}
           />
-          <TextField
-            label="Labels"
-            value={listAt(config, "labels")}
-            hint="Every label listed must be on the message."
-            disabled={disabled}
-            onChange={(raw) => setList("labels", raw)}
-          />
-          <SwitchField
-            label="Only when the message has an attachment"
-            checked={boolAt(config, "requireAttachment")}
-            disabled={disabled}
-            onChange={(requireAttachment) => set({ requireAttachment })}
-          />
+          {labelsLimit ? (
+            <UnservableOption
+              label="Labels"
+              message={labelsLimit}
+              asked={listAt(config, "labels").length > 0}
+              disabled={disabled}
+              onClear={() => set({ labels: [] })}
+            />
+          ) : (
+            <TextField
+              label="Labels"
+              value={listAt(config, "labels")}
+              hint="Every label listed must be on the message."
+              disabled={disabled}
+              onChange={(raw) => setList("labels", raw)}
+            />
+          )}
+          {attachmentLimit ? (
+            <UnservableOption
+              label="Attachments"
+              message={attachmentLimit}
+              asked={boolAt(config, "requireAttachment")}
+              disabled={disabled}
+              onClear={() => set({ requireAttachment: false })}
+            />
+          ) : (
+            <SwitchField
+              label="Only when the message has an attachment"
+              checked={boolAt(config, "requireAttachment")}
+              disabled={disabled}
+              onChange={(requireAttachment) => set({ requireAttachment })}
+            />
+          )}
         </div>
       );
+    }
 
-    case "calendar_window":
+    case "calendar_window": {
+      const attendeesLimit = optionLimit("calendar_window", "requireAttendees");
       return (
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -863,14 +1025,25 @@ function TriggerConfigFields({
             disabled={disabled}
             onChange={(raw) => setList("calendarIds", raw)}
           />
-          <SwitchField
-            label="Skip blocks with no other attendees"
-            checked={boolAt(config, "requireAttendees")}
-            disabled={disabled}
-            onChange={(requireAttendees) => set({ requireAttendees })}
-          />
+          {attendeesLimit ? (
+            <UnservableOption
+              label="Attendees"
+              message={attendeesLimit}
+              asked={boolAt(config, "requireAttendees")}
+              disabled={disabled}
+              onClear={() => set({ requireAttendees: false })}
+            />
+          ) : (
+            <SwitchField
+              label="Skip blocks with no other attendees"
+              checked={boolAt(config, "requireAttendees")}
+              disabled={disabled}
+              onChange={(requireAttendees) => set({ requireAttendees })}
+            />
+          )}
         </div>
       );
+    }
 
     case "topic_monitor":
       return (

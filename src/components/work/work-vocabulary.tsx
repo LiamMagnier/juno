@@ -58,7 +58,16 @@ const STATUS_META: Record<WorkStatus, StatusMeta> = {
   },
   paused: { label: "Paused", tone: "neutral", sentence: "You stopped this. It can be resumed." },
   completed: { label: "Done", tone: "good", sentence: "This finished." },
-  failed: { label: "Failed", tone: "bad", sentence: "The run itself reported that it could not finish." },
+  // Deliberately does not say who decided. The old sentence was "The run itself
+  // reported that it could not finish", which distinguished `failed` from
+  // `interrupted` and `cancelled` usefully — and was flatly untrue for the most
+  // common cause of it. A run killed by a provider rate limit reported nothing;
+  // it was refused. Telling a user their run gave up, when a lab turned it away,
+  // sends them to re-read a task that was never the problem. The specific cause
+  // is carried by `terminalDetail` beside this, and since the executor started
+  // classifying provider failures that detail is a sentence rather than an HTTP
+  // status.
+  failed: { label: "Failed", tone: "bad", sentence: "This stopped before it finished." },
   cancelled: { label: "Cancelled", tone: "neutral", sentence: "This was cancelled before it finished." },
   interrupted: {
     label: "Interrupted",

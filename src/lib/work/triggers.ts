@@ -23,9 +23,15 @@ import {
   LOCAL_ONLY_TRIGGER_KINDS,
   selectTarget,
   type HostCapabilityView,
+  type WorkCapability,
+  type WorkDegradation,
+  type WorkEffectiveTarget,
+  type WorkHostOfflinePolicy,
+  type WorkTarget,
+  type WorkTerminalReason,
   type WorkTriggerKind,
 } from "@/lib/work/domain";
-import { canonicalize } from "@/lib/work/digests";
+import { canonicalize } from "@/lib/work/canonical";
 import {
   configForTimeTrigger,
   isTimeTriggerKind,
@@ -255,6 +261,154 @@ export function parseTriggerConfig(kind: string, config: unknown): TriggerConfig
     case "manual":
       return { ok: true, parsed: { kind, config: {} } };
   }
+}
+
+// ---------------------------------------------------------------------------
+// What Juno can actually watch
+// ---------------------------------------------------------------------------
+
+/**
+ * The connector each event kind's runtime reads, or null when there is none.
+ *
+ * This is the difference between a trigger that is stored and a trigger that
+ * fires, and it is stated here — beside the matcher — rather than inside the
+ * poller, because three separate places have to agree on it: the poller decides
+ * what to read, `normalizeTriggerDrafts` decides what may be saved, and the UI
+ * decides what to offer. A kind that gains a source gains it in one edit.
+ *
+ * `manual` is deliberately mapped to null and is still servable: it has no
+ * source because a person is its source.
+ */
+export const TRIGGER_SOURCE_CONNECTORS = {
+  email_filter: "apple-mail",
+  calendar_window: "apple-calendar",
+  topic_monitor: null,
+  connector_event: null,
+  folder_change: null,
+  manual: null,
+} as const satisfies Record<EventTriggerKind, string | null>;
+
+export function triggerSourceConnector(kind: EventTriggerKind): string | null {
+  return TRIGGER_SOURCE_CONNECTORS[kind];
+}
+
+/**
+ * Why a kind cannot be served at all, in the sentence the user is shown.
+ *
+ * Present for every kind Juno has no runtime for, absent for the rest, so the
+ * two lists cannot drift apart into "the poller ignores it" and "the form still
+ * offers it" — which is the state this whole file was in: a complete matching
+ * engine, a complete editor, and nothing in between.
+ *
+ * Each sentence names the thing that is missing rather than saying "not
+ * supported", because the missing thing is the only part a reader can act on:
+ * two of these are waiting on a producer that does not exist yet, and knowing
+ * which is which is the difference between waiting and looking for a setting.
+ */
+export const TRIGGER_KIND_LIMITS: Readonly<Partial<Record<EventTriggerKind, string>>> = {
+  topic_monitor:
+    "Juno has nowhere to watch for a topic yet. Nothing feeds it the mentions this trigger would count, so this trigger would never start a run.",
+  connector_event:
+    "No connected app sends Juno events yet. Connectors are read when a run asks them something; none of them call Juno when something happens, so this trigger would never start a run.",
+  folder_change:
+    "Juno's Mac app does not watch folders yet. It can read a folder you granted while a run is going, but nothing tells Juno when one changes, so this trigger would never start a run.",
+};
+
+/**
+ * A single option the source cannot answer, and what that means for the trigger.
+ *
+ * These are worse than an unsupported kind, not better, which is why they are
+ * named individually. An email filter that requires an attachment is a filter
+ * the mail reader can never satisfy — it is given the sender, the subject and
+ * the date and nothing else — so the trigger matches nothing, for ever, while
+ * looking exactly like a trigger that is simply waiting for the right message.
+ */
+export interface TriggerOptionLimit {
+  /** The config field, as the editor and the parser both name it. */
+  field: string;
+  message: string;
+}
+
+export const TRIGGER_OPTION_LIMITS: Readonly<
+  Partial<Record<EventTriggerKind, readonly TriggerOptionLimit[]>>
+> = {
+  email_filter: [
+    {
+      field: "labels",
+      message:
+        "Juno's mail reader sees the sender, the subject and the date of a message, and not its labels. A trigger that requires a label would never match anything.",
+    },
+    {
+      field: "requireAttachment",
+      message:
+        "Juno's mail reader cannot tell whether a message has an attachment without downloading it. A trigger that requires one would never match anything.",
+    },
+  ],
+  calendar_window: [
+    {
+      field: "requireAttendees",
+      message:
+        "Juno's calendar reader sees the title, the times and the calendar of an event, and not who was invited. A trigger that skips meetings with no other attendees would skip every meeting.",
+    },
+  ],
+};
+
+export type TriggerSupport =
+  | { servable: true; connectorId: string | null }
+  /** `field` is null when the whole kind is unservable, not one option of it. */
+  | { servable: false; field: string | null; message: string };
+
+/**
+ * Whether a configured trigger is one this build can actually fire.
+ *
+ * Asked at three moments and answered the same way at all three: when a trigger
+ * is saved, so a control that cannot work is refused rather than stored; when
+ * the editor renders, so the refusal is visible before anyone types into it;
+ * and when the poller picks the trigger up, so a row written by an older build
+ * or another client is reported instead of quietly matching nothing.
+ *
+ * The kind is checked before the options, because "Juno cannot watch folders"
+ * is the more useful answer than "this folder trigger's suffix list is fine".
+ */
+export function triggerSupport(kind: string, config: unknown): TriggerSupport {
+  if (!isEventTriggerKind(kind)) {
+    // A clock kind, or one this build does not know. Neither is this module's
+    // to judge: `parseTimeTrigger` owns the first and refuses the second.
+    return { servable: true, connectorId: null };
+  }
+
+  const kindLimit = TRIGGER_KIND_LIMITS[kind];
+  if (kindLimit) return { servable: false, field: null, message: kindLimit };
+
+  const parsed = parseTriggerConfig(kind, config);
+  if (!parsed.ok) return { servable: false, field: null, message: parsed.message };
+
+  for (const limit of TRIGGER_OPTION_LIMITS[kind] ?? []) {
+    if (usesOption(parsed.parsed, limit.field)) {
+      return { servable: false, field: limit.field, message: limit.message };
+    }
+  }
+  return { servable: true, connectorId: TRIGGER_SOURCE_CONNECTORS[kind] };
+}
+
+/**
+ * Whether a configuration actually asks for the named option.
+ *
+ * An empty list and a false switch are not requests, and treating them as ones
+ * would refuse every email filter ever written: the editor stores `labels: []`
+ * and `requireAttachment: false` in the default configuration for the kind, so
+ * a check on presence rather than on content would refuse a filter the moment
+ * it was created.
+ */
+function usesOption(parsed: TriggerConfig, field: string): boolean {
+  if (parsed.kind === "email_filter") {
+    if (field === "labels") return parsed.config.labels.length > 0;
+    if (field === "requireAttachment") return parsed.config.requireAttachment;
+  }
+  if (parsed.kind === "calendar_window" && field === "requireAttendees") {
+    return parsed.config.requireAttendees;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -695,6 +849,321 @@ export function triggerRunIdempotencyKey(
   return `wtrg:${triggerId}:${eventKey}:${bucket}`;
 }
 
+/**
+ * The event key a triggered run was started for, read back off its key.
+ *
+ * The reverse of the function above, and the cheap way to fill
+ * `recentEventKeys`: the runs a trigger has already started are one indexed
+ * query away, and their idempotency keys carry the keys that started them. The
+ * alternative — a second table of fired events — would be a second thing to
+ * write, expire and keep consistent with the runs it describes.
+ *
+ * Split from the end rather than by a plain `split(":")`, because an event key
+ * legitimately contains colons: `apple-mail:INBOX:48213` is one, and a naive
+ * split would return "apple-mail". The prefix and the trigger id are known, so
+ * the only ambiguity is the bucket, which is the last segment by construction.
+ */
+export function eventKeyFromTriggerRunKey(triggerId: string, key: string): string | null {
+  const prefix = `wtrg:${triggerId}:`;
+  if (!key.startsWith(prefix)) return null;
+  const rest = key.slice(prefix.length);
+  const lastColon = rest.lastIndexOf(":");
+  if (lastColon <= 0) return null;
+  return rest.slice(0, lastColon);
+}
+
+// ---------------------------------------------------------------------------
+// Admission
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether a matched event may actually start a run right now.
+ *
+ * The sibling of `planScheduleDispatch`, deliberately not a call into it. That
+ * function's first act is to reason about a `TimeTriggerSpec` — is the fire due,
+ * how many were missed, when is the next one — and an event trigger has none of
+ * those: there is no clock to be late against, and "the backlog" is whatever the
+ * source still has unread. What the two DO share is the part that matters, which
+ * is the order of the admission checks, and that order is repeated here rather
+ * than approximated: an event fire must be held by the same concurrency caps,
+ * blocked by the same budget and refused by the same absent Mac as a clock fire,
+ * or "run this when an email arrives" is a way of getting past the limits the
+ * user set on "run this every morning".
+ *
+ * Three outcomes rather than six, because a poller has fewer honest answers than
+ * a scheduler. `wait` is the one to look at: the event is left unconsumed — the
+ * poller does not advance its cursor past it — so the next poll offers it again,
+ * which is this module's version of the scheduler leaving `nextRunAt` alone.
+ * Consuming an event it refused to act on is how a mail that mattered becomes a
+ * run that never happened and a mailbox that has moved on.
+ */
+export const TRIGGER_HOLD_CAUSES = [
+  "schedule_disabled",
+  "schedule_concurrency",
+  "account_concurrency",
+  "budget_exhausted",
+  "host_offline",
+] as const;
+
+export type TriggerHoldCause = (typeof TRIGGER_HOLD_CAUSES)[number];
+
+export interface TriggerDispatchInput {
+  /** The schedule the trigger hangs off, as the poller read it. */
+  schedule: {
+    enabled: boolean;
+    target: WorkTarget;
+    hostOfflinePolicy: WorkHostOfflinePolicy;
+    maxConcurrentRuns: number;
+  };
+  /** Runs of THIS schedule in a live status right now. */
+  inFlightForSchedule: number;
+  /** Runs the account has in flight from any schedule. */
+  inFlightForUser: number;
+  userConcurrencyCap: number;
+  /** The account's Work hosts, the schedule's preferred one first. */
+  hosts: readonly HostCapabilityView[];
+  requiredCapabilities: readonly WorkCapability[];
+  cloudAvailable: boolean;
+  /** Micro-USD the account may still spend, or null when it is not metered. */
+  remainingBudgetMicroUsd: number | null;
+}
+
+export type TriggerDispatchDecision =
+  | {
+      outcome: "dispatch";
+      effectiveTarget: WorkEffectiveTarget;
+      hostId: string | null;
+      degradation: WorkDegradation[];
+      explanation: string;
+    }
+  /** Not now. The event stays unconsumed and the next poll offers it again. */
+  | { outcome: "wait"; cause: TriggerHoldCause; explanation: string }
+  /**
+   * Not at all. The event is consumed and a finished run is written down for it,
+   * because a fire that will never happen is information the user needs and the
+   * console is not a surface they can see.
+   */
+  | { outcome: "skip"; cause: TriggerHoldCause; reason: WorkTerminalReason; explanation: string };
+
+export function planTriggerDispatch(input: TriggerDispatchInput): TriggerDispatchDecision {
+  const { schedule } = input;
+
+  if (!schedule.enabled) {
+    // Waiting rather than skipping, and this is the one place the two come
+    // apart from the scheduler's reading: a paused schedule has no clock to
+    // fall behind, so nothing is lost by leaving the event where it is, and a
+    // schedule un-paused an hour later then picks up what arrived meanwhile
+    // instead of having quietly discarded it.
+    return {
+      outcome: "wait",
+      cause: "schedule_disabled",
+      explanation: "This schedule is paused, so nothing it watches for starts a run.",
+    };
+  }
+
+  if (input.inFlightForSchedule >= Math.max(1, schedule.maxConcurrentRuns)) {
+    return {
+      outcome: "wait",
+      cause: "schedule_concurrency",
+      explanation: "The previous run of this schedule has not finished, so this one is waiting for it.",
+    };
+  }
+  if (input.inFlightForUser >= input.userConcurrencyCap) {
+    return {
+      outcome: "wait",
+      cause: "account_concurrency",
+      explanation: "You already have as many scheduled runs going as Juno will run at once.",
+    };
+  }
+
+  if (input.remainingBudgetMicroUsd !== null && input.remainingBudgetMicroUsd <= 0) {
+    // Skipped, not held. Holding would keep re-offering the same event on every
+    // poll for the rest of the budget period, and the whole backlog would then
+    // fire at once the moment the budget reset — which is the pile-up the cap
+    // exists to prevent, delayed rather than avoided.
+    return {
+      outcome: "skip",
+      cause: "budget_exhausted",
+      reason: "budget_exceeded",
+      explanation: "This run was not started because the account has used its budget for the period.",
+    };
+  }
+
+  const required = [...input.requiredCapabilities];
+  const selection = selectTarget({
+    requested: schedule.target,
+    required,
+    hosts: input.hosts,
+    cloudAvailable: input.cloudAvailable,
+  });
+
+  if (selection.target === null) {
+    switch (schedule.hostOfflinePolicy) {
+      case "wait":
+        return {
+          outcome: "wait",
+          cause: "host_offline",
+          explanation: `${selection.explanation} This schedule is set to wait for it.`,
+        };
+      case "skip":
+        return {
+          outcome: "skip",
+          cause: "host_offline",
+          reason: "host_offline",
+          explanation: `${selection.explanation} This schedule is set to skip rather than wait.`,
+        };
+      case "cloud_subset": {
+        // `automatic` is the request that lets `selectTarget` return the cloud
+        // with a `local_portion_skipped` degradation. Asking it again rather
+        // than assembling the fallback here keeps one implementation of what the
+        // cloud can cover and of the sentence the user is shown.
+        const fallback = selectTarget({
+          requested: "automatic",
+          required,
+          hosts: input.hosts,
+          cloudAvailable: input.cloudAvailable,
+        });
+        if (fallback.target === null) {
+          return {
+            outcome: "skip",
+            cause: "host_offline",
+            reason: "host_offline",
+            explanation: `${selection.explanation} There is no part of this the cloud can do on its own.`,
+          };
+        }
+        return {
+          outcome: "dispatch",
+          effectiveTarget: fallback.target,
+          hostId: fallback.hostId,
+          degradation: fallback.degradation,
+          explanation: fallback.explanation,
+        };
+      }
+    }
+  }
+
+  return {
+    outcome: "dispatch",
+    effectiveTarget: selection.target,
+    hostId: selection.hostId,
+    degradation: selection.degradation,
+    explanation: selection.explanation,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Cursors
+// ---------------------------------------------------------------------------
+
+/**
+ * How far the poller has read into each source a trigger watches.
+ *
+ * Keyed by a source string the poller mints — `apple-mail:INBOX` — rather than
+ * by the connector alone, because one trigger can legitimately watch several
+ * collections of the same kind and a shared position would let the busiest one
+ * drag the others past unread history.
+ *
+ * Positions are strings even when they are numbers. An IMAP UID is an integer
+ * and a CalDAV sync token is not, and a column that is sometimes one and
+ * sometimes the other is a column every reader has to guess about; the poller
+ * that wrote a position is the only thing that has to interpret it.
+ */
+export type TriggerCursor = Readonly<Record<string, string>>;
+
+/** Reads the stored `WorkTrigger.cursor` column, dropping anything malformed. */
+export function parseTriggerCursor(value: unknown): TriggerCursor {
+  const body = record(value);
+  if (!body) return {};
+  const cursor: Record<string, string> = {};
+  for (const [source, position] of Object.entries(body)) {
+    // A non-string position is dropped rather than coerced. Coercing would turn
+    // a corrupt entry into a plausible one — `null` becomes "null", which sorts
+    // above every real UID — and the poller would then skip everything for ever.
+    // Dropped, it reads as "never polled", and the next poll re-establishes the
+    // high-water mark without firing.
+    if (typeof position === "string" && position.length > 0) cursor[source] = position;
+  }
+  return cursor;
+}
+
+/**
+ * The cursor with one source advanced.
+ *
+ * Returns a `TriggerCursor` rather than a bare `JsonObject`, because the caller
+ * needs both: it walks a page of events advancing this value once per event, and
+ * then writes the last one it reached straight into the column. A cursor is
+ * assignable to `JsonObject` — every value in it is a string — so narrowing the
+ * return type costs the write nothing and stops the walk having to cast.
+ */
+export function advanceTriggerCursor(
+  cursor: TriggerCursor,
+  source: string,
+  position: string
+): TriggerCursor {
+  return { ...cursor, [source]: position };
+}
+
+// ---------------------------------------------------------------------------
+// Cadence
+// ---------------------------------------------------------------------------
+
+/**
+ * How often a healthy trigger's source is read.
+ *
+ * Two minutes rather than the scheduler's fifteen seconds, because the two
+ * workers pay different prices for a tick. The scheduler's tick is a single
+ * indexed query against a table it already owns; a poll opens an IMAP
+ * connection or a CalDAV report against somebody's iCloud account, and doing
+ * that every fifteen seconds for every trigger on the deployment is how an
+ * account gets throttled — at which point every trigger on it stops firing.
+ */
+export const TRIGGER_POLL_INTERVAL_MS = 2 * 60_000;
+
+/**
+ * The floor, so a configuration cannot ask for a poll faster than the source
+ * will tolerate no matter what the arithmetic below produces.
+ */
+export const MIN_TRIGGER_POLL_INTERVAL_MS = 30_000;
+
+/**
+ * How long to wait after a poll that failed.
+ *
+ * Longer than the healthy cadence and deliberately not a backoff that grows: the
+ * overwhelmingly common failure is an app-specific password that was rotated,
+ * which will not fix itself and which the user fixes in one action. A growing
+ * backoff would mean the first poll after they fix it is hours away, so the fix
+ * appears not to have worked.
+ */
+export const TRIGGER_POLL_ERROR_INTERVAL_MS = 15 * 60_000;
+
+/**
+ * How long to wait on a trigger this build cannot serve at all.
+ *
+ * An hour, because nothing about the answer can change without a deployment —
+ * `triggerSupport` is a constant table — and the row is only re-examined at all
+ * so that a trigger written by a newer build, or fixed by an edit, is picked up
+ * without the poller being restarted.
+ */
+export const TRIGGER_POLL_UNSERVABLE_INTERVAL_MS = 60 * 60_000;
+
+/**
+ * How long until this trigger's source should be read again.
+ *
+ * A calendar trigger is the reason this is a function rather than a constant.
+ * Its lead window is open for `leadMinutes` and then the meeting starts, after
+ * which `matchCalendar` refuses it for ever; a trigger set to five minutes'
+ * notice and polled every two would have a window narrow enough to be missed
+ * outright by one slow poll. Half the lead time means the window is always seen
+ * at least twice, and the dedupe window — widened to the lead time by
+ * `dedupeWindowMs` for exactly this reason — is what stops the second sighting
+ * starting a second run.
+ */
+export function triggerPollIntervalMs(parsed: TriggerConfig): number {
+  if (parsed.kind !== "calendar_window") return TRIGGER_POLL_INTERVAL_MS;
+  const half = (parsed.config.leadMinutes * 60_000) / 2;
+  return Math.max(MIN_TRIGGER_POLL_INTERVAL_MS, Math.min(TRIGGER_POLL_INTERVAL_MS, half));
+}
+
 // ---------------------------------------------------------------------------
 // Storage
 // ---------------------------------------------------------------------------
@@ -826,6 +1295,26 @@ export function normalizeTriggerDrafts(
 
     const parsed = parseTriggerConfig(input.kind, input.config);
     if (!parsed.ok) return { ok: false, index, message: parsed.message };
+
+    // Readable is not the same as servable, and this is the second question.
+    // A folder trigger parses perfectly and there is nothing in Juno that will
+    // ever tell it a folder changed, so storing it produces a schedule the user
+    // configured, saw saved, and which sits there for ever. Refusing at the
+    // write is the only point at which anybody is still looking.
+    //
+    // The kind, not the options. An option the source cannot answer —
+    // `requireAttachment` on a mail reader that never sees one — is refused by
+    // the editor and reported by the poller as a run that will not happen,
+    // because a stored trigger set is re-submitted whole on every save and
+    // refusing one of its fields here would lock the user out of editing the
+    // rest of the schedule.
+    //
+    // Deliberately after the parse, so the message names the more specific
+    // problem: a folder trigger with no grant is told it needs a grant rather
+    // than that folders are not watched at all.
+    const limit = TRIGGER_KIND_LIMITS[parsed.parsed.kind];
+    if (limit) return { ok: false, index, message: limit };
+
     drafts.push({
       // The parser's narrowed kind, not the caller's string: they are the same
       // value, and taking it from the parser is what carries the proof.

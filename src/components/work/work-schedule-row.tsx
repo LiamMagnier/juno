@@ -60,6 +60,35 @@ function nextFireSentence(schedule: ClientWorkSchedule): string {
   return schedule.enabled ? `Next: ${formatted}` : `Paused. Would have run ${formatted}`;
 }
 
+/**
+ * What this schedule will send, in three words.
+ *
+ * On the row rather than only in the editor because this list is where somebody
+ * notices that the hourly sweep they set up last month is the reason their inbox
+ * is full — and because the opposite mistake is quieter and worse: a schedule
+ * that has been failing for a week reads exactly like one that has been working,
+ * unless the row says nothing was ever going to tell them.
+ *
+ * `none` is the only one that gets a sentence, because it is the only one whose
+ * consequence is silence. The other three are stated flatly; the editor carries
+ * the full explanation, including the blocked-run exception that `none` cannot
+ * silence.
+ */
+function notifySentence(notifyPolicy: string): string | null {
+  switch (notifyPolicy) {
+    case "none":
+      return "No email unless a run gets stuck";
+    case "on_attention":
+      return "Emails when it needs you";
+    case "on_finish":
+      return "Emails on every run";
+    case "all":
+      return "Emails on everything";
+    default:
+      return null;
+  }
+}
+
 export function WorkScheduleRow({
   schedule,
   index = 0,
@@ -70,6 +99,7 @@ export function WorkScheduleRow({
   onChanged: (schedule: ClientWorkSchedule) => void;
 }) {
   const [busy, setBusy] = React.useState<"toggle" | "run" | null>(null);
+  const notify = notifySentence(schedule.notifyPolicy);
 
   const toggle = async () => {
     setBusy("toggle");
@@ -146,6 +176,7 @@ export function WorkScheduleRow({
           <span className="mt-1.5 block font-mono text-[10px] text-muted-foreground/70">
             {nextFireSentence(schedule)}
             {schedule.lastRunAt !== null && ` · last ran ${workTimeAgo(schedule.lastRunAt)}`}
+            {notify !== null && ` · ${notify}`}
           </span>
         </span>
         <ChevronRight

@@ -8,6 +8,7 @@ import type {
 } from './types.js';
 import type { ChatMessage } from '../types.js';
 import { resolveKey } from './credentials.js';
+import { classifyProviderError } from './errors.js';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './timeouts.js';
 
 /**
@@ -209,51 +210,74 @@ export class OpenAICompatAdapter implements ProviderAdapter {
     // `max_completion_tokens`; every other OpenAI-compatible lab accepts
     // `max_tokens`. (Matches the web app's openai-compat routing.)
     const isOpenAI = this.config.id === 'openai';
-    const stream = await this.client.chat.completions.create(
-      {
-        model: req.model,
-        messages: toCompatMessages(req.system, req.messages),
-        stream: true,
-        stream_options: { include_usage: true },
-        ...(isOpenAI ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
-        ...(req.reasoningEffort && this.config.reasoningEffortParam
-          ? { reasoning_effort: toOpenAIEffort(req.reasoningEffort) }
-          : {}),
-        tools: req.tools.length
-          ? req.tools.map((t) => ({
-              type: 'function' as const,
-              function: { name: t.name, description: t.description, parameters: t.inputSchema },
-            }))
-          : undefined,
-      },
-      { signal: req.signal },
-    );
+    // Classified here, at the only point where the HTTP status still exists.
+    // Above this line the SDK's error is an opaque `Error` whose message is
+    // whatever it could make of the response body — for an empty 429 that is the
+    // literal string "429 status code (no body)", which is what a user was shown
+    // as the reason their task failed. See providers/errors.ts.
+    let stream;
+    try {
+      stream = await this.client.chat.completions.create(
+        {
+          model: req.model,
+          messages: toCompatMessages(req.system, req.messages),
+          stream: true,
+          stream_options: { include_usage: true },
+          ...(isOpenAI ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
+          ...(req.reasoningEffort && this.config.reasoningEffortParam
+            ? { reasoning_effort: toOpenAIEffort(req.reasoningEffort) }
+            : {}),
+          tools: req.tools.length
+            ? req.tools.map((t) => ({
+                type: 'function' as const,
+                function: { name: t.name, description: t.description, parameters: t.inputSchema },
+              }))
+            : undefined,
+        },
+        { signal: req.signal },
+      );
+    } catch (err) {
+      // A stop the user asked for is not a provider failure. The loop checks the
+      // signal itself, so passing the abort through unchanged keeps that the one
+      // place cancellation is decided.
+      if (req.signal?.aborted) throw err;
+      throw classifyProviderError(err, this.name);
+    }
 
     // Streamed tool-call fragments accumulate per choice index.
     const calls = new Map<number, { id: string; name: string; args: string }>();
     let finishReason: string | undefined;
     let usage = { inputTokens: 0, outputTokens: 0 };
 
-    for await (const chunk of stream) {
-      const choice = chunk.choices?.[0];
-      const delta = choice?.delta;
-      if (delta?.content) yield { type: 'text_delta', text: delta.content };
-      const reasoning = (delta as unknown as { reasoning_content?: string })?.reasoning_content;
-      if (reasoning) yield { type: 'thinking_delta', text: reasoning };
-      for (const tc of delta?.tool_calls ?? []) {
-        const cur = calls.get(tc.index) ?? { id: '', name: '', args: '' };
-        if (tc.id) cur.id = tc.id;
-        if (tc.function?.name) cur.name = tc.function.name;
-        if (tc.function?.arguments) cur.args += tc.function.arguments;
-        calls.set(tc.index, cur);
+    // The same classification around the iteration, not only around the call
+    // that opened it. A lab that accepts the connection and then fails — a 5xx
+    // after headers, a reset socket mid-token — throws from here instead, and an
+    // unclassified throw at this point is the identical dead end.
+    try {
+      for await (const chunk of stream) {
+        const choice = chunk.choices?.[0];
+        const delta = choice?.delta;
+        if (delta?.content) yield { type: 'text_delta', text: delta.content };
+        const reasoning = (delta as unknown as { reasoning_content?: string })?.reasoning_content;
+        if (reasoning) yield { type: 'thinking_delta', text: reasoning };
+        for (const tc of delta?.tool_calls ?? []) {
+          const cur = calls.get(tc.index) ?? { id: '', name: '', args: '' };
+          if (tc.id) cur.id = tc.id;
+          if (tc.function?.name) cur.name = tc.function.name;
+          if (tc.function?.arguments) cur.args += tc.function.arguments;
+          calls.set(tc.index, cur);
+        }
+        if (choice?.finish_reason) finishReason = choice.finish_reason;
+        if (chunk.usage) {
+          usage = {
+            inputTokens: chunk.usage.prompt_tokens ?? usage.inputTokens,
+            outputTokens: chunk.usage.completion_tokens ?? usage.outputTokens,
+          };
+        }
       }
-      if (choice?.finish_reason) finishReason = choice.finish_reason;
-      if (chunk.usage) {
-        usage = {
-          inputTokens: chunk.usage.prompt_tokens ?? usage.inputTokens,
-          outputTokens: chunk.usage.completion_tokens ?? usage.outputTokens,
-        };
-      }
+    } catch (err) {
+      if (req.signal?.aborted) throw err;
+      throw classifyProviderError(err, this.name);
     }
 
     for (const [, call] of [...calls.entries()].sort((a, b) => a[0] - b[0])) {

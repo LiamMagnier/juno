@@ -69,7 +69,21 @@ import { cn } from "@/lib/utils";
 // The plan
 // ---------------------------------------------------------------------------
 
-export type PlanStepState = "pending" | "active" | "done" | "skipped" | "failed";
+export type PlanStepState =
+  | "pending"
+  | "active"
+  | "done"
+  | "skipped"
+  | "failed"
+  /**
+   * The run ended while this step was still the active one.
+   *
+   * Derived here and never sent over the wire — the executor cannot report it,
+   * because by definition it stopped without reporting. Named to match
+   * `ActivityState`'s member of the same name below, which exists for exactly
+   * the same reason and already carries the argument for it.
+   */
+  | "unreported";
 
 export interface PlanStep {
   id: string;
@@ -77,6 +91,11 @@ export interface PlanStep {
   state: PlanStepState;
 }
 
+/**
+ * The states the *executor* may assert. `unreported` is deliberately absent: it
+ * is this file's conclusion about a run that stopped talking, and accepting it
+ * from the wire would let a step claim a status only the reader can determine.
+ */
 const STEP_STATES = new Set<string>(["pending", "active", "done", "skipped", "failed"]);
 
 function stepState(value: string | null, fallback: PlanStepState): PlanStepState {
@@ -118,15 +137,43 @@ export function derivePlan(events: readonly ClientWorkEvent[]): PlanStep[] {
   if (steps.length === 0) return steps;
 
   const byId = new Map(steps.map((step) => [step.id, step]));
+  /** Set once the run stopped, whatever the last step event happened to say. */
+  let ended = false;
   for (const event of events) {
     if (event.seq <= planSeq) continue;
     const payload = readEvent(event);
     const id = str(payload, "stepId", "id");
     const step = id === null ? undefined : byId.get(id);
+    if (event.kind === "run_finished" || event.kind === "error" || event.kind === "paused") {
+      ended = true;
+    }
     if (!step) continue;
     if (event.kind === "step_started") step.state = "active";
     if (event.kind === "step_finished") {
       step.state = stepState(str(payload, "status", "state"), "done");
+    }
+  }
+
+  /*
+   * Reconcile against the run actually being over.
+   *
+   * Without this the plan advanced only on `step_started` / `step_finished`, so
+   * a run that died mid-step left that step `active` for ever — and `active`
+   * renders a `Loader2` with `animate-spin`. That is the spinner in the bug
+   * report that started this work: a task that failed against a rate limit
+   * fourteen seconds in, sitting under a red Failed pill, with "Understand what
+   * is being asked" turning next to it indefinitely.
+   *
+   * `deriveActivity` 400 lines below has always had this rule and states the
+   * principle outright — "a spinner that outlives its run is the single thing
+   * this whole surface was built to remove". The plan panel simply never got it.
+   * Applying it after the event walk rather than inside it is what makes it
+   * unconditional: it does not matter which order the executor emitted its last
+   * events in, only that the run is over.
+   */
+  if (ended) {
+    for (const step of steps) {
+      if (step.state === "active") step.state = "unreported";
     }
   }
   return steps;
@@ -138,6 +185,9 @@ const STEP_ICON: Record<PlanStepState, React.ComponentType<{ className?: string 
   done: Check,
   skipped: Minus,
   failed: X,
+  // Not an X. The step did not fail — the run stopped while it was open, and
+  // which of those two happened is a distinction the reader is owed.
+  unreported: CircleDashed,
 };
 
 const STEP_CLASS: Record<PlanStepState, string> = {
@@ -146,7 +196,11 @@ const STEP_CLASS: Record<PlanStepState, string> = {
   done: "text-success-ink",
   skipped: "text-muted-foreground/60",
   failed: "text-destructive",
+  unreported: "text-warning-foreground",
 };
+
+/** What a step that never reported back is called, for the reader. */
+const UNREPORTED_NOTE = "never finished";
 
 export function WorkPlan({ steps }: { steps: readonly PlanStep[] }) {
   if (steps.length === 0) {
@@ -176,10 +230,19 @@ export function WorkPlan({ steps }: { steps: readonly PlanStep[] }) {
                 "min-w-0",
                 step.state === "done" && "text-muted-foreground",
                 step.state === "skipped" && "text-muted-foreground/70 line-through",
-                step.state === "active" && "font-medium text-foreground"
+                step.state === "active" && "font-medium text-foreground",
+                step.state === "unreported" && "text-muted-foreground"
               )}
             >
               {step.title}
+              {step.state === "unreported" && (
+                // Said in words as well as in colour. The icon alone changes a
+                // spinner into a dashed circle, which is a difference nobody
+                // reads as "this never happened".
+                <span className="ml-1.5 font-mono text-[11px] text-warning-foreground">
+                  {UNREPORTED_NOTE}
+                </span>
+              )}
             </span>
           </li>
         );

@@ -4,8 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { isOwnerEmail } from "@/lib/owner";
 import { rateLimit } from "@/lib/rate-limit";
-import { pickAutoModel } from "@/lib/auto-model";
 import { MODEL_LIST, resolveModel } from "@/lib/models";
+import { configuredProviders } from "@/lib/providers";
 import { getUserPlan } from "@/lib/usage";
 import { canUseModel } from "@/lib/plans";
 import {
@@ -23,11 +23,13 @@ import {
 } from "@/lib/work/domain";
 import { inferCapabilities, selectForInferred } from "@/lib/work/inference";
 import {
-  cheapestWorkModel,
   defaultWorkModelId,
   isAutoModelId,
   isWorkCapableModel,
   isWorkModelAllowed,
+  pickWorkModel,
+  workFailoverModels,
+  workModelOptions,
 } from "@/lib/work/models";
 import {
   createRun,
@@ -48,6 +50,15 @@ export const runtime = "nodejs";
 const WORK_RUN_RATE_LIMIT = 10;
 /** Max simultaneously live runs per user, across every session. */
 const WORK_RUN_CONCURRENCY_CAP = 3;
+/**
+ * How many previous failures a retry looks back over when choosing a model.
+ *
+ * Bounded so a task retried thirty times does not send a thirty-item `NOT IN`
+ * to the router, and so a model that failed once a month ago is eligible again
+ * — the pool is not large, and permanently retiring a model from a task on one
+ * bad afternoon would eventually leave nothing to run it on.
+ */
+const MAX_FAILOVER_HISTORY = 4;
 
 /**
  * Whether cloud Work is accepting runs.
@@ -175,6 +186,18 @@ function modelLabel(id: string): string {
 class NoEntitledModelError extends Error {}
 
 /**
+ * Raised when this deployment can reach no model the agent runtime can drive —
+ * every lab that carries one is unconfigured.
+ *
+ * The other half of the pair above, and the reason the router is not allowed to
+ * answer both with a bare `null`: one of these is a wall in front of the reader
+ * and the other is a wall in front of the operator, and telling somebody to
+ * upgrade their plan when the truth is that nobody set an API key sends them to
+ * a checkout page that will not help.
+ */
+class NoReachableModelError extends Error {}
+
+/**
  * Decides which model this attempt actually runs on, before the row is written.
  *
  * This is the fix for a bug that killed every cloud run started from a browser.
@@ -194,55 +217,141 @@ class NoEntitledModelError extends Error {}
  * teach people to ignore the one that matters.
  *
  * What IS a substitution is a model this run cannot actually have — either one
- * the agent runtime cannot drive, or one the account is not entitled to. Auto's
- * own pool guards against neither: it filters for chat, not for
- * `isWorkCapableModel`, so it can land on a Responses-API-only entry the Work
- * runtime has no adapter for; and its last resort abandons the plan filter
- * altogether, so on an account with an empty eligible pool it returns whatever
- * chat model comes first in the catalog. Either way the run proceeds on the
- * cheapest model the account may actually use and says so, because a run that
- * quietly used a different model from the one on its own detail page is a
- * result nobody can account for afterwards.
+ * the agent runtime cannot drive, or one the account is not entitled to. The run
+ * proceeds on the best model the account may actually use and says so, because a
+ * run that quietly used a different model from the one on its own detail page is
+ * a result nobody can account for afterwards.
  *
- * Two different throws, answered two different ways by the caller. `pickAutoModel`
- * throws when the deployment has no configured provider — a 503, nobody's fault
- * on this side. ``NoEntitledModelError`` means the account's plan admits no model
- * that could run a Work task at all — a 403, and a different sentence.
+ * **Auto routes through `pickWorkModel`, not `pickAutoModel`.** It used to be
+ * the latter, and that is the whole of how the reported incident began. The chat
+ * router grades a sentence for the job chat does and ranks the survivors
+ * cheapest-first; asked to route "clean my github & add readme on projects that
+ * doesn't have one" it scored `simple` / `minIntelligence: 4` and returned the
+ * cheapest model in the catalog clearing a 4 — measured on this catalog, one
+ * billing an average of zero, which is a free tier, which is the tier with the
+ * tightest rate limits. The run made one tool call and died against a 429 it had
+ * no way to survive. `pickWorkModel` states Work's own floor, ranks within the
+ * pool this deployment can actually reach, and breaks ties on capability rather
+ * than on the first letter of a marketing name. See `src/lib/work/models.ts`.
+ *
+ * Two different throws, answered two different ways by the caller.
+ * ``NoReachableModelError`` means no lab carrying a drivable model is configured
+ * — a 503, nobody's fault on this side. ``NoEntitledModelError`` means the
+ * account's plan admits no model that could run a Work task at all — a 403, and
+ * a different sentence.
  */
-function resolveRunModel(input: { requested: string; goal: string; plan: Plan }): RunModel {
-  const auto = isAutoModelId(input.requested);
-  const chosen = auto ? pickAutoModel({ message: input.goal, plan: input.plan }).model.id : input.requested;
+function resolveRunModel(input: {
+  requested: string;
+  goal: string;
+  plan: Plan;
+  /** Models earlier attempts at this task already failed on. Auto only. */
+  spentModels?: readonly string[];
+}): RunModel {
+  const providers = configuredProviders();
+  const spent = input.spentModels ?? [];
 
-  const info = resolveModel(chosen);
-  // Both halves, and the second one is not redundant. `isWorkModelAllowed`
-  // above has already vetted anything the reader *named*, but it lets the Auto
-  // sentinel through — and `pickAutoModel`'s last resort ignores the plan
-  // entirely, so on an account with an empty eligible pool it hands back a
-  // frontier model. Checking only the shape here is what let a free account run
-  // an agent loop on the most expensive model in the catalog, on the
-  // deployment's key. The resolved id is the only id worth checking.
-  if (info && isWorkCapableModel(info) && canUseModel(input.plan, info.id)) {
-    return { requested: input.requested, effective: chosen, degradation: [] };
+  // Asked before anything else, because "this deployment can reach no drivable
+  // model" and "your plan includes no drivable model" are the 503 and the 403,
+  // and a single null from the router below cannot tell them apart. Reading the
+  // reachable pool first is what keeps those two answers distinct.
+  if (workModelOptions(MODEL_LIST, { providers }).length === 0) {
+    throw new NoReachableModelError();
   }
 
-  const fallback = cheapestWorkModel(MODEL_LIST, input.plan);
+  const auto = isAutoModelId(input.requested);
+
+  if (auto) {
+    // A retry of a task that already failed on one or more models moves to a
+    // different lab rather than repeating the attempt that just died. The
+    // ordering prefers a provider this task has not met yet, because the failure
+    // this exists for — a rate limit — belongs to the lab and not to the model,
+    // and the second-best model on the same key meets the same quota.
+    if (spent.length > 0) {
+      const [next] = workFailoverModels({
+        goal: input.goal,
+        plan: input.plan,
+        models: MODEL_LIST,
+        providers,
+        exclude: spent,
+      });
+      if (next) {
+        const previous = modelLabel(spent[0]);
+        return {
+          requested: input.requested,
+          effective: next.id,
+          degradation: [
+            {
+              kind: "model_substituted",
+              subject: next.id,
+              explanation:
+                spent.length === 1
+                  ? `The last attempt failed on ${previous}, so this one runs on ${next.name} instead.`
+                  : `Earlier attempts failed on ${spent.length} other models, so this one runs on ${next.name}.`,
+            },
+          ],
+        };
+      }
+      // Nothing left to move to. Falling through runs the ordinary choice again,
+      // which is right: a task whose whole eligible pool has failed should still
+      // be allowed one more go rather than be refused, and the reader pressed
+      // the button knowing the last attempt failed.
+    }
+
+    const pick = pickWorkModel({
+      goal: input.goal,
+      plan: input.plan,
+      models: MODEL_LIST,
+      providers,
+    });
+    if (!pick) throw new NoEntitledModelError();
+    return {
+      requested: input.requested,
+      effective: pick.model.id,
+      // Routing is the answer to the request rather than a shortfall in it, so
+      // an ordinary Auto run records nothing — see the docstring. The single
+      // exception is a floor that could not be met, because that genuinely
+      // changes what the reader should expect the run to get through.
+      degradation: pick.relaxed
+        ? [
+            {
+              kind: "model_substituted",
+              subject: pick.model.id,
+              explanation: `This task reads like it needs a more capable model than your plan includes, so it runs on ${pick.model.name}. It may take more steps, or stop short of the whole job.`,
+            },
+          ]
+        : [],
+    };
+  }
+
+  // A model the reader named. `isWorkModelAllowed` has already vetted the plan
+  // for it; this re-checks on the resolved id, which is the only id worth
+  // checking once `resolveModel` has had the chance to migrate a retired one.
+  const info = resolveModel(input.requested);
+  if (info && isWorkCapableModel(info) && canUseModel(input.plan, info.id)) {
+    return { requested: input.requested, effective: info.id, degradation: [] };
+  }
+
+  const fallback = pickWorkModel({
+    goal: input.goal,
+    plan: input.plan,
+    models: MODEL_LIST,
+    providers,
+  });
   if (!fallback) throw new NoEntitledModelError();
 
   const why =
     info && isWorkCapableModel(info)
-      ? `${modelLabel(chosen)} is not included in your plan`
-      : `${modelLabel(chosen)} cannot be driven as an agent`;
+      ? `${modelLabel(input.requested)} is not included in your plan`
+      : `${modelLabel(input.requested)} cannot be driven as an agent`;
 
   return {
     requested: input.requested,
-    effective: fallback.id,
+    effective: fallback.model.id,
     degradation: [
       {
         kind: "model_substituted",
-        subject: chosen,
-        explanation: auto
-          ? `Auto chose ${modelLabel(chosen)}, but ${why}, so this task runs on ${fallback.name} instead.`
-          : `${why}, so this task runs on ${fallback.name} instead.`,
+        subject: input.requested,
+        explanation: `${why}, so this task runs on ${fallback.model.name} instead.`,
       },
     ],
   };
@@ -362,9 +471,50 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // Before the rate limit, because a deployment with no configured provider is
   // not the reader's fault and should not cost them one of their ten runs a
   // minute to discover.
+  /*
+   * Models this task has already burned an attempt on.
+   *
+   * This is failover, and it is deliberately here rather than inside the agent
+   * loop. Swapping a model mid-run cannot be done honestly: `provider` and
+   * `model` are fixed `AgentLoopOptions`, and three things are bound alongside
+   * them at construction — the budget guard's `pricing`, the reasoning tier
+   * clamped for the old model's enum, and the `run_started` event that already
+   * told the transcript which model was answering. A mid-loop swap would bill
+   * the new model's tokens at the old one's rate, risk an instant 400 from a lab
+   * whose thinking dialect differs, and leave the record naming a model that
+   * stopped being true. A new attempt has none of those problems, because every
+   * one of them is rebuilt.
+   *
+   * Only for Auto. A reader who named a model is owed that model or a refusal —
+   * quietly running their task somewhere else is the substitution the whole
+   * degradation vocabulary exists to prevent. And only across *failed* attempts:
+   * a cancelled run was somebody's decision, not the model's failure.
+   */
+  const spentModels = isAutoModelId(requestedModel)
+    ? (
+        await prisma.workRun.findMany({
+          where: {
+            sessionId: session.id,
+            userId: user.id,
+            status: { in: ["failed", "timed_out"] },
+          },
+          select: { effectiveModel: true },
+          orderBy: { attempt: "desc" },
+          take: MAX_FAILOVER_HISTORY,
+        })
+      )
+        .map((run) => run.effectiveModel)
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+    : [];
+
   let model: RunModel;
   try {
-    model = resolveRunModel({ requested: requestedModel, goal: session.goal, plan });
+    model = resolveRunModel({
+      requested: requestedModel,
+      goal: session.goal,
+      plan,
+      spentModels,
+    });
   } catch (err) {
     if (err instanceof NoEntitledModelError) {
       return NextResponse.json(
@@ -376,8 +526,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         { status: 403 }
       );
     }
-    // `pickAutoModel` throws when nothing at all survives its filters. The only
-    // honest answer is that nothing was started, and that the reason is on this
+    // `NoReachableModelError`, or anything unexpected out of the router. The
+    // only honest answer is that nothing was started and the reason is on this
     // side: a 500 would send the reader to retry a request that cannot succeed
     // until somebody configures a provider.
     return NextResponse.json(

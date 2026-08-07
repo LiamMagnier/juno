@@ -10,7 +10,12 @@ import {
   type WorkArtifactKind,
   type WorkCapability,
 } from "@/lib/work/domain";
-import type { ClientWorkEvent, ClientWorkHost, ClientWorkRun } from "@/lib/work/serializers";
+import type {
+  ClientWorkEvent,
+  ClientWorkHost,
+  ClientWorkRun,
+  ClientWorkSession,
+} from "@/lib/work/serializers";
 import type { PerformedActions } from "@/components/work/work-timeline";
 import { num, prose, readEvent, records, str } from "@/components/work/work-payload";
 import {
@@ -293,19 +298,10 @@ export function WorkRunSettings({
   run,
   host,
 }: {
-  run: ClientWorkRun | null;
+  run: ClientWorkRun;
   /** The Mac this run is bound to, when it is bound to one and the host list loaded. */
   host: ClientWorkHost | null;
 }) {
-  if (run === null) {
-    return (
-      <p className="text-[13px] leading-relaxed text-muted-foreground">
-        This task has not been started, so there is nothing to describe yet — no target, no model,
-        no budget spent.
-      </p>
-    );
-  }
-
   const available = new Set<WorkCapability>(run.availableCapabilities);
 
   return (
@@ -402,6 +398,80 @@ export function WorkRunSettings({
       )}
 
       <WorkBudget run={run} />
+    </div>
+  );
+}
+
+/**
+ * What a draft *will* run as, before there is a run to describe.
+ *
+ * This replaces a sentence that said there was nothing to describe yet, which
+ * was not true: a draft carries the target, the model and the approval mode
+ * chosen in the composer, and those are exactly the three things somebody
+ * checks before pressing Start. Saying "nothing to describe" and then starting
+ * the task on settings the reader was never shown is how a person discovers
+ * their choice of Mac was ignored by watching the cloud do the work.
+ *
+ * Every value here is a request rather than an outcome, and the wording keeps
+ * that distinction rather than borrowing the run panel's. Automatic is not a
+ * target and is not rendered as one — `selectTarget` decides at dispatch, and a
+ * draft that claimed "Cloud" would be this panel guessing on its behalf.
+ */
+export function WorkPlannedSettings({
+  session,
+  hosts,
+}: {
+  session: ClientWorkSession;
+  /** Null until the host list loads, which only affects whether a Mac is named. */
+  hosts: readonly ClientWorkHost[] | null;
+}) {
+  const preferred =
+    session.preferredHostId === null
+      ? null
+      : (hosts ?? []).find((host) => host.id === session.preferredHostId) ?? null;
+
+  return (
+    <div className="space-y-3.5">
+      <dl className="space-y-1.5">
+        <SettingRow label="Will run">
+          {session.requestedTarget === "automatic" ? (
+            <span className="font-mono text-[10px] text-muted-foreground">
+              wherever it fits
+            </span>
+          ) : (
+            <WorkTargetLabel
+              target={session.requestedTarget}
+              hostName={preferred?.displayName}
+              hostUnknown={session.requestedTarget === "local" && preferred === null}
+            />
+          )}
+        </SettingRow>
+        <SettingRow label="Model">
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {/* A draft may carry the Auto sentinel, which is a promise to choose
+                rather than a choice. Printing it verbatim is honest; resolving
+                it here would be this bundle guessing at a decision the dispatch
+                route makes with the account's plan in front of it. */}
+            {session.requestedModel ?? "chosen when it starts"}
+          </span>
+        </SettingRow>
+        <SettingRow label="Asks">
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {WORK_APPROVAL_MODE_LABEL[session.permissionPolicy]}
+          </span>
+        </SettingRow>
+      </dl>
+
+      <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+        {WORK_APPROVAL_MODE_SUMMARY[session.permissionPolicy]}
+      </p>
+
+      {/* Said once, here, rather than as an empty state on every panel a draft
+          has nothing to fill. */}
+      <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+        Nothing has been spent and nothing has been touched. A Mac may ask more often than this —
+        it cannot ask less.
+      </p>
     </div>
   );
 }

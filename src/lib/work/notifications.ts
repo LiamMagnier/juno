@@ -78,6 +78,17 @@ export function decideNotification(input: WorkNotifyTransition): WorkNotifyDecis
     return { notify: false, reason: "This has already been notified." };
   }
 
+  // A superseded run lands in `cancelled`, and nobody cancelled it — a newer
+  // attempt for the same session took over. Left to the table below, `on_finish`
+  // would send "your task was stopped" about a task that is still running, which
+  // is not merely noise but the opposite of what happened. This is the one place
+  // `terminalReason` carries information `status` cannot: the two ways into
+  // `cancelled` need different treatment and the status column cannot tell them
+  // apart.
+  if (input.terminalReason === "superseded") {
+    return { notify: false, reason: "A newer attempt took this over; the task is still going." };
+  }
+
   const blocking = statusNeedsAttention(input.status);
 
   if (blocking) {

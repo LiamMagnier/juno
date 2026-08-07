@@ -128,10 +128,12 @@ export {
   MAX_STEPS_PER_RUN,
   WORK_ASK_TOOL_NAME,
   WORK_PLAN_TOOL_NAME,
+  WORK_WRITE_PLAN_TOOL_NAME,
   WorkAgentSession,
   askUserToolSpec,
   structuralValidation,
   updatePlanToolSpec,
+  writePlanToolSpec,
   type WorkCheckpoint,
   type WorkRunResult,
   type WorkSessionCallbacks,
@@ -154,6 +156,19 @@ export {
   DEFAULT_STREAM_SILENCE_MS,
   ProviderSilenceError,
 } from '../loop.js';
+
+/*
+ * The failure taxonomy, for the same reason.
+ *
+ * The executor needs `ProviderCallError` as a *value* rather than a type: its
+ * failover decision is `error instanceof ProviderCallError && error.retryable`,
+ * and an `import type` would compile and then never match anything at runtime.
+ */
+export {
+  ProviderCallError,
+  classifyProviderError,
+  type ProviderFailureKind,
+} from '../providers/errors.js';
 
 export {
   createProvider,

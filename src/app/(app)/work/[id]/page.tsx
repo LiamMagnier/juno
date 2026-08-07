@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Pause, Play, RefreshCw, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import { isTerminalStatus } from "@/lib/work/domain";
 import type {
   ClientWorkEvent,
@@ -16,11 +17,26 @@ import type {
 import {
   WorkActionsPerformed,
   WorkLiveMeter,
+  WorkPlannedSettings,
   WorkReferences,
   WorkRunSettings,
   deriveArtifacts,
   deriveReferences,
 } from "@/components/work/work-detail-panels";
+import {
+  RAIL_GROUPS,
+  RAIL_POLICY,
+  RailGroup,
+  RailPanel,
+  WorkRunAnnouncer,
+  deriveRunPhase,
+  groupTitle,
+  panelProps,
+  panelVisible,
+  type GroupName,
+} from "@/components/work/detail/work-rail";
+import { WorkAttempts } from "@/components/work/detail/work-attempts";
+import { WorkOutcomeDigest } from "@/components/work/detail/work-outcome";
 import { WorkDocuments } from "@/components/work/work-documents";
 import { WorkToolbox } from "@/components/work/work-toolbox";
 import {
@@ -91,6 +107,20 @@ import {
  * The page has no loading state that outlives an answer. A task nothing can
  * execute is refused at dispatch with a sentence, and that sentence is rendered
  * where a spinner would otherwise sit for ever.
+ *
+ * ── The rail ──────────────────────────────────────────────────────────────
+ *
+ * The right column is not a list of panels. It is four groups whose order and
+ * whose weight follow the run's state, and a panel is in it only if it has
+ * something to say: `RAIL_POLICY` in `detail/work-rail.tsx` is that judgement,
+ * written as a table so the whole hierarchy can be read in one place. This page
+ * supplies the contents and the counts; it does not decide the ranking.
+ *
+ * Anything blocking on a person is lifted out of that rail entirely and rendered
+ * as its own grid item — pinned above the reference panels on a desktop, and
+ * above the conversation on a phone. It is one element in one place in the DOM,
+ * placed by grid rather than duplicated per breakpoint, so there is never a
+ * second copy of an Allow button to press by mistake.
  */
 export default function WorkThreadPage() {
   const { id } = useParams<{ id: string }>();
@@ -245,7 +275,13 @@ export default function WorkThreadPage() {
     [events, live]
   );
   const activityPhase: ActivityPhase = run === null ? "not-started" : live ? "live" : "settled";
+  // Split rather than filtered twice. The two halves go to different places: an
+  // undecided approval is a thing blocking a person and is lifted above the
+  // conversation, while a decided one is history and belongs in the rail with
+  // the rest of the record. Rendering the whole list in both would offer the
+  // same Allow button in two places.
   const openApprovals = approvals.filter((approval) => approval.decision === "pending");
+  const decidedApprovals = approvals.filter((approval) => approval.decision !== "pending");
   const host = React.useMemo(
     () =>
       run?.hostId == null ? null : (hosts ?? []).find((entry) => entry.id === run.hostId) ?? null,
@@ -474,6 +510,173 @@ export default function WorkThreadPage() {
 
   const notStarted = run === null;
 
+  /*
+   * What state the rail arranges itself for, and what it puts where.
+   *
+   * `needsYou` outranks liveness on purpose: a run parked on an approval is
+   * technically still running, but a rail that leads with the plan while a
+   * person is being waited on has ranked the wrong thing.
+   */
+  const needsYou = questions.length > 0 || openApprovals.length > 0;
+  const phase = deriveRunPhase({
+    hasRun: run !== null,
+    live,
+    needsYou,
+    terminalReason: run?.terminalReason ?? null,
+  });
+  const policy = RAIL_POLICY[phase];
+
+  /*
+   * Run settings is quiet almost everywhere, and must not be quiet here.
+   *
+   * That panel is where a run's degradations are printed — "your Mac was
+   * asleep, so the local half was skipped", "the model you asked for is not in
+   * your plan". Those are the sentences that explain a disappointing result, and
+   * a reader who has to find and open a collapsed panel to reach them will
+   * instead conclude the product simply did the wrong thing.
+   */
+  const settingsPolicy =
+    run !== null && run.degradation.length > 0
+      ? { ...policy.settings, tone: "standard" as const, open: true }
+      : policy.settings;
+
+  const planPanel = panelVisible(policy.plan, plan.length > 0 || currentAction !== null) && (
+    <RailPanel key="plan" title="Plan" {...panelProps(policy.plan, plan.length)}>
+      <div className="space-y-3">
+        <WorkCurrentAction action={currentAction} />
+        <WorkPlan steps={plan} />
+      </div>
+    </RailPanel>
+  );
+
+  // Not "Progress". Progress is a percentage; this is the record of what Juno
+  // actually did, step by step, and it is the answer to the question the whole
+  // page exists for.
+  const activityPanel = panelVisible(policy.activity, activity.length > 0) && (
+    <RailPanel key="activity" title="Activity" {...panelProps(policy.activity, activity.length)}>
+      {/* Marked busy rather than live. The feed gains a row a second while a run
+          is going, and announcing each one would make the page unusable for the
+          reader who most needs it — `WorkRunAnnouncer` in the header carries the
+          state changes instead. `aria-busy` says the region is still filling
+          without reading it aloud. */}
+      <div aria-busy={live}>
+        <WorkActivity entries={activity} phase={activityPhase} />
+      </div>
+    </RailPanel>
+  );
+
+  const approvalsPanel = panelVisible(policy.approvals, decidedApprovals.length > 0) && (
+    <RailPanel
+      key="approvals"
+      title="Approvals"
+      {...panelProps(policy.approvals, decidedApprovals.length)}
+    >
+      <WorkApprovals approvals={decidedApprovals} busyId={busyApprovalId} onDecide={decide} />
+    </RailPanel>
+  );
+
+  const referencesPanel = panelVisible(policy.references, references.length > 0) && (
+    <RailPanel
+      key="references"
+      title="Files and sources"
+      {...panelProps(policy.references, references.length)}
+    >
+      <WorkReferences references={references} />
+    </RailPanel>
+  );
+
+  // Documents and the toolbox are the two panels whose emptiness this page
+  // cannot know — both read their own endpoint, and the artifact list covers the
+  // whole session rather than this attempt, so an empty event-derived list is no
+  // evidence there is nothing to show. They are always rendered, and the policy
+  // decides whether that costs a collapsed row or an open panel.
+  const documentsPanel = panelVisible(policy.documents, true) && (
+    <RailPanel
+      key="documents"
+      title="Documents"
+      {...panelProps(policy.documents, artifacts.length)}
+    >
+      <WorkDocuments sessionId={session.id} fromEvents={artifacts} />
+    </RailPanel>
+  );
+
+  const performedPanel = panelVisible(
+    policy.performed,
+    performed.actions.length > 0 || performed.unclassified > 0
+  ) && (
+    <RailPanel
+      key="performed"
+      title="Actions performed"
+      {...panelProps(policy.performed, performed.actions.length)}
+    >
+      <WorkActionsPerformed performed={performed} />
+    </RailPanel>
+  );
+
+  const toolboxPanel = panelVisible(policy.toolbox, true) && (
+    <RailPanel key="toolbox" title="Skills and apps" {...panelProps(policy.toolbox)}>
+      <WorkToolbox />
+    </RailPanel>
+  );
+
+  // An attempt history exists only once there has been more than one attempt.
+  // On a first run the panel would be a heading over a single row the reader is
+  // already looking at.
+  //
+  // Titled "Attempts" rather than "Earlier attempts" because the attempt on
+  // screen is in the list too, marked rather than omitted — a comparison with a
+  // gap where the thing being compared should be is not a comparison.
+  const attemptsPanel = panelVisible(policy.attempts, run !== null && run.attempt > 1) &&
+    run !== null && (
+      <RailPanel key="attempts" title="Attempts" {...panelProps(policy.attempts, run.attempt)}>
+        <WorkAttempts sessionId={session.id} current={run} />
+      </RailPanel>
+    );
+
+  const settingsPanel = panelVisible(settingsPolicy, true) && (
+    <RailPanel
+      key="settings"
+      title={run === null ? "Settings" : "Run settings"}
+      {...panelProps(settingsPolicy)}
+    >
+      {run === null ? (
+        // A draft has no run to describe, and saying "nothing to describe yet"
+        // and then starting the task on settings the reader was never shown is
+        // how somebody discovers their choice of Mac was ignored by watching the
+        // cloud do the work.
+        <WorkPlannedSettings session={session} hosts={hosts} />
+      ) : (
+        <WorkRunSettings run={run} host={host} />
+      )}
+    </RailPanel>
+  );
+
+  const outcomePanel = phase === "failed" && run !== null && (
+    <RailPanel key="outcome" title="Where it got to" tone="primary">
+      <WorkOutcomeDigest run={run} plan={plan} performed={performed} />
+    </RailPanel>
+  );
+
+  const groups: Record<GroupName, React.ReactNode[]> = {
+    outcome: [outcomePanel],
+    progress: [planPanel, activityPanel, approvalsPanel],
+    produced: [referencesPanel, documentsPanel, performedPanel],
+    setup: [attemptsPanel, settingsPanel, toolboxPanel],
+  };
+
+  /*
+   * What the rail leads with, which on a phone is also what it is called.
+   *
+   * Every panel above is either an element or `false`, so this finds the first
+   * group that will genuinely render rather than the first one listed — a link
+   * promising "what it produced" that lands on "how it ran" because the produced
+   * group came out empty is a worse link than none.
+   *
+   * It doubles as the guard for the jump link itself: null means the rail
+   * rendered nothing at all, and there is nothing to jump to.
+   */
+  const railLead = RAIL_GROUPS[phase].find((name) => groups[name].some(Boolean)) ?? null;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="shrink-0 border-b border-border/60 px-4 py-4 sm:px-6">
@@ -612,16 +815,107 @@ export default function WorkThreadPage() {
               </WorkStateNote>
             )}
             <WorkApprovalPrompt count={openApprovals.length} />
+            {/*
+             * The two ways down the page, on the screen where both are furthest
+             * away.
+             *
+             * On a desktop neither exists: the block that needs answering is
+             * pinned at the top of the second column and the rail is the rest of
+             * it, so both are already in view and a link would point at
+             * something the reader is looking at.
+             *
+             * On a phone there is one column, and everything the rail holds sits
+             * below a transcript that can run to many screens. Without these,
+             * "what did it actually produce" is a question you answer by
+             * scrolling past the whole conversation, which is barely better than
+             * the rail being dropped from the layout altogether. Both targets
+             * carry `tabIndex={-1}`, so following one moves the keyboard as well
+             * as the viewport rather than leaving focus at the top of the page.
+             *
+             * The rail's link is named after whatever the rail is leading with,
+             * so it says "what happened" on a failure and "what it produced" on
+             * a finished task — the reader is told where they are going in the
+             * same words they will land on.
+             */}
+            {(needsYou || railLead !== null) && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 lg:hidden">
+                {needsYou && <JumpLink href="#work-needs-you">Go to what needs you</JumpLink>}
+                {railLead !== null && (
+                  <JumpLink href="#work-rail">
+                    Go to {uncapitalize(groupTitle(railLead, phase))}
+                  </JumpLink>
+                )}
+              </div>
+            )}
           </div>
+
+          {/* The one thing a screen reader is interrupted for. See
+              `WorkRunAnnouncer` — the activity feed deliberately is not a live
+              region, and this carries the state changes in its place. */}
+          <WorkRunAnnouncer status={session.status} detail={run?.terminalDetail ?? null} />
         </div>
       </header>
 
-      {/* One scroll region on a phone, two on a desktop. The right column is not
-          a sidebar that can be collapsed away: it holds the approvals, so it
-          must never be somewhere the user has to go looking. */}
+      {/*
+       * One scroll region on a phone, two on a desktop — and three grid items in
+       * one DOM order, placed differently at each size rather than duplicated.
+       *
+       * On a phone the order is: what needs you, the conversation, the reference
+       * rail. Reading follows the decision rather than burying it, and the rail
+       * is still there below rather than dropped — which is what it was before
+       * this: eight panels of reference material stacked under a transcript,
+       * with the one panel holding an Allow button somewhere among them.
+       *
+       * On a desktop the rail's two halves take the second column in two rows.
+       * The block that needs answering takes the auto row at the top and does
+       * NOT scroll; the reference panels take the remaining row and scroll under
+       * it. So an approval cannot be scrolled out of view while the reader is
+       * reading the thing it is about, which is the invariant the old single
+       * scrolling column only had by luck.
+       */}
       <div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
-        <div className="mx-auto grid w-full max-w-[80rem] grid-cols-1 gap-8 px-4 py-6 sm:px-6 lg:h-full lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-10 lg:overflow-hidden lg:py-0 xl:grid-cols-[minmax(0,1fr)_26rem]">
-          <div className="min-w-0 lg:h-full lg:overflow-y-auto lg:py-6">
+        <div className="mx-auto grid w-full max-w-[80rem] grid-cols-1 gap-x-10 gap-y-8 px-4 py-6 sm:px-6 lg:h-full lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-y-0 lg:overflow-hidden lg:py-0 xl:grid-cols-[minmax(0,1fr)_26rem]">
+          {needsYou && (
+            <section
+              id="work-needs-you"
+              tabIndex={-1}
+              aria-label="Waiting on you"
+              className="min-w-0 space-y-4 lg:col-start-2 lg:row-start-1 lg:border-l lg:border-border/60 lg:pb-7 lg:pl-8 lg:pt-6"
+            >
+              {questions.length > 0 && (
+                <div>
+                  <h2 className="mb-2.5 font-mono text-[11px] tracking-[0.1em] text-foreground">
+                    Waiting on you
+                  </h2>
+                  <div className="space-y-2.5">
+                    {questions.map((question) => (
+                      <WorkQuestionCard
+                        key={question.id}
+                        question={question}
+                        busy={answering}
+                        onAnswer={(questionId, text) => void answer(questionId, text)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {openApprovals.length > 0 && (
+                <div>
+                  <h2 className="mb-2.5 font-mono text-[11px] tracking-[0.1em] text-foreground">
+                    {openApprovals.length === 1 ? "Approval needed" : "Approvals needed"}
+                  </h2>
+                  <WorkApprovals
+                    approvals={openApprovals}
+                    busyId={busyApprovalId}
+                    onDecide={decide}
+                  />
+                </div>
+              )}
+            </section>
+          )}
+
+          <div className="min-w-0 lg:col-start-1 lg:row-start-1 lg:row-span-2 lg:h-full lg:overflow-y-auto lg:py-6">
             <WorkConversation
               session={session}
               turns={turns}
@@ -637,64 +931,62 @@ export default function WorkThreadPage() {
             />
           </div>
 
-          <div className="min-w-0 space-y-7 lg:h-full lg:overflow-y-auto lg:border-l lg:border-border/60 lg:py-6 lg:pl-8">
-            {questions.length > 0 && (
-              <Panel title="Waiting on you">
-                <div className="space-y-2.5">
-                  {questions.map((question) => (
-                    <WorkQuestionCard
-                      key={question.id}
-                      question={question}
-                      busy={answering}
-                      onAnswer={(questionId, text) => void answer(questionId, text)}
-                    />
-                  ))}
-                </div>
-              </Panel>
+          {/* The rail proper. Its groups and their order come from `RAIL_GROUPS`,
+              and a group whose every panel was omitted renders nothing at all —
+              no heading, no rule, no apology. */}
+          <aside
+            id="work-rail"
+            // Focusable only by the jump link above, never by tabbing: a landmark
+            // that took a tab stop of its own would put an unlabelled stop
+            // between the conversation and the first panel for every keyboard
+            // user on every screen size, to serve one link that exists on one.
+            tabIndex={-1}
+            aria-label="Run detail"
+            className={cn(
+              "min-w-0 space-y-8 focus-visible:outline-none lg:col-start-2 lg:row-start-2 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-border/60 lg:pb-6 lg:pl-8",
+              !needsYou && "lg:pt-6"
             )}
-
-            <Panel title="Plan">
-              <div className="space-y-3">
-                <WorkCurrentAction action={currentAction} />
-                <WorkPlan steps={plan} />
-              </div>
-            </Panel>
-
-            {/* Not "Progress". Progress is a percentage; this is the record of
-                what Juno actually did, step by step, and it is the answer to the
-                question the whole page exists for. */}
-            <Panel title="Activity">
-              <WorkActivity entries={activity} phase={activityPhase} />
-            </Panel>
-
-            <Panel title="Approvals">
-              <WorkApprovals approvals={approvals} busyId={busyApprovalId} onDecide={decide} />
-            </Panel>
-
-            <Panel title="Files and sources">
-              <WorkReferences references={references} />
-            </Panel>
-
-            <Panel title="Documents">
-              <WorkDocuments sessionId={session.id} fromEvents={artifacts} />
-            </Panel>
-
-            <Panel title="Skills and apps">
-              <WorkToolbox />
-            </Panel>
-
-            <Panel title="Actions performed">
-              <WorkActionsPerformed performed={performed} />
-            </Panel>
-
-            <Panel title="Run settings">
-              <WorkRunSettings run={run} host={host} />
-            </Panel>
-          </div>
+          >
+            {RAIL_GROUPS[phase].map((name) => (
+              <RailGroup key={name} title={groupTitle(name, phase)}>
+                {groups[name]}
+              </RailGroup>
+            ))}
+          </aside>
         </div>
       </div>
     </div>
   );
+}
+
+/**
+ * A link down the page, on the layout where down the page is a long way.
+ *
+ * `lg:hidden` lives here rather than at the call sites because it is the whole
+ * reason these exist: on a desktop both targets are already on screen, and a
+ * link to something visible is noise a reader has to rule out.
+ */
+function JumpLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      className="inline-flex rounded font-mono text-[10px] text-muted-foreground underline underline-offset-4 transition-colors duration-base ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {children}
+    </a>
+  );
+}
+
+/**
+ * A group's title as the tail of a sentence.
+ *
+ * The titles are written to stand alone as headings — "What it produced" — and
+ * "Go to What it produced" reads like a proper noun. Only the first character is
+ * touched, so a title that begins with a word which is capitalised in its own
+ * right would need a different treatment; none currently does.
+ */
+function uncapitalize(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
 /** The header + centred column used by the pre-content states. */
@@ -711,14 +1003,5 @@ function ThreadFrame({ children, onBack }: { children: React.ReactNode; onBack: 
         {children}
       </div>
     </div>
-  );
-}
-
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section>
-      <h2 className="mb-2.5 font-mono text-label text-muted-foreground">{title}</h2>
-      {children}
-    </section>
   );
 }
