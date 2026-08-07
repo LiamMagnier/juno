@@ -8,6 +8,7 @@ import {
   ChevronRight,
   CircleDashed,
   FileText,
+  Layers,
   Link2,
   Loader2,
   MessageSquare,
@@ -32,6 +33,12 @@ import {
   type Payload,
 } from "@/components/work/work-payload";
 import {
+  classifyCall,
+  summariseBatch,
+  type ActivityClass,
+  type BatchItem,
+} from "@/components/work/activity/activity-summary";
+import {
   actionLabel,
   formatDuration,
   toolPastLabel,
@@ -54,6 +61,16 @@ import { cn } from "@/lib/utils";
  * every tool call is paired — started with finished, on its call id — and each
  * row says what the call was for, where its data came from, whether it
  * succeeded and how long it took. A call still in flight ticks.
+ *
+ * A run of consecutive calls is then FOLDED into one line — "Ran 63 commands ·
+ * read 48 files" — and opens to those same rows. One row per call is right at
+ * six calls and ruinous at sixty: the sentences Juno wrote end up two screens
+ * apart, and the log wins over the narrative it was supposed to support. The
+ * counting lives in activity/activity-summary.ts; what stays here is the
+ * decision about which runs fold and which never do. A batch holding a
+ * failure, a refusal, a call that never reported back or a flagged result
+ * opens by itself, because a collapsed error is a run that looks like it
+ * worked.
  *
  * What is deliberately NOT here is a reasoning trace. No event kind carries
  * one: `WorkReport` in the runtime rules it out in as many words, and a
@@ -422,6 +439,14 @@ export interface ActivityEntry {
    */
   callId: string | null;
   tool: string | null;
+  /**
+   * Which tally this call joins when a run of calls is folded into one line.
+   *
+   * Decided here, where the payload is, rather than in the fold: `intent` and
+   * `tier` are the two most reliable signals and neither survives onto the
+   * entry. Null means the call is named in the summary rather than counted.
+   */
+  batch: ActivityClass | null;
   /** The plan step this fell under, when the executor named one. */
   step: string | null;
   title: string;
@@ -507,6 +532,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
         seq: event.seq,
         callId,
         tool: str(payload, "tool", "name"),
+        batch: classifyCall(payload),
         step,
         title: str(payload, "summary", "title") ?? toolPresentLabel(str(payload, "tool", "name")),
         detail: toolPurpose(payload),
@@ -534,6 +560,11 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
         started.state = state;
         started.tone = tone;
         started.icon = icon;
+        // The start had the intent and the tier and is the better witness, so
+        // it wins. This only fires when it had neither — a Mac call whose tool
+        // name no table knows, finishing with a provenance action that one
+        // does.
+        started.batch = started.batch ?? classifyCall(payload);
         // The executor's own measurement wins. The gap between the two rows'
         // timestamps is a second-best that also counts however long the events
         // took to be written and read back, so it is used only when the
@@ -551,6 +582,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
         seq: event.seq,
         callId,
         tool: str(payload, "tool", "name"),
+        batch: classifyCall(payload),
         step,
         title: described.title,
         detail: toolOutcome(payload, event.kind) ?? described.detail,
@@ -594,6 +626,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
         seq: event.seq,
         callId: null,
         tool: null,
+        batch: null,
         step: closing,
         title: `${status === "skipped" ? "Skipped" : "Could not finish"}: ${described.title}`,
         detail: described.detail,
@@ -614,6 +647,7 @@ export function deriveActivity(events: readonly ClientWorkEvent[]): ActivityEntr
       seq: event.seq,
       callId: null,
       tool: null,
+      batch: null,
       step,
       title: described.title,
       detail: described.detail,
@@ -768,9 +802,13 @@ export function WorkActivity({
             <p className="mb-1.5 font-mono text-[10px] text-muted-foreground/70">{group.step}</p>
           )}
           <ol className="relative space-y-2.5 border-l border-border/60 pl-4">
-            {group.entries.map((entry) => (
-              <ActivityRow key={entry.id} entry={entry} phase={phase} />
-            ))}
+            {foldBatches(group.entries).map((piece) =>
+              piece.kind === "row" ? (
+                <ActivityRow key={piece.entry.id} entry={piece.entry} phase={phase} />
+              ) : (
+                <ActivityBatch key={piece.entries[0].id} entries={piece.entries} phase={phase} />
+              )
+            )}
           </ol>
         </div>
       ))}
@@ -778,14 +816,215 @@ export function WorkActivity({
   );
 }
 
+// ---------------------------------------------------------------------------
+// A run of tool calls, folded
+// ---------------------------------------------------------------------------
+
+export type FeedPiece =
+  | { kind: "row"; entry: ActivityEntry }
+  | { kind: "batch"; entries: ActivityEntry[] };
+
+/**
+ * How many consecutive calls it takes before folding them is worth a click.
+ *
+ * Three, not two. A single call is obviously never folded — a disclosure
+ * hiding one row is a control that exists to waste a click. A PAIR is the
+ * interesting case, and it fails for the same reason once the control is
+ * counted: two rows are two lines, and the summary that would replace them is
+ * one line plus a chevron. Folding a pair buys nothing and costs the reader
+ * everything the two rows said.
+ */
+const FOLD_FLOOR = 3;
+
+/**
+ * Consecutive tool calls, gathered; everything else left exactly where it was.
+ *
+ * `state === null` is the discriminator and not a proxy for one: it is set on
+ * precisely the three kinds that are a tool call — started, finished, denied —
+ * and null on every kind that is prose or an event in its own right. So an
+ * assistant message, a question, a citation or a failed step BREAKS a run of
+ * calls, which is the whole point: the narration is what the folding exists to
+ * keep visible, and it can only do that if it stays between the folds.
+ */
+export function foldBatches(entries: readonly ActivityEntry[]): FeedPiece[] {
+  const pieces: FeedPiece[] = [];
+  let run: ActivityEntry[] = [];
+  const flush = () => {
+    if (run.length >= FOLD_FLOOR) pieces.push({ kind: "batch", entries: run });
+    else for (const entry of run) pieces.push({ kind: "row", entry });
+    run = [];
+  };
+  for (const entry of entries) {
+    if (entry.state === null) {
+      flush();
+      pieces.push({ kind: "row", entry });
+      continue;
+    }
+    run.push(entry);
+  }
+  flush();
+  return pieces;
+}
+
+/**
+ * A call left open on a task that is over.
+ *
+ * A run can end without a `run_finished` event — an expired lease is exactly
+ * that, and it is why `interrupted` exists as a status. So the phase gets the
+ * last word: a call still marked running on a settled task did not report
+ * back, no matter what the transcript failed to say.
+ */
+function isStranded(entry: ActivityEntry, phase: ActivityPhase): boolean {
+  return entry.state === "unreported" || (entry.state === "running" && phase === "settled");
+}
+
+function batchItem(entry: ActivityEntry, phase: ActivityPhase): BatchItem {
+  return {
+    batch: entry.batch,
+    // Only asked for when there is no class, so an unrecognised tool is named
+    // rather than swept into a tally. `toolPastLabel` falls back to sentence
+    // case rather than to a raw symbol, and to "Did something" when even the
+    // name is missing — which is the honest label for a call this build can
+    // say nothing else about.
+    label: entry.batch === null ? toolPastLabel(entry.tool) : null,
+    trouble: isStranded(entry, phase)
+      ? "unreported"
+      : entry.state === "failed"
+        ? "failed"
+        : entry.state === "refused"
+          ? "refused"
+          : null,
+    flagged: entry.warning !== null,
+    durationMs: entry.durationMs,
+  };
+}
+
+function ActivityBatch({
+  entries,
+  phase,
+}: {
+  entries: readonly ActivityEntry[];
+  phase: ActivityPhase;
+}) {
+  const summary = React.useMemo(
+    () => summariseBatch(entries.map((entry) => batchItem(entry, phase))),
+    [entries, phase]
+  );
+
+  /*
+   * Null until the reader has an opinion, and then theirs.
+   *
+   * Not a boolean seeded from `troubled`, because the batch at the end of a
+   * live run is still being written: a call that fails a moment from now has
+   * to be able to open the fold it landed in, and a `useState(false)` seeded
+   * once at mount cannot. Once the reader has clicked either way, their choice
+   * holds — a fold that reopened itself under someone who had just closed it
+   * would be worse than never opening at all.
+   */
+  const [choice, setChoice] = React.useState<boolean | null>(null);
+  const open = choice ?? summary.troubled;
+
+  /*
+   * What the fold as a whole looks like, decided once for the marker and the
+   * line so the two can never disagree.
+   *
+   * A failure outranks everything else because it is the reason the fold is
+   * open. Below that, `troubled` covers a refusal, a call that never reported
+   * back and a flagged result — all warnings rather than faults, and all
+   * already named in the line. A fold with nothing wrong in it is drawn as
+   * quietly as the feed allows: it is a summary of machinery, and the prose
+   * around it is what the reader came for.
+   */
+  const running = entries.some((entry) => entry.state === "running" && !isStranded(entry, phase));
+  const failed = entries.some((entry) => entry.state === "failed");
+  const tone = failed
+    ? TONE_CLASS.bad
+    : summary.troubled
+      ? TONE_CLASS.warning
+      : "text-muted-foreground";
+  const Icon = failed
+    ? AlertTriangle
+    : summary.troubled
+      ? CircleDashed
+      : running
+        ? Loader2
+        : Layers;
+
+  return (
+    <li className="relative">
+      <span
+        className="absolute -left-[21px] top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background"
+        aria-hidden="true"
+      >
+        <Icon
+          className={cn(
+            "h-3 w-3",
+            // The one place the marker departs from the line: a fold still
+            // filling up ticks, exactly as the running row inside it would.
+            // Collapsed, it is the only sign the run has not stalled.
+            !failed && !summary.troubled && running
+              ? "text-primary motion-safe:animate-spin"
+              : tone
+          )}
+        />
+      </span>
+
+      <button
+        type="button"
+        onClick={() => setChoice(!open)}
+        aria-expanded={open}
+        // The line is the button's text, so the accessible name has to say what
+        // pressing it does as well as what it is about — a control announced
+        // only as "Ran 63 commands" is one nobody knows is a control.
+        aria-label={`${open ? "Hide" : "Show"} these ${entries.length} steps: ${summary.line}`}
+        className="group flex w-full items-baseline gap-2 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <ChevronRight
+          className={cn(
+            "h-2.5 w-2.5 shrink-0 text-muted-foreground/60 transition-[transform,color] duration-base ease-out-soft group-hover:text-foreground",
+            open && "rotate-90"
+          )}
+          aria-hidden="true"
+        />
+        <span
+          className={cn(
+            "min-w-0 flex-1 text-[13px] leading-relaxed transition-colors duration-base ease-out-soft",
+            tone,
+            // Only the quiet line brightens on hover. A fold that is open
+            // because something failed is already carrying its tone's colour,
+            // and washing that to `foreground` under the pointer would take
+            // the warning off the one row that needed it.
+            !failed && !summary.troubled && "group-hover:text-foreground"
+          )}
+        >
+          {summary.line}
+        </span>
+        {/* Time spent inside these calls rather than time the batch took: two
+            overlapping calls — a sub-agent and the root agent — add up to more
+            than the clock did. It is left as a bare number for that reason,
+            with no verb claiming it is an elapsed span. */}
+        {summary.durationMs !== null && (
+          <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/80">
+            {formatDuration(summary.durationMs)}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <ol className="mt-2.5 space-y-2.5 border-l border-border/50 pl-4">
+          {entries.map((entry) => (
+            <ActivityRow key={entry.id} entry={entry} phase={phase} />
+          ))}
+        </ol>
+      )}
+    </li>
+  );
+}
+
 function ActivityRow({ entry, phase }: { entry: ActivityEntry; phase: ActivityPhase }) {
   const [open, setOpen] = React.useState(false);
   const Icon = entry.icon;
-  // A run can end without a `run_finished` event — an expired lease is exactly
-  // that, and it is why `interrupted` exists as a status. So the phase gets the
-  // last word: a call left open on a task that is over did not report back, no
-  // matter what the transcript failed to say.
-  const stranded = entry.state === "unreported" || (entry.state === "running" && phase === "settled");
+  const stranded = isStranded(entry, phase);
   const running = entry.state === "running" && !stranded;
 
   return (

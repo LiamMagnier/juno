@@ -534,6 +534,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Respects your plan, vision needs (images), and web search. Model and thinking for each answer still show on the receipt."
   },
   {
+    "id": "08d641af4250b4dc",
+    "source": "Reaches"
+  },
+  {
     "id": "090512d93fcc3c0d",
     "source": "Integrations"
   },
@@ -570,6 +574,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Run now"
   },
   {
+    "id": "09a785379844ff95",
+    "source": "A small sample first, so you can check the approach"
+  },
+  {
     "id": "09c068dd0c101194",
     "source": "Older Codex-tuned model."
   },
@@ -600,6 +608,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0abba441f16eff90",
     "source": "Horizontal"
+  },
+  {
+    "id": "0ac6b02c12536c34",
+    "source": "Use the recommended answers"
   },
   {
     "id": "0ada0c035439099c",
@@ -736,6 +748,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0e570ca6fabe24f9",
     "source": "Source"
+  },
+  {
+    "id": "0e6ca0b914d5393e",
+    "source": "Send it once it is ready"
   },
   {
     "id": "0e76960093379060",
@@ -900,6 +916,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "11f118aa1713db2e",
     "source": "Back to Macs"
+  },
+  {
+    "id": "11f52a8117694d07",
+    "source": "No — work only from what is in the task"
   },
   {
     "id": "11fa5fea8a1819e6",
@@ -1076,6 +1096,14 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "14bd0943016b9952",
     "source": "Invalid pinned"
+  },
+  {
+    "id": "14bf20a9281fa03a",
+    "source": "Other steps"
+  },
+  {
+    "id": "14c355f570f79772",
+    "source": "Tasks that work well"
   },
   {
     "id": "1505f40de62c4f26",
@@ -1606,6 +1634,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "People with the link see the conversation up to now — new messages stay private."
   },
   {
+    "id": "1f768d5fac72de2a",
+    "source": "Any age — whatever is most authoritative"
+  },
+  {
     "id": "1f7fd524f4064b60",
     "source": "The entity index cursor is malformed."
   },
@@ -1686,6 +1718,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": ". L'éditeur peut suspendre ou résilier un compte en cas de violation grave ou répétée des présentes, après notification lorsque cela est possible."
   },
   {
+    "id": "2150d8df37e48957",
+    "source": "Show all"
+  },
+  {
     "id": "2168d175f7ab2343",
     "source": "5. Paiement et facturation"
   },
@@ -1712,10 +1748,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "21d886b74bc1abe1",
     "source": "Previous version"
-  },
-  {
-    "id": "21dfc88f3a32dddb",
-    "source": "Files and sources"
   },
   {
     "id": "21e022b6805c3040",
@@ -1840,6 +1872,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "24f5bba781bbeeb7",
     "source": "transmis aux API des laboratoires d'IA correspondant aux modèles que vous sélectionnez"
+  },
+  {
+    "id": "24f95dce09509ddc",
+    "source": ", stops at $"
   },
   {
     "id": "25070cd932a7309a",
@@ -2694,6 +2730,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This permanently removes"
   },
   {
+    "id": "3579d1de91e7e03c",
+    "source": "minutes."
+  },
+  {
     "id": "357f9729ca190712",
     "source": "projects:sync"
   },
@@ -2892,6 +2932,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "39196850301996d6",
     "source": "Animations, tracks and keyframes"
+  },
+  {
+    "id": "3927acbccb40a53d",
+    "source": "Before it starts"
   },
   {
     "id": "392e3f583c259137",
@@ -3466,10 +3510,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "8. Sécurité"
   },
   {
-    "id": "44ef9c208f11dfd8",
-    "source": "Everything you have going is waiting on you, above."
-  },
-  {
     "id": "44f5e3fbec57be75",
     "source": "Comment"
   },
@@ -3626,8 +3666,8 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "On scroll into view"
   },
   {
-    "id": "483bd49023ae2bfb",
-    "source": "What happened"
+    "id": "483b5676fbece44a",
+    "source": "The last five years"
   },
   {
     "id": "485ac10ad2ebdc43",
@@ -3640,6 +3680,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4878eb5817a6ede7",
     "source": "Opening design…"
+  },
+  {
+    "id": "488f46032f2d1cc4",
+    "source": "Under way"
   },
   {
     "id": "48e6f00bc1d91905",
@@ -3946,6 +3990,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "GPT-5.4 Mini"
   },
   {
+    "id": "4ea073ed37472361",
+    "source": "Juno would decide this on its own. Its answer is already chosen."
+  },
+  {
     "id": "4ed480de13dfff86",
     "source": "Couldn’t load this Mac. Nothing has been changed by the attempt — it still has whatever permissions it had, and this page not loading has not taken any of them away."
   },
@@ -3960,6 +4008,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4f35f7ed49ec90b6",
     "source": "First run"
+  },
+  {
+    "id": "4f41189e809002df",
+    "source": "What this task could see and reach — the pages it read, and the skills and apps it was given."
   },
   {
     "id": "4f4c9bd1c28b894b",
@@ -4122,6 +4174,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "1 instruction waiting to be picked up"
   },
   {
+    "id": "5279650aa090480c",
+    "source": "Answers go into the task, where you can edit them."
+  },
+  {
     "id": "5294557442bbfebb",
     "source": "Image editor"
   },
@@ -4208,6 +4264,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "54c2743c16f0938b",
     "source": "Generation stopped before any output."
+  },
+  {
+    "id": "54c3f106142f8d2d",
+    "source": "Give Juno an errand with a finish line"
   },
   {
     "id": "54e6289e14c7b0e7",
@@ -6118,6 +6178,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No file provided."
   },
   {
+    "id": "7804f7a79a9eee32",
+    "source": "Finished"
+  },
+  {
     "id": "781e581aee6edac4",
     "source": "GPT-5.1 Codex"
   },
@@ -6136,6 +6200,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7863d1d0857268f1",
     "source": "Play in reverse"
+  },
+  {
+    "id": "787548acd1883bc9",
+    "source": "It plans the work, shows you every step as it goes, and asks first before anything it cannot undo."
   },
   {
     "id": "787cf8450f0b8d29",
@@ -6286,10 +6354,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Connected tools ready"
   },
   {
-    "id": "7b940d847536b182",
-    "source": "Recent tasks"
-  },
-  {
     "id": "7bbc36905270774e",
     "source": "Run details"
   },
@@ -6414,10 +6478,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "conversationId_required"
   },
   {
-    "id": "7e824ef78517f683",
-    "source": "Nothing is running right now."
-  },
-  {
     "id": "7e8b64d281f4401e",
     "source": "Pre-filter matched explicit child sexual abuse language."
   },
@@ -6472,10 +6532,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7f22ae6ab14e3934",
     "source": "The schedule cannot be saved while this trigger is on it. Remove it, and everything else you have set up here is kept."
-  },
-  {
-    "id": "7f32a0df4b10a6ff",
-    "source": "font-mono text-[10px] tabular-nums text-muted-foreground/60"
   },
   {
     "id": "7f40071ec4849bea",
@@ -6676,6 +6732,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "830f29012027c3ca",
     "source": "cannot ban an owner"
+  },
+  {
+    "id": "831d0f72d242b7d1",
+    "source": "Getting started"
   },
   {
     "id": "8335e4c92c40556a",
@@ -7262,6 +7322,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Pages"
   },
   {
+    "id": "904eedb4e7313ad6",
+    "source": "It stopped before producing a file."
+  },
+  {
     "id": "907ccb2ff91ca91a",
     "source": "Started. This run is extra — the schedule still fires when it was going to."
   },
@@ -7834,6 +7898,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Web search is available on a paid Juno plan."
   },
   {
+    "id": "9b01f503586a02cd",
+    "source": "Stops at"
+  },
+  {
     "id": "9b068269293ae3b3",
     "source": "Canvas editing stopped before any change was applied."
   },
@@ -7868,10 +7936,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9b7fb0c015e1915d",
     "source": "Ran with less than you asked for"
-  },
-  {
-    "id": "9b91e275a53ed06b",
-    "source": "What it produced"
   },
   {
     "id": "9b9a8d05a7ec353b",
@@ -8886,6 +8950,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Rejected"
   },
   {
+    "id": "aeabd97f747fd8cb",
+    "source": "Leave it as a draft for you to send"
+  },
+  {
     "id": "aeb531150e9146ac",
     "source": "Nothing to update"
   },
@@ -9618,10 +9686,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The meter runs the same math you see here — no opaque “message” units, no quiet throttling."
   },
   {
-    "id": "be9dc3d6d06e530f",
-    "source": "Nothing is running unattended — everything you have going is waiting on you, above."
-  },
-  {
     "id": "beb6bef23bf2d599",
     "source": "WEEKLY"
   },
@@ -9760,6 +9824,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c1d9ef078cdb6575",
     "source": "Too many voice sessions. Try again later."
+  },
+  {
+    "id": "c1f62a712b9da463",
+    "source": "Questions before this task starts"
   },
   {
     "id": "c1f88e9d6c4145cf",
@@ -9912,6 +9980,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c49e87cc3b68df2a",
     "source": "Couldn’t load your projects"
+  },
+  {
+    "id": "c49f4e14c4d3e9c3",
+    "source": "Clarifications:"
   },
   {
     "id": "c49fea7425fa7f86",
@@ -10306,10 +10378,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Baseline"
   },
   {
-    "id": "cca8d533c8d58553",
-    "source": "No tasks yet"
-  },
-  {
     "id": "ccc0e8da6b80e08e",
     "source": "written"
   },
@@ -10376,10 +10444,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cdb9acda3abe6c16",
     "source": "Project cover image updated."
-  },
-  {
-    "id": "cdbb582d0b32f4f4",
-    "source": "Nothing has finished yet."
   },
   {
     "id": "cdbe5536615bae42",
@@ -10528,6 +10592,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d04fc7d7e19702f8",
     "source": "Web Search"
+  },
+  {
+    "id": "d06981ca7c17d8a1",
+    "source": "Your tasks"
   },
   {
     "id": "d078bf7520a710d0",
@@ -10782,6 +10850,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Attach"
   },
   {
+    "id": "d4537752282341cc",
+    "source": "No connected apps. It works from the task, its project and any files attached to it."
+  },
+  {
     "id": "d466c22f18d776a6",
     "source": "chat.liams.dev"
   },
@@ -10844,6 +10916,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d5af0924afee92cc",
     "source": "Couldn’t load your Code projects."
+  },
+  {
+    "id": "d5b18ea57c182016",
+    "source": "Dismiss these questions"
   },
   {
     "id": "d5c0d99686202c1a",
@@ -10920,6 +10996,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d6eafe8235910042",
     "source": "Download"
+  },
+  {
+    "id": "d70604e843046137",
+    "source": "Recommended"
   },
   {
     "id": "d70b9e24bca26b40",
@@ -11136,10 +11216,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dacf15163a11c489",
     "source": "Outside"
-  },
-  {
-    "id": "dae5a026278c4aaf",
-    "source": "Ask for something with a finish line — a folder tidied, a spreadsheet reconciled, a weekly summary written. Juno plans it, shows you every step, and asks before anything it cannot undo."
   },
   {
     "id": "daee7606b339f3c3",
@@ -11386,6 +11462,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Add to project"
   },
   {
+    "id": "df1510cd79d0d19b",
+    "source": "As much as fits, then say what is left"
+  },
+  {
     "id": "df9b882aef17c7e0",
     "source": "Unsaved changes · saves as v"
   },
@@ -11464,10 +11544,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e0b9c93df9393d3d",
     "source": "Apple Mail"
-  },
-  {
-    "id": "e0bc818e8d8a9909",
-    "source": "font-mono text-[11px] tracking-[0.1em]"
   },
   {
     "id": "e0c197435e1732fb",
@@ -11564,6 +11640,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e2861894f065ab75",
     "source": "Instant"
+  },
+  {
+    "id": "e294391b87fd2a20",
+    "source": "Use these answers"
   },
   {
     "id": "e2cb995c13fcddcb",
@@ -11762,6 +11842,14 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Run every one"
   },
   {
+    "id": "e624b803dd2e5424",
+    "source": "This task finished without producing a file."
+  },
+  {
+    "id": "e651e9131900288b",
+    "source": "Juno’s cloud. Nothing on your Mac is read or touched."
+  },
+  {
     "id": "e654358ce1366f23",
     "source": "This Mac's version of Juno cannot carry out that instruction."
   },
@@ -11840,6 +11928,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e7b89d41bbc32cf6",
     "source": "Legacy alias routing to V4 Flash (thinking)."
+  },
+  {
+    "id": "e7ce99764a2debd2",
+    "source": "Outputs"
   },
   {
     "id": "e7cf3ef4f17c3999",
@@ -11938,10 +12030,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "unreported"
   },
   {
-    "id": "e9e6c80dcacfbc0f",
-    "source": "Skills and apps"
-  },
-  {
     "id": "e9fbc2c576307569",
     "source": "Agentic coding model superseded by Qwen3.7 Plus."
   },
@@ -11992,6 +12080,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "eaa1346b934ff5a4",
     "source": "Previous GLM flagship."
+  },
+  {
+    "id": "eaa76f28062c001a",
+    "source": "The last 12 months"
   },
   {
     "id": "eab0cd8fdf9bccec",
@@ -12226,10 +12318,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Say what should happen, when it should start, and what Juno may do about it while you are not there."
   },
   {
-    "id": "ef15bc5fc7adce2d",
-    "source": "Where it got to"
-  },
-  {
     "id": "ef250ca533330279",
     "source": "Space around"
   },
@@ -12416,6 +12504,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f31ca38a3538dc2e",
     "source": "Qwen Flash"
+  },
+  {
+    "id": "f32a2c334c3b228f",
+    "source": "Parked"
   },
   {
     "id": "f337e339b50ed8bf",
@@ -12632,6 +12724,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f7701c10cf7477f5",
     "source": "A schedule pinned to a Mac has to say which one. Left open, a 07:00 fire would land on whichever machine happened to be awake."
+  },
+  {
+    "id": "f77c38def3b24d49",
+    "source": ", reaches"
   },
   {
     "id": "f7828fec9b959260",

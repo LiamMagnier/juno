@@ -15,30 +15,27 @@ import type {
   ClientWorkSession,
 } from "@/lib/work/serializers";
 import {
-  WorkActionsPerformed,
   WorkLiveMeter,
   WorkPlannedSettings,
-  WorkReferences,
   WorkRunSettings,
   deriveArtifacts,
   deriveReferences,
 } from "@/components/work/work-detail-panels";
 import {
-  RAIL_GROUPS,
+  RAIL_ORDER,
   RAIL_POLICY,
-  RailGroup,
-  RailPanel,
+  RailDisclosure,
+  RailSection,
   WorkRunAnnouncer,
   deriveRunPhase,
-  groupTitle,
-  panelProps,
-  panelVisible,
-  type GroupName,
+  sectionTitle,
+  type RailSectionName,
 } from "@/components/work/detail/work-rail";
 import { WorkAttempts } from "@/components/work/detail/work-attempts";
+import { WorkContextSection } from "@/components/work/detail/work-context";
 import { WorkOutcomeDigest } from "@/components/work/detail/work-outcome";
-import { WorkDocuments } from "@/components/work/work-documents";
-import { WorkToolbox } from "@/components/work/work-toolbox";
+import { WorkOutputsSection } from "@/components/work/detail/work-outputs";
+import { WorkProgressChecklist, planTally } from "@/components/work/detail/work-progress";
 import {
   WorkConversation,
   deriveTurns,
@@ -55,7 +52,6 @@ import {
 import {
   WorkActivity,
   WorkCurrentAction,
-  WorkPlan,
   deriveActivity,
   deriveCurrentAction,
   derivePerformedActions,
@@ -110,11 +106,21 @@ import {
  *
  * ── The rail ──────────────────────────────────────────────────────────────
  *
- * The right column is not a list of panels. It is four groups whose order and
- * whose weight follow the run's state, and a panel is in it only if it has
- * something to say: `RAIL_POLICY` in `detail/work-rail.tsx` is that judgement,
- * written as a table so the whole hierarchy can be read in one place. This page
- * supplies the contents and the counts; it does not decide the ranking.
+ * The right column is three questions and a footnote, always in this order:
+ * Progress — how far did it get; Outputs — what did it make; Context — what
+ * could it see and reach; How it ran — the model, the target and the budget
+ * bars, which are reference rather than narrative and sit last and closed.
+ *
+ * The order does not vary. Only openness does, and `RAIL_POLICY` in
+ * `detail/work-rail.tsx` is that judgement, written as a table so the whole
+ * hierarchy can be read in one place. This page supplies the contents and the
+ * counts; it does not decide the ranking.
+ *
+ * Everything subordinate — the activity feed, the decided approvals, the
+ * actions that changed something outside Juno — is a disclosure inside the
+ * section it belongs to rather than a panel beside it. That is the whole shape
+ * of the rewrite: the eight sibling panels this replaced were eight true labels
+ * and not one of them was a question anybody arrives with.
  *
  * Anything blocking on a person is lifted out of that rail entirely and rendered
  * as its own grid item — pinned above the reference panels on a desktop, and
@@ -527,155 +533,154 @@ export default function WorkThreadPage() {
   const policy = RAIL_POLICY[phase];
 
   /*
-   * Run settings is quiet almost everywhere, and must not be quiet here.
+   * "How it ran" is closed almost everywhere, and must not be closed here.
    *
-   * That panel is where a run's degradations are printed — "your Mac was
+   * That section is where a run's degradations are printed — "your Mac was
    * asleep, so the local half was skipped", "the model you asked for is not in
    * your plan". Those are the sentences that explain a disappointing result, and
-   * a reader who has to find and open a collapsed panel to reach them will
+   * a reader who has to find and open a collapsed section to reach them will
    * instead conclude the product simply did the wrong thing.
    */
-  const settingsPolicy =
-    run !== null && run.degradation.length > 0
-      ? { ...policy.settings, tone: "standard" as const, open: true }
-      : policy.settings;
+  const setupOpen = policy.setup.open || (run !== null && run.degradation.length > 0);
 
-  const planPanel = panelVisible(policy.plan, plan.length > 0 || currentAction !== null) && (
-    <RailPanel key="plan" title="Plan" {...panelProps(policy.plan, plan.length)}>
-      <div className="space-y-3">
+  /*
+   * The two halves of the reference list go to different sections, and the
+   * direction each entry already carries is what splits them.
+   *
+   * A page the run read is context — it is part of the answer to "what could
+   * this see". A file the run wrote is an output. They lived in one panel called
+   * "Files and sources" because they arrive on the same events, which is a fact
+   * about the stream and not about the reader.
+   */
+  const readSources = references.filter((reference) => reference.direction === "read");
+  const writtenFiles = references.filter((reference) => reference.direction === "written");
+  const tally = planTally(plan);
+
+  const sections: Record<RailSectionName, React.ReactNode> = {
+    progress: policy.progress.shown && (
+      <RailSection
+        key="progress"
+        name="progress"
+        title={sectionTitle("progress", phase)}
+        // The tally rather than a percentage. "4/7" is a position in a list
+        // somebody can see; "57%" is a number they have to convert back.
+        meta={tally.total > 0 ? `${tally.done}/${tally.total}` : null}
+        defaultOpen={policy.progress.open}
+      >
+        {/* On a failure the digest leads, because how far it got and whether it
+            left anything behind are the two things somebody decides "Try again"
+            on, and the checklist below is the detail of the first of them. */}
+        {phase === "failed" && run !== null && (
+          <WorkOutcomeDigest run={run} plan={plan} performed={performed} />
+        )}
         <WorkCurrentAction action={currentAction} />
-        <WorkPlan steps={plan} />
-      </div>
-    </RailPanel>
-  );
+        <WorkProgressChecklist steps={plan} />
 
-  // Not "Progress". Progress is a percentage; this is the record of what Juno
-  // actually did, step by step, and it is the answer to the question the whole
-  // page exists for.
-  const activityPanel = panelVisible(policy.activity, activity.length > 0) && (
-    <RailPanel key="activity" title="Activity" {...panelProps(policy.activity, activity.length)}>
-      {/* Marked busy rather than live. The feed gains a row a second while a run
-          is going, and announcing each one would make the page unusable for the
-          reader who most needs it — `WorkRunAnnouncer` in the header carries the
-          state changes instead. `aria-busy` says the region is still filling
-          without reading it aloud. */}
-      <div aria-busy={live}>
-        <WorkActivity entries={activity} phase={activityPhase} />
-      </div>
-    </RailPanel>
-  );
+        {/*
+         * The feed, subordinate to the plan rather than beside it.
+         *
+         * It opens by default only when there is no plan to be subordinate to.
+         * A run that never wrote one still did the work, and on that run the
+         * feed is the only record of it — leaving it collapsed would make
+         * Progress an empty heading over a task that ran for ten minutes.
+         */}
+        <RailDisclosure
+          storageKey="progress.activity"
+          title="Activity"
+          meta={activity.length > 0 ? String(activity.length) : null}
+          defaultOpen={plan.length === 0}
+        >
+          {/* Marked busy rather than live. The feed gains a row a second while a
+              run is going, and announcing each one would make the page unusable
+              for the reader who most needs it — `WorkRunAnnouncer` in the header
+              carries the state changes instead. `aria-busy` says the region is
+              still filling without reading it aloud. */}
+          <div aria-busy={live}>
+            <WorkActivity entries={activity} phase={activityPhase} />
+          </div>
+        </RailDisclosure>
 
-  const approvalsPanel = panelVisible(policy.approvals, decidedApprovals.length > 0) && (
-    <RailPanel
-      key="approvals"
-      title="Approvals"
-      {...panelProps(policy.approvals, decidedApprovals.length)}
-    >
-      <WorkApprovals approvals={decidedApprovals} busyId={busyApprovalId} onDecide={decide} />
-    </RailPanel>
-  );
+        {decidedApprovals.length > 0 && (
+          <RailDisclosure
+            storageKey="progress.approvals"
+            title="Approvals"
+            meta={String(decidedApprovals.length)}
+          >
+            <WorkApprovals approvals={decidedApprovals} busyId={busyApprovalId} onDecide={decide} />
+          </RailDisclosure>
+        )}
+      </RailSection>
+    ),
 
-  const referencesPanel = panelVisible(policy.references, references.length > 0) && (
-    <RailPanel
-      key="references"
-      title="Files and sources"
-      {...panelProps(policy.references, references.length)}
-    >
-      <WorkReferences references={references} />
-    </RailPanel>
-  );
+    outputs: policy.outputs.shown && (
+      <WorkOutputsSection
+        key="outputs"
+        sessionId={session.id}
+        phase={phase}
+        defaultOpen={policy.outputs.open}
+        artifacts={artifacts}
+        written={writtenFiles}
+        performed={performed}
+        // The page's only evidence that documents may exist which this attempt's
+        // stream knows nothing about. See the note in work-outputs.tsx.
+        hasEarlierAttempts={run !== null && run.attempt > 1}
+      />
+    ),
 
-  // Documents and the toolbox are the two panels whose emptiness this page
-  // cannot know — both read their own endpoint, and the artifact list covers the
-  // whole session rather than this attempt, so an empty event-derived list is no
-  // evidence there is nothing to show. They are always rendered, and the policy
-  // decides whether that costs a collapsed row or an open panel.
-  const documentsPanel = panelVisible(policy.documents, true) && (
-    <RailPanel
-      key="documents"
-      title="Documents"
-      {...panelProps(policy.documents, artifacts.length)}
-    >
-      <WorkDocuments sessionId={session.id} fromEvents={artifacts} />
-    </RailPanel>
-  );
+    context: policy.context.shown && (
+      <WorkContextSection key="context" read={readSources} defaultOpen={policy.context.open} />
+    ),
 
-  const performedPanel = panelVisible(
-    policy.performed,
-    performed.actions.length > 0 || performed.unclassified > 0
-  ) && (
-    <RailPanel
-      key="performed"
-      title="Actions performed"
-      {...panelProps(policy.performed, performed.actions.length)}
-    >
-      <WorkActionsPerformed performed={performed} />
-    </RailPanel>
-  );
+    setup: policy.setup.shown && (
+      <RailSection
+        key="setup"
+        name="setup"
+        title={sectionTitle("setup", phase)}
+        defaultOpen={setupOpen}
+      >
+        {/* An attempt history exists only once there has been more than one
+            attempt. On a first run this would be a heading over a single row the
+            reader is already looking at.
 
-  const toolboxPanel = panelVisible(policy.toolbox, true) && (
-    <RailPanel key="toolbox" title="Skills and apps" {...panelProps(policy.toolbox)}>
-      <WorkToolbox />
-    </RailPanel>
-  );
-
-  // An attempt history exists only once there has been more than one attempt.
-  // On a first run the panel would be a heading over a single row the reader is
-  // already looking at.
-  //
-  // Titled "Attempts" rather than "Earlier attempts" because the attempt on
-  // screen is in the list too, marked rather than omitted — a comparison with a
-  // gap where the thing being compared should be is not a comparison.
-  const attemptsPanel = panelVisible(policy.attempts, run !== null && run.attempt > 1) &&
-    run !== null && (
-      <RailPanel key="attempts" title="Attempts" {...panelProps(policy.attempts, run.attempt)}>
-        <WorkAttempts sessionId={session.id} current={run} />
-      </RailPanel>
-    );
-
-  const settingsPanel = panelVisible(settingsPolicy, true) && (
-    <RailPanel
-      key="settings"
-      title={run === null ? "Settings" : "Run settings"}
-      {...panelProps(settingsPolicy)}
-    >
-      {run === null ? (
-        // A draft has no run to describe, and saying "nothing to describe yet"
-        // and then starting the task on settings the reader was never shown is
-        // how somebody discovers their choice of Mac was ignored by watching the
-        // cloud do the work.
-        <WorkPlannedSettings session={session} hosts={hosts} />
-      ) : (
-        <WorkRunSettings run={run} host={host} />
-      )}
-    </RailPanel>
-  );
-
-  const outcomePanel = phase === "failed" && run !== null && (
-    <RailPanel key="outcome" title="Where it got to" tone="primary">
-      <WorkOutcomeDigest run={run} plan={plan} performed={performed} />
-    </RailPanel>
-  );
-
-  const groups: Record<GroupName, React.ReactNode[]> = {
-    outcome: [outcomePanel],
-    progress: [planPanel, activityPanel, approvalsPanel],
-    produced: [referencesPanel, documentsPanel, performedPanel],
-    setup: [attemptsPanel, settingsPanel, toolboxPanel],
+            Titled "Attempts" rather than "Earlier attempts" because the attempt
+            on screen is in the list too, marked rather than omitted — a
+            comparison with a gap where the thing being compared should be is not
+            a comparison. */}
+        {run !== null && run.attempt > 1 && (
+          <RailDisclosure
+            storageKey="setup.attempts"
+            title="Attempts"
+            meta={String(run.attempt)}
+            defaultOpen
+          >
+            <WorkAttempts sessionId={session.id} current={run} />
+          </RailDisclosure>
+        )}
+        {run === null ? (
+          // A draft has no run to describe, and saying "nothing to describe yet"
+          // and then starting the task on settings the reader was never shown is
+          // how somebody discovers their choice of Mac was ignored by watching
+          // the cloud do the work.
+          <WorkPlannedSettings session={session} hosts={hosts} />
+        ) : (
+          <WorkRunSettings run={run} host={host} />
+        )}
+      </RailSection>
+    ),
   };
 
   /*
    * What the rail leads with, which on a phone is also what it is called.
    *
-   * Every panel above is either an element or `false`, so this finds the first
-   * group that will genuinely render rather than the first one listed — a link
-   * promising "what it produced" that lands on "how it ran" because the produced
-   * group came out empty is a worse link than none.
+   * Every section above is either an element or `false`, so this finds the first
+   * one that will genuinely render rather than the first one listed — a link
+   * promising "progress" that lands on "how it will run" because a draft has no
+   * progress to show is a worse link than none.
    *
    * It doubles as the guard for the jump link itself: null means the rail
    * rendered nothing at all, and there is nothing to jump to.
    */
-  const railLead = RAIL_GROUPS[phase].find((name) => groups[name].some(Boolean)) ?? null;
+  const railLead = RAIL_ORDER.find((name) => Boolean(sections[name])) ?? null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -842,7 +847,7 @@ export default function WorkThreadPage() {
                 {needsYou && <JumpLink href="#work-needs-you">Go to what needs you</JumpLink>}
                 {railLead !== null && (
                   <JumpLink href="#work-rail">
-                    Go to {uncapitalize(groupTitle(railLead, phase))}
+                    Go to {uncapitalize(sectionTitle(railLead, phase))}
                   </JumpLink>
                 )}
               </div>
@@ -931,9 +936,9 @@ export default function WorkThreadPage() {
             />
           </div>
 
-          {/* The rail proper. Its groups and their order come from `RAIL_GROUPS`,
-              and a group whose every panel was omitted renders nothing at all —
-              no heading, no rule, no apology. */}
+          {/* The rail proper. Its four sections are always in `RAIL_ORDER`, and a
+              section this phase has no use for renders nothing at all — no
+              heading, no rule, no apology. */}
           <aside
             id="work-rail"
             // Focusable only by the jump link above, never by tabbing: a landmark
@@ -947,11 +952,7 @@ export default function WorkThreadPage() {
               !needsYou && "lg:pt-6"
             )}
           >
-            {RAIL_GROUPS[phase].map((name) => (
-              <RailGroup key={name} title={groupTitle(name, phase)}>
-                {groups[name]}
-              </RailGroup>
-            ))}
+            {RAIL_ORDER.map((name) => sections[name])}
           </aside>
         </div>
       </div>
@@ -978,10 +979,10 @@ function JumpLink({ href, children }: { href: string; children: React.ReactNode 
 }
 
 /**
- * A group's title as the tail of a sentence.
+ * A section's title as the tail of a sentence.
  *
- * The titles are written to stand alone as headings — "What it produced" — and
- * "Go to What it produced" reads like a proper noun. Only the first character is
+ * The titles are written to stand alone as headings — "How it will run" — and
+ * "Go to How it will run" reads like a proper noun. Only the first character is
  * touched, so a title that begins with a word which is capitalised in its own
  * right would need a different treatment; none currently does.
  */
