@@ -376,7 +376,7 @@ struct DesktopConnectionsScreen: View {
         // is the unsatisfiable ask that makes a split view oversize its window.
         .padding(JunoSpace.regular)
         .frame(minHeight: DesktopConnectorGrid.cardMinimumHeight, alignment: .top)
-        .junoCard(cornerRadius: JunoCornerRadius.card)
+        .junoCard(cornerRadius: JunoRadius.card)
         .contextMenu { cardMenu(connector, state: cardState) }
         .accessibilityElement(children: .contain)
     }

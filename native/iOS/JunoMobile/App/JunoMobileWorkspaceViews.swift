@@ -1303,11 +1303,11 @@ struct JunoMobileArtifactDetail: View {
                 .id("\(artifact.id)#\(version.version)#\(designReloadToken)")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(
-                    RoundedRectangle(cornerRadius: JunoCornerRadius.card, style: .continuous)
+                    RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                         .fill(Color.junoSurface)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: JunoCornerRadius.card, style: .continuous)
+                    RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                         .strokeBorder(Color.junoHairline, lineWidth: 1)
                 )
                 .padding(.horizontal, close == nil ? 16 : 12)

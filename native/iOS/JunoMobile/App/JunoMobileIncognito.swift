@@ -354,10 +354,10 @@ private struct JunoMobileIncognitoTurnRow: View {
     @State private var rowWidth: CGFloat = 0
 
     private static let bubble = UnevenRoundedRectangle(
-        topLeadingRadius: JunoCornerRadius.message,
-        bottomLeadingRadius: JunoCornerRadius.message,
+        topLeadingRadius: JunoRadius.message,
+        bottomLeadingRadius: JunoRadius.message,
         bottomTrailingRadius: 6,
-        topTrailingRadius: JunoCornerRadius.message,
+        topTrailingRadius: JunoRadius.message,
         style: .continuous
     )
 

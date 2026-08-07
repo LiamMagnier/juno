@@ -504,7 +504,7 @@ private struct JunoDesktopSignInView: View {
             }
         }
         .padding(JunoSpace.section)
-        .junoCard(cornerRadius: JunoCornerRadius.card)
+        .junoCard(cornerRadius: JunoRadius.card)
     }
 
     private var credentialFields: some View {

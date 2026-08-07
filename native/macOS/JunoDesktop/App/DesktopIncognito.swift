@@ -132,11 +132,11 @@ struct DesktopIncognitoChat: View {
                     .padding(.horizontal, JunoSpace.cozy)
                     .padding(.vertical, JunoSpace.snug + 1)
                     .background(
-                        RoundedRectangle(cornerRadius: JunoCornerRadius.message, style: .continuous)
+                        RoundedRectangle(cornerRadius: JunoRadius.message, style: .continuous)
                             .fill(Color.junoRaised)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: JunoCornerRadius.message, style: .continuous)
+                        RoundedRectangle(cornerRadius: JunoRadius.message, style: .continuous)
                             .strokeBorder(Color.junoHairline)
                     )
             }
@@ -211,11 +211,11 @@ struct DesktopIncognitoChat: View {
             }
             .padding(JunoSpace.cozy)
             .background(
-                RoundedRectangle(cornerRadius: JunoCornerRadius.composer, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
                     .fill(Color.junoRaised)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: JunoCornerRadius.composer, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
                     .strokeBorder(Color.junoHairline)
             )
 

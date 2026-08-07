@@ -1435,10 +1435,10 @@ private struct JunoMobileMessageRow: View {
     /// `rounded-2xl rounded-br-md`: one clipped corner on the trailing-bottom
     /// edge. Uniform corners make a card; the notch is what makes it a remark.
     private static let bubbleShape = UnevenRoundedRectangle(
-        topLeadingRadius: JunoCornerRadius.message,
-        bottomLeadingRadius: JunoCornerRadius.message,
+        topLeadingRadius: JunoRadius.message,
+        bottomLeadingRadius: JunoRadius.message,
         bottomTrailingRadius: 6,
-        topTrailingRadius: JunoCornerRadius.message,
+        topTrailingRadius: JunoRadius.message,
         style: .continuous
     )
 
@@ -1797,11 +1797,11 @@ private struct JunoMobileArtifactInlineCard: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: JunoCornerRadius.card, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                 .fill(Color.junoSurface)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: JunoCornerRadius.card, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                 .strokeBorder(Color.junoHairline, lineWidth: 1)
         )
         .padding(.vertical, 4)

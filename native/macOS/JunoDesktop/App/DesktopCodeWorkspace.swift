@@ -1862,7 +1862,7 @@ private struct DesktopCodeRemoteCanvas: View {
             }
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.snug)
-            .junoFloatingChrome(cornerRadius: CGFloat(JunoCornerRadius.composer))
+            .junoFloatingChrome(cornerRadius: CGFloat(JunoRadius.composer))
         }
     }
 
@@ -1940,11 +1940,11 @@ private struct DesktopCodeRemoteCanvas: View {
         .padding(.horizontal, JunoSpace.snug)
         .padding(.vertical, JunoSpace.snug)
         .background(
-            RoundedRectangle(cornerRadius: CGFloat(JunoCornerRadius.control), style: .continuous)
+            RoundedRectangle(cornerRadius: CGFloat(JunoRadius.row), style: .continuous)
                 .fill(Color.primary.opacity(0.035))
         )
         .overlay {
-            RoundedRectangle(cornerRadius: CGFloat(JunoCornerRadius.control), style: .continuous)
+            RoundedRectangle(cornerRadius: CGFloat(JunoRadius.row), style: .continuous)
                 .stroke(presentation.tint.opacity(0.14), lineWidth: 0.7)
         }
     }
@@ -1967,7 +1967,7 @@ private struct DesktopCodeRemoteCanvas: View {
         .padding(.horizontal, JunoSpace.snug)
         .padding(.vertical, JunoSpace.snug)
         .background(
-            RoundedRectangle(cornerRadius: CGFloat(JunoCornerRadius.control), style: .continuous)
+            RoundedRectangle(cornerRadius: CGFloat(JunoRadius.row), style: .continuous)
                 .fill(Color.junoDanger.opacity(0.08))
         )
     }

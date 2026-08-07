@@ -1417,10 +1417,10 @@ private struct DesktopMessageRow: View {
     /// `rounded-2xl rounded-br-md`: one clipped corner on the trailing-bottom
     /// edge. Uniform corners make a card; the notch is what makes it a remark.
     private static let bubbleShape = UnevenRoundedRectangle(
-        topLeadingRadius: JunoCornerRadius.message,
-        bottomLeadingRadius: JunoCornerRadius.message,
+        topLeadingRadius: JunoRadius.message,
+        bottomLeadingRadius: JunoRadius.message,
         bottomTrailingRadius: JunoRadius.control,
-        topTrailingRadius: JunoCornerRadius.message,
+        topTrailingRadius: JunoRadius.message,
         style: .continuous
     )
 
@@ -1758,7 +1758,7 @@ private struct DesktopInlineArtifactCard: View {
                     .frame(width: 32, height: 32)
                     .background(
                         RoundedRectangle(
-                            cornerRadius: JunoCornerRadius.compactControl,
+                            cornerRadius: JunoRadius.row,
                             style: .continuous
                         )
                         .fill(Color.junoMuted)
@@ -1794,7 +1794,7 @@ private struct DesktopInlineArtifactCard: View {
         }
         .buttonStyle(.plain)
         .disabled(open == nil)
-        .junoCard(cornerRadius: JunoCornerRadius.card)
+        .junoCard(cornerRadius: JunoRadius.card)
         .accessibilityLabel(
             artifact.streaming
                 ? "Writing artifact \(artifact.title)"
@@ -1890,7 +1890,7 @@ private struct DesktopMessageSources: View {
         // The radius exceeds half the pill's height, so it resolves to a capsule —
         // which is what makes it read as a control rather than as a small card,
         // exactly as the web's `rounded-full` pill does.
-        .junoCard(cornerRadius: JunoCornerRadius.message)
+        .junoCard(cornerRadius: JunoRadius.message)
         .accessibilityLabel("Sources, \(sources.count)")
         .accessibilityValue(expanded ? "Expanded" : "Collapsed")
     }
@@ -2312,7 +2312,7 @@ struct DesktopComposer: View {
         // treatment stroked a hairline border over the glass, which flattened
         // the rim's light scatter — the thing that makes glass read as having
         // thickness — back into a translucent rounded rectangle.
-        .junoFloatingChrome(cornerRadius: JunoCornerRadius.composer)
+        .junoFloatingChrome(cornerRadius: JunoRadius.composer)
         .padding(.horizontal, DesktopChatMeasure.gutter)
         .padding(.bottom, JunoSpace.tight)
         .fileImporter(
@@ -2522,7 +2522,7 @@ struct DesktopComposer: View {
         .padding(JunoSpace.snug)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
                 .fill(Color.junoMuted.opacity(0.6))
         )
         // Return sends from here too: the card *is* the draft, and a reader who

@@ -186,7 +186,7 @@ struct JunoMobileThoughtProcessRow: View {
             }
             .frame(minHeight: 48)
             .padding(.horizontal, 8)
-            .contentShape(RoundedRectangle(cornerRadius: JunoCornerRadius.row, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
         }
         .buttonStyle(JunoMobileThoughtRowStyle())
         // The press wash bleeds past the transcript's own inset, as the web's
@@ -217,7 +217,7 @@ private struct JunoMobileThoughtRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(
-                RoundedRectangle(cornerRadius: JunoCornerRadius.row, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
                     .fill(Color.junoMuted.opacity(configuration.isPressed ? 0.9 : 0))
             )
             .animation(JunoMotion.fast, value: configuration.isPressed)
