@@ -1,6 +1,22 @@
 // swift-tools-version: 6.0
 
+import Foundation
 import PackageDescription
+
+// Keep local compatibility copies out of the target when they exist, but do
+// not emit SwiftPM warnings on a clean CI checkout where those copies are
+// intentionally absent.
+let packageDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+func existingExcludes(_ paths: [String], relativeTo targetDirectory: String) -> [String] {
+    let directory = packageDirectory.appendingPathComponent(targetDirectory)
+    return paths.filter { directory.appendingPathComponent($0).pathExists }
+}
+
+private extension URL {
+    var pathExists: Bool {
+        FileManager.default.fileExists(atPath: path)
+    }
+}
 
 let package = Package(
     name: "JunoCode",
@@ -26,12 +42,12 @@ let package = Package(
         .target(
             name: "JunoCodeLocal",
             dependencies: ["JunoCodeCore"],
-            exclude: [
+            exclude: existingExcludes([
                 "DevServerCommandDiscovery 2.swift",
                 "DevServerService 2.swift",
                 "DevServerURLDetector 2.swift",
                 "WorktreeManager 2.swift",
-            ]
+            ], relativeTo: "Sources/JunoCodeLocal")
         ),
         // Depends on Core only, for SecretRedactor — build logs routinely carry
         // tokens, and they are redacted before they reach the UI or the model.
@@ -39,11 +55,11 @@ let package = Package(
         .target(
             name: "JunoCodeRuntime",
             dependencies: ["JunoCodeCore"],
-            exclude: [
+            exclude: existingExcludes([
                 "Tools/ComputerUseTools 2.swift",
                 "Tools/DelegateTaskTool 2.swift",
                 "Tools/UpdateGoalTool 2.swift",
-            ]
+            ], relativeTo: "Sources/JunoCodeRuntime")
         ),
         .target(
             name: "JunoCodeUI",
@@ -63,7 +79,7 @@ let package = Package(
             // below now uses the same `CodeSessionCanvas` as the desktop shell;
             // `AgentCanvasView` is an older, self-contained surface that also
             // declares copies of shared status/approval views.
-            exclude: [
+            exclude: existingExcludes([
                 "Models/CodeAttachment 2.swift",
                 "Models/CodeDraftModel 2.swift",
                 "Models/CodeModelCatalog 2.swift",
@@ -83,7 +99,7 @@ let package = Package(
                 "Views/SlashCommandMenu 2.swift",
                 "Views/StatusChip 2.swift",
                 "Views/AgentCanvasView.swift",
-            ]
+            ], relativeTo: "Sources/JunoCodeUI")
         ),
         .target(
             name: "JunoCodeBridge",
@@ -97,12 +113,12 @@ let package = Package(
                 .product(name: "JunoSync", package: "JunoNativeKit"),
                 .product(name: "JunoChatKit", package: "JunoNativeKit"),
             ],
-            exclude: ["CodeThinkingWire 2.swift"]
+            exclude: existingExcludes(["CodeThinkingWire 2.swift"], relativeTo: "Sources/JunoCodeBridge")
         ),
         .testTarget(
             name: "JunoCodeCoreTests",
             dependencies: ["JunoCodeCore"],
-            exclude: ["GoalModelsTests 2.swift"]
+            exclude: existingExcludes(["GoalModelsTests 2.swift"], relativeTo: "Tests/JunoCodeCoreTests")
         ),
         .testTarget(
             name: "JunoSimulatorTests",
@@ -112,31 +128,31 @@ let package = Package(
         .testTarget(
             name: "JunoCodeLocalTests",
             dependencies: ["JunoCodeCore", "JunoCodeLocal"],
-            exclude: [
+            exclude: existingExcludes([
                 "ComputerUseKeyChordTests 2.swift",
                 "WorktreeManagerTests 2.swift",
                 "WorkspaceBookmarkTests 2.swift",
-            ]
+            ], relativeTo: "Tests/JunoCodeLocalTests")
         ),
         .testTarget(
             name: "JunoCodeRuntimeTests",
             dependencies: ["JunoCodeCore", "JunoCodeRuntime", "JunoCodeLocal"],
-            exclude: [
+            exclude: existingExcludes([
                 "CodeSessionStoreTests 2.swift",
                 "DelegateTaskToolTests 2.swift",
                 "GoalModeRuntimeTests 2.swift",
-            ]
+            ], relativeTo: "Tests/JunoCodeRuntimeTests")
         ),
         .testTarget(
             name: "JunoCodeUITests",
             dependencies: ["JunoCodeCore", "JunoCodeLocal", "JunoCodeRuntime", "JunoCodeUI"],
-            exclude: [
+            exclude: existingExcludes([
                 "CodeModelCatalogTests 2.swift",
                 "FileContextTokenTests 2.swift",
                 "SlashCommandTests 2.swift",
                 "SubagentDigestTests 2.swift",
                 "SubagentSessionVisibilityTests 2.swift",
-            ]
+            ], relativeTo: "Tests/JunoCodeUITests")
         ),
         .testTarget(
             name: "JunoCodeBridgeTests",
@@ -146,10 +162,10 @@ let package = Package(
                 "JunoCodeRuntime",
                 "JunoCodeBridge",
             ],
-            exclude: [
+            exclude: existingExcludes([
                 "CodeThinkingWireTests 2.swift",
                 "UserAttachmentWireTests 2.swift",
-            ]
+            ], relativeTo: "Tests/JunoCodeBridgeTests")
         ),
     ],
     swiftLanguageModes: [.v6]

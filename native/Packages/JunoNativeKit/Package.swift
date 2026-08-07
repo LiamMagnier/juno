@@ -1,6 +1,24 @@
 // swift-tools-version: 6.0
 
+import Foundation
 import PackageDescription
+
+// Some contributors keep compatibility copies named `… 2.swift` in their
+// local checkout while migrating native targets. SwiftPM warns when an
+// `exclude` names a file that is not present, which made CI noisy and hid real
+// manifest warnings. Keep the local copies excluded when they exist, without
+// making the manifest claim that they are part of the repository.
+let packageDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+func existingExcludes(_ paths: [String], relativeTo targetDirectory: String) -> [String] {
+    let directory = packageDirectory.appendingPathComponent(targetDirectory)
+    return paths.filter { directory.appendingPathComponent($0).pathExists }
+}
+
+private extension URL {
+    var pathExists: Bool {
+        FileManager.default.fileExists(atPath: path)
+    }
+}
 
 let package = Package(
     name: "JunoNativeKit",
@@ -34,7 +52,7 @@ let package = Package(
             // The repository currently contains compatibility copies created
             // during the native-package migration. They intentionally stay on
             // disk, but SwiftPM must not compile both declarations.
-            exclude: ["JunoUpdateFeed 2.swift"]
+            exclude: existingExcludes(["JunoUpdateFeed 2.swift"], relativeTo: "Sources/JunoCore")
         ),
         .target(name: "JunoAPI", dependencies: ["JunoCore"]),
         .target(name: "JunoAuth", dependencies: ["JunoCore", "JunoAPI"]),
@@ -47,7 +65,7 @@ let package = Package(
         .target(
             name: "JunoDesignSystem",
             dependencies: ["JunoCore"],
-            exclude: [
+            exclude: existingExcludes([
                 "JunoAIcssCode 2.swift",
                 "JunoAIcssGeneration 2.swift",
                 "JunoAIcssReasoning 2.swift",
@@ -72,7 +90,7 @@ let package = Package(
                 "JunoVoiceAura 2.swift",
                 "JunoYAMLSubset 2.swift",
                 "NativePromptLimits 2.swift",
-            ]
+            ], relativeTo: "Sources/JunoDesignSystem")
         ),
         // Deliberately dependency-free: the design contract must be decodable
         // without dragging in auth, storage or sync, so a test can round-trip a
@@ -84,7 +102,7 @@ let package = Package(
                 "JunoCore", "JunoAPI", "JunoAuth", "JunoStorage", "JunoSync",
                 "JunoSearch", "JunoDesignSystem",
             ],
-            exclude: [
+            exclude: existingExcludes([
                 "NativeFilePreview 2.swift",
                 "NativeFollowUpClient 2.swift",
                 "NativeFollowUpStrip 2.swift",
@@ -95,7 +113,7 @@ let package = Package(
                 "NativeShareClient 2.swift",
                 "NativeSharedLinksView 2.swift",
                 "NativeUsageBreakdown 2.swift",
-            ]
+            ], relativeTo: "Sources/JunoChatKit")
         ),
         .target(
             name: "JunoCodeKit",
@@ -103,10 +121,10 @@ let package = Package(
                 "JunoCore", "JunoAPI", "JunoAuth", "JunoStorage", "JunoSync",
                 "JunoDesignSystem",
             ],
-            exclude: [
+            exclude: existingExcludes([
                 "NativeGitHubPullsClient 2.swift",
                 "NativePullsView 2.swift",
-            ]
+            ], relativeTo: "Sources/JunoCodeKit")
         ),
         .target(
             name: "JunoWorkKit",
@@ -118,10 +136,10 @@ let package = Package(
         .target(
             name: "JunoVoiceKit",
             dependencies: ["JunoCore", "JunoAPI", "JunoAuth", "JunoDesignSystem"],
-            exclude: [
+            exclude: existingExcludes([
                 "JunoVoiceTranscriptRecord 2.swift",
                 "VoiceSessionState 2.swift",
-            ]
+            ], relativeTo: "Sources/JunoVoiceKit")
         ),
         .target(
             name: "JunoPreviewSupport",
@@ -134,7 +152,7 @@ let package = Package(
         .testTarget(
             name: "JunoCoreTests",
             dependencies: ["JunoCore"],
-            exclude: ["JunoUpdateFeedTests 2.swift"]
+            exclude: existingExcludes(["JunoUpdateFeedTests 2.swift"], relativeTo: "Tests/JunoCoreTests")
         ),
         .testTarget(name: "JunoAPITests", dependencies: ["JunoAPI"]),
         .testTarget(name: "JunoAuthTests", dependencies: ["JunoAuth"]),
@@ -152,10 +170,10 @@ let package = Package(
         .testTarget(
             name: "JunoDesignSystemTests",
             dependencies: ["JunoDesignSystem"],
-            exclude: [
+            exclude: existingExcludes([
                 "JunoAIcssReasoningLinesTests 2.swift",
                 "JunoLearningBlocksTests 2.swift",
-            ]
+            ], relativeTo: "Tests/JunoDesignSystemTests")
         ),
         .testTarget(
             name: "JunoDesignKitTests",
@@ -172,13 +190,13 @@ let package = Package(
                 // tests still live here.
                 "JunoDesignSystem",
             ],
-            exclude: [
+            exclude: existingExcludes([
                 "NativeFilePreviewTests 2.swift",
                 "NativeImageMaskTests 2.swift",
                 "NativeModelCapabilityTests 2.swift",
                 "NativePromptLimitsTests 2.swift",
                 "NativeVoiceTranscriptClientTests 2.swift",
-            ]
+            ], relativeTo: "Tests/JunoChatKitTests")
         ),
         .testTarget(
             name: "JunoCodeKitTests",
