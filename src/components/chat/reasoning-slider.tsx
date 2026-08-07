@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Zap } from "lucide-react";
+import { Sparkles, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReasoningOption } from "@/lib/model-metrics";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -175,6 +175,8 @@ export function ReasoningSlider({
   className,
   fastMode = false,
   onFastModeChange,
+  proMode = false,
+  onProModeChange,
 }: {
   options: ReasoningOption[];
   value: ReasoningOption["value"];
@@ -183,6 +185,8 @@ export function ReasoningSlider({
   className?: string;
   fastMode?: boolean;
   onFastModeChange?: (value: boolean) => void;
+  proMode?: boolean;
+  onProModeChange?: (value: boolean) => void;
 }) {
   const count = options.length;
   // findIndex is exact: Instant's value is null, and null === null, so an
@@ -284,6 +288,43 @@ export function ReasoningSlider({
             </TooltipTrigger>
             <TooltipContent>
               {fastMode ? "Flash is on — faster output at a premium rate" : "Turn on Flash for faster output"}
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {onProModeChange && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                disabled={disabled}
+                aria-pressed={proMode}
+                aria-label={proMode ? "Pro mode on; turn off" : "Pro mode off; turn on"}
+                onClick={() => onProModeChange(!proMode)}
+                className={cn(
+                  "reasoning-pro-toggle group relative inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-90 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none",
+                  proMode
+                    ? "border-foreground bg-foreground text-background shadow-pop"
+                    : "border-border/70 bg-background/70 text-muted-foreground shadow-soft hover:border-foreground/20 hover:bg-accent hover:text-foreground"
+                )}
+              >
+                <Sparkles
+                  aria-hidden="true"
+                  strokeWidth={1.75}
+                  className={cn(
+                    "reasoning-pro-icon size-3.5 transition-transform duration-base ease-spring group-hover:scale-110 motion-reduce:transform-none motion-reduce:transition-none",
+                    proMode && "fill-current"
+                  )}
+                />
+              </button>
+            </TooltipTrigger>
+            {/* Says "same price" because that is the surprising part: unlike Flash,
+                pro is not a premium rate — it is the same per-token price spent on
+                more tokens, which is a different thing to budget for. */}
+            <TooltipContent>
+              {proMode
+                ? "Pro is on — the model reasons harder at the same per-token price"
+                : "Turn on Pro for deeper reasoning (same rate, more tokens)"}
             </TooltipContent>
           </Tooltip>
         )}

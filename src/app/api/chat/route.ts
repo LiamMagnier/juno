@@ -47,6 +47,7 @@ import { truncate, currentPeriod } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { supportsFastMode } from "@/lib/pricing";
+import { supportsProMode } from "@/lib/model-metrics";
 import { buildUsage } from "@/lib/chat-usage";
 import { logDebug } from "@/lib/logger";
 import { createStallWatchdog, stallDetail, stallMessageFor } from "@/lib/chat-stall";
@@ -441,6 +442,7 @@ async function handleChat(req: Request) {
 
     const useWebSearch = !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
     const useFastMode = !!input.fastMode && supportsFastMode(modelInfo);
+    const useProMode = !!input.proMode && supportsProMode(modelInfo);
     const baseSystem = buildSystemPrompt({
       userName: user.name,
       customInstructions: settings?.customInstructions ?? "",
@@ -585,6 +587,7 @@ async function handleChat(req: Request) {
             // user (their system prompt is the shared prefix).
             cacheKey: `private-${user.id}`,
             fastMode: useFastMode,
+            proMode: useProMode,
           })) {
             stallWatchdog.touch();
             const effect = acc.apply(ev);
@@ -1254,6 +1257,7 @@ async function handleChat(req: Request) {
   // collect the sources it returns from the stream below — no third-party search.
   const useWebSearch = !researchActive && !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
   const useFastMode = !!input.fastMode && supportsFastMode(modelInfo);
+  const useProMode = !!input.proMode && supportsProMode(modelInfo);
 
   const canvasOn = !input.voiceMode && (input.canvasEnabled ?? true);
   const baseSystem = buildSystemPrompt({
@@ -1700,6 +1704,7 @@ async function handleChat(req: Request) {
           // One conversation = one stable prompt prefix (system + history).
           cacheKey: conversationId,
           fastMode: useFastMode,
+          proMode: useProMode,
           audit: { userId: user.id, conversationId },
         })) {
           stallWatchdog.touch();

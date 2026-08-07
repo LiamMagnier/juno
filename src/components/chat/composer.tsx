@@ -60,7 +60,7 @@ import { LibraryPicker } from "@/components/chat/library-picker";
 import { ComposerClarificationPopover } from "@/components/chat/composer-clarification-popover";
 import { resolveModel, type ModelInfo } from "@/lib/models";
 import { isAutoModelId } from "@/lib/auto-model";
-import { reasoningOptions, defaultReasoning, clampReasoningEffort } from "@/lib/model-metrics";
+import { reasoningOptions, defaultReasoning, clampReasoningEffort, supportsProMode } from "@/lib/model-metrics";
 import { supportsFastMode } from "@/lib/pricing";
 import { PROVIDERS } from "@/lib/providers";
 import { PLANS } from "@/lib/plans";
@@ -117,6 +117,10 @@ interface ComposerProps {
    *  renders for models that support it (supportsFastMode). */
   fastMode?: boolean;
   onToggleFastMode?: (v: boolean) => void;
+  /** GPT-5.6 pro execution — the toggle only renders for models that support it
+   *  (supportsProMode). */
+  proMode?: boolean;
+  onToggleProMode?: (v: boolean) => void;
   connectorsEnabled?: string[];
   onToggleConnector?: (id: string) => void;
   /** Batch-add connector ids for this chat (no toggle-off). Used by prompt intent. */
@@ -301,6 +305,8 @@ export function Composer({
   onReasoningChange,
   fastMode = false,
   onToggleFastMode,
+  proMode = false,
+  onToggleProMode,
   connectorsEnabled = [],
   onToggleConnector,
   onEnableConnectors,
@@ -329,6 +335,25 @@ export function Composer({
   const canFastMode = React.useMemo(
     () => !isAuto && !!resolved && supportsFastMode(resolved),
     [isAuto, resolved]
+  );
+  // Pro execution is a separate axis from effort and exists on the GPT-5.6 line
+  // only — see supportsProMode(). Same hide-when-unsupported rule as Flash.
+  const canProMode = React.useMemo(
+    () => !isAuto && !!resolved && supportsProMode(resolved),
+    [isAuto, resolved]
+  );
+  // Pro at Instant is a contradiction — the mode's whole content is that the
+  // model deliberates. Rather than send a self-cancelling pair (the adapter
+  // would drop the effort and quietly apply the API default), raise the tier
+  // when Pro goes on, so the control shows what will actually run.
+  const toggleProMode = React.useCallback(
+    (v: boolean) => {
+      onToggleProMode?.(v);
+      if (v && reasoningEffort == null && resolved) {
+        onReasoningChange(clampReasoningEffort(resolved, "medium"));
+      }
+    },
+    [onToggleProMode, onReasoningChange, reasoningEffort, resolved]
   );
   const modality = resolved?.modality ?? "chat";
 
@@ -2197,7 +2222,7 @@ export function Composer({
                             variant="ghost"
                             size="sm"
                             disabled={controlsLocked}
-                            aria-label={`Thinking effort: ${currentEffort.label}${canFastMode ? `; Flash mode ${fastMode ? "on" : "off"}` : ""}`}
+                            aria-label={`Thinking effort: ${currentEffort.label}${canFastMode ? `; Flash mode ${fastMode ? "on" : "off"}` : ""}${canProMode ? `; Pro mode ${proMode ? "on" : "off"}` : ""}`}
                             className={cn(
                               "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-[10px] px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
                               atTopTier ? "text-ultra" : "text-foreground/80"
@@ -2221,6 +2246,8 @@ export function Composer({
                           disabled={controlsLocked}
                           fastMode={fastMode}
                           onFastModeChange={canFastMode && onToggleFastMode ? onToggleFastMode : undefined}
+                          proMode={proMode}
+                          onProModeChange={canProMode && onToggleProMode ? toggleProMode : undefined}
                         />
                       </PopoverContent>
                     </Popover>

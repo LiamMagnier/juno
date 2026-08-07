@@ -106,8 +106,10 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       return { input: 3, output: 15 }; // sonnet-class
     case "openai":
       if (/^o\d/.test(pm) || pm.includes("-o1") || pm.includes("-o3")) return { input: 15, output: 60 };
-      if (pm.includes("gpt-5.6-terra")) return { input: 2.5, output: 15 };
-      if (pm.includes("gpt-5.6-luna")) return { input: 1, output: 6 };
+      // Terra/Luna were cut on 2026-07-30 (Terra −20%, Luna −80%) from their
+      // 2026-07-09 launch rates of $2.50/$15 and $1/$6. Sol was not repriced.
+      if (pm.includes("gpt-5.6-terra")) return { input: 2, output: 12 };
+      if (pm.includes("gpt-5.6-luna")) return { input: 0.2, output: 1.2 };
       if (pm.includes("gpt-5.6")) return { input: 5, output: 30 }; // sol + bare alias
       if (pm.includes("gpt-5.5-pro") || pm.includes("gpt-5.4-pro")) return { input: 30, output: 180 };
       if (pm.includes("gpt-5.5")) return { input: 5, output: 30 };

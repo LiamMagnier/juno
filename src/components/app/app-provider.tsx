@@ -58,11 +58,16 @@ export interface ComposerPrefs {
   canvas: boolean;
   /** Premium "fast mode" — only ever applied to models that support it. */
   fastMode: boolean;
+  /** GPT-5.6 pro execution — only ever applied to models that support it. */
+  proMode: boolean;
 }
 
 // webSearch defaults ON — it's only ever applied to models that actually support
 // native web search, so leaving it on gives up-to-date answers by default.
-const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: "high", webSearch: true, canvas: true, fastMode: false };
+// proMode defaults OFF, unlike webSearch: it spends materially more output
+// tokens per turn, so it is a thing the user opts into rather than discovers
+// on their bill.
+const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: "high", webSearch: true, canvas: true, fastMode: false, proMode: false };
 
 /** The bundled catalog, marked the same way /api/models marks it a moment
  *  later, so the picker's "Past models" section does not appear, disappear and
@@ -88,6 +93,7 @@ function sanitizeComposerPrefs(v: unknown): Partial<ComposerPrefs> {
   if (typeof o.webSearch === "boolean") out.webSearch = o.webSearch;
   if (typeof o.canvas === "boolean") out.canvas = o.canvas;
   if (typeof o.fastMode === "boolean") out.fastMode = o.fastMode;
+  if (typeof o.proMode === "boolean") out.proMode = o.proMode;
   return out;
 }
 

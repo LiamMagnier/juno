@@ -63,8 +63,8 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
   ],
   openai: [
     { hints: ["gpt-5.6-sol"], metric: official(5, 30, 1_050_000, 5, 9) }, // II 58.9 #2 · 73 tok/s
-    { hints: ["gpt-5.6-terra"], metric: official(2.5, 15, 1_050_000, 8, 9) }, // II 55.0 · 141 tok/s — best value in the OpenAI lineup
-    { hints: ["gpt-5.6-luna"], metric: official(1, 6, 1_050_000, 9, 8) }, // II 51.2 · 204 tok/s
+    { hints: ["gpt-5.6-terra"], metric: official(2, 12, 1_050_000, 8, 9) }, // II 55.0 · 141 tok/s — repriced 2026-07-30 (was $2.50/$15)
+    { hints: ["gpt-5.6-luna"], metric: official(0.2, 1.2, 1_050_000, 9, 8) }, // II 51.2 · 204 tok/s — repriced 2026-07-30, −80% (was $1/$6); best value in the OpenAI lineup
     { hints: ["gpt-5.6"], metric: official(5, 30, 1_050_000, 5, 9) }, // bare alias routes to Sol
     { hints: ["gpt-5.5-pro"], metric: official(30, 180, 1_050_000, 1, 9) }, // no AA/arena data — positioning estimate
     { hints: ["gpt-5.5"], metric: official(5, 30, 1_050_000, 4, 9) }, // II 54.8 · 64 tok/s

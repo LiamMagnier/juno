@@ -7,9 +7,9 @@ import Foundation
 
 public enum JunoCapabilityContract {
     /// Bumped whenever a capability is added or its meaning changes.
-    public static let version = 1
+    public static let version = 2
     /// SHA-256 of the manifest this was generated from.
-    public static let digest = "56e6847f8265260698ae425717e56e06ce2400f5172230c06c239f4b70bf3d76"
+    public static let digest = "4b87b80f73e7b1ba85f76092033355400aa906f85ab60f92752f7dbe93359432"
 }
 
 /// A thinking effort, lowest to highest.
@@ -40,6 +40,8 @@ public enum JunoCapability: String, Codable, CaseIterable, Sendable {
     case webSearch = "webSearch"
     /// A provider's priority/fast serving tier.
     case fastMode = "fastMode"
+    /// Deeper 'pro' execution on the same model id, independent of reasoning effort.
+    case proMode = "proMode"
     /// Read images supplied with the message.
     case vision = "vision"
     /// Call connector tools during the turn.
@@ -59,6 +61,8 @@ public enum JunoDegradationKind: String, Codable, CaseIterable, Sendable {
     case webSearchUnavailable = "web_search_unavailable"
     /// Fast mode was requested but the model has no faster tier.
     case fastModeUnavailable = "fast_mode_unavailable"
+    /// Pro mode was requested but the model has no pro execution mode.
+    case proModeUnavailable = "pro_mode_unavailable"
     /// Images were supplied but the model cannot read them.
     case visionUnavailable = "vision_unavailable"
     /// Connectors were requested but did not run.

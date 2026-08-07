@@ -4,7 +4,7 @@ import { streamOpenAICompat } from "@/lib/openai-compat";
 import { streamOpenAIResponses } from "@/lib/openai-responses";
 import { streamGeminiSearch } from "@/lib/gemini-search";
 import { anthropicMcpServers, openMcpToolset, type ActiveConnector, type McpToolset } from "@/lib/mcp";
-import { reasoningCaps } from "@/lib/model-metrics";
+import { reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import { normalizeProviderError } from "@/lib/provider-error";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
@@ -62,6 +62,9 @@ export async function* streamChat(opts: {
   /** Premium "fast mode": Anthropic speed:"fast" / OpenAI service_tier:"priority".
    *  The route only sets this on models that support it. */
   fastMode?: boolean;
+  /** OpenAI GPT-5.6 `reasoning.mode: "pro"` — deeper execution on the same model
+   *  id. The route only sets this on models that support it. */
+  proMode?: boolean;
   /**
    * Who connector tool calls are attributed to in the audit trail, and which
    * conversation they belong to. Required whenever `connectors` is non-empty:
@@ -71,6 +74,7 @@ export async function* streamChat(opts: {
   audit?: { userId: string; conversationId?: string | null };
 }): AsyncGenerator<LlmEvent> {
   const { model, system, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey, fastMode } = opts;
+  const proMode = !!opts.proMode && supportsProMode(model);
   // On OpenAI-compatible providers, reasoning/thinking tokens count toward the
   // completion budget — a plan-sized cap can be eaten entirely by thinking,
   // truncating the answer ("length" with little or no visible text). Add an
@@ -122,10 +126,23 @@ export async function* streamChat(opts: {
   try {
     // gpt-*-pro and Responses-only Codex snapshots aren't served on
     // /chat/completions — they take the Responses API adapter instead.
-    const streamFn = model.provider === "openai" && model.api === "responses"
-      ? streamOpenAIResponses
-      : streamOpenAICompat;
-    yield* streamFn(model, system, history, maxTokens, signal, reasoningEffort, webSearch, toolset, dynamicContext, cacheKey, fastMode);
+    //
+    // Pro mode forces the same switch on a model that would otherwise be a
+    // chat/completions model: `reasoning.mode` exists ONLY on /v1/responses, so
+    // routing is not an optimisation here — sending GPT-5.6 to the compat
+    // adapter with pro requested would silently drop the mode and bill a
+    // standard turn the user believes was a pro one.
+    if (model.provider === "openai" && (model.api === "responses" || proMode)) {
+      yield* streamOpenAIResponses(
+        model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+        toolset, dynamicContext, cacheKey, fastMode, proMode
+      );
+    } else {
+      yield* streamOpenAICompat(
+        model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+        toolset, dynamicContext, cacheKey, fastMode
+      );
+    }
   } finally {
     if (toolset) await toolset.close();
   }

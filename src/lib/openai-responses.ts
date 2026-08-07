@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
-import { reasoningCaps } from "@/lib/model-metrics";
+import { reasoningCaps, supportsProMode } from "@/lib/model-metrics";
 import {
   openAIPromptCacheRequestFields,
   openAIResponsesSystemInput,
@@ -143,7 +143,8 @@ export async function* streamOpenAIResponses(
   toolset?: McpToolset,
   dynamicContext?: string,
   cacheKey?: string,
-  fastMode?: boolean
+  fastMode?: boolean,
+  proMode?: boolean
 ): AsyncGenerator<LlmEvent> {
   const input = await toResponsesInput(history, model.vision);
   // GPT-5.6+: put system into input with an explicit cache breakpoint so the
@@ -185,7 +186,17 @@ export async function* streamOpenAIResponses(
       })
     : undefined;
 
-  const effort = mapEffort(model, reasoningEffort);
+  // Pro is a SECOND axis, not a deeper effort: `reasoning.mode` selects standard
+  // or pro execution while `reasoning.effort` controls how much reasoning happens
+  // inside it, and the two are set independently. Gated on supportsProMode rather
+  // than relayed blind — every other Responses model 400s on an unknown
+  // reasoning key, and this adapter also serves the 5.x-pro and Codex lines.
+  const usePro = !!proMode && supportsProMode(model);
+  const requestedEffort = mapEffort(model, reasoningEffort);
+  // "none" and pro contradict each other — pro mode's whole content is that the
+  // model deliberates more. Rather than send a self-cancelling pair, drop the
+  // effort and let the API apply its own default (medium in both modes).
+  const effort = usePro && requestedEffort === "none" ? undefined : requestedEffort;
   // ASK FOR WHAT THE MODEL ALREADY MAKES.
   //
   // Without this key the API emits no reasoning_summary_* events at all, so the
@@ -201,12 +212,16 @@ export async function* streamOpenAIResponses(
   //
   // Skipped when effort is "none": the model does not think, so there is
   // nothing to summarise and nothing to pay for.
-  const wantsSummary = !!effort && effort !== "none";
+  // Pro mode reasons even when the effort is left to the API's default, so the
+  // summary is worth asking for on `usePro` alone — keying it off `effort` would
+  // hide the steps on exactly the runs that produce the most of them.
+  const wantsSummary = usePro || (!!effort && effort !== "none");
 
   console.info("[llm:openai-responses] stream start", {
     model: model.providerModel,
     maxTokens,
     reasoningEffort: effort ?? null,
+    proMode: usePro,
     tools: hasTools ? toolset!.tools.length : 0,
   });
 
@@ -242,9 +257,10 @@ export async function* streamOpenAIResponses(
     };
     // Cast: the installed openai types predate the "none"/"xhigh"/"max" values
     // that the Responses API now accepts.
-    if (effort) {
+    if (effort || usePro) {
       params.reasoning = {
-        effort,
+        ...(effort ? { effort } : {}),
+        ...(usePro ? { mode: "pro" } : {}),
         ...(wantsSummary ? { summary: "detailed" } : {}),
       } as OpenAI.Responses.ResponseCreateParams["reasoning"];
     }

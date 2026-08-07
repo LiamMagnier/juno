@@ -7638,6 +7638,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Your plan doesn’t include a model that can run a Work task, so nothing was started."
   },
   {
+    "id": "978bc91c5a1ee090",
+    "source": "Turn on Pro for deeper reasoning (same rate, more tokens)"
+  },
+  {
     "id": "9795c5ff8937f235",
     "source": "pong"
   },
@@ -9248,6 +9252,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b6275aaec5e1d75e",
     "source": "Invalid archived"
+  },
+  {
+    "id": "b6497414017cf201",
+    "source": "Pro is on — the model reasons harder at the same per-token price"
   },
   {
     "id": "b64f772fe3aa4595",

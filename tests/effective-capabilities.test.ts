@@ -23,6 +23,7 @@ const full: ModelCapabilities = {
   maxReasoning: "max",
   webSearch: true,
   fastMode: true,
+  proMode: true,
   vision: true,
   connectors: true,
 };
@@ -34,6 +35,7 @@ const modest: ModelCapabilities = {
   maxReasoning: null,
   webSearch: false,
   fastMode: false,
+  proMode: false,
   vision: false,
   connectors: false,
 };
@@ -49,6 +51,31 @@ test("a request the model can satisfy reports no degradation", () => {
   assert.equal(effective.fastMode, true);
   assert.equal(wasDegraded(effective), false);
   assert.equal(degradationSummary(effective), null, "nothing to store when nothing changed");
+});
+
+test("pro mode on a model without one is reported, not silently dropped", () => {
+  const effective = resolveEffectiveCapabilities({
+    requested: { modelId: modest.modelId, proMode: true },
+    actual: modest,
+  });
+
+  assert.equal(effective.proMode, false);
+  const d = effective.degradations.find((x) => x.kind === "pro_mode_unavailable");
+  assert.ok(d, "asking for pro on a model that has none must be recorded");
+  assert.equal(d.effective, "off");
+});
+
+test("pro mode and reasoning effort are independent axes", () => {
+  // The whole point of modelling pro as a mode rather than a deeper tier: a turn
+  // can run pro at a modest effort, and neither choice clamps the other.
+  const effective = resolveEffectiveCapabilities({
+    requested: { modelId: full.modelId, proMode: true, reasoning: "low" },
+    actual: full,
+  });
+
+  assert.equal(effective.proMode, true);
+  assert.equal(effective.reasoning, "low");
+  assert.equal(wasDegraded(effective), false);
 });
 
 test("reasoning above the model's ceiling is clamped and said so", () => {

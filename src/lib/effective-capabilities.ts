@@ -45,6 +45,13 @@ export interface RequestedCapabilities {
   reasoning?: ReasoningLevel | null;
   webSearch?: boolean;
   fastMode?: boolean;
+  /**
+   * Deeper execution on the SAME model id — OpenAI's GPT-5.6
+   * `reasoning.mode: "pro"`. Orthogonal to `reasoning`: mode selects standard
+   * or pro execution, effort controls how much reasoning happens within it, and
+   * a turn can ask for both.
+   */
+  proMode?: boolean;
   vision?: boolean;
   connectors?: readonly string[];
 }
@@ -58,6 +65,7 @@ export interface ModelCapabilities {
   maxReasoning?: ReasoningLevel | null;
   webSearch: boolean;
   fastMode: boolean;
+  proMode: boolean;
   vision: boolean;
   connectors: boolean;
 }
@@ -68,6 +76,7 @@ export type DegradationKind =
   | "reasoning_unsupported"
   | "web_search_unavailable"
   | "fast_mode_unavailable"
+  | "pro_mode_unavailable"
   | "vision_unavailable"
   | "connectors_unavailable";
 
@@ -88,6 +97,7 @@ export interface EffectiveCapabilities {
   reasoning: ReasoningLevel | null;
   webSearch: boolean;
   fastMode: boolean;
+  proMode: boolean;
   vision: boolean;
   connectors: boolean;
   degradations: Degradation[];
@@ -180,6 +190,16 @@ export function resolveEffectiveCapabilities(opts: {
     });
   }
 
+  const proMode = Boolean(requested.proMode) && actual.proMode;
+  if (requested.proMode && !proMode) {
+    degradations.push({
+      kind: "pro_mode_unavailable",
+      requested: "on",
+      effective: "off",
+      reason: `${actual.modelId} has no pro mode, so the request ran in standard mode.`,
+    });
+  }
+
   const vision = Boolean(requested.vision) && actual.vision;
   if (requested.vision && !vision) {
     degradations.push({
@@ -210,6 +230,7 @@ export function resolveEffectiveCapabilities(opts: {
     reasoning,
     webSearch,
     fastMode,
+    proMode,
     vision,
     connectors,
     degradations,

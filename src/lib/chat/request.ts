@@ -86,6 +86,10 @@ export const chatBodySchema = z
     // Premium "fast mode" (Anthropic speed:"fast" / OpenAI service_tier:
     // "priority"). Honored only on models that support it (supportsFastMode).
     fastMode: z.boolean().optional(),
+    // GPT-5.6 pro execution (reasoning.mode:"pro"). Honored only on models that
+    // support it (supportsProMode); a request for it elsewhere is a recorded
+    // degradation, not an error.
+    proMode: z.boolean().optional(),
     // Durable creation metadata used by native clients and Juno Quick. The
     // legacy `client` field below remains for spend-ledger compatibility.
     origin: chatOriginSchema.optional(),

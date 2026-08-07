@@ -257,9 +257,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       ? initialReasoningEffort
       : composerPrefs.reasoningEffort;
   const fastMode = composerPrefs.fastMode;
+  const proMode = composerPrefs.proMode;
   const setCanvasEnabled = React.useCallback((v: boolean) => setComposerPrefs({ canvas: v }), [setComposerPrefs]);
   const setWebSearchEnabled = React.useCallback((v: boolean) => setComposerPrefs({ webSearch: v }), [setComposerPrefs]);
   const setFastMode = React.useCallback((v: boolean) => setComposerPrefs({ fastMode: v }), [setComposerPrefs]);
+  const setProMode = React.useCallback((v: boolean) => setComposerPrefs({ proMode: v }), [setComposerPrefs]);
   const setReasoningEffort = React.useCallback(
     (e: ReasoningEffort | null) => {
       setDeepLinkReasoningActive(false);
@@ -320,6 +322,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     webSearch: webSearchEnabled,
     reasoningEffort: reasoningEffort ?? undefined,
     fastMode,
+    proMode,
     connectors: enabledConnectors,
     privateMode,
     onQuota: setQuota,
@@ -1484,6 +1487,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onReasoningChange={setReasoningEffort}
       fastMode={fastMode}
       onToggleFastMode={setFastMode}
+      proMode={proMode}
+      onToggleProMode={setProMode}
       connectorsEnabled={enabledConnectors}
       onToggleConnector={toggleConnector}
       onEnableConnectors={enableConnectors}
