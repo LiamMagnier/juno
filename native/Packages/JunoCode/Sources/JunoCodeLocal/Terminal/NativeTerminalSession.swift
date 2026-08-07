@@ -68,8 +68,24 @@ public actor NativeTerminalSession {
         }
 
         var streamContinuation: AsyncThrowingStream<NativeTerminalEvent, Error>.Continuation!
+        // `maximumPendingEvents` is a caller-provided lower bound, not a hard
+        // cap that is allowed to discard terminal output. The child is already
+        // stopped once `maximumOutputBytes` is reached, so the complete output
+        // can occupy at most this many chunks. Reserve room for those chunks
+        // and the six lifecycle events (starting, running, stopping, EOF,
+        // exited state and exited value) before applying the requested floor.
+        // Without this, a slow consumer could silently lose a chunk from a
+        // bounded command while the transcript still retained it.
+        let outputEventCapacity =
+            limits.maximumOutputBytes / limits.maximumOutputChunkBytes
+            + (limits.maximumOutputBytes % limits.maximumOutputChunkBytes == 0 ? 0 : 1)
+        let lifecycleEventCapacity = 6
+        let streamCapacity = max(
+            limits.maximumPendingEvents,
+            outputEventCapacity + lifecycleEventCapacity
+        )
         let stream = AsyncThrowingStream<NativeTerminalEvent, Error>(
-            bufferingPolicy: .bufferingNewest(limits.maximumPendingEvents)
+            bufferingPolicy: .bufferingNewest(streamCapacity)
         ) { continuation in
             streamContinuation = continuation
         }

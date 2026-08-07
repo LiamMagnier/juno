@@ -18,6 +18,9 @@ public struct NativeTerminalLimits: Equatable, Sendable {
     public let maximumOutputBytes: Int
     public let maximumTranscriptBytes: Int
     public let maximumOutputChunkBytes: Int
+    /// Minimum pending event capacity. NativeTerminalSession also reserves
+    /// enough room for its bounded output budget and lifecycle events, so
+    /// output is never silently discarded merely because a consumer is slow.
     public let maximumPendingEvents: Int
     public let maximumInputBytes: Int
     public let maximumLifetimeNanoseconds: UInt64
