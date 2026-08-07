@@ -125,25 +125,45 @@ test('an explicit status in a revision is honoured, and reported as a change', (
   ]);
 });
 
-test('a run that moves no step and makes nothing is stopped as stalled', () => {
+test('a run that keeps re-asking the same things is stopped as stalled', () => {
   const plan = new WorkPlan(STEPS, { stallThreshold: 3 });
-  // Distinct inputs, so this is the stall detector and not the repeat one.
-  assert.equal(plan.observeToolCall('search', { q: 'one' }).state, 'progressing');
-  assert.equal(plan.observeToolCall('search', { q: 'two' }).state, 'progressing');
-  const verdict = plan.observeToolCall('search', { q: 'three' });
+  // Each signature's FIRST call is new information and does not count. Only the
+  // repeats do — and none of these repeats often enough to trip the separate
+  // repetition detector, so this is the stall detector on its own.
+  assert.equal(plan.observeToolCall('search', { q: 'one' }).state, 'progressing'); // novel
+  assert.equal(plan.observeToolCall('search', { q: 'one' }).state, 'progressing'); // 1
+  assert.equal(plan.observeToolCall('search', { q: 'two' }).state, 'progressing'); // novel
+  assert.equal(plan.observeToolCall('search', { q: 'two' }).state, 'progressing'); // 2
+  const verdict = plan.observeToolCall('search', { q: 'one' }); // 3
   assert.equal(verdict.state, 'stalled');
   assert.match(
     verdict.state === 'stalled' ? verdict.reason : '',
-    /3 tool calls in a row moved no plan step and produced no artifact/,
+    /3 tool calls in a row repeated something already asked/,
   );
+});
+
+test('breadth is not a stall: auditing many things one at a time is working', () => {
+  // The production case this rule was corrected for. A run asked to tidy a
+  // GitHub account listed eleven repositories and audited them one at a time
+  // for a missing README — eleven reads inside a single step. Under the old
+  // rule the sixth one stopped the run.
+  const plan = new WorkPlan(STEPS, { stallThreshold: 6 });
+  for (let repo = 1; repo <= 11; repo += 1) {
+    const verdict = plan.observeToolCall('github_get_readme', { repo: `repo-${repo}` });
+    assert.equal(verdict.state, 'progressing', `repo ${repo} must not be treated as a stall`);
+  }
 });
 
 test('a step transition clears the stall counter', () => {
   const plan = new WorkPlan(STEPS, { stallThreshold: 3 });
+  // Repeats, so they actually accumulate: novel, +1, novel, +1 => 2 of 3.
+  plan.observeToolCall('search', { q: 'one' });
   plan.observeToolCall('search', { q: 'one' });
   plan.observeToolCall('search', { q: 'two' });
+  plan.observeToolCall('search', { q: 'two' });
   plan.complete('a');
-  assert.equal(plan.observeToolCall('search', { q: 'three' }).state, 'progressing');
+  // Cleared: this repeat is the first to count again rather than the third.
+  assert.equal(plan.observeToolCall('search', { q: 'one' }).state, 'progressing');
 });
 
 test('a new artifact clears the stall counter even inside one step', () => {
@@ -195,21 +215,26 @@ test('a checkpoint round-trip preserves the stall position, not just the steps',
   // time someone resumes it, which turns resume into a way around the check.
   const plan = new WorkPlan(STEPS, { stallThreshold: 3 });
   plan.start('a');
-  plan.observeToolCall('search', { q: 'one' });
-  plan.observeToolCall('search', { q: 'two' });
+  // Repeats, because only a repeat counts — and the repetition table is
+  // checkpointed too, so a resumed run knows what it had already asked.
+  plan.observeToolCall('search', { q: 'one' }); // novel
+  plan.observeToolCall('search', { q: 'one' }); // 1
+  plan.observeToolCall('search', { q: 'two' }); // novel
+  plan.observeToolCall('search', { q: 'two' }); // 2
 
   // No options passed: the threshold comes back with the state, so a resumed
   // run behaves like the run it is continuing rather than like a fresh one.
   const restored = WorkPlan.fromJSON(plan.toJSON());
   assert.deepEqual(restored.snapshot(), plan.snapshot());
-  assert.equal(restored.observeToolCall('search', { q: 'three' }).state, 'stalled');
+  assert.equal(restored.observeToolCall('search', { q: 'one' }).state, 'stalled'); // 3
 });
 
 test('a tightened threshold overrides what the checkpoint recorded', () => {
   const plan = new WorkPlan(STEPS, { stallThreshold: 10 });
-  plan.observeToolCall('search', { q: 'one' });
+  plan.observeToolCall('search', { q: 'one' }); // novel
+  plan.observeToolCall('search', { q: 'one' }); // 1
   const restored = WorkPlan.fromJSON(plan.toJSON(), { stallThreshold: 2 });
-  assert.equal(restored.observeToolCall('search', { q: 'two' }).state, 'stalled');
+  assert.equal(restored.observeToolCall('search', { q: 'one' }).state, 'stalled'); // 2
 });
 
 test('a checkpoint never carries raw tool arguments', () => {
