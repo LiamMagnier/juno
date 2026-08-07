@@ -91,12 +91,19 @@ import {
   provenanceForStorage,
 } from "@/lib/work/deliverables";
 import {
+  parseSkillContract,
   parseSkillInvocation,
   resolveSkillPermissions,
+  scoreSkillsForGoal,
+  selectSkillAutomatically,
   selectSkillBySlug,
   selectSkillVersion,
+  skillContractTerms,
   skillRequestFromRow,
   skillVersionRunReference,
+  type SkillProfile,
+  type SkillSelection,
+  type SkillSelectionVia,
   type SkillVersionRunReference,
 } from "@/lib/work/skills";
 import type { Prisma } from "@prisma/client";
@@ -1802,19 +1809,118 @@ interface AppliedSkill {
   reference: SkillVersionRunReference;
   /** What the version asked for and did not get. Reported, never dropped. */
   withheld: string[];
+  /** How this skill came to be in force, for the audit row below. */
+  via: SkillSelectionVia;
+  /** The scorer's number, or 1 for a slash invocation. Audited, never stored. */
+  confidence: number;
+}
+
+/**
+ * How many opted-in skills are read and scored.
+ *
+ * A cap on work done on every run, not a judgement about the skills past it:
+ * an account that has opted more than this many in has the remainder ignored
+ * for automatic selection, in slug order, and can still invoke every one of
+ * them by name.
+ */
+const SKILL_AUTO_SELECT_MAX_CANDIDATES = 50;
+
+const SKILL_CANDIDATE_COLUMNS = {
+  id: true,
+  slug: true,
+  enabled: true,
+  trust: true,
+  autoSelect: true,
+  currentVersion: true,
+} as const;
+
+/**
+ * The skill the user named.
+ *
+ * Trust is not consulted, per `selectSkillBySlug`: the user typed the name.
+ */
+async function skillFromInvocation(userId: string, slug: string): Promise<SkillSelection> {
+  const candidates = await prisma.workSkill.findMany({
+    where: { userId, slug, deletedAt: null },
+    select: SKILL_CANDIDATE_COLUMNS,
+  });
+  return selectSkillBySlug(slug, candidates);
+}
+
+/**
+ * The skill this goal reads like, when the account has opted one in.
+ *
+ * The opt-in gate is in the WHERE clause rather than left to
+ * `eligibleForAutoSelection`, and that ordering is the whole cost argument:
+ * every run without a slash invocation reaches this function, and an account
+ * that has opted no skill in should pay one indexed lookup that returns nothing
+ * rather than the cost of reading and scoring its entire library. The two
+ * queries below the gate run only for accounts that asked for this.
+ *
+ * Trust is deliberately NOT in the WHERE clause. `trustPermitsAutoSelection`
+ * fails closed on a level this build does not recognise, which no SQL predicate
+ * here could express without restating the rule in a second place where it
+ * would drift. The rows come back and `selectSkillAutomatically` drops them,
+ * which also keeps the ranking honest — an untrusted skill is removed from the
+ * ranking rather than allowed to block the trusted one below it.
+ */
+async function skillForGoal(userId: string, goal: string): Promise<SkillSelection> {
+  const rows = await prisma.workSkill.findMany({
+    where: { userId, deletedAt: null, enabled: true, autoSelect: true },
+    select: { ...SKILL_CANDIDATE_COLUMNS, name: true, description: true },
+    // Ordered so `take` keeps the same set on every run, rather than whichever
+    // rows the query planner happened to return first.
+    orderBy: { slug: "asc" },
+    take: SKILL_AUTO_SELECT_MAX_CANDIDATES,
+  });
+  if (rows.length === 0) return { selected: false, reason: "no_candidate" };
+
+  // The contract of the version that would actually run, addressed by
+  // (skillId, version) so this reads the unique index and not every version of
+  // every candidate.
+  const versions = await prisma.workSkillVersion.findMany({
+    where: { OR: rows.map((row) => ({ skillId: row.id, version: row.currentVersion })) },
+    select: { skillId: true, contract: true },
+  });
+  const contracts = new Map(
+    versions.map((version) => [version.skillId, parseSkillContract(version.contract)])
+  );
+
+  const profiles: SkillProfile[] = rows.map(({ name, description, ...candidate }) => {
+    const contract = contracts.get(candidate.id);
+    return {
+      candidate,
+      name,
+      description,
+      // A head pointing at a missing row scores on its name and description
+      // alone. `selectSkillVersion` refuses the run further down anyway; there
+      // is nothing to gain by discovering the fault twice.
+      contractTerms: contract ? skillContractTerms(contract) : [],
+    };
+  });
+
+  return selectSkillAutomatically({ scored: scoreSkillsForGoal({ goal, profiles }) });
 }
 
 /**
  * The skill this run is operating under, if any.
  *
- * Selection is by slash invocation and only by slash invocation. Neither
- * `WorkSession` nor `WorkRun` has a skill column, so there is nowhere for a
- * planner's automatic choice to be recorded — and `selectSkillAutomatically`
- * needs a confidence score that only a planning model can produce, which this
- * executor does not run. A goal beginning `/tidy-downloads …` is the one
- * expression of intent that survives into the executor unambiguously, and it
- * is the one the user typed, which is also the only case where trust may be
- * skipped (see `selectSkillBySlug`).
+ * Two ways in, and they do not overlap. A goal beginning `/tidy-downloads …` is
+ * an explicit request and takes the slash path; anything else is offered to
+ * `scoreSkillsForGoal`, which reaches a decision only for skills the user has
+ * switched `autoSelect` on for. A goal that names a skill which does not
+ * resolve — a typo, a deleted slug — is NOT then scored automatically. The user
+ * expressed an intent and it failed, and quietly running a different skill
+ * instead is a worse answer to that than running none.
+ *
+ * Both paths are recorded identically, which is the correction to what this
+ * docstring used to claim. It said there was nowhere for an automatic choice to
+ * live, and that was already untrue when it was written: `reference` is a
+ * `WorkRunIO` row naming the version that ran, and the caller writes it plus a
+ * `skill_applied` audit event without caring how the skill was chosen. What was
+ * genuinely missing was the confidence, and `scoreSkillsForGoal` now produces
+ * it from the goal text without a model — see the argument in `skills.ts` for
+ * why it is computed rather than asked for.
  *
  * The goal itself is left alone. `WorkSession.goal` is documented as what the
  * user asked for verbatim and is the thing the plan is checked back against;
@@ -1829,22 +1935,19 @@ async function applySkill(input: {
   policy: string;
 }): Promise<AppliedSkill | null> {
   const invocation = parseSkillInvocation(input.goal);
-  if (!invocation) return null;
-
-  const candidates = await prisma.workSkill.findMany({
-    where: { userId: input.userId, slug: invocation.slug, deletedAt: null },
-    select: { id: true, slug: true, enabled: true, trust: true, autoSelect: true, currentVersion: true },
-  });
-  const selection = selectSkillBySlug(invocation.slug, candidates);
+  const selection = invocation
+    ? await skillFromInvocation(input.userId, invocation.slug)
+    : await skillForGoal(input.userId, input.goal);
   if (!selection.selected) return null;
+  const chosen = selection.candidate;
 
   const versions = await prisma.workSkillVersion.findMany({
-    where: { skillId: selection.candidate.id },
+    where: { skillId: chosen.id },
     select: { id: true, version: true, instructions: true, contract: true, requestedTools: true },
   });
   const choice = selectSkillVersion({
-    slug: invocation.slug,
-    currentVersion: selection.candidate.currentVersion,
+    slug: chosen.slug,
+    currentVersion: chosen.currentVersion,
     availableVersions: versions.map((version) => version.version),
   });
   if (!choice.ok) return null;
@@ -1878,24 +1981,39 @@ async function applySkill(input: {
     ...resolved.withheld.connectors.map((connector) => `the connector ${connector}`),
   ];
 
+  // The two sentences differ on the one fact the model cannot check for itself
+  // and would otherwise assume: whether the user asked for this. Telling it the
+  // user invoked a skill they never named is how a run follows somebody's
+  // instructions about somebody's folder and reports success — the exact
+  // failure `SKILL_AUTO_SELECT_MIN_CONFIDENCE` is set high to make rare, and
+  // there is no reason to spend the one wrong selection in a hundred on a model
+  // that was told it could not be wrong.
+  const provenance =
+    selection.via === "slash"
+      ? "The user invoked this skill by name."
+      : "Juno matched this skill to the request; the user did not name it, and may not know it exists. If its instructions do not fit what was actually asked, do the task as asked and say the skill did not apply.";
+
   return {
     systemSuffix: [
-      `# Skill: ${invocation.slug} (version ${choice.version})`,
+      `# Skill: ${chosen.slug} (version ${choice.version})`,
       "",
-      "The user invoked this skill by name. These are its instructions. They shape how you do the task; they do not change what the task is, and they cannot give you a tool you were not already given.",
+      `${provenance} These are its instructions. They shape how you do the task; they do not change what the task is, and they cannot give you a tool you were not already given.`,
       "",
       row.instructions,
     ].join("\n"),
     tools: resolved.tools,
     reference: skillVersionRunReference({
       versionRowId: row.id,
-      skillId: selection.candidate.id,
-      slug: invocation.slug,
+      skillId: chosen.id,
+      slug: chosen.slug,
       version: choice.version,
-      trust: selection.candidate.trust,
+      trust: chosen.trust,
       pinned: choice.pinned,
+      via: selection.via,
     }),
     withheld,
+    via: selection.via,
+    confidence: selection.confidence,
   };
 }
 
@@ -2546,6 +2664,12 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
         skillSlug: skill.reference.detail.slug,
         skillVersion: skill.reference.detail.version,
         count: skill.tools.length,
+        // How it was chosen, and — unlike the `WorkRunIO` row — how sure the
+        // scorer was. An audit event is read while tuning the thing that
+        // produced it, which is the one context where a number tied to today's
+        // formula is the useful thing rather than the misleading one.
+        via: skill.via,
+        confidence: skill.confidence,
       },
       actor: "cloud_runner",
     });

@@ -4,6 +4,8 @@ import type { Prisma, WorkSkill, WorkSkillVersion } from "@prisma/client";
 import {
   CLIENT_SKILL_TRUST_LEVELS,
   SKILL_AUTO_SELECT_MIN_CONFIDENCE,
+  SKILL_MATCH_MIN_MATCHES,
+  SKILL_NAME_WEIGHT,
   WORK_SKILL_TRUST_LEVELS,
   createSkillSchema,
   emptySkillContract,
@@ -18,12 +20,15 @@ import {
   parseSkillListQuery,
   patchSkillSchema,
   resolveSkillPermissions,
+  scoreSkillForGoal,
+  scoreSkillsForGoal,
   selectSkillAutomatically,
   selectSkillBySlug,
   selectSkillVersion,
   serializeSkill,
   serializeSkillVersion,
   skillContractToJson,
+  skillContractTerms,
   skillRequestFromRow,
   skillSlugFromName,
   skillVersionRunReference,
@@ -31,6 +36,7 @@ import {
   trustForOrigin,
   trustPermitsAutoSelection,
   type SkillCandidate,
+  type SkillProfile,
   type WorkSkillExample,
   type WorkSkillGrantLayer,
   type WorkSkillRequest,
@@ -445,6 +451,7 @@ test("a run records the version row, not the skill", () => {
     version: 3,
     trust: "community_reviewed",
     pinned: true,
+    via: "slash",
   });
   assert.equal(reference.refKind, "skill_version");
   // The version row, so the answer does not change when the skill is edited.
@@ -454,6 +461,37 @@ test("a run records the version row, not the skill", () => {
   assert.equal(reference.detail.version, 3);
   // An unreadable trust level is recorded as untrusted rather than passed on.
   assert.equal(reference.detail.trust, "untrusted");
+});
+
+test("a run records whether the user asked for the skill or Juno matched it", () => {
+  // "Which skill ran" is answerable without this; "did I ask for that" is not,
+  // and automatic selection is what makes it a question worth asking.
+  const named = skillVersionRunReference({
+    versionRowId: "wsv_3",
+    skillId: "skl_1",
+    slug: "tidy-downloads",
+    version: 3,
+    trust: "user_authored",
+    pinned: false,
+    via: "slash",
+  });
+  const matched = { ...named, detail: { ...named.detail, via: "automatic" as const } };
+  assert.equal(named.detail.via, "slash");
+  assert.equal(
+    skillVersionRunReference({
+      versionRowId: "wsv_3",
+      skillId: "skl_1",
+      slug: "tidy-downloads",
+      version: 3,
+      trust: "user_authored",
+      pinned: false,
+      via: "automatic",
+    }).detail.via,
+    "automatic"
+  );
+  // The two are otherwise the same row, so nothing else has to be read
+  // differently depending on how the skill was chosen.
+  assert.deepEqual({ ...matched.detail, via: "slash" }, named.detail);
 });
 
 // ---------------------------------------------------------------------------
@@ -558,6 +596,328 @@ test("two equally confident skills are a refusal, not a coin toss", () => {
       ],
     }),
     { selected: false, reason: "ambiguous" }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Scoring
+// ---------------------------------------------------------------------------
+
+/*
+ * The tests above hand `selectSkillAutomatically` confidences chosen to exercise
+ * one branch each, which pins the gate and says nothing about whether a real
+ * goal can ever get through it. Everything below goes in the other end — a goal
+ * somebody might type, and a skill somebody might have written — so that the
+ * selecting branch is reached by the scorer rather than by a literal.
+ *
+ * The property under test is not "the scorer ranks well". It is that the scorer
+ * and the gate agree on where 0.75 is: strong evidence gets through, evidence
+ * that is merely topical does not, and neither answer moves between runs.
+ */
+
+function profile(overrides: Partial<SkillProfile> = {}): SkillProfile {
+  return {
+    candidate: candidate(),
+    name: "Tidy Downloads",
+    description: "",
+    contractTerms: [],
+    ...overrides,
+  };
+}
+
+/** The skill and the goal a reader of this module would expect to work. */
+const TIDY_DOWNLOADS = profile({
+  candidate: candidate({ id: "skl_tidy", slug: "tidy-downloads" }),
+  name: "Tidy Downloads",
+  description: "Sorts the Downloads folder by file type and moves installers to the bin.",
+});
+
+test("a real goal reaches the selecting branch through the scorer", () => {
+  const scored = scoreSkillsForGoal({
+    goal: "tidy my downloads folder",
+    profiles: [
+      TIDY_DOWNLOADS,
+      profile({
+        candidate: candidate({ id: "skl_weekly", slug: "weekly-report" }),
+        name: "Weekly Report",
+        description: "Writes the Monday summary from last week's sessions.",
+      }),
+    ],
+  });
+
+  const selection = selectSkillAutomatically({ scored });
+  assert.equal(selection.selected, true);
+  assert.equal(selection.selected && selection.candidate.id, "skl_tidy");
+  assert.equal(selection.selected && selection.via, "automatic");
+  // The confidence the run records is the scorer's own number, not a rounding
+  // of it: the audit event and the threshold have to be reading one value.
+  assert.equal(selection.selected && selection.confidence, scored[0].confidence);
+  assert.ok(scored[0].confidence >= SKILL_AUTO_SELECT_MIN_CONFIDENCE);
+
+  // The unrelated skill contributed nothing rather than a small amount, so it
+  // cannot creep up on the leader as descriptions get longer.
+  assert.equal(scored[1].confidence, 0);
+  assert.deepEqual(scored[1].matched, []);
+  // Naming evidence is reported before corroborating evidence.
+  assert.deepEqual(scored[0].matched, ["tidy", "download", "folder"]);
+});
+
+test("a goal about nothing in particular selects nothing", () => {
+  const scored = scoreSkillsForGoal({
+    goal: "summarise this idea for me",
+    profiles: [TIDY_DOWNLOADS],
+  });
+  assert.equal(scored[0].confidence, 0);
+  assert.deepEqual(selectSkillAutomatically({ scored }), {
+    selected: false,
+    reason: "low_confidence",
+  });
+});
+
+test("a goal on the skill's topic that does not name it is refused", () => {
+  // The conservative half of the design, and the one worth a test: this goal is
+  // unmistakably what the skill is for, and every corroborating term matches.
+  // Half the skill's name is still missing, and half a name is not enough to
+  // act on unasked.
+  const expenses = profile({
+    candidate: candidate({ id: "skl_expenses", slug: "expense-report" }),
+    name: "Expense Report",
+    description: "Reconciles the monthly spreadsheet totals against receipts.",
+  });
+  const scored = scoreSkillsForGoal({
+    goal: "reconcile the monthly spreadsheet totals against my receipts and expenses",
+    profiles: [expenses],
+  });
+
+  assert.ok(scored[0].confidence > 0, "the topical overlap is visible");
+  assert.ok(scored[0].confidence < SKILL_AUTO_SELECT_MIN_CONFIDENCE);
+  assert.deepEqual(selectSkillAutomatically({ scored }), {
+    selected: false,
+    reason: "low_confidence",
+  });
+
+  // And it stays refused however much corroboration is piled on, because the
+  // description can only ever be worth `1 - SKILL_NAME_WEIGHT`.
+  const saturated = scoreSkillsForGoal({
+    goal: "reconcile the monthly spreadsheet totals against my receipts and expenses",
+    profiles: [{ ...expenses, contractTerms: ["reconcile", "monthly", "spreadsheet", "receipts"] }],
+  });
+  assert.ok(saturated[0].confidence <= SKILL_NAME_WEIGHT / 2 + (1 - SKILL_NAME_WEIGHT));
+  assert.ok(saturated[0].confidence < SKILL_AUTO_SELECT_MIN_CONFIDENCE);
+});
+
+test("one matched term is never enough on its own", () => {
+  const invoices = profile({
+    candidate: candidate({ id: "skl_inv", slug: "invoices" }),
+    name: "Invoices",
+    description: "",
+  });
+  const scored = scoreSkillForGoal({ goal: "file the invoices", profile: invoices });
+  // Its whole name matched, so coverage alone would report full confidence —
+  // there was only ever one thing to match.
+  assert.deepEqual(scored.matched, ["invoice"]);
+  assert.ok(scored.matched.length < SKILL_MATCH_MIN_MATCHES);
+  assert.equal(scored.confidence, 0);
+});
+
+test("a plural in the goal meets a singular in the skill, and the reverse", () => {
+  const archive = profile({
+    candidate: candidate({ id: "skl_arch", slug: "invoice-archive" }),
+    name: "Invoice Archive",
+  });
+  for (const goal of ["archive my invoices", "archive my invoice"]) {
+    const scored = scoreSkillForGoal({ goal, profile: archive });
+    assert.ok(
+      scored.confidence >= SKILL_AUTO_SELECT_MIN_CONFIDENCE,
+      `${goal} did not reach the threshold`
+    );
+  }
+
+  // Folding is applied to both sides, so it does not have to be right about
+  // English to work: `analysis` folds to a non-word, and meets itself there.
+  const analysis = profile({
+    candidate: candidate({ id: "skl_an", slug: "analysis-notes" }),
+    name: "Analysis Notes",
+  });
+  assert.ok(
+    scoreSkillForGoal({ goal: "write up the analysis notes", profile: analysis }).confidence >=
+      SKILL_AUTO_SELECT_MIN_CONFIDENCE
+  );
+
+  // `ss` and short words are left whole, so `address` is not folded to `addres`
+  // and then missed by a goal that spells it correctly.
+  const addresses = profile({
+    candidate: candidate({ id: "skl_ad", slug: "address-book" }),
+    name: "Address Book",
+  });
+  assert.ok(
+    scoreSkillForGoal({ goal: "update the address book", profile: addresses }).confidence >=
+      SKILL_AUTO_SELECT_MIN_CONFIDENCE
+  );
+});
+
+test("function words carry no evidence on either side", () => {
+  // Every word here is a stopword or too short, so there is nothing to match
+  // however many of them the goal and the skill have in common.
+  const scored = scoreSkillForGoal({
+    goal: "please can you do this for me and then also do that",
+    profile: profile({ description: "Please do this for me." }),
+  });
+  assert.equal(scored.confidence, 0);
+  assert.deepEqual(scored.matched, []);
+});
+
+test("the contract corroborates what the name already suggested", () => {
+  const base = profile({
+    candidate: candidate({ id: "skl_mail", slug: "mailbox-triage" }),
+    name: "Mailbox Triage",
+    description: "",
+  });
+  const goal = "triage the gmail label";
+
+  const without = scoreSkillForGoal({ goal, profile: base });
+  const with_ = scoreSkillForGoal({
+    goal,
+    profile: {
+      ...base,
+      contractTerms: skillContractTerms(
+        parseSkillContract({
+          inputs: [{ name: "label", kind: "string", description: "The Gmail label to read." }],
+          requestedConnectors: ["gmail"],
+        })
+      ),
+    },
+  });
+
+  assert.ok(with_.confidence > without.confidence);
+  assert.ok(with_.matched.includes("gmail"));
+  // Corroboration only. Half the name is still missing, so this does not become
+  // a second route past the threshold.
+  assert.ok(with_.confidence < SKILL_AUTO_SELECT_MIN_CONFIDENCE);
+});
+
+test("contract terms are what the skill is for, not where it may go", () => {
+  const terms = skillContractTerms(
+    parseSkillContract({
+      inputs: [{ name: "folder", kind: "file", description: "The folder to sort." }],
+      outputs: [{ name: "report", kind: "string", description: "What moved." }],
+      requestedConnectors: ["gmail"],
+      requestedApps: ["Finder"],
+      // Excluded: these tokenise to `example` and `com`, and `com` would match
+      // every goal that mentions a URL.
+      requestedDomains: ["example.com"],
+    })
+  );
+  assert.ok(terms.includes("folder"));
+  assert.ok(terms.includes("The folder to sort."));
+  assert.ok(terms.includes("report"));
+  assert.ok(terms.includes("gmail"));
+  assert.ok(terms.includes("Finder"));
+  assert.equal(
+    terms.some((term) => term.includes("example.com")),
+    false
+  );
+});
+
+test("a strong match still cannot get an untrusted skill selected", () => {
+  // The trust gate is the one that matters most here, because this is the path
+  // an imported skill reaches without anybody typing its name.
+  const scored = scoreSkillsForGoal({
+    goal: "tidy my downloads folder",
+    profiles: [
+      {
+        ...TIDY_DOWNLOADS,
+        candidate: candidate({ id: "skl_tidy", slug: "tidy-downloads", trust: "untrusted" }),
+      },
+    ],
+  });
+  assert.ok(scored[0].confidence >= SKILL_AUTO_SELECT_MIN_CONFIDENCE);
+  assert.deepEqual(selectSkillAutomatically({ scored }), {
+    selected: false,
+    reason: "untrusted",
+  });
+
+  // Same for a skill the user has not opted in, at the same score.
+  assert.deepEqual(
+    selectSkillAutomatically({
+      scored: scoreSkillsForGoal({
+        goal: "tidy my downloads folder",
+        profiles: [
+          {
+            ...TIDY_DOWNLOADS,
+            candidate: candidate({ id: "skl_tidy", slug: "tidy-downloads", autoSelect: false }),
+          },
+        ],
+      }),
+    }),
+    { selected: false, reason: "auto_select_disabled" }
+  );
+});
+
+test("two skills matched equally compare exactly equal, so the tie is seen", () => {
+  // A goal that asks for two things and names both skills. The refusal depends
+  // on `===`, so equal evidence has to produce the same double and not two
+  // values a hair apart — which it does because the arithmetic is the same
+  // operations on the same rationals for every candidate.
+  const scored = scoreSkillsForGoal({
+    goal: "tidy my downloads and archive the invoices",
+    profiles: [
+      profile({
+        candidate: candidate({ id: "skl_tidy", slug: "tidy-downloads" }),
+        name: "Tidy Downloads",
+      }),
+      profile({
+        candidate: candidate({ id: "skl_arch", slug: "archive-invoices" }),
+        name: "Archive Invoices",
+      }),
+    ],
+  });
+
+  assert.equal(scored[0].confidence, scored[1].confidence);
+  assert.ok(scored[0].confidence >= SKILL_AUTO_SELECT_MIN_CONFIDENCE);
+  assert.deepEqual(selectSkillAutomatically({ scored }), {
+    selected: false,
+    reason: "ambiguous",
+  });
+});
+
+test("confidence measures the skill's terms, not how much the user typed", () => {
+  // Scoring the goal's coverage instead would make the threshold a measure of
+  // brevity: the same skill would clear it for a terse request and miss it for
+  // a chatty one describing the identical job.
+  const terse = scoreSkillForGoal({ goal: "tidy downloads", profile: profile() });
+  const rambling = scoreSkillForGoal({
+    goal: "tidy downloads, and while you are at it could you have a look at the spare room, the garage, and anything else that has piled up over the past several months",
+    profile: profile(),
+  });
+  assert.equal(terse.confidence, rambling.confidence);
+  assert.ok(terse.confidence >= SKILL_AUTO_SELECT_MIN_CONFIDENCE);
+});
+
+test("the same goal scores the same way twice", () => {
+  // The property a planner pass would have given up, and the reason this is a
+  // pure function: a user who reruns a task gets the skill they got last time,
+  // and the composer can show the answer before the run starts.
+  const input = {
+    goal: "tidy my downloads folder",
+    profiles: [TIDY_DOWNLOADS, profile({ candidate: candidate({ id: "skl_b", slug: "beta" }) })],
+  };
+  assert.deepEqual(scoreSkillsForGoal(input), scoreSkillsForGoal(input));
+});
+
+test("a skill whose name yields no terms is never selected automatically", () => {
+  // The tokeniser reads `[a-z0-9]` and nothing else, so a name written in
+  // another script has no terms to match. It fails in the safe direction: the
+  // skill is un-suggested rather than unusable, and typing its slug still runs
+  // it.
+  const scored = scoreSkillForGoal({
+    goal: "整理する",
+    profile: profile({ candidate: candidate({ slug: "id" }), name: "識別", description: "整理" }),
+  });
+  assert.equal(scored.confidence, 0);
+  assert.deepEqual(
+    selectSkillAutomatically({ scored: [scored] }),
+    { selected: false, reason: "low_confidence" }
   );
 });
 
