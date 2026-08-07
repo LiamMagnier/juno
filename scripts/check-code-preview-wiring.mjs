@@ -22,16 +22,27 @@ function requireText(relativePath, snippets) {
 }
 
 // The preview engine can exist in the package while remaining unreachable from
-// the shipping app. Keep the three links that make it a real user workflow in
-// one cheap, deterministic release check: the dock, the inspector action, and
-// the separate-window scene.
-requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Views/WorkbenchView.swift", [
-  "CodePreviewDock(",
-  "openPreview: { openPreviewForCurrentSession() }",
-  "openWindow(id: CodePreviewScene.windowID, value: target)",
-  "Open the live workspace preview",
+// the shipping app. Keep the links that make it a real user workflow in one
+// cheap, deterministic release check. JunoDesktop is the product shell; the
+// older JunoMac target is not the app users launch.
+requireText("native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift", [
+  "DesktopCodePreviewDock(",
+  "target: previewTarget",
+  "previewTarget = CodePreviewTarget(workspaceRoot: root)",
+  "openPreviewWindow(previewTarget)",
   "keyboardShortcut(\"p\", modifiers: [.command, .option])",
 ]);
-requireText("native/macOS/JunoMac/App/JunoMacApp.swift", ["CodePreviewScene()"]);
+requireText("native/macOS/JunoDesktop/App/DesktopCodePreviewDock.swift", [
+  "CodePreviewDock(",
+  "openInWindow:",
+]);
+requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Views/Preview/CodePreviewWindow.swift", [
+  "DevServerService.contained",
+  "public struct CodePreviewDock",
+  "CodePreviewScene",
+  "WindowGroup(id: Self.windowID, for: CodePreviewTarget.self)",
+  "juno.code.preview.dock",
+]);
+requireText("native/macOS/JunoDesktop/App/JunoDesktopApp.swift", ["CodePreviewScene()"]);
 
-console.log("[code-preview] active JunoMac dock, inspector action, and window scene are wired");
+console.log("[code-preview] shipping JunoDesktop dock, contained server, inspector action, and window scene are wired");

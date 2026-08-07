@@ -19,11 +19,19 @@ const provider = read(
 const monitor = read(
   "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Remote/CodeRemoteTaskMonitorView.swift",
 );
-const workbench = read(
-  "native/Packages/JunoCode/Sources/JunoCodeUI/Views/WorkbenchView.swift",
+const desktopWorkspace = read(
+  "native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift",
 );
-const codeView = read("native/macOS/JunoMac/App/JunoMacCodeView.swift");
-const rootSource = read("native/macOS/JunoMac/App/JunoMacRootView.swift");
+const desktopRoot = read(
+  "native/macOS/JunoDesktop/App/JunoDesktopWorkspaceView.swift",
+);
+const desktopConfiguration = read(
+  "native/macOS/JunoDesktop/App/JunoDesktopConfiguration.swift",
+);
+const sidebar = read("native/macOS/JunoDesktop/App/DesktopCodeStudio.swift");
+const remoteBrowser = read(
+  "native/Packages/JunoNativeKit/Sources/JunoCodeKit/CodeRemoteBrowserModel.swift",
+);
 
 const required = [
   [sheet, 'Button(location == .local ? "Create Session" : "Start Remote Task")'],
@@ -40,13 +48,18 @@ const required = [
   [monitor, "model.events"],
   [monitor, "respondToApproval"],
   [monitor, "cancelOpenTask"],
-  [workbench, "CodeRemoteTaskMonitorView(model: remoteTaskModel)"],
-  [workbench, "onRemoteTaskStarted: { remoteTaskModel?.refreshSoon() }"],
-  [workbench, "remoteTaskModel.tasks.filter"],
-  [codeView, "let remoteTaskModel: NativeCodeModel?"],
-  [codeView, "makeRemoteTaskModel"],
-  [rootSource, "codeTaskModel?.start(for: session.profile.id)"],
-  [rootSource, "remoteTaskModel: codeTaskModel"],
+  [desktopWorkspace, "DesktopCodeRemoteCanvas"],
+  [desktopWorkspace, "await remoteModel.pollEvents("],
+  [desktopWorkspace, "await remote.respondToApproval("],
+  [desktopWorkspace, "await remote.send("],
+  [desktopWorkspace, "CodeRemoteTaskDetailView("],
+  [desktopRoot, "remoteModel: remoteCodeModel"],
+  [desktopConfiguration, "CodeRemoteBrowserModel("],
+  [sidebar, "matchingRemoteSessions"],
+  [sidebar, ".remote(deviceID: summary.deviceID, sessionID: summary.sessionID)"],
+  [remoteBrowser, "public func pollEvents("],
+  [remoteBrowser, "public func respondToApproval("],
+  [remoteBrowser, "public func send("],
 ];
 
 const missing = required
@@ -61,4 +74,4 @@ if (sheet.includes(".disabled(workspaceID == nil || location != .local)")) {
   throw new Error("[code-remote] remote creation is still disabled in the session sheet");
 }
 
-console.log("[code-remote] target discovery, dispatch, and JunoMac live monitoring are wired");
+console.log("[code-remote] shipping JunoDesktop target discovery, dispatch, approvals, and live monitoring are wired");

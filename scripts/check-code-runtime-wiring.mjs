@@ -24,7 +24,22 @@ function requireText(relativePath, snippets) {
 // A package can compile every capability while the active session constructor
 // silently leaves one out. Keep the real composition points guarded: these are
 // the features that make Juno Code a product rather than a collection of
-// unused Swift types.
+// unused Swift types. These checks intentionally follow JunoDesktop, the
+// shipping host, rather than the retired standalone JunoMac shell.
+requireText("native/macOS/JunoDesktop/project.yml", [
+  "product: JunoCodeUI",
+  "product: JunoCodeRuntime",
+  "product: JunoWorkRuntime",
+  "product: JunoWorkAutomation",
+]);
+
+requireText("native/macOS/JunoDesktop/App/DesktopCodeWorkspace.swift", [
+  "SessionController",
+  "CodeSessionInspector(controller: controller, openPreview: openPreview)",
+  ".inspector(isPresented: inspectorPresentation)",
+  "computerUseIndicator(controller)",
+]);
+
 requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Models/WorkspaceContext.swift", [
   "self.mcpRegistry = try MCPToolRegistry(",
   "public func mcpTools() async -> [any CodeTool]",
@@ -46,9 +61,4 @@ requireText("native/Packages/JunoCode/Sources/JunoCodeRuntime/AgentOrchestrator.
   "lifecycleHooks?.sessionStopped",
 ]);
 
-requireText("native/Packages/JunoCode/Sources/JunoCodeUI/Views/WorkbenchView.swift", [
-  "CodePreviewDock(",
-  "CodeRemoteTaskMonitorView(model: remoteTaskModel)",
-]);
-
-console.log("[code-runtime] MCP, hooks, computer use, subagents, terminal, preview, and remote monitoring are composed");
+console.log("[code-runtime] shipping JunoDesktop composes MCP, hooks, computer use, subagents, terminal, Work, and the native inspector");

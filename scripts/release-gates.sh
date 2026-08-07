@@ -134,20 +134,20 @@ fi
 echo
 
 # ---------------------------------------------------------------------------
-# 4. The active JunoMac Code workbench must expose its local preview, remote
+# 4. The active JunoDesktop Code workbench must expose its local preview, remote
 # task monitor, and composed agent runtime. These source-level checks prevent
 # the package and the active app shell from drifting apart again.
 # ---------------------------------------------------------------------------
 echo "Code workbench wiring"
 if npm run code:preview:check >/dev/null 2>&1; then
-    pass "active JunoMac Code workbench exposes the local preview"
+    pass "active JunoDesktop Code workbench exposes the local preview"
 else
-    fail "active JunoMac Code workbench is missing local preview wiring"
+    fail "active JunoDesktop Code workbench is missing local preview wiring"
 fi
 if npm run code:remote:check >/dev/null 2>&1; then
-    pass "active JunoMac Code composer exposes Cloud/Remote task dispatch"
+    pass "active JunoDesktop Code composer exposes Cloud/Remote task dispatch"
 else
-    fail "active JunoMac Code composer is missing Cloud/Remote wiring"
+    fail "active JunoDesktop Code composer is missing Cloud/Remote wiring"
 fi
 if npm run code:runtime:check >/dev/null 2>&1; then
     pass "MCP, hooks, Computer Use, subagents, terminal, preview, and remote monitoring are composed"
