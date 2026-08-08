@@ -91,8 +91,9 @@ were online on the read-only recheck, including the wrapper-based
 import-recovery worker beyond its historical CJS restart loop. The `ccc7c237`
 artifact is now live, but a separate remote deployment shell is still running
 an orphaned `next build`; its worker has been in uninterruptible I/O sleep under
-severe memory pressure for more than 15 minutes, leaving an unresolved
-operational hazard even though the serving process is healthy.
+severe memory pressure for more than 15 minutes. A later read-only health
+request timed out after 15 seconds while PM2 still reported the backend online,
+so production is currently degraded and the rollout is not complete.
 The current source at `ccc7c237` includes quota hardening, relay boundary
 hardening, the one-voice-session ceiling, import integrity/recovery, parked
 Work parity and the desktop Work-search fix beyond that live artifact.
