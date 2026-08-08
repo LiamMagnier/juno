@@ -1,22 +1,22 @@
 {
   "$comment": "Machine-readable execution ledger for the Juno completion program. States: missing | in_progress | blocked | implemented | verified. 'verified' requires a named test. Prose and evidence live in JUNO_PRODUCT_COMPLETION.md.",
   "schemaVersion": 1,
-  "auditCommit": "50374c17",
+  "auditCommit": "6cb75e06",
   "auditDate": "2026-08-08",
-  "branch": "feat/juno-work",
+  "branch": "main",
   "verification": {
-    "fullTest": "passed: 1943 tests, 1941 passed, 2 skipped, 0 failed",
+    "fullTest": "passed: 1945 tests, 1943 passed, 2 skipped, 0 failed",
     "lint": "passed: eslint . --no-cache",
     "typecheck": "passed: npx tsc --noEmit --pretty false",
     "schema": "passed: npx prisma validate and prisma generate",
     "build": "passed: npm run build; Next.js compiled and generated 110/110 static pages",
-    "relay": "passed: npm test --prefix relay (2/2), npm run typecheck --prefix relay, npm run build --prefix relay",
+    "relay": "passed: npm test --prefix relay (3/3), npm run typecheck --prefix relay, npm run build --prefix relay",
     "contractChecks": "passed: release gates, native, capabilities, work, code preview/remote/runtime, sandbox, design",
     "focusedResearchTests": "passed: 53 passed, 0 failed",
     "nativePackages": "passed: JunoChatKit 213/213 including native chat approval recovery/decision coverage; JunoWork 52/52; JunoCode 0 failures with 1 simulator skip; JunoDesktop 111 tests/0 failures; JunoMobile 66 tests/0 failures; unsigned JunoDesktop and JunoMobile Simulator builds passed with warnings-as-errors",
-    "productionHealth": "passed read-only: https://chat.liams.dev/api/health returned ok/db ok with live artifact ce36248fa1e466bccf8f52fed2e589b32b2d8951; the remote production database reports 75 applied migrations and an up-to-date schema and all nine PM2 services are online; current source at 50374c17 includes direct attachment retrieval, public UI smoke, authenticated fail-closed release smoke, relay boundary hardening, and the desktop work-search fix; no production deploy or migration was executed",
+    "productionHealth": "passed read-only: https://chat.liams.dev/api/health returned ok/db ok with live artifact ce36248fa1e466bccf8f52fed2e589b32b2d8951; the remote production database reports 75 applied migrations and an up-to-date schema and all nine PM2 services are online; current source at 6cb75e06 includes direct attachment retrieval, public UI smoke, authenticated fail-closed release smoke, relay boundary hardening, the global voice-session ceiling, and the desktop work-search fix; no production deploy or migration was executed",
     "productionSmoke": "passed: unauthenticated health plus public UI/auth-boundary smoke against https://chat.liams.dev; authenticated catalog/chat receipt/replay smoke has not run because both JUNO_SMOKE_TOKEN and JUNO_SMOKE_COOKIE are absent on the remote; ALLOWED_ORIGINS is also absent, and the release workflow now fails closed until it is configured",
-    "lastVerifiedAt": "2026-08-08T19:38:14+02:00"
+    "lastVerifiedAt": "2026-08-08T19:48:45+02:00"
   },
   "nextSlice": {
     "id": "product-e2e-and-release-gates",
@@ -63,7 +63,7 @@
         { "id": "research-fees", "state": "implemented", "text": "Deep research records planner/model spend and vendor search/extract fees to both the run odometer and ApiSpend." },
         { "id": "retry-accounting", "state": "verified", "text": "Provider SDK adapters set maxRetries: 0; higher-level retry/accounting paths remain explicit and are covered by adapter and spend tests." },
         { "id": "reservation", "state": "verified", "text": "Concurrent work uses a conditional SpendPeriod reservation and settles/releases it atomically; covered by tests/spend-ceiling.test.ts." },
-        { "id": "per-unit-ceilings", "state": "implemented", "text": "Research and unattended Work have explicit unit ceilings; voice is stopped by the shared monthly ceiling. Per-voice-session hard cap remains a follow-up." },
+        { "id": "per-unit-ceilings", "state": "verified", "text": "Research and unattended Work have explicit unit ceilings; voice enforces a global one-hour session ceiling (or the lower provider cap) across provider switches and the shared monthly ceiling; covered by relay/tests/security.test.ts." },
         { "id": "preflight-estimate", "state": "verified", "text": "Unusually expensive Work is estimated before admission and requires explicit confirmation; covered by tests/work-preflight.test.ts and route wiring." }
       ]
     },

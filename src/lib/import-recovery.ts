@@ -95,13 +95,28 @@ export async function sweepExpiredImportRuns(limit = 20) {
         },
       });
       if (claimed.count !== 1) continue;
+
+      // The run lease and its object rows are separate records. Rebind every
+      // still-unattached object before cleanup so a failed delete remains
+      // discoverable by the next recovery sweep after the run token rotates.
+      // Attached rows are intentionally excluded: they are committed library
+      // objects and must never be swept, even during recovery.
+      await prismaUnguarded.importObject.updateMany({
+        where: {
+          userId: run.userId,
+          importRunId: run.id,
+          leaseToken: previousLeaseToken,
+          status: { in: [...CLEANUP_STATES] },
+        },
+        data: { leaseToken: replacementLeaseToken },
+      });
     }
 
-    const cleanup = await cleanupImportRun(run.userId, run.id, previousLeaseToken);
+    const cleanup = await cleanupImportRun(run.userId, run.id, replacementLeaseToken);
     objectsDeleted += cleanup.deleted;
     objectsFailed += cleanup.failed;
     const remaining = await prismaUnguarded.importObject.count({
-      where: { userId: run.userId, importRunId: run.id, leaseToken: previousLeaseToken, status: { in: [...CLEANUP_STATES] } },
+      where: { userId: run.userId, importRunId: run.id, leaseToken: replacementLeaseToken, status: { in: [...CLEANUP_STATES] } },
     });
     if (run.status !== "completed") {
       await prismaUnguarded.importRun.updateMany({
