@@ -123,6 +123,12 @@ process was killed or restarted because that intervention requires explicit
 authorization. An additional read-only HTTPS check, SSH banner check, and
 browser navigation at 21:08 CEST also timed out; this remains a network/runtime
 availability blocker, not evidence that the new local release is live.
+In a separate local browser render check at approximately 21:16 CEST, the landing,
+sign-in, sign-up, privacy, terms, and legal-notice routes all rendered with a
+semantic `main` landmark and one `h1`. The three legal pages also visibly exposed
+unresolved publisher, SIREN/address/contact, tax, director, and hosting
+placeholders; owner-provided legal facts and a subprocessor/hosting review are
+therefore release gates, not values engineering can safely invent.
 
 ---
 
