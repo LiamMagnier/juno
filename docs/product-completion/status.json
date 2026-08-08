@@ -1,22 +1,22 @@
 {
   "$comment": "Machine-readable execution ledger for the Juno completion program. States: missing | in_progress | blocked | implemented | verified. 'verified' requires a named test. Prose and evidence live in JUNO_PRODUCT_COMPLETION.md.",
   "schemaVersion": 1,
-  "auditCommit": "3ab4129f",
+  "auditCommit": "cd34a1f7",
   "auditDate": "2026-08-08",
   "branch": "feat/juno-work",
   "verification": {
-    "fullTest": "passed: 1896 passed, 2 skipped, 0 failed",
+    "fullTest": "passed: 1899 passed, 2 skipped, 0 failed",
     "lint": "passed: eslint . --no-cache",
     "typecheck": "passed: npx tsc --noEmit --pretty false",
     "schema": "passed: npx prisma validate and prisma generate",
     "contractChecks": "passed: native, capabilities, work, code preview/remote/runtime, sandbox, design",
-    "focusedResearchTests": "passed: 50 passed, 0 failed",
+    "focusedResearchTests": "passed: 53 passed, 0 failed",
     "lastVerifiedAt": "2026-08-08T15:30:00+02:00"
   },
   "nextSlice": {
-    "id": "research-validator-benchmark",
+    "id": "knowledge-ocr-and-inspector",
     "state": "in_progress",
-    "reason": "The evidence loop now has a restart-safe worker lease/backstop and persisted source-policy enforcement; the remaining P0 evidence gate is a named 100-claim validator benchmark."
+    "reason": "The evidence loop now has a restart-safe worker lease/backstop, persisted source-policy enforcement and a deterministic 100-claim validator benchmark; the next P0 gap is OCR and a citable document inspector."
   },
   "slices": [
     {
@@ -127,7 +127,7 @@
         { "id": "durable", "state": "implemented", "text": "Persisted state machine, cursor, audit rows and a fenced worker lease/backstop survive request loss; production topology is covered by tests/research-worker.test.ts and the PM2 juno-research process." },
         { "id": "steering", "state": "verified", "text": "Editable plan, confirmation gate, pause/resume/cancel and steering are covered by tests/research-run.test.ts." },
         { "id": "claim-graph", "state": "implemented", "text": "ResearchClaim/Passage/ClaimLink rows persist supporting and contradicting passage ids, strength and status; database-backed inspector coverage remains." },
-        { "id": "validator", "state": "implemented", "text": "Post-synthesis audit validates and labels unsupported/partial/contradicted/unverified claims, preserves draft/final revisions, and has a deterministic fixture; the 100-claim benchmark target is not yet run." },
+        { "id": "validator", "state": "verified", "text": "Post-synthesis audit validates and labels unsupported/partial/contradicted/unverified claims, preserves draft/final revisions, and clears the 100-claim >=95% precision benchmark in tests/research-citations.test.ts." },
         { "id": "snapshots", "state": "implemented", "text": "Fetched source snapshots, hashes, publication dates and source-policy scores are persisted; source rank and syndication events are auditable." },
         { "id": "url-safety", "state": "verified", "text": "Third-party source URLs cannot become clickable links unless http(s). Fixed 2026-08-07 at the render chokepoint." }
       ]
