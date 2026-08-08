@@ -18,7 +18,21 @@ import { prisma } from "@/lib/prisma";
  */
 
 /** Surfaces a request can come from — the ledger's `kind` column. */
-export const USAGE_SURFACES = ["chat", "code", "task", "image", "video", "voice"] as const;
+export const USAGE_SURFACES = [
+  "chat",
+  "code",
+  "task",
+  "image",
+  "video",
+  "voice",
+  // Work runs and deep research's per-search vendor fees now reach the ledger.
+  // Named here rather than left to fall through as raw strings, because the
+  // whole reason those two are worth billing is that a user should be able to
+  // see WHICH surface spent their month — and Work is the one that can spend it
+  // while nobody is looking.
+  "work",
+  "research",
+] as const;
 export type UsageSurface = (typeof USAGE_SURFACES)[number];
 
 /** Clients a request can come from — the ledger's `source` column. */
