@@ -227,6 +227,17 @@ export async function recordCitationAudit(opts: {
   const claims = extractClaims(opts.report).slice(0, MAX_CLAIMS);
   if (claims.length === 0 || opts.sources.length === 0) return null;
 
+  // The message id is a user-visible foreign key, not a convenience string.
+  // Check it before writing any claims so a caller cannot attach an audit to a
+  // different account's message (or leave an orphaned graph behind on failure).
+  if (opts.messageId) {
+    const message = await prisma.message.findFirst({
+      where: { id: opts.messageId, conversation: { userId: opts.userId } },
+      select: { id: true },
+    });
+    if (!message) return null;
+  }
+
   const existing = opts.runId
     ? await prisma.researchRun.findFirst({
         where: { id: opts.runId, userId: opts.userId },
@@ -357,28 +368,52 @@ export async function recordCitationAudit(opts: {
   }
 
   const repaired = repairReportFromClaims(opts.report, repairableClaims);
-  const latestRevision = await prisma.researchReportRevision.findFirst({
-    where: { runId: run.id, userId: opts.userId },
-    orderBy: { revision: "desc" },
-    select: { revision: true },
-  });
-  const revision = (latestRevision?.revision ?? 0) + 1;
-  await prisma.researchReportRevision.create({
-    data: {
-      userId: opts.userId,
-      runId: run.id,
-      assistantMessageId: opts.messageId ?? null,
-      revision,
-      report: repaired.report,
-      audit: summaryCounts(summary),
-    },
-  });
+  // Lock the run while allocating a revision. A retry, a reconnect, or two
+  // workers finishing the same run must never both claim revision N. When a
+  // repair changes the report, write the delivered draft first and the
+  // evidence-backed version second; the inspector can then show exactly what
+  // was said before the audit changed it.
+  const createRevision = async (report: string, audit: Record<string, unknown>) =>
+    prisma.$transaction(async (tx) => {
+      await tx.researchRun.update({
+        where: { id: run.id, userId: opts.userId },
+        data: { updatedAt: new Date() },
+        select: { id: true },
+      });
+      const latest = await tx.researchReportRevision.findFirst({
+        where: { runId: run.id, userId: opts.userId },
+        orderBy: { revision: "desc" },
+        select: { revision: true },
+      });
+      const revision = (latest?.revision ?? 0) + 1;
+      await tx.researchReportRevision.create({
+        data: {
+          userId: opts.userId,
+          runId: run.id,
+          assistantMessageId: opts.messageId ?? null,
+          revision,
+          report,
+          audit,
+        },
+      });
+      await tx.researchRun.update({
+        where: { id: run.id, userId: opts.userId },
+        data: {
+          report,
+          reportRevision: revision,
+          ...(opts.messageId ? { assistantMessageId: opts.messageId } : {}),
+        },
+      });
+      return revision;
+    });
+
+  const draftRevision = repaired.repaired
+    ? await createRevision(opts.report, { phase: "draft" })
+    : null;
+  const revision = await createRevision(repaired.report, summaryCounts(summary));
   await prisma.researchRun.update({
     where: { id: run.id, userId: opts.userId },
     data: {
-      report: repaired.report,
-      reportRevision: revision,
-      ...(opts.messageId ? { assistantMessageId: opts.messageId } : {}),
       // Legacy callers own their temporary audit run. The original durable
       // run's state is finalized by the engine after this pre-final audit.
       ...(existing ? {} : { state: summary.unverified > 0 ? "partially_completed" : "completed", finishedAt: new Date() }),
@@ -392,19 +427,43 @@ export async function recordCitationAudit(opts: {
    * citation NUMBERS are a property of the corpus the model was shown, not of
    * any column, and the inspector has to line `[3]` up with the right row.
    */
-  await appendResearchEvent({
-    userId: opts.userId,
-    runId: run.id,
-    kind: "citation_audit",
-    payload: {
-      ...(opts.messageId ? { messageId: opts.messageId } : {}),
-      sourceOrder: stored.map((s) => s.id),
-      judgeCalls,
-      revision,
-      repaired: repaired.repaired,
-      ...summaryCounts(summary),
+  const events: Array<{ kind: string; payload: Record<string, unknown> }> = [
+    {
+      kind: "citation_audit",
+      payload: {
+        ...(opts.messageId ? { messageId: opts.messageId } : {}),
+        sourceOrder: stored.map((s) => s.id),
+        judgeCalls,
+        draftRevision,
+        revision,
+        repaired: repaired.repaired,
+        ...summaryCounts(summary),
+      },
     },
-  });
+  ];
+  if (repaired.repaired) {
+    events.push({
+      kind: "report_revision",
+      payload: {
+        draftRevision,
+        revision,
+        reason: "citation_validation",
+        originalChars: opts.report.length,
+        finalChars: repaired.report.length,
+      },
+    });
+  }
+  if (summary.contradicted > 0 || duplicates.size > 0) {
+    events.push({
+      kind: "conflict_found",
+      payload: {
+        contradictedClaims: summary.contradicted,
+        duplicateSources: duplicates.size,
+        sourceIds: stored.map((s) => s.id),
+      },
+    });
+  }
+  await appendResearchEvents({ userId: opts.userId, runId: run.id, events });
 
   return { ...summary, report: repaired.report, repaired: repaired.repaired, revision };
 }
@@ -458,6 +517,16 @@ async function appendResearchEvent(input: {
   console.error("[research] could not append audit event", { runId: input.runId, error: lastError });
 }
 
+async function appendResearchEvents(input: {
+  userId: string;
+  runId: string;
+  events: Array<{ kind: string; payload: Record<string, unknown> }>;
+}): Promise<void> {
+  for (const event of input.events) {
+    await appendResearchEvent({ ...input, ...event });
+  }
+}
+
 type CitationCounts = Omit<CitationAuditSummary, "runId">;
 
 function tally(summary: CitationCounts, status: ClaimStatus, strength: number | null) {
@@ -494,7 +563,7 @@ async function storeCorpus(opts: {
       eventDate: eventDate
         ? new Date(Date.UTC(eventDate.year, (eventDate.month ?? 1) - 1, eventDate.day ?? 1))
         : null,
-    }).authority;
+    });
     const existingSource = await prisma.researchSource.findFirst({
       where: {
         userId: opts.userId,
@@ -510,7 +579,11 @@ async function storeCorpus(opts: {
             title: source.title.slice(0, 500),
             publishedAt: source.publishedAt ?? null,
             ...(body ? { snapshot: body } : {}),
-            authority,
+            authority: authority.authority,
+            freshness: authority.freshness,
+            directness: authority.directness,
+            independence: authority.independence,
+            composite: authority.composite,
           },
           select: { id: true },
         })
@@ -524,7 +597,11 @@ async function storeCorpus(opts: {
             // The snapshot is what makes a report auditable after the page changes:
             // the inspector quotes THIS, not a re-fetch that may say something else.
             snapshot: body || null,
-            authority,
+            authority: authority.authority,
+            freshness: authority.freshness,
+            directness: authority.directness,
+            independence: authority.independence,
+            composite: authority.composite,
           },
           select: { id: true },
         });
@@ -582,7 +659,7 @@ async function markSyndication(opts: {
   for (const [copyId, canonicalId] of duplicates) {
     await prisma.researchSource.update({
       where: { id: copyId, userId: opts.userId },
-      data: { duplicateOfId: canonicalId },
+      data: { duplicateOfId: canonicalId, independence: 0, composite: 0 },
     });
   }
   return duplicates;
@@ -667,6 +744,10 @@ export async function loadCitationAuditForMessage(
           title: true,
           publishedAt: true,
           authority: true,
+          freshness: true,
+          directness: true,
+          independence: true,
+          composite: true,
           snapshot: true,
           duplicateOfId: true,
         },
@@ -723,9 +804,9 @@ export async function loadCitationAuditForMessage(
         host: hostOfUrl(s.url),
         publishedAt: s.publishedAt ? s.publishedAt.toISOString() : null,
         authority: s.authority ?? score.authority,
-        freshness: score.freshness,
-        directness: score.directness,
-        independence: score.independence,
+        freshness: s.freshness ?? score.freshness,
+        directness: s.directness ?? score.directness,
+        independence: s.independence ?? score.independence,
         duplicateOfIndex: s.duplicateOfId ? indexOf.get(s.duplicateOfId) ?? null : null,
       };
     })

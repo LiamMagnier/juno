@@ -197,10 +197,22 @@ export const searchTheWeb: ResearchDeps["search"] = async ({ query, signal }) =>
       return { hits: [], costMicroUsd: res.status === 429 ? TAVILY_SEARCH_MICRO_USD : 0 };
     }
     const data = (await res.json()) as {
-      results?: Array<{ url?: string; title?: string; content?: string; raw_content?: string | null }>;
+      results?: Array<{
+        url?: string;
+        title?: string;
+        content?: string;
+        raw_content?: string | null;
+        published_date?: string | null;
+      }>;
     };
     const hits: ResearchHit[] = (data.results ?? [])
-      .filter((r): r is { url: string; title: string; content?: string; raw_content?: string | null } =>
+      .filter((r): r is {
+        url: string;
+        title: string;
+        content?: string;
+        raw_content?: string | null;
+        published_date?: string | null;
+      } =>
         !!r.url && !!r.title
       )
       .slice(0, RESULTS_PER_QUERY)
@@ -212,6 +224,9 @@ export const searchTheWeb: ResearchDeps["search"] = async ({ query, signal }) =>
           typeof r.raw_content === "string" && r.raw_content.trim()
             ? r.raw_content.slice(0, PAGE_CONTENT_CHARS)
             : undefined,
+        ...(r.published_date && Number.isFinite(Date.parse(r.published_date))
+          ? { publishedAt: new Date(r.published_date) }
+          : {}),
       }));
     return { hits, costMicroUsd: TAVILY_SEARCH_MICRO_USD };
   } catch (e) {

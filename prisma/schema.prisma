@@ -2684,6 +2684,12 @@ model ResearchSource {
   fetchedAt     DateTime  @default(now())
   /// 0..1 heuristics recorded so a reader can see why a source was weighted.
   authority     Float?
+  /// 0..1 source-policy dimensions persisted with the snapshot, not recomputed
+  /// against a moving clock when a report is inspected later.
+  freshness     Float?
+  directness    Float?
+  independence  Float?
+  composite     Float?
   /// Set when this source is a syndicated copy of another, so two copies of one
   /// wire story never read as independent corroboration.
   duplicateOfId String?

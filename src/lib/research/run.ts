@@ -62,6 +62,7 @@ interface PrismaResearchRun {
   updatedAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
+  reportRevision?: number;
 }
 
 function toRunRow(row: PrismaResearchRun): ResearchRunRow {
@@ -81,6 +82,7 @@ function toRunRow(row: PrismaResearchRun): ResearchRunRow {
     updatedAt: row.updatedAt,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
+    reportRevision: row.reportRevision,
   };
 }
 
@@ -242,7 +244,20 @@ export function createPrismaResearchStore(): ResearchStore {
       };
     },
 
-    async upsertSource({ runId, userId, url, title, contentHash, snapshot, authority }) {
+    async upsertSource({
+      runId,
+      userId,
+      url,
+      title,
+      publishedAt,
+      contentHash,
+      snapshot,
+      authority,
+      freshness,
+      directness,
+      independence,
+      composite,
+    }) {
       // No unique index on (runId, url) to upsert against, so this is a read
       // then a write. The race it leaves is two rows for one URL, which costs a
       // duplicate line in the sources list — acceptable, and far cheaper than
@@ -256,9 +271,14 @@ export function createPrismaResearchStore(): ResearchStore {
           where: { id: existing.id, userId },
           data: {
             title: title.slice(0, 500),
+            ...(publishedAt !== undefined ? { publishedAt } : {}),
             ...(contentHash !== undefined ? { contentHash } : {}),
             ...(snapshot !== undefined ? { snapshot } : {}),
             ...(authority !== undefined ? { authority } : {}),
+            ...(freshness !== undefined ? { freshness } : {}),
+            ...(directness !== undefined ? { directness } : {}),
+            ...(independence !== undefined ? { independence } : {}),
+            ...(composite !== undefined ? { composite } : {}),
           },
         });
         return { id: existing.id, created: false };
@@ -269,9 +289,14 @@ export function createPrismaResearchStore(): ResearchStore {
           userId,
           url,
           title: (title || url).slice(0, 500),
+          publishedAt: publishedAt ?? null,
           contentHash: contentHash ?? null,
           snapshot: snapshot ?? null,
           authority: authority ?? null,
+          freshness: freshness ?? null,
+          directness: directness ?? null,
+          independence: independence ?? null,
+          composite: composite ?? null,
         },
         select: { id: true },
       });
@@ -308,6 +333,10 @@ export function createPrismaResearchStore(): ResearchStore {
           snapshot: true,
           publishedAt: true,
           authority: true,
+          freshness: true,
+          directness: true,
+          independence: true,
+          composite: true,
           fetchedAt: true,
         },
       });
@@ -467,6 +496,7 @@ export interface ResearchRunView {
     unverified: number;
     duplicateSources: number;
   } | null;
+  reportRevision: number;
   /** Serialised as strings: BigInt does not survive JSON.stringify. */
   costMicroUsd: string;
   budgetMicroUsd: string | null;
@@ -503,7 +533,7 @@ export async function readResearchRun(input: {
   const store = createPrismaResearchStore();
   const run = await store.loadRun(input.runId, input.userId);
   if (!run) return null;
-  const [events, sources] = await Promise.all([
+  const [events, sources, auditEvent, latestEvent] = await Promise.all([
     store.readEvents({
       runId: run.id,
       userId: run.userId,
@@ -511,10 +541,21 @@ export async function readResearchRun(input: {
       limit: Math.min(500, Math.max(1, input.limit ?? 200)),
     }),
     store.listSources(run.id, run.userId),
+    // The caller's cursor may be past the audit event. Read the latest audit
+    // independently so a reconnect still shows the durable verification
+    // receipt instead of silently dropping it from the run header.
+    prisma.researchEvent.findFirst({
+      where: { runId: run.id, userId: run.userId, kind: "citation_audit" },
+      orderBy: { seq: "desc" },
+      select: { payload: true },
+    }),
+    prisma.researchEvent.aggregate({
+      where: { runId: run.id, userId: run.userId },
+      _max: { seq: true },
+    }),
   ]);
   const plan = parsePlan(run.plan);
   const state = isResearchState(run.state) ? run.state : "failed";
-  const auditEvent = [...events].reverse().find((event) => event.kind === "citation_audit");
   const auditPayload = auditEvent?.payload;
   const auditSummary =
     auditPayload && typeof auditPayload === "object" && !Array.isArray(auditPayload)
@@ -546,6 +587,7 @@ export async function readResearchRun(input: {
         followUpRound: plan.followUpRound ?? 0,
       },
       auditSummary,
+      reportRevision: run.reportRevision ?? 0,
       costMicroUsd: run.costMicroUsd.toString(),
       budgetMicroUsd: run.budgetMicroUsd === null ? null : run.budgetMicroUsd.toString(),
       error: run.error,
@@ -572,7 +614,7 @@ export async function readResearchRun(input: {
           : {},
       createdAt: event.createdAt.toISOString(),
     })),
-    lastSeq: events.length > 0 ? events[events.length - 1].seq : Math.max(0, input.after ?? 0),
+    lastSeq: latestEvent._max.seq ?? Math.max(0, input.after ?? 0),
   };
 }
 

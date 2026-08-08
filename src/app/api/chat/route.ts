@@ -1614,6 +1614,7 @@ async function handleChat(req: Request) {
     runId: string | null;
   } | null = null;
   let auditedMessageId: string | null = null;
+  let researchGenerationPartial = false;
 
 
   // Generation + persistence is detached from the request lifecycle: we do not
@@ -2215,6 +2216,8 @@ async function handleChat(req: Request) {
               },
             });
             assistantFull = acc.text;
+            auditedMessageId = assistant.id;
+            researchGenerationPartial = true;
             if (!(await markDurableReceiptCompleted(assistant.id, reason))) {
               durableReceiptLeaseLost = true;
               throw new DurableReceiptLeaseLostError();
@@ -2451,7 +2454,7 @@ async function handleChat(req: Request) {
           runId: input.runId,
           userId: user.id,
           report: audit?.report ?? assistantFull,
-          partial: !audit,
+          partial: !audit || researchGenerationPartial,
         }).catch((err) => {
           console.error("[chat] could not finalize research run", {
             runId: input.runId,

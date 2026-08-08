@@ -90,6 +90,10 @@ export interface ResearchSourceRow {
   snapshot: string | null;
   publishedAt: Date | null;
   authority: number | null;
+  freshness?: number | null;
+  directness?: number | null;
+  independence?: number | null;
+  composite?: number | null;
   fetchedAt: Date;
 }
 
@@ -159,6 +163,7 @@ export interface ResearchStore {
     userId: string;
     url: string;
     title: string;
+    publishedAt?: Date | null;
     /**
      * Only ever set together with `contentHash`, and only by a stage that
      * actually fetched the body. `ResearchSource` has no snippet column, so the
@@ -169,6 +174,10 @@ export interface ResearchStore {
     contentHash?: string | null;
     snapshot?: string | null;
     authority?: number | null;
+    freshness?: number | null;
+    directness?: number | null;
+    independence?: number | null;
+    composite?: number | null;
   }): Promise<{ id: string; created: boolean }>;
   savePassages(input: {
     userId: string;
@@ -196,6 +205,7 @@ export interface ResearchHit {
   url: string;
   title: string;
   snippet: string;
+  publishedAt?: Date | null;
   /** Full page text when the backend returned it in the same call. */
   rawContent?: string;
 }
@@ -704,13 +714,19 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         // snapshot here is what stops READ fetching the identical page a second
         // time and billing the run twice for one document.
         const body = hit.rawContent?.trim() ? hit.rawContent.slice(0, SNAPSHOT_CHARS) : null;
+        const score = scoreSource({
+          url: hit.url,
+          text: body ?? hit.snippet,
+          publishedAt: hit.publishedAt,
+        });
         const stored = await store.upsertSource({
           runId: run.id,
           userId: run.userId,
           url: hit.url,
           title: hit.title,
+          publishedAt: hit.publishedAt,
           ...(body ? { snapshot: body, contentHash: deps.hash(body) } : {}),
-          authority: scoreSource({ url: hit.url, text: body ?? hit.snippet }).authority,
+          ...score,
         });
         if (stored.created) {
           await append(run.id, run.userId, [
@@ -796,17 +812,38 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
    * that can only cite half of what it read.
    */
   const doReading = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
-    const sources = (await store.listSources(run.id, run.userId)).sort(
-      (a, b) => (b.authority ?? 0) - (a.authority ?? 0) || a.fetchedAt.getTime() - b.fetchedAt.getTime()
-    );
+    const sources = (await store.listSources(run.id, run.userId))
+      .map((source) => {
+        const score = scoreSource({
+          url: source.url,
+          text: source.snapshot ?? "",
+          publishedAt: source.publishedAt,
+        });
+        return {
+          source,
+          score: {
+            authority: source.authority ?? score.authority,
+            freshness: source.freshness ?? score.freshness,
+            directness: source.directness ?? score.directness,
+            independence: source.independence ?? score.independence,
+            composite: source.composite ?? score.composite,
+          },
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.score.composite - a.score.composite ||
+          b.score.authority - a.score.authority ||
+          a.source.fetchedAt.getTime() - b.source.fetchedAt.getTime()
+      );
     await append(run.id, run.userId, [
       {
         kind: "source_ranked",
         payload: {
-          order: sources.slice(0, MAX_READ_SOURCES).map((source) => ({
+          order: sources.slice(0, MAX_READ_SOURCES).map(({ source, score }) => ({
             sourceId: source.id,
             host: hostOfUrl(source.url),
-            authority: source.authority ?? 0,
+            ...score,
           })),
         },
       },
@@ -814,7 +851,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     let current = run;
     let fetched = 0;
     let passages = 0;
-    for (const source of sources.slice(0, MAX_READ_SOURCES)) {
+    for (const { source } of sources.slice(0, MAX_READ_SOURCES)) {
       const fresh = await store.loadRun(current.id, current.userId);
       if (!fresh || fresh.state !== "reading_documents") return { kind: "raced" };
       current = fresh;
@@ -828,13 +865,20 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         if (!page) continue;
         await bill(current, page.costMicroUsd, "fetch");
         text = page.text.slice(0, SNAPSHOT_CHARS);
+        const score = scoreSource({
+          url: source.url,
+          text,
+          publishedAt: source.publishedAt,
+        });
         await store.upsertSource({
           runId: run.id,
           userId: run.userId,
           url: source.url,
           title: page.title || source.title,
+          publishedAt: source.publishedAt,
           contentHash: deps.hash(text),
           snapshot: text,
+          ...score,
         });
         fetched += 1;
         await append(run.id, run.userId, [
@@ -1008,6 +1052,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
   const doValidation = async (run: ResearchRunRow): Promise<StepOutcome> => {
     const sources = await store.listSources(run.id, run.userId);
     let report = run.report ?? "";
+    let auditDegraded = false;
     if (deps.validateReport && report.trim()) {
       await append(run.id, run.userId, [{ kind: "citation_audit_started", payload: { sources: sources.length } }]);
       try {
@@ -1017,7 +1062,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           goal: run.goal,
           plan: parsePlan(run.plan),
           report,
-        sources,
+          sources,
         });
         if (validated) {
           report = validated.report;
@@ -1030,8 +1075,20 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
               ? [{ kind: "report_repaired" as const, payload: { reason: "citation_validation" } }]
               : []),
           ]);
+        } else {
+          auditDegraded = true;
+          await append(run.id, run.userId, [
+            {
+              kind: "error",
+              payload: {
+                scope: "citation_audit",
+                message: "Citation validation returned no result; claims remain unverified.",
+              },
+            },
+          ]);
         }
       } catch (error) {
+        auditDegraded = true;
         await append(run.id, run.userId, [
           {
             kind: "error",
@@ -1058,14 +1115,17 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         },
       ]);
     }
-    const to: ResearchTerminalState = dangling.length > 0 ? "partially_completed" : "completed";
+    const to: ResearchTerminalState = dangling.length > 0 || auditDegraded ? "partially_completed" : "completed";
     const ended = await finish(run, to, {
-      reason: dangling.length > 0 ? "citations_unverified" : "completed",
+      reason:
+        dangling.length > 0 ? "citations_unverified" : auditDegraded ? "citation_audit_degraded" : "completed",
       report,
       error:
         dangling.length > 0
           ? "Some citations in the report do not match a gathered source."
-          : null,
+          : auditDegraded
+            ? "Citation validation was unavailable; the report is usable but not fully verified."
+            : null,
     });
     return ended ? { kind: "finished", state: to } : { kind: "raced" };
   };
