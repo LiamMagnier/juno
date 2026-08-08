@@ -1,6 +1,6 @@
 # Juno Product Completion — execution ledger
 
-**Audit commit:** `5447c1cf` (`feat/juno-work`, local production-hardening commit)
+**Audit commit:** `6721d39f` (`feat/juno-work`, local production-hardening commit)
 **Audit date:** 2026-08-08
 **Method:** 12 parallel evidence-based subsystem readers over the source, then an
 adversarial re-check of every claim of "implemented" in the P0 areas. Findings
@@ -70,9 +70,9 @@ Apple artifacts. The production workflow now fails closed: protected
 authenticated smoke always runs catalog, provider-backed chat, durable receipt
 and idempotent replay checks. The live server was checked read-only:
 `https://chat.liams.dev/api/health` returned `ok`/`db: ok` for artifact
-`546808a9eae0f5adc192b2a214bb8dbfeaecc6e3`. The remote production checkout and
-database report 72 applied migrations and an up-to-date schema. The current
-source at `5447c1cf` contains three import-recovery migration changes beyond
+`5ef25ecd5212156e8a3dc9452ea0d4110ae07b2e`. The remote production database
+reports 75 applied migrations and an up-to-date schema; the import-recovery
+worker is online. The current source at `6721d39f` adds quota hardening beyond
 that live artifact; no production deploy or migration was executed in this run.
 
 ---
