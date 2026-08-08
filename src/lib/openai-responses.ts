@@ -12,6 +12,7 @@ import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 import type { McpToolset } from "@/lib/mcp";
+import { pdfAttachmentFallbackNote } from "@/lib/attachment-context";
 
 /**
  * OpenAI Responses API adapter — for models that are not served on
@@ -85,7 +86,7 @@ async function toResponsesInput(
           parts.push({ type: "input_text", text: `Attached file "${att.fileName}":\n\n${att.extractedText.slice(0, 100_000)}` });
         } else {
           const note = att.mimeType === "application/pdf"
-            ? " — Juno could not extract readable text from this PDF, and this model does not receive raw PDF bytes; open its Document Inspector or upload a text-readable copy"
+            ? ` — ${pdfAttachmentFallbackNote(att.parserState)}`
             : att.kind === "IMAGE" && !vision
             ? " — this model cannot view images"
             : "";

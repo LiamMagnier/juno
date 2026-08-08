@@ -104,6 +104,7 @@ import {
 } from "@/lib/chat/assistant-turn";
 import {
   applyHiddenUserContent,
+  buildAttachmentContext,
   buildPrivateHistory,
   buildProjectContext,
   contextActivityDetail,
@@ -111,9 +112,10 @@ import {
   HISTORY_LIMIT,
   promptChars,
   replaceLastUserTurn,
+  type AttachmentKnowledge,
   type ProjectKnowledge,
 } from "@/lib/chat/context-assembly";
-import { retrieveProjectKnowledge } from "@/lib/knowledge/retrieve";
+import { retrieveAttachmentKnowledge, retrieveProjectKnowledge } from "@/lib/knowledge/retrieve";
 import {
   codeSessionRefusal,
   emptySubmissionRefusal,
@@ -124,6 +126,7 @@ import {
 import { postGenerationPlan } from "@/lib/chat/post-processing";
 import { composeSystemPrompt } from "@/lib/chat/prompt-sections";
 import { chatBodySchema } from "@/lib/chat/request";
+import { isAttachmentParserPending, isAttachmentParserUnavailable } from "@/lib/attachment-context";
 import { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
 import {
   recoverFirstSubmission,
@@ -1400,10 +1403,10 @@ async function handleChat(req: Request) {
         select: { name: true, instructions: true, files: { select: { fileName: true, extractedText: true } } },
       })
     : null;
+  const knowledgeQuery =
+    [...modelHistory].reverse().find((m) => m.role === "USER")?.content ?? input.message?.trim() ?? "";
   let projectKnowledge: ProjectKnowledge | null = null;
   if (conversation.projectId && projectRow) {
-    const knowledgeQuery =
-      [...modelHistory].reverse().find((m) => m.role === "USER")?.content ?? input.message?.trim() ?? "";
     if (knowledgeQuery) {
       try {
         const retrieved = await retrieveProjectKnowledge({
@@ -1433,6 +1436,49 @@ async function handleChat(req: Request) {
   }
   const projectContext = buildProjectContext(projectRow, projectKnowledge);
 
+  // A file attached directly to a conversation may have no project at all.
+  // Retrieve its indexed passages by the durable attachment → document join so
+  // provider choice no longer decides whether a PDF can be understood. Files
+  // still in the parser queue are named explicitly below; a filename-only
+  // placeholder is not an honest answer to a user who just uploaded a file.
+  const directAttachments = modelHistory
+    .flatMap((message) => message.attachments)
+    .filter((attachment) => attachment.projectId == null && !attachment.deletedAt);
+  let attachmentKnowledge: AttachmentKnowledge | null = null;
+  if (directAttachments.length > 0 && knowledgeQuery) {
+    try {
+      const retrieved = await retrieveAttachmentKnowledge({
+        userId: user.id,
+        attachmentIds: directAttachments.map((attachment) => attachment.id),
+        query: knowledgeQuery,
+        policy: await loadBackgroundProviderPolicy(user.id),
+        conversationProvider: modelInfo.provider,
+      });
+      const pendingFiles = directAttachments
+        .filter((attachment) => isAttachmentParserPending(attachment.parserState))
+        .map((attachment) => ({ fileName: attachment.fileName, state: attachment.parserState }));
+      const unavailableFiles = directAttachments
+        .filter((attachment) => isAttachmentParserUnavailable(attachment.parserState))
+        .map((attachment) => ({ fileName: attachment.fileName, state: attachment.parserState }));
+      if (retrieved || pendingFiles.length > 0 || unavailableFiles.length > 0) {
+        attachmentKnowledge = {
+          passages: retrieved?.passages ?? [],
+          indexedFileNames: retrieved?.indexedFileNames ?? [],
+          degraded: retrieved?.mode === "lexical",
+          pendingFiles,
+          unavailableFiles,
+        };
+      }
+    } catch (error) {
+      console.error("[chat] attachment knowledge retrieval failed", {
+        conversationId: conversation.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  const attachmentContext = buildAttachmentContext(attachmentKnowledge);
+  const promptContext = [projectContext, attachmentContext].filter(Boolean).join("\n\n");
+
   // Deep research: Tavily plan → search → read before synthesis. It replaces
   // native web search for this turn — the researched corpus IS the live web
   // data — so the two are never both active. Voice turns stay conversational.
@@ -1456,12 +1502,17 @@ async function handleChat(req: Request) {
     memoryEnabled,
     canvas: canvasOn,
     voiceMode: input.voiceMode,
-    projectContext,
+    projectContext: promptContext,
     // Any of these can put text Juno did not author into context: a connector
     // tool result, provider-side web search, or a fetched research page.
     // (Deep research also carries the rule in its own system append, since that
     // corpus is assembled separately.)
-    untrustedContent: activeConnectors.length > 0 || useWebSearch || researchActive,
+    untrustedContent:
+      activeConnectors.length > 0 ||
+      useWebSearch ||
+      researchActive ||
+      !!projectKnowledge ||
+      !!attachmentKnowledge,
   });
   const targetedArtifactEditPrompt =
     artifactEditTarget && input.artifactEdit
@@ -1782,7 +1833,8 @@ async function handleChat(req: Request) {
           attachments: modelHistory.reduce((sum, msg) => sum + msg.attachments.length, 0),
           memories: memoryEnabled ? memoryProfile.recent.length : 0,
           hasProjectContext: !!projectContext,
-          documentPassages: projectKnowledge?.passages.length ?? 0,
+          hasAttachmentContext: !!attachmentContext,
+          documentPassages: (projectKnowledge?.passages.length ?? 0) + (attachmentKnowledge?.passages.length ?? 0),
         }),
       });
       // The memory receipt. A count ("3 memories") tells the user nothing they

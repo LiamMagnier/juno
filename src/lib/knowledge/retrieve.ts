@@ -391,4 +391,57 @@ export async function retrieveProjectKnowledge(options: {
   };
 }
 
+/**
+ * Retrieve from files attached directly to a conversation.
+ *
+ * Project retrieval used to be the only caller because project documents were
+ * the first knowledge surface. That made a direct PDF provider-dependent:
+ * Anthropic received its bytes, while every other adapter saw only a filename
+ * because the PDF has no flat `extractedText`. Attachment ids are the durable
+ * join that works for both project and unfiled uploads, so use them as the
+ * retrieval boundary rather than pretending every conversation has a project.
+ */
+export async function retrieveAttachmentKnowledge(options: {
+  userId: string;
+  attachmentIds: readonly string[];
+  query: string;
+  policy: BackgroundProviderPolicy;
+  conversationProvider?: string | null;
+  signal?: AbortSignal;
+  embed?: typeof embedQuery;
+}): Promise<ProjectKnowledgeContext | null> {
+  const attachmentIds = [...new Set(options.attachmentIds)].slice(0, 20);
+  if (attachmentIds.length === 0 || !options.query.trim()) return null;
+
+  const documents = await prisma.knowledgeDocument.findMany({
+    where: {
+      userId: options.userId,
+      attachmentId: { in: attachmentIds },
+      state: { in: RETRIEVABLE_STATES },
+      deletedAt: null,
+      supersededById: null,
+    },
+    select: { id: true, fileName: true },
+    take: 200,
+  });
+  if (documents.length === 0) return null;
+
+  const retrieval = await retrieveKnowledge({
+    userId: options.userId,
+    query: options.query,
+    filters: { documentIds: documents.map((document) => document.id) },
+    policy: options.policy,
+    conversationProvider: options.conversationProvider,
+    signal: options.signal,
+    embed: options.embed,
+  });
+
+  return {
+    passages: retrieval.passages,
+    mode: retrieval.mode,
+    ...(retrieval.degradedReason ? { degradedReason: retrieval.degradedReason } : {}),
+    indexedFileNames: [...new Set(documents.map((document) => document.fileName))],
+  };
+}
+
 export type { ScoredPassage } from "@/lib/knowledge/rank";

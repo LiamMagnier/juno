@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   applyHiddenUserContent,
+  buildAttachmentContext,
   buildPrivateHistory,
   buildProjectContext,
   contextActivityDetail,
@@ -138,6 +139,36 @@ test("no project is no context at all", () => {
   assert.equal(buildProjectContext(null), "");
 });
 
+test("direct attachments expose indexed passages and honest parser states", () => {
+  const context = buildAttachmentContext({
+    passages: [
+      {
+        documentId: "d1",
+        fileName: "brief.pdf",
+        locator: "page 2",
+        blockIds: ["b1"],
+        text: "The launch is scheduled for June.",
+      },
+    ],
+    indexedFileNames: ["brief.pdf"],
+    pendingFiles: [{ fileName: "new.pdf", state: "indexing" }],
+    unavailableFiles: [{ fileName: "scan.pdf", state: "failed" }],
+  });
+
+  assert.match(context, /Retrieved from attached documents/);
+  assert.match(context, /brief\.pdf · page 2/);
+  assert.match(context, /new\.pdf \(indexing\)/);
+  assert.match(context, /scan\.pdf \(failed\)/);
+  assert.match(context, /Do not claim to have read it/);
+  assert.match(context, /Do not invent contents/);
+});
+
+test("an indexed direct attachment with no matching passage stays explicit", () => {
+  const context = buildAttachmentContext({ passages: [], indexedFileNames: ["brief.pdf"] });
+  assert.match(context, /No relevant passage matched this question/);
+  assert.match(context, /brief\.pdf/);
+});
+
 test("the context line never claims context that is not there", () => {
   assert.equal(
     contextActivityDetail({ messages: 1, attachments: 0, memories: 0, hasProjectContext: false }),
@@ -150,6 +181,10 @@ test("the context line never claims context that is not there", () => {
   assert.equal(
     contextActivityDetail({ messages: 0, attachments: 0, memories: 3, hasProjectContext: false }),
     "0 messages · 3 memories"
+  );
+  assert.equal(
+    contextActivityDetail({ messages: 1, attachments: 1, memories: 0, hasProjectContext: false, hasAttachmentContext: true }),
+    "1 message · 1 attachment · attached document context"
   );
 });
 

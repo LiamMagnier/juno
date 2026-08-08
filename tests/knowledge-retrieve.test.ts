@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   describeLocator,
   estimateTokens,
@@ -18,6 +19,8 @@ import {
 } from "@/lib/knowledge/rank";
 import { lexicalCandidateQuery } from "@/lib/knowledge/lexical-query";
 import { buildProjectContext, contextActivityDetail } from "@/lib/chat/context-assembly";
+
+const CHAT_ROUTE = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
 
 /*
  * Knowledge: chunking, ranking, packing.
@@ -536,6 +539,20 @@ test("vector columns are selected only when there is a query vector to compare",
 
   const with_ = lexicalCandidateQuery({ userId: "u", expression: "a:*", withEmbeddings: true, limit: 5 });
   assert.match(with_.text, /c\."embedding" AS "embedding"/);
+});
+
+test("direct attachment retrieval is scoped by document ids and wired into chat", () => {
+  const scoped = lexicalCandidateQuery({
+    userId: "u",
+    expression: "pdf:*",
+    filters: { documentIds: ["doc-a", "doc-b"] },
+    withEmbeddings: false,
+    limit: 5,
+  });
+  assert.match(scoped.text, /d\."id" = ANY\(\$\d+\)/);
+  assert.match(CHAT_ROUTE, /retrieveAttachmentKnowledge\(/);
+  assert.match(CHAT_ROUTE, /buildAttachmentContext\(/);
+  assert.match(CHAT_ROUTE, /attachmentIds: directAttachments\.map/);
 });
 
 // ---------------------------------------------------------------------------

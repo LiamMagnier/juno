@@ -5,6 +5,7 @@ import { providerApiKey } from "@/lib/providers";
 import type { ModelInfo } from "@/lib/models";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 import type { ClientSource } from "@/types/chat";
+import { pdfAttachmentFallbackNote } from "@/lib/attachment-context";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
@@ -27,7 +28,7 @@ async function toGeminiContents(history: MessageForModel[], vision: boolean): Pr
           parts.push({ text: `Attached file "${att.fileName}":\n\n${att.extractedText.slice(0, 100_000)}` });
         } else {
           const note = att.mimeType === "application/pdf"
-            ? " Juno could not extract readable text from this PDF, and this model does not receive raw PDF bytes. Open its Document Inspector or upload a text-readable copy."
+            ? ` ${pdfAttachmentFallbackNote(att.parserState)}`
             : att.kind === "IMAGE" && !vision
             ? " This model cannot view images."
             : " This attachment has no extracted text.";
