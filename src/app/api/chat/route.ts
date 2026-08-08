@@ -17,7 +17,7 @@ import { buildSystemPrompt, buildDynamicContext } from "@/lib/anthropic";
 import { finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
-import { getMemoryProfile, saveAutoMemories, extractConversationMemory, maybeConsolidate, utilityModelCandidates } from "@/lib/memory";
+import { getMemoryProfile, saveAutoMemories, extractConversationMemory, maybeConsolidate } from "@/lib/memory";
 import { ArtifactVersionConflictError, persistArtifacts, persistTargetedArtifactEdit } from "@/lib/artifacts-store";
 import {
   applyArtifactPatch,
@@ -1411,10 +1411,12 @@ async function handleChat(req: Request) {
     }
   };
   let assistantFull = ""; // captured for background memory extraction
-  // Background memory work runs on the same speed-ranked utility models the
-  // rest of the app uses, not on whichever FREE model happens to be listed first.
-  const cheapModel =
-    utilityModelCandidates()[0] ?? MODEL_LIST.find((m) => isProviderConfigured(m.provider)) ?? modelInfo;
+  // The chat route no longer picks the background model itself. It used to hand
+  // `utilityModelCandidates()[0]` to maybeConsolidate, which then treated that
+  // model's provider as the one to match `same_provider` against — the worker
+  // vouching for itself. Choosing the model is runUtilityPrompt's job, after
+  // the background-provider policy has narrowed the field; this route's only
+  // contribution is naming the provider the user chose for the conversation.
 
   // Generation + persistence is detached from the request lifecycle: we do not
   // pass req.signal to the model, so navigating away can drop the browser stream
@@ -2166,7 +2168,11 @@ async function handleChat(req: Request) {
     }
     if (postWork.consolidates) {
       // Periodically re-summarize so the memory stays tidy and deduped.
-      await maybeConsolidate(user.id, cheapModel).catch(() => {});
+      // The provider of the model the user chose for THIS turn, so
+      // `same_provider` has the conversation to match against. It used to get
+      // `cheapModel` — the background worker itself — which under that policy
+      // amounted to asking the worker whether it was allowed to do the work.
+      await maybeConsolidate(user.id, modelInfo.provider).catch(() => {});
     }
   });
 

@@ -224,12 +224,22 @@ test("no memory write site creates or updates MemoryEntry outside the door", () 
 // Defect 2: consolidation may not have an unchecked path
 // ---------------------------------------------------------------------------
 
-/** The source of one top-level `export async function <name>` in memory.ts. */
+/**
+ * The CODE of one top-level `export async function <name>`, comments removed.
+ *
+ * Stripping comments matters: this file's assertions are about what the
+ * function does, and the comments in memory.ts name the removed constructs
+ * (`opts.model`, `streamChat`) precisely because they explain why they went.
+ * Without this, the prose describing the fix would fail the test for the fix.
+ */
 function functionBody(source: string, name: string): string {
   const start = source.indexOf(`export async function ${name}(`);
   assert.notEqual(start, -1, `${name} not found — this test is reading the wrong thing`);
   const next = source.indexOf("\nexport ", start + 1);
-  return source.slice(start, next === -1 ? source.length : next);
+  return source
+    .slice(start, next === -1 ? source.length : next)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
 test("consolidateMemories has no path that streams a model directly", () => {
@@ -243,10 +253,25 @@ test("consolidateMemories has no path that streams a model directly", () => {
   assert.equal(/\brunUtilityPrompt\s*\(/.test(body), true);
 });
 
-test("a caller-chosen model is still filtered by the policy", () => {
-  // What `candidates: [opts.model]` has to mean: a preference, not an
-  // exemption. A local_only account handed the chat route's cloud model gets
-  // nothing, rather than a quiet cross-provider send.
+test("consolidation never matches the policy against the background model's own provider", () => {
+  // The subtler second version of defect 2, caught while fixing the first:
+  // maybeConsolidate() received `utilityModelCandidates()[0]`, chosen with no
+  // reference to the conversation at all. Feeding that model's provider in as
+  // the conversationProvider makes `same_provider` a tautology — the worker
+  // vouching for itself — so consolidateMemories no longer takes a model, and
+  // the chat route contributes only the provider the USER picked for the turn.
+  const body = functionBody(src("src/lib/memory.ts"), "consolidateMemories");
+  assert.equal(/opts\.model/.test(body), false, "consolidateMemories reads a caller-supplied model again");
+  assert.match(body, /accountBackgroundProvider\(/);
+
+  const chat = src("src/app/api/chat/route.ts");
+  assert.match(chat, /maybeConsolidate\(user\.id, modelInfo\.provider\)/);
+  assert.equal(/maybeConsolidate\([^)]*cheapModel/.test(chat), false, "the chat route feeds back the worker's own model");
+});
+
+test("a single permitted candidate is filtered like any other", () => {
+  // Narrowing the field never grants an exemption: a local_only account offered
+  // one cloud model gets nothing, rather than a quiet cross-provider send.
   const chosen: UtilityCandidate = { id: "gpt-mini", provider: "openai" };
   const denied = resolveBackgroundCandidates({
     policy: { mode: "local_only" },

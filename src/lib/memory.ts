@@ -162,13 +162,6 @@ export async function runUtilityPrompt<T>(opts: {
   policy?: BackgroundProviderPolicy;
   /** Provider of the model the user actually chose for this conversation. */
   conversationProvider?: string | null;
-  /**
-   * Narrow the walk to models the caller already picked (the chat route hands
-   * consolidation its cheap background model). Still policy-filtered: a
-   * caller-chosen model is an preference, never an exemption — that hole is
-   * exactly how distilled memory used to reach a forbidden provider.
-   */
-  candidates?: readonly ModelInfo[];
   purpose?: BackgroundPurpose;
   /** Receives what was decided, for the audit trail. Never given content. */
   onDecision?: (record: BackgroundProcessingRecord) => void;
@@ -188,7 +181,7 @@ export async function runUtilityPrompt<T>(opts: {
   const decision = resolveBackgroundCandidates({
     policy: opts.policy ?? { mode: DEFAULT_BACKGROUND_PROVIDER_MODE },
     conversationProvider: opts.conversationProvider,
-    candidates: opts.candidates ?? utilityModelCandidates(),
+    candidates: utilityModelCandidates(),
   });
 
   if (decision.candidates.length === 0) {
@@ -690,7 +683,6 @@ export type ConsolidationOutcome =
  */
 export async function consolidateMemories(opts: {
   userId: string;
-  model?: ModelInfo;
   policy?: BackgroundProviderPolicy;
   conversationProvider?: string | null;
   onDecision?: (record: BackgroundProcessingRecord) => void;
@@ -737,20 +729,24 @@ Rules:
   // This used to branch: `opts.llm || !opts.model` went through
   // runUtilityPrompt (policy-checked), and everything else streamed the
   // caller's model directly with no resolveBackgroundCandidates call at all.
-  // maybeConsolidate() always passes a model, so the production path — the one
+  // maybeConsolidate() always passed a model, so the production path — the one
   // that runs after almost every chat turn — was the unchecked one, and the
   // user's distilled memory went to whatever provider the chat route happened
-  // to pick for its cheap background model, policy or no policy. A
-  // caller-supplied model is now a candidate list of one, filtered like any
-  // other. It also gains runUtilityPrompt's per-attempt timeout, which that
-  // branch never had.
+  // to pick for its cheap background model, policy or no policy.
+  //
+  // The `model` parameter is gone rather than merely policy-filtered. It was
+  // `utilityModelCandidates()[0]` — the globally fastest free model across every
+  // configured provider — which is precisely what the walk below picks anyway
+  // once the policy has had its say. Keeping it would also have left a quieter
+  // version of the same hole: matching `same_provider` against the background
+  // model's OWN provider lets the background model approve itself.
   //
   // Consolidation has no single conversation behind it — it distils facts
-  // already extracted from many — so `same_provider` matches against the
-  // provider driving this turn, falling back to the account's default chat
-  // model rather than against nothing.
+  // already extracted from many — so `same_provider` matches the provider
+  // driving this turn when the caller names one, and otherwise the account's
+  // own default chat model rather than nothing at all.
   const conversationProvider =
-    opts.conversationProvider ?? opts.model?.provider ?? (await accountBackgroundProvider(opts.userId));
+    opts.conversationProvider ?? (await accountBackgroundProvider(opts.userId));
 
   const { result, transient, deniedByPolicy, deniedReason, mode } = await runUtilityPrompt({
     system,
@@ -760,7 +756,6 @@ Rules:
     parse: (text) => (text.trim() ? text.trim() : null),
     policy: opts.policy ?? (await loadBackgroundProviderPolicy(opts.userId)),
     conversationProvider,
-    candidates: opts.model ? [opts.model] : undefined,
     purpose: "memory_consolidation",
     onDecision: opts.onDecision,
     llm: opts.llm,
@@ -818,7 +813,7 @@ export async function consolidateWithFallback(
  * exchange. (Previously gated on a 12h staleness window, which left the summary
  * showing "updated Nd ago" long after new chats had added facts.)
  */
-export async function maybeConsolidate(userId: string, model: ModelInfo): Promise<void> {
+export async function maybeConsolidate(userId: string, conversationProvider: string | null): Promise<void> {
   const [count, summary] = await Promise.all([
     prisma.memoryEntry.count({ where: { userId, kind: "FACT" } }),
     prisma.memorySummary.findUnique({ where: { userId }, select: { entryCount: true, updatedAt: true } }),
@@ -830,6 +825,9 @@ export async function maybeConsolidate(userId: string, model: ModelInfo): Promis
   const recentlyBuilt = summary != null && Date.now() - summary.updatedAt.getTime() < MIN_INTERVAL_MS;
   if (!changed || recentlyBuilt) return;
   if (count > 0) {
-    await consolidateMemories({ userId, model }).catch(() => {});
+    // The CONVERSATION's provider, not the background model's — see
+    // consolidateMemories. Passing the model that is about to do the work would
+    // make `same_provider` a tautology.
+    await consolidateMemories({ userId, conversationProvider }).catch(() => {});
   }
 }
