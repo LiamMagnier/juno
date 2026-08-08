@@ -9,6 +9,7 @@ import {
 } from "@/components/work/clarify/preflight";
 import { inferCapabilities } from "@/lib/work/inference";
 import type { WorkCapability } from "@/lib/work/domain";
+import { estimateWorkRunCost, WORK_PREFLIGHT_CONFIRMATION_MICRO_USD } from "@/lib/work/preflight-cost";
 
 /*
  * The Work composer's pre-flight questions.
@@ -183,6 +184,20 @@ test("a second round appends to the block rather than opening another", () => {
 
 test("nothing to add leaves the goal untouched", () => {
   assert.equal(appendClarifications("Do the thing", []), "Do the thing");
+});
+
+test("the Work cost preflight is deterministic and asks before an expensive run", () => {
+  const short = estimateWorkRunCost({ modelId: "deepseek:deepseek-v4-flash", goalChars: 20 });
+  const long = estimateWorkRunCost({
+    modelId: "anthropic:claude-opus-5",
+    goalChars: 20_000,
+    attachmentChars: 80_000,
+  });
+
+  assert.deepEqual(short, estimateWorkRunCost({ modelId: "deepseek:deepseek-v4-flash", goalChars: 20 }));
+  assert.equal(short.requiresConfirmation, short.estimatedCostMicroUsd >= WORK_PREFLIGHT_CONFIRMATION_MICRO_USD);
+  assert.ok(long.estimatedCostMicroUsd > short.estimatedCostMicroUsd);
+  assert.equal(long.requiresConfirmation, true);
 });
 
 test("a goal with no block splits into itself", () => {

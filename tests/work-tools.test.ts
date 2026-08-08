@@ -336,6 +336,43 @@ test("web_fetch reports a refused target rather than fetching it", async () => {
   assert.equal(fetched, false, "the blocked URL was fetched anyway");
 });
 
+test("skill-scoped web_fetch is default-deny and only reaches granted HTTPS hosts", async () => {
+  const fetched: string[] = [];
+  const tool = webFetchTool({
+    allowedDomains: () => ["docs.example.com", ".registry.example.org"],
+    fetchPage: async (url) => {
+      fetched.push(url);
+      return { ok: true, contentType: "text/plain", body: "ok" };
+    },
+  });
+
+  const denied = await tool.execute({ url: "https://collector.example.net/" }, { cwd: "/tmp" });
+  assert.equal(denied.isError, true);
+  assert.match(denied.output, /not on the allowlist/i);
+
+  const exact = await tool.execute({ url: "https://docs.example.com/guide" }, { cwd: "/tmp" });
+  assert.equal(exact.isError, undefined);
+  const subdomain = await tool.execute({ url: "https://cdn.registry.example.org/pkg" }, { cwd: "/tmp" });
+  assert.equal(subdomain.isError, undefined);
+  const wrongPort = await tool.execute({ url: "https://docs.example.com:8443/guide" }, { cwd: "/tmp" });
+  assert.equal(wrongPort.isError, true);
+  assert.deepEqual(fetched, ["https://docs.example.com/guide", "https://cdn.registry.example.org/pkg"]);
+});
+
+test("ordinary Work research remains public-web when no skill grant is active", async () => {
+  let fetched = false;
+  const tool = webFetchTool({
+    allowedDomains: () => null,
+    fetchPage: async () => {
+      fetched = true;
+      return { ok: true, contentType: "text/plain", body: "public" };
+    },
+  });
+  const result = await tool.execute({ url: "https://example.com/" }, { cwd: "/tmp" });
+  assert.equal(result.isError, undefined);
+  assert.equal(fetched, true);
+});
+
 test("a fetched page is reduced to its text and cited", async () => {
   const citations: string[] = [];
   const tool = webFetchTool({

@@ -9,7 +9,6 @@ import { sendBudgetAlert } from "@/lib/email";
 import { getUserPlan } from "@/lib/usage";
 import {
   DEFAULT_ESTIMATE_MICRO_USD,
-  RESERVATION_TTL_MS,
   UNIT_CEILING_MICRO_USD,
   effectiveBudget,
   type BudgetCapSource,
@@ -181,7 +180,7 @@ export interface RecordSpendInput {
  * estimate — so missing usage, ignored reasoning tokens, or a stale rate
  * never under-report spend against the plan budget.
  */
-export async function recordSpend(input: RecordSpendInput): Promise<void> {
+export async function recordSpend(input: RecordSpendInput): Promise<boolean> {
   try {
     let promptTokens = Math.max(0, input.promptTokens ?? 0);
     let completionTokens = Math.max(0, input.completionTokens ?? 0);
@@ -255,7 +254,7 @@ export async function recordSpend(input: RecordSpendInput): Promise<void> {
         .catch((error: unknown) => {
           if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
             inserted = false;
-            return;
+            return true;
           }
           throw error;
         });
@@ -273,6 +272,7 @@ export async function recordSpend(input: RecordSpendInput): Promise<void> {
     // an over-count, which refuses work; the reverse is an under-count, which
     // admits it.
     if (input.ref) await settleSpend(input.userId, input.ref, data.costMicroUsd);
+    return true;
   } catch (err) {
     console.error("[spend] failed to record spend", {
       userId: input.userId,
@@ -280,6 +280,7 @@ export async function recordSpend(input: RecordSpendInput): Promise<void> {
       kind: input.kind,
       message: err instanceof Error ? err.message : String(err),
     });
+    return false;
   }
 }
 
@@ -345,7 +346,7 @@ export async function recordWorkRunSpend(input: {
       (input.outputTokens ?? 0) - (billed._sum.completionTokens ?? 0)
     );
 
-    await recordSpend({
+    const recorded = await recordSpend({
       userId: input.userId,
       // A run whose model was never resolved still spent money; naming it
       // honestly beats attributing the cost to a model that did not run.
@@ -358,7 +359,7 @@ export async function recordWorkRunSpend(input: {
       costUsd: delta / 1_000_000,
       idempotencyKey: `${prefix}${cumulative}`,
     });
-    if (input.terminal && input.reservationRef) {
+    if (recorded && input.terminal && input.reservationRef) {
       await settleSpend(input.userId, input.reservationRef, cumulative);
     }
   } catch (err) {
@@ -561,6 +562,7 @@ export async function checkBudget(
   const budgetMicroUsd = eff.budgetMicroUsd;
   const p = period ?? (await resolveBillingPeriod(userId));
   const since = p ? new Date(p.startMs) : new Date(Date.now() - MONTH_MS);
+  if (p) await expireStaleSpendReservations(userId);
   const [spentMicroUsd, reservedMicroUsd] = await Promise.all([
     spendSinceMicroUsd(userId, since),
     p ? openReservedMicroUsd(userId, p) : Promise.resolve(0),
@@ -586,20 +588,19 @@ export async function checkBudget(
 }
 
 /**
- * Micro-USD held by reservations that are still open and not yet stale.
+ * Micro-USD held by reservations that are still open in this billing period.
  *
- * The TTL is applied in the query rather than by a sweeper because a stuck hold
- * must stop counting whether or not a sweeper ever runs: a worker that dies
- * mid-stream would otherwise pin its estimate against the account for the rest
- * of the month, and the only symptom the user would see is a budget that never
- * recovers.
+ * Stale reservations are reaped before this query. Keeping the query honest is
+ * important: the admission UPDATE and the display value must describe the same
+ * ledger. Previously the read ignored old rows while the conditional UPDATE
+ * still counted them, so the UI promised room that every new run was refused.
  */
 async function openReservedMicroUsd(userId: string, period: BillingPeriod): Promise<number> {
   const agg = await prisma.spendReservation.aggregate({
     where: {
       userId,
       state: "open",
-      createdAt: { gte: new Date(Date.now() - RESERVATION_TTL_MS), lt: new Date(period.endMs) },
+      spendPeriod: { userId, period: spendPeriodKey(period) },
     },
     _sum: { estimateMicroUsd: true },
   });
@@ -689,6 +690,11 @@ export async function reserveSpend(input: ReserveSpendInput): Promise<SpendReser
     0,
     Math.round(input.estimateMicroUsd ?? DEFAULT_ESTIMATE_MICRO_USD[input.kind])
   );
+  // A crashed request must not leave its hold in the conditional admission
+  // counter forever. Work reservations belonging to queued/running/paused runs
+  // are preserved by the reaper; terminal or orphaned reservations are safe to
+  // release and can be retried under the same ref.
+  await expireStaleSpendReservations(input.userId);
   // Resolved rather than defaulted: guessing FREE here would give a budget of
   // 0 and refuse every caller that did not happen to know the plan, which is
   // most of them — a gate that fails closed on its own ignorance is a gate that
@@ -802,6 +808,57 @@ export async function reserveSpend(input: ReserveSpendInput): Promise<SpendReser
       capDisabled: eff.capDisabled,
     };
   });
+}
+
+const ACTIVE_WORK_RUN_STATUSES = ["queued", "running", "paused"] as const;
+
+/**
+ * Close abandoned holds before an admission decision.
+ *
+ * The old TTL lived only in `openReservedMicroUsd`, which made the two views of
+ * the ledger disagree: the read path forgot an old row, but the SQL hold still
+ * saw its reserved amount. Releasing the row and decrementing the materialised
+ * counter is the only safe fix. A paused Work run is intentionally retained—
+ * pausing is a user decision and its reservation is the run's maximum-cost
+ * promise until the user resumes or ends it.
+ */
+export async function expireStaleSpendReservations(
+  userId: string,
+  options: { now?: Date; retentionMs?: number; limit?: number } = {}
+): Promise<number> {
+  const cutoff = new Date((options.now ?? new Date()).getTime() - (options.retentionMs ?? 60 * 60 * 1000));
+  const stale = await prisma.spendReservation.findMany({
+    where: { userId, state: "open", createdAt: { lt: cutoff } },
+    select: { ref: true, kind: true },
+    orderBy: { createdAt: "asc" },
+    take: Math.min(Math.max(options.limit ?? 200, 1), 1_000),
+  });
+  if (stale.length === 0) return 0;
+
+  const workRefs = stale.filter((row) => row.kind === "work").map((row) => row.ref);
+  const liveWorkRefs = new Set(
+    workRefs.length === 0
+      ? []
+      : (
+          await prisma.workRun.findMany({
+            where: {
+              userId,
+              spendReservationRef: { in: workRefs },
+              status: { in: [...ACTIVE_WORK_RUN_STATUSES] },
+            },
+            select: { spendReservationRef: true },
+          })
+        )
+          .map((row) => row.spendReservationRef)
+          .filter((ref): ref is string => ref !== null)
+  );
+
+  let released = 0;
+  for (const row of stale) {
+    if (row.kind === "work" && liveWorkRefs.has(row.ref)) continue;
+    if (await releaseSpend(userId, row.ref)) released += 1;
+  }
+  return released;
 }
 
 /**
