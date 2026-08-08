@@ -48,6 +48,10 @@ test("production release preflight requires one smoke credential", () => {
   assert.ok(credentialGuard, "the release preflight must require an authenticated smoke credential");
 });
 
+test("production release preflight requires an explicit browser origin allowlist", () => {
+  assert.match(RELEASE_PREFLIGHT, /for name in DATABASE_URL DIRECT_URL AUTH_SECRET ALLOWED_ORIGINS;/);
+});
+
 test("deploy smoke passes authentication and public UI checks without an optional skip", () => {
   assert.notEqual(SMOKE_REMOTE_BLOCK, "", "production smoke step is missing its remote block");
   assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_REQUIRE_AUTH\s*=\s*1\b/);
