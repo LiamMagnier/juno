@@ -511,6 +511,7 @@ struct DesktopWorkWorkspace: View {
 enum DesktopWorkFilter: String, CaseIterable, Identifiable, Sendable {
     case attention
     case active
+    case parked
     case all
     case completed
 
@@ -520,6 +521,7 @@ enum DesktopWorkFilter: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .attention: "Needs you"
         case .active: "In progress"
+        case .parked: "Parked"
         case .all: "All tasks"
         case .completed: "Completed"
         }
@@ -529,6 +531,7 @@ enum DesktopWorkFilter: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .attention: "bell.badge"
         case .active: "bolt.horizontal.circle"
+        case .parked: "pause.circle"
         case .all: "tray.full"
         case .completed: "checkmark.circle"
         }
@@ -538,6 +541,7 @@ enum DesktopWorkFilter: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .attention: "Nothing is waiting on you."
         case .active: "No tasks are running right now."
+        case .parked: "No tasks are parked right now."
         case .all: "Start a task to see it here."
         case .completed: "Finished tasks will stay here for reference."
         }
@@ -553,8 +557,11 @@ enum DesktopWorkFilter: String, CaseIterable, Identifiable, Sendable {
         case .active:
             return !status.isTerminal
                 && status != .draft
+                && status != .paused
                 && !session.needsAttention
                 && !status.needsAttention
+        case .parked:
+            return status == .draft || status == .paused
         case .all:
             return true
         case .completed:
@@ -832,6 +839,12 @@ private struct DesktopWorkOverview: View {
             .sorted { $0.lastActivityAt > $1.lastActivityAt }
     }
 
+    private var parked: [WorkSessionSummary] {
+        allSessions
+            .filter { DesktopWorkFilter.parked.includes($0, model: model) }
+            .sorted { $0.lastActivityAt > $1.lastActivityAt }
+    }
+
     private var completed: [WorkSessionSummary] {
         allSessions
             .filter { DesktopWorkFilter.completed.includes($0, model: model) }
@@ -842,6 +855,7 @@ private struct DesktopWorkOverview: View {
         switch filter {
         case .attention: attention
         case .active: active
+        case .parked: parked
         case .completed: completed
         case .all: []
         }
@@ -851,6 +865,7 @@ private struct DesktopWorkOverview: View {
         switch filter {
         case .attention: "Needs your attention"
         case .active: "In progress"
+        case .parked: "Parked work"
         case .completed: "Completed work"
         case .all: "Your work"
         }
@@ -860,6 +875,7 @@ private struct DesktopWorkOverview: View {
         switch filter {
         case .attention: "Decisions and answers that will let Juno continue."
         case .active: "Tasks Juno is carrying out in the background."
+        case .parked: "Tasks waiting to be started or resumed."
         case .completed: "A record of what Juno has already finished or stopped."
         case .all: "Tasks Juno can carry out while you focus on something else."
         }
@@ -869,6 +885,7 @@ private struct DesktopWorkOverview: View {
         switch filter {
         case .attention: "These tasks need your next decision."
         case .active: "Juno will keep working while you do something else."
+        case .parked: "Resume or start a parked task when you are ready."
         case .completed: "Open a task to review its result and activity."
         case .all: ""
         }
@@ -906,6 +923,28 @@ private struct DesktopWorkOverview: View {
                             subtitle: "Juno is handling these in the background."
                         ) {
                             ForEach(active.prefix(4)) { task in
+                                taskRow(task)
+                            }
+                        }
+                    }
+
+                    if filter == .all, !parked.isEmpty {
+                        DesktopWorkOverviewSection(
+                            title: "Parked",
+                            subtitle: "These tasks are paused or still waiting to be started."
+                        ) {
+                            ForEach(parked.prefix(8)) { task in
+                                taskRow(task)
+                            }
+                        }
+                    }
+
+                    if filter == .all, !completed.isEmpty {
+                        DesktopWorkOverviewSection(
+                            title: "Finished",
+                            subtitle: "A record of what Juno has already finished or stopped."
+                        ) {
+                            ForEach(completed.prefix(8)) { task in
                                 taskRow(task)
                             }
                         }
@@ -974,6 +1013,13 @@ private struct DesktopWorkOverview: View {
                 label: "In progress",
                 symbol: DesktopWorkFilter.active.symbol,
                 tint: Color.junoAccent
+            )
+            Divider().frame(height: 34)
+            metric(
+                value: DesktopWorkFilter.parked.count(in: allSessions, model: model),
+                label: "Parked",
+                symbol: DesktopWorkFilter.parked.symbol,
+                tint: Color.junoCaution
             )
             Divider().frame(height: 34)
             metric(

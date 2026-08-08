@@ -261,6 +261,20 @@ final class JunoDesktopLaunchUITests: XCTestCase {
             app.buttons["juno.work.overview.new-task"].exists
                 || app.descendants(matching: .any)["juno.work.overview.new-task"].exists
         )
+
+        let allTasks = app.descendants(matching: .any)["juno.work.filter.all"]
+        XCTAssertTrue(allTasks.waitForExistence(timeout: 5))
+        allTasks.click()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.work.overview.task.wk-receipts"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.work.overview.task.wk-digest"]
+                .waitForExistence(timeout: 5)
+        )
+
+        completed.click()
         XCTAssertTrue(
             app.descendants(matching: .any)["juno.work.overview.task.wk-receipts"]
                 .exists
