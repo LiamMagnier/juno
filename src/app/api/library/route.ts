@@ -17,11 +17,51 @@ export async function GET(req: Request) {
     take: 300,
   });
 
+  // Structured-extraction state, joined in one query rather than per row.
+  // Ingest runs after the upload response, so this is the only place the user
+  // finds out that their scan produced nothing citable — and `error` is carried
+  // through verbatim because the extractor already wrote it to be read.
+  const documents = atts.length
+    ? await prisma.knowledgeDocument.findMany({
+        where: {
+          userId: user.id,
+          attachmentId: { in: atts.map((a) => a.id) },
+          state: { not: "stale" },
+        },
+        orderBy: { version: "asc" },
+        select: {
+          attachmentId: true,
+          state: true,
+          error: true,
+          pageCount: true,
+          _count: { select: { blocks: true } },
+        },
+      })
+    : [];
+
+  // Ascending version above, so a later version overwrites an earlier one here.
+  const byAttachment = new Map(
+    documents
+      .filter((document) => document.attachmentId)
+      .map((document) => [
+        document.attachmentId as string,
+        {
+          state: document.state,
+          error: document.error,
+          pageCount: document.pageCount,
+          blockCount: document._count.blocks,
+        },
+      ])
+  );
+
   const items = await Promise.all(
     atts.map(async (a) => ({
       ...(await serializeAttachment(a)),
       createdAt: a.createdAt.toISOString(),
       conversationId: a.conversationId,
+      // null for anything no extractor claims — a photo is not a document that
+      // failed to index, and the UI renders nothing for it.
+      knowledge: byAttachment.get(a.id) ?? null,
     }))
   );
 
