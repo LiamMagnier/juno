@@ -1,7 +1,7 @@
 {
   "$comment": "Machine-readable execution ledger for the Juno completion program. States: missing | in_progress | blocked | implemented | verified. 'verified' requires a named test. Prose and evidence live in JUNO_PRODUCT_COMPLETION.md.",
   "schemaVersion": 1,
-  "auditCommit": "6721d39f",
+  "auditCommit": "c7e389cc",
   "auditDate": "2026-08-08",
   "branch": "feat/juno-work",
   "verification": {
@@ -12,9 +12,9 @@
     "contractChecks": "passed: native, capabilities, work, code preview/remote/runtime, sandbox, design",
     "focusedResearchTests": "passed: 53 passed, 0 failed",
     "nativePackages": "passed: JunoChatKit 213/213 including native chat approval recovery/decision coverage; JunoWork 52/52; JunoCode 0 failures with 1 simulator skip; JunoDesktop 111 tests/0 failures; JunoMobile 66 tests/0 failures; unsigned JunoDesktop and JunoMobile Simulator builds passed with warnings-as-errors",
-    "productionHealth": "passed read-only: https://chat.liams.dev/api/health returned ok/db ok with live artifact 5ef25ecd5212156e8a3dc9452ea0d4110ae07b2e; the remote production database reports 75 applied migrations and an up-to-date schema and juno-import-recovery is online; current source at 6721d39f adds quota hardening beyond the live artifact; no production deploy or migration was executed",
+    "productionHealth": "passed read-only: https://chat.liams.dev/api/health returned ok/db ok with live artifact 5ef25ecd5212156e8a3dc9452ea0d4110ae07b2e; the remote production database reports 75 applied migrations and an up-to-date schema and juno-import-recovery is online; current source at c7e389cc includes quota hardening and a fail-closed authenticated release smoke gate beyond the live artifact; no production deploy or migration was executed",
     "productionSmoke": "passed: unauthenticated health-only smoke against the live artifact; authenticated catalog/chat receipt/replay smoke has not run because no dedicated credential was available; the release workflow now fails closed and requires JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE plus the chat path",
-    "lastVerifiedAt": "2026-08-08T18:58:50+02:00"
+    "lastVerifiedAt": "2026-08-08T19:05:02+02:00"
   },
   "nextSlice": {
     "id": "product-e2e-and-release-gates",
@@ -187,7 +187,7 @@
       "dependsOn": ["approval-broker"],
       "acceptance": [
         { "id": "e2e-layer", "state": "implemented", "text": "A bounded production HTTP smoke layer exists in scripts/production-smoke.mjs with health, authenticated model-contract, provider-backed chat, durable receipt and idempotent replay checks; the production workflow requires the authenticated path, while browser automation is still outstanding." },
-        { "id": "http-smoke", "state": "verified", "text": "Read-only health smoke passes against chat.liams.dev on live artifact 546808a9eae0f5adc192b2a214bb8dbfeaecc6e3; authenticated catalog/chat replay remains unrun without a dedicated smoke account." },
+        { "id": "http-smoke", "state": "verified", "text": "Read-only health smoke passes against chat.liams.dev on live artifact 5ef25ecd5212156e8a3dc9452ea0d4110ae07b2e; authenticated catalog/chat replay remains unrun without a dedicated smoke account." },
         { "id": "journeys", "state": "partial", "text": "HTTP health and fail-closed authenticated smoke hooks are wired; authenticated chat/citation/search/approval/budget/disconnect/recovery still need a configured staging credential plus browser/native execution." },
         { "id": "states", "state": "missing", "text": "Desktop/tablet/phone, light/dark, reduced motion, empty/loading/error/partial/success, long and localized strings." },
         { "id": "restore-drill", "state": "missing", "text": "Tested database and object-storage backups with an exercised restore drill." }
