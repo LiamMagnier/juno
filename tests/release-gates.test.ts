@@ -159,6 +159,7 @@ test("manual deployment requires a direct schema connection and never mutates th
   assert.match(DEPLOY_SCRIPT, /git get-tar-commit-id/);
   assert.match(DEPLOY_SCRIPT, /verify_build_artifact\(\)/);
   assert.match(DEPLOY_SCRIPT, /normalize_next_build_paths\(\)/);
+  assert.match(DEPLOY_SCRIPT, /normalize_next_build_paths "\$STAGING_DIR" "\$RELEASE_DIR"/);
   assert.match(DEPLOY_SCRIPT, /runner\/agent-core\/dist\/index\.js/);
   assert.doesNotMatch(DEPLOY_SCRIPT, /sync:models:write/);
   assert.match(DEPLOY_SCRIPT, /JUNO_PERSISTENT_DATA_ROOT/);

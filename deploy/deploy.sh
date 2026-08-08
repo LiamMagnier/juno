@@ -122,6 +122,7 @@ verify_build_artifact() {
 
 normalize_next_build_paths() {
   local directory="$1"
+  local runtime_root="${2:-$directory}"
   [[ -n "$BUILD_ROOT" && -d "$directory/.next" ]] || return 0
   require_command perl
 
@@ -129,7 +130,7 @@ normalize_next_build_paths() {
   while IFS= read -r -d '' file; do
     if grep -Iq -- "$BUILD_ROOT" "$file"; then
       BUILD_ROOT="$BUILD_ROOT" \
-        RUNTIME_ROOT="$directory" \
+        RUNTIME_ROOT="$runtime_root" \
         perl -pi -e 's/\Q$ENV{BUILD_ROOT}\E/$ENV{RUNTIME_ROOT}/g' "$file"
     fi
   done < <(find "$directory/.next" -path "$directory/.next/cache" -prune -o -type f -print0)
@@ -428,7 +429,9 @@ main() {
     [[ -f "$STAGING_DIR/.next/BUILD_ID" ]] || fail "The CI build artifact is missing the Next.js build"
     [[ -f "$STAGING_DIR/relay/dist/server.js" ]] || fail "The CI build artifact is missing the voice relay build"
     [[ -f "$STAGING_DIR/runner/agent-core/dist/index.js" ]] || fail "The CI build artifact is missing the vendored runner build"
-    normalize_next_build_paths "$STAGING_DIR"
+    # Scan the temporary tree, but point manifests at the final immutable path
+    # because the staging directory is renamed immediately after this branch.
+    normalize_next_build_paths "$STAGING_DIR" "$RELEASE_DIR"
   else
     say "${YELLOW}📦 Installing application dependencies...${NC}"
     run_in_release "$STAGING_DIR" npm ci
