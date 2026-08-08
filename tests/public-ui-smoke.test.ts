@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -39,6 +39,11 @@ type SeenRequest = {
   reducedMotion?: string;
 };
 
+function firstHeader(headers: IncomingHttpHeaders, name: string): string | undefined {
+  const value = headers[name];
+  return Array.isArray(value) ? value[0] : value;
+}
+
 async function startServer(
   omitHeaderFor?: string,
   seen: SeenRequest[] = [],
@@ -46,10 +51,10 @@ async function startServer(
   const server = createServer((request, response) => {
     seen.push({
       path: request.url ?? "/",
-      viewportWidth: request.headers["viewport-width"],
-      mobile: request.headers["sec-ch-ua-mobile"],
-      colorScheme: request.headers["sec-ch-prefers-color-scheme"],
-      reducedMotion: request.headers["x-juno-test-reduced-motion"],
+      viewportWidth: firstHeader(request.headers, "viewport-width"),
+      mobile: firstHeader(request.headers, "sec-ch-ua-mobile"),
+      colorScheme: firstHeader(request.headers, "sec-ch-prefers-color-scheme"),
+      reducedMotion: firstHeader(request.headers, "x-juno-test-reduced-motion"),
     });
     if (request.url === "/chat") {
       response.writeHead(307, { ...SECURITY_HEADERS, location: "/sign-in" });
