@@ -794,7 +794,9 @@ jobs:
           umask 077
           git rev-parse --verify "$GITHUB_SHA^{commit}" >/dev/null
           git archive --format=tar "$GITHUB_SHA" | gzip -1 > "$archive"
-          archive_sha="$(gzip -cd "$archive" | git get-tar-commit-id)"
+          set +o pipefail
+          archive_sha="$(set +o pipefail; gzip -cd "$archive" | git get-tar-commit-id)"
+          set -o pipefail
           test "$archive_sha" = "$GITHUB_SHA"
           sha256sum "$archive" | cut -d' ' -f1 > "$archive_checksum"
           printf '%s\n' "$PROD_ENV" > "$remote_env"
@@ -823,7 +825,9 @@ jobs:
           [ "$actual_checksum" = "$expected_checksum" ] || { echo "::error::Source archive checksum mismatch." >&2; exit 1; }
           [ ! -e "$SOURCE_STAGE" ] || { echo "::error::Source staging path already exists: $SOURCE_STAGE" >&2; exit 1; }
           mkdir "$SOURCE_STAGE"
-          archive_sha="$(gzip -cd "$ARCHIVE" | git get-tar-commit-id)"
+          set +o pipefail
+          archive_sha="$(set +o pipefail; gzip -cd "$ARCHIVE" | git get-tar-commit-id)"
+          set -o pipefail
           [ "$archive_sha" = "$GITHUB_SHA" ] || { echo "::error::Source archive commit id does not match the reviewed SHA." >&2; exit 1; }
           tar -xzf "$ARCHIVE" -C "$SOURCE_STAGE" --no-same-owner
           [ -f "$SOURCE_STAGE/deploy/deploy.sh" ] || { echo "::error::Source archive is missing deploy/deploy.sh." >&2; exit 1; }

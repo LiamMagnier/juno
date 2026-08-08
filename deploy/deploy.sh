@@ -93,9 +93,15 @@ verify_source_archive() {
   local expected_sha="$2"
   local archive_sha
 
-  if ! archive_sha="$(gzip -cd "$archive" | git get-tar-commit-id)"; then
+  # `git get-tar-commit-id` only needs the tar metadata and exits before the
+  # compressed stream is exhausted. Temporarily disabling pipefail prevents
+  # gzip's expected SIGPIPE from masquerading as an archive-integrity failure.
+  set +o pipefail
+  if ! archive_sha="$(set +o pipefail; gzip -cd "$archive" | git get-tar-commit-id)"; then
+    set -o pipefail
     fail "The reviewed source archive is not a valid Git tar archive: $archive"
   fi
+  set -o pipefail
   [[ "$archive_sha" == "$expected_sha" ]] || fail "The source archive commit $archive_sha does not match reviewed commit $expected_sha"
 }
 
