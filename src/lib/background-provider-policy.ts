@@ -229,6 +229,11 @@ export type BackgroundPurpose =
   | "title"
   | "moderation"
   | "research_planning"
+  // Re-reading a cited passage to decide whether it supports the claim. It is
+  // the user's research corpus going to a model, so it is bound by the same
+  // policy as every other background job rather than riding along with the
+  // conversation's own provider.
+  | "citation_validation"
   | "follow_ups"
   | "translation"
   /**

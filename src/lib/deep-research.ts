@@ -39,6 +39,25 @@ import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 
 type SendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => ClientActivityEvent;
 
+/**
+ * One numbered source, with the text the model was actually shown.
+ *
+ * The client-facing `sources` array is deliberately snippet-sized — it is
+ * persisted on every message — but the citation validator has to re-read the
+ * SAME text the model saw. Checking a claim against a fresh fetch would be
+ * checking it against a page that may have changed since, which is the failure
+ * the run's stored snapshot exists to prevent. So the corpus rides back
+ * separately, for the audit, and is not persisted on the message.
+ */
+export interface ResearchCorpusPage {
+  url: string;
+  title: string;
+  body: string;
+  publishedAt: Date | null;
+  /** True when `body` is the search snippet rather than the fetched page. */
+  truncated: boolean;
+}
+
 export interface DeepResearchResult {
   /** false = nothing usable came back; the caller answers as plain chat. */
   ok: boolean;
@@ -63,9 +82,11 @@ export interface DeepResearchResult {
    * run was created at all.
    */
   runId: string | null;
+  /** The bodies behind `sources`, for the citation audit. Never persisted. */
+  corpus: ResearchCorpusPage[];
 }
 
-const EMPTY: DeepResearchResult = { ok: false, context: "", sources: [], costUsd: 0, runId: null };
+const EMPTY: DeepResearchResult = { ok: false, context: "", sources: [], costUsd: 0, runId: null, corpus: [] };
 
 /** Total numbered sources handed to the model. */
 const MAX_SOURCES = 12;
@@ -256,5 +277,15 @@ export async function runDeepResearch(opts: {
     })),
     costUsd,
     runId,
+    // Read from the run's stored snapshots rather than re-fetched: the audit
+    // must judge a claim against the bytes the model was given, not against
+    // whatever the page says now.
+    corpus: sources.map((source) => ({
+      url: source.url,
+      title: source.title,
+      body: source.snapshot ?? "",
+      publishedAt: source.publishedAt ?? null,
+      truncated: !source.snapshot,
+    })),
   };
 }
