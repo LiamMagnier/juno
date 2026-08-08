@@ -1,6 +1,6 @@
 # Juno Product Completion — execution ledger
 
-**Audit commit:** `0b159e5c` (`main`, production-hardening commit)
+**Audit commit:** `49744136` (`main`, production-hardening commit)
 **Audit date:** 2026-08-08
 **Method:** 12 parallel evidence-based subsystem readers over the source, then an
 adversarial re-check of every claim of "implemented" in the P0 areas. Findings
@@ -15,7 +15,7 @@ truth.
 ## Current reconciliation — 2026-08-08
 
 The current source tree now has passing repository-wide automated checks:
-**1,945 tests completed, 1,943 passed, 2 database-dependent tests skipped without a test
+**1,950 tests completed, 1,948 passed, 2 database-dependent tests skipped without a test
 database, 0 failed**; full ESLint, TypeScript, Prisma validation/generation,
 native/capability/Work contract checks, code wiring checks, sandbox checks, and
 design-contract checks also pass. The production Next build renders 110/110
@@ -67,6 +67,10 @@ production entry points:
 - Direct conversation attachments now retrieve owner-scoped indexed passages
   independently of project membership; every provider receives explicit
   pending/unavailable PDF state instead of a misleading filename placeholder.
+- Backup tooling now creates a custom-format PostgreSQL dump plus a per-object
+  SHA-256 manifest for local or S3-compatible storage, verifies every byte, and
+  restores only into explicitly non-production scratch targets. The restore
+  drill itself remains unexercised and is still a release gate.
 - The deploy workflow validates public HTML/security/auth-boundary routes and
   fails closed when authenticated smoke credentials are absent. Authenticated
   catalog/chat receipt/replay smoke is always required after deployment. The
@@ -83,7 +87,7 @@ current reconciliation and `status.json` are authoritative. The production workf
 `ce36248fa1e466bccf8f52fed2e589b32b2d8951`, and the public UI smoke passed all
 public routes plus the `/chat` auth boundary. The remote production database
 reports 75 applied migrations and an up-to-date schema; all nine PM2 services
-are online. The current source at `0b159e5c` includes quota hardening, relay
+are online. The current source at `49744136` includes quota hardening, relay
 boundary hardening, the one-voice-session ceiling, import integrity/recovery,
 parked Work parity and the desktop Work-search fix beyond that live artifact.
 The remote environment currently lacks `ALLOWED_ORIGINS` and both dedicated
