@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { detectFormat, importArchiveBudgetProblems, parseHistoryExport } from "../src/lib/history-import";
 
 const IMPORT_ROUTE_SOURCE = readFileSync(new URL("../src/app/api/import/route.ts", import.meta.url), "utf8");
+const EXPORT_ROUTE_SOURCE = readFileSync(new URL("../src/app/api/account/export/route.ts", import.meta.url), "utf8");
 const ACTIVE_IMPORT_ROUTE_SOURCE = IMPORT_ROUTE_SOURCE.replace(/\/\*[\s\S]*?\*\//g, "");
 
 test("detects Gemini Takeout entries without mistaking them for ChatGPT", () => {
@@ -155,4 +156,14 @@ test("account imports commit database state atomically and schedule indexing aft
   const transactionResult = IMPORT_ROUTE_SOURCE.indexOf("return resultPayload");
   const postCommitScheduling = IMPORT_ROUTE_SOURCE.indexOf("for (const ingest of scheduledIngests)");
   assert.ok(transactionResult >= 0 && postCommitScheduling > transactionResult);
+});
+
+test("Juno attachment round trips carry per-object integrity evidence and fail closed on loss", () => {
+  assert.match(EXPORT_ROUTE_SOURCE, /createHash\("sha256"\)/);
+  assert.match(EXPORT_ROUTE_SOURCE, /archiveSha256ByStorageKey/);
+  assert.match(EXPORT_ROUTE_SOURCE, /archiveSha256:/);
+  assert.match(IMPORT_ROUTE_SOURCE, /function assertArchiveDigest/);
+  assert.match(IMPORT_ROUTE_SOURCE, /failed its SHA-256 integrity check/);
+  assert.match(IMPORT_ROUTE_SOURCE, /Juno restore aborted: attachment/);
+  assert.match(IMPORT_ROUTE_SOURCE, /status: 422/);
 });
