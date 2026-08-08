@@ -86,7 +86,7 @@ function SourceAudit({ audit, index }: { audit: CitationAudit; index: number }) 
               </p>
             )}
             {evidence.map(({ claim, link }, i) => (
-              <div key={`${claim.id}-${i}`} className="mt-3 border-t border-border/60 pt-3 first-of-type:border-t-0">
+              <div key={`${claim.id}-${i}`} className="mt-3 border-t border-border/60 pt-3">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <SupportBadge label={claim.label} />
                   {link.stance === "contradicts" && (

@@ -155,6 +155,14 @@ export interface ResearchCorpusSource {
   body: string;
   /** As claimed by the source. Distinct from the date of the event it describes. */
   publishedAt?: Date | null;
+  /**
+   * True when `body` is only a search snippet rather than the page. It changes
+   * what a failed check MEANS: a claim we could not confirm against two
+   * sentences of preview text has not been shown to be unsupported, it has not
+   * been checked, and printing "unsupported" there is an accusation the
+   * evidence does not carry.
+   */
+  truncated?: boolean;
 }
 
 export interface CitationAuditSummary {
@@ -177,6 +185,8 @@ interface StoredSource {
   title: string;
   url: string;
   publishedAt: Date | null;
+  /** Snippet-only: see ResearchCorpusSource.truncated. */
+  truncated: boolean;
 }
 
 /**
@@ -259,6 +269,7 @@ export async function recordCitationAudit(opts: {
 
     const candidates = selectPassagesForClaim(claim, passagesBySource);
     const verdicts: LinkVerdict[] = [];
+    let sawFullText = false;
     /*
      * The deterministic audit is free, so it runs on every candidate first and
      * the model is spent only on the one it cannot decide. Ranking by the
@@ -295,6 +306,7 @@ export async function recordCitationAudit(opts: {
         judge,
       });
       verdicts.push(verdict);
+      if (!candidate.source?.truncated) sawFullText = true;
       const passageId = passageIdOf.get(`${candidate.sourceIndex}:${candidate.passage.ordinal}`);
       if (passageId) await upsertLink(row.id, passageId, verdict.stance, verdict.strength);
       // One honest supporting passage is what a citation is for; checking the
@@ -303,11 +315,21 @@ export async function recordCitationAudit(opts: {
     }
 
     const resolved = resolveClaimStatus(verdicts);
+    /*
+     * A claim checked only against search snippets is UNVERIFIED, not
+     * unsupported. Two sentences of preview text failing to contain a figure is
+     * not evidence that the page lacks it, and the difference matters: the
+     * whole value of the unsupported badge is that a reader can believe it.
+     * A contradiction survives — the snippet said the opposite, which it did.
+     */
+    const status =
+      resolved.status === "unsupported" && verdicts.length > 0 && !sawFullText ? "unverified" : resolved.status;
+    const supportStrength = status === "unverified" ? null : resolved.supportStrength;
     await prisma.researchClaim.update({
       where: { id: row.id, userId: opts.userId },
-      data: { status: resolved.status, supportStrength: resolved.supportStrength },
+      data: { status, supportStrength },
     });
-    tally(summary, resolved.status, resolved.supportStrength);
+    tally(summary, status, supportStrength);
   }
 
   await prisma.researchRun.update({
@@ -418,6 +440,7 @@ async function storeCorpus(opts: {
       title: source.title,
       url: source.url,
       publishedAt: source.publishedAt ?? null,
+      truncated: !!source.truncated,
       passages: passages.map((p) => ({ ...p, id: byOrdinal.get(p.ordinal) ?? "" })).filter((p) => p.id),
     });
   }

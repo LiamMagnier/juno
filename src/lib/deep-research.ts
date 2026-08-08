@@ -61,6 +61,8 @@ export interface ResearchCorpusPage {
   title: string;
   body: string;
   publishedAt: Date | null;
+  /** True when `body` is the search snippet rather than the page (see MAX_READ_PAGES). */
+  truncated: boolean;
 }
 
 export interface DeepResearchResult {
@@ -404,12 +406,16 @@ export async function runDeepResearch(opts: {
     // Deep research is the ONLY path that numbers sources for the model.
     sources: pages.map(({ title, url, snippet }) => ({ title, url, snippet, cited: true })),
     // Same order as `sources`, so index n of both is the report's `[n + 1]`.
-    corpus: pages.map((p) => ({
-      title: p.title,
-      url: p.url,
-      body: readUrls.has(p.url) && p.rawContent ? p.rawContent : p.snippet,
-      publishedAt: p.publishedAt ?? null,
-    })),
+    corpus: pages.map((p) => {
+      const full = readUrls.has(p.url) && !!p.rawContent;
+      return {
+        title: p.title,
+        url: p.url,
+        body: full ? p.rawContent! : p.snippet,
+        publishedAt: p.publishedAt ?? null,
+        truncated: !full,
+      };
+    }),
     costUsd: plan.costUsd,
   };
 }
