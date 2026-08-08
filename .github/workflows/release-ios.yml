@@ -193,8 +193,8 @@ jobs:
           set -euo pipefail
           ipa="$(find "$RUNNER_TEMP/JunoMobile-export" -maxdepth 1 -type f -name '*.ipa' -print -quit)"
           [ -n "$ipa" ] || { echo "::error::The signed export produced no IPA."; exit 1; }
-          xcrun altool --validate-app -f "$ipa" --type ios --apiKey "$IOS_ASC_KEY_ID" --apiIssuer "$IOS_ASC_ISSUER_ID"
-          xcrun altool --upload-app -f "$ipa" --type ios --apiKey "$IOS_ASC_KEY_ID" --apiIssuer "$IOS_ASC_ISSUER_ID"
+          xcrun altool --validate-app -f "$ipa" --type ios --api-key "$IOS_ASC_KEY_ID" --api-issuer "$IOS_ASC_ISSUER_ID"
+          xcrun altool --upload-package "$ipa" --api-key "$IOS_ASC_KEY_ID" --api-issuer "$IOS_ASC_ISSUER_ID" --wait
 
       - name: Remove App Store Connect key from the runner
         if: always()

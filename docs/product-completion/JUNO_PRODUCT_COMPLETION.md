@@ -15,7 +15,7 @@ truth.
 ## Current reconciliation — 2026-08-08
 
 The current source tree now has passing repository-wide automated checks:
-**1,956 tests completed, 1,954 passed, 2 database-dependent tests skipped without a test
+**1,971 tests completed, 1,969 passed, 2 database-dependent tests skipped without a test
 database, 0 failed**; full ESLint, TypeScript, Prisma validation/generation,
 native/capability/Work contract checks, code wiring checks, sandbox checks, and
 design-contract checks also pass. The production Next build renders 110/110
@@ -80,7 +80,12 @@ production entry points:
   semantic main landmark; native Work mirrors web's parked and finished groups.
   Public smoke also carries a 12-profile viewport/theme/reduced-motion matrix
   and static contracts for empty/loading/error/partial/success states; browser
-  rendering and visual snapshots remain separate evidence.
+  rendering and visual snapshots remain separate evidence. Production release
+  jobs now use a protected environment, pinned SSH host keys, independent
+  external health/UI checks, fail-closed nginx validation, immutable candidate
+  releases with application rollback, DB-only public liveness, and explicit
+  owner-gated provider diagnostics. A protected iOS archive/TestFlight path is
+  also present but remains credential- and hardware-gated.
 
 The core product slices are ready for a controlled production release, but the
 release program is not fully closed. Remaining gates are explicit in

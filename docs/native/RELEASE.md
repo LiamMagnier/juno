@@ -1,8 +1,9 @@
 # Juno Native — Release and Distribution
 
 Status: implementation and unsigned verification are complete for the current
-shared worktree. No current Apple artifact satisfies the signed production gates
-below.
+shared worktree. Protected macOS and iOS publication workflows now exist and
+fail closed when their Apple credentials are absent, but no current Apple
+artifact satisfies the signed production gates below.
 
 ## Current evidence
 
@@ -148,6 +149,27 @@ Production procedure:
 “Available on iPhone/iPad” means an approved TestFlight invitation or App Store
 listing exists; a simulator build or unsigned IPA is not availability.
 
+### Automated iOS publication path
+
+The protected manual workflow `.github/workflows/release-ios.yml` is the
+canonical iOS path. It checks out `main`, runs the web/native gates, generates
+the Xcode project, stamps commit provenance, archives `JunoMobile` with
+automatic distribution signing, exports an App Store IPA, validates it, and
+uploads it to TestFlight. It never submits the build for App Store review or
+changes phased-release settings.
+
+Configure these secrets on the protected `Production` environment before
+running it:
+
+- `IOS_ASC_KEY_ID`
+- `IOS_ASC_ISSUER_ID`
+- `IOS_ASC_PRIVATE_KEY_BASE64`
+
+The requested version must already match `MARKETING_VERSION` in
+`native/Config/Base.xcconfig`; the workflow does not modify source or silently
+invent a build number. A missing secret stops the job before signing or
+uploading.
+
 ## GitHub and production publication
 
 Before publication, authenticate `gh` for the intended owner, verify the remote,
@@ -188,6 +210,8 @@ the publication gate.
 
 - The protected `Production` environment still needs the Apple
   Developer ID certificate and App Store Connect notary secrets listed above.
+- The protected `Production` environment still needs the iOS App Store Connect
+  key secrets listed in the automated iOS publication path above.
 - Production APNs and StoreKit values require the product owner.
 - The current development builds are not production artifacts; the next stable
   replacement must be produced by the protected workflow.

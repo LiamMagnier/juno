@@ -23,7 +23,9 @@ test("iOS production release archives, validates, and uploads the exact signed I
   assert.match(IOS_RELEASE, /-authenticationKeyPath/);
   assert.match(IOS_RELEASE, /method<\/key><string>app-store/);
   assert.match(IOS_RELEASE, /altool --validate-app/);
-  assert.match(IOS_RELEASE, /altool --upload-app/);
+  assert.match(IOS_RELEASE, /altool --upload-package/);
+  assert.match(IOS_RELEASE, /--api-key/);
+  assert.match(IOS_RELEASE, /--api-issuer/);
   assert.match(IOS_RELEASE, /if: always\(\)/);
   assert.match(IOS_RELEASE, /Remove App Store Connect key from the runner/);
 });
