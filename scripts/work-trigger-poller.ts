@@ -309,7 +309,7 @@ async function callConnectorTool(
         `${connectorId} did not offer the ${tool} tool, so Juno has no way to check this trigger.`
       );
     }
-    return unwrapUntrusted(await toolset.execute(named.function.name, args));
+    return unwrapUntrusted((await toolset.execute(named.function.name, args)).text);
   } finally {
     await toolset?.close().catch(() => {});
   }

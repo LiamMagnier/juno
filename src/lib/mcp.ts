@@ -152,6 +152,31 @@ export interface McpFunctionTool {
   annotations?: McpToolAnnotations;
 }
 
+/**
+ * One dispatch, described twice — once for the model and once for the person.
+ *
+ * `text` is what it always was: the envelope-wrapped string appended to the
+ * conversation. `body` is the same content without the envelope, for the
+ * thought-process panel, where the markers would be noise.
+ *
+ * `ok` and `durationMs` exist because they cannot be recovered downstream.
+ * Every one of the five outcomes returns prose, and a caller holding only the
+ * string would have to sniff it — so a GitHub issue titled "Tool error: build
+ * fails" would read as a failed call. And only this function is on both sides
+ * of the await that the duration measures.
+ */
+export interface ToolExecution {
+  /** What goes back to the MODEL: envelope-wrapped, exactly as before. */
+  text: string;
+  /** The same content WITHOUT the untrusted envelope — for the panel. */
+  body: string;
+  /** False for the four refusal/failure paths. Stated, never inferred. */
+  ok: boolean;
+  /** Set only when `client.callTool` was actually reached. Absent — never zero
+   *  — for a call that never left Juno. */
+  durationMs?: number;
+}
+
 export interface McpToolset {
   tools: McpFunctionTool[];
   labelFor(toolName: string): string;
@@ -170,7 +195,7 @@ export interface McpToolset {
     args: Record<string, unknown>,
     signal?: AbortSignal,
     callId?: string
-  ): Promise<string>;
+  ): Promise<ToolExecution>;
   close(): Promise<void>;
 }
 
@@ -229,6 +254,24 @@ function stringifyToolResult(res: unknown): TruncatedForModel {
         .join("\n")
     : JSON.stringify(res);
   return truncateConnectorResult(text);
+}
+
+/**
+ * Both projections of one outcome, built from a single body so the model-facing
+ * string and the panel-facing one can never describe different text.
+ *
+ * `body` is the text BEFORE `defang`. Defanging exists to stop hostile content
+ * closing its own envelope in the model's context; the panel has no envelope
+ * and no instruction position, so showing the connector's characters exactly as
+ * they arrived is both safe and more truthful.
+ */
+function toolExecution(label: string, body: string, ok: boolean, durationMs?: number): ToolExecution {
+  return {
+    text: wrapUntrusted(label, body),
+    body,
+    ok,
+    ...(durationMs === undefined ? {} : { durationMs }),
+  };
 }
 
 /** Who a toolset's calls belong to. Every dispatch is logged and brokered
@@ -349,7 +392,8 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
       const route = routing.get(toolName);
       // An unroutable name never reached a connector, so there is nothing to
       // audit: this is the model hallucinating a tool, not a call happening.
-      if (!route) return wrapUntrusted(toolName, `Unknown tool: ${toolName}`);
+      // Never dispatched, so there is no duration and the outcome is a refusal.
+      if (!route) return toolExecution(toolName, `Unknown tool: ${toolName}`, false);
       const client = clients.get(route.connectorId);
       const label = `${route.label} · ${route.toolName}`;
 
@@ -367,7 +411,7 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
 
       if (!client) {
         await settleToolInvocation(auditId, { status: "failed", error: "connector unavailable" });
-        return wrapUntrusted(label, `Connector ${route.connectorId} is not available.`);
+        return toolExecution(label, `Connector ${route.connectorId} is not available.`, false);
       }
 
       /*
@@ -413,36 +457,43 @@ export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetC
 
       if (authorization.kind === "refused") {
         await settleToolInvocation(auditId, { status: "failed", error: authorization.reason });
-        return wrapUntrusted(label, `Action not permitted: ${authorization.reason}`);
+        return toolExecution(label, `Action not permitted: ${authorization.reason}`, false);
       }
       if (authorization.kind === "replay") {
         await settleToolInvocation(auditId, {
           status: authorization.failed ? "failed" : "executed",
           error: authorization.failed ? authorization.result : undefined,
         });
-        return wrapUntrusted(label, authorization.result);
+        // A replay hands back the stored result of the ORIGINAL dispatch, whose
+        // duration belonged to that attempt and is not re-measured here.
+        return toolExecution(label, authorization.result, !authorization.failed);
       }
 
       const startedAt = Date.now();
       try {
         const res = await client.callTool({ name: route.toolName, arguments: args }, undefined, signal ? { signal } : undefined);
         const result = stringifyToolResult(res);
-        await settleToolInvocation(auditId, { status: "executed", durationMs: Date.now() - startedAt });
+        // One reading of the clock, used by the audit row and by the panel, so
+        // the trail and the thought process cannot report different numbers for
+        // the same call.
+        const durationMs = Date.now() - startedAt;
+        await settleToolInvocation(auditId, { status: "executed", durationMs });
         // The receipt stores what the model was actually given, notice included:
         // a replay of this call returns the stored string verbatim, so a receipt
         // holding the untruncated text would hand a replayed call more than the
         // first attempt got — and one holding the prefix without the notice
         // would hand it the silent version.
         await completeExternalAction({ userId: ctx.userId, receiptId: authorization.receiptId, ok: true, result: result.text });
-        return wrapUntrusted(label, result.text);
+        return toolExecution(label, result.text, true, durationMs);
       } catch (err) {
         // An error message is the connector's text too, and nothing bounds it:
         // a server that answers a failed call with a megabyte of prose gets the
         // same cap and the same sentence as one that succeeds with it.
         const detail = truncateConnectorResult(err instanceof Error ? err.message : String(err)).text;
-        await settleToolInvocation(auditId, { status: "failed", error: detail, durationMs: Date.now() - startedAt });
+        const durationMs = Date.now() - startedAt;
+        await settleToolInvocation(auditId, { status: "failed", error: detail, durationMs });
         await completeExternalAction({ userId: ctx.userId, receiptId: authorization.receiptId, ok: false, result: detail });
-        return wrapUntrusted(label, `Tool error: ${detail}`);
+        return toolExecution(label, `Tool error: ${detail}`, false, durationMs);
       }
     },
     async close() {

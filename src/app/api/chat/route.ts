@@ -42,7 +42,8 @@ import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
 import { checkBudget, recordSpend, budgetExceededMessage, modelRatesMicroUsdPerToken } from "@/lib/spend";
 import { runDeepResearch } from "@/lib/deep-research";
 import { isWebSearchConfigured } from "@/lib/web-search";
-import { createSseSender, encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
+import { createSseSender, encodeChunk, SSE_HEADERS, type SseSender } from "@/lib/chat-stream";
+import { closeToolDetail, createToolDetailBudget, openToolDetail } from "@/lib/chat/tool-detail";
 import { truncate, currentPeriod } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
@@ -117,7 +118,7 @@ import {
   resolveTerminalState,
   terminalFailureCode,
 } from "@/lib/chat/terminal-state";
-import type { ChatFinishReason, ClientActivityEvent } from "@/types/chat";
+import type { ChatFinishReason, ClientActivityEvent, ClientToolDetail } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 
 export const runtime = "nodejs";
@@ -164,6 +165,66 @@ function privateAssistantMessage(
     promptTokens: usage.totalInput || undefined,
     completionTokens: usage.output || undefined,
     costUsd: usage.cost || undefined,
+  };
+}
+
+/**
+ * One generation's connector transparency: which rows exist, what they may
+ * carry, and how much of it in total.
+ *
+ * Built once per stream and used identically by BOTH streaming paths. The
+ * private path currently passes `connectors: []` so no tool event can reach it
+ * — it gets this code anyway rather than a comment saying it cannot happen,
+ * because these two paths have drifted before and `stream-accumulator.ts`
+ * exists because of it.
+ *
+ * ONE ROW PER CALL. The adapters emit two acts; this collapses them into a
+ * single activity entry that is created when the model reaches for the tool and
+ * COMPLETED IN PLACE when the connector answers. The entry object handed back
+ * by `sendActivity` is the same object sitting in `activityLog`, which is what
+ * gets persisted onto `Message.activity`, so mutating it and re-sending keeps
+ * both the log's order and the completed payload. Pushing a second entry would
+ * look right live and show every tool twice on reload.
+ *
+ * `createdAt` is deliberately not refreshed on completion: it is the instant
+ * the call STARTED, and that is the only instant about this row that anything
+ * measures from.
+ *
+ * A `result` whose `callId` has no open row is DROPPED, not turned into an
+ * orphan row. An unpaired result is a bug in an adapter, and inventing a row
+ * for it would hide that bug behind a plausible-looking panel entry.
+ */
+function createToolActivity(
+  sender: Pick<SseSender, "send" | "sendActivity">,
+  enabled: boolean
+): {
+  open(effect: { server: string; name: string; callId: string; args?: string }): void;
+  close(effect: { server: string; name: string; callId: string; args?: string; result: string; ok: boolean; durationMs?: number }): void;
+} {
+  const budget = createToolDetailBudget();
+  const rows = new Map<string, { entry: ClientActivityEvent; opened?: ClientToolDetail }>();
+
+  return {
+    open(effect) {
+      const opened = enabled ? openToolDetail(effect, budget) : undefined;
+      const entry = sender.sendActivity({
+        kind: "tool",
+        title: `Using ${effect.server}`,
+        detail: effect.name,
+        ...(opened ? { tool: opened } : {}),
+      });
+      // Tracked even when detail is disabled, so a later `result` is still
+      // recognised as paired and silently dropped rather than half-handled.
+      rows.set(effect.callId, { entry, opened });
+    },
+    close(effect) {
+      const row = rows.get(effect.callId);
+      if (!row) return;
+      rows.delete(effect.callId);
+      if (!enabled) return;
+      row.entry.tool = closeToolDetail(row.opened, effect, budget);
+      sender.send({ type: "activity", event: row.entry });
+    },
   };
 }
 
@@ -293,6 +354,21 @@ async function handleChat(req: Request) {
   // "juno:auto" is a routing sentinel: classify the prompt and pick the cheapest
   // chat model that can handle it (vision / web-search constraints applied).
   const settings = await prisma.settings.findUnique({ where: { userId: user.id } });
+
+  /*
+   * Whether the thought-process panel receives connector ARGUMENTS and RESULTS
+   * rather than only the tool's name.
+   *
+   * Read ONCE, here, before the stream, and passed into the emitter as a
+   * boolean. It is never a client-side filter: data that must not be shown is
+   * data that must not be SENT.
+   *
+   * Lockdown is a hard override. It already means "a hard network/tool stop",
+   * and it must not be the mode in which Juno gets chattier about what its
+   * connectors returned.
+   */
+  const toolDetailEnabled = !settings?.lockdownMode;
+
   const requestedId =
     input.model && isModelId(input.model)
       ? input.model
@@ -472,6 +548,11 @@ async function handleChat(req: Request) {
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         const { send, sendActivity, activityLog } = createSseSender(controller);
+        // Identical to the saved path's. This branch passes `connectors: []`,
+        // so no tool event can reach it today — it gets the same code rather
+        // than a comment claiming that, because the two paths have drifted
+        // before.
+        const toolActivity = createToolActivity({ send, sendActivity }, toolDetailEnabled);
         // One accumulator for text, reasoning, sources, usage and served speed
         // — the same one the saved path folds its stream into.
         const acc = new GenerationAccumulator({ requestedFastMode: useFastMode });
@@ -609,7 +690,9 @@ async function handleChat(req: Request) {
               send({ type: "delta", text: effect.text });
               enforceStreamBudget();
             } else if (effect.kind === "tool_call") {
-              sendActivity({ kind: "tool", title: `Using ${effect.server}`, detail: effect.name });
+              toolActivity.open(effect);
+            } else if (effect.kind === "tool_result") {
+              toolActivity.close(effect);
             } else if (effect.kind === "reasoning") {
               // `part` rides the SSE so the panel can build steps AS THEY
               // ARRIVE, from the same boundaries the API gave the adapter.
@@ -1425,6 +1508,7 @@ async function handleChat(req: Request) {
       // Once the client disconnects the controller is closed; swallow the enqueue
       // error so generation and persistence keep running regardless.
       const { send, sendActivity, activityLog } = createSseSender(controller);
+      const toolActivity = createToolActivity({ send, sendActivity }, toolDetailEnabled);
       // One accumulator for text, reasoning, sources, usage and served speed —
       // the same one the private branch folds its stream into.
       const acc = new GenerationAccumulator({ requestedFastMode: useFastMode });
@@ -1752,7 +1836,13 @@ async function handleChat(req: Request) {
             if (!artifactEditTarget) send({ type: "delta", text: effect.text });
             enforceStreamBudget();
           } else if (effect.kind === "tool_call") {
-            sendActivity({ kind: "tool", title: `Using ${effect.server}`, detail: effect.name });
+            toolActivity.open(effect);
+          } else if (effect.kind === "tool_result") {
+            // Deliberately NOT followed by enforceStreamBudget(): that guard
+            // projects micro-USD from token counts, and a tool payload spends
+            // no tokens. The bound that applies here is the run's character
+            // budget, already charged inside closeToolDetail.
+            toolActivity.close(effect);
           } else if (effect.kind === "reasoning") {
             send({ type: "reasoning", text: effect.text, part: effect.part });
             enforceStreamBudget();

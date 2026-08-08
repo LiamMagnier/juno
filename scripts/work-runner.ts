@@ -1188,7 +1188,11 @@ async function openConnectors(input: {
     async call(descriptor, args) {
       const callId = randomUUID();
       const raw = input.runtime.stripUntrustedEnvelope(
-        await toolset.execute(descriptor.functionName, args)
+        // `.text` is the model-facing, envelope-wrapped projection — the exact
+        // string this call site has always unwrapped. `.body` is the panel's
+        // pre-wrap copy and is deliberately not used here, so the runner's
+        // admission path keeps seeing byte-identical input.
+        (await toolset.execute(descriptor.functionName, args)).text
       );
 
       // Every path, including the failures. A connector's error message is

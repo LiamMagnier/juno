@@ -371,16 +371,28 @@ export async function* streamOpenAIResponses(
           arguments: call.args,
         } as InputItem);
         const label = toolset!.labelFor(call.name);
-        yield { type: "tool", server: label, name: call.name, phase: "call" };
+        // The Responses adapter has the whole argument JSON before it
+        // dispatches, so the arguments ride on the CALL — the row is complete
+        // in the panel while the connector is still being waited on.
+        yield { type: "tool", server: label, name: call.name, phase: "call", callId: call.callId, args: call.args };
         let parsedArgs: Record<string, unknown> = {};
         try {
           parsedArgs = call.args ? JSON.parse(call.args) : {};
         } catch {
           parsedArgs = {};
         }
-        const result = await toolset!.execute(call.name, parsedArgs, signal);
-        input.push({ type: "function_call_output", call_id: call.callId, output: result } as InputItem);
-        yield { type: "tool", server: label, name: call.name, phase: "result" };
+        const exec = await toolset!.execute(call.name, parsedArgs, signal);
+        input.push({ type: "function_call_output", call_id: call.callId, output: exec.text } as InputItem);
+        yield {
+          type: "tool",
+          server: label,
+          name: call.name,
+          phase: "result",
+          callId: call.callId,
+          result: exec.body,
+          ok: exec.ok,
+          durationMs: exec.durationMs,
+        };
       }
       continue;
     }

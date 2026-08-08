@@ -629,9 +629,23 @@ export async function* streamAnthropic(
       const results: Anthropic.Messages.ToolResultBlockParam[] = [];
       for (const call of toolUses) {
         const label = toolset!.labelFor(call.name);
-        const text = await toolset!.execute(call.name, safeToolInput(call.json), signal, call.id);
-        results.push({ type: "tool_result", tool_use_id: call.id, content: text });
-        yield { type: "tool", server: label, name: call.name, phase: "result" };
+        const exec = await toolset!.execute(call.name, safeToolInput(call.json), signal, call.id);
+        results.push({ type: "tool_result", tool_use_id: call.id, content: exec.text });
+        yield {
+          type: "tool",
+          server: label,
+          name: call.name,
+          phase: "result",
+          callId: call.id,
+          // Anthropic's ONLY chance to supply arguments: the call event was
+          // yielded from `content_block_start`, before `input_json_delta` had
+          // begun. `call.json` is the raw accumulated JSON text, unparsed —
+          // redaction and truncation belong to the route, not to an adapter.
+          args: call.json,
+          result: exec.body,
+          ok: exec.ok,
+          durationMs: exec.durationMs,
+        };
       }
       messages.push({ role: "user", content: results });
       continue;

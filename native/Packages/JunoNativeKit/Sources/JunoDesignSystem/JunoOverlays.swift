@@ -76,8 +76,12 @@ public extension View {
     /// window. The ninth, `DesktopTaskEditor`, already did the right thing by
     /// painting `junoReadingCanvas()` inside its own content, and this is that
     /// pattern named. The presentation clips its content to the platter shape,
-    /// so the canvas fills the interior while the system keeps the rim, the
+    /// so the ground fills the interior while the system keeps the rim, the
     /// corner radius and the material edge.
+    ///
+    /// **Which ground, though, is platform-specific**, and getting that wrong is
+    /// how the dark-appearance sheet ended up with no visible edge for a whole
+    /// release. See ``JunoSheetSurface/ground`` for the measurements.
     ///
     /// `scrollContentBackground(.hidden)` is not optional here: a `Form` or a
     /// `List` supplies its own opaque grouped background, which would cover the
@@ -128,10 +132,51 @@ public extension View {
 private struct JunoSheetSurface: ViewModifier {
     let sizing: JunoSheetSizing
 
+    /// The ground this puts under the content, which is **not the same token on
+    /// both platforms** — and the difference is the whole of what was wrong.
+    ///
+    /// Both used to paint ``Color/junoCanvas``, the page's own colour. On macOS
+    /// that works only because the system dims the page behind a sheet, and it
+    /// dims it *by a lot in light and by almost nothing in dark*. Measured off
+    /// the running app, warm canvas `#FAF9F8` against its own dimmed self:
+    ///
+    ///     light   backdrop #D4D4D3  →  sheet #FAF9F8   Δ 114/765
+    ///     dark    backdrop #201E1D  →  sheet #20201D   Δ   2/765
+    ///
+    /// Two parts in 765 is not an edge. The dark sheet had no visible boundary
+    /// at all: no rim, no corner, no separation — its rounded platter was
+    /// invisible and the thing read as a block of text lying on the page. On the
+    /// Settings sheet it was worse than invisible, because that sheet lands over
+    /// the settings *cards*, which dim to `#252323` — lighter than the sheet's
+    /// own `#20201D`. A raised surface that is darker than what it floats over
+    /// reads as a hole, and that is what it looked like.
+    ///
+    /// ``Color/junoPopover`` is the fix and it needed no new token: it is the
+    /// web's `--popover`, and its doc comment in `JunoColors.swift` already
+    /// names the three things it is for — "menu, popover, **sheet**". In dark it
+    /// is `48 6% 18%` against the canvas's `48 7% 9%`, so the platter finally
+    /// sits above the page instead of level with it. In light it is a 1% step
+    /// off the canvas and changes nothing anyone can see, which is correct —
+    /// light was never broken.
+    ///
+    /// **iOS deliberately keeps the canvas.** There, `junoSheetSurface` means a
+    /// full-height reading sheet: it covers the screen, nothing shows beside it,
+    /// and there is no page for it to sit above. Elevating a surface that has
+    /// nothing under it is not depth, it is just a lighter grey — and it would
+    /// put a seam between a pushed destination and the sheet that contains it.
+    /// The macOS problem is specifically that a sheet there is an inset card.
+    private var ground: Color {
+        #if os(macOS)
+        .junoPopover
+        #else
+        .junoCanvas
+        #endif
+    }
+
     func body(content: Content) -> some View {
         let grounded = content
             .scrollContentBackground(.hidden)
-            .background(Color.junoCanvas)
+            .background(ground)
 
         #if os(macOS)
         // `presentationSizing` is macOS 15 / iOS 18, one notch above this

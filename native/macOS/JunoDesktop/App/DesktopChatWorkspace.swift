@@ -2752,6 +2752,12 @@ struct DesktopComposer: View {
                 }
             )
         }
+        // The real popover, from the real anchor. `JunoDesktopPreviewRoot` also
+        // has a route to this selector, but it renders the *content* full-window
+        // precisely because it could not keep a popover open — so it shows the
+        // picker and says nothing about the glass platter the picker sits on,
+        // which is the half the overlay contract governs.
+        .desktopPreviewOverlays(popover: { showingModelSelector = true })
     }
 
     /// The glyph that says "this is about how hard the model thinks".

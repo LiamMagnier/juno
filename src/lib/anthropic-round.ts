@@ -193,6 +193,16 @@ export async function* readAnthropicRound(
           server: opts.labelFor?.(raw.name ?? "") ?? "connector",
           name: raw.name ?? "tool",
           phase: "call",
+          callId: raw.id ?? "",
+          // NO `args` HERE, AND THIS IS NOT AN OVERSIGHT. `content_block_start`
+          // carries the tool's id and name and nothing else: the arguments
+          // arrive afterwards as `input_json_delta` fragments and are only
+          // whole at `content_block_stop`. Anything read here would be `{}`.
+          // Anthropic attaches them to the RESULT event instead
+          // (anthropic.ts), which is the whole reason the wire contract lets
+          // args ride on either act. Deferring this yield until the arguments
+          // exist would cost the panel the live row — "Using Linear" would
+          // appear only after Linear had already answered.
         };
       } else if (raw.type === "web_search_tool_result") {
         const content = raw.content;

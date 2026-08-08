@@ -516,16 +516,27 @@ export async function* streamOpenAICompat(
       } as OpenAI.Chat.Completions.ChatCompletionMessageParam);
       for (const v of calls) {
         const label = toolset!.labelFor(v.name);
-        yield { type: "tool", server: label, name: v.name, phase: "call" };
+        // Deltas are fully accumulated before this loop runs, so the arguments
+        // ride on the CALL — see the Responses adapter for the same shape.
+        yield { type: "tool", server: label, name: v.name, phase: "call", callId: v.id, args: v.args };
         let parsedArgs: Record<string, unknown> = {};
         try {
           parsedArgs = v.args ? JSON.parse(v.args) : {};
         } catch {
           parsedArgs = {};
         }
-        const result = await toolset!.execute(v.name, parsedArgs, signal);
-        messages.push({ role: "tool", tool_call_id: v.id, content: result } as OpenAI.Chat.Completions.ChatCompletionMessageParam);
-        yield { type: "tool", server: label, name: v.name, phase: "result" };
+        const exec = await toolset!.execute(v.name, parsedArgs, signal);
+        messages.push({ role: "tool", tool_call_id: v.id, content: exec.text } as OpenAI.Chat.Completions.ChatCompletionMessageParam);
+        yield {
+          type: "tool",
+          server: label,
+          name: v.name,
+          phase: "result",
+          callId: v.id,
+          result: exec.body,
+          ok: exec.ok,
+          durationMs: exec.durationMs,
+        };
       }
       continue;
     }

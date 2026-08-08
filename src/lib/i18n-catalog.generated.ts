@@ -1626,6 +1626,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Couldn’t load your schedules. This page is empty because the request failed, not because you have none — anything already set up is still running to its own clock."
   },
   {
+    "id": "1e2c6e7439db044b",
+    "source": "Waiting for the connector to answer."
+  },
+  {
     "id": "1e2eb2815850b75d",
     "source": "Cancel clarification"
   },
@@ -3966,6 +3970,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "&rdquo; · vocab id"
   },
   {
+    "id": "4ba1bfc120a21428",
+    "source": "The connector was called with no arguments."
+  },
+  {
     "id": "4ba2fb207cfbad73",
     "source": "Restore access"
   },
@@ -4428,6 +4436,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "55ea09e5715d0a8d",
     "source": "limit"
+  },
+  {
+    "id": "56547a7cc8bbf46b",
+    "source": "listed"
   },
   {
     "id": "5660cedc0f34aa98",
@@ -5838,6 +5850,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Presence unavailable"
   },
   {
+    "id": "6eedf80d418f4927",
+    "source": "The provider did not send the arguments for this call."
+  },
+  {
     "id": "6f16c8b05d243bb7",
     "source": "Previous-generation Sonnet, superseded by Sonnet 5."
   },
@@ -6380,6 +6396,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7906898af04074f5",
     "source": "This deletes your account and everything in it — conversations, memories, uploaded files, and your subscription. It takes effect immediately, and nothing can be recovered afterwards. If you want a copy, export your data first."
+  },
+  {
+    "id": "7907ce231d200865",
+    "source": "Some of these calls carry no recorded detail — they ran before Juno kept it, or with it turned off."
   },
   {
     "id": "7924f4ab279fec70",
@@ -6970,6 +6990,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "x2"
   },
   {
+    "id": "84520fd4bfc2e60b",
+    "source": "This run reached its limit for recorded call detail before this call."
+  },
+  {
     "id": "8453e9e99229730e",
     "source": "Legacy alias routing to V4 Flash."
   },
@@ -7408,6 +7432,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8e76a94ac8320d51",
     "source": "Summary"
+  },
+  {
+    "id": "8e7e9cf14ce15b56",
+    "source": "Exactly what Juno sent each connector and exactly what came back. Credentials are removed and long results are cut; nothing else is edited."
   },
   {
     "id": "8e920ae7d06bef0e",
@@ -8590,6 +8618,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This sign-in request is invalid or came from an unsupported version of Juno."
   },
   {
+    "id": "a489aca31da41615",
+    "source": "No result was recorded for this call."
+  },
+  {
     "id": "a48bce7b21519953",
     "source": "Manage memories"
   },
@@ -9182,6 +9214,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Older free-tier model."
   },
   {
+    "id": "aef59dce871cd7fd",
+    "source": "No arguments were recorded for this call."
+  },
+  {
     "id": "aefa6fb5a58d4f2e",
     "source": "Light and airy"
   },
@@ -9470,6 +9506,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "A yearly trigger needs a month (1-12) and a day of the month (1-31)."
   },
   {
+    "id": "b456698ccf105457",
+    "source": "This run reached its limit for recorded call detail before this call returned."
+  },
+  {
     "id": "b46a096aa0eac51c",
     "source": "Files & storage"
   },
@@ -9708,6 +9748,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b958ce8b871ab36b",
     "source": "Temperature"
+  },
+  {
+    "id": "b96b8aad6efca9cf",
+    "source": "The connector returned nothing."
   },
   {
     "id": "b977b950c1ae31e5",
@@ -10944,6 +10988,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d0d0123bc739fadd",
     "source": "Pick the plan that"
+  },
+  {
+    "id": "d0da1e5e8dcc7458",
+    "source": "The provider sent argument text that is not valid JSON, so it could not be redacted and is not shown."
   },
   {
     "id": "d0db8b5e364b6989",
@@ -12308,6 +12356,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e8b0b8daf176b804",
     "source": "Drop shadow"
+  },
+  {
+    "id": "e8e08858d5af1867",
+    "source": "The run ended before this call returned."
   },
   {
     "id": "e8eff27681869dc1",

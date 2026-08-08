@@ -138,6 +138,10 @@ struct DesktopSettingsScreen: View {
                 }
             }
         }
+        // Diagnostics rather than Shared links: it is the taller of the two and
+        // fills the host's fixed 560×620, which is what makes the ground under
+        // the content — the thing the overlay contract is about — visible at all.
+        .desktopPreviewOverlays(sheet: { sheet = .diagnostics })
     }
 
     // MARK: - Header

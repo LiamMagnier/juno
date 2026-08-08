@@ -89,13 +89,38 @@ test("seeded research sources are not re-added when the model cites them back", 
   assert.deepEqual(acc.sources.map((s) => s.url), ["https://a", "https://b"]);
 });
 
-test("only tool calls surface; tool results are folded in silently", () => {
+test("both acts of a tool call surface, carrying the callId that pairs them", () => {
   const acc = new GenerationAccumulator();
-  const call = acc.apply({ type: "tool", server: "github", name: "search", phase: "call" });
-  const result = acc.apply({ type: "tool", server: "github", name: "search", phase: "result" });
+  const call = acc.apply({
+    type: "tool",
+    server: "github",
+    name: "search",
+    phase: "call",
+    callId: "call_1",
+    args: '{"q":"juno"}',
+  });
+  const result = acc.apply({
+    type: "tool",
+    server: "github",
+    name: "search",
+    phase: "result",
+    callId: "call_1",
+    result: "3 issues",
+    ok: true,
+    durationMs: 412,
+  });
 
-  assert.equal(call.kind, "tool_call");
-  assert.equal(result.kind, "none");
+  assert.deepEqual(call, { kind: "tool_call", server: "github", name: "search", callId: "call_1", args: '{"q":"juno"}' });
+  assert.deepEqual(result, {
+    kind: "tool_result",
+    server: "github",
+    name: "search",
+    callId: "call_1",
+    args: undefined,
+    result: "3 issues",
+    ok: true,
+    durationMs: 412,
+  });
 });
 
 test("usage merges across events and exposes the counters spend recording wants", () => {

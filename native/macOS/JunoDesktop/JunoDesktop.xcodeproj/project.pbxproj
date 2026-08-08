@@ -80,6 +80,7 @@
 		C7182D3BF762DDD9FB6E64AB /* JunoDesktopSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00EF62FB4286BF63383E60F3 /* JunoDesktopSmokeTests.swift */; };
 		C811AAC4B9F0229208452F6D /* DesktopWorkHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EBD8AF37B6F60E4B079D55D /* DesktopWorkHost.swift */; };
 		CF031665979D62647C1AAB27 /* DesktopDesignLauncherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FFFE5490F5C28D155449527 /* DesktopDesignLauncherTests.swift */; };
+		CF6EBA587B7EBC9D96E7C01F /* DesktopPreviewOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A54CD2AEEE462BD81D096CB /* DesktopPreviewOverlay.swift */; };
 		D4BA69411D695B3CA7C42F81 /* JunoCodeBridge in Frameworks */ = {isa = PBXBuildFile; productRef = 689E8F208D90FF8819D502E1 /* JunoCodeBridge */; };
 		D8627BF871280CE0B9EA8617 /* JunoChatKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6696C1EC4C2EE4496A403864 /* JunoChatKit */; };
 		D8CA917E990E2E2241873C87 /* Navigation.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 67002ACB31FEB3D116EE36AB /* Navigation.xcassets */; };
@@ -166,6 +167,7 @@
 		80E08901FA58A4F4DD67CE18 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		83368A128D410411E190E1E4 /* DesktopCodeAccountFooter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCodeAccountFooter.swift; sourceTree = "<group>"; };
 		87DDC6F2406B896D29731CCE /* DesktopNavigationStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNavigationStateTests.swift; sourceTree = "<group>"; };
+		8A54CD2AEEE462BD81D096CB /* DesktopPreviewOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopPreviewOverlay.swift; sourceTree = "<group>"; };
 		928369F1801364D12F5B89FD /* JunoDesktopTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = JunoDesktopTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9DB86AE5BD906CBD665AA5B2 /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
 		9F2B1A470F0961AE5B4912BF /* DesktopCodeWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCodeWorkspace.swift; sourceTree = "<group>"; };
@@ -292,6 +294,7 @@
 				CD1849262D77AE703CF3750A /* DesktopLibraryScreen.swift */,
 				3DFFC07CCB09E2219AC6EC1C /* DesktopModelSelector.swift */,
 				6F7DAFF580CD4F8CAF1786FD /* DesktopNavigationState.swift */,
+				8A54CD2AEEE462BD81D096CB /* DesktopPreviewOverlay.swift */,
 				3937DD015DAB7C6F68939F1F /* DesktopProductMode.swift */,
 				ECACB2996FDFAD5AC00D7C58 /* DesktopProjectsScreen.swift */,
 				18E25C3C510164E4281E592D /* DesktopSearchScreen.swift */,
@@ -596,6 +599,7 @@
 				3165507567EC5879E6D83B4F /* DesktopLibraryScreen.swift in Sources */,
 				08972069C96DFC6ADEA5FA47 /* DesktopModelSelector.swift in Sources */,
 				436B5F3E43E4D083EC052871 /* DesktopNavigationState.swift in Sources */,
+				CF6EBA587B7EBC9D96E7C01F /* DesktopPreviewOverlay.swift in Sources */,
 				2155687BD62CFDED5F0224D5 /* DesktopProductMode.swift in Sources */,
 				79B232CCF1311D4C40B8C24C /* DesktopProjectsScreen.swift in Sources */,
 				157B182726D958C47128E4B3 /* DesktopSearchScreen.swift in Sources */,

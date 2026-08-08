@@ -26,8 +26,26 @@ export type StreamEffect =
       startedWriting: boolean;
     }
   | { kind: "reasoning"; text: string; part?: number }
-  /** A tool invocation worth showing. Results are folded in silently. */
-  | { kind: "tool_call"; server: string; name: string }
+  /**
+   * The two acts of one connector call, paired by `callId`.
+   *
+   * The accumulator holds NO tool state of its own. It could pair the acts
+   * here, but it must not: a mid-stream reconnect replays events, and any
+   * pairing state kept here would have to be reconciled against an activity log
+   * and a database this class cannot see. The route already owns both, so it
+   * owns the pairing too — and gets one activity row per call out of it.
+   */
+  | { kind: "tool_call"; server: string; name: string; callId: string; args?: string }
+  | {
+      kind: "tool_result";
+      server: string;
+      name: string;
+      callId: string;
+      args?: string;
+      result: string;
+      ok: boolean;
+      durationMs?: number;
+    }
   | {
       kind: "sources";
       /** Newly seen this event — one "Visited source" activity each. */
@@ -37,7 +55,7 @@ export type StreamEffect =
     }
   | { kind: "usage" }
   | { kind: "finish"; reason: ChatFinishReason }
-  /** Nothing to emit — a tool result, or an event this build does not render. */
+  /** Nothing to emit — an event this build does not render. */
   | { kind: "none" };
 
 /** Token counters in the shape `recordSpend` and the logs want them. */
@@ -155,8 +173,21 @@ export class GenerationAccumulator {
         return { kind: "reasoning", text: event.text, part: event.part };
       }
       case "tool": {
-        if (event.phase !== "call") return { kind: "none" };
-        return { kind: "tool_call", server: event.server, name: event.name };
+        // Results are no longer swallowed. They carry the only record of what a
+        // connector actually answered, and dropping them here is what used to
+        // make "Using Linear" the entire truth the panel could tell.
+        return event.phase === "call"
+          ? { kind: "tool_call", server: event.server, name: event.name, callId: event.callId, args: event.args }
+          : {
+              kind: "tool_result",
+              server: event.server,
+              name: event.name,
+              callId: event.callId,
+              args: event.args,
+              result: event.result,
+              ok: event.ok,
+              durationMs: event.durationMs,
+            };
       }
       case "sources": {
         const added = this.seedSources(event.sources);

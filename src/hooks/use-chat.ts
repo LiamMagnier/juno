@@ -20,6 +20,7 @@ import {
   type PreflightClarificationContext,
 } from "@/lib/preflight-clarification";
 import type {
+  ClientActivityEvent,
   ClientArtifact,
   ClientAttachment,
   ClientMessage,
@@ -30,6 +31,27 @@ import type {
   ReasoningEffort,
   TitleSource,
 } from "@/types/chat";
+
+/**
+ * Add an activity event, or update the one already holding its id WHERE IT IS.
+ *
+ * The server completes a tool row by re-sending it: one entry per connector
+ * call, created when the model reaches for the tool and finished when the
+ * connector answers. Order is meaning in the activity log — the panel reads a
+ * run's shape from the first and last events and lists the calls in the order
+ * they happened — so a completing row has to stay where it started.
+ */
+function upsertActivity(
+  events: ClientActivityEvent[] | undefined,
+  next: ClientActivityEvent
+): ClientActivityEvent[] {
+  const current = events ?? [];
+  const at = current.findIndex((event) => event.id === next.id);
+  if (at === -1) return [...current, next];
+  const merged = current.slice();
+  merged[at] = next;
+  return merged;
+}
 
 export type ChatMessage = ClientMessage & {
   streaming?: boolean;
@@ -477,7 +499,14 @@ export function useChat(opts: UseChatOptions) {
                   m.id === assistantTempId
                     ? {
                         ...m,
-                        activity: [...(m.activity ?? []).filter((event) => event.id !== chunk.event.id), chunk.event],
+                        // REPLACE IN POSITION, never filter-and-append. Re-sending
+                        // an event with an id already in the log is how a tool row
+                        // completes: the server keeps one row per connector call and
+                        // fills in the result when it arrives. Appending would move
+                        // that row to the END of the activity array, reordering the
+                        // run's calls in the panel and putting a mid-run event after
+                        // the terminal ones the run's shape is read from.
+                        activity: upsertActivity(m.activity, chunk.event),
                       }
                     : m
                 )

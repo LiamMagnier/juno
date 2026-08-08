@@ -133,8 +133,10 @@ test("every tool_use yields a call event, labelled through the toolset", async (
     ],
     (n) => (n.startsWith("github") ? "GitHub" : "?")
   );
+  // No `args`: the call event is yielded from content_block_start, where the
+  // arguments have not begun streaming. Anthropic attaches them to the result.
   assert.deepEqual(yielded, [
-    { type: "tool", server: "GitHub", name: "github__create_issue", phase: "call" },
+    { type: "tool", server: "GitHub", name: "github__create_issue", phase: "call", callId: "a" },
   ]);
 });
 
