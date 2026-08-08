@@ -211,11 +211,16 @@ function parseBlocks(markdown: string): Block[] {
       const header = splitCells(line);
       i += 2;
       const rows: string[][] = [];
+      let omittedRows = 0;
       while (i < lines.length && isTableRow(lines[i]) && !FENCE_RE.test(lines[i])) {
         if (rows.length < MAX_TABLE_ROWS) rows.push(splitCells(lines[i]));
+        else omittedRows += 1;
         i++;
       }
       const grid = rectangularise(header, rows);
+      if (omittedRows > 0) {
+        grid.rows.push([`… ${omittedRows.toLocaleString("en-US")} more table row(s) omitted`, ...Array(Math.max(0, grid.header.length - 1)).fill("")]);
+      }
       blocks.push({ kind: "table", table: { heading, header: grid.header, rows: grid.rows } });
       continue;
     }
@@ -683,6 +688,17 @@ function fitColumns(ws: import("exceljs").Worksheet, grid: string[][]): void {
   }
 }
 
+function wrapLongCells(ws: import("exceljs").Worksheet): void {
+  ws.eachRow({ includeEmpty: false }, (row) => {
+    row.eachCell({ includeEmpty: false }, (cell) => {
+      const width = ws.getColumn(cell.col).width ?? 10;
+      if (typeof cell.value === "string" && cell.value.length > width) {
+        cell.alignment = { ...cell.alignment, wrapText: true, vertical: "top" };
+      }
+    });
+  });
+}
+
 export async function toXlsx(markdown: string, title: string): Promise<Buffer> {
   try {
     const blocks = parseBlocks(markdown);
@@ -697,6 +713,7 @@ export async function toXlsx(markdown: string, title: string): Promise<Buffer> {
       const ws = wb.addWorksheet(sheetName(cleanTitle(title) || "Document", taken));
       for (const line of plainLines(blocks)) ws.addRow([line]);
       ws.getColumn(1).width = 100;
+      wrapLongCells(ws);
     } else {
       for (const t of tables) {
         const ws = wb.addWorksheet(sheetName(t.heading ?? cleanTitle(title) ?? "", taken));
@@ -706,6 +723,7 @@ export async function toXlsx(markdown: string, title: string): Promise<Buffer> {
         ws.views = [{ state: "frozen", ySplit: 1 }];
         for (const row of t.rows) ws.addRow(row.map(cellValue));
         fitColumns(ws, [header, ...t.rows.map((r) => r.map(stripInline))]);
+        wrapLongCells(ws);
       }
     }
 
@@ -754,13 +772,17 @@ function splitSlides(blocks: Block[]): Block[][] {
 
 function slideBody(blocks: Block[]): SlideLine[] {
   const lines: SlideLine[] = [];
+  let omitted = 0;
   const push = (text: string, bullet: boolean) => {
     const t = text.trim();
     if (t !== "") lines.push({ text: t, bullet });
+    if (lines.length > MAX_SLIDE_LINES) {
+      lines.pop();
+      omitted += 1;
+    }
   };
 
   for (const b of blocks) {
-    if (lines.length >= MAX_SLIDE_LINES) break;
     switch (b.kind) {
       case "heading":
         push(stripInline(b.text), false);
@@ -769,26 +791,36 @@ function slideBody(blocks: Block[]): SlideLine[] {
         push(stripInline(b.text), false);
         break;
       case "list":
-        for (const item of b.items) push(stripInline(item), true);
+        for (const item of b.items) {
+          if (lines.length >= MAX_SLIDE_LINES) omitted += 1;
+          else push(stripInline(item), true);
+        }
         break;
       case "quote":
         push(stripInline(b.lines.join(" ")), false);
         break;
       case "code":
-        for (const l of b.lines) push(l, false);
+        for (const l of b.lines) {
+          if (lines.length >= MAX_SLIDE_LINES) omitted += 1;
+          else push(l, false);
+        }
         break;
       case "table":
-        push(b.table.header.map(stripInline).join("  |  "), false);
-        for (const r of b.table.rows) push(r.map(stripInline).join("  |  "), true);
+        if (lines.length >= MAX_SLIDE_LINES) omitted += 1;
+        else push(b.table.header.map(stripInline).join("  |  "), false);
+        for (const r of b.table.rows) {
+          if (lines.length >= MAX_SLIDE_LINES) omitted += 1;
+          else push(r.map(stripInline).join("  |  "), true);
+        }
         break;
       case "divider":
         break;
     }
   }
 
-  if (lines.length > MAX_SLIDE_LINES) {
-    lines.length = MAX_SLIDE_LINES;
-    lines.push({ text: "…", bullet: false });
+  if (omitted > 0) {
+    if (lines.length >= MAX_SLIDE_LINES) lines.length = MAX_SLIDE_LINES - 1;
+    lines.push({ text: `… ${omitted.toLocaleString("en-US")} more line(s) omitted`, bullet: false });
   }
   return lines;
 }

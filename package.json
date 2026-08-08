@@ -45,6 +45,7 @@
     "sync:prune": "tsx scripts/prune-sync.ts",
     "sync:models:write": "tsx scripts/sync-models.ts --write --prune",
     "models:probe": "NODE_OPTIONS=--conditions=react-server tsx scripts/probe-models.ts",
+    "production:smoke": "node scripts/production-smoke.mjs",
     "sync:benchmarks": "tsx scripts/fetch-benchmarks.ts",
     "radar:models": "tsx scripts/model-radar.ts",
     "design:contract": "tsx scripts/generate-design-contract.ts",

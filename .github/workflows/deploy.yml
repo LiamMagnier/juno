@@ -692,3 +692,27 @@ jobs:
           pm2 status || true
           exit 1
           REMOTE
+
+      - name: Run authenticated production smoke when configured
+        env:
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new \
+            "$VM_USER@$VM_HOST" "EXPECTED_SHA='$EXPECTED_SHA' bash -s" <<'REMOTE'
+          set -e
+          APP_URL="$(grep -m1 '^NEXT_PUBLIC_APP_URL=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
+          APP_URL="${APP_URL%/}"
+          [ -n "$APP_URL" ] || APP_URL="https://chat.liams.dev"
+          SMOKE_TOKEN="$(grep -m1 '^JUNO_SMOKE_TOKEN=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
+          if [ -n "$SMOKE_TOKEN" ]; then
+            JUNO_SMOKE_BASE_URL="$APP_URL" \
+              JUNO_SMOKE_EXPECTED_SHA="$EXPECTED_SHA" \
+              JUNO_SMOKE_TOKEN="$SMOKE_TOKEN" \
+              JUNO_SMOKE_RUN_CHAT="$(grep -m1 '^JUNO_SMOKE_RUN_CHAT=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)" \
+              node ~/juno/scripts/production-smoke.mjs
+          else
+            echo "Authenticated production smoke skipped: JUNO_SMOKE_TOKEN is not configured."
+          fi
+          REMOTE

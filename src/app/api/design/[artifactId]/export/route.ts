@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/session";
+import { prisma } from "@/lib/prisma";
+import { headObject } from "@/lib/storage";
+import { sniffImageMime } from "@/lib/uploads";
 import { documentFromArtifact, loadOwnedDesignArtifact } from "@/lib/design/store";
 import {
   buildHandoffBundle,
@@ -59,6 +62,45 @@ function isolateLayer(doc: DesignDocument, pageId: PageId, nodeId: NodeId): Desi
   };
 }
 
+/** Export must not turn a missing Library asset into a blank, shareable design. */
+async function validateDesignAssets(doc: DesignDocument, userId: string): Promise<string | null> {
+  for (const asset of Object.values(doc.assets)) {
+    if (asset.url.toLowerCase().startsWith("data:image/")) {
+      const comma = asset.url.indexOf(",");
+      if (comma < 0) return `Image asset ${asset.id} has an invalid data URL.`;
+      const payload = asset.url.slice(comma + 1);
+      if (asset.url.slice(0, comma).toLowerCase().endsWith(";base64")) {
+        const bytes = Buffer.from(payload, "base64");
+        if (bytes.length === 0 || !sniffImageMime(bytes)) return `Image asset ${asset.id} has invalid image bytes.`;
+      } else {
+        try {
+          if (!/^\s*<svg[\s>]/i.test(decodeURIComponent(payload))) {
+            return `Image asset ${asset.id} is not a decodable inline image.`;
+          }
+        } catch {
+          return `Image asset ${asset.id} is not a decodable inline image.`;
+        }
+      }
+      continue;
+    }
+    if (!asset.url.startsWith("/api/files/")) return `Image asset ${asset.id} is not an app-owned file.`;
+    const key = asset.url.slice("/api/files/".length).split("?", 1)[0];
+    if (!key || key.includes("..")) return `Image asset ${asset.id} has an unsafe file reference.`;
+    const attachment = await prisma.attachment.findFirst({
+      where: { userId, storageKey: key, kind: "IMAGE", deletedAt: null },
+      select: { id: true },
+    });
+    if (!attachment) return `Image asset ${asset.id} points to a missing Library file.`;
+    try {
+      const head = await headObject(key, 32);
+      if (!sniffImageMime(head.prefix)) return `Image asset ${asset.id} is not a readable image.`;
+    } catch {
+      return `Image asset ${asset.id} points to an unavailable Library file.`;
+    }
+  }
+  return null;
+}
+
 /**
  * Export a design document.
  *
@@ -95,6 +137,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ artifact
     }
     throw error;
   }
+
+  const assetProblem = await validateDesignAssets(document, user.id);
+  if (assetProblem) return NextResponse.json({ error: assetProblem, code: "MISSING_ASSET" }, { status: 422 });
 
   const pageId = parsed.data.pageId ?? document.pages[0].id;
   if (!document.pages.some((page) => page.id === pageId)) {
