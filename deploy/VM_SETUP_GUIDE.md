@@ -220,7 +220,11 @@ pm2 save
 ```
 
 ### Updating the Backend (Future Deployments)
-We've created a `deploy/deploy.sh` script to pull updates and restart PM2. To update your backend, just SSH in and run:
+`deploy/deploy.sh` is the VM-local release transaction. From the repository root
+it creates an immutable candidate, applies only the reviewed migration ledger,
+atomically switches the active release, verifies the expected commit through
+`/api/health`, and rolls back application pointers if activation fails. To
+update the backend, SSH in and run:
 ```bash
 ./deploy/deploy.sh
 ```

@@ -93,7 +93,11 @@ From here, follow **`VM_SETUP_GUIDE.md`** exactly:
 
 ## Redeploying later
 
-SSH in and run `./deploy/deploy.sh` — it pulls, rebuilds, and reloads PM2.
+From the repository root, run `./deploy/deploy.sh` — it verifies the reviewed
+environment, builds an immutable candidate release, applies only reviewed
+Prisma migrations, atomically switches the active release, and reloads PM2 with
+an expected-SHA health check. It refuses a dirty checkout or an unverified
+migration history.
 
 ---
 

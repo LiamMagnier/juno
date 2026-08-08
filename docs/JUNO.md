@@ -1580,8 +1580,9 @@ working.** Two releases, never one.
 
 ### 20.3 Continuous deployment (GitHub Actions)
 
-Pushing to `main` deploys automatically — the low-RAM VM never has to build. Four
-workflows live in `.github/workflows/`; the fourth, **`native.yml`**, gates the
+Pushing to `main` deploys automatically — the low-RAM VM never has to build. The
+web deploy, native CI, model-sync, macOS publication, iOS publication and Cloud
+Code workflows live in `.github/workflows/`. The native CI workflow gates the
 Swift surface (shared packages, the generated API contract, and both app builds)
 and is documented in `docs/native/TESTING.md` rather than here.
 
@@ -1619,9 +1620,15 @@ cancel-in-progress. A superseding run must never sever a deploy midway through i
    `prisma generate`, an nginx header-buffer patch if needed, and
    `pm2 startOrReload deploy/ecosystem.config.js --update-env` + `pm2 save`.
 
-Required **GitHub Actions secrets**: `PROD_ENV` (the full production env file),
-`VM_SSH_KEY`, `VM_USER`, `VM_HOST`. All provider keys and app secrets (including
+Required **protected Production environment inputs**: `PROD_ENV` (the full
+production env file), `VM_SSH_KEY`, `VM_KNOWN_HOSTS`, `VM_USER`, and `VM_HOST`.
+`PROD_ENV` must also contain `JUNO_SMOKE_TOKEN` or `JUNO_SMOKE_COOKIE`; the
+post-deploy authenticated catalog/chat/receipt/replay smoke never has an
+optional skip path. All provider keys and app secrets (including
 `CLOUD_CODE_SECRET`, `GITHUB_DISPATCH_TOKEN`, etc.) live inside `PROD_ENV`.
+The job independently checks the public origin and UI after the VM-local check,
+and a failed post-deploy check restores the prior application snapshot while
+leaving the database forward-only.
 
 **`sync-models.yml` — Sync models** (nightly cron `04:17 UTC` + manual): runs
 `sync:models:write` (provider discovery → `models.generated.ts`), `sync:benchmarks`
@@ -1650,7 +1657,13 @@ release meant revert → rebuild → redeploy → migrate, with the bad build se
 for the twenty minutes that took.
 
 `deploy.yml` now snapshots the running build to `~/juno-previous` first
-(hardlinked, so it costs seconds and almost no space). To roll back:
+(hardlinked, so it costs seconds and almost no space). Its final failure step
+performs the rollback automatically and preserves the current `.env`, uploads
+and logs before activating the snapshot. If the workflow itself cannot reach
+the VM, do not blindly rsync the snapshot over the live tree: use the pinned
+SSH path and preserve those runtime paths first.
+
+For a controlled operator rollback when the VM is reachable:
 
 ```bash
 ssh <vm> 'cd ~ && rsync -a --delete \
@@ -1667,22 +1680,27 @@ Three things this does **not** do, and you must think about each:
   expand/contract rule in §20.2b, and the reason that rule is not optional.
 - **It keeps only one generation.** The snapshot is overwritten on the next
   deploy, so roll back *before* deploying again.
-- **It does not restore `.env`.** The runtime env is excluded on purpose; the
-  merge step keeps its own `.env.bak`.
+- **It does not roll back `.env`, uploads or logs.** Preserve the live runtime
+  paths before using the shorthand command; the workflow's automatic rollback
+  already does this.
 
-The fuller scheme — `~/juno-releases/<sha>` with a `current` symlink, so rollback
-is re-pointing a link and several generations are kept — is still worth doing.
-This is the version that needed no restructuring of the deploy path.
+The VM-local `deploy/deploy.sh` path uses the fuller scheme: immutable
+`releases/<sha>-<timestamp>-<pid>` directories with atomic `current` and
+`previous` symlinks, candidate build/migration verification, expected-SHA health
+checks, and PM2 rollback. Database migrations remain forward-only.
 
 ### 20.4 Manual deploy (`deploy/deploy.sh`)
 
 For a deploy from the VM itself (or first-time setup), `deploy/deploy.sh` is the
-idempotent equivalent: discard any local model-registry edit, `git pull`, ensure
-`AUTH_URL` + nginx tuning, `npm ci`, apply migrations (with the same baseline
-convergence), `prisma generate`, best-effort model sync, `npm run build`, build the
-relay, and reload all three PM2 processes. The `deploy/VM_SETUP_GUIDE.md` (Oracle) and
-`deploy/GCP_SETUP_GUIDE.md` runbooks cover the one-time VM provisioning (Node/PM2/nginx/
-Certbot, swap for the 1 GB build, firewall).
+idempotent release transaction. It requires a clean checkout and reviewed
+environment, fetches the selected commit without rewriting the checkout,
+materializes an immutable candidate, installs/builds it, verifies the migration
+ledger, runs only `prisma migrate deploy`, atomically switches `current`, and
+reloads the complete PM2 ecosystem. It rolls back application pointers and PM2
+when activation or expected-SHA health fails; it never uses `prisma db push` or
+ad-hoc SQL. The `deploy/VM_SETUP_GUIDE.md` (Oracle) and
+`deploy/GCP_SETUP_GUIDE.md` runbooks cover one-time VM provisioning
+(Node/PM2/nginx/Certbot, swap for the 1 GB build, firewall).
 
 ### 20.5 UI-on-Vercel variant
 
@@ -1702,12 +1720,13 @@ The voice relay can alternatively run on Render (`render.yaml`, free tier, sleep
 - **Encryption key rotation**: `npm run crypto:rotate`.
 - **Log rotation**: PM2 writes `logs/*.log` unbounded. Run `pm2 install
   pm2-logrotate` once on the VM (idempotent) or the disk fills eventually.
-- **Health**: `GET /api/health` returns `{ ok, db, version, uptime }` and answers
-  **503** when Postgres is unreachable, so an external uptime monitor needs no
-  special configuration — point it at that URL and alert on non-200. Signed in as
-  an owner (`OWNER_EMAILS`) the same endpoint also returns a per-provider health
-  map; that part is owner-only because it enumerates which model vendors this
-  deployment holds keys for.
+- **Health**: ordinary `GET /api/health` returns `{ ok, db, version, uptime }`,
+  performs only a bounded database liveness check, and answers **503** when
+  Postgres is unreachable. An external uptime monitor needs no special
+  configuration — point it at that URL and alert on non-200. Owner-gated
+  provider readiness is an explicit `?readiness=1` (with `?diagnostic=1` and
+  legacy `?probe=1` aliases); it is never part of public liveness and is bounded
+  with cancellable per-provider and batch deadlines.
 - **Provider health**: `src/lib/provider-health.ts` probes each configured
   provider with a 1-token completion (10 min TTL, 30 min while a provider is
   known down) and hides unhealthy providers' models from the catalog. Only
@@ -1717,17 +1736,26 @@ The voice relay can alternatively run on Render (`render.yaml`, free tier, sleep
   `[alert]` line to stderr always, and additionally mails `OWNER_EMAILS` when
   `RESEND_API_KEY` is set, deduplicated to one message per hour per alert.
   `grep '\[alert\]' logs/err.log` is the audit trail.
-- **Backups**: see §20.7. There is no backup tooling in this repo — recovery depends
-  entirely on the managed provider's configuration. User data export is available
-  per-account via `GET /api/account/export` (metadata only for attachments).
+- **Backups**: see §20.7. The repository now has custom-format PostgreSQL backup,
+  byte-digest verification, scratch-only restore and a disposable local drill;
+  remote scratch RPO/RTO evidence and offsite retention remain operational gates.
+  User data export is available per-account via `GET /api/account/export` and
+  is not a replacement for byte-level backup.
 
-### 20.7 Backup & disaster recovery — **unverified**
+### 20.7 Backup & disaster recovery — **implemented, operationally unverified**
 
-> **Status: not confirmed.** Nothing in this repository backs the database up.
-> There is no `pg_dump`, no `wal-g`, no backup workflow, no backup cron. Recovery
-> depends entirely on how the managed Supabase project is configured, and that is
-> not knowable from the code. Until an operator confirms the two answers below,
-> assume Juno has **no recoverable backup**.
+> **Status: local evidence passes; production RPO/RTO is not confirmed.** The
+> repository has `scripts/backup-production.mjs`, `scripts/verify-backup.mjs`,
+> `scripts/restore-production.mjs`, `scripts/restore-drill.mjs` and the runbook
+> `docs/runbooks/BACKUP_RESTORE.md`. Backups contain a custom-format `pg_dump`
+> plus a per-object SHA-256/byte manifest. Verification reads every database and
+> object byte. Restore refuses production-looking targets, requires explicit
+> scratch destinations, validates all manifest paths/digests before writing, and
+> the disposable local drill round-trips database rows and object bytes.
+>
+> A remote scratch restore with measured RPO/RTO, offsite retention, encryption,
+> and an operator-owned schedule is still required before claiming disaster
+> recovery is production-proven.
 
 This section previously claimed backups relied on "Neon's branching/point-in-time
 restore". That was wrong twice over: the reference deployment is **Supabase**, not
@@ -1735,7 +1763,7 @@ Neon (§20.2), and no restore capability was ever verified.
 
 **What an operator must confirm in the Supabase dashboard** (neither is visible
 from the repo, and the local `.env` is not authoritative — production env lives in
-the `PROD_ENV` GitHub Actions secret):
+the protected `PROD_ENV` GitHub Actions secret):
 
 1. **The project's plan tier.** Supabase's Free tier has no point-in-time recovery
    and no scheduled backups; daily backups begin on Pro. On Free, a bad migration
@@ -1748,29 +1776,26 @@ a schedule or on demand: the weekly `npm run sync:prune` (`deploy/VM_SETUP_GUIDE
 30-day default window) and the cascading account delete. If retention is shorter than
 the time it takes to *notice* a bad prune, backups do not help.
 
-**Uploads are a separate failure domain, and currently a worse one.** In the `.env`
-this repo was reviewed against, `S3_ENDPOINT`, `S3_BUCKET` and `S3_PUBLIC_URL` are
-all set — but `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` are **empty**.
-`isStorageConfigured()` requires the bucket *and both credentials*, so it is false,
-`usesLocalDisk()` is true, and every attachment, avatar and generated image is
-written to the VM's local `.uploads` directory (§13) despite the bucket being
-configured. This is easy to misread: the presence of `S3_PUBLIC_URL` suggests
-uploads are on a CDN, and they are not. That means:
-
-- user uploads have **no** redundancy of any kind — they exist on one always-free VM's
-  disk and nowhere else;
-- they survive deploys only because `deploy.yml`'s rsync `--delete` explicitly
-  excludes `.uploads`. That exclusion is the entire backup strategy for user files;
-- a database restore would come back referencing attachment rows whose bytes are gone.
+**Uploads are a separate failure domain.** The backup manifest and restore drill
+cover object bytes, but production must still prove that the configured storage
+backend is redundant and included in its retention policy. `isStorageConfigured()`
+requires the bucket and both credentials; when those are absent, attachments,
+avatars and generated images use the VM's local `.uploads` directory (§13). The
+deploy workflow excludes that directory from `rsync --delete`, which preserves it
+across releases but is not redundancy. A database restore must therefore be
+validated together with the matching object target, not by rows alone.
 
 `GET /api/account/export` writes attachment *metadata*, not bytes, so it is not a
-substitute. Configuring S3 (any S3-compatible bucket) is the fix; until then, a
-restore drill that only proves the database comes back gives false confidence.
+substitute. Configure and verify an S3-compatible bucket (or an equivalent
+managed redundant store), then include it in the scratch restore drill; a drill
+that proves only the database comes back gives false confidence.
 
-**Restore drill.** Once the plan tier is known, restore into a scratch project and
-record the date, the method, the measured RTO and what was verified (rows, and
-separately Storage objects) here. On the Free tier there is nothing to drill —
-the finding is then "no backups exist", which is itself the result to record.
+**Restore drill.** Once the plan tier and storage target are known, run
+`docs/runbooks/BACKUP_RESTORE.md` into an empty scratch database and empty
+object target. Record the date, backup age/RPO, restore duration/RTO, row and
+object counts, digest comparison, retention, and encryption here. If the
+managed plan has no recoverable backup, record that explicitly rather than
+calling the local drill production recovery.
 
 Any dump must go through the Supavisor **session** pooler (5432) for the reasons in
 §20.2 — never the transaction pooler (6543), never `db.<ref>.supabase.co` (IPv6-only).
@@ -1799,11 +1824,14 @@ Tests (`tests/*.test.ts` + `scripts/test-*.ts`, run via `tsx`) cover auth token/
 helpers, message crypto, moderation logic (with provider keys scrubbed to force fail-open),
 memory backfill/suppression, clarify, and the code-remote-sessions ordering/planner logic.
 
-> **What is not covered, stated plainly:** `POST /api/chat` (the 2,600-line core), the
-> Stripe webhook and plan transitions, per-route authorization, the provider adapters,
-> and the budget/spend arithmetic in `src/lib/spend.ts` all have **no tests**. The
-> `tests/*.test.ts` glob does not recurse, so a test added in a subdirectory will be
-> silently skipped by `npm test`.
+> **What still needs operational evidence, stated plainly:** the repository test
+> suite covers the chat pipeline, spend policy, provider adapters, authorization
+> contracts and release workflow invariants, but two database-backed suites are
+> skipped unless their explicit test database is configured. Authenticated
+> browser/native journeys, real provider/model availability, visual/accessibility
+> snapshots, remote restore RPO/RTO, and signed Apple artifacts remain release
+> gates. The `tests/*.test.ts` glob intentionally covers the root test suite;
+> subdirectory suites must be invoked explicitly or added to the script.
 Local dev: `npm install`, `cp .env.example .env`, `npx prisma migrate dev`, `npm run dev`
 → <http://localhost:3000>. For voice, run the relay with `RELAY_ENABLE_MOCK=1` and set
 `NEXT_PUBLIC_VOICE_RELAY_URL=ws://localhost:8787`.
