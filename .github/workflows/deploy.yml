@@ -716,7 +716,7 @@ jobs:
           exit 1
           REMOTE
 
-      - name: Run authenticated production smoke when configured
+      - name: Run authenticated production smoke
         env:
           VM_USER: ${{ secrets.VM_USER }}
           VM_HOST: ${{ secrets.VM_HOST }}
