@@ -19,6 +19,8 @@ PREVIOUS_LINK="${JUNO_PREVIOUS_LINK:-$APP_HOME/previous}"
 ENV_FILE="${JUNO_ENV_FILE:-$APP_HOME/.env}"
 LOCK_FILE="${JUNO_DEPLOY_LOCK:-$APP_HOME/.deploy.lock}"
 DEPLOY_REF="${JUNO_DEPLOY_REF:-origin/main}"
+DEPLOY_BUNDLE="${JUNO_DEPLOY_BUNDLE:-}"
+INITIAL_RELEASE_TARGET="${JUNO_INITIAL_RELEASE_TARGET:-$APP_HOME}"
 
 STAGING_DIR=''
 RELEASE_DIR=''
@@ -246,6 +248,28 @@ rollback_release() {
   set -e
 }
 
+rollback_active_release() {
+  local current_target previous_target previous_sha
+  current_target="$(pointer_target "$CURRENT_LINK")"
+  previous_target="$(pointer_target "$PREVIOUS_LINK")"
+  [[ -n "$current_target" ]] || fail "No active release pointer exists: $CURRENT_LINK"
+  [[ -n "$previous_target" ]] || fail "No previous release pointer exists: $PREVIOUS_LINK"
+  validate_release "$previous_target"
+  previous_sha="$(release_sha "$previous_target")"
+
+  say "${YELLOW}↩️ Switching current from $current_target to $previous_target...${NC}"
+  atomic_symlink "$current_target" "$PREVIOUS_LINK"
+  atomic_symlink "$previous_target" "$CURRENT_LINK"
+  reload_release "$previous_target" "$previous_sha"
+
+  local url
+  url="$(health_url)"
+  wait_for_health "$url" "$previous_sha" "${JUNO_ROLLBACK_HEALTH_ATTEMPTS:-6}" \
+    "${JUNO_HEALTH_SLEEP_SECONDS:-5}" "${JUNO_HEALTH_TIMEOUT_SECONDS:-12}" \
+    || fail "Rollback did not restore a healthy release"
+  say "${GREEN}✅ Application rollback verified on $previous_sha.${NC}"
+}
+
 cleanup_staging() {
   if [[ -n "$STAGING_DIR" && -d "$STAGING_DIR" ]]; then
     rm -rf -- "$STAGING_DIR"
@@ -272,6 +296,15 @@ main() {
   require_command pm2
   require_command curl
 
+  if [[ "${1:-}" == "--rollback" ]]; then
+    umask 077
+    exec 9>"$LOCK_FILE"
+    flock -n 9 || fail "Another deployment is already running: $LOCK_FILE"
+    require_deploy_environment
+    rollback_active_release
+    exit 0
+  fi
+
   umask 077
   exec 9>"$LOCK_FILE"
   flock -n 9 || fail "Another deployment is already running: $LOCK_FILE"
@@ -282,7 +315,11 @@ main() {
   require_clean_checkout
 
   say "${YELLOW}📥 Fetching the reviewed Git ref...${NC}"
-  git -C "$APP_HOME" fetch --prune origin main
+  if [[ -n "$DEPLOY_BUNDLE" ]]; then
+    git -C "$APP_HOME" fetch --no-tags "$DEPLOY_BUNDLE" "$DEPLOY_REF"
+  else
+    git -C "$APP_HOME" fetch --prune origin main
+  fi
   TARGET_SHA="$(git -C "$APP_HOME" rev-parse --verify "${DEPLOY_REF}^{commit}")"
   reviewed_migrations_exist "$TARGET_SHA"
 
@@ -335,8 +372,9 @@ main() {
   OLD_CURRENT_TARGET="$(pointer_target "$CURRENT_LINK")"
   if [[ -z "$OLD_CURRENT_TARGET" ]]; then
     # Existing installations used the repository root as the live checkout.
-    # Treat it as the first rollback target without replacing that directory.
-    OLD_CURRENT_TARGET="$APP_HOME"
+    # The CI bootstrap may keep the Git source mirror elsewhere, so make the
+    # initial live target explicit rather than accidentally rolling back to it.
+    OLD_CURRENT_TARGET="$INITIAL_RELEASE_TARGET"
   else
     CURRENT_WAS_LINK=1
   fi

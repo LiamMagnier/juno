@@ -522,6 +522,10 @@ jobs:
           chmod 644 ~/.ssh/known_hosts
 
       - name: Snapshot the current build for rollback
+        # Superseded by the immutable VM transaction below. Keep this legacy
+        # block in history until the first controlled cutover is complete, but
+        # never execute its in-place snapshot path.
+        if: ${{ false }}
         env:
           VM_USER: ${{ secrets.VM_USER }}
           VM_HOST: ${{ secrets.VM_HOST }}
@@ -567,6 +571,7 @@ jobs:
           REMOTE
 
       - name: Ship build to the VM
+        if: ${{ false }}
         env:
           VM_USER: ${{ secrets.VM_USER }}
           VM_HOST: ${{ secrets.VM_HOST }}
@@ -597,6 +602,7 @@ jobs:
             .env.shared "$VM_USER@$VM_HOST:~/juno/.env.shared"
 
       - name: Post-deploy on the VM (install-if-changed, migrate, reload)
+        if: ${{ false }}
         env:
           VM_USER: ${{ secrets.VM_USER }}
           VM_HOST: ${{ secrets.VM_HOST }}
@@ -772,6 +778,66 @@ jobs:
           '
           echo "Deploy complete."
           REMOTE
+
+      - name: Deploy the exact reviewed commit through the immutable VM transaction
+        env:
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+          PROD_ENV: ${{ secrets.PROD_ENV }}
+          GITHUB_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bundle="juno-${GITHUB_SHA}.bundle"
+          remote_env="juno-${RUN_ID}.env"
+          umask 077
+          git bundle create "$bundle" "$GITHUB_SHA"
+          git bundle verify "$bundle"
+          printf '%s\n' "$PROD_ENV" > "$remote_env"
+          scp -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            "$bundle" "$remote_env" "$VM_USER@$VM_HOST:/tmp/"
+          ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
+            "$VM_USER@$VM_HOST" "GITHUB_SHA='$GITHUB_SHA' RUN_ID='$RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          SOURCE_ROOT="$HOME/juno-source"
+          LIVE_ROOT="$HOME/juno"
+          BUNDLE="/tmp/juno-${GITHUB_SHA}.bundle"
+          REMOTE_ENV="/tmp/juno-${RUN_ID}.env"
+          INCOMING_ENV="$LIVE_ROOT/.env.incoming-${RUN_ID}"
+          cleanup() {
+            rm -f -- "$BUNDLE" "$REMOTE_ENV" "$INCOMING_ENV"
+          }
+          trap cleanup EXIT
+          [ -d "$LIVE_ROOT" ] || { echo "::error::Live root $LIVE_ROOT is missing." >&2; exit 1; }
+          if [ -e "$SOURCE_ROOT" ] && [ ! -d "$SOURCE_ROOT/.git" ]; then
+            echo "::error::Source mirror $SOURCE_ROOT exists without a Git checkout." >&2
+            exit 1
+          fi
+          if [ ! -d "$SOURCE_ROOT/.git" ]; then
+            mkdir -p "$SOURCE_ROOT"
+            git init "$SOURCE_ROOT" >/dev/null
+          fi
+          if [ -n "$(git -C "$SOURCE_ROOT" status --porcelain)" ]; then
+            echo "::error::Source mirror has uncommitted changes; refusing deployment." >&2
+            exit 1
+          fi
+          git -C "$SOURCE_ROOT" fetch --no-tags "$BUNDLE" "$GITHUB_SHA"
+          git -C "$SOURCE_ROOT" checkout --detach "$GITHUB_SHA"
+          install -m 600 "$REMOTE_ENV" "$INCOMING_ENV"
+          JUNO_APP_HOME="$SOURCE_ROOT" \
+            JUNO_RELEASES_DIR="$LIVE_ROOT/releases" \
+            JUNO_CURRENT_LINK="$LIVE_ROOT/current" \
+            JUNO_PREVIOUS_LINK="$LIVE_ROOT/previous" \
+            JUNO_INITIAL_RELEASE_TARGET="$LIVE_ROOT" \
+            JUNO_ENV_FILE="$INCOMING_ENV" \
+            JUNO_DEPLOY_REF="$GITHUB_SHA" \
+            JUNO_DEPLOY_BUNDLE="$BUNDLE" \
+            bash "$SOURCE_ROOT/deploy/deploy.sh"
+          sudo nginx -t
+          install -m 600 "$INCOMING_ENV" "$LIVE_ROOT/.env"
+          echo "Immutable release transaction complete for $GITHUB_SHA."
+          REMOTE
+          rm -f -- "$bundle" "$remote_env"
 
       - name: Verify production health and version
         env:
