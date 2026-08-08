@@ -606,6 +606,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Older Codex-tuned model."
   },
   {
+    "id": "09f81e26fc7b5138",
+    "source": "Only my selected provider"
+  },
+  {
     "id": "0a30a815d67d7dd2",
     "source": "Page"
   },
@@ -892,6 +896,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "10b8732757c6e347",
     "source": "L'utilisation des modèles reste également soumise aux politiques d'usage des laboratoires d'IA concernés."
+  },
+  {
+    "id": "10bd5224f865b313",
+    "source": "Juno isn’t allowed to process this — see the note above."
   },
   {
     "id": "10c1cb05312d6cd2",
@@ -1710,6 +1718,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Nothing on this page yet."
   },
   {
+    "id": "1fec1656f19a2ed6",
+    "source": "Background work is limited to on-device models, and none is available in this deployment. You can change this under Settings → Memory → Background processing."
+  },
+  {
     "id": "1ff57a29d7c9d11b",
     "source": "Next"
   },
@@ -2514,6 +2526,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Create your Juno account and start chatting with the best AI models in seconds."
   },
   {
+    "id": "2f48a3041b76595c",
+    "source": "Juno keeps background work with the provider you chat with, and that provider has no model free for it right now. You can change this under Settings → Memory → Background processing."
+  },
+  {
     "id": "2f6c34e1e304c303",
     "source": "Restoring keeps history — v"
   },
@@ -2692,6 +2708,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "324b134f57c70c72",
     "source": "Preview"
+  },
+  {
+    "id": "3258d6af92ecf671",
+    "source": "This deployment’s provider allowlist rules out every provider that could do this work. Your administrator sets that list."
   },
   {
     "id": "327e94281cf45b94",
@@ -3512,6 +3532,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "42ea3a1538ab8312",
     "source": "Thinking effort: Auto — chosen with the model"
+  },
+  {
+    "id": "43004f2fd394fba1",
+    "source": "This wasn’t saved — tell Juno to remember it again if that has changed."
   },
   {
     "id": "43100289640d4b79",
@@ -6378,6 +6402,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Intelligence"
   },
   {
+    "id": "78fd7f3a2edbdfec",
+    "source": "Which providers may read your chats to build memory, titles and summaries — work you never see."
+  },
+  {
     "id": "7906898af04074f5",
     "source": "This deletes your account and everything in it — conversations, memories, uploaded files, and your subscription. It takes effect immediately, and nothing can be recovered afterwards. If you want a copy, export your data first."
   },
@@ -7074,6 +7102,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Branched from"
   },
   {
+    "id": "86d2b5393d26df0f",
+    "source": "Background processing"
+  },
+  {
     "id": "86d90b97a36a43ce",
     "source": "Named, never located. Juno does not send the path of a folder on your Mac to a browser — a path is a path in a screenshot, in a support ticket, and in the next thing that asks an agent to read what sits next to it."
   },
@@ -7092,6 +7124,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8783b2704f792ad1",
     "source": "% likely"
+  },
+  {
+    "id": "8788a1c853eb1a4e",
+    "source": "The AI provider is busy right now — wait a minute and try again."
   },
   {
     "id": "878a52fc5ff6a57d",
@@ -7592,6 +7628,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "923dac27d087982d",
     "source": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><propfind xmlns=\"DAV:\"><prop><current-user-principal/></prop></propfind>"
+  },
+  {
+    "id": "9255d6a7f3fa0c79",
+    "source": "Only the provider I chat with"
   },
   {
     "id": "9256c289604e9e0c",
@@ -8294,6 +8334,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Add an interaction"
   },
   {
+    "id": "9e5ea10b54988367",
+    "source": "Your background-processing setting left no provider allowed to do this. You can change it under Settings → Memory → Background processing."
+  },
+  {
     "id": "9e6ad6db21dbc4cc",
     "source": "Smart"
   },
@@ -8432,6 +8476,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a10a36fa109818be",
     "source": "Search apps"
+  },
+  {
+    "id": "a1121523e5fdbc57",
+    "source": "You asked Juno to forget"
   },
   {
     "id": "a13383aa22588d5f",
@@ -9184,6 +9232,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "aefa6fb5a58d4f2e",
     "source": "Light and airy"
+  },
+  {
+    "id": "af06cdec25c51733",
+    "source": "On-device models only"
   },
   {
     "id": "af10493d8cea8778",
@@ -10530,6 +10582,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Every conversation in that export already exists here."
   },
   {
+    "id": "ca381c1e76e681b6",
+    "source": "Open settings"
+  },
+  {
     "id": "ca4060581b0eef00",
     "source": "App is not connected"
   },
@@ -10704,6 +10760,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cd66f97b9ffbdddc",
     "source": "Juno team"
+  },
+  {
+    "id": "cd70ad0e3ac4a148",
+    "source": "Any configured provider"
   },
   {
     "id": "cd7a7120bad25bb8",
@@ -11514,6 +11574,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Revoke link"
   },
   {
+    "id": "da9a3acba75737f7",
+    "source": "Juno couldn’t draft that change — the provider returned nothing usable. Try again in a moment."
+  },
+  {
     "id": "daa2f8c3fc897cc7",
     "source": "Previous match"
   },
@@ -11986,6 +12050,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Attendees"
   },
   {
+    "id": "e2ecee20653cc17a",
+    "source": "Background work is pinned to one provider, and that provider isn’t configured or has no model available. You can change this under Settings → Memory → Background processing."
+  },
+  {
     "id": "e2fea04b48fd9346",
     "source": "Fast o-series reasoning."
   },
@@ -12228,6 +12296,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e70cda37e2503b4f",
     "source": "Your repositories couldn’t be listed, so this list is empty rather than wrong. Nothing was disconnected — try again."
+  },
+  {
+    "id": "e7142dbedf43d914",
+    "source": "No AI provider is configured for background work in this deployment yet."
   },
   {
     "id": "e734f11010f7edcd",

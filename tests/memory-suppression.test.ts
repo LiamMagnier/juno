@@ -299,7 +299,7 @@ test("naming the account's own provider makes the same request succeed", () => {
 });
 
 test("a denial message states the rule and never blames a rate limit", () => {
-  const message = backgroundDenialMessage("no_candidate_for_conversation_provider", "same_provider");
+  const message = backgroundDenialMessage("no_candidate_for_conversation_provider");
   assert.match(message, /provider you chat with/);
   // The shipped copy said "The AI providers are rate-limited right now — wait a
   // minute and try again." for a condition that waiting cannot change.
@@ -318,14 +318,14 @@ test("every denial reason has its own honest explanation", () => {
   ] as const;
   const seen = new Set<string>();
   for (const reason of reasons) {
-    const message = backgroundDenialMessage(reason, "same_provider");
+    const message = backgroundDenialMessage(reason);
     assert.equal(/rate.?limit/i.test(message), false, `${reason} blames a rate limit`);
     assert.equal(seen.has(message), false, `${reason} reuses another reason's wording`);
     seen.add(message);
   }
   // "nothing is configured" is a deployment fact, not a setting the user can
   // change — pointing them at one would be its own small lie.
-  assert.equal(/Settings/.test(backgroundDenialMessage("no_candidates", "same_provider")), false);
+  assert.equal(/Settings/.test(backgroundDenialMessage("no_candidates")), false);
 });
 
 test("the memory routes answer a denial and a provider failure differently", () => {

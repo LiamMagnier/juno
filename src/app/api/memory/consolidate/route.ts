@@ -6,6 +6,14 @@ import { consolidateWithFallback, getMemorySummary, hasMemorySources, utilityMod
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+// Hoisted rather than written inline in the ternary below: the i18n extractor
+// reads a copy property's literal initializer, and a conditional expression is
+// not one — inlining these would silently drop them from the catalog.
+const FAILURE_MESSAGE = {
+  busy: "The AI provider is busy right now — wait a minute and try again.",
+  unusable: "Couldn’t generate a summary right now — try again in a moment.",
+};
+
 // Regenerate the consolidated memory summary on demand (the "Regenerate" button).
 export async function POST() {
   const user = await getCurrentUser();
@@ -26,7 +34,7 @@ export async function POST() {
   if (outcome.status === "denied") {
     return NextResponse.json(
       {
-        error: backgroundDenialMessage(outcome.reason, outcome.mode),
+        error: backgroundDenialMessage(outcome.reason),
         code: "background_policy_denied",
         policyMode: outcome.mode,
       },
@@ -37,9 +45,7 @@ export async function POST() {
   if (outcome.status === "failed") {
     return NextResponse.json(
       {
-        error: outcome.transient
-          ? "The AI provider is busy right now — wait a minute and try again."
-          : "Couldn’t generate a summary right now — try again in a moment.",
+        error: outcome.transient ? FAILURE_MESSAGE.busy : FAILURE_MESSAGE.unusable,
         code: "provider_failed",
       },
       { status: 502 }

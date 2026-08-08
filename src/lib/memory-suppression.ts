@@ -70,12 +70,21 @@ export function findSuppression(
  * applied edit and the native sync — and so it always names the statement being
  * honoured, which is the only part that tells the user what to do next.
  */
+const REFUSAL_MESSAGE = {
+  // Split around the quoted statement, which is the user's own text and cannot
+  // be part of a translatable string. The name and the `*Message` suffix are
+  // what put both halves in the i18n catalog — see
+  // scripts/generate-i18n-catalog.mjs.
+  lead: "You asked Juno to forget",
+  tail: "This wasn’t saved — tell Juno to remember it again if that has changed.",
+};
+
 export function suppressionRefusalMessage(suppression: string): string {
   const quoted =
     suppression.length > QUOTED_SUPPRESSION_LIMIT
       ? `${suppression.slice(0, QUOTED_SUPPRESSION_LIMIT - 1)}…`
       : suppression;
-  return `You asked Juno to forget “${quoted}”, so this wasn’t saved. Tell Juno to remember it again if that has changed.`;
+  return `${REFUSAL_MESSAGE.lead} “${quoted}”. ${REFUSAL_MESSAGE.tail}`;
 }
 
 export type MemoryWriteRefusal =

@@ -15,6 +15,13 @@ export const maxDuration = 60;
 
 const bodySchema = z.object({ instruction: z.string().trim().min(1).max(600) });
 
+// Hoisted so the i18n extractor can see them: it reads a copy property's
+// literal initializer, and the ternary these used to sit in is not one.
+const FAILURE_MESSAGE = {
+  busy: "The AI provider is busy right now — wait a minute and try again.",
+  unusable: "Juno couldn’t draft that change — the provider returned nothing usable. Try again in a moment.",
+};
+
 // What the model returns: operations addressed by 1-based index into the fact list.
 const modelOpSchema = z.union([
   z.object({ op: z.literal("add"), content: z.string().trim().min(1).max(500), suppress: z.boolean().optional() }),
@@ -116,7 +123,7 @@ Rules:
   if (deniedByPolicy) {
     return NextResponse.json(
       {
-        error: backgroundDenialMessage(deniedReason, mode ?? policy.mode),
+        error: backgroundDenialMessage(deniedReason),
         code: "background_policy_denied",
         policyMode: mode ?? policy.mode,
       },
@@ -126,9 +133,7 @@ Rules:
   if (!drafted) {
     return NextResponse.json(
       {
-        error: transient
-          ? "The AI provider is busy right now — wait a minute and try again."
-          : "Juno couldn’t draft that change — the provider returned nothing usable. Try again in a moment.",
+        error: transient ? FAILURE_MESSAGE.busy : FAILURE_MESSAGE.unusable,
         code: "provider_failed",
       },
       { status: 502 }

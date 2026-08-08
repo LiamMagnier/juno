@@ -1346,7 +1346,10 @@ generates Swift models from it and fails the build on drift.
   `(account, device)`), executed in a **Serializable** transaction with optimistic
   `baseRevision` concurrency (mismatch → **409** `revision_conflict`; reused key with a
   different hash → **409** `idempotency_key_reused`). Mutable types: conversation, folder,
-  project, memory, settings. Conversation updates include title, pin, sticky model,
+  project, memory, settings. `memory.create` / `memory.update` go through the same
+  suppression door the web writes use, so content the account asked Juno to forget is
+  refused with **409** `suppressed_by_memory` (`retryable:false`, the covering statement
+  in `details.suppression`) — a queued offline mutation must be dropped, not retried. Conversation updates include title, pin, sticky model,
   project/folder placement and archive state. Project updates include name, instructions
   and the boolean favorite state (`starred`).
 - **`GET /models`** — the native model catalog (ETag'd).
