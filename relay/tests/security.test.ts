@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { mintRelayCallbackToken, verifyRelayToken } from "../src/auth.js";
 import { isAllowedRelayOrigin, parseAllowedOrigins } from "../src/origin.js";
+import { DEFAULT_RELAY_SESSION_LIMIT_SEC, effectiveRelaySessionLimitSec } from "../src/session-limit.js";
 
 process.env.AUTH_SECRET = "relay-test-secret";
 
@@ -29,4 +30,11 @@ test("relay callback tokens cannot authenticate an inbound voice session", () =>
     { userId: "user-1" },
   );
   assert.equal(verifyRelayToken(inboundToken({ uid: "user-1", exp: Math.floor(Date.now() / 1000) - 1 })), null);
+});
+
+test("voice session limits are global across provider switches and bounded by provider caps", () => {
+  assert.equal(effectiveRelaySessionLimitSec(2 * 60 * 60, ""), DEFAULT_RELAY_SESSION_LIMIT_SEC);
+  assert.equal(effectiveRelaySessionLimitSec(15 * 60, "7200"), 15 * 60);
+  assert.equal(effectiveRelaySessionLimitSec(2 * 60 * 60, "90"), 90);
+  assert.equal(effectiveRelaySessionLimitSec(2 * 60 * 60, "not-a-number"), DEFAULT_RELAY_SESSION_LIMIT_SEC);
 });

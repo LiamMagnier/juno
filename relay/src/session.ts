@@ -11,6 +11,7 @@ import {
 import { mintRelayCallbackToken } from "./auth.js";
 import { PROVIDERS } from "./providers/registry.js";
 import type { ProviderEvents, TranscriptEntry, VoiceProviderSession } from "./providers/types.js";
+import { effectiveRelaySessionLimitSec } from "./session-limit.js";
 
 const VOICE_INSTRUCTIONS = `You are Juno, a warm, quick-witted voice assistant. You are having a spoken conversation: keep replies short and conversational (one to three sentences unless asked for more), never use markdown, lists, or symbols that sound wrong aloud, and match the user's language. It is fine to be interrupted mid-sentence — just pick up naturally.`;
 
@@ -41,6 +42,8 @@ export class RelaySession {
   private sessionTimer: NodeJS.Timeout | null = null;
   private switching = false;
   private closed = false;
+  private sessionStartedAtMs: number | null = null;
+  private sessionLimitReached = false;
   private historySeeded = false;
   /*
    * How much of `usage` Juno has already been told about, in dollars.
@@ -82,6 +85,7 @@ export class RelaySession {
     } catch {
       return;
     }
+    if (this.sessionLimitReached && msg.type !== "ping") return;
     switch (msg.type) {
       case "session.start":
         // Existing chat context is accepted once, on the initial start only.
@@ -125,6 +129,10 @@ export class RelaySession {
   }
 
   private async startProvider(id: VoiceProviderId): Promise<void> {
+    if (this.sessionLimitReached) {
+      this.send({ type: "error", message: "This voice session reached its time limit. Start a new session to continue." });
+      return;
+    }
     const factory = PROVIDERS[id];
     if (!factory) {
       this.send({ type: "error", message: `Unknown provider "${id}".` });
@@ -135,6 +143,7 @@ export class RelaySession {
       return;
     }
     if (this.switching) return;
+    if (this.sessionStartedAtMs === null) this.sessionStartedAtMs = Date.now();
     this.switching = true;
     try {
       // Tear down the old session but keep the transcript for re-seeding.
@@ -153,11 +162,16 @@ export class RelaySession {
       );
       this.provider = session;
       this.providerId = id;
-      this.sessionTimer = setTimeout(() => {
-        void this.provider?.close().catch(() => {});
-        this.send({ type: "session.closed", reason: "session-limit" });
-      }, factory.capabilities.maxSessionSec * 1000);
-      this.send({ type: "session.ready", provider: id, capabilities: factory.capabilities });
+      if (this.sessionTimer) clearTimeout(this.sessionTimer);
+      const sessionLimitSec = effectiveRelaySessionLimitSec(factory.capabilities.maxSessionSec);
+      const elapsedSec = (Date.now() - (this.sessionStartedAtMs ?? Date.now())) / 1000;
+      const remainingSec = Math.max(0, sessionLimitSec - elapsedSec);
+      if (remainingSec <= 0) {
+        this.endAtSessionLimit();
+        return;
+      }
+      this.sessionTimer = setTimeout(() => this.endAtSessionLimit(), remainingSec * 1000);
+      this.send({ type: "session.ready", provider: id, capabilities: { ...factory.capabilities, maxSessionSec: sessionLimitSec } });
     } catch (err) {
       this.send({
         type: "error",
@@ -166,6 +180,16 @@ export class RelaySession {
     } finally {
       this.switching = false;
     }
+  }
+
+  private endAtSessionLimit(): void {
+    if (this.sessionLimitReached || this.closed) return;
+    this.sessionLimitReached = true;
+    if (this.sessionTimer) clearTimeout(this.sessionTimer);
+    const provider = this.provider;
+    this.provider = null;
+    void provider?.close().catch(() => {});
+    this.send({ type: "session.closed", reason: "session-limit" });
   }
 
   private makeEvents(id: VoiceProviderId, session: VoiceProviderSession): ProviderEvents {
