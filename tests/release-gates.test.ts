@@ -127,6 +127,15 @@ test("deploy script only applies committed Prisma migrations", () => {
   );
 });
 
+test("manual deployment requires a direct schema connection and never mutates the model registry", () => {
+  assert.match(DEPLOY_SCRIPT, /for name in DATABASE_URL DIRECT_URL AUTH_SECRET AUTH_URL ALLOWED_ORIGINS/);
+  assert.match(DEPLOY_SCRIPT, /JUNO_APP_HOME/);
+  assert.doesNotMatch(DEPLOY_SCRIPT, /sync:models:write/);
+  assert.match(DEPLOY_SCRIPT, /mkdir -p -- "\$APP_HOME\/\.uploads" "\$APP_HOME\/logs"/);
+  assert.match(DEPLOY_SCRIPT, /ln -s -- "\$APP_HOME\/\.uploads" "\$STAGING_DIR\/\.uploads"/);
+  assert.match(DEPLOY_SCRIPT, /ln -s -- "\$APP_HOME\/logs" "\$STAGING_DIR\/logs"/);
+});
+
 test("deploy script builds before atomic activation and has an application rollback path", () => {
   const archive = DEPLOY_SCRIPT.indexOf('git -C "$APP_HOME" archive');
   const migrate = DEPLOY_SCRIPT.indexOf('run_in_release "$STAGING_DIR" npx prisma migrate deploy');
