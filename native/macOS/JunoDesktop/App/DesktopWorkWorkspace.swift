@@ -49,6 +49,7 @@ struct DesktopWorkWorkspace: View {
 
     @SceneStorage("juno.desktop.work.selection") private var storedSessionID = ""
     @SceneStorage("juno.desktop.work.columns") private var storedColumnVisibility = ""
+    @SceneStorage("juno.desktop.work.filter") private var storedFilter = DesktopWorkFilter.all.rawValue
     /// Chat's destination, which this window writes and never reads.
     ///
     /// The one thing Work's column can do that its window cannot serve is open
@@ -69,6 +70,7 @@ struct DesktopWorkWorkspace: View {
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var isComposing = false
     @State private var query = ""
+    @State private var filter = DesktopWorkFilter.all
     /// The reply being typed to a question the run asked. Held here rather than
     /// in the thread view so switching tasks and coming back cannot resurrect a
     /// half-typed answer against a different question.
@@ -143,6 +145,7 @@ struct DesktopWorkWorkspace: View {
                 session: session,
                 sessions: visibleSessions,
                 selection: selection,
+                filter: $filter,
                 product: $product,
                 compose: { isComposing = true },
                 openDesign: openDesign,
@@ -201,9 +204,21 @@ struct DesktopWorkWorkspace: View {
             selection.wrappedValue = nil
         }
         .onAppear {
+            filter = DesktopWorkFilter(rawValue: storedFilter) ?? .all
             if storedColumnVisibility == "detailOnly" {
                 columnVisibility = .detailOnly
             }
+        }
+        .onChange(of: filter) { _, newFilter in
+            storedFilter = newFilter.rawValue
+            guard let selected = selection.wrappedValue,
+                let selectedSession = model.sessions.first(where: { $0.sessionID == selected }),
+                !newFilter.includes(selectedSession, model: model)
+            else { return }
+            // A filter is a view, not a styling hint. Clear a selection that no
+            // longer belongs to it so the reader cannot keep showing a task that
+            // has disappeared from the source list.
+            selection.wrappedValue = nil
         }
         .onChange(of: columnVisibility) { _, visibility in
             storedColumnVisibility = visibility == .detailOnly ? "detailOnly" : "all"
@@ -282,11 +297,13 @@ struct DesktopWorkWorkspace: View {
                 action: { isComposing = true }
             )
         } else {
-            JunoEmptyState(
-                title: "Nothing open",
-                message: "Choose a task on the left to see its plan, what it has done and "
-                    + "anything it is waiting on you for.",
-                symbol: "sidebar.left"
+            DesktopWorkOverview(
+                model: model,
+                sessions: visibleSessions,
+                filter: filter,
+                selection: selection,
+                hostModel: hostModel,
+                compose: { isComposing = true }
             )
         }
     }
@@ -487,6 +504,68 @@ struct DesktopWorkWorkspace: View {
 
 // MARK: - Sidebar
 
+/// The four questions the Work source list should answer before a task is
+/// selected. A status badge on every row is not a navigation model; these views
+/// give the reader a useful place to start and make the attention queue a real
+/// workflow instead of a coloured heading.
+enum DesktopWorkFilter: String, CaseIterable, Identifiable, Sendable {
+    case attention
+    case active
+    case all
+    case completed
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .attention: "Needs you"
+        case .active: "In progress"
+        case .all: "All tasks"
+        case .completed: "Completed"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .attention: "bell.badge"
+        case .active: "bolt.horizontal.circle"
+        case .all: "tray.full"
+        case .completed: "checkmark.circle"
+        }
+    }
+
+    var emptyMessage: String {
+        switch self {
+        case .attention: "Nothing is waiting on you."
+        case .active: "No tasks are running right now."
+        case .all: "Start a task to see it here."
+        case .completed: "Finished tasks will stay here for reference."
+        }
+    }
+
+    func includes(_ session: WorkSessionSummary?, model: NativeWorkModel) -> Bool {
+        guard let session else { return false }
+        let status = model.displayStatus(of: session)
+        switch self {
+        case .attention:
+            return session.needsAttention || status.needsAttention
+        case .active:
+            return !status.isTerminal
+                && status != .draft
+                && !session.needsAttention
+                && !status.needsAttention
+        case .all:
+            return true
+        case .completed:
+            return status.isTerminal
+        }
+    }
+
+    func count(in sessions: [WorkSessionSummary], model: NativeWorkModel) -> Int {
+        sessions.filter { includes($0, model: model) }.count
+    }
+}
+
 /// The task list, and one line about this Mac underneath it.
 ///
 /// Two sections, and the split is the point: a task that has stopped to ask
@@ -501,6 +580,7 @@ private struct DesktopWorkSidebar: View {
     let session: NativeAuthenticatedSession
     let sessions: [WorkSessionSummary]
     @Binding var selection: String?
+    @Binding var filter: DesktopWorkFilter
     /// Which half of the app the window is showing, so the switch at the top of
     /// this column can move it. Read by nothing else here — it exists to give
     /// the header something to write through, exactly as Chat's and Code's do.
@@ -515,33 +595,43 @@ private struct DesktopWorkSidebar: View {
     let openSettings: () -> Void
     let openUsage: () -> Void
 
-
-    private var attention: [WorkSessionSummary] {
-        let needing = Set(model.sessionsNeedingAttention.map(\.sessionID))
-        return sessions.filter { needing.contains($0.sessionID) }
-    }
-
     private var rest: [WorkSessionSummary] {
-        let needing = Set(model.sessionsNeedingAttention.map(\.sessionID))
-        return sessions
-            .filter { !needing.contains($0.sessionID) }
-            .sorted { $0.lastActivityAt > $1.lastActivityAt }
+        sessions
+            .filter { filter.includes($0, model: model) }
+            .sorted { lhs, rhs in
+                if lhs.pinned != rhs.pinned { return lhs.pinned }
+                return lhs.lastActivityAt > rhs.lastActivityAt
+            }
     }
 
     var body: some View {
         List(selection: $selection) {
-            if !attention.isEmpty {
-                Section("Waiting on you") {
-                    ForEach(attention) { row($0) }
+            Section {
+                Button(action: compose) {
+                    Label("New task", systemImage: "plus")
+                        .font(.system(.body, design: .default, weight: .medium))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("juno.work.sidebar.new-task")
+            }
+
+            Section("Views") {
+                ForEach(DesktopWorkFilter.allCases) { view in
+                    filterRow(view)
                 }
             }
-            Section("Tasks") {
+
+            Section {
                 if rest.isEmpty {
-                    Text("Nothing here yet.")
+                    Text(filter.emptyMessage)
                         .junoCaption()
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
                     ForEach(rest) { row($0) }
                 }
+            } header: {
+                Text(filter.title)
             }
         }
         .listStyle(.sidebar)
@@ -582,6 +672,39 @@ private struct DesktopWorkSidebar: View {
         }
         .junoSidebarScrollEdge()
         .accessibilityIdentifier("juno.work.sidebar")
+    }
+
+    private func filterRow(_ view: DesktopWorkFilter) -> some View {
+        let count = view.count(in: sessions, model: model)
+        return Button {
+            filter = view
+            if let selected = selection,
+                let session = sessions.first(where: { $0.sessionID == selected }),
+                !view.includes(session, model: model)
+            {
+                selection = nil
+            }
+        } label: {
+            HStack(spacing: JunoSpace.cozy) {
+                Image(systemName: view.symbol)
+                    .junoSidebarMarkInk(selected: filter == view)
+                    .frame(width: 18)
+                Text(view.title)
+                    .junoRowLabel()
+                Spacer(minLength: JunoSpace.snug)
+                if count > 0 {
+                    Text(count.formatted())
+                        .font(.system(.caption, design: .default, weight: .medium))
+                        .monospacedDigit()
+                        .junoMetaInk()
+                }
+            }
+            .padding(.vertical, 2)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("juno.work.filter.\(view.rawValue)")
+        .accessibilityValue(filter == view ? "Selected" : "")
     }
 
     /// One task in the source list.
@@ -665,15 +788,317 @@ private struct DesktopWorkSidebar: View {
                     .textSelection(.enabled)
             }
 
-            Button(action: compose) {
-                Label("New task", systemImage: "plus")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("juno.work.sidebar.new-task")
         }
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, JunoSpace.snug)
+    }
+}
+
+// MARK: - Work overview
+
+/// The landing page when no task is selected.
+///
+/// A source list with a blank reader is technically navigable but gives Work no
+/// centre of gravity. This page answers three things immediately: what needs a
+/// decision, what is still running, and how to start the next piece of work.
+/// The rows are the same rows as the sidebar, so the overview is a useful
+/// launchpad rather than a second, stale representation of the task list.
+private struct DesktopWorkOverview: View {
+    let model: NativeWorkModel
+    let sessions: [WorkSessionSummary]
+    let filter: DesktopWorkFilter
+    @Binding var selection: String?
+    let hostModel: DesktopWorkHostModel?
+    let compose: () -> Void
+
+    private var allSessions: [WorkSessionSummary] {
+        model.sessions.filter { !$0.archived }
+    }
+
+    private var attention: [WorkSessionSummary] {
+        allSessions
+            .filter { DesktopWorkFilter.attention.includes($0, model: model) }
+            .sorted { $0.lastActivityAt > $1.lastActivityAt }
+    }
+
+    private var active: [WorkSessionSummary] {
+        allSessions
+            .filter { DesktopWorkFilter.active.includes($0, model: model) }
+            .sorted { $0.lastActivityAt > $1.lastActivityAt }
+    }
+
+    private var completed: [WorkSessionSummary] {
+        allSessions
+            .filter { DesktopWorkFilter.completed.includes($0, model: model) }
+            .sorted { $0.lastActivityAt > $1.lastActivityAt }
+    }
+
+    private var primaryTasks: [WorkSessionSummary] {
+        switch filter {
+        case .attention: attention
+        case .active: active
+        case .completed: completed
+        case .all: []
+        }
+    }
+
+    private var headingTitle: String {
+        switch filter {
+        case .attention: "Needs your attention"
+        case .active: "In progress"
+        case .completed: "Completed work"
+        case .all: "Your work"
+        }
+    }
+
+    private var headingSubtitle: String {
+        switch filter {
+        case .attention: "Decisions and answers that will let Juno continue."
+        case .active: "Tasks Juno is carrying out in the background."
+        case .completed: "A record of what Juno has already finished or stopped."
+        case .all: "Tasks Juno can carry out while you focus on something else."
+        }
+    }
+
+    private var primarySubtitle: String {
+        switch filter {
+        case .attention: "These tasks need your next decision."
+        case .active: "Juno will keep working while you do something else."
+        case .completed: "Open a task to review its result and activity."
+        case .all: ""
+        }
+    }
+
+    var body: some View {
+        if sessions.isEmpty, !model.sessions.isEmpty {
+            JunoEmptyState(
+                title: "No matching tasks",
+                message: "Try a different search, or start a new task.",
+                symbol: "magnifyingglass",
+                actionLabel: "New Task",
+                action: compose
+            )
+        } else {
+            JunoDetailPage(maxWidth: 920) {
+                VStack(alignment: .leading, spacing: JunoSpace.section) {
+                    heading
+                    metrics
+
+                    if !attention.isEmpty {
+                        DesktopWorkOverviewSection(
+                            title: "Needs your attention",
+                            subtitle: "These tasks cannot continue without you."
+                        ) {
+                            ForEach(attention.prefix(4)) { task in
+                                taskRow(task)
+                            }
+                        }
+                    }
+
+                    if !active.isEmpty {
+                        DesktopWorkOverviewSection(
+                            title: "In progress",
+                            subtitle: "Juno is handling these in the background."
+                        ) {
+                            ForEach(active.prefix(4)) { task in
+                                taskRow(task)
+                            }
+                        }
+                    }
+
+                    if filter != .all, !primaryTasks.isEmpty {
+                        DesktopWorkOverviewSection(
+                            title: filter.title,
+                            subtitle: primarySubtitle
+                        ) {
+                            ForEach(primaryTasks.prefix(8)) { task in
+                                taskRow(task)
+                            }
+                        }
+                    }
+
+                    if let hostModel {
+                        DesktopWorkOverviewSection(
+                            title: "This Mac",
+                            subtitle: "Local work uses the permissions you choose in Settings."
+                        ) {
+                            DesktopWorkBlockerRow(
+                                host: hostModel,
+                                confirmsReady: true,
+                                identifier: "juno.work.overview.host"
+                            )
+                        }
+                    }
+
+                    startSection
+                }
+            }
+        }
+    }
+
+    private var heading: some View {
+        HStack(alignment: .bottom, spacing: JunoSpace.roomy) {
+            VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                Text(headingTitle)
+                    .font(.system(size: 30, weight: .semibold, design: .rounded))
+                Text(headingSubtitle)
+                    .junoBody()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: JunoSpace.regular)
+            Button(action: compose) {
+                Label("New task", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.junoAccent)
+            .accessibilityIdentifier("juno.work.overview.new-task")
+        }
+    }
+
+    private var metrics: some View {
+        HStack(spacing: 0) {
+            metric(
+                value: DesktopWorkFilter.attention.count(in: allSessions, model: model),
+                label: "Need you",
+                symbol: DesktopWorkFilter.attention.symbol,
+                tint: Color.junoCaution
+            )
+            Divider().frame(height: 34)
+            metric(
+                value: DesktopWorkFilter.active.count(in: allSessions, model: model),
+                label: "In progress",
+                symbol: DesktopWorkFilter.active.symbol,
+                tint: Color.junoAccent
+            )
+            Divider().frame(height: 34)
+            metric(
+                value: DesktopWorkFilter.completed.count(in: allSessions, model: model),
+                label: "Completed",
+                symbol: DesktopWorkFilter.completed.symbol,
+                tint: Color.junoSuccess
+            )
+        }
+        .padding(.horizontal, JunoSpace.roomy)
+        .padding(.vertical, JunoSpace.regular)
+        .junoCard()
+        .accessibilityIdentifier("juno.work.overview.metrics")
+    }
+
+    private func metric(value: Int, label: String, symbol: String, tint: Color) -> some View {
+        HStack(spacing: JunoSpace.snug) {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(value.formatted())
+                    .font(.system(.title3, design: .default, weight: .semibold))
+                    .monospacedDigit()
+                Text(label)
+                    .junoCaption()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var startSection: some View {
+        DesktopWorkOverviewSection(
+            title: "Start something",
+            subtitle: "Describe the outcome. Juno will make the plan and ask before sensitive actions."
+        ) {
+            Button(action: compose) {
+                HStack(spacing: JunoSpace.cozy) {
+                    Image(systemName: "square.and.pencil")
+                        .foregroundStyle(Color.junoAccent)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Describe a task")
+                            .junoRowLabel()
+                        Text("Research, organise, compare, or prepare a deliverable.")
+                            .junoCaption()
+                    }
+                    Spacer(minLength: JunoSpace.snug)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .junoMetaInk()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("juno.work.overview.start")
+        }
+    }
+
+    private func taskRow(_ task: WorkSessionSummary) -> some View {
+        let status = model.displayStatus(of: task)
+        let style = DesktopWorkStatusStyle.of(status)
+        return Button {
+            selection = task.sessionID
+        } label: {
+            HStack(alignment: .top, spacing: JunoSpace.cozy) {
+                Image(systemName: style.symbol)
+                    .foregroundStyle(style.tint)
+                    .frame(width: 18, alignment: .center)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(task.title)
+                        .junoRowLabel()
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                    Text(task.goal)
+                        .junoCaption()
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Text(
+                        "\(style.label)  ·  "
+                            + DesktopWorkVocabulary.target(
+                                task.effectiveTarget ?? task.requestedTarget,
+                                hostName: task.hostDisplayName
+                            )
+                            + "  ·  "
+                            + task.lastActivityAt.formatted(.relative(presentation: .named))
+                    )
+                    .junoCaption()
+                }
+                Spacer(minLength: JunoSpace.snug)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .junoMetaInk()
+                    .padding(.top, 3)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("juno.work.overview.task.\(task.sessionID)")
+        .accessibilityLabel("\(task.title). \(style.sentence)")
+    }
+}
+
+private struct DesktopWorkOverviewSection<Content: View>: View {
+    let title: String
+    let subtitle: String
+    let content: Content
+
+    init(title: String, subtitle: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.subtitle = subtitle
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .junoSidebarSection()
+                Text(subtitle)
+                    .junoCaption()
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                content
+            }
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.snug)
+            .junoCard()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -934,13 +1359,39 @@ struct DesktopWorkStartPath: View {
 
 // MARK: - Thread
 
+/// The three surfaces of a task. The first answers "what do I need to know?";
+/// the other two keep the audit trail available without making every reader
+/// wade through it before reaching the result.
+private enum DesktopWorkSurface: String, CaseIterable, Identifiable {
+    case overview
+    case activity
+    case files
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .overview: "Overview"
+        case .activity: "Activity"
+        case .files: "Files & cost"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .overview: "rectangle.topthird.inset.filled"
+        case .activity: "clock.arrow.circlepath"
+        case .files: "folder"
+        }
+    }
+}
+
 /// One task, from the goal it was given to the last thing it did.
 ///
-/// The order is the order somebody catching up asks in: what is it for, is it
-/// waiting on me, what is it doing now, what is the plan, what has it touched,
-/// what has it made, what has it cost, and what has happened. The things that
-/// block — an approval, a question — are above the fold on purpose; a card the
-/// reader has to scroll to find is a run that stays stopped.
+/// The header and blocking cards stay fixed at the top of the reading surface.
+/// Everything below them is deliberately split into three modes so the result
+/// and plan are a short catch-up view, while the activity log and file ledger
+/// remain available as first-class surfaces rather than as an endless appendix.
 private struct DesktopWorkThread: View {
     let model: NativeWorkModel
     /// This Mac's hosting model, for approvals raised by a run executing here.
@@ -948,6 +1399,7 @@ private struct DesktopWorkThread: View {
     let session: WorkSessionSummary
     @Binding var answerDraft: String
     @Binding var instructionDraft: String
+    @State private var surface: DesktopWorkSurface = .overview
 
     private var status: JunoWorkStatus { model.displayStatus(of: session) }
 
@@ -989,7 +1441,7 @@ private struct DesktopWorkThread: View {
         // longest surface in the app, and a detail column that reports its
         // content height resizes the window's split view rather than being
         // clipped by it.
-        JunoDetailPage {
+        JunoDetailPage(maxWidth: 980) {
             VStack(alignment: .leading, spacing: JunoSpace.section) {
                 header
                 // Both cards act on the model's *open* task, so they are drawn
@@ -1038,14 +1490,46 @@ private struct DesktopWorkThread: View {
                         EmptyView()
                     }
                 }
-                currentAction
-                result
-                plan
-                changes
-                artifacts
-                budget
-                activity
+                surfacePicker
+                selectedSurface
             }
+        }
+        .onChange(of: session.sessionID) { _, _ in
+            surface = .overview
+        }
+    }
+
+    private var surfacePicker: some View {
+        HStack(spacing: JunoSpace.regular) {
+            Label("Task details", systemImage: surface.symbol)
+                .junoSidebarSection()
+                .labelStyle(.titleAndIcon)
+            Spacer(minLength: JunoSpace.snug)
+            Picker("Task details", selection: $surface) {
+                ForEach(DesktopWorkSurface.allCases) { surface in
+                    Text(surface.title).tag(surface)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 390)
+            .accessibilityIdentifier("juno.work.surface")
+        }
+        .padding(.horizontal, JunoSpace.hairline)
+    }
+
+    @ViewBuilder
+    private var selectedSurface: some View {
+        switch surface {
+        case .overview:
+            currentAction
+            result
+            plan
+        case .activity:
+            activity
+        case .files:
+            changes
+            artifacts
+            budget
         }
     }
 
