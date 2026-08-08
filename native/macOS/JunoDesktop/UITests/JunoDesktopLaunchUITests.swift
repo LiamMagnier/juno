@@ -70,6 +70,31 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["juno.code.review.toggle"].exists)
     }
 
+    func testCodeLaunchIntentPopulatesTheRealComposer() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-ApplePersistenceIgnoreState", "YES",
+            "--juno-ui-preview",
+            "--juno-preview-tab", "code",
+            "--juno-preview-size", "1240x800",
+        ]
+        app.launch()
+        openMainWindowIfNeeded(in: app)
+
+        let intent = app.descendants(matching: .any)[
+            "juno.code.launch-intent.explain-project"
+        ]
+        XCTAssertTrue(intent.waitForExistence(timeout: 12))
+        intent.click()
+
+        let composer = app.textFields["juno.code.launch-prompt"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            (composer.value as? String)?.contains("Explain the architecture") == true,
+            "An intent should fill the editable launch prompt instead of starting a dead-end flow."
+        )
+    }
+
     func testCodeSidebarUsesTheNativeSourceListBelowTheToolbar() {
         let app = XCUIApplication()
         app.launchArguments = [
