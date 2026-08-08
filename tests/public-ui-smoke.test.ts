@@ -13,9 +13,9 @@ const SECURITY_HEADERS = {
 
 function bodyFor(route: string): string {
   if (route === "/") return "<main><h1>Every frontier model</h1></main>";
-  if (route === "/sign-in") return '<h1>Welcome back</h1><input id="email"><input id="password">';
-  if (route === "/sign-up") return '<h1>Create your account</h1><input id="email"><input id="password">';
-  if (route === "/forgot-password") return '<h1>Reset your password</h1><input placeholder="you@example.com">';
+  if (route === "/sign-in") return '<main><h1>Welcome back</h1><input id="email"><input id="password"></main>';
+  if (route === "/sign-up") return '<main><h1>Create your account</h1><input id="email"><input id="password"></main>';
+  if (route === "/forgot-password") return '<main><h1>Reset your password</h1><input placeholder="you@example.com"></main>';
   return "<main>legal</main>";
 }
 

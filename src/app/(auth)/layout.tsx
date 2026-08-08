@@ -18,9 +18,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <JunoMark className="h-12 w-12" />
         <AsciiWordmark />
       </Link>
-      <div className="w-full max-w-sm motion-safe:animate-rise-in [animation-delay:60ms] [animation-fill-mode:backwards]">
+      <main className="w-full max-w-sm motion-safe:animate-rise-in [animation-delay:60ms] [animation-fill-mode:backwards]">
         {children}
-      </div>
+      </main>
       <p className="mt-8 max-w-sm text-center text-caption text-muted-foreground motion-safe:animate-fade-in [animation-delay:180ms] [animation-fill-mode:backwards]">
         By continuing you agree to use Juno responsibly. Your conversations are private to your account.
       </p>
