@@ -1,25 +1,25 @@
 {
   "$comment": "Machine-readable execution ledger for the Juno completion program. States: missing | in_progress | blocked | implemented | verified. 'verified' requires a named test. Prose and evidence live in JUNO_PRODUCT_COMPLETION.md.",
   "schemaVersion": 1,
-  "auditCommit": "a8c65342",
+  "auditCommit": "5447c1cf",
   "auditDate": "2026-08-08",
   "branch": "feat/juno-work",
   "verification": {
-    "fullTest": "passed: 1925 tests, 1923 passed, 2 skipped, 0 failed",
+    "fullTest": "passed: 1934 tests, 1932 passed, 2 skipped, 0 failed",
     "lint": "passed: eslint . --no-cache",
     "typecheck": "passed: npx tsc --noEmit --pretty false",
     "schema": "passed: npx prisma validate and prisma generate",
     "contractChecks": "passed: native, capabilities, work, code preview/remote/runtime, sandbox, design",
     "focusedResearchTests": "passed: 53 passed, 0 failed",
-    "nativePackages": "passed: JunoChatKit 213/213 including native chat approval recovery/decision coverage; JunoWork 52/52; JunoCode 0 failures with 1 simulator skip; unsigned JunoDesktop and JunoMobile Simulator builds passed with warnings-as-errors",
-    "productionHealth": "passed read-only: https://chat.liams.dev/api/health returned ok/db ok with live artifact a8c65342802ea4b3558183b798ee64f6c9630bd0; the server and checkout each report 72 applied migration files",
-    "productionSmoke": "passed: health-only smoke against the live artifact; authenticated catalog/chat replay runs when JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE is configured and remains unrun without a dedicated smoke credential",
-    "lastVerifiedAt": "2026-08-08T18:01:04+02:00"
+    "nativePackages": "passed: JunoChatKit 213/213 including native chat approval recovery/decision coverage; JunoWork 52/52; JunoCode 0 failures with 1 simulator skip; JunoDesktop 111 tests/0 failures; JunoMobile 66 tests/0 failures; unsigned JunoDesktop and JunoMobile Simulator builds passed with warnings-as-errors",
+    "productionHealth": "passed read-only: https://chat.liams.dev/api/health returned ok/db ok with live artifact 546808a9eae0f5adc192b2a214bb8dbfeaecc6e3; the remote production checkout/database report 72 applied migrations and an up-to-date schema; current source at 5447c1cf contains three import-recovery migrations not deployed; no production deploy or migration was executed",
+    "productionSmoke": "passed: unauthenticated health-only smoke against the live artifact; authenticated catalog/chat receipt/replay smoke has not run because no dedicated credential was available; the release workflow now fails closed and requires JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE plus the chat path",
+    "lastVerifiedAt": "2026-08-08T18:57:15+02:00"
   },
   "nextSlice": {
     "id": "product-e2e-and-release-gates",
     "state": "in_progress",
-    "reason": "The core slices are implemented and locally verified. The remaining work is authenticated HTTP/browser/native journey coverage, visual/accessibility matrices, backup restore evidence, and signed native artifacts. The production workflow runs authenticated smoke when a dedicated credential is configured and otherwise verifies health."
+    "reason": "The core slices are implemented and locally verified. The remaining work is authenticated HTTP/browser/native journey coverage, visual/accessibility matrices, backup restore evidence, signed native artifacts, deployed runtime proof for import rollback/storage recovery and infrastructure egress enforcement, and a controlled release after smoke credentials are configured. No deploy or migration was executed in this run."
   },
   "slices": [
     {
@@ -116,7 +116,7 @@
         { "id": "categories", "state": "verified", "text": "Typed categories and lifecycle statuses are centralized in memory-categories.ts; covered by tests/memory-lifecycle.test.ts." },
         { "id": "lifecycle", "state": "verified", "text": "Normalization/dedup, contradiction/supersession and expiry are covered by tests/memory-lifecycle.test.ts." },
         { "id": "context-receipt", "state": "verified", "text": "Responses expose the memories used, source chat and a Forget control; covered by memory lifecycle/receipt tests and the chat UI." },
-        { "id": "import", "state": "implemented", "text": "Versioned Juno export/import preserves settings, projects/branches, message metadata, memory provenance/supersession, attachment manifests and versioned bytes with stable per-account idempotency; capped exports are rejected." }
+        { "id": "import", "state": "implemented", "text": "Versioned Juno export/import preserves settings, projects/branches, message metadata, memory provenance/supersession, attachment manifests and versioned bytes with per-account archive-SHA idempotency; serializable commit, durable object cleanup/recovery and parser-lease recovery are wired, while deployed runtime proof remains release-gated." }
       ]
     },
     {
@@ -186,9 +186,9 @@
       "state": "partial",
       "dependsOn": ["approval-broker"],
       "acceptance": [
-        { "id": "e2e-layer", "state": "implemented", "text": "A bounded production HTTP smoke layer exists in scripts/production-smoke.mjs with health, authenticated model-contract and optional chat/replay checks; the workflow runs the authenticated path when credentials are configured, while browser automation is still outstanding." },
-        { "id": "http-smoke", "state": "verified", "text": "Read-only health smoke passes against chat.liams.dev on live artifact a8c65342802ea4b3558183b798ee64f6c9630bd0; authenticated catalog/chat replay remains unrun without a dedicated smoke account." },
-        { "id": "journeys", "state": "partial", "text": "HTTP health and optional authenticated smoke hooks are wired; authenticated chat/citation/search/approval/budget/disconnect/recovery still need a configured staging credential plus browser/native execution." },
+        { "id": "e2e-layer", "state": "implemented", "text": "A bounded production HTTP smoke layer exists in scripts/production-smoke.mjs with health, authenticated model-contract, provider-backed chat, durable receipt and idempotent replay checks; the production workflow requires the authenticated path, while browser automation is still outstanding." },
+        { "id": "http-smoke", "state": "verified", "text": "Read-only health smoke passes against chat.liams.dev on live artifact 546808a9eae0f5adc192b2a214bb8dbfeaecc6e3; authenticated catalog/chat replay remains unrun without a dedicated smoke account." },
+        { "id": "journeys", "state": "partial", "text": "HTTP health and fail-closed authenticated smoke hooks are wired; authenticated chat/citation/search/approval/budget/disconnect/recovery still need a configured staging credential plus browser/native execution." },
         { "id": "states", "state": "missing", "text": "Desktop/tablet/phone, light/dark, reduced motion, empty/loading/error/partial/success, long and localized strings." },
         { "id": "restore-drill", "state": "missing", "text": "Tested database and object-storage backups with an exercised restore drill." }
       ]

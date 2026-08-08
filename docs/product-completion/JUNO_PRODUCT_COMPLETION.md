@@ -1,6 +1,6 @@
 # Juno Product Completion — execution ledger
 
-**Audit commit:** `a8c65342` (`main`)
+**Audit commit:** `5447c1cf` (`feat/juno-work`, local production-hardening commit)
 **Audit date:** 2026-08-08
 **Method:** 12 parallel evidence-based subsystem readers over the source, then an
 adversarial re-check of every claim of "implemented" in the P0 areas. Findings
@@ -14,11 +14,12 @@ truth.
 
 ## Current reconciliation — 2026-08-08
 
-The branch now has passing repository-wide automated checks: **1,925 tests
-completed, 1,923 passed, 2 database-dependent tests skipped without a test
+The current source tree now has passing repository-wide automated checks:
+**1,934 tests completed, 1,932 passed, 2 database-dependent tests skipped without a test
 database, 0 failed**; full ESLint, TypeScript, Prisma validation/generation,
 native/capability/Work contract checks, code wiring checks, sandbox checks, and
-design-contract checks also pass. The focused research evidence suite is 53/53,
+design-contract checks also pass. The production Next build renders 110/110
+static pages successfully. The focused research evidence suite is 53/53,
 including the deterministic 100-claim validator benchmark. The full
 `JunoChatKitTests` target is 213/213, and unsigned JunoDesktop/JunoMobile
 Simulator builds pass with warnings treated as errors.
@@ -50,17 +51,29 @@ production entry points:
   approval card with exact redacted detail and expiry, and submit decisions only
   with the displayed `receiptDigest`. The focused native contract test covers
   the stream, recovery query, decision route and digest.
+- Provider/Juno import ZIPs now fail closed on entry-count, per-entry/aggregate
+  inflation, compression-ratio and case-folded-duplicate budgets; deliverable
+  validators preflight package budgets before inflating XML or markup.
+- Import restore now claims a per-account archive SHA-256, stages attachment
+  objects in a durable ledger, commits relational state serializably, and has
+  scoped cleanup/recovery plus a parser-lease sweeper for crash windows.
+- Account-wide library quota writes are rechecked under a PostgreSQL account-row
+  lock across web/native uploads, generated media, replacements and imports;
+  newly written objects are compensated when relational persistence fails.
 
 The core product slices are ready for a controlled production release, but the
 release program is not fully closed. Remaining gates are explicit in
 `status.json`: authenticated browser/native journeys and visual/accessibility
 matrices; a tested database/object-storage restore drill; and signed/notarized
-Apple artifacts. The production smoke workflow runs the authenticated checks
-when `JUNO_SMOKE_TOKEN` or `JUNO_SMOKE_COOKIE` is configured and otherwise
-keeps the existing health-only gate. The live server was checked read-only:
+Apple artifacts. The production workflow now fails closed: protected
+`PROD_ENV` must contain `JUNO_SMOKE_TOKEN` or `JUNO_SMOKE_COOKIE`, and the
+authenticated smoke always runs catalog, provider-backed chat, durable receipt
+and idempotent replay checks. The live server was checked read-only:
 `https://chat.liams.dev/api/health` returned `ok`/`db: ok` for artifact
-`a8c65342802ea4b3558183b798ee64f6c9630bd0`; the deployed database and this
-checkout both contain 72 migrations.
+`546808a9eae0f5adc192b2a214bb8dbfeaecc6e3`. The remote production checkout and
+database report 72 applied migrations and an up-to-date schema. The current
+source at `5447c1cf` contains three import-recovery migration changes beyond
+that live artifact; no production deploy or migration was executed in this run.
 
 ---
 

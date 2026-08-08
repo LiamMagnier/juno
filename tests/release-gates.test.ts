@@ -34,7 +34,7 @@ const SMOKE_STEP = sectionAfter(
 );
 const SMOKE_REMOTE_BLOCK = SMOKE_STEP.match(/<<['"]REMOTE['"]\n([\s\S]*?)\n\s+REMOTE\b/)?.[1] ?? "";
 
-test("production release preflight does not require an optional smoke credential", () => {
+test("production release preflight requires one smoke credential", () => {
   const preflight = withoutCommentLines(RELEASE_PREFLIGHT);
   const credentialGuard = Array.from(preflight.matchAll(/(?:^|\n)\s*if\b[\s\S]*?\bfi\b/g)).find(([block]) => {
     const hasToken = /JUNO_SMOKE_TOKEN/.test(block);
@@ -45,15 +45,21 @@ test("production release preflight does not require an optional smoke credential
     return hasToken && hasCookie && checksEitherCredential && rejectsMissingCredentials;
   });
 
-  assert.equal(credentialGuard, undefined, "release preflight must remain deployable without a dedicated smoke account");
+  assert.ok(
+    credentialGuard,
+    "release preflight must reject when neither JUNO_SMOKE_TOKEN nor JUNO_SMOKE_COOKIE is configured",
+  );
 });
 
-test("deploy smoke authenticates when configured and skips otherwise", () => {
+test("deploy smoke passes authentication and chat requirements without an optional skip", () => {
   assert.notEqual(SMOKE_REMOTE_BLOCK, "", "production smoke step is missing its remote block");
-  assert.match(SMOKE_REMOTE_BLOCK, /if\s+\[\s+-n\s+"\$SMOKE_TOKEN"\s+\]\s+\|\|\s+\[\s+-n\s+"\$SMOKE_COOKIE"\s+\]/);
   assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_REQUIRE_AUTH\s*=\s*1\b/);
-  assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_RUN_CHAT\s*=\s*\"\$\(/);
-  assert.match(SMOKE_REMOTE_BLOCK, /else[\s\S]*?(?:skip|skipped|not configured)[\s\S]*?fi/i);
+  assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_RUN_CHAT\s*=\s*1\b/);
+  assert.doesNotMatch(
+    SMOKE_REMOTE_BLOCK,
+    /if[\s\S]*?(?:JUNO_SMOKE_TOKEN|JUNO_SMOKE_COOKIE)[\s\S]*?else[\s\S]*?(?:skip|skipped|not configured)[\s\S]*?fi/i,
+    "the deploy remote block must fail rather than skip smoke when credentials are absent",
+  );
 });
 
 test("authenticated production smoke rejects missing credentials and missing chat mode", () => {
