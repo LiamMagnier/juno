@@ -34,6 +34,8 @@
  * competitor appears is a tier assigned after the mistake.
  */
 
+import { evaluateEgress } from "../tools/egress-policy.js";
+
 import type { ToolContext, ToolDefinition, ToolResult } from '../tools/types.js';
 import { bashTool } from '../tools/bash.js';
 import { editFileTool, globTool, grepTool, readFileTool, writeFileTool } from '../tools/fs.js';
@@ -234,6 +236,8 @@ export interface WebFetchDeps {
   fetchPage(url: string): Promise<{ ok: true; contentType: string; body: string } | { ok: false; message: string }>;
   onCitation?(citation: WorkCitation): void;
   now?(): Date;
+  /** Late-bound skill egress grant; an empty list denies all skill fetches. */
+  allowedDomains?(): readonly string[] | null;
 }
 
 const MAX_SEARCH_RESULTS = 8;
@@ -529,6 +533,17 @@ export function webFetchTool(deps: WebFetchDeps): WorkToolDefinition {
 
       const blocked = blockedFetchTarget(url);
       if (blocked) return { output: `Juno will not fetch that: ${blocked}`, isError: true };
+
+      const allowedDomains = deps.allowedDomains?.();
+      if (allowedDomains !== undefined && allowedDomains !== null) {
+        const egress = evaluateEgress(url, { allowedDomains, allowedPorts: [443] });
+        if (!egress.allowed) {
+          return {
+            output: `Juno will not fetch that for this skill: ${egress.reason}.`,
+            isError: true,
+          };
+        }
+      }
 
       const page = await deps.fetchPage(url);
       if (!page.ok) return { output: page.message, isError: true };

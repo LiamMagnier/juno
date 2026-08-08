@@ -438,6 +438,7 @@ if (!DB_URL) {
     const { run } = await store.createRun({
       sessionId,
       userId,
+      spendReservation: false,
       requestedTarget: "local",
       effectiveTarget: "local",
       hostId,
@@ -473,6 +474,7 @@ if (!DB_URL) {
     const { run } = await store.createRun({
       sessionId,
       userId,
+      spendReservation: false,
       requestedTarget: "automatic",
       effectiveTarget: "cloud",
     });
@@ -487,6 +489,7 @@ if (!DB_URL) {
     const { run } = await store.createRun({
       sessionId,
       userId,
+      spendReservation: false,
       requestedTarget: "local",
       effectiveTarget: "local",
       hostId,
@@ -525,6 +528,7 @@ if (!DB_URL) {
     const { run } = await store.createRun({
       sessionId,
       userId,
+      spendReservation: false,
       requestedTarget: "local",
       effectiveTarget: "local",
       hostId: oldHostId,
@@ -553,6 +557,7 @@ if (!DB_URL) {
     const { run } = await store.createRun({
       sessionId,
       userId,
+      spendReservation: false,
       requestedTarget: "local",
       effectiveTarget: "local",
       hostId,
@@ -634,6 +639,7 @@ if (!DB_URL) {
     const { run } = await store.createRun({
       sessionId,
       userId,
+      spendReservation: false,
       requestedTarget: "local",
       effectiveTarget: "local",
       hostId,

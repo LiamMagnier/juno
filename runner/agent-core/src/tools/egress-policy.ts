@@ -46,7 +46,7 @@ export interface EgressPolicy {
  * lets the first through a list containing the second.
  */
 export function normalizeHost(host: string): string {
-  return host.trim().toLowerCase().replace(/\.+$/, "");
+  return host.trim().toLowerCase().replace(/^\*\./, ".").replace(/\.+$/, "");
 }
 
 /**

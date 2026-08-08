@@ -1465,6 +1465,7 @@ function buildTools(input: {
   sessionId: string;
   sink: SessionSink;
   connectors: ConnectorSurface;
+  egressDomains: { current: readonly string[] | null };
 }): WorkToolDefinition[] {
   const { runtime } = input;
 
@@ -1478,6 +1479,7 @@ function buildTools(input: {
       search: (query, maxResults) => webSearch(query, maxResults),
     }),
     runtime.webFetchTool({
+      allowedDomains: () => input.egressDomains.current,
       onCitation: (citation) => input.sink.session?.recordCitation(citation),
       /*
        * Redirects are followed by hand, one hop at a time.
@@ -1835,6 +1837,8 @@ interface AppliedSkill {
   reference: SkillVersionRunReference;
   /** What the version asked for and did not get. Reported, never dropped. */
   withheld: string[];
+  /** Concrete egress hosts the skill was granted for this run. */
+  domains: string[];
   /** How this skill came to be in force, for the audit row below. */
   via: SkillSelectionVia;
   /** The scorer's number, or 1 for a slash invocation. Audited, never stored. */
@@ -1858,6 +1862,20 @@ class SkillSecurityError extends Error {
  * them by name.
  */
 const SKILL_AUTO_SELECT_MAX_CANDIDATES = 50;
+
+/**
+ * Deployment-approved hosts a selected skill may fetch. The default is an
+ * empty grant: ordinary Work research keeps its public-web path, while an
+ * imported skill cannot turn a declared domain into network authority without
+ * an operator explicitly configuring that authority.
+ */
+function configuredWorkEgressDomains(): string[] {
+  return (process.env.JUNO_WORK_ALLOWED_DOMAINS ?? "")
+    .split(",")
+    .map((domain) => domain.trim().toLowerCase())
+    .filter(Boolean)
+    .slice(0, 500);
+}
 
 const SKILL_CANDIDATE_COLUMNS = {
   id: true,
@@ -1968,6 +1986,7 @@ async function applySkill(input: {
   goal: string;
   toolNames: readonly string[];
   connectors: readonly string[];
+  domains: readonly string[];
   policy: string;
   /**
    * The runtime's own envelope and scanner, not the app's copies. Both modules
@@ -2069,9 +2088,10 @@ async function applySkill(input: {
         tools: input.toolNames,
         connectors: input.connectors,
         apps: [],
-        // No domain allowlist is enforced anywhere yet, so claiming one here
-        // would narrow a skill against a rule nothing applies.
-        domains: [],
+        // Network access is a deployment grant, never a skill claim. An empty
+        // configured list deliberately means a skill receives no web egress;
+        // the ordinary (non-skill) web tool remains available for research.
+        domains: [...input.domains],
         policy: input.policy as "conservative" | "balanced" | "permissive",
       },
     ],
@@ -2080,6 +2100,7 @@ async function applySkill(input: {
   const withheld = [
     ...resolved.withheld.tools.map((tool) => `the tool ${tool}`),
     ...resolved.withheld.connectors.map((connector) => `the connector ${connector}`),
+    ...resolved.withheld.domains.map((domain) => `the domain ${domain}`),
   ];
 
   // The block the model actually reads, including whether these instructions
@@ -2120,6 +2141,7 @@ async function applySkill(input: {
     untrusted: block.untrusted,
     injection,
     tools: resolved.tools,
+    domains: resolved.domains,
     reference: skillVersionRunReference({
       versionRowId: row.id,
       skillId: chosen.id,
@@ -2782,6 +2804,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     return EMPTY_CONNECTOR_SURFACE;
   });
 
+  const egressDomains = { current: null as readonly string[] | null };
   const tools = buildTools({
     runtime,
     runId: input.runId,
@@ -2789,6 +2812,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     sessionId: run.sessionId,
     sink,
     connectors,
+    egressDomains,
   });
 
   const policy = (run.permissionPolicy ?? {}) as { policy?: unknown };
@@ -2797,6 +2821,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
     goal: run.session.goal,
     toolNames: runtime.toolNames(tools),
     connectors: [...connectors.admitted],
+    domains: configuredWorkEgressDomains(),
     policy: typeof policy.policy === "string" ? policy.policy : "conservative",
     runtime,
   });
@@ -2806,6 +2831,7 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
   // the skill's request, so a name the skill asked for and did not get simply
   // produces no tool.
   const effectiveTools = skill ? runtime.narrowToPermittedTools(tools, skill.tools) : tools;
+  egressDomains.current = skill ? skill.domains : null;
 
   if (skill) {
     await prisma.workRunIO

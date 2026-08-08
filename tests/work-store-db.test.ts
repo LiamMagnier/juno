@@ -79,7 +79,7 @@ if (!URL) {
   });
 
   test("only one of two racing executors claims a run", async () => {
-    const { run } = await store.createRun({ sessionId, userId, requestedTarget: "cloud" });
+    const { run } = await store.createRun({ sessionId, userId, requestedTarget: "cloud", spendReservation: false });
     await prisma.workRun.updateMany({ where: { id: run.id }, data: { status: "queued" } });
 
     // Genuinely concurrent: both promises are in flight before either resolves.
@@ -102,7 +102,7 @@ if (!URL) {
   });
 
   test("concurrent appends produce a dense sequence with no holes and no collisions", async () => {
-    const { run } = await store.createRun({ sessionId, userId, requestedTarget: "cloud" });
+    const { run } = await store.createRun({ sessionId, userId, requestedTarget: "cloud", spendReservation: false });
 
     const batches = Array.from({ length: 8 }, (_, batch) =>
       store.appendEvents({
@@ -136,7 +136,7 @@ if (!URL) {
   });
 
   test("a replayed batch is dropped rather than appended twice", async () => {
-    const { run } = await store.createRun({ sessionId, userId, requestedTarget: "cloud" });
+    const { run } = await store.createRun({ sessionId, userId, requestedTarget: "cloud", spendReservation: false });
     const events = [
       { kind: "run_started" as const, payload: {}, key: "replay:1" },
       { kind: "assistant_message" as const, payload: { text: "hello" }, key: "replay:2" },
@@ -154,7 +154,7 @@ if (!URL) {
   });
 
   test("a terminal reason is written once and cannot be overwritten", async () => {
-    const { run } = await store.createRun({ sessionId, userId, requestedTarget: "cloud" });
+    const { run } = await store.createRun({ sessionId, userId, requestedTarget: "cloud", spendReservation: false });
     await prisma.workRun.updateMany({ where: { id: run.id }, data: { status: "running" } });
 
     const first = await store.finishRun({ runId: run.id, userId, reason: "completed" });
@@ -172,7 +172,7 @@ if (!URL) {
   });
 
   test("an expired lease on a live run is swept to interrupted, not re-queued", async () => {
-    const { run } = await store.createRun({ sessionId, userId, requestedTarget: "cloud" });
+    const { run } = await store.createRun({ sessionId, userId, requestedTarget: "cloud", spendReservation: false });
     await prisma.workRun.updateMany({
       where: { id: run.id },
       data: {
@@ -198,7 +198,7 @@ if (!URL) {
   });
 
   test("a healthy lease is left alone by the sweep", async () => {
-    const { run } = await store.createRun({ sessionId, userId, requestedTarget: "cloud" });
+    const { run } = await store.createRun({ sessionId, userId, requestedTarget: "cloud", spendReservation: false });
     await prisma.workRun.updateMany({
       where: { id: run.id },
       data: { status: "running", leaseExpiresAt: new Date(Date.now() + 60_000) },
@@ -209,7 +209,7 @@ if (!URL) {
   });
 
   test("the session mirrors the current run's terminal state and attention", async () => {
-    const { run } = await store.createRun({ sessionId, userId, requestedTarget: "cloud" });
+    const { run } = await store.createRun({ sessionId, userId, requestedTarget: "cloud", spendReservation: false });
     await prisma.workRun.updateMany({ where: { id: run.id }, data: { status: "running" } });
     await store.finishRun({ runId: run.id, userId, reason: "host_offline" });
 
