@@ -6,6 +6,7 @@ import { resolveModel } from "@/lib/models";
 import { getModelMetrics } from "@/lib/model-metrics";
 import { estimateGenerationCostUsd, estimateTokensFromChars } from "@/lib/pricing";
 import { sendBudgetAlert } from "@/lib/email";
+import { getUserPlan } from "@/lib/usage";
 import {
   DEFAULT_ESTIMATE_MICRO_USD,
   RESERVATION_TTL_MS,
@@ -672,8 +673,13 @@ export async function reserveSpend(input: ReserveSpendInput): Promise<SpendReser
     0,
     Math.round(input.estimateMicroUsd ?? DEFAULT_ESTIMATE_MICRO_USD[input.kind])
   );
-  const plan = input.plan ?? "FREE";
-  const eff = input.budget ?? (await resolveEffectiveBudget(input.userId, plan));
+  // Resolved rather than defaulted: guessing FREE here would give a budget of
+  // 0 and refuse every caller that did not happen to know the plan, which is
+  // most of them — a gate that fails closed on its own ignorance is a gate that
+  // gets deleted.
+  const eff =
+    input.budget ??
+    (await resolveEffectiveBudget(input.userId, input.plan ?? (await getUserPlan(input.userId))));
 
   // The per-unit ceiling is a separate refusal from the monthly one: a research
   // run that fans out into searches, or a Work run that loops, can burn a whole
