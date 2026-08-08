@@ -1,14 +1,52 @@
 # Juno Product Completion — execution ledger
 
-**Audit commit:** `57f2734e` (`feat/juno-work`, level with `origin/main`, 0 ahead / 0 behind)
-**Audit date:** 2026-08-07
+**Audit commit:** `8a0cf344` (`feat/juno-work`)
+**Audit date:** 2026-08-08
 **Method:** 12 parallel evidence-based subsystem readers over the source, then an
 adversarial re-check of every claim of "implemented" in the P0 areas. Findings
 cite `file:line`. Documentation was not accepted as evidence that anything is wired.
 
 This file is an execution ledger, not a design document. It records what is
 true, what was built, and what is next. `status.json` beside it is the
-machine-readable form.
+machine-readable form. The historical findings below are retained for
+traceability; the reconciliation immediately below is the current source of
+truth.
+
+## Current reconciliation — 2026-08-08
+
+The branch now has passing repository-wide automated checks: **1,894 tests
+passed, 2 database-dependent tests skipped without a test database, 0 failed**;
+full ESLint, TypeScript, Prisma validation/generation, native/capability/Work
+contract checks, code wiring checks, sandbox checks, and design-contract checks
+also pass. The focused research evidence suite is 49/49.
+
+Since the 2026-08-07 audit, the following slices are real and wired into
+production entry points:
+
+- Knowledge extraction and retrieval cover PDF, DOCX, PPTX, XLSX and text with
+  durable document/block/chunk/index-job rows, versioning, bounded hybrid
+  retrieval, citations and honest degraded states.
+- Unified search fans out across the account corpus with snippets, marked terms,
+  destinations and per-source coverage.
+- Memory suppression/lifecycle gates every write path, with categories,
+  deduplication, contradiction/supersession and expiry.
+- Shared spend reservations and the ApiSpend ledger cover chat, voice, Work and
+  research vendor fees; the personal account defaults to a finite €15 monthly
+  ceiling.
+- Artifact exports are re-opened and verified before Office bytes are served;
+  model sync opens a reviewed PR instead of deploying a bot-discovered model.
+- Research now persists objectives, evidence requirements, coverage, conflicts,
+  source snapshots and policy scores; it performs a bounded follow-up, stores a
+  claim/citation graph, validates before terminal completion, and preserves both
+  the delivered draft and repaired report revisions.
+
+The product is not yet “production complete.” The highest remaining blockers
+are explicit in `status.json`: a restart-safe research worker lease/queue,
+source-policy enforcement and a 100-claim validator benchmark; OCR and a
+document inspector; skill/plugin scanning and network egress allowlists; native
+chat approval parity; runtime model capability probes; and an end-to-end/
+restore-drill layer. These are not marked verified merely because adjacent code
+exists.
 
 ---
 
