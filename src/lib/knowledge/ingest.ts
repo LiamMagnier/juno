@@ -150,6 +150,8 @@ export type IngestOutcome =
   | { status: "skipped"; reason: string }
   /** These exact bytes are already indexed by this parser version. */
   | { status: "reused"; documentId: string }
+  /** The document could not even be created — the database is unreachable. */
+  | { status: "unavailable"; reason: string }
   | { status: "indexed"; documentId: string; state: ExtractionStatus; blocks: number; error?: string };
 
 /** Files past this are not read into memory at all; the ceiling is the memory bound. */
@@ -191,18 +193,30 @@ export async function runIngest(store: KnowledgeStore, input: IngestInput): Prom
     return { status: "reused", documentId: plan.documentId };
   }
 
-  const documentId = await store.createDocument({
-    userId: input.userId,
-    projectId: input.projectId,
-    attachmentId: input.attachmentId,
-    fileName: input.fileName,
-    mimeType: input.mimeType,
-    checksum,
-    version: plan.version,
-    parser: extractor,
-    parserVersion,
-  });
-  const jobId = await store.createJob(input.userId, documentId);
+  // Creating the row and its job is the one step with no document to record a
+  // failure against, so it gets its own guard. Everything after this point can
+  // report into the document's own state.
+  let documentId: string;
+  let jobId: string;
+  try {
+    documentId = await store.createDocument({
+      userId: input.userId,
+      projectId: input.projectId,
+      attachmentId: input.attachmentId,
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      checksum,
+      version: plan.version,
+      parser: extractor,
+      parserVersion,
+    });
+    jobId = await store.createJob(input.userId, documentId);
+  } catch (error) {
+    return {
+      status: "unavailable",
+      reason: error instanceof Error ? error.message : "The knowledge index is unavailable.",
+    };
+  }
 
   try {
     await store.updateDocument(input.userId, documentId, { state: "extracting" });

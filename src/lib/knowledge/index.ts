@@ -12,7 +12,9 @@
  */
 
 import "server-only";
+import { after } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { logSync } from "@/lib/logger";
 import {
   runIngest,
   type IngestInput,
@@ -120,4 +122,40 @@ const prismaStore: KnowledgeStore = {
  */
 export async function ingest(input: IngestInput): Promise<IngestOutcome> {
   return runIngest(prismaStore, input);
+}
+
+/**
+ * The upload routes' entry point: index this file, after the response.
+ *
+ * Both `/api/upload` and `/api/v1/attachments` call exactly this, for the same
+ * reason they share `planAttachmentUpload` — two copies of "how does an upload
+ * get indexed" means only one of them gets fixed. Scheduling lives here rather
+ * than in the routes so neither of them can accidentally `await` it and make a
+ * user watch a 200-page PDF parse before their file appears.
+ *
+ * `after()` and not a floating promise: a floating promise in a serverless
+ * handler is killed the moment the response is flushed, which would leave the
+ * document in `extracting` with nothing left running to move it on.
+ */
+export function scheduleIngest(input: IngestInput): void {
+  after(async () => {
+    try {
+      const outcome = await ingest(input);
+      logSync(outcome.status === "unavailable" ? "warn" : "info", "knowledge.ingest", {
+        status: outcome.status,
+        fileName: input.fileName,
+        attachmentId: input.attachmentId,
+        ...(outcome.status === "indexed"
+          ? { documentId: outcome.documentId, state: outcome.state, blocks: outcome.blocks }
+          : {}),
+      });
+    } catch (error) {
+      // runIngest is written not to throw; if it does, the upload has already
+      // succeeded and this must not become an unhandled rejection.
+      logSync("error", "knowledge.ingest_crashed", {
+        fileName: input.fileName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
 }
