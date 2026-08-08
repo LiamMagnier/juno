@@ -226,15 +226,19 @@ function jsonSections(source: string): Section[] {
   let memberStartLine = 1;
   let rootOpened = false;
 
-  const flush = (endIndex: number, endLine: number) => {
+  const flush = (endIndex: number) => {
     if (memberStart < 0) return;
     const raw = source.slice(memberStart, endIndex);
     if (!raw.trim()) return;
     const key = /^\s*"((?:[^"\\]|\\.)*)"\s*:/.exec(raw);
+    // Counted from the member's own text rather than from the scanner's current
+    // line: the closing brace that ends a member sits on the line *after* it,
+    // and reporting that line would send a reader one line past the value.
+    const spanned = raw.replace(/\s+$/, "").match(/\n/g)?.length ?? 0;
     out.push({
       type: "code",
       lineStart: memberStartLine,
-      lineEnd: endLine,
+      lineEnd: memberStartLine + spanned,
       text: raw.trim(),
       heading: key ? [key[1]] : [],
     });
@@ -271,12 +275,12 @@ function jsonSections(source: string): Section[] {
       continue;
     }
     if (ch === "}" || ch === "]") {
-      if (depth === 1) flush(i, line);
+      if (depth === 1) flush(i);
       depth -= 1;
       continue;
     }
     if (ch === "," && depth === 1) {
-      flush(i, line);
+      flush(i);
       continue;
     }
     if (depth === 1 && memberStart < 0 && ch.trim()) {

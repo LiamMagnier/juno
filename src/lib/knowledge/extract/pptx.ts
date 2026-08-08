@@ -69,6 +69,35 @@ async function slidePartsInOrder(pkg: OoxmlPackage): Promise<{ parts: string[]; 
   return ordered.length ? { parts: ordered, ordered: true } : { parts: numeric, ordered: false };
 }
 
+/**
+ * The notes part for a slide, via that slide's relationships.
+ *
+ * `slide3.xml` → `notesSlide3.xml` holds in decks PowerPoint wrote from scratch
+ * and breaks the moment slides are deleted, at which point the numbering of the
+ * two directories drifts apart and notes get attached to the wrong slide. The
+ * relationship is the authority; the naming convention is only the fallback.
+ */
+async function notesPartFor(pkg: OoxmlPackage, slidePart: string): Promise<string | null> {
+  const relsPart = slidePart.replace(/^(ppt\/slides\/)(slide\d+\.xml)$/, "$1_rels/$2.rels");
+  const rels = relsPart === slidePart ? null : await pkg.read(relsPart);
+  if (rels) {
+    let found: string | null = null;
+    scanXml(rels, (event) => {
+      if (found) return;
+      if ((event.kind === "open" || event.kind === "empty") && event.name === "Relationship") {
+        const target = xmlAttr(event.attrs, "Target");
+        if (target && target.includes("notesSlide")) {
+          const resolved = `ppt/${target.replace(/^\.\.\//, "").replace(/^\//, "")}`;
+          if (pkg.names.includes(resolved)) found = resolved;
+        }
+      }
+    });
+    if (found) return found;
+  }
+  const byName = slidePart.replace("ppt/slides/slide", "ppt/notesSlides/notesSlide");
+  return pkg.names.includes(byName) ? byName : null;
+}
+
 /** Every shape on one slide (or notes page), with its placeholder role and box. */
 function shapesOf(xml: string): Shape[] {
   const shapes: Shape[] = [];
@@ -213,9 +242,9 @@ export async function extractPptx(input: { bytes: Uint8Array; fileName: string }
       push({ type: "paragraph", text: shape.paragraphs.join("\n"), heading, path: part, bbox: shape.bbox });
     }
 
-    const notesPart = part.replace("ppt/slides/slide", "ppt/notesSlides/notesSlide");
-    const notesXml = pkg.names.includes(notesPart) ? await pkg.read(notesPart) : null;
-    if (notesXml) {
+    const notesPart = await notesPartFor(pkg, part);
+    const notesXml = notesPart ? await pkg.read(notesPart) : null;
+    if (notesPart && notesXml) {
       const notes = shapesOf(notesXml)
         .filter((s) => s.placeholder !== "sldNum" && s.placeholder !== "dt")
         .map((s) => s.paragraphs.join("\n"))

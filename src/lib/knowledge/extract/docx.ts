@@ -76,13 +76,17 @@ export async function extractDocx(input: { bytes: Uint8Array; fileName: string }
   // sentence the author already removed.
   let inText = false;
 
-  const pushBlock = (block: Omit<ExtractedBlock, "confidence" | "path"> & { confidence?: number }) => {
+  const pushBlock = (block: Omit<ExtractedBlock, "confidence" | "path" | "page">) => {
+    // `page` is attached to every block and stripped afterwards if the document
+    // turned out to have no rendered page breaks at all. It cannot be decided
+    // here: the first paragraph is pushed before we have seen the first break,
+    // so at this point "does this document have page numbers?" is not yet known.
     collector.push({
       path: DOCUMENT_PART,
+      page,
       // Verified embedded text: these are the characters the author typed.
       confidence: 1,
       ...block,
-      ...(sawPageBreak ? { page } : {}),
     });
   };
 
@@ -194,7 +198,13 @@ export async function extractDocx(input: { bytes: Uint8Array; fileName: string }
   });
   endParagraph();
 
-  const blocks = collector.done();
+  const blocks = sawPageBreak
+    ? collector.done()
+    : collector.done().map((block) => {
+        const withoutPage = { ...block };
+        delete withoutPage.page;
+        return withoutPage;
+      });
   if (!blocks.length) {
     return {
       ...base,
