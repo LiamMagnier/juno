@@ -1,6 +1,6 @@
 # Juno Product Completion — execution ledger
 
-**Audit commit:** `c7e389cc` (`feat/juno-work`, local production-hardening commit)
+**Audit commit:** `b1248d04` (`feat/juno-work`, local production-hardening commit)
 **Audit date:** 2026-08-08
 **Method:** 12 parallel evidence-based subsystem readers over the source, then an
 adversarial re-check of every claim of "implemented" in the P0 areas. Findings
@@ -15,11 +15,12 @@ truth.
 ## Current reconciliation — 2026-08-08
 
 The current source tree now has passing repository-wide automated checks:
-**1,934 tests completed, 1,932 passed, 2 database-dependent tests skipped without a test
+**1,943 tests completed, 1,941 passed, 2 database-dependent tests skipped without a test
 database, 0 failed**; full ESLint, TypeScript, Prisma validation/generation,
 native/capability/Work contract checks, code wiring checks, sandbox checks, and
 design-contract checks also pass. The production Next build renders 110/110
-static pages successfully. The focused research evidence suite is 53/53,
+static pages successfully, and the voice relay has 2/2 security tests plus
+clean typecheck/build. The focused research evidence suite is 53/53,
 including the deterministic 100-claim validator benchmark. The full
 `JunoChatKitTests` target is 213/213, and unsigned JunoDesktop/JunoMobile
 Simulator builds pass with warnings treated as errors.
@@ -60,19 +61,28 @@ production entry points:
 - Account-wide library quota writes are rechecked under a PostgreSQL account-row
   lock across web/native uploads, generated media, replacements and imports;
   newly written objects are compensated when relational persistence fails.
+- Direct conversation attachments now retrieve owner-scoped indexed passages
+  independently of project membership; every provider receives explicit
+  pending/unavailable PDF state instead of a misleading filename placeholder.
+- The deploy workflow validates public HTML/security/auth-boundary routes and
+  fails closed when authenticated smoke credentials are absent. The voice relay
+  rejects unlisted browser origins and cannot confuse callback spend tokens with
+  inbound session tokens.
 
 The core product slices are ready for a controlled production release, but the
 release program is not fully closed. Remaining gates are explicit in
 `status.json`: authenticated browser/native journeys and visual/accessibility
 matrices; a tested database/object-storage restore drill; and signed/notarized
-Apple artifacts. The production workflow now fails closed: protected
+Apple artifacts. Read the historical sections below as traceability only; the
+current reconciliation and `status.json` are authoritative. The production workflow now fails closed: protected
 `PROD_ENV` must contain `JUNO_SMOKE_TOKEN` or `JUNO_SMOKE_COOKIE`, and the
 authenticated smoke always runs catalog, provider-backed chat, durable receipt
 and idempotent replay checks. The live server was checked read-only:
 `https://chat.liams.dev/api/health` returned `ok`/`db: ok` for artifact
-`5ef25ecd5212156e8a3dc9452ea0d4110ae07b2e`. The remote production database
-reports 75 applied migrations and an up-to-date schema; the import-recovery
-worker is online. The current source at `c7e389cc` includes quota hardening and
+`ce36248fa1e466bccf8f52fed2e589b32b2d8951`, and the public UI smoke passed all
+public routes plus the `/chat` auth boundary. The remote production database
+reports 75 applied migrations and an up-to-date schema; all nine PM2 services
+are online. The current source at `b1248d04` includes quota hardening and
 a fail-closed authenticated release smoke gate beyond that live artifact; no
 production deploy or migration was executed in this run.
 

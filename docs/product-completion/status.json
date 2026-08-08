@@ -1,20 +1,22 @@
 {
   "$comment": "Machine-readable execution ledger for the Juno completion program. States: missing | in_progress | blocked | implemented | verified. 'verified' requires a named test. Prose and evidence live in JUNO_PRODUCT_COMPLETION.md.",
   "schemaVersion": 1,
-  "auditCommit": "c7e389cc",
+  "auditCommit": "b1248d04",
   "auditDate": "2026-08-08",
   "branch": "feat/juno-work",
   "verification": {
-    "fullTest": "passed: 1934 tests, 1932 passed, 2 skipped, 0 failed",
+    "fullTest": "passed: 1943 tests, 1941 passed, 2 skipped, 0 failed",
     "lint": "passed: eslint . --no-cache",
     "typecheck": "passed: npx tsc --noEmit --pretty false",
     "schema": "passed: npx prisma validate and prisma generate",
-    "contractChecks": "passed: native, capabilities, work, code preview/remote/runtime, sandbox, design",
+    "build": "passed: npm run build; Next.js compiled and generated 110/110 static pages",
+    "relay": "passed: npm test --prefix relay (2/2), npm run typecheck --prefix relay, npm run build --prefix relay",
+    "contractChecks": "passed: release gates, native, capabilities, work, code preview/remote/runtime, sandbox, design",
     "focusedResearchTests": "passed: 53 passed, 0 failed",
     "nativePackages": "passed: JunoChatKit 213/213 including native chat approval recovery/decision coverage; JunoWork 52/52; JunoCode 0 failures with 1 simulator skip; JunoDesktop 111 tests/0 failures; JunoMobile 66 tests/0 failures; unsigned JunoDesktop and JunoMobile Simulator builds passed with warnings-as-errors",
-    "productionHealth": "passed read-only: https://chat.liams.dev/api/health returned ok/db ok with live artifact 5ef25ecd5212156e8a3dc9452ea0d4110ae07b2e; the remote production database reports 75 applied migrations and an up-to-date schema and juno-import-recovery is online; current source at c7e389cc includes quota hardening and a fail-closed authenticated release smoke gate beyond the live artifact; no production deploy or migration was executed",
-    "productionSmoke": "passed: unauthenticated health-only smoke against the live artifact; authenticated catalog/chat receipt/replay smoke has not run because no dedicated credential was available; the release workflow now fails closed and requires JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE plus the chat path",
-    "lastVerifiedAt": "2026-08-08T19:05:02+02:00"
+    "productionHealth": "passed read-only: https://chat.liams.dev/api/health returned ok/db ok with live artifact ce36248fa1e466bccf8f52fed2e589b32b2d8951; the remote production database reports 75 applied migrations and an up-to-date schema and all nine PM2 services are online; current source at b1248d04 includes direct attachment retrieval, public UI smoke, authenticated fail-closed release smoke, and relay boundary hardening; no production deploy or migration was executed",
+    "productionSmoke": "passed: unauthenticated health plus public UI/auth-boundary smoke against https://chat.liams.dev; authenticated catalog/chat receipt/replay smoke has not run because no dedicated credential was available; the release workflow now fails closed and requires JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE plus the chat path",
+    "lastVerifiedAt": "2026-08-08T19:38:14+02:00"
   },
   "nextSlice": {
     "id": "product-e2e-and-release-gates",
@@ -81,7 +83,8 @@
         { "id": "citations", "state": "implemented", "text": "Retrieved blocks carry page/slide/sheet/cell/path locators into chat context, unified search destinations and the document inspector." },
         { "id": "index-states", "state": "implemented", "text": "Queued/extracting/indexing/ready/degraded/failed/stale states are durable and exposed by /api/knowledge/documents; OCR is still not a separate worker state." },
         { "id": "remove-fake-progress", "state": "implemented", "text": "Project indexing UI now reflects the durable server state instead of a timed cosmetic progress bar." },
-        { "id": "honest-pdf-degradation", "state": "verified", "text": "Unreadable/scanned PDFs produce an explicit degraded result and are not silently dropped or represented as a filename placeholder; covered by knowledge extraction tests." },
+        { "id": "direct-attachment-context", "state": "verified", "text": "Direct conversation attachments retrieve owner-scoped indexed passages independently of project membership, and pending/unavailable parser states are explicit to every provider adapter; covered by tests/chat-context-assembly.test.ts, tests/knowledge-retrieve.test.ts and tests/attachment-context.test.ts." },
+        { "id": "honest-pdf-degradation", "state": "verified", "text": "Unreadable/scanned PDFs produce an explicit degraded result and are not silently dropped or represented as a filename placeholder; covered by knowledge extraction, attachment-context and adapter tests." },
         { "id": "versioning", "state": "implemented", "text": "Replacement/version chains and deletion tombstones preserve derived knowledge state and make restore/reindex behavior explicit." }
       ]
     },
@@ -186,8 +189,8 @@
       "state": "partial",
       "dependsOn": ["approval-broker"],
       "acceptance": [
-        { "id": "e2e-layer", "state": "implemented", "text": "A bounded production HTTP smoke layer exists in scripts/production-smoke.mjs with health, authenticated model-contract, provider-backed chat, durable receipt and idempotent replay checks; the production workflow requires the authenticated path, while browser automation is still outstanding." },
-        { "id": "http-smoke", "state": "verified", "text": "Read-only health smoke passes against chat.liams.dev on live artifact 5ef25ecd5212156e8a3dc9452ea0d4110ae07b2e; authenticated catalog/chat replay remains unrun without a dedicated smoke account." },
+        { "id": "e2e-layer", "state": "implemented", "text": "Bounded production HTTP smoke exists for health, authenticated model-contract/provider-backed chat/receipt/replay, and public HTML/security/auth-boundary routes; the workflow requires authenticated smoke, while browser automation is still outstanding." },
+        { "id": "http-smoke", "state": "verified", "text": "Read-only health and public UI/auth-boundary smoke pass against chat.liams.dev on live artifact ce36248fa1e466bccf8f52fed2e589b32b2d8951; authenticated catalog/chat replay remains unrun without a dedicated smoke account." },
         { "id": "journeys", "state": "partial", "text": "HTTP health and fail-closed authenticated smoke hooks are wired; authenticated chat/citation/search/approval/budget/disconnect/recovery still need a configured staging credential plus browser/native execution." },
         { "id": "states", "state": "missing", "text": "Desktop/tablet/phone, light/dark, reduced motion, empty/loading/error/partial/success, long and localized strings." },
         { "id": "restore-drill", "state": "missing", "text": "Tested database and object-storage backups with an exercised restore drill." }
