@@ -73,6 +73,63 @@ export const MAX_IMPORT_CONVERSATIONS = 500;
 export const MAX_IMPORT_MESSAGE_CHARS = 100_000;
 const MAX_TITLE_CHARS = 200; // matches the conversation PATCH schema
 
+/**
+ * ZIP-level limits for provider/Juno imports.
+ *
+ * The upload cap protects the request body, not what a ZIP can inflate into.
+ * Keep these checks independent of JSZip so the route can reject a hostile
+ * central directory before asking JSZip to materialize any entry.
+ */
+export const MAX_IMPORT_ARCHIVE_ENTRIES = 5_000;
+export const MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES = 200 * 1024 * 1024;
+export const MAX_IMPORT_ARCHIVE_ENTRY_BYTES = 64 * 1024 * 1024;
+export const MAX_IMPORT_ARCHIVE_COMPRESSION_RATIO = 200;
+
+export interface ImportArchiveEntryBudget {
+  name: string;
+  dir?: boolean;
+  unsafeOriginalName?: string;
+  uncompressedSize?: number;
+  compressedSize?: number;
+}
+
+/** Returns human-readable ZIP budget failures, or an empty array when safe. */
+export function importArchiveBudgetProblems(entries: readonly ImportArchiveEntryBudget[]): string[] {
+  const files = entries.filter((entry) => !entry.dir);
+  const problems: string[] = [];
+  if (files.length > MAX_IMPORT_ARCHIVE_ENTRIES) {
+    problems.push(
+      `The import archive contains ${files.length.toLocaleString("en-US")} files, over the ${MAX_IMPORT_ARCHIVE_ENTRIES.toLocaleString("en-US")}-file safety limit.`,
+    );
+  }
+
+  const names = new Set<string>();
+  let total = 0;
+  for (const entry of files) {
+    const normalized = (entry.unsafeOriginalName ?? entry.name).toLowerCase();
+    if (names.has(normalized)) problems.push(`The import archive contains duplicate file names differing only by case: ${entry.name}.`);
+    names.add(normalized);
+
+    const uncompressed = Number(entry.uncompressedSize ?? 0);
+    const compressed = Number(entry.compressedSize ?? 0);
+    if (Number.isFinite(uncompressed) && uncompressed > MAX_IMPORT_ARCHIVE_ENTRY_BYTES) {
+      problems.push(
+        `Import entry ${entry.name} expands to ${Math.round(uncompressed / (1024 * 1024))} MB, over the ${MAX_IMPORT_ARCHIVE_ENTRY_BYTES / (1024 * 1024)} MB per-entry limit.`,
+      );
+    }
+    if (Number.isFinite(uncompressed)) total += uncompressed;
+    if (compressed > 0 && Number.isFinite(uncompressed) && uncompressed / compressed > MAX_IMPORT_ARCHIVE_COMPRESSION_RATIO) {
+      problems.push(`Import entry ${entry.name} has an unsafe compression ratio.`);
+    }
+  }
+  if (total > MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES) {
+    problems.push(
+      `The import archive expands to ${Math.round(total / (1024 * 1024))} MB, over the ${MAX_IMPORT_ARCHIVE_UNCOMPRESSED_BYTES / (1024 * 1024)} MB total limit.`,
+    );
+  }
+  return problems;
+}
+
 // ---------------------------------------------------------------------------
 // ZIP-level detection
 // ---------------------------------------------------------------------------

@@ -17,6 +17,7 @@ import { scheduleIngest } from "@/lib/knowledge";
 import {
   detectFormat,
   findConversationsEntry,
+  importArchiveBudgetProblems,
   parseHistoryExport,
   HistoryImportError,
 } from "@/lib/history-import";
@@ -105,6 +106,19 @@ export async function POST(req: Request) {
     } else {
       const zip = await JSZip.loadAsync(bytes).catch(() => null);
       if (!zip) throw new HistoryImportError("That file isn't a readable ZIP — upload a ChatGPT, Claude, Gemini, or Juno export.");
+      const budgetProblems = importArchiveBudgetProblems(
+        Object.values(zip.files).map((entry) => {
+          const data = (entry as unknown as { _data?: { uncompressedSize?: number; compressedSize?: number } })._data;
+          return {
+            name: entry.name,
+            dir: entry.dir,
+            unsafeOriginalName: entry.unsafeOriginalName,
+            uncompressedSize: data?.uncompressedSize,
+            compressedSize: data?.compressedSize,
+          };
+        }),
+      );
+      if (budgetProblems.length > 0) throw new HistoryImportError(budgetProblems.join(" "));
       sourceZip = zip;
       const entries = Object.keys(zip.files);
       const entryPath = findConversationsEntry(entries);
@@ -127,53 +141,78 @@ export async function POST(req: Request) {
     );
   }
 
-  // Preferences are account-scoped, so a user-initiated Juno restore applies
-  // the exported settings without changing account identity, plan, or billing.
-  if (parsed.format === "juno" && junoPayload && isRecord(junoPayload.settings)) {
-    const raw = junoPayload.settings;
-    const theme = enumValue(raw.theme, ["LIGHT", "DARK", "SYSTEM"] as const);
-    const update: Record<string, unknown> = {};
-    if (theme) update.theme = theme;
-    for (const key of [
-      "accent",
-      "defaultModel",
-      "customInstructions",
-      "responseLanguage",
-      "uiLocale",
-      "personality",
-      "backgroundProviderMode",
-      "backgroundProviderSelected",
-      "voiceId",
-      "actionApprovalPolicy",
-    ]) {
-      if (typeof raw[key] === "string") update[key] = raw[key];
+  // All database mutations for one archive share a transaction. Storage cannot
+  // participate in the database transaction, so every key written below is
+  // also registered for whole-import compensation if the transaction aborts.
+  // This prevents a malformed later record from leaving an account half-restored
+  // or leaking objects that no Attachment row can ever reference.
+  const uploadedStorageKeys: string[] = [];
+  const scheduledIngests: Parameters<typeof scheduleIngest>[0][] = [];
+  const importedSuppressionsSnapshot =
+    parsed.format === "juno" && junoPayload && Array.isArray(junoPayload.memories) ? await getSuppressions(user.id) : [];
+  const cleanupStorageKeys = async (keys: readonly string[]) => {
+    const uniqueKeys = [...new Set(keys)];
+    if (uniqueKeys.length === 0) return;
+    const results = await Promise.allSettled(uniqueKeys.map((key) => deleteObject(key)));
+    const failed = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failed.length > 0) {
+      console.error("[import] object compensation failed; orphan cleanup must be retried", {
+        count: failed.length,
+        messages: failed.slice(0, 3).map((result) => (result.reason instanceof Error ? result.reason.message : String(result.reason))),
+      });
     }
-    for (const key of ["memoryEnabled", "emailBudgetAlerts", "emailWeeklyDigest", "lockdownMode", "spendCapDisabled"]) {
-      if (typeof raw[key] === "boolean") update[key] = raw[key];
-    }
-    if (Array.isArray(raw.favoriteModels)) update.favoriteModels = raw.favoriteModels.filter((value): value is string => typeof value === "string").slice(0, 200);
-    if (Array.isArray(raw.blockedConnectors)) update.blockedConnectors = raw.blockedConnectors.filter((value): value is string => typeof value === "string").slice(0, 200);
-    if (typeof raw.monthlySpendCapEur === "number" && Number.isInteger(raw.monthlySpendCapEur) && raw.monthlySpendCapEur >= 0) {
-      update.monthlySpendCapEur = raw.monthlySpendCapEur;
-    }
-    if (Object.keys(update).length > 0) {
-      await prisma.settings.upsert({ where: { userId: user.id }, create: { userId: user.id, ...update }, update });
-    }
-  }
+  };
 
-  // Idempotency-light: title + createdAt identifies a conversation well enough
-  // to make re-uploading the same archive a no-op. Seeding the set from the DB
-  // and adding as we insert also dedupes repeats inside the ZIP itself.
-  const [existing, existingProjects] = await Promise.all([
-    prisma.conversation.findMany({
-      where: { userId: user.id },
-      select: { id: true, clientRequestId: true, title: true, createdAt: true },
-    }),
-    prisma.project.findMany({
-      where: { userId: user.id },
-      select: { id: true, importSourceId: true, name: true, createdAt: true },
-    }),
-  ]);
+  try {
+    const result = await prisma.$transaction(
+      async (tx) => {
+        // Preferences are account-scoped, so a user-initiated Juno restore applies
+        // the exported settings without changing account identity, plan, or billing.
+        if (parsed.format === "juno" && junoPayload && isRecord(junoPayload.settings)) {
+          const raw = junoPayload.settings;
+          const theme = enumValue(raw.theme, ["LIGHT", "DARK", "SYSTEM"] as const);
+          const update: Record<string, unknown> = {};
+          if (theme) update.theme = theme;
+          for (const key of [
+            "accent",
+            "defaultModel",
+            "customInstructions",
+            "responseLanguage",
+            "uiLocale",
+            "personality",
+            "backgroundProviderMode",
+            "backgroundProviderSelected",
+            "voiceId",
+            "actionApprovalPolicy",
+          ]) {
+            if (typeof raw[key] === "string") update[key] = raw[key];
+          }
+          for (const key of ["memoryEnabled", "emailBudgetAlerts", "emailWeeklyDigest", "lockdownMode", "spendCapDisabled"]) {
+            if (typeof raw[key] === "boolean") update[key] = raw[key];
+          }
+          if (Array.isArray(raw.favoriteModels)) update.favoriteModels = raw.favoriteModels.filter((value): value is string => typeof value === "string").slice(0, 200);
+          if (Array.isArray(raw.blockedConnectors)) update.blockedConnectors = raw.blockedConnectors.filter((value): value is string => typeof value === "string").slice(0, 200);
+          if (typeof raw.monthlySpendCapEur === "number" && Number.isInteger(raw.monthlySpendCapEur) && raw.monthlySpendCapEur >= 0) {
+            update.monthlySpendCapEur = raw.monthlySpendCapEur;
+          }
+          if (Object.keys(update).length > 0) {
+            await tx.settings.upsert({ where: { userId: user.id }, create: { userId: user.id, ...update }, update });
+          }
+        }
+
+        // Idempotency-light: title + createdAt identifies a conversation well enough
+        // to make re-uploading the same archive a no-op. Seeding the set from the DB
+        // and adding as we insert also dedupes repeats inside the ZIP itself.
+        const [existing, existingProjects] = await Promise.all([
+          tx.conversation.findMany({
+            where: { userId: user.id },
+            select: { id: true, clientRequestId: true, title: true, createdAt: true },
+          }),
+          tx.project.findMany({
+            where: { userId: user.id },
+            select: { id: true, importSourceId: true, name: true, createdAt: true },
+          }),
+        ]);
   const seen = new Set(existing.map((c) => `${c.createdAt.getTime()}\\0${c.title}`));
   const existingConversationByImportKey = new Map(
     existing.filter((conversation) => conversation.clientRequestId).map((conversation) => [conversation.clientRequestId!, conversation.id]),
@@ -204,7 +243,7 @@ export async function POST(req: Request) {
         if (sourceId) sourceIdToProjectId.set(sourceId, existingProjectId);
         continue;
       }
-      const project = await prisma.project.create({
+      const project = await tx.project.create({
         data: {
           userId: user.id,
           name,
@@ -229,7 +268,7 @@ export async function POST(req: Request) {
   const sourceAttachmentToMessageId = new Map<string, string>();
   const sourceMessageToConversationId = new Map<string, string>();
   const hydrateExistingConversation = async (convo: (typeof parsed.conversations)[number], conversationId: string) => {
-    const rows = await prisma.message.findMany({
+    const rows = await tx.message.findMany({
       where: { conversationId },
       orderBy: { createdAt: "asc" },
       select: { id: true, clientId: true },
@@ -273,7 +312,7 @@ export async function POST(req: Request) {
     seen.add(key);
 
     const lastMessage = convo.messages[convo.messages.length - 1];
-    const created = await prisma.conversation.create({
+    const created = await tx.conversation.create({
       data: {
         userId: user.id,
         origin: "import",
@@ -314,7 +353,7 @@ export async function POST(req: Request) {
         },
       },
     });
-    const createdMessages = await prisma.message.findMany({
+    const createdMessages = await tx.message.findMany({
       where: { conversationId: created.id },
       orderBy: { createdAt: "asc" },
       select: { id: true },
@@ -342,7 +381,7 @@ export async function POST(req: Request) {
   let memoriesImported = 0;
   const sourceIdToMemoryId = new Map<string, string>();
   if (parsed.format === "juno" && junoPayload && Array.isArray(junoPayload.memories)) {
-    const existingMemories = await prisma.memoryEntry.findMany({
+    const existingMemories = await tx.memoryEntry.findMany({
       where: { userId: user.id },
       select: { id: true, importSourceId: true },
     });
@@ -350,7 +389,7 @@ export async function POST(req: Request) {
       existingMemories.filter((memory) => memory.importSourceId).map((memory) => [memory.importSourceId!, memory.id]),
     );
     const pendingSupersession: Array<{ id: string; sourceId: string }> = [];
-    const importedSuppressions = await getSuppressions(user.id);
+    const importedSuppressions = [...importedSuppressionsSnapshot];
     for (const rawMemory of junoPayload.memories.slice(0, 50_000)) {
       if (!isRecord(rawMemory)) continue;
       const content = stringValue(rawMemory.content, 500);
@@ -371,7 +410,7 @@ export async function POST(req: Request) {
         content,
         kind,
         loadSuppressions: async () => importedSuppressions,
-        write: (checked) => prisma.memoryEntry.create({
+        write: (checked) => tx.memoryEntry.create({
           data: {
             userId: user.id,
             content: checked,
@@ -412,13 +451,13 @@ export async function POST(req: Request) {
     }
     for (const pending of pendingSupersession) {
       const supersededById = sourceIdToMemoryId.get(pending.sourceId);
-      if (supersededById) await prisma.memoryEntry.update({ where: { id: pending.id, userId: user.id }, data: { supersededById } });
+      if (supersededById) await tx.memoryEntry.update({ where: { id: pending.id, userId: user.id }, data: { supersededById } });
     }
 
     const rawSummary = isRecord(junoPayload.memorySummary) ? junoPayload.memorySummary : null;
     const summaryContent = rawSummary ? stringValue(rawSummary.content, 500_000) : null;
     if (rawSummary && summaryContent) {
-      await prisma.memorySummary.upsert({
+      await tx.memorySummary.upsert({
         where: { userId: user.id },
         create: {
           userId: user.id,
@@ -442,7 +481,7 @@ export async function POST(req: Request) {
       ? junoPayload.attachments.items.slice(0, 1_000)
       : [];
   if (attachmentManifest.length > 0) {
-    const existingAttachments = await prisma.attachment.findMany({
+    const existingAttachments = await tx.attachment.findMany({
       where: { userId: user.id },
       select: { id: true, idempotencyKey: true },
     });
@@ -451,6 +490,7 @@ export async function POST(req: Request) {
     );
     const plan = await getUserPlan(user.id);
     let archiveBytesRead = 0;
+    let importStorageBytes = 0;
     const archiveBytes = new Map<string, Uint8Array | null>();
     const readArchiveBytes = async (path: string): Promise<Uint8Array | null> => {
       if (archiveBytes.has(path)) return archiveBytes.get(path) ?? null;
@@ -502,6 +542,7 @@ export async function POST(req: Request) {
         continue;
       }
       const uploadedKeys: string[] = [];
+      let attachmentStorageBytes = 0;
       let attachmentCreated = false;
       try {
         const bytes = await readArchiveBytes(archivePath);
@@ -520,7 +561,7 @@ export async function POST(req: Request) {
           attachmentsSkipped += 1;
           continue;
         }
-        const capacity = await libraryCapacity(user.id, plan, bytes.length);
+        const capacity = await libraryCapacity(user.id, plan, bytes.length + importStorageBytes);
         if (!capacity.allowed) {
           attachmentsSkipped += 1;
           continue;
@@ -529,6 +570,9 @@ export async function POST(req: Request) {
         const currentKey = buildObjectKey(user.id, planned.plan.fileName);
         await putObject(currentKey, bytes, planned.plan.storedContentType, planned.plan.contentDisposition);
         uploadedKeys.push(currentKey);
+        uploadedStorageKeys.push(currentKey);
+        importStorageBytes += bytes.length;
+        attachmentStorageBytes += bytes.length;
         const currentVersion = positiveInt(rawAttachment.version, 1);
         const snapshotRows: {
           version: number;
@@ -572,11 +616,14 @@ export async function POST(req: Request) {
             maxUploadMb: PLANS[plan].maxUploadMb,
           });
           if (!versionPlan.ok) continue;
-          const versionCapacity = await libraryCapacity(user.id, plan, versionBytes.length);
+          const versionCapacity = await libraryCapacity(user.id, plan, versionBytes.length + importStorageBytes);
           if (!versionCapacity.allowed) continue;
           const versionKey = buildObjectKey(user.id, versionPlan.plan.fileName);
           await putObject(versionKey, versionBytes, versionPlan.plan.storedContentType, versionPlan.plan.contentDisposition);
           uploadedKeys.push(versionKey);
+          uploadedStorageKeys.push(versionKey);
+          importStorageBytes += versionBytes.length;
+          attachmentStorageBytes += versionBytes.length;
           snapshotRows.push({
             version,
             origin: "import",
@@ -603,7 +650,7 @@ export async function POST(req: Request) {
             ? sourceMessageToConversationId.get(sourceMessageId) ?? null
             : null;
         const deletedAt = dateValue(rawAttachment.deletedAt);
-        const created = await prisma.attachment.create({
+        const created = await tx.attachment.create({
           data: {
             userId: user.id,
             conversationId,
@@ -629,7 +676,7 @@ export async function POST(req: Request) {
         });
         attachmentCreated = true;
         if (!deletedAt && planned.plan.kind === "FILE") {
-          scheduleIngest({
+          scheduledIngests.push({
             userId: user.id,
             attachmentId: created.id,
             projectId: created.projectId,
@@ -641,13 +688,25 @@ export async function POST(req: Request) {
         attachmentsImported += 1;
         if (importKey) existingAttachmentByImportKey.set(importKey, created.id);
       } catch {
-        if (!attachmentCreated && uploadedKeys.length > 0) {
-          await Promise.allSettled(uploadedKeys.map((key) => deleteObject(key)));
-        }
+        if (!attachmentCreated && uploadedKeys.length > 0) await cleanupStorageKeys(uploadedKeys);
+        importStorageBytes -= attachmentStorageBytes;
         attachmentsSkipped += 1;
       }
     }
   }
 
-  return NextResponse.json({ imported, skipped, format: parsed.format, projectsImported, memoriesImported, attachmentsImported, attachmentsSkipped });
+        return { imported, skipped, format: parsed.format, projectsImported, memoriesImported, attachmentsImported, attachmentsSkipped };
+      },
+      {
+        maxWait: 15_000,
+        timeout: 120_000,
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      },
+    );
+    for (const ingest of scheduledIngests) scheduleIngest(ingest);
+    return NextResponse.json(result);
+  } catch (error) {
+    await cleanupStorageKeys(uploadedStorageKeys);
+    throw error;
+  }
 }

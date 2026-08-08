@@ -474,8 +474,12 @@ function decodeXmlText(raw: string): string {
 
 async function inspectDocx(bytes: Buffer): Promise<Verdict> {
   const zip = await JSZip.loadAsync(bytes);
+  const packageProblems = packageBudgetProblems(zip);
+  if (packageProblems.length > 0) {
+    return { observations: [], problems: packageProblems, details: { entryCount: Object.keys(zip.files).length } };
+  }
   const relationshipProblems = await packageRelationshipProblems(zip);
-  const problems: string[] = [...packageBudgetProblems(zip), ...relationshipProblems];
+  const problems: string[] = [...relationshipProblems];
   const observations: string[] = [];
 
   if (!zip.file("[Content_Types].xml")) {
@@ -510,8 +514,12 @@ async function inspectDocx(bytes: Buffer): Promise<Verdict> {
 
 async function inspectPptx(bytes: Buffer): Promise<Verdict> {
   const zip = await JSZip.loadAsync(bytes);
+  const packageProblems = packageBudgetProblems(zip);
+  if (packageProblems.length > 0) {
+    return { observations: [], problems: packageProblems, details: { entryCount: Object.keys(zip.files).length } };
+  }
   const relationshipProblems = await packageRelationshipProblems(zip);
-  const problems: string[] = [...packageBudgetProblems(zip), ...relationshipProblems];
+  const problems: string[] = [...relationshipProblems];
   const slides = Object.keys(zip.files).filter((name) => PPTX_SLIDE.test(name));
 
   if (!zip.file("ppt/presentation.xml")) {
@@ -541,15 +549,19 @@ async function inspectPptx(bytes: Buffer): Promise<Verdict> {
 type XlsxLoadInput = Parameters<Workbook["xlsx"]["load"]>[0];
 
 async function inspectXlsx(bytes: Buffer): Promise<Verdict> {
+  const zip = await JSZip.loadAsync(bytes);
+  const packageProblems = packageBudgetProblems(zip);
+  if (packageProblems.length > 0) {
+    return { observations: [], problems: packageProblems, details: { entryCount: Object.keys(zip.files).length } };
+  }
   const workbook = new Workbook();
   // exceljs parses the whole book, so this is a genuine open rather than a
   // container check: a corrupt sharedStrings or a broken sheet relationship
   // fails here and would fail identically in Excel.
   await workbook.xlsx.load(bytes as unknown as XlsxLoadInput);
 
-  const zip = await JSZip.loadAsync(bytes);
   const relationshipProblems = await packageRelationshipProblems(zip);
-  const problems: string[] = [...packageBudgetProblems(zip), ...relationshipProblems];
+  const problems: string[] = [...relationshipProblems];
   const sheets = workbook.worksheets.map((sheet) => sheet.name);
   const rowCounts = workbook.worksheets.map((sheet) => sheet.rowCount);
   if (sheets.length === 0) problems.push("The workbook has no worksheets.");
@@ -662,6 +674,13 @@ async function inspectZip(bytes: Buffer, options: { site: boolean }): Promise<Ve
   }
 
   observations.push(`Listed ${entries.length} entries; checked every stored name for traversal.`);
+
+  // Do not inflate any markup until the central-directory budget and every
+  // stored path have passed. This keeps a tiny hostile ZIP from consuming the
+  // validator's memory merely to produce a refusal.
+  if (problems.length > 0) {
+    return { observations, problems, details: { entryCount: entryNames.length, entryNames: entryNames.slice(0, MAX_LISTED_ENTRIES) } };
+  }
 
   if (options.site) {
     if (!entryNames.includes("index.html")) {

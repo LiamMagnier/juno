@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { detectFormat, parseHistoryExport } from "../src/lib/history-import";
+import { readFileSync } from "node:fs";
+import { detectFormat, importArchiveBudgetProblems, parseHistoryExport } from "../src/lib/history-import";
+
+const IMPORT_ROUTE_SOURCE = readFileSync(new URL("../src/app/api/import/route.ts", import.meta.url), "utf8");
 
 test("detects Gemini Takeout entries without mistaking them for ChatGPT", () => {
   assert.equal(detectFormat(["My Activity.json", "Gemini Apps/readme.txt"]), "gemini");
@@ -120,4 +123,31 @@ test("preserves Juno message metadata and recognizes a full JSON account snapsho
   assert.equal(parsed.conversations[0].messages[0].reasoning, "Checked the constraints.");
   assert.equal(parsed.conversations[0].messages[0].costMicroUsd, 99);
   assert.deepEqual(parsed.conversations[0].messages[0].sources, [{ title: "Juno", url: "https://example.com" }]);
+});
+
+test("import archive budgets reject ZIP inflation and case-folded collisions", () => {
+  assert.match(
+    importArchiveBudgetProblems([
+      { name: "a.json", uncompressedSize: 64 * 1024 * 1024 + 1, compressedSize: 1 },
+      { name: "A.JSON", uncompressedSize: 1, compressedSize: 1 },
+    ]).join(" "),
+    /per-entry limit|duplicate file names|compression ratio/,
+  );
+  assert.match(
+    importArchiveBudgetProblems(
+      Array.from({ length: 5_001 }, (_, index) => ({ name: `file-${index}.json`, uncompressedSize: 1, compressedSize: 1 })),
+    ).join(" "),
+    /5,000-file safety limit/,
+  );
+});
+
+test("account imports commit database state atomically and schedule indexing after commit", () => {
+  assert.match(IMPORT_ROUTE_SOURCE, /const result = await prisma\.\$transaction\(/);
+  assert.match(IMPORT_ROUTE_SOURCE, /isolationLevel: Prisma\.TransactionIsolationLevel\.Serializable/);
+  assert.match(IMPORT_ROUTE_SOURCE, /const uploadedStorageKeys: string\[\] = \[\]/);
+  assert.match(IMPORT_ROUTE_SOURCE, /await cleanupStorageKeys\(uploadedStorageKeys\)/);
+  assert.doesNotMatch(IMPORT_ROUTE_SOURCE, /scheduleIngest\(\{/);
+  const transactionResult = IMPORT_ROUTE_SOURCE.indexOf("return { imported");
+  const postCommitScheduling = IMPORT_ROUTE_SOURCE.indexOf("for (const ingest of scheduledIngests)");
+  assert.ok(transactionResult >= 0 && postCommitScheduling > transactionResult);
 });
