@@ -16,6 +16,7 @@ import {
   stitchOverlapping,
   type ScoredPassage,
 } from "@/lib/knowledge/rank";
+import { lexicalCandidateQuery } from "@/lib/knowledge/lexical-query";
 import { buildProjectContext, contextActivityDetail } from "@/lib/chat/context-assembly";
 
 /*
@@ -445,6 +446,96 @@ test("a question with nothing searchable has no query at all", () => {
   assert.equal(lexicalQueryExpression("a"), null, "a single letter prefix-matches the corpus");
   // A question that is nothing but stopwords keeps them rather than vanishing.
   assert.equal(lexicalQueryExpression("what is this"), "what:* | is:* | this:*");
+});
+
+// ---------------------------------------------------------------------------
+// The lexical statement
+//
+// This is the one query in the knowledge subsystem the ownership guard in
+// db.ts cannot see: the guard is a Prisma query extension and $queryRaw is not
+// a model operation. So the scoping is asserted here, on the composed
+// statement, rather than trusted.
+// ---------------------------------------------------------------------------
+
+test("the account is bound into the statement twice, on the chunk and on the document", () => {
+  const sql = lexicalCandidateQuery({
+    userId: "user-1",
+    expression: lexicalQueryExpression("refund window")!,
+    withEmbeddings: false,
+    limit: 120,
+  });
+
+  assert.match(sql.text, /c\."userId" = \$\d+/);
+  assert.match(sql.text, /d\."userId" = \$\d+/);
+  assert.equal(
+    sql.values.filter((value) => value === "user-1").length,
+    2,
+    "both scopes must be the requesting account"
+  );
+  // Superseded versions keep their rows so old citations resolve, but must not
+  // be answered from.
+  assert.match(sql.text, /d\."supersededById" IS NULL/);
+});
+
+test("no user input reaches the SQL as text", () => {
+  const hostile = "'; DROP TABLE \"KnowledgeChunk\"; --";
+  const sql = lexicalCandidateQuery({
+    userId: hostile,
+    expression: lexicalQueryExpression("refund")!,
+    filters: { projectId: hostile, documentIds: [hostile], mimeTypes: [hostile] },
+    withEmbeddings: true,
+    limit: 10,
+  });
+
+  assert.ok(!sql.text.includes("DROP TABLE"), "a value was interpolated into the statement");
+  assert.ok(!sql.text.includes(hostile));
+  assert.ok(sql.values.includes(hostile), "it must be a bound parameter instead");
+  // The text-search configuration and the tsquery are parameters too.
+  assert.match(sql.text, /to_tsquery\(\$\d+::regconfig, \$\d+\)/);
+});
+
+test("filters are added only when asked for, and null project means unfiled", () => {
+  const none = lexicalCandidateQuery({
+    userId: "u",
+    expression: "refund:*",
+    withEmbeddings: false,
+    limit: 5,
+  });
+  // Both columns are in the SELECT list, so the assertion is on the predicate.
+  assert.ok(!none.text.includes('d."projectId" ='));
+  assert.ok(!none.text.includes('d."projectId" IS NULL'));
+  assert.ok(!none.text.includes('d."mimeType" = ANY'));
+  assert.ok(!none.text.includes('d."createdAt" >='));
+
+  const unfiled = lexicalCandidateQuery({
+    userId: "u",
+    expression: "refund:*",
+    filters: { projectId: null },
+    withEmbeddings: false,
+    limit: 5,
+  });
+  assert.match(unfiled.text, /d\."projectId" IS NULL/);
+
+  const dated = lexicalCandidateQuery({
+    userId: "u",
+    expression: "refund:*",
+    filters: { since: new Date("2026-01-01"), until: new Date("2026-06-01") },
+    withEmbeddings: false,
+    limit: 5,
+  });
+  assert.match(dated.text, /d\."createdAt" >= \$\d+/);
+  assert.match(dated.text, /d\."createdAt" <= \$\d+/);
+});
+
+test("vector columns are selected only when there is a query vector to compare", () => {
+  // A 3072-dimension embedding is ~24KB of JavaScript numbers per row; fetching
+  // 120 of them for a lexical-only request is pure waste.
+  const without = lexicalCandidateQuery({ userId: "u", expression: "a:*", withEmbeddings: false, limit: 5 });
+  assert.ok(!without.text.includes('c."embedding"'));
+  assert.match(without.text, /NULL::double precision\[\] AS "embedding"/);
+
+  const with_ = lexicalCandidateQuery({ userId: "u", expression: "a:*", withEmbeddings: true, limit: 5 });
+  assert.match(with_.text, /c\."embedding" AS "embedding"/);
 });
 
 // ---------------------------------------------------------------------------

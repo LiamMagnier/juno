@@ -1,16 +1,19 @@
 import "server-only";
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { BackgroundProviderPolicy } from "@/lib/background-provider-policy";
 import { describeLocator, type BlockLocation } from "@/lib/knowledge/chunk";
 import { embedQuery, type EmbeddingUnavailableReason } from "@/lib/knowledge/embed";
+import {
+  lexicalCandidateQuery,
+  RETRIEVABLE_STATES,
+  type LexicalQueryFilters,
+} from "@/lib/knowledge/lexical-query";
 import {
   cosineSimilarity,
   lexicalQueryExpression,
   packContext,
   reciprocalRankFusion,
   rerankPassages,
-  LEXICAL_TSCONFIG,
   type PackOptions,
   type RerankOptions,
   type RetrievalCandidate,
@@ -64,23 +67,17 @@ import {
  */
 const LEXICAL_CANDIDATE_LIMIT = 120;
 
-/** Document states whose chunks are safe to answer from. */
-const RETRIEVABLE_STATES = ["ready", "degraded"];
-
-export interface KnowledgeFilters {
-  /** Restrict to one project's documents. Null means "unfiled documents". */
-  projectId?: string | null;
-  documentIds?: readonly string[];
-  /**
-   * Document MIME types. Filtering is by document rather than by block type
-   * because a chunk routinely spans a heading, its paragraphs and a table cell
-   * — there is no single block type to filter it on.
-   */
-  mimeTypes?: readonly string[];
-  /** Bounds on when the document entered the library, not when it was written. */
-  since?: Date | null;
-  until?: Date | null;
-}
+/**
+ * Retrieval filters: project, document, type and date.
+ *
+ * Typed as the lexical query's own filter shape so the two cannot drift. Type
+ * filtering is by document MIME type rather than by block type, because a chunk
+ * routinely spans a heading, its paragraphs and a table cell — there is no
+ * single block type to filter it on. The date bounds are on when the document
+ * entered the library, not on when it was written; nothing in the schema claims
+ * to know the latter.
+ */
+export type KnowledgeFilters = LexicalQueryFilters;
 
 /**
  * Why retrieval ran without its semantic leg.
@@ -146,76 +143,22 @@ interface CandidateRow {
   lexicalScore: number;
 }
 
-/**
- * The lexical leg.
- *
- * `to_tsvector` is computed per row rather than read from an expression index,
- * because adding one is a migration and the schema is fixed here. At personal-
- * library scale (thousands of chunks, not millions) the sequential scan is
- * cheap; if it stops being, the index belongs on
- * `to_tsvector('simple', "text")` over `KnowledgeChunk`, and this query needs
- * no change to start using it.
- */
+/** The lexical leg: run the composed statement (see lexical-query.ts). */
 async function lexicalCandidates(
   userId: string,
   expression: string,
   filters: KnowledgeFilters | undefined,
   withEmbeddings: boolean
 ): Promise<CandidateRow[]> {
-  const config = Prisma.sql`${LEXICAL_TSCONFIG}::regconfig`;
-  const tsquery = Prisma.sql`to_tsquery(${config}, ${expression})`;
-  const tsvector = Prisma.sql`to_tsvector(${config}, c."text")`;
-
-  const conditions: Prisma.Sql[] = [
-    Prisma.sql`c."userId" = ${userId}`,
-    Prisma.sql`d."userId" = ${userId}`,
-    Prisma.sql`d."state" = ANY(${RETRIEVABLE_STATES})`,
-    // A superseded version keeps its rows so old citations still resolve, but
-    // answering from a replaced document is answering from a stale one.
-    Prisma.sql`d."supersededById" IS NULL`,
-    Prisma.sql`${tsvector} @@ ${tsquery}`,
-  ];
-
-  if (filters?.projectId !== undefined) {
-    conditions.push(
-      filters.projectId === null
-        ? Prisma.sql`d."projectId" IS NULL`
-        : Prisma.sql`d."projectId" = ${filters.projectId}`
-    );
-  }
-  if (filters?.documentIds?.length) {
-    conditions.push(Prisma.sql`d."id" = ANY(${[...filters.documentIds]})`);
-  }
-  if (filters?.mimeTypes?.length) {
-    conditions.push(Prisma.sql`d."mimeType" = ANY(${[...filters.mimeTypes]})`);
-  }
-  if (filters?.since) conditions.push(Prisma.sql`d."createdAt" >= ${filters.since}`);
-  if (filters?.until) conditions.push(Prisma.sql`d."createdAt" <= ${filters.until}`);
-
-  // The vector columns are the expensive part of the row, so they are only
-  // selected when there is a query vector to compare them against.
-  const embeddingColumns = withEmbeddings
-    ? Prisma.sql`c."embedding" AS "embedding", c."embeddingModel" AS "embeddingModel",`
-    : Prisma.sql`NULL::double precision[] AS "embedding", NULL::text AS "embeddingModel",`;
-
-  return prisma.$queryRaw<CandidateRow[]>(Prisma.sql`
-    SELECT c."id",
-           c."documentId",
-           c."ordinal",
-           c."text",
-           c."blockIds",
-           ${embeddingColumns}
-           d."fileName",
-           d."mimeType",
-           d."projectId",
-           COALESCE(d."indexedAt", d."createdAt") AS "documentAt",
-           ts_rank_cd(${tsvector}, ${tsquery}) AS "lexicalScore"
-      FROM "KnowledgeChunk" c
-      JOIN "KnowledgeDocument" d ON d."id" = c."documentId"
-     WHERE ${Prisma.join(conditions, " AND ")}
-     ORDER BY "lexicalScore" DESC, c."documentId" ASC, c."ordinal" ASC
-     LIMIT ${LEXICAL_CANDIDATE_LIMIT}
-  `);
+  return prisma.$queryRaw<CandidateRow[]>(
+    lexicalCandidateQuery({
+      userId,
+      expression,
+      filters,
+      withEmbeddings,
+      limit: LEXICAL_CANDIDATE_LIMIT,
+    })
+  );
 }
 
 /** Resolve the citation blocks for the packed passages, in one scoped query. */
