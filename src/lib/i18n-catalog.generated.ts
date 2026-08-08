@@ -58,10 +58,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Full"
   },
   {
-    "id": "00a05fce19732187",
-    "source": "Notices"
-  },
-  {
     "id": "00a54f38dceaac87",
     "source": "Uploading your export"
   },
@@ -794,10 +790,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "1 attachment"
   },
   {
-    "id": "0dcc1111e409913c",
-    "source": "Run summary"
-  },
-  {
     "id": "0de962814273dd82",
     "source": "Event UID (from list_events)."
   },
@@ -960,10 +952,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "10f3d6a0e6b3c775",
     "source": "Active for this model"
-  },
-  {
-    "id": "10fd874b68dad080",
-    "source": "write"
   },
   {
     "id": "10fe3280d9eba6c4",
@@ -1152,10 +1140,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1432897a6136de54",
     "source": "Legacy"
-  },
-  {
-    "id": "143b270a32602d41",
-    "source": "Complete"
   },
   {
     "id": "1440933fe938e25f",
@@ -3474,10 +3458,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno — chat.liams.dev · ©"
   },
   {
-    "id": "3e510d6b982e7a5e",
-    "source": ", par mois ; la TVA applicable est ajoutée au moment du paiement. Chaque plan inclut un budget mensuel de consommation des API des modèles ; au-delà, l'accès aux modèles peut être suspendu jusqu'au cycle suivant."
-  },
-  {
     "id": "3e61193910e7b273",
     "source": "Partly supported"
   },
@@ -5402,10 +5382,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Undoing…"
   },
   {
-    "id": "62eb1dabf0e6c2e4",
-    "source": "This model streams one unbroken trace"
-  },
-  {
     "id": "62ebd0edacef1c72",
     "source": "An email arrives"
   },
@@ -5636,10 +5612,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "66f4804ee23ddc09",
     "source": "Archive"
-  },
-  {
-    "id": "66f62d1807d3821a",
-    "source": "research"
   },
   {
     "id": "66fa41f5bd6fa382",
@@ -6100,10 +6072,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6e16db102267e6e7",
     "source": "delay"
-  },
-  {
-    "id": "6e23fb8ff5521ef0",
-    "source": "Still thinking deeply — safe to leave and come back"
   },
   {
     "id": "6e292d0c2e342d08",
@@ -6750,10 +6718,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Medium effort"
   },
   {
-    "id": "7889d06f7235b90b",
-    "source": "Response complete"
-  },
-  {
     "id": "78a11233691a4bb8",
     "source": "Writing the private answer"
   },
@@ -6904,10 +6868,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7b8e819ce4f6702f",
     "source": "Connected tools ready"
-  },
-  {
-    "id": "7bbc36905270774e",
-    "source": "Run details"
   },
   {
     "id": "7c0daaf8653572af",
@@ -7670,10 +7630,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Do the rest, and say what it skipped"
   },
   {
-    "id": "8a58b690bf39ae5d",
-    "source": "Budget API mensuel"
-  },
-  {
     "id": "8a6be05198a5a62f",
     "source": "out of 100"
   },
@@ -7764,10 +7720,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8c2ef559f91d5f39",
     "source": "Run not found"
-  },
-  {
-    "id": "8c458a05f7052989",
-    "source": "Finding and checking sources"
   },
   {
     "id": "8c4b4eb91f682bc9",
@@ -8456,10 +8408,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "97ebc65eba0bf96e",
     "source": "Snapshot ·"
-  },
-  {
-    "id": "98038bc093e9fc76",
-    "source": "Run progress"
   },
   {
     "id": "98197a0092b64ff3",
@@ -9228,10 +9176,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a51d598fe3ddbf35",
     "source": "www.cnil.fr"
-  },
-  {
-    "id": "a52342f5b1ad083a",
-    "source": "Full thinking"
   },
   {
     "id": "a52ace420f2175d0",
@@ -10798,10 +10742,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Visual explanation"
   },
   {
-    "id": "c2a9461389fdf45a",
-    "source": "Live process"
-  },
-  {
     "id": "c2dcdc8db2cdad56",
     "source": "&ldquo;"
   },
@@ -12340,10 +12280,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dbf87f669e1d1f4f",
     "source": "Choose new password"
-  },
-  {
-    "id": "dc01b07203158782",
-    "source": "Researching"
   },
   {
     "id": "dc052e9106e29f6e",
