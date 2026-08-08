@@ -814,7 +814,10 @@ private struct DesktopWorkOverview: View {
     let compose: () -> Void
 
     private var allSessions: [WorkSessionSummary] {
-        model.sessions.filter { !$0.archived }
+        // The source list has already applied both the current view and the
+        // search query. The reader must use that same set, otherwise searching
+        // for one task leaves the overview quietly showing unrelated work.
+        sessions
     }
 
     private var attention: [WorkSessionSummary] {
