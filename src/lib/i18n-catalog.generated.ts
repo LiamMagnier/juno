@@ -166,6 +166,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "React"
   },
   {
+    "id": "0203ab701cdbac4d",
+    "source": "Remembered about you"
+  },
+  {
     "id": "02069f2c274641c5",
     "source": "Drag to resize. Arrow keys adjust, Home resets."
   },
@@ -490,6 +494,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Max results (default 25, max 25)."
   },
   {
+    "id": "07d5d719bbaad61d",
+    "source": "Who you are — your role, where you live and work, the languages you speak."
+  },
+  {
     "id": "07e14a54703bb5e4",
     "source": "Planning research"
   },
@@ -620,6 +628,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0a5a17b7628db27d",
     "source": "Mac unreachable"
+  },
+  {
+    "id": "0a6ab7833ed42c8a",
+    "source": "Something newer took its place. Kept so you can see the change."
   },
   {
     "id": "0a6ce29c77c93011",
@@ -932,6 +944,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "115f84349f569f60",
     "source": "This chat will be saved to the project."
+  },
+  {
+    "id": "116cd3982a9bc435",
+    "source": "Goals"
   },
   {
     "id": "11a2b0f914523300",
@@ -1518,6 +1534,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The entity index limit must be between 1 and 500."
   },
   {
+    "id": "1c087a5ca8efdf2e",
+    "source": "Juno may use this as context."
+  },
+  {
     "id": "1c1fdd2b7c6912a6",
     "source": "Cheaper previous-generation workhorse."
   },
@@ -1810,6 +1830,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "New chat in project"
   },
   {
+    "id": "21a91bc883a9f4bc",
+    "source": "Every one of these can be edited, forgotten, or deleted. Nothing here is used in a chat it isn’t scoped to."
+  },
+  {
     "id": "21b111cbfe6e8fca",
     "source": "Default"
   },
@@ -2050,12 +2074,20 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "labs"
   },
   {
+    "id": "26cfc93bf8716962",
+    "source": "You asked Juno to forget this. It will not be relearned."
+  },
+  {
     "id": "270ebc9527bec911",
     "source": "Attach files and images you’ve shared with Juno before."
   },
   {
     "id": "2719c688ad2de027",
     "source": "GPT-5.6 Terra"
+  },
+  {
+    "id": "27386b1c065f138e",
+    "source": "Replaced"
   },
   {
     "id": "273e66c3414605ad",
@@ -2266,6 +2298,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Rename project"
   },
   {
+    "id": "2a04cc62b7df515c",
+    "source": "Memory is paused, so none of these are used as context right now."
+  },
+  {
     "id": "2a15d5e1b8630b2f",
     "source": "politique de confidentialité"
   },
@@ -2406,6 +2442,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Older Pro reasoning model (Responses API)."
   },
   {
+    "id": "2caf4902f355918f",
+    "source": "The tools, stacks and routines you work in day to day."
+  },
+  {
     "id": "2caf9fee4536b57f",
     "source": "Even and measured"
   },
@@ -2416,6 +2456,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2cff9baabf56ca00",
     "source": "Import"
+  },
+  {
+    "id": "2d14325f5c22e7e3",
+    "source": "What Juno stopped believing"
   },
   {
     "id": "2d2f5728412a0af9",
@@ -2904,6 +2948,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3683c643d61d41fb",
     "source": "Low effort"
+  },
+  {
+    "id": "36a6bb3ad56f3019",
+    "source": "One project"
   },
   {
     "id": "36bde66f289a3568",
@@ -3474,6 +3522,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "reveal"
   },
   {
+    "id": "41a4c9a0e84b07c3",
+    "source": "Only chats in this project can see this memory."
+  },
+  {
     "id": "41a86988751ad5cb",
     "source": "Recents"
   },
@@ -3508,6 +3560,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4246c437215fc5e4",
     "source": "Actions performed"
+  },
+  {
+    "id": "424a2551d356754c",
+    "source": "Expired"
   },
   {
     "id": "425f233626b3cd02",
@@ -3828,6 +3884,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "49195f559e4a9f5b",
     "source": "Submitting…"
+  },
+  {
+    "id": "491ba694b78ccdf2",
+    "source": "Forgotten"
   },
   {
     "id": "4922bb490d222e2f",
@@ -4334,6 +4394,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No conversations yet."
   },
   {
+    "id": "53304959d83d9abb",
+    "source": "True for now, not forever. Juno forgets these on its own."
+  },
+  {
     "id": "534ac6cdde7b382a",
     "source": "These instructions haven’t been saved. Closing now loses what you wrote."
   },
@@ -4530,6 +4594,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Waiting on you"
   },
   {
+    "id": "57e9428d7642b9ce",
+    "source": "Couldn’t delete that memory. Nothing was changed."
+  },
+  {
     "id": "57ef14eae4358303",
     "source": "Give a reason of at least 3 characters."
   },
@@ -4662,6 +4730,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "text-sm text-muted-foreground"
   },
   {
+    "id": "5a85f702601d0031",
+    "source": "Save this memory"
+  },
+  {
     "id": "5a889457d27958e3",
     "source": "No tasks yet."
   },
@@ -4726,6 +4798,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Prepended to every chat here — Juno reads this before your first message, alongside the referenced files."
   },
   {
+    "id": "5b720147b6918dfc",
+    "source": "retired"
+  },
+  {
     "id": "5b8051c3b0887e4d",
     "source": "Scheduled tasks are part of Pro. Upgrade to schedule your first one."
   },
@@ -4764,6 +4840,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5cbfb02bf2b72ca0",
     "source": "Macs"
+  },
+  {
+    "id": "5cdaf86ba3219832",
+    "source": "Edit this memory"
   },
   {
     "id": "5ce44dd77dae789f",
@@ -4940,6 +5020,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5f3c4f8580d392e4",
     "source": "items"
+  },
+  {
+    "id": "5f59236b4dfbfc45",
+    "source": "Forgotten — Juno won’t learn it again."
   },
   {
     "id": "5f5c5baf8fbc063d",
@@ -5222,6 +5306,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Available until"
   },
   {
+    "id": "64c6c17ec05d3f03",
+    "source": "in use"
+  },
+  {
     "id": "64cff1319d2fd2cb",
     "source": "Action"
   },
@@ -5320,6 +5408,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "667c7736c7b239b5",
     "source": "The model stopped responding. Nothing more arrived, so the answer was cut short — try again, or pick another model."
+  },
+  {
+    "id": "66962f72a0888373",
+    "source": "Preferences"
   },
   {
     "id": "669d59cd2d84b327",
@@ -6118,6 +6210,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Profile → Import history. Titles and dates come across intact, and re-uploading the same archive never duplicates a conversation."
   },
   {
+    "id": "72e1e8c368771fb4",
+    "source": "Memory updated."
+  },
+  {
     "id": "72e971f06472669c",
     "source": "Enter your email and we’ll send you a secure reset link."
   },
@@ -6156,6 +6252,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "73bd89be01deef02",
     "source": "Les présentes conditions générales (« CGU/CGV ») régissent l'accès et l'utilisation du service Juno (le « Service »), accessible à l'adresse"
+  },
+  {
+    "id": "73cb8f9fda29bde0",
+    "source": "Individual facts"
   },
   {
     "id": "73d6fc07d8e62879",
@@ -6216,6 +6316,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "74fb138973c6fd6b",
     "source": "Request submitted — thanks!"
+  },
+  {
+    "id": "750af77aa42eea62",
+    "source": "In use"
   },
   {
     "id": "7510d4404e0c6016",
@@ -6318,6 +6422,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Play animation"
   },
   {
+    "id": "76d7262b3d2b1c7f",
+    "source": "The people you mention — family, colleagues, collaborators."
+  },
+  {
     "id": "7711faa74a10416c",
     "source": "Web search"
   },
@@ -6396,6 +6504,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "78a11233691a4bb8",
     "source": "Writing the private answer"
+  },
+  {
+    "id": "78aa4421bbb4811c",
+    "source": "Nothing to change"
   },
   {
     "id": "78ea5ef30f1e6270",
@@ -6622,6 +6734,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Close"
   },
   {
+    "id": "7db20897053bb278",
+    "source": "People"
+  },
+  {
     "id": "7dbce211c4cb64b8",
     "source": "Sign in to Juno — chat with the best AI models from one thoughtful workspace."
   },
@@ -6768,6 +6884,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7ffbc0e9caf8d9c3",
     "source": "Remove quoted selection"
+  },
+  {
+    "id": "7ffe66cb34b9de1d",
+    "source": "What you are working towards, beyond any single conversation."
   },
   {
     "id": "800190d22f103a73",
@@ -7154,6 +7274,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Building"
   },
   {
+    "id": "87c8443638cdc967",
+    "source": "How Juno came to believe this."
+  },
+  {
     "id": "87d2f3386f90d631",
     "source": "Searching the web"
   },
@@ -7394,6 +7518,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Copied"
   },
   {
+    "id": "8d5766e6e0c3f229",
+    "source": "Juno hasn’t remembered anything specific yet. Facts appear here as you chat."
+  },
+  {
     "id": "8d59829c1e15afe1",
     "source": "Usage"
   },
@@ -7528,6 +7656,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9046da16aea909ba",
     "source": "Pages"
+  },
+  {
+    "id": "904cd00e08eaa15c",
+    "source": "Things you are building, and the work around them."
   },
   {
     "id": "904eedb4e7313ad6",
@@ -7826,6 +7958,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "OpenAI's flagship — Sol tier for complex professional work, 90%-discount prompt cache."
   },
   {
+    "id": "95af139769c3a00e",
+    "source": "Stop using this, and never learn it again."
+  },
+  {
     "id": "95b6156164e80bc8",
     "source": "That clip is too long."
   },
@@ -7978,6 +8114,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "answer_expected"
   },
   {
+    "id": "982ab155613373a7",
+    "source": "Remembered from your chats"
+  },
+  {
     "id": "982d9e3eb996f559",
     "source": "text"
   },
@@ -8044,6 +8184,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "99825c3b217d0016",
     "source": "First GPT-5 release."
+  },
+  {
+    "id": "999f23fcd7bec707",
+    "source": "Identity"
   },
   {
     "id": "99a52df3ff3d4994",
@@ -8220,6 +8364,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9c31be5d6b1cd1da",
     "source": "Message Juno…"
+  },
+  {
+    "id": "9c4083f5beed9599",
+    "source": "Never remember"
   },
   {
     "id": "9c5884d8ec17c61c",
@@ -8450,6 +8598,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "path"
   },
   {
+    "id": "a0bb1e6625e29be8",
+    "source": "It was only true for a while, and that while has passed."
+  },
+  {
     "id": "a0c79a8531e1feaa",
     "source": "Settle"
   },
@@ -8560,6 +8712,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a292ab76d1442dae",
     "source": "Your plan does not include that model, so nothing was created. Pick another one, or upgrade."
+  },
+  {
+    "id": "a29c13b958388a80",
+    "source": "Temporary"
   },
   {
     "id": "a2b3e8272173c6cb",
@@ -9044,6 +9200,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ab8508f26511d617",
     "source": "Attention Is All You Need"
+  },
+  {
+    "id": "ab8a2845f16cb2ff",
+    "source": "expires"
   },
   {
     "id": "ab8de2701145fabe",
@@ -9758,6 +9918,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Create popup"
   },
   {
+    "id": "b9378eef84bb5f08",
+    "source": "Deleted. Use Forget if it should never come back."
+  },
+  {
     "id": "b958ce8b871ab36b",
     "source": "Temperature"
   },
@@ -10092,6 +10256,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c089807f7a724421",
     "source": "Let them go"
+  },
+  {
+    "id": "c0acecedfcc4b189",
+    "source": "Studies"
   },
   {
     "id": "c0b0109d9439de57",
@@ -11022,6 +11190,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Multi-model AI chat"
   },
   {
+    "id": "d1376dce95bf9f88",
+    "source": "Statements you asked Juno to forget. They block future recall."
+  },
+  {
     "id": "d14938780e2bc59a",
     "source": "Bring your memory"
   },
@@ -11220,6 +11392,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d466c22f18d776a6",
     "source": "chat.liams.dev"
+  },
+  {
+    "id": "d4674ab0467a8f02",
+    "source": "Conflicting"
   },
   {
     "id": "d47d7cb0e4f8fd2b",
@@ -11782,6 +11958,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No connected apps yet. Connect one from All apps to get started."
   },
   {
+    "id": "dd8a5a185ba31aa5",
+    "source": "How you like things done, and what you would rather avoid."
+  },
+  {
     "id": "dd9d24965dbedc02",
     "source": "Cron"
   },
@@ -11992,6 +12172,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e2035fca477074f7",
     "source": "Token usage recorded"
+  },
+  {
+    "id": "e2073645cb0dbbdd",
+    "source": "Workflows"
   },
   {
     "id": "e213c161d5cefa52",
@@ -12826,6 +13010,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "dispatch_failed"
   },
   {
+    "id": "f0c100ef11e96a28",
+    "source": "Courses, exams and subjects you are learning."
+  },
+  {
     "id": "f0de7f7a243c100a",
     "source": "Queued — starting a cloud machine (this can take a moment)…"
   },
@@ -13110,6 +13298,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Subject must not contain"
   },
   {
+    "id": "f63d5b6b4de4fca7",
+    "source": "suppressed"
+  },
+  {
     "id": "f63e546db0fbac3a",
     "source": "tokens in,"
   },
@@ -13190,6 +13382,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Connect your tools"
   },
   {
+    "id": "f79b4290e331c6c1",
+    "source": "Remembered from a chat"
+  },
+  {
     "id": "f7b45111a6777de6",
     "source": "These arrive by email, at the address on your account, once per thing worth saying — a run that finishes while a retry is still in flight does not write twice."
   },
@@ -13208,6 +13404,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f81ab834de5f8491",
     "source": "Reason"
+  },
+  {
+    "id": "f839161355091fcd",
+    "source": "used"
   },
   {
     "id": "f83a6ca776ccb71c",
@@ -13544,6 +13744,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "feed787788a639b9",
     "source": "sur nos serveurs et privées à votre compte."
+  },
+  {
+    "id": "fef21f67ca68b936",
+    "source": "It clashes with a fact you saved yourself, so Juno does not use it."
   },
   {
     "id": "fefacd3886d2a787",

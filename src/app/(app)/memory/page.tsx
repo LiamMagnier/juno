@@ -11,6 +11,7 @@ import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { useApp } from "@/components/app/app-provider";
 import { SummaryCard } from "@/components/memory/summary-card";
 import { EditsPanel } from "@/components/memory/edits-panel";
+import { EntryList } from "@/components/memory/entry-list";
 import { PrivacyStrip } from "@/components/memory/privacy-strip";
 import {
   loadEdits,
@@ -25,8 +26,9 @@ import {
 export default function MemoryPage() {
   const router = useRouter();
   const { user, settings, setSettings } = useApp();
-  // The raw notes stay server-side as the edit substrate; the page keeps them
-  // only for export and empty-state detection — they're never listed.
+  // The individual facts, listed by EntryList below. They used to be held only
+  // for export and empty-state detection: the summary was the entire interface,
+  // which left a user who spotted a wrong fact with nothing to point at.
   const [memories, setMemories] = React.useState<Memory[] | null>(null);
   const [summary, setSummary] = React.useState<SummaryData | null>(null);
   const [loadError, setLoadError] = React.useState(false);
@@ -301,6 +303,71 @@ export default function MemoryPage() {
     setEdits((prev) => prev.filter((e) => e.id !== id));
   };
 
+  // ---- Single-entry controls ------------------------------------------------
+
+  // Per-entry busy tracking, same reason as the edits ledger: deleting one fact
+  // must not freeze the controls on every other row.
+  const [busyMemoryIds, setBusyMemoryIds] = React.useState<ReadonlySet<string>>(new Set());
+  const markMemoryBusy = (id: string, busy: boolean) =>
+    setBusyMemoryIds((prev) => {
+      const next = new Set(prev);
+      if (busy) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  const patchMemory = async (memory: Memory, body: Record<string, unknown>, failure: string): Promise<boolean> => {
+    markMemoryBusy(memory.id, true);
+    try {
+      const res = await fetch(`/api/memory/${memory.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? failure);
+      // Re-read rather than patching local state: editing a fact re-runs
+      // classification and can revive a retired row, so the server's version of
+      // the entry is the only one that is right.
+      await load();
+      return true;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : failure);
+      return false;
+    } finally {
+      markMemoryBusy(memory.id, false);
+    }
+  };
+
+  const editMemory = async (id: string, content: string): Promise<boolean> => {
+    const memory = memories?.find((m) => m.id === id);
+    if (!memory) return false;
+    const ok = await patchMemory(memory, { content }, "Couldn’t save that change.");
+    if (ok) toast.success("Memory updated.");
+    return ok;
+  };
+
+  const forgetMemory = async (memory: Memory) => {
+    if (await patchMemory(memory, { forget: true }, "Couldn’t forget that. Nothing was changed.")) {
+      toast.success("Forgotten — Juno won’t learn it again.");
+    }
+  };
+
+  const deleteMemory = async (memory: Memory) => {
+    markMemoryBusy(memory.id, true);
+    try {
+      const res = await fetch(`/api/memory/${memory.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      setMemories((prev) => (prev ?? []).filter((m) => m.id !== memory.id));
+      // Deleting only removes the row: the chat it came from is still there to
+      // be re-read, so say so rather than implying a promise we can't keep.
+      toast.success("Deleted. Use Forget if it should never come back.");
+    } catch {
+      toast.error("Couldn’t delete that memory. Nothing was changed.");
+    } finally {
+      markMemoryBusy(memory.id, false);
+    }
+  };
+
   // ---- Privacy controls -----------------------------------------------------
 
   const exportMemory = () => {
@@ -407,6 +474,14 @@ export default function MemoryPage() {
                   </span>
                 </p>
               )}
+              <EntryList
+                memories={memories}
+                busyIds={busyMemoryIds}
+                paused={paused}
+                onEdit={editMemory}
+                onForget={forgetMemory}
+                onDelete={deleteMemory}
+              />
               <EditsPanel
                 edits={edits}
                 open={editsOpen}

@@ -179,22 +179,59 @@ test("every write path refuses the suppressed statement", async () => {
 // Wiring: no writer may reach MemoryEntry around the door
 // ---------------------------------------------------------------------------
 
-const WRITE_SITES = [
-  "src/lib/memory.ts",
-  "src/app/api/memory/route.ts",
-  "src/app/api/memory/[id]/route.ts",
-  "src/app/api/memory/edit/apply/route.ts",
-  "src/app/api/v1/mutations/route.ts",
-];
+/**
+ * Every path that writes MemoryEntry must screen the statement against the
+ * block-list first. There are three sanctioned ways to do that, and the second
+ * test below proves they all resolve to ONE rule — findSuppression — so this is
+ * not three chances to get it subtly different.
+ *
+ *  - guardedMemoryWrite(): the callback door. The write is an argument, so it
+ *    cannot run on refusal. Preferred wherever the write is a single create.
+ *  - screenMemoryWrite(): the same rule as a plain check plus an early return.
+ *    Used where the write is a partial update the door's shape cannot wrap.
+ *  - planFactIngestion(): the lifecycle planner. It screens before deciding
+ *    whether a fact is created, refreshed, or supersedes an older one, so it
+ *    subsumes the door rather than skipping it.
+ *
+ * A file that writes MemoryEntry and names none of these is a writer that never
+ * asked — which is precisely the defect this suite exists to prevent recurring.
+ */
+const SCREENED_BY = new Map<string, string>([
+  ["src/lib/memory.ts", "planFactIngestion"],
+  ["src/app/api/memory/route.ts", "guardedMemoryWrite"],
+  ["src/app/api/memory/[id]/route.ts", "screenMemoryWrite"],
+  ["src/app/api/memory/edit/apply/route.ts", "guardedMemoryWrite"],
+  ["src/app/api/v1/mutations/route.ts", "guardedMemoryWrite"],
+]);
 
-test("no memory write site creates or updates MemoryEntry outside the door", () => {
-  // The defect was not a wrong rule, it was four writers that never asked. This
-  // fails the moment a fifth one is added the old way.
-  for (const file of WRITE_SITES) {
+const SCREENING_MECHANISMS = ["guardedMemoryWrite", "screenMemoryWrite", "planFactIngestion"];
+
+test("every memory write site screens against the block-list first", () => {
+  // The defect was not a wrong rule, it was writers that never asked. This
+  // fails the moment one is added the old way.
+  for (const [file, mechanism] of SCREENED_BY) {
     const text = src(file);
-    // Strip every guardedMemoryWrite({...}) block; whatever writes remain are
-    // writes that skipped the door. Brace-matched rather than regex-greedy so a
-    // nested object literal does not swallow the rest of the file.
+    const writes = [...text.matchAll(/memoryEntry\.(create|update|updateMany|upsert)\b/g)];
+    if (writes.length === 0) continue;
+    assert.ok(
+      text.includes(mechanism),
+      `${file} writes MemoryEntry but does not screen with ${mechanism}`
+    );
+    assert.ok(
+      SCREENING_MECHANISMS.some((m) => text.includes(m)),
+      `${file} writes MemoryEntry with no recognised screening mechanism`
+    );
+  }
+});
+
+test("the door leaves no unscreened write behind it", () => {
+  // Stronger than "the symbol appears": for the files that use the callback
+  // door, strip every guardedMemoryWrite({...}) block and assert nothing is
+  // left writing. Brace-matched rather than regex-greedy so a nested object
+  // literal cannot swallow the rest of the file.
+  for (const [file, mechanism] of SCREENED_BY) {
+    if (mechanism !== "guardedMemoryWrite") continue;
+    const text = src(file);
     let stripped = "";
     for (let i = 0; i < text.length; ) {
       const start = text.indexOf("guardedMemoryWrite(", i);
@@ -211,13 +248,48 @@ test("no memory write site creates or updates MemoryEntry outside the door", () 
       }
       i = j + 1;
     }
-    const escaped = [...stripped.matchAll(/memoryEntry\.(create|update|updateMany|upsert)\b/g)];
+    // Only writes that can SET CONTENT matter here. Suppression is a rule about
+    // statements, so a write whose data cannot carry one — clearing a
+    // supersededById back-pointer, stamping lastVerifiedAt — has nothing to
+    // screen and is deliberately allowed outside the door. Narrowing this to
+    // content-bearing writes is what keeps the assertion true AND meaningful;
+    // widening it back would make the test fail for writes that are safe by
+    // construction, and the usual fix for that is to delete the test.
+    const escaped = [...stripped.matchAll(/memoryEntry\.(create|update|updateMany|upsert)\b/g)].filter((m) => {
+      const open = stripped.indexOf("(", m.index! + m[0].length);
+      if (open === -1) return true;
+      let depth = 0;
+      let end = open;
+      for (; end < stripped.length; end++) {
+        if (stripped[end] === "(") depth++;
+        else if (stripped[end] === ")" && --depth === 0) break;
+      }
+      return /\bcontent\s*:/.test(stripped.slice(open, end));
+    });
     assert.deepEqual(
       escaped.map((m) => m[0]),
       [],
-      `${file} writes MemoryEntry without going through guardedMemoryWrite`
+      `${file} writes MemoryEntry content without going through guardedMemoryWrite`
     );
   }
+});
+
+test("all three screening mechanisms resolve to the same suppression rule", () => {
+  // Memory v2's lifecycle arrived with its own suppression matcher built on a
+  // SORTED token set — right for asking "is this the same fact reworded", wrong
+  // for "does this suppression cover it", because substring containment over a
+  // sorted set is not containment of a phrase. Two rules would drift, and the
+  // one users rely on when they say "forget my address" is the phrase one.
+  const lifecycle = src("src/lib/memory-lifecycle.ts");
+  assert.ok(
+    lifecycle.includes("findSuppression"),
+    "memory-lifecycle must delegate suppression matching, not reimplement it"
+  );
+  assert.equal(
+    (lifecycle.match(/normalizedSuppression/g) ?? []).length,
+    0,
+    "memory-lifecycle still carries its own suppression matcher"
+  );
 });
 
 // ---------------------------------------------------------------------------

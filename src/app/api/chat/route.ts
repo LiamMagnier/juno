@@ -18,6 +18,7 @@ import { finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
 import { getMemoryProfile, saveAutoMemories, extractConversationMemory, maybeConsolidate } from "@/lib/memory";
+import { memoryReceiptDetail } from "@/lib/memory-lifecycle";
 import { ArtifactVersionConflictError, persistArtifacts, persistTargetedArtifactEdit } from "@/lib/artifacts-store";
 import {
   applyArtifactPatch,
@@ -1244,9 +1245,14 @@ async function handleChat(req: Request) {
   );
 
   const memoryEnabled = settings?.memoryEnabled ?? true;
-  // Prefer the consolidated summary (deduped, sectioned); fall back to the raw
-  // list when no summary exists yet. `recent` holds entries newer than the summary.
-  const memoryProfile = memoryEnabled ? await getMemoryProfile(user.id) : { summary: null, recent: [] };
+  // The consolidated summary carries settled account-wide memory; `recent` is
+  // the individually-selected entries on top of it — ranked against what the
+  // user just asked, scoped to this conversation's project, and cut to a token
+  // budget. `used` names them, which is what the memory receipt below reports.
+  const latestUserMessage = [...modelHistory].reverse().find((m) => m.role === "USER")?.content;
+  const memoryProfile = memoryEnabled
+    ? await getMemoryProfile(user.id, { projectId: conversation.projectId, query: latestUserMessage })
+    : { summary: null, recent: [], used: [], usedTokens: 0, droppedForBudget: 0 };
 
   // Project context: instructions + reference file contents injected into the system prompt.
   const projectContext = conversation.projectId
@@ -1576,6 +1582,20 @@ async function handleChat(req: Request) {
           hasProjectContext: !!projectContext,
         }),
       });
+      // The memory receipt. A count ("3 memories") tells the user nothing they
+      // can act on; naming the facts is what lets them notice a wrong one and
+      // say so. Only sent when memory actually contributed — an empty line
+      // every turn would train people to stop reading the trail.
+      if (memoryEnabled && memoryProfile.used.length > 0) {
+        sendActivity({
+          kind: "context",
+          title: "Remembered about you",
+          detail: memoryReceiptDetail({
+            selected: memoryProfile.used,
+            droppedForBudget: memoryProfile.droppedForBudget,
+          }),
+        });
+      }
       if (artifactEditTarget) {
         sendActivity({
           kind: "tool",
@@ -1825,7 +1845,13 @@ async function handleChat(req: Request) {
         if (targetedArtifact) send({ type: "delta", text: acc.text });
         let memoryUpdated = false;
         if (memoryEnabled) {
-          const created = await saveAutoMemories(user.id, parseMemories(acc.text), conversationId);
+          // Provenance points at the USER's message, not the assistant's: the
+          // memory page answers "where did you learn that?", and the honest
+          // answer is the turn in which the user said it.
+          const created = await saveAutoMemories(user.id, parseMemories(acc.text), conversationId, {
+            projectId: conversation.projectId,
+            sourceMessageId: userMessageId,
+          });
           memoryUpdated = created > 0;
         }
 

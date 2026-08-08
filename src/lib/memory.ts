@@ -14,7 +14,13 @@ import {
   type BackgroundProviderPolicy,
   type BackgroundPurpose,
 } from "@/lib/background-provider-policy";
-import { guardedMemoryWrite, normalizeStatement } from "@/lib/memory-suppression";
+import {
+  DEFAULT_MEMORY_TOKEN_BUDGET,
+  planFactIngestion,
+  selectMemoriesForContext,
+  type LifecycleEntry,
+  type RetrievalResult,
+} from "@/lib/memory-lifecycle";
 
 /*
  * Incremental memory architecture
@@ -289,45 +295,145 @@ export async function getSuppressions(userId: string): Promise<string[]> {
   return rows.map((r) => r.content);
 }
 
-/**
- * Persist candidate facts, skipping near-duplicates AND anything covered by a
- * suppression note. Returns the number created.
- */
-export async function saveCandidates(userId: string, facts: string[], sourceRef?: string): Promise<number> {
-  if (facts.length === 0) return 0;
+/** The columns the lifecycle rules need to judge an existing entry. */
+const LIFECYCLE_SELECT = {
+  id: true,
+  content: true,
+  normalized: true,
+  category: true,
+  projectId: true,
+  source: true,
+  kind: true,
+  confidence: true,
+  status: true,
+  expiresAt: true,
+  createdAt: true,
+} as const;
 
-  const existing = await prisma.memoryEntry.findMany({
-    where: { userId },
-    select: { content: true, kind: true },
-  });
-  const seen = new Set(existing.map((e) => normalizeStatement(e.content)));
-  const suppressions = existing.filter((e) => e.kind === "SUPPRESSION").map((e) => e.content);
-
-  let created = 0;
-  for (const fact of facts) {
-    const key = normalizeStatement(fact.trim().slice(0, 500));
-    if (!key || seen.has(key)) continue;
-    // The block-list is already in hand for this batch — one read, not one per
-    // fact — so the door is handed a resolved loader rather than a query.
-    const outcome = await guardedMemoryWrite({
-      content: fact,
-      kind: "FACT",
-      loadSuppressions: async () => suppressions,
-      write: (content) =>
-        prisma.memoryEntry.create({
-          data: { userId, content, source: "AUTO", kind: "FACT", sourceRef },
-        }),
-    });
-    if (!outcome.ok) continue;
-    seen.add(key);
-    created++;
-  }
-  return created;
+export interface SaveCandidatesResult {
+  /** New rows written. */
+  created: number;
+  /** Already-known facts whose lastVerifiedAt was refreshed instead. */
+  refreshed: number;
+  /** Older beliefs this batch replaced — annotated, never deleted. */
+  superseded: number;
+  /** Stored but not believed: suppressed, or beaten by an explicit fact. */
+  rejected: number;
 }
 
-/** Back-compat alias for the chat route's model-emitted memory tags. */
-export async function saveAutoMemories(userId: string, facts: string[], sourceRef?: string): Promise<number> {
-  return saveCandidates(userId, facts, sourceRef);
+/**
+ * Persist candidate facts through the Memory v2 lifecycle: classify, detect
+ * duplicates by normalized form, and let a genuinely conflicting fact supersede
+ * the older one rather than sitting beside it.
+ *
+ * The write loop is deliberately one fact at a time against an in-memory view
+ * that is updated as it goes — two facts in the same extraction batch can be
+ * duplicates of each other, and a batch-wide snapshot taken once would let both
+ * through.
+ */
+export async function saveCandidates(
+  userId: string,
+  facts: string[],
+  sourceRef?: string,
+  opts: { projectId?: string | null; sourceMessageId?: string | null; source?: "AUTO" | "MANUAL" } = {}
+): Promise<SaveCandidatesResult> {
+  const result: SaveCandidatesResult = { created: 0, refreshed: 0, superseded: 0, rejected: 0 };
+  if (facts.length === 0) return result;
+
+  const rows = await prisma.memoryEntry.findMany({ where: { userId }, select: LIFECYCLE_SELECT });
+  const entries: LifecycleEntry[] = rows.filter((r) => r.kind === "FACT");
+  const suppressions = rows.filter((r) => r.kind === "SUPPRESSION").map((r) => r.content);
+  const now = new Date();
+  const source = opts.source ?? "AUTO";
+  const projectId = opts.projectId ?? null;
+
+  for (const fact of facts) {
+    const plan = planFactIngestion({ content: fact, source, projectId }, { entries, suppressions, now });
+
+    if (plan.action === "skip") {
+      if (plan.reason === "suppressed") result.rejected++;
+      continue;
+    }
+
+    if (plan.action === "refresh") {
+      await prisma.memoryEntry.updateMany({
+        where: { id: plan.entryId, userId },
+        data: {
+          lastVerifiedAt: now,
+          ...(plan.revive ? { status: "active", reason: "You mentioned this again, so Juno picked it back up." } : {}),
+          ...(plan.expiresAt !== undefined ? { expiresAt: plan.expiresAt } : {}),
+        },
+      });
+      const known = entries.find((e) => e.id === plan.entryId);
+      if (known && plan.revive) known.status = "active";
+      result.refreshed++;
+      continue;
+    }
+
+    const created = await prisma.memoryEntry.create({
+      data: {
+        userId,
+        content: plan.content,
+        source,
+        kind: "FACT",
+        sourceRef,
+        category: plan.category,
+        projectId,
+        sourceMessageId: opts.sourceMessageId ?? null,
+        confidence: plan.confidence,
+        status: plan.status,
+        reason: plan.reason ?? null,
+        expiresAt: plan.expiresAt,
+        normalized: plan.normalized,
+        lastVerifiedAt: now,
+      },
+      select: LIFECYCLE_SELECT,
+    });
+    entries.push(created);
+    if (plan.status === "active") result.created++;
+    else result.rejected++;
+
+    if (plan.supersedes) {
+      await prisma.memoryEntry.updateMany({
+        where: { id: plan.supersedes.entryId, userId, status: "active" },
+        data: { status: "superseded", supersededById: created.id, reason: plan.supersedes.reason },
+      });
+      const older = entries.find((e) => e.id === plan.supersedes!.entryId);
+      if (older) older.status = "superseded";
+      result.superseded++;
+    }
+  }
+  return result;
+}
+
+/**
+ * Back-compat alias for the chat route's model-emitted memory tags: returns the
+ * count of NEW facts, which is all the caller uses it for.
+ */
+export async function saveAutoMemories(
+  userId: string,
+  facts: string[],
+  sourceRef?: string,
+  opts: { projectId?: string | null; sourceMessageId?: string | null } = {}
+): Promise<number> {
+  return (await saveCandidates(userId, facts, sourceRef, opts)).created;
+}
+
+/**
+ * Retire temporary facts whose moment has passed.
+ *
+ * Retrieval already refuses to inject an expired entry, so this is not what
+ * keeps them out of context — it is what stops the memory page from listing a
+ * flight from three months ago as something Juno currently believes. Cheap
+ * enough to run on any page load: one indexed updateMany over
+ * `@@index([userId, expiresAt])`.
+ */
+export async function sweepExpiredMemories(userId: string, now: Date = new Date()): Promise<number> {
+  const { count } = await prisma.memoryEntry.updateMany({
+    where: { userId, status: "active", expiresAt: { not: null, lte: now } },
+    data: { status: "expired", reason: "This was only true for a while, and that while has passed." },
+  });
+  return count;
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +483,7 @@ export async function extractConversationMemory(opts: {
       // The provider the user actually chose is what `same_provider` matches
       // background work against.
       model: true,
+      projectId: true,
       lastMessageAt: true,
       memory: { select: { processedAt: true, factCount: true, digest: true } },
     },
@@ -489,7 +596,11 @@ Return ONLY JSON: {"facts":["<short third-person fact>", ...],"digest":"<one lin
     });
     if (!result) break; // model unavailable — keep the mark, retry later
 
-    const createdInChunk = await saveCandidates(opts.userId, result.facts, convo.id);
+    // A chat that belongs to a project teaches project-scoped memory: course
+    // notes learned in "Japanese" must not surface in an unrelated work chat.
+    const { created: createdInChunk } = await saveCandidates(opts.userId, result.facts, convo.id, {
+      projectId: convo.projectId,
+    });
     created += createdInChunk;
     const isLastChunkOverall = processed + 1 === chunks.length;
     await markProcessed(
@@ -559,21 +670,92 @@ export async function getMemorySummary(userId: string): Promise<MemorySummary | 
   });
 }
 
+export interface MemoryProfile {
+  summary: string | null;
+  /** The selected facts, as the system prompt wants them. */
+  recent: string[];
+  /**
+   * The same facts with their identity intact, so the turn can show a receipt
+   * naming what it remembered instead of only how many.
+   */
+  used: RetrievalResult["selected"];
+  usedTokens: number;
+  /** Ranked high enough but cut by the token budget — the receipt says so. */
+  droppedForBudget: number;
+}
+
 /**
- * What to inject into the model context: the consolidated summary plus any raw
- * facts newer than it (so freshly-saved facts are never missed between
- * consolidations). Suppressions are never injected. Falls back to the raw
- * fact list when no summary exists yet.
+ * What to inject into the model context, and a receipt for it.
+ *
+ * The summary carries the account's settled, globally-scoped memory. On top of
+ * it go individual entries the summary cannot represent: facts newer than the
+ * last consolidation, and every fact scoped to the project this chat belongs
+ * to — those are deliberately excluded from the summary (see
+ * gatherMemorySources), because a summary is account-wide and project memory
+ * must not be.
+ *
+ * Selection is ranked against the current message and bounded by a token
+ * budget, so memory competes for context on relevance rather than by being
+ * recent enough to make a `take: 15`.
  */
-export async function getMemoryProfile(userId: string): Promise<{ summary: string | null; recent: string[] }> {
+export async function getMemoryProfile(
+  userId: string,
+  opts: { projectId?: string | null; query?: string; budgetTokens?: number } = {}
+): Promise<MemoryProfile> {
+  const projectId = opts.projectId ?? null;
+  const now = new Date();
   const summary = await getMemorySummary(userId);
+
   const rows = await prisma.memoryEntry.findMany({
-    where: { userId, kind: "FACT", ...(summary ? { createdAt: { gt: summary.updatedAt } } : {}) },
+    where: {
+      userId,
+      kind: "FACT",
+      status: "active",
+      AND: [
+        { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+        // Scope is enforced in the query as well as in the ranking: a fact
+        // belonging to another project must never even be loaded into this
+        // request, let alone ranked and dropped.
+        { OR: projectId ? [{ projectId: null }, { projectId }] : [{ projectId: null }] },
+      ],
+    },
     orderBy: { createdAt: "desc" },
-    take: summary ? 15 : 50,
-    select: { content: true },
+    take: 400,
+    select: LIFECYCLE_SELECT,
   });
-  return { summary: summary?.content ?? null, recent: rows.map((r) => r.content) };
+
+  // Facts already represented in the summary would otherwise be said twice.
+  // Project-scoped facts are never in it, so they always stay.
+  const candidates = rows.filter(
+    (row) => row.projectId !== null || !summary || row.createdAt > summary.updatedAt
+  );
+
+  const result = selectMemoriesForContext(candidates, {
+    query: opts.query,
+    projectId,
+    now,
+    budgetTokens: opts.budgetTokens ?? DEFAULT_MEMORY_TOKEN_BUDGET,
+  });
+
+  // "Used" has to mean used. Without this the memory page can show what Juno
+  // knows but not what it actually leans on, and nothing can ever age out on
+  // the basis of never being read.
+  if (result.selected.length > 0) {
+    await prisma.memoryEntry
+      .updateMany({ where: { userId, id: { in: result.selected.map((m) => m.id) } }, data: { lastUsedAt: now } })
+      .catch((error) => {
+        // A failed bookkeeping write must never cost the user their reply.
+        console.error("[memory] could not stamp lastUsedAt:", error instanceof Error ? error.message : error);
+      });
+  }
+
+  return {
+    summary: summary?.content ?? null,
+    recent: result.selected.map((m) => m.content),
+    used: result.selected,
+    usedTokens: result.usedTokens,
+    droppedForBudget: result.droppedForBudget,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -624,7 +806,7 @@ export async function gatherMemorySources(userId: string): Promise<MemorySources
     prisma.memoryEntry.findMany({
       where: { userId },
       orderBy: { createdAt: "asc" },
-      select: { content: true, createdAt: true, kind: true },
+      select: { content: true, createdAt: true, kind: true, status: true, projectId: true, expiresAt: true },
     }),
     prisma.conversationMemory.findMany({
       where: { userId, digest: { not: null } },
@@ -641,7 +823,21 @@ export async function gatherMemorySources(userId: string): Promise<MemorySources
   ]);
 
   // Newest facts always make the budget; drop the OLDEST when over.
-  const factRows = entries.filter((e) => e.kind === "FACT");
+  //
+  // Only ACTIVE, ACCOUNT-WIDE, unexpired facts are summarized. The summary is
+  // injected into every conversation, so a project-scoped fact reaching it
+  // would defeat project scope entirely — the fact would be invisible as a row
+  // and quoted verbatim in the prose. Superseded and contradicted rows are
+  // excluded for the same reason in time rather than space: they are what Juno
+  // used to believe.
+  const now = new Date();
+  const factRows = entries.filter(
+    (e) =>
+      e.kind === "FACT" &&
+      e.status === "active" &&
+      e.projectId === null &&
+      (e.expiresAt === null || e.expiresAt > now)
+  );
   const facts: MemorySources["facts"] = [];
   let used = 0;
   for (let i = factRows.length - 1; i >= 0; i--) {

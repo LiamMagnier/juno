@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { consolidateWithFallback, getMemorySummary } from "@/lib/memory";
 import { guardedMemoryWrite, type MemoryWriteRefusal } from "@/lib/memory-suppression";
+import { factFields } from "@/lib/memory-lifecycle";
+import { MEMORY_ENTRY_SELECT, serializeMemoryEntry } from "@/lib/memory-view";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -83,17 +85,27 @@ export async function POST(req: Request) {
             content: op.content,
             kind: op.suppress ? "SUPPRESSION" : "FACT",
             loadSuppressions: suppressions,
-            write: (content) =>
-              tx.memoryEntry.create({
+            write: (content) => {
+              // Classified and normalized on the same path as every other write:
+              // a fact added by an edit that carried no category would show up as
+              // "Uncategorised" and, worse, be invisible to duplicate detection.
+              const fields = factFields(content, { source: "MANUAL" });
+              return tx.memoryEntry.create({
                 data: {
                   userId: user.id,
                   content,
                   source: "MANUAL",
                   kind: op.suppress ? "SUPPRESSION" : "FACT",
                   sourceRef: "edit",
+                  category: op.suppress ? "suppression" : fields.category,
+                  confidence: fields.confidence,
+                  normalized: fields.normalized,
+                  expiresAt: op.suppress ? null : fields.expiresAt,
+                  lastVerifiedAt: new Date(),
                 },
                 select: { id: true },
-              }),
+              });
+            },
           });
           if (!outcome.ok) {
             refusal = outcome;
@@ -106,7 +118,25 @@ export async function POST(req: Request) {
             content: op.content,
             kind: row.kind,
             loadSuppressions: suppressions,
-            write: (content) => tx.memoryEntry.update({ where: { id: op.id, userId: user.id }, data: { content } }),
+            write: (content) => {
+              const fields = factFields(content, { source: "MANUAL" });
+              return tx.memoryEntry.update({
+                where: { id: op.id, userId: user.id },
+                data: {
+                  content,
+                  category: fields.category,
+                  confidence: fields.confidence,
+                  normalized: fields.normalized,
+                  expiresAt: fields.expiresAt,
+                  // An edited fact is believed again: a row the user just
+                  // rewrote is not still "replaced by something newer".
+                  status: "active",
+                  reason: null,
+                  supersededById: null,
+                  lastVerifiedAt: new Date(),
+                },
+              });
+            },
           });
           if (!outcome.ok) {
             refusal = outcome;
@@ -115,6 +145,12 @@ export async function POST(req: Request) {
           inverse.push({ op: "update", id: op.id, before: op.content, content: row.content });
         } else {
           const row = byId.get(op.id)!;
+          // Clear the back-pointers first: a row deleted while another names it
+          // as its replacement leaves a "replaced by" that resolves to nothing.
+          await tx.memoryEntry.updateMany({
+            where: { userId: user.id, supersededById: op.id },
+            data: { supersededById: null },
+          });
           await tx.memoryEntry.delete({ where: { id: op.id, userId: user.id } });
           // Undoing the removal must restore the same KIND (a deleted suppression
           // comes back as a suppression, not as a fact).
@@ -145,13 +181,13 @@ export async function POST(req: Request) {
     prisma.memoryEntry.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
-      select: { id: true, content: true, source: true, kind: true, sourceRef: true, createdAt: true },
+      select: MEMORY_ENTRY_SELECT,
     }),
     getMemorySummary(user.id),
   ]);
 
   return NextResponse.json({
-    memories: memories.map((m) => ({ ...m, createdAt: m.createdAt.toISOString() })),
+    memories: memories.map(serializeMemoryEntry),
     summary: summary
       ? { content: summary.content, updatedAt: summary.updatedAt.toISOString(), entryCount: summary.entryCount }
       : null,
