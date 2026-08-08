@@ -646,6 +646,7 @@ async function recordMarkerRun(input: {
     // Null, and true: nothing ran anywhere. Naming a target here would put a
     // run against a machine that never saw it.
     effectiveTarget: null,
+    spendReservation: false,
     idempotencyKey: input.idempotencyKey,
   });
   if (created.replay) return;

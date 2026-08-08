@@ -1815,7 +1815,10 @@ model WorkRun {
 
   /// Idempotency for dispatch: a schedule firing twice, or a retried POST,
   /// resolves to the same run rather than a second one.
-  idempotencyKey String?
+  idempotencyKey      String?
+  /// The shared spend-ceiling hold for this attempt. Nullable for historical
+  /// runs created before Work joined the reservation ledger.
+  spendReservationRef String?
 
   startedAt  DateTime?
   finishedAt DateTime?
@@ -1834,6 +1837,7 @@ model WorkRun {
   @@unique([sessionId, attempt])
   @@unique([userId, idempotencyKey])
   @@index([userId, createdAt])
+  @@index([userId, spendReservationRef])
   @@index([status, leaseExpiresAt])
   @@index([hostId, status])
   @@index([scheduleId, createdAt])

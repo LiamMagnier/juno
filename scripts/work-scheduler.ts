@@ -364,6 +364,7 @@ async function recordMarkerRun(input: MarkerRunInput): Promise<void> {
     // Null, and true: nothing ran anywhere. Naming a target here would put a
     // run against a machine that never saw it.
     effectiveTarget: null,
+    spendReservation: false,
     idempotencyKey: scheduleRunIdempotencyKey(input.scheduleId, input.fireAt),
   });
   if (created.replay) return;

@@ -27,7 +27,10 @@ export {
 let anthropic: Anthropic | null = null;
 
 export function getAnthropic(): Anthropic {
-  // maxRetries handles transient 429/5xx/overloaded errors on the initial request.
+  // The SDK must not replay a paid request behind Juno's accounting boundary.
+  // A streamed request may have consumed tokens before a transport error is
+  // observed; retrying invisibly would duplicate spend or make the ledger lie.
+  // The caller may start an explicit, separately metered attempt instead.
   //
   // The key goes through providerApiKey() rather than env.anthropicApiKey so it
   // gets the same normalization every other provider's key gets (trim, strip one
@@ -39,7 +42,7 @@ export function getAnthropic(): Anthropic {
   if (!anthropic) {
     anthropic = new Anthropic({
       apiKey: providerApiKey("anthropic") ?? env.anthropicApiKey,
-      maxRetries: 2,
+      maxRetries: 0,
     });
   }
   return anthropic;

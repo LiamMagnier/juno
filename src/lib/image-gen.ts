@@ -170,7 +170,9 @@ async function editMiniMaxImage(
 async function generateOpenAICompatImage(model: ModelInfo, prompt: string): Promise<GeneratedImage> {
   const apiKey = providerApiKey(model.provider);
   if (!apiKey) throw new Error(`${PROVIDERS[model.provider].label} API key is not configured.`);
-  const client = new OpenAI({ apiKey, baseURL: providerBaseUrl(model.provider), maxRetries: 1 });
+  // Image generation is a paid, non-idempotent operation. Do not let the SDK
+  // silently create a second image when the first request's response is lost.
+  const client = new OpenAI({ apiKey, baseURL: providerBaseUrl(model.provider), maxRetries: 0 });
 
   const params: OpenAI.Images.ImageGenerateParams = { model: model.providerModel, prompt, n: 1 };
   if (model.provider === "openai") params.size = "1024x1024";
@@ -191,7 +193,8 @@ async function editOpenAICompatImage(
 ): Promise<GeneratedImage> {
   const apiKey = providerApiKey(model.provider);
   if (!apiKey) throw new Error(`${PROVIDERS[model.provider].label} API key is not configured.`);
-  const client = new OpenAI({ apiKey, baseURL: providerBaseUrl(model.provider), maxRetries: 1 });
+  // Image edits are also non-idempotent; retries must be explicit and metered.
+  const client = new OpenAI({ apiKey, baseURL: providerBaseUrl(model.provider), maxRetries: 0 });
 
   // Without a pixel mask the region constraint has to travel in the prompt.
   const fullPrompt = !opts.maskPng && opts.region ? `${prompt}\n\n${regionInstruction(opts.region)}` : prompt;

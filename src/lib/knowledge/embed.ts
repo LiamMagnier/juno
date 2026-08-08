@@ -122,7 +122,10 @@ function client(provider: Provider): OpenAI {
   if (!apiKey) throw new Error(`${provider} API key is not configured.`);
   let existing = clients.get(provider);
   if (!existing) {
-    existing = new OpenAI({ apiKey, baseURL: providerBaseUrl(provider), maxRetries: 1 });
+    // Embedding retries can duplicate provider spend and produce vectors for a
+    // job that has already advanced. The ingestion job owns bounded retries,
+    // so the SDK must make exactly one request per job attempt.
+    existing = new OpenAI({ apiKey, baseURL: providerBaseUrl(provider), maxRetries: 0 });
     clients.set(provider, existing);
   }
   return existing;

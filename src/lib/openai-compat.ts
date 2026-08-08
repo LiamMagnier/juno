@@ -17,7 +17,13 @@ function client(provider: Provider): OpenAI {
   if (!apiKey) throw new Error(`${PROVIDERS[provider].label} API key is not configured.`);
   let c = clients.get(provider);
   if (!c) {
-    c = new OpenAI({ apiKey, baseURL: providerBaseUrl(provider), maxRetries: 2 });
+    // Do not let the SDK replay a billable request behind the accounting
+    // boundary. A streamed request can have consumed tokens before a
+    // transport error is observed, and an invisible retry would either charge
+    // twice or make the usage ledger under-report. Work retries at a higher
+    // level where the attempt gets a new idempotency key and an explicit
+    // provider/model attribution.
+    c = new OpenAI({ apiKey, baseURL: providerBaseUrl(provider), maxRetries: 0 });
     clients.set(provider, c);
   }
   return c;

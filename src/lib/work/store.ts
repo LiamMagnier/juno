@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import type { WorkCommand, WorkRun, WorkSession } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/db";
@@ -31,6 +32,13 @@ import {
   runCommandKey,
   type WorkRelayRefusal,
 } from "@/lib/work/relay";
+import {
+  recordWorkRunSpend,
+  releaseSpend,
+  reserveSpend,
+  type SpendReservationResult,
+} from "@/lib/spend";
+import { unattendedRunCeiling } from "@/lib/spend-ceiling";
 
 /**
  * The session and run lifecycle: create, append, claim, finish.
@@ -232,6 +240,8 @@ export interface CreateRunInput {
   budget?: WorkBudget;
   /** A schedule firing twice resolves to the same run rather than a second one. */
   idempotencyKey?: string | null;
+  /** Set false for scheduler marker rows that never dispatch an executor. */
+  spendReservation?: boolean;
   /**
    * The instruction that drives this run on a Mac, written in the same
    * transaction as the run itself.
@@ -265,6 +275,21 @@ export interface CreateRunResult {
   replay: boolean;
 }
 
+/** A run was not created because its spend hold would breach a ceiling. */
+export class WorkSpendAdmissionError extends Error {
+  readonly result: SpendReservationResult;
+
+  constructor(result: SpendReservationResult) {
+    super(
+      result.refusedBy === "unit"
+        ? "This Work run is above the per-run spending ceiling."
+        : "This Work run would exceed the account spending ceiling."
+    );
+    this.name = "WorkSpendAdmissionError";
+    this.result = result;
+  }
+}
+
 /**
  * How many times to re-derive `attempt` when another writer takes the number
  * first. Two clients retrying a dispatch at once is the realistic case, and it
@@ -295,7 +320,29 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
     if (existing) return { run: existing, replay: true };
   }
 
-  const budget = input.budget ?? NO_BUDGET;
+  // A zero cost limit historically meant "unlimited" in Work. That is not a
+  // safe default for a scheduled or resumed executor, so every new run gets a
+  // finite ceiling. Callers that need a narrower limit still win through the
+  // ordinary minimum semantics of the stored budget.
+  const requestedBudget = input.budget ?? NO_BUDGET;
+  const budget: WorkBudget = {
+    ...requestedBudget,
+    maxCostMicroUsd: unattendedRunCeiling(requestedBudget.maxCostMicroUsd),
+  };
+  const spendReservationRef =
+    input.spendReservation === false
+      ? null
+      : `work:${input.userId}:${idempotencyKey ?? randomUUID()}`;
+  let reservation: SpendReservationResult | null = null;
+  if (spendReservationRef) {
+    reservation = await reserveSpend({
+      userId: input.userId,
+      kind: "work",
+      ref: spendReservationRef,
+      estimateMicroUsd: budget.maxCostMicroUsd,
+    });
+    if (!reservation.allowed) throw new WorkSpendAdmissionError(reservation);
+  }
   // Rebuilt as object literals rather than passed through, so the arrays land
   // in JSONB in the shape `domain.ts` describes and an optional `subject` that
   // is absent stays absent instead of becoming a `null` the reader must handle.
@@ -305,8 +352,9 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
       : { kind: entry.kind, explanation: entry.explanation, subject: entry.subject }
   );
 
-  for (let tries = 0; tries < ATTEMPT_ALLOCATION_TRIES; tries++) {
-    try {
+  try {
+    for (let tries = 0; tries < ATTEMPT_ALLOCATION_TRIES; tries++) {
+      try {
       const run = await prisma.$transaction(async (tx) => {
         // Read once per attempt rather than per statement, so the command's TTL
         // is measured from the moment the run was made and not from whenever
@@ -338,6 +386,7 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
             maxTokens: budget.maxTokens,
             maxRuntimeMs: budget.maxRuntimeMs,
             idempotencyKey,
+            spendReservationRef,
           },
         });
 
@@ -370,27 +419,33 @@ export async function createRun(input: CreateRunInput): Promise<CreateRunResult>
         });
         return created;
       });
-      return { run, replay: false };
-    } catch (err) {
-      const conflict = uniqueConflict(err);
-      if (!conflict) throw err;
-      if (idempotencyKey && conflict.some((column) => column.includes("idempotencyKey"))) {
-        // Two dispatches of the same key raced past the pre-check above. The
-        // loser reads the winner rather than reporting a conflict, because from
-        // the caller's point of view the run it asked for now exists.
-        const winner = await prisma.workRun.findFirst({
-          where: { userId: input.userId, idempotencyKey },
-        });
-        if (winner) return { run: winner, replay: true };
-        throw err;
+        return { run, replay: false };
+      } catch (err) {
+        const conflict = uniqueConflict(err);
+        if (!conflict) throw err;
+        if (idempotencyKey && conflict.some((column) => column.includes("idempotencyKey"))) {
+          // Two dispatches of the same key raced past the pre-check above. The
+          // loser reads the winner rather than reporting a conflict, because from
+          // the caller's point of view the run it asked for now exists.
+          const winner = await prisma.workRun.findFirst({
+            where: { userId: input.userId, idempotencyKey },
+          });
+          if (winner) return { run: winner, replay: true };
+          throw err;
+        }
+        if (!conflict.some((column) => column.includes("attempt"))) throw err;
       }
-      if (!conflict.some((column) => column.includes("attempt"))) throw err;
     }
+    throw new Error(
+      `createRun: could not allocate an attempt number for session ${input.sessionId} after ${ATTEMPT_ALLOCATION_TRIES} tries`
+    );
+  } catch (error) {
+    // The reservation is deliberately taken before the run transaction so the
+    // account ceiling closes the admission race. Any failed insert must give
+    // that hold back; a successful run owns it until finishRun settles it.
+    if (reservation && spendReservationRef) await releaseSpend(input.userId, spendReservationRef);
+    throw error;
   }
-
-  throw new Error(
-    `createRun: could not allocate an attempt number for session ${input.sessionId} after ${ATTEMPT_ALLOCATION_TRIES} tries`
-  );
 }
 
 /** The columns a P2002 names, or null when the error is not a unique violation. */
@@ -1144,7 +1199,7 @@ export async function finishRun(input: FinishRunInput): Promise<FinishRunResult>
   const now = input.now ?? new Date();
   const status = statusForTerminalReason(input.reason);
 
-  return prisma.$transaction(async (tx): Promise<FinishRunResult> => {
+  const result = await prisma.$transaction(async (tx): Promise<FinishRunResult> => {
     const moved = await tx.workRun.updateMany({
       where: {
         id: input.runId,
@@ -1200,6 +1255,24 @@ export async function finishRun(input: FinishRunInput): Promise<FinishRunResult>
 
     return { finished: true, run, status };
   });
+
+  // Billing and reservation settlement happen after the terminal row commits.
+  // This makes every terminal writer — runner, host relay, cancel route and
+  // lease sweeper — close the same hold exactly once, while the idempotent
+  // spend keys make a runner's follow-up billing call harmless.
+  if (result.finished) {
+    await recordWorkRunSpend({
+      userId: input.userId,
+      runId: input.runId,
+      model: result.run.effectiveModel ?? result.run.requestedModel,
+      cumulativeCostMicroUsd: input.usage?.costMicroUsd ?? result.run.costMicroUsd,
+      inputTokens: input.usage?.inputTokens ?? result.run.inputTokens,
+      outputTokens: input.usage?.outputTokens ?? result.run.outputTokens,
+      reservationRef: result.run.spendReservationRef,
+      terminal: true,
+    });
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------

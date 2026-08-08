@@ -191,10 +191,13 @@ export class OpenAICompatAdapter implements ProviderAdapter {
       apiKey: options.apiKey ?? resolveKey(config.id, config.envVar, undefined) ?? 'missing',
       baseURL: config.baseUrl,
       defaultHeaders: options.headers,
-      maxRetries: 2,
-      // The SDK's own default is ten minutes, and with two retries on top a
-      // lab that accepts the connection and answers nothing costs half an hour
-      // of a run that looks alive. See timeouts.ts.
+      // The SDK must not replay a paid/streamed request invisibly. The runner
+      // owns bounded, attempt-level failover so each retry can be accounted to
+      // its own model and budget; an SDK retry would be a second charge hidden
+      // behind one Work event.
+      maxRetries: 0,
+      // The SDK's own default is ten minutes; the explicit timeout still keeps
+      // one provider attempt bounded. See timeouts.ts.
       timeout: config.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
     });
   }

@@ -42,8 +42,9 @@ import type {
  *                                            requestedTarget?, model?,
  *                                            reasoningEffort?, idempotencyKey? }
  *          201 → { run, selection }
- *          409 → { error: "no_executor_available" | "session_already_running",
- *                  message, missing?, degradation? }
+ *          409 → { error: "no_executor_available" | "session_already_running" |
+ *                  "expensive_confirmation_required", message, missing?,
+ *                  degradation?, confirmation? }
  *          429 → { error: "run_cap_exceeded" | "dispatch_in_flight", message }
  *   GET  /api/work/sessions/[id]/events?runId=<id>&after=<seq>   (SSE)
  *          data: { type: "snapshot" | "events" | "done", session, run, events }
@@ -132,6 +133,11 @@ export interface WorkBlocked {
   /** Required capabilities the refusal says nothing can serve. */
   missing: WorkCapability[];
   degradation: WorkDegradation[];
+  confirmation?: {
+    kind: "expensive_work";
+    estimatedCostMicroUsd: number;
+    modelId: string | null;
+  };
 }
 
 /** A request that failed for a reason the user can only respond to by retrying. */
@@ -234,6 +240,24 @@ async function refusal(res: Response): Promise<WorkBlocked | WorkTransportFailur
   const data = await body(res);
   const message = text(data, "message");
 
+  const rawConfirmation = data.confirmation;
+  const confirmation =
+    rawConfirmation !== null &&
+    typeof rawConfirmation === "object" &&
+    !Array.isArray(rawConfirmation) &&
+    (rawConfirmation as Record<string, unknown>).kind === "expensive_work" &&
+    typeof (rawConfirmation as Record<string, unknown>).estimatedCostMicroUsd === "number"
+      ? {
+          kind: "expensive_work" as const,
+          estimatedCostMicroUsd: (rawConfirmation as Record<string, unknown>)
+            .estimatedCostMicroUsd as number,
+          modelId:
+            typeof (rawConfirmation as Record<string, unknown>).modelId === "string"
+              ? ((rawConfirmation as Record<string, unknown>).modelId as string)
+              : null,
+        }
+      : undefined;
+
   if (res.status === 409 || res.status === 429) {
     return {
       kind: "blocked",
@@ -242,6 +266,7 @@ async function refusal(res: Response): Promise<WorkBlocked | WorkTransportFailur
         message ?? "Juno cannot run this right now and did not say why. Try again in a moment.",
       missing: capabilitiesFrom(data.missing),
       degradation: degradationsFrom(data.degradation),
+      ...(confirmation ? { confirmation } : {}),
     };
   }
   if (res.status === 401 || res.status === 403) {
@@ -579,6 +604,8 @@ export interface StartWorkRunInput {
   model?: string | null;
   /** Absent, a tier, or null for Instant — read the way `CreateWorkSessionInput` describes. */
   reasoningEffort?: string | null;
+  /** A second explicit press after the server's expensive-work preflight. */
+  confirmExpensive?: boolean;
   idempotencyKey: string;
 }
 
@@ -611,6 +638,7 @@ export function startWorkRun(
       ...(input.requestedTarget === undefined ? {} : { requestedTarget: input.requestedTarget }),
       ...(input.model ? { model: input.model } : {}),
       ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }),
+      ...(input.confirmExpensive ? { confirmExpensive: true } : {}),
       idempotencyKey: input.idempotencyKey,
     },
     (data) => {

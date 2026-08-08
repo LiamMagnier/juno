@@ -554,6 +554,8 @@ export const startRunSchema = z.object({
   // session's mode is the composer's default for this task, not a ceiling. The
   // only ceiling is the Mac's, and it is applied after this.
   permissionPolicy: permissionPolicy.optional(),
+  /** Required after the server's preflight estimate crosses the warning bar. */
+  confirmExpensive: z.boolean().optional(),
   idempotencyKey: idempotencyKey.optional(),
 });
 

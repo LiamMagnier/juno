@@ -26,7 +26,9 @@ let cached: OpenAI | null = null;
 function client(): OpenAI {
   const apiKey = providerApiKey("openai");
   if (!apiKey) throw new Error(`${PROVIDERS.openai.label} API key is not configured.`);
-  if (!cached) cached = new OpenAI({ apiKey, baseURL: providerBaseUrl("openai"), maxRetries: 2 });
+  // SDK retries are disabled so a partially consumed paid response cannot be
+  // replayed without a new, explicitly metered attempt.
+  if (!cached) cached = new OpenAI({ apiKey, baseURL: providerBaseUrl("openai"), maxRetries: 0 });
   return cached;
 }
 

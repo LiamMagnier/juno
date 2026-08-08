@@ -310,17 +310,30 @@ export async function recordWorkRunSpend(input: {
   cumulativeCostMicroUsd: number;
   inputTokens?: number;
   outputTokens?: number;
+  /** Close the Work admission hold after the terminal bill is recorded. */
+  reservationRef?: string | null;
+  terminal?: boolean;
 }): Promise<void> {
   try {
     const cumulative = Math.max(0, Math.round(input.cumulativeCostMicroUsd));
-    if (cumulative <= 0) return;
+    if (cumulative <= 0) {
+      if (input.terminal && input.reservationRef) {
+        await settleSpend(input.userId, input.reservationRef, 0);
+      }
+      return;
+    }
     const prefix = `work:${input.runId}:`;
     const billed = await prisma.apiSpend.aggregate({
       where: { userId: input.userId, idempotencyKey: { startsWith: prefix } },
       _sum: { costMicroUsd: true, promptTokens: true, completionTokens: true },
     });
     const delta = cumulative - (billed._sum.costMicroUsd ?? 0);
-    if (delta <= 0) return;
+    if (delta <= 0) {
+      if (input.terminal && input.reservationRef) {
+        await settleSpend(input.userId, input.reservationRef, cumulative);
+      }
+      return;
+    }
 
     // The token counts are cumulative too, and `recordSpend` re-costs from them
     // and keeps the HIGHER of the two figures. Handing it cumulative tokens
@@ -345,6 +358,9 @@ export async function recordWorkRunSpend(input: {
       costUsd: delta / 1_000_000,
       idempotencyKey: `${prefix}${cumulative}`,
     });
+    if (input.terminal && input.reservationRef) {
+      await settleSpend(input.userId, input.reservationRef, cumulative);
+    }
   } catch (err) {
     console.error("[spend] failed to bill a work run", {
       userId: input.userId,

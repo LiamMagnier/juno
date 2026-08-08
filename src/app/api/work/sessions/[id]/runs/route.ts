@@ -34,12 +34,14 @@ import {
 import {
   createRun,
   recordRunInputsFromGrants,
+  WorkSpendAdmissionError,
   type CreateRunResult,
   type RunDrivingCommand,
 } from "@/lib/work/store";
 import { planRunCommand, refusalBody, startCommandPayload } from "@/lib/work/relay";
 import { serializeRun } from "@/lib/work/serializers";
 import { effectiveHostState, refusalForSelection, startRunSchema } from "@/app/api/work/protocol";
+import { estimateWorkRunCost } from "@/lib/work/preflight-cost";
 
 export const runtime = "nodejs";
 
@@ -539,6 +541,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     );
   }
 
+  const preflight = estimateWorkRunCost({ modelId: model.effective, goalChars: session.goal.length });
+  if (preflight.requiresConfirmation && !body.confirmExpensive) {
+    return NextResponse.json(
+      {
+        error: "expensive_confirmation_required",
+        message: `This task is estimated at about $${(preflight.estimatedCostMicroUsd / 1_000_000).toFixed(2)} before it starts. Confirm to use the Work budget and continue.`,
+        confirmation: {
+          kind: "expensive_work",
+          estimatedCostMicroUsd: preflight.estimatedCostMicroUsd,
+          modelId: preflight.modelId,
+        },
+      },
+      { status: 409 }
+    );
+  }
+
   if (!isOwnerEmail(user.email)) {
     const limited = await rateLimit({
       key: `work-run:${user.id}`,
@@ -704,6 +722,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       });
     });
   } catch (err) {
+    if (err instanceof WorkSpendAdmissionError) {
+      const message =
+        err.result.refusedBy === "unit"
+          ? "This task is above Juno’s per-run spending ceiling, so nothing was started. Lower its scope or choose a less expensive model."
+          : "Starting this task would exceed your current spending ceiling, so nothing was started. Finish or stop another run, or lower the account cap.";
+      return NextResponse.json(
+        {
+          error: "spend_cap_exceeded",
+          message,
+          budgetMicroUsd: err.result.budgetMicroUsd,
+          remainingMicroUsd: err.result.remainingMicroUsd,
+          estimateMicroUsd: err.result.estimateMicroUsd,
+          capSource: err.result.capSource,
+        },
+        { status: 429 }
+      );
+    }
     if (err instanceof Error && err.message === "dispatch_in_flight") {
       return NextResponse.json(
         { error: "dispatch_in_flight", message: "Another run is being started. Try again in a moment." },
@@ -786,6 +821,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         explanation: mode.explanation,
       },
       ...(created.replay ? { replay: true } : {}),
+      preflight,
     },
     { status: created.replay ? 200 : 201 }
   );

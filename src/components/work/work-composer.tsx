@@ -238,6 +238,7 @@ interface StartAttempt {
   sessionKey: string;
   runKey: string;
   session: ClientWorkSession | null;
+  confirmExpensive?: boolean;
 }
 
 /** A press that started nothing, and whether pressing again could. */
@@ -719,6 +720,7 @@ export function WorkComposer({
       requestedTarget: "automatic",
       model,
       reasoningEffort: effort,
+      confirmExpensive: attempt.confirmExpensive === true,
       idempotencyKey: attempt.runKey,
     });
     setSubmitting(false);
@@ -777,6 +779,13 @@ export function WorkComposer({
     clear,
     router,
   ]);
+
+  const confirmExpensiveAndSubmit = React.useCallback(() => {
+    if (attemptRef.current === null) return;
+    attemptRef.current.confirmExpensive = true;
+    setBlocked(null);
+    void submit();
+  }, [submit]);
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
@@ -1255,6 +1264,22 @@ export function WorkComposer({
         <WorkStateNote tone="blocked" className="mt-2.5 motion-safe:animate-rise-in">
           <p>{blocked.explanation}</p>
           <DegradationNotes degradation={blocked.degradation} className="mt-2" />
+          {blocked.confirmation?.kind === "expensive_work" && (
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={confirmExpensiveAndSubmit}
+                disabled={submitting || !canStart}
+                className="border-warning/40 text-foreground hover:bg-warning/10"
+              >
+                Confirm and start
+              </Button>
+              <span className="text-[12px] text-muted-foreground">
+                Estimate: ${(blocked.confirmation.estimatedCostMicroUsd / 1_000_000).toFixed(2)}
+              </span>
+            </div>
+          )}
           {draftLink !== null && (
             <p className="mt-2 text-[12.5px]">
               Nothing was queued. The task is saved as a draft. {draftLink}
