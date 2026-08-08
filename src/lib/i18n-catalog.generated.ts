@@ -2386,6 +2386,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Ban user"
   },
   {
+    "id": "29dc414fcfb02365",
+    "source": "Import lease expired; object cleanup is in progress."
+  },
+  {
     "id": "29eb415e67235208",
     "source": "Couldn’t delete this skill. It is exactly as it was."
   },
@@ -5392,6 +5396,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "60a13ab792ec88be",
     "source": "In chat — 288px, 14px pitch"
+  },
+  {
+    "id": "60a3ee910383f7aa",
+    "source": "An identical import is already in progress."
   },
   {
     "id": "60acc53f13a5d1bf",

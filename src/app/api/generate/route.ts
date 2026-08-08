@@ -10,10 +10,11 @@ import { checkBudget, recordSpend, budgetExceededMessage } from "@/lib/spend";
 import { planRank } from "@/lib/plans";
 import { generateImage, editImage } from "@/lib/image-gen";
 import { generateVideo, isVideoGenSupported, videoGenUnsupportedMessage } from "@/lib/video-gen";
-import { buildObjectKey, putObject, getObjectBytes } from "@/lib/storage";
+import { buildObjectKey, deleteObject, putObject, getObjectBytes } from "@/lib/storage";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { serializeMessage } from "@/lib/serializers";
 import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
+import { assertLibraryCapacity, lockedLibraryCapacity } from "@/lib/library";
 import type { StreamChunk } from "@/types/chat";
 
 export const runtime = "nodejs";
@@ -141,6 +142,8 @@ export async function POST(req: Request) {
         }
       };
       let keepalive: ReturnType<typeof setInterval> | null = null;
+      let outputStorageKey: string | null = null;
+      let outputPersistenceCommitted = false;
       try {
         if (!conversationId) {
           const fallback = model.modality === "video" ? "New video" : "New image";
@@ -215,48 +218,60 @@ export async function POST(req: Request) {
 
         send({ type: "progress", stage: "uploading" });
         const key = buildObjectKey(user.id, `juno-${model.providerModel}.${ext}`);
+        outputStorageKey = key;
         await putObject(key, bytes, mimeType);
 
-        const assistant = await prisma.message.create({
-          data: {
-            conversationId: conversationId!,
-            role: "ASSISTANT",
-            model: model.id,
-            content: encryptMessageText(""),
-            attachments: {
-              create: {
-                userId: user.id,
-                conversationId: conversationId!,
-                kind,
-                fileName: fileName.slice(0, 120),
-                mimeType,
-                size: bytes.length,
-                storageKey: key,
-                origin: "generated",
-                parserState: "skipped",
-                versions: {
-                  create: {
-                    version: 1,
-                    origin: "generated",
-                    kind,
-                    fileName: fileName.slice(0, 120),
-                    mimeType,
-                    size: bytes.length,
-                    storageKey: key,
-                    parserState: "skipped",
+        const assistant = await prisma.$transaction(async (tx) => {
+          const capacity = await lockedLibraryCapacity(tx, user.id, plan, bytes.byteLength);
+          assertLibraryCapacity(capacity);
+          const created = await tx.message.create({
+            data: {
+              conversationId: conversationId!,
+              role: "ASSISTANT",
+              model: model.id,
+              content: encryptMessageText(""),
+              attachments: {
+                create: {
+                  userId: user.id,
+                  conversationId: conversationId!,
+                  kind,
+                  fileName: fileName.slice(0, 120),
+                  mimeType,
+                  size: bytes.length,
+                  storageKey: key,
+                  origin: "generated",
+                  parserState: "skipped",
+                  versions: {
+                    create: {
+                      version: 1,
+                      origin: "generated",
+                      kind,
+                      fileName: fileName.slice(0, 120),
+                      mimeType,
+                      size: bytes.length,
+                      storageKey: key,
+                      parserState: "skipped",
+                    },
                   },
                 },
               },
             },
-          },
-          include: { attachments: { where: { deletedAt: null } } },
+            include: { attachments: { where: { deletedAt: null } } },
+          });
+          await tx.conversation.update({
+            where: { id: conversationId!, userId: user.id },
+            data: { lastMessageAt: new Date() },
+          });
+          return created;
         });
-
-        await prisma.conversation.update({ where: { id: conversationId!, userId: user.id }, data: { lastMessageAt: new Date() } });
+        outputPersistenceCommitted = true;
 
         const message = await serializeMessage(assistant);
         send({ type: "done", message, artifacts: [], memoryUpdated: false, quota: quotaRes.quota });
       } catch (err) {
+        if (outputStorageKey && !outputPersistenceCommitted) {
+          await deleteObject(outputStorageKey).catch(() => undefined);
+        }
         // The generation failed after metering — refund the message.
         const quota = await refundMessage(user.id, plan).catch(() => quotaRes.quota);
         const fallback = model.modality === "video" ? "Video generation failed." : "Image generation failed.";

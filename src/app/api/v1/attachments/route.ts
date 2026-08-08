@@ -5,12 +5,12 @@ import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
 import { isStorageAvailable } from "@/lib/env";
-import { buildObjectKey, putObject } from "@/lib/storage";
+import { buildObjectKey, deleteObject, putObject } from "@/lib/storage";
 import { planAttachmentUpload } from "@/lib/attachment-upload";
 import { serializeAttachment } from "@/lib/serializers";
 import { scheduleIngest } from "@/lib/knowledge";
 import { isOwnerEmail } from "@/lib/owner";
-import { libraryCapacity } from "@/lib/library";
+import { assertLibraryCapacity, libraryCapacity, lockedLibraryCapacity, LibraryQuotaExceededError } from "@/lib/library";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -45,6 +45,8 @@ export const maxDuration = 30;
  *   network by design, and without this every retry would leave a duplicate.
  */
 export async function POST(request: Request) {
+  let uploadedStorageKey: string | null = null;
+  let transactionCommitted = false;
   try {
     const current = await requireNativeRequest(request);
     const user = current.user;
@@ -127,9 +129,12 @@ export async function POST(request: Request) {
     }
 
     const key = buildObjectKey(user.id, fileName);
+    uploadedStorageKey = key;
     await putObject(key, bytes, storedContentType, contentDisposition);
 
     const attachment = await prisma.$transaction(async (tx) => {
+      const lockedCapacity = await lockedLibraryCapacity(tx, user.id, plan, bytes.byteLength);
+      assertLibraryCapacity(lockedCapacity);
       const created = await tx.attachment.create({
         data: {
           userId: user.id,
@@ -162,6 +167,7 @@ export async function POST(request: Request) {
       });
       return created;
     });
+    transactionCommitted = true;
 
 
     // Structured extraction (program §5.1): the same bytes become citable blocks
@@ -178,6 +184,12 @@ export async function POST(request: Request) {
 
     return apiV1Json({ attachment: await serializeAttachment(attachment) }, { status: 201 });
   } catch (error) {
+    if (uploadedStorageKey && !transactionCommitted) {
+      await deleteObject(uploadedStorageKey).catch(() => undefined);
+    }
+    if (error instanceof LibraryQuotaExceededError) {
+      return apiV1Error(new ApiV1Error("library_quota_exceeded", 413, error.message));
+    }
     return apiV1Error(error);
   }
 }

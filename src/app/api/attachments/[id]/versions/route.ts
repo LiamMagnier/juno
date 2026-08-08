@@ -3,8 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
-import { libraryCapacity } from "@/lib/library";
-import { buildObjectKey, getViewUrl, putObject } from "@/lib/storage";
+import { assertLibraryCapacity, libraryCapacity, lockedLibraryCapacity, LibraryQuotaExceededError } from "@/lib/library";
+import { buildObjectKey, deleteObject, getViewUrl, putObject } from "@/lib/storage";
 import { planAttachmentUpload } from "@/lib/attachment-upload";
 import { scheduleIngest } from "@/lib/knowledge";
 
@@ -76,45 +76,67 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const { fileName, kind, storedMime, storedContentType, contentDisposition, extractedText } = planned.plan;
   const key = buildObjectKey(user.id, fileName);
-  await putObject(key, bytes, storedContentType, contentDisposition);
+  let transactionCommitted = false;
+  let updated;
+  try {
+    await putObject(key, bytes, storedContentType, contentDisposition);
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const current = await tx.attachment.findFirst({ where: { id, userId: user.id, deletedAt: null } });
-    if (!current) throw new Error("Attachment changed while replacing it.");
-    const prior = await tx.attachmentVersion.findFirst({ where: { attachmentId: id, version: current.version } });
-    if (!prior) {
-      await tx.attachmentVersion.create({
+    updated = await prisma.$transaction(async (tx) => {
+      const lockedCapacity = await lockedLibraryCapacity(tx, user.id, plan, bytes.byteLength);
+      assertLibraryCapacity(lockedCapacity);
+      const current = await tx.attachment.findFirst({ where: { id, userId: user.id, deletedAt: null } });
+      if (!current) throw new Error("Attachment changed while replacing it.");
+      const prior = await tx.attachmentVersion.findFirst({ where: { attachmentId: id, version: current.version } });
+      if (!prior) {
+        await tx.attachmentVersion.create({
+          data: {
+            attachmentId: id,
+            version: current.version,
+            origin: current.origin,
+            kind: current.kind,
+            fileName: current.fileName,
+            mimeType: current.mimeType,
+            size: current.size,
+            storageKey: current.storageKey,
+            extractedText: current.extractedText,
+            parserState: current.parserState,
+            parserVersion: current.parserVersion,
+          },
+        });
+      }
+      return tx.attachment.update({
+        where: { id, userId: user.id },
         data: {
-          attachmentId: id,
-          version: current.version,
-          origin: current.origin,
-          kind: current.kind,
-          fileName: current.fileName,
-          mimeType: current.mimeType,
-          size: current.size,
-          storageKey: current.storageKey,
-          extractedText: current.extractedText,
-          parserState: current.parserState,
-          parserVersion: current.parserVersion,
+          version: { increment: 1 },
+          origin: "replacement",
+          kind,
+          fileName,
+          mimeType: storedMime,
+          size: file.size,
+          storageKey: key,
+          extractedText,
+          parserState: "queued",
+          parserVersion: null,
         },
       });
-    }
-    return tx.attachment.update({
-      where: { id, userId: user.id },
-      data: {
-        version: { increment: 1 },
-        origin: "replacement",
-        kind,
-        fileName,
-        mimeType: storedMime,
-        size: file.size,
-        storageKey: key,
-        extractedText,
-        parserState: "queued",
-        parserVersion: null,
-      },
     });
-  });
+    transactionCommitted = true;
+  } catch (error) {
+    if (!transactionCommitted) await deleteObject(key).catch(() => undefined);
+    if (error instanceof LibraryQuotaExceededError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: "LIBRARY_QUOTA_EXCEEDED",
+          usedBytes: error.capacity.usedBytes,
+          quotaBytes: error.capacity.quotaBytes,
+          remainingBytes: error.capacity.remainingBytes,
+        },
+        { status: 413 },
+      );
+    }
+    throw error;
+  }
 
   scheduleIngest({ userId: user.id, attachmentId: updated.id, projectId: updated.projectId, fileName, mimeType: storedMime, bytes });
   return NextResponse.json({ ok: true, version: updated.version, url: await getViewUrl(updated.storageKey) });

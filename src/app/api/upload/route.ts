@@ -5,13 +5,13 @@ import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
 import { isStorageAvailable } from "@/lib/env";
-import { buildObjectKey, putObject } from "@/lib/storage";
+import { buildObjectKey, deleteObject, putObject } from "@/lib/storage";
 import { isAcceptedMime } from "@/lib/uploads";
 import { planAttachmentUpload } from "@/lib/attachment-upload";
 import { serializeAttachment } from "@/lib/serializers";
 import { scheduleIngest } from "@/lib/knowledge";
 import { isOwnerEmail } from "@/lib/owner";
-import { libraryCapacity } from "@/lib/library";
+import { assertLibraryCapacity, libraryCapacity, lockedLibraryCapacity, LibraryQuotaExceededError } from "@/lib/library";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -91,40 +91,62 @@ export async function POST(req: Request) {
     planned.plan;
 
   const key = buildObjectKey(user.id, fileName);
-  await putObject(key, bytes, storedContentType, contentDisposition);
+  let transactionCommitted = false;
+  let attachment;
+  try {
+    await putObject(key, bytes, storedContentType, contentDisposition);
 
-  const attachment = await prisma.$transaction(async (tx) => {
-    const created = await tx.attachment.create({
-      data: {
-        userId: user.id,
-        conversationId: conversationId ?? null,
-        projectId: projectId ?? null,
-        kind,
-        fileName,
-        mimeType: storedMime,
-        size: file.size,
-        storageKey: key,
-        extractedText,
-        origin: "upload",
-        parserState: "queued",
-      },
+    attachment = await prisma.$transaction(async (tx) => {
+      const lockedCapacity = await lockedLibraryCapacity(tx, user.id, plan, bytes.byteLength);
+      assertLibraryCapacity(lockedCapacity);
+      const created = await tx.attachment.create({
+        data: {
+          userId: user.id,
+          conversationId: conversationId ?? null,
+          projectId: projectId ?? null,
+          kind,
+          fileName,
+          mimeType: storedMime,
+          size: file.size,
+          storageKey: key,
+          extractedText,
+          origin: "upload",
+          parserState: "queued",
+        },
+      });
+      await tx.attachmentVersion.create({
+        data: {
+          attachmentId: created.id,
+          version: created.version,
+          origin: "upload",
+          kind,
+          fileName,
+          mimeType: storedMime,
+          size: file.size,
+          storageKey: key,
+          extractedText,
+          parserState: "queued",
+        },
+      });
+      return created;
     });
-    await tx.attachmentVersion.create({
-      data: {
-        attachmentId: created.id,
-        version: created.version,
-        origin: "upload",
-        kind,
-        fileName,
-        mimeType: storedMime,
-        size: file.size,
-        storageKey: key,
-        extractedText,
-        parserState: "queued",
-      },
-    });
-    return created;
-  });
+    transactionCommitted = true;
+  } catch (error) {
+    if (!transactionCommitted) await deleteObject(key).catch(() => undefined);
+    if (error instanceof LibraryQuotaExceededError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: "LIBRARY_QUOTA_EXCEEDED",
+          usedBytes: error.capacity.usedBytes,
+          quotaBytes: error.capacity.quotaBytes,
+          remainingBytes: error.capacity.remainingBytes,
+        },
+        { status: 413 },
+      );
+    }
+    throw error;
+  }
 
 
   // Structured extraction (program §5.1): the same bytes become citable blocks

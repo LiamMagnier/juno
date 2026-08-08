@@ -13,7 +13,7 @@ import { PLANS } from "@/lib/plans";
 import { buildImportObjectKey, deleteObject, putObject } from "@/lib/storage";
 import { isStorageAvailable } from "@/lib/env";
 import { planAttachmentUpload } from "@/lib/attachment-upload";
-import { libraryCapacity } from "@/lib/library";
+import { assertLibraryCapacity, libraryCapacity, lockedLibraryCapacity, LibraryQuotaExceededError } from "@/lib/library";
 import { scheduleIngest } from "@/lib/knowledge";
 import { cleanupImportRun, IMPORT_RUN_LEASE_MS } from "@/lib/import-recovery";
 import {
@@ -456,6 +456,11 @@ export async function POST(req: Request) {
 
     const result = await prisma.$transaction(
       async (tx) => {
+        // The pre-staging checks keep the happy path cheap, but only this
+        // account-locked re-check can make a multi-object restore quota-safe
+        // against concurrent uploads or generated media.
+        const lockedCapacity = await lockedLibraryCapacity(tx, user.id, plan, importStorageBytes);
+        assertLibraryCapacity(lockedCapacity);
         // Preferences are account-scoped, so a user-initiated Juno restore applies
         // the exported settings without changing account identity, plan, or billing.
         if (parsed.format === "juno" && junoPayload && isRecord(junoPayload.settings)) {
@@ -888,6 +893,18 @@ export async function POST(req: Request) {
       });
     });
     await cleanupStorageKeys(uploadedStorageKeys);
+    if (error instanceof LibraryQuotaExceededError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: "LIBRARY_QUOTA_EXCEEDED",
+          usedBytes: error.capacity.usedBytes,
+          quotaBytes: error.capacity.quotaBytes,
+          remainingBytes: error.capacity.remainingBytes,
+        },
+        { status: 413 },
+      );
+    }
     throw error;
   }
 }
