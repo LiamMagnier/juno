@@ -545,10 +545,15 @@ gh release create "v$VERSION" "$DMG" \
   --title "$TITLE" \
   --notes "$RELEASE_NOTES"
 
-RELEASES_JSON="$(gh api "repos/$REPO/releases?per_page=100")" || die \
-  "GitHub created the draft release but its release list could not be read."
-RELEASE_ID="$(printf '%s' "$RELEASES_JSON" \
-  | jq -r --arg tag "v$VERSION" '[.[] | select(.tag_name == $tag and .draft == true)] | .[0].id // empty')"
+RELEASE_ID=""
+for attempt in $(seq 1 12); do
+  if RELEASES_JSON="$(gh api "repos/$REPO/releases?per_page=100" 2>/dev/null)"; then
+    RELEASE_ID="$(printf '%s' "$RELEASES_JSON" \
+      | jq -r --arg tag "v$VERSION" '[.[] | select(.tag_name == $tag and .draft == true)] | .[0].id // empty')"
+    [ -n "$RELEASE_ID" ] && break
+  fi
+  [ "$attempt" -eq 12 ] || sleep 1
+done
 [ -n "$RELEASE_ID" ] || die "GitHub created the draft release but returned no release ID; it remains draft-only."
 if ! gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" \
   -F draft=false -F prerelease=false >/dev/null; then
