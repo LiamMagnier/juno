@@ -10,6 +10,42 @@ They never print connection strings or object contents. They also require an
 explicit confirmation token. Do not put a backup directory inside the checkout
 or commit a generated backup.
 
+## Run the disposable local restore drill
+
+The repository includes a fully local end-to-end drill. It starts a temporary
+PostgreSQL cluster bound to `127.0.0.1`, creates deterministic database rows and
+three object fixtures, invokes the production backup/verify/restore scripts,
+compares the exact restored row set and every object SHA-256 digest, then stops
+the cluster and removes its temporary workspace:
+
+```bash
+node scripts/restore-drill.mjs --check
+node scripts/restore-drill.mjs
+```
+
+The local drill requires Node.js 20 or newer and these PostgreSQL 16-compatible
+binaries on `PATH`: `initdb`, `pg_ctl`, `postgres`, `createdb`, `pg_isready`,
+`psql`, `pg_dump`, and `pg_restore`. If they are installed in another
+directory, set `JUNO_PG_BIN_DIR` to that directory. No Docker, cloud account,
+application `.env`, production database, or production object credentials are
+read; the child processes explicitly clear those environment variables and the
+storage mode is forced to local files. Set `JUNO_RESTORE_DRILL_KEEP=1` only
+when debugging a failed local run; otherwise generated data is deleted.
+
+This proves the backup format, manifest verification, `pg_restore` behavior,
+database row recovery, local object recovery, and exact object integrity. It
+does not prove a remote provider's IAM permissions, network path, S3 behavior,
+RPO/RTO, or an application deployment against the restored database. A remote
+drill still requires all of the following disposable, non-production targets:
+
+- an empty scratch PostgreSQL database reachable by the release host;
+- an empty scratch S3-compatible bucket and scoped restore credentials, or a
+  scratch VM-local uploads directory;
+- a scratch application deployment configured to use those targets; and
+- an operator-approved maintenance window plus measured RPO/RTO capture.
+
+Those prerequisites are intentionally not supplied by this local harness.
+
 ## Create and verify a backup
 
 Run from the release checkout with a destination outside the repository:
