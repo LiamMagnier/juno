@@ -455,6 +455,11 @@ jobs:
               missing=1
             fi
           done
+          if ! printf '%s\n' "$PROD_ENV" | grep -Eq '^JUNO_SMOKE_TOKEN=.+$' && \
+             ! printf '%s\n' "$PROD_ENV" | grep -Eq '^JUNO_SMOKE_COOKIE=.+$'; then
+            echo "::error::PROD_ENV must include JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE for authenticated release smoke."
+            missing=1
+          fi
           [ "$missing" -eq 0 ]
 
       - name: Install dependencies
@@ -711,7 +716,7 @@ jobs:
           exit 1
           REMOTE
 
-      - name: Run authenticated production smoke when configured
+      - name: Run authenticated production smoke
         env:
           VM_USER: ${{ secrets.VM_USER }}
           VM_HOST: ${{ secrets.VM_HOST }}
@@ -725,17 +730,13 @@ jobs:
           [ -n "$APP_URL" ] || APP_URL="https://chat.liams.dev"
           SMOKE_TOKEN="$(grep -m1 '^JUNO_SMOKE_TOKEN=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
           SMOKE_COOKIE="$(grep -m1 '^JUNO_SMOKE_COOKIE=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
-          if [ -n "$SMOKE_TOKEN" ] || [ -n "$SMOKE_COOKIE" ]; then
-            JUNO_SMOKE_BASE_URL="$APP_URL" \
-              JUNO_SMOKE_EXPECTED_SHA="$EXPECTED_SHA" \
-              JUNO_SMOKE_REQUIRE_AUTH=1 \
-              JUNO_SMOKE_TOKEN="$SMOKE_TOKEN" \
-              JUNO_SMOKE_COOKIE="$SMOKE_COOKIE" \
-              JUNO_SMOKE_RUN_CHAT="$(grep -m1 '^JUNO_SMOKE_RUN_CHAT=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)" \
-              node ~/juno/scripts/production-smoke.mjs
-          else
-            echo "Authenticated production smoke skipped: JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE is not configured."
-          fi
+          JUNO_SMOKE_BASE_URL="$APP_URL" \
+            JUNO_SMOKE_EXPECTED_SHA="$EXPECTED_SHA" \
+            JUNO_SMOKE_REQUIRE_AUTH=1 \
+            JUNO_SMOKE_TOKEN="$SMOKE_TOKEN" \
+            JUNO_SMOKE_COOKIE="$SMOKE_COOKIE" \
+            JUNO_SMOKE_RUN_CHAT=1 \
+            node ~/juno/scripts/production-smoke.mjs
           JUNO_PUBLIC_UI_BASE_URL="$APP_URL" \
             node ~/juno/scripts/public-ui-smoke.mjs
           REMOTE
