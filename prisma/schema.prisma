@@ -604,22 +604,28 @@ model Attachment {
   width          Int?
   height         Int?
   idempotencyKey String?
-  /** Current library revision. Older rows are revision 1 after migration. */
-  version        Int              @default(1)
-  /** upload | library_clone | replacement | restore */
-  origin         String           @default("upload")
-  /** queued | indexing | ready | degraded | failed | skipped | deleted */
-  parserState    String           @default("queued")
+  /**
+   * Current library revision. Older rows are revision 1 after migration.
+   */
+  version        Int            @default(1)
+  /**
+   * upload | library_clone | replacement | restore
+   */
+  origin         String         @default("upload")
+  /**
+   * queued | indexing | ready | degraded | failed | skipped | deleted
+   */
+  parserState    String         @default("queued")
   parserVersion  String?
   deletedAt      DateTime?
   createdAt      DateTime       @default(now())
 
   projectId String?
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  message      Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
-  project      Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation?       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message      Message?            @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  project      Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   versions     AttachmentVersion[]
 
   // Unique, not a plain index: /api/v1/attachments resolves a retry by reading
@@ -643,18 +649,19 @@ model Attachment {
  * replacement/restore snapshots the outgoing row here before swapping it.
  */
 model AttachmentVersion {
-  id             String     @id @default(cuid())
-  attachmentId   String
-  version        Int
-  origin         String     @default("upload")
-  fileName       String
-  mimeType       String
-  size           Int
-  storageKey     String
-  extractedText  String?    @db.Text
-  parserState    String     @default("ready")
-  parserVersion  String?
-  createdAt      DateTime   @default(now())
+  id            String   @id @default(cuid())
+  attachmentId  String
+  version       Int
+  origin        String   @default("upload")
+  kind          AttachmentKind
+  fileName      String
+  mimeType      String
+  size          Int
+  storageKey    String
+  extractedText String?  @db.Text
+  parserState   String   @default("ready")
+  parserVersion String?
+  createdAt     DateTime @default(now())
 
   attachment Attachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
 

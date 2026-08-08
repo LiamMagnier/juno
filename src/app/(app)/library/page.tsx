@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   Pencil,
   RefreshCw,
+  RotateCcw,
   Search,
   Trash2,
   X,
@@ -50,6 +51,12 @@ interface LibItem {
   url: string;
   createdAt: string;
   conversationId: string | null;
+  version: number;
+  versionCount: number;
+  origin: string;
+  parserState: string;
+  parserVersion: string | null;
+  deletedAt: string | null;
   /** Structured-extraction state, or null when no extractor claims the format. */
   knowledge?: (KnowledgeIndexState & { documentId?: string }) | null;
 }
@@ -235,11 +242,13 @@ function MobileItemMenu({
   item,
   onRename,
   onDelete,
+  onRestore,
   triggerClassName,
 }: {
   item: LibItem;
   onRename: () => void;
   onDelete: () => void;
+  onRestore: () => void;
   triggerClassName?: string;
 }) {
   return (
@@ -255,9 +264,15 @@ function MobileItemMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-40">
-        <DropdownMenuItem onSelect={onRename}>
-          <Pencil /> Rename
-        </DropdownMenuItem>
+        {item.deletedAt ? (
+          <DropdownMenuItem onSelect={onRestore}>
+            <RotateCcw /> Restore
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onSelect={onRename}>
+            <Pencil /> Rename
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem asChild>
           <a href={item.url} target="_blank" rel="noopener noreferrer" download={item.fileName}>
             <Download /> Download
@@ -270,10 +285,14 @@ function MobileItemMenu({
             </Link>
           </DropdownMenuItem>
         )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:text-destructive">
-          <Trash2 /> Delete
-        </DropdownMenuItem>
+        {!item.deletedAt && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onDelete} className="text-destructive focus:text-destructive">
+              <Trash2 /> Delete
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -306,12 +325,14 @@ function LibraryGridItem({
   onToggleSelect,
   onRename,
   onDelete,
+  onRestore,
 }: {
   item: LibItem;
   selected: boolean;
   onToggleSelect: () => void;
   onRename: () => void;
   onDelete: () => void;
+  onRestore: () => void;
 }) {
   return (
     <article role="listitem" aria-label={item.fileName} className="group/card min-w-0">
@@ -335,6 +356,7 @@ function LibraryGridItem({
           item={item}
           onRename={onRename}
           onDelete={onDelete}
+          onRestore={onRestore}
           triggerClassName="absolute right-2 top-2 z-10 bg-background/90 text-foreground opacity-0 shadow-pop backdrop-blur-sm transition-opacity duration-fast hover:bg-background group-focus-within/card:opacity-100 group-hover/card:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
         />
       </div>
@@ -436,18 +458,19 @@ export default function LibraryPage() {
   const [renameValue, setRenameValue] = React.useState("");
   const [deleteTargets, setDeleteTargets] = React.useState<LibItem[] | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [showDeleted, setShowDeleted] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setError(false);
     try {
-      const response = await fetch("/api/library");
+      const response = await fetch(`/api/library${showDeleted ? "?includeDeleted=true" : ""}`);
       if (!response.ok) throw new Error();
       setItems((await response.json()).items);
     } catch {
       setError(true);
       setItems([]);
     }
-  }, []);
+  }, [showDeleted]);
 
   React.useEffect(() => {
     load();
@@ -574,6 +597,30 @@ export default function LibraryPage() {
     setDeleteTargets(null);
   };
 
+  const restoreItems = async (targets: LibItem[]) => {
+    if (targets.length === 0) return;
+    setBusy(true);
+    const results = await Promise.allSettled(
+      targets.map((target) =>
+        fetch(`/api/attachments/${target.id}/restore`, { method: "POST" }).then((response) => {
+          if (!response.ok) throw new Error();
+          return target.id;
+        }),
+      ),
+    );
+    const restored = new Set(results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : [])));
+    setItems((previous) => previous?.filter((item) => !restored.has(item.id)) ?? previous);
+    const failed = targets.length - restored.size;
+    if (failed) toast.error(`${failed} ${failed === 1 ? "item" : "items"} couldn’t be restored.`);
+    else toast.success(`Restored ${restored.size} ${restored.size === 1 ? "item" : "items"}.`);
+    setSelected((previous) => {
+      const next = new Set(previous);
+      restored.forEach((id) => next.delete(id));
+      return next;
+    });
+    setBusy(false);
+  };
+
   return (
     <div className="h-full overflow-y-auto">
       <main className="mx-auto w-full max-w-6xl px-4 pb-12 pt-6 sm:px-7 sm:pb-16 sm:pt-9 lg:px-10">
@@ -601,6 +648,18 @@ export default function LibraryPage() {
                 <span>{formatBytes(totalSize)}</span>
               </p>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSelected(new Set());
+                setShowDeleted((value) => !value);
+              }}
+              className="shrink-0 gap-1.5 text-muted-foreground"
+            >
+              <RotateCcw className="size-3.5" />
+              {showDeleted ? "Back to library" : "Recently deleted"}
+            </Button>
           </div>
           <div className="mt-3 max-w-2xl">
             <h1 className="font-serif text-[2.25rem] font-medium leading-[1.05] tracking-[-0.035em] sm:text-[2.75rem]">
@@ -708,10 +767,10 @@ export default function LibraryPage() {
                 variant="ghost"
                 size="sm"
                 className="danger-hover gap-1.5 text-muted-foreground"
-                onClick={() => setDeleteTargets(selectedItems)}
+                onClick={() => (showDeleted ? void restoreItems(selectedItems) : setDeleteTargets(selectedItems))}
               >
-                <Trash2 className="size-3.5" />
-                <span className="hidden sm:inline">Delete</span>
+                {showDeleted ? <RotateCcw className="size-3.5" /> : <Trash2 className="size-3.5" />}
+                <span className="hidden sm:inline">{showDeleted ? "Restore" : "Delete"}</span>
               </Button>
               <Button variant="ghost" size="icon-sm" onClick={clearSelection} aria-label="Clear selection">
                 <X className="size-4" />
@@ -766,6 +825,7 @@ export default function LibraryPage() {
                   onToggleSelect={() => toggleSelect(item.id)}
                   onRename={() => openRename(item)}
                   onDelete={() => setDeleteTargets([item])}
+                  onRestore={() => void restoreItems([item])}
                 />
               ))}
             </div>
@@ -864,17 +924,18 @@ export default function LibraryPage() {
                       <ItemAction icon={Pencil} label={`Rename ${item.fileName}`} onClick={() => openRename(item)} motion="edit" />
                       <DownloadAction item={item} />
                       <ItemAction
-                        icon={Trash2}
-                        label={`Delete ${item.fileName}`}
-                        tone="danger"
-                        motion="delete"
-                        onClick={() => setDeleteTargets([item])}
+                        icon={showDeleted ? RotateCcw : Trash2}
+                        label={showDeleted ? `Restore ${item.fileName}` : `Delete ${item.fileName}`}
+                        tone={showDeleted ? undefined : "danger"}
+                        motion={showDeleted ? "lift" : "delete"}
+                        onClick={() => (showDeleted ? void restoreItems([item]) : setDeleteTargets([item]))}
                       />
                     </div>
                     <MobileItemMenu
                       item={item}
                       onRename={() => openRename(item)}
                       onDelete={() => setDeleteTargets([item])}
+                      onRestore={() => void restoreItems([item])}
                     />
                   </article>
                 );
@@ -915,7 +976,7 @@ export default function LibraryPage() {
           <DialogHeader>
             <DialogTitle>Delete {deleteTargets?.length === 1 ? "this file" : `${deleteTargets?.length} files`}?</DialogTitle>
             <DialogDescription>
-              This permanently removes {deleteTargets?.length === 1 ? "it" : "them"} from your library and storage. This can’t be undone.
+              This moves {deleteTargets?.length === 1 ? "it" : "them"} to Recently deleted. You can restore the original bytes later.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

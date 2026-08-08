@@ -55,7 +55,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // attachment id resolves to nothing rather than to a 403 that confirms it
   // exists — the same no-existence-oracle rule the file route follows.
   const attachment = await prisma.attachment.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: user.id, deletedAt: null },
     select: { storageKey: true, mimeType: true },
   });
   if (!attachment) return NextResponse.json({ error: "Not found" }, { status: 404 });

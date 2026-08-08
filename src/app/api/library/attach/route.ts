@@ -59,6 +59,7 @@ export async function POST(req: Request) {
       attachmentId: clone.id,
       version: clone.version,
       origin: "library_clone",
+      kind: clone.kind,
       fileName: clone.fileName,
       mimeType: clone.mimeType,
       size: clone.size,

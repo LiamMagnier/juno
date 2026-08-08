@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { deleteObject, headObject, openObjectStream } from "@/lib/storage";
+import { headObject, openObjectStream } from "@/lib/storage";
 import { MIME_SNIFF_BYTES, sanitizeFileName, sniffImageMime } from "@/lib/uploads";
 
 const patchSchema = z.object({ fileName: z.string().trim().min(1).max(200) });
@@ -15,7 +15,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const { id } = await params;
   const attachment = await prisma.attachment.findFirst({
-    where: { id, userId: user.id, kind: "IMAGE" },
+    where: { id, userId: user.id, kind: "IMAGE", deletedAt: null },
     select: { storageKey: true },
   });
   if (!attachment) return NextResponse.json({ error: "Image not found." }, { status: 404 });
@@ -49,7 +49,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const attachment = await prisma.attachment.findFirst({ where: { id, userId: user.id }, select: { id: true } });
+  const attachment = await prisma.attachment.findFirst({ where: { id, userId: user.id, deletedAt: null }, select: { id: true } });
   if (!attachment) return NextResponse.json({ error: "Attachment not found." }, { status: 404 });
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
@@ -69,7 +69,7 @@ export async function DELETE(
 
   const { id } = await params;
   const attachment = await prisma.attachment.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: user.id, deletedAt: null },
   });
 
   if (!attachment) {
@@ -80,13 +80,13 @@ export async function DELETE(
   // delete. The block/chunk ids remain answerable as deleted citations, while
   // their text and embeddings are redacted and retrieval can never use them.
   await prisma.$transaction(async (tx) => {
+    const deletedAt = new Date();
     const documents = await tx.knowledgeDocument.findMany({
       where: { userId: user.id, attachmentId: attachment.id, deletedAt: null },
       select: { id: true },
     });
     const documentIds = documents.map((document) => document.id);
     if (documentIds.length > 0) {
-      const deletedAt = new Date();
       await tx.knowledgeDocument.updateMany({
         where: { userId: user.id, id: { in: documentIds } },
         data: {
@@ -124,17 +124,15 @@ export async function DELETE(
       });
     }
 
-    // Delete the DB row first, then the object — but only if no other
-    // attachment still references the same stored object. Library "attach"
-    // clones share a storageKey, so deleting one clone must not pull the file
-    // out from under the original (or its siblings).
-    await tx.attachment.delete({ where: { id: attachment.id, userId: user.id } });
+    // Keep the row and every immutable version. A library delete is a
+    // recoverable tombstone, not a destructive object-store operation; restore
+    // can therefore put the exact bytes back without pretending they can be
+    // reconstructed from a redacted knowledge block.
+    await tx.attachment.update({
+      where: { id: attachment.id, userId: user.id },
+      data: { deletedAt, parserState: "deleted" },
+    });
   });
-
-  const stillReferenced = await prisma.attachment.count({ where: { storageKey: attachment.storageKey } });
-  if (stillReferenced === 0) {
-    await deleteObject(attachment.storageKey).catch(() => {});
-  }
 
   return NextResponse.json({ ok: true });
 }

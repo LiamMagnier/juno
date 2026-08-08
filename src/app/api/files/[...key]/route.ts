@@ -20,7 +20,7 @@ async function canReadObject(userId: string, key: string): Promise<boolean> {
   // storageKey is the lookup key, so the query cannot be userId-scoped —
   // ownership is the explicit check on the row instead.
   const attachment = await prismaUnguarded.attachment.findFirst({
-    where: { storageKey: key },
+    where: { storageKey: key, deletedAt: null },
     select: { userId: true },
   });
   if (attachment) return attachment.userId === userId;

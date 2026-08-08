@@ -114,6 +114,7 @@ export async function POST(req: Request) {
         attachmentId: created.id,
         version: created.version,
         origin: "upload",
+        kind,
         fileName,
         mimeType: storedMime,
         size: file.size,
