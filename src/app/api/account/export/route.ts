@@ -343,6 +343,7 @@ export async function GET(req: Request) {
     const priorVersions = [];
     for (const version of attachment.versions) {
       const path = `attachments/${attachment.id}/v${version.version}-${safeArchiveName(version.fileName)}`;
+      const archivePath = await addAttachmentBytes(version.storageKey, path, version.size);
       priorVersions.push({
         version: version.version,
         origin: version.origin,
@@ -354,7 +355,8 @@ export async function GET(req: Request) {
         parserVersion: version.parserVersion,
         extractedText: version.extractedText,
         createdAt: version.createdAt,
-        archivePath: await addAttachmentBytes(version.storageKey, path, version.size),
+        archivePath,
+        archiveSha256: archivePath ? archiveSha256ByStorageKey.get(version.storageKey) ?? null : null,
       });
     }
     attachmentItems.push({
