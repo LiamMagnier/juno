@@ -1,6 +1,6 @@
 # Juno Product Completion — execution ledger
 
-**Audit commit:** `5278c31b` (`main`, production-hardening commit)
+**Audit commit:** `7e6a5f46` (`main`, native parity and archive-deploy hardening)
 **Audit date:** 2026-08-08
 **Method:** 12 parallel evidence-based subsystem readers over the source, then an
 adversarial re-check of every claim of "implemented" in the P0 areas. Findings
@@ -15,7 +15,7 @@ truth.
 ## Current reconciliation — 2026-08-08
 
 The current source tree now has passing repository-wide automated checks:
-**1,972 tests completed, 1,970 passed, 2 database-dependent tests skipped without a test
+**1,978 tests completed, 1,976 passed, 2 database-dependent tests skipped without a test
 database, 0 failed**; full ESLint, TypeScript, Prisma validation/generation,
 native/capability/Work contract checks, code wiring checks, sandbox checks, and
 design-contract checks also pass. The production Next build renders 110/110
@@ -86,6 +86,13 @@ production entry points:
   releases with application rollback, DB-only public liveness, and explicit
   owner-gated provider diagnostics. A protected iOS archive/TestFlight path is
   also present but remains credential- and hardware-gated.
+
+The current release also adds two parity and operations hardening changes:
+native macOS/iOS chat offers **Continue** for length- or network-truncated
+answers, preserving the partial answer and matching the web continuation prompt;
+and the protected VM deploy transfers a SHA-256-checked, Git-commit-embedded
+source archive into an immutable release transaction rather than attempting a
+detached full-history Git bundle.
 
 The core product slices are ready for a controlled production release, but the
 release program is not fully closed. Remaining gates are explicit in
