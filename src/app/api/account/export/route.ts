@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import JSZip from "jszip";
 import { prisma } from "@/lib/prisma";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
@@ -314,6 +315,7 @@ export async function GET(req: Request) {
   const MAX_JUNO_ARCHIVE_BYTES = 100 * 1024 * 1024;
   const junoZip = isJuno && isStorageAvailable() ? new JSZip() : null;
   const archivePathByStorageKey = new Map<string, string>();
+  const archiveSha256ByStorageKey = new Map<string, string>();
   let archivedBytes = 0;
   const safeArchiveName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80) || "file";
   const addAttachmentBytes = async (storageKey: string, path: string, declaredSize: number) => {
@@ -327,6 +329,7 @@ export async function GET(req: Request) {
       junoZip.file(path, object.bytes);
       archivedBytes += object.bytes.length;
       archivePathByStorageKey.set(storageKey, path);
+      archiveSha256ByStorageKey.set(storageKey, createHash("sha256").update(object.bytes).digest("hex"));
       return path;
     } catch {
       return null;
@@ -374,6 +377,7 @@ export async function GET(req: Request) {
       deletedAt: attachment.deletedAt,
       createdAt: attachment.createdAt,
       archivePath: currentArchivePath,
+      archiveSha256: currentArchivePath ? archiveSha256ByStorageKey.get(attachment.storageKey) ?? null : null,
       versions: priorVersions,
     });
   }
