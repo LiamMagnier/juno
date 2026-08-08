@@ -1635,7 +1635,10 @@ async function handleChat(req: Request) {
         const research = await runDeepResearch({
           userId: user.id,
           prompt: researchPrompt,
-          selectedModel: modelInfo,
+          // The corpus is gathered by a durable ResearchRun attached to this
+          // conversation, so the panel can reopen it — paused, resumed or
+          // steered — long after this turn has finished streaming.
+          conversationId,
           client: legacyClient,
           signal: generationController.signal,
           sendActivity,
