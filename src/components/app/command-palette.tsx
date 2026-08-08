@@ -27,6 +27,7 @@ import {
   SEARCH_WINDOWS,
   SEARCH_WINDOW_LABELS,
   type SearchHit,
+  type SearchMark,
   type SearchSnippet,
   type SearchType,
   type SearchWindow,
@@ -45,13 +46,15 @@ type PaletteItem = {
   meta?: string;
   hint?: string;
   snippet?: SearchSnippet | null;
+  /** Matched spans inside `label`, so a title-only match is highlighted too. */
+  labelMarks?: SearchMark[];
   icon: React.ComponentType<{ className?: string }>;
   keywords?: string;
   run: () => void;
 };
 
 /**
- * A snippet with its matched spans marked.
+ * Text with its matched spans marked.
  *
  * The server sends offsets rather than markup (see src/lib/search/types.ts), so
  * this walks them and emits real `<mark>` elements — which is also what makes
@@ -62,20 +65,21 @@ type PaletteItem = {
  * selection bar's own colour, so a mark painted with it would vanish on exactly
  * the row the user is looking at.
  */
-function MarkedSnippet({ snippet }: { snippet: SearchSnippet }) {
+function Marked({ text, marks }: { text: string; marks: readonly SearchMark[] }) {
+  if (marks.length === 0) return <>{text}</>;
   const parts: React.ReactNode[] = [];
   let cursor = 0;
-  snippet.marks.forEach((mark, i) => {
-    if (mark.start > cursor) parts.push(snippet.text.slice(cursor, mark.start));
+  marks.forEach((mark, i) => {
+    if (mark.start > cursor) parts.push(text.slice(cursor, mark.start));
     parts.push(
       <mark key={i} className="rounded-[3px] bg-primary/15 px-0.5 text-primary-ink">
-        {snippet.text.slice(mark.start, mark.end)}
+        {text.slice(mark.start, mark.end)}
       </mark>
     );
     cursor = mark.end;
   });
-  if (cursor < snippet.text.length) parts.push(snippet.text.slice(cursor));
-  return <span className="block truncate text-[12px] leading-[1.45] text-muted-foreground">{parts}</span>;
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return <>{parts}</>;
 }
 
 function Kbd({ children }: { children: React.ReactNode }) {
@@ -351,8 +355,14 @@ function PaletteShell({
                         <Icon className="h-[15px] w-[15px]" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate">{c.label}</span>
-                        {c.snippet && <MarkedSnippet snippet={c.snippet} />}
+                        <span className="block truncate">
+                          <Marked text={c.label} marks={c.labelMarks ?? []} />
+                        </span>
+                        {c.snippet && (
+                          <span className="block truncate text-[12px] leading-[1.45] text-muted-foreground">
+                            <Marked text={c.snippet.text} marks={c.snippet.marks} />
+                          </span>
+                        )}
                       </span>
                       {c.meta && (
                         <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/55">{c.meta}</span>
@@ -603,6 +613,7 @@ function SearchPalette() {
         label: hit.title,
         meta: hit.locator ?? relativeTime(hit.updatedAt),
         snippet: hit.snippet,
+        labelMarks: hit.titleMarks,
         icon: SEARCH_TYPE_ICONS[hit.type],
         run: () => go(hit.href),
       }))

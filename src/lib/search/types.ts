@@ -82,6 +82,14 @@ export interface SearchHit {
   id: string;
   type: SearchType;
   title: string;
+  /**
+   * Matched spans inside `title`, same offset convention as a snippet.
+   *
+   * Separate from `snippet` because a chat matched on its title has no body to
+   * excerpt, and rendering the row with nothing highlighted anywhere leaves the
+   * reader to work out for themselves why it is in the list.
+   */
+  titleMarks: SearchMark[];
   snippet: SearchSnippet | null;
   href: string;
   /**

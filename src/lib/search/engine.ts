@@ -213,6 +213,14 @@ function fileHref(row: FileRow): string {
 }
 
 /**
+ * A hit as a source builds it. `titleMarks` is filled in centrally by
+ * `attempt`, so no branch can produce a row whose title is highlighted by a
+ * different rule than its snippet — the two are computed by the same function
+ * from the same terms, in one place.
+ */
+type RawHit = Omit<SearchHit, "titleMarks">;
+
+/**
  * One source's work: run it, map it, and say what it covered. A source that
  * throws is reported as unavailable rather than taken down with the whole
  * search — a missing Work table on a stale deployment should cost the Work
@@ -220,10 +228,12 @@ function fileHref(row: FileRow): string {
  */
 async function attempt(
   type: SearchType,
-  work: () => Promise<{ hits: SearchHit[]; coverage: SearchCoverage }>
+  terms: readonly string[],
+  work: () => Promise<{ hits: RawHit[]; coverage: SearchCoverage }>
 ): Promise<{ hits: SearchHit[]; coverage: SearchCoverage }> {
   try {
-    return await work();
+    const { hits, coverage } = await work();
+    return { coverage, hits: hits.map((hit) => ({ ...hit, titleMarks: markTerms(hit.title, terms) })) };
   } catch (err) {
     // The query text can carry the user's own words; the error message is
     // logged, the query is not.
@@ -267,7 +277,7 @@ export async function runUnifiedSearch(
 
   if (wanted.has("conversation")) {
     tasks.push(
-      attempt("conversation", async () => {
+      attempt("conversation", terms, async () => {
         const rows = await executor.run<ConversationRow>(conversationSearchSql(base));
         const scores = scaled(rows.map((r) => r.rank), TYPE_WEIGHT.conversation);
         return {
@@ -292,7 +302,7 @@ export async function runUnifiedSearch(
 
   if (wanted.has("project")) {
     tasks.push(
-      attempt("project", async () => {
+      attempt("project", terms, async () => {
         const rows = await executor.run<ProjectRow>(projectSearchSql(base));
         const scores = scaled(rows.map((r) => r.rank), TYPE_WEIGHT.project);
         return {
@@ -315,7 +325,7 @@ export async function runUnifiedSearch(
 
   if (wanted.has("file")) {
     tasks.push(
-      attempt("file", async () => {
+      attempt("file", terms, async () => {
         const rows = await executor.run<FileRow>(fileSearchSql(base));
         const scores = scaled(rows.map((r) => r.rank), TYPE_WEIGHT.file);
         return {
@@ -338,7 +348,7 @@ export async function runUnifiedSearch(
 
   if (wanted.has("knowledge")) {
     tasks.push(
-      attempt("knowledge", async () => {
+      attempt("knowledge", terms, async () => {
         const [rows, readiness] = await Promise.all([
           executor.run<KnowledgeRow>(knowledgeSearchSql(base)),
           executor.run<{ pending: number; impaired: number }>(knowledgeReadinessSql(request.userId)),
@@ -354,9 +364,21 @@ export async function runUnifiedSearch(
         let coverage = truncated("knowledge", rows.length, limit);
         if (pending > 0 || impaired > 0) {
           const parts: string[] = [];
-          if (pending > 0) parts.push(`${pending} ${pending === 1 ? "document is" : "documents are"} still being indexed`);
-          if (impaired > 0) parts.push(`${impaired} could not be fully read`);
-          coverage = partial("knowledge", `${parts.join(", and ")}. Those are not searchable yet.`);
+          if (pending > 0) {
+            parts.push(
+              pending === 1
+                ? "1 document is still being indexed and is not searchable yet."
+                : `${pending} documents are still being indexed and are not searchable yet.`
+            );
+          }
+          if (impaired > 0) {
+            parts.push(
+              impaired === 1
+                ? "1 document could not be fully read."
+                : `${impaired} documents could not be fully read.`
+            );
+          }
+          coverage = partial("knowledge", parts.join(" "));
         }
 
         return {
@@ -379,7 +401,7 @@ export async function runUnifiedSearch(
 
   if (wanted.has("artifact")) {
     tasks.push(
-      attempt("artifact", async () => {
+      attempt("artifact", terms, async () => {
         const rows = await executor.run<ArtifactRow>(artifactSearchSql(base));
         const scores = scaled(rows.map((r) => r.rank), TYPE_WEIGHT.artifact);
         return {
@@ -404,7 +426,7 @@ export async function runUnifiedSearch(
 
   if (wanted.has("memory")) {
     tasks.push(
-      attempt("memory", async () => {
+      attempt("memory", terms, async () => {
         const rows = await executor.run<MemoryRow>(memorySearchSql(base));
         const scores = scaled(rows.map((r) => r.rank), TYPE_WEIGHT.memory);
         return {
@@ -429,7 +451,7 @@ export async function runUnifiedSearch(
 
   if (wanted.has("work")) {
     tasks.push(
-      attempt("work", async () => {
+      attempt("work", terms, async () => {
         const [sessions, events] = await Promise.all([
           executor.run<WorkSessionRow>(workSessionSearchSql(base)),
           executor.run<WorkEventRow>(workEventSearchSql(base)),
@@ -440,7 +462,7 @@ export async function runUnifiedSearch(
         // the follow-up question.
         const eventScores = scaled(events.map((r) => r.rank), TYPE_WEIGHT.work * 0.9);
 
-        const hits: SearchHit[] = [
+        const hits: RawHit[] = [
           ...sessions.map((row, i) => ({
             id: `work:${row.id}`,
             type: "work" as const,
@@ -478,7 +500,7 @@ export async function runUnifiedSearch(
 
   if (wanted.has("message")) {
     tasks.push(
-      attempt("message", async () => {
+      attempt("message", terms, async () => {
         const conversations = await executor.run<{ id: string; title: string; projectId: string | null }>(
           messageScanConversationsSql({
             userId: request.userId,
@@ -498,7 +520,7 @@ export async function runUnifiedSearch(
           })
         );
 
-        const hits: SearchHit[] = [];
+        const hits: RawHit[] = [];
         const marksPerHit: number[] = [];
         let undecryptable = 0;
         for (const row of rows) {

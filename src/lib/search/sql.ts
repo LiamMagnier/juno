@@ -66,10 +66,14 @@ function query(tsquery: string): Prisma.Sql {
  * regardless.
  */
 function snippetOf(column: Prisma.Sql, term: string): Prisma.Sql {
+  // The `::int` casts are load-bearing. Prisma sends a JS number as a bigint
+  // parameter, and Postgres has no `substr(text, bigint, bigint)` or
+  // `left(text, bigint)` — the statement fails to plan at all, which cost six
+  // of the eight sources on the first run against a real database.
   return Prisma.sql`CASE
     WHEN position(${term} in lower(${column})) > 0
-      THEN substr(${column}, greatest(1, position(${term} in lower(${column})) - ${SNIPPET_LEAD}), ${SNIPPET_CHARS})
-    ELSE left(${column}, ${SNIPPET_CHARS})
+      THEN substr(${column}, greatest(1, position(${term} in lower(${column})) - ${SNIPPET_LEAD}::int), ${SNIPPET_CHARS}::int)
+    ELSE left(${column}, ${SNIPPET_CHARS}::int)
   END`;
 }
 
@@ -277,7 +281,7 @@ export function knowledgeSearchSql(o: SearchSqlOptions): Prisma.Sql {
     SELECT b."id",
            b."documentId",
            d."fileName",
-           left(b."text", ${SNIPPET_CHARS * 2}) AS text,
+           left(b."text", ${SNIPPET_CHARS * 2}::int) AS text,
            b."page",
            b."slide",
            b."sheet",

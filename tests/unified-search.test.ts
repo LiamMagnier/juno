@@ -457,6 +457,7 @@ function hit(over: Partial<SearchHit>): SearchHit {
     id: "conversation:x",
     type: "conversation",
     title: "x",
+    titleMarks: [],
     snippet: null,
     href: "/chat/x",
     locator: null,
