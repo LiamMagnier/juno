@@ -705,7 +705,7 @@ function SearchPalette() {
   // account is empty when the network dropped is the one mistake this surface
   // must never make, because they will believe it.
   const emptyState = (
-    <div className="px-3 py-10 text-center" aria-hidden={searching ? undefined : true}>
+    <div className="px-3 py-10 text-center">
       {failed ? (
         <>
           <p className="text-sm text-muted-foreground">Search is unavailable right now.</p>
