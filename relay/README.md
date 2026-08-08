@@ -35,7 +35,7 @@ set `NEXT_PUBLIC_VOICE_RELAY_URL=ws://localhost:8787` in `.env.local`.
 | `GOOGLE_API_KEY` | per provider | fallback for `gemini` when `GEMINI_LIVE_API_KEY` is unset (same `AIza…` requirement) |
 | `DASHSCOPE_API_KEY` | per provider | enables `qwen` (international/Singapore endpoint) |
 | `MINIMAX_API_KEY` | per provider | enables `minimax` (composed pipeline; TTS may also need a Group ID on some accounts) |
-| `ALLOWED_ORIGINS` | prod | comma-separated browser origins (native apps send no Origin and always pass) |
+| `ALLOWED_ORIGINS` | prod | comma-separated browser origins; an empty value rejects browser origins (native apps send no Origin and pass) |
 | `RELAY_OPENAI_MODEL` | no | default `gpt-realtime-2` (`gpt-realtime-mini` = ~10x cheaper) |
 | `RELAY_GEMINI_MODEL` | no | default `gemini-3.1-flash-live-preview` |
 | `RELAY_QWEN_MODEL` | no | default `qwen3.5-omni-flash-realtime` |

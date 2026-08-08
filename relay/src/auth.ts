@@ -45,9 +45,17 @@ export function verifyRelayToken(token: string | null): { userId: string } | nul
   const b = Buffer.from(expected);
   if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
   try {
-    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as { uid?: string; exp?: number };
-    if (typeof payload.uid !== "string" || typeof payload.exp !== "number") return null;
-    if (payload.exp * 1000 < Date.now()) return null;
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as {
+      uid?: string;
+      exp?: number;
+      aud?: unknown;
+    };
+    // Spend callback tokens use the same HMAC secret but are for the opposite
+    // direction. Accepting their audience here would let a captured relay
+    // callback token open a user-facing WebSocket session.
+    if (payload.aud !== undefined) return null;
+    if (typeof payload.uid !== "string" || payload.uid.length === 0 || typeof payload.exp !== "number") return null;
+    if (payload.exp * 1000 <= Date.now()) return null;
     return { userId: payload.uid };
   } catch {
     return null;

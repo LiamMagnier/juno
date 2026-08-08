@@ -471,6 +471,7 @@ jobs:
       - name: Build voice relay
         run: |
           npm ci --prefix relay
+          npm test --prefix relay
           npm run build --prefix relay
 
       # The cloud Work executor imports `runner/agent-core/dist/work/index.js`

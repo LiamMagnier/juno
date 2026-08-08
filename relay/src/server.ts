@@ -3,24 +3,25 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { verifyRelayToken } from "./auth.js";
 import { RelaySession } from "./session.js";
 import { PROVIDERS } from "./providers/registry.js";
+import { isAllowedRelayOrigin, parseAllowedOrigins } from "./origin.js";
 
 /**
  * Juno voice relay. Standalone service (NOT deployable on Vercel serverless —
  * it needs long-lived WebSockets). Env: PORT (default 8787), AUTH_SECRET
  * (shared with the Juno backend), provider keys (OPENAI_API_KEY,
  * GOOGLE_API_KEY, DASHSCOPE_API_KEY, MINIMAX_API_KEY), optional
- * RELAY_*_MODEL overrides, ALLOWED_ORIGINS (comma list; empty = allow all,
- * native apps send no Origin).
+ * RELAY_*_MODEL overrides, ALLOWED_ORIGINS (comma list; browser origins are
+ * denied when empty, native apps send no Origin and remain allowed).
  */
 const PORT = Number(process.env.PORT || 8787);
 
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+const allowedOrigins = parseAllowedOrigins(process.env.ALLOWED_ORIGINS);
 
 if (!process.env.AUTH_SECRET) {
   console.warn("[relay] AUTH_SECRET is not set — every client connection will be rejected with 401.");
+}
+if (allowedOrigins.length === 0) {
+  console.warn("[relay] ALLOWED_ORIGINS is not configured — browser WebSocket origins will be rejected; native clients without Origin remain allowed.");
 }
 
 const server = createServer((req, res) => {
@@ -41,7 +42,7 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 4 * 1024 * 1024 })
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url ?? "/", "http://relay");
   const origin = req.headers.origin;
-  if (allowedOrigins.length && origin && !allowedOrigins.includes(origin)) {
+  if (!isAllowedRelayOrigin(origin, allowedOrigins)) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     socket.destroy();
     return;

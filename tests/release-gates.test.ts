@@ -81,3 +81,8 @@ test("deploy job has no executable prisma db push or db execute fallback", () =>
     "production deploys must use the controlled migration path, never db push/db execute",
   );
 });
+
+test("deploy validates the voice relay before shipping it", () => {
+  assert.match(DEPLOY_JOB, /npm test --prefix relay/);
+  assert.match(DEPLOY_JOB, /npm run build --prefix relay/);
+});
