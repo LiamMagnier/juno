@@ -10,6 +10,7 @@ import {
   extractEventDate,
   hostOfUrl,
   resolveClaimStatus,
+  repairReportFromClaims,
   scoreSource,
   selectPassagesForClaim,
   splitPassages,
@@ -22,6 +23,7 @@ import {
   type LinkStance,
   type LinkVerdict,
   type PassageDraft,
+  type RepairableClaim,
   type SupportLabel,
 } from "@/lib/research/claim-analysis";
 
@@ -149,6 +151,8 @@ export function createCitationJudge(opts: {
 
 /** One numbered source from the report's corpus, in citation order. */
 export interface ResearchCorpusSource {
+  /** Existing source row when the audit belongs to a durable research run. */
+  sourceId?: string;
   url: string;
   title: string;
   /** The text the model was actually shown — the thing a citation points at. */
@@ -178,6 +182,13 @@ export interface CitationAuditSummary {
   duplicateSources: number;
 }
 
+export interface CitationAuditResult extends CitationAuditSummary {
+  /** The report after deterministic honesty repairs. */
+  report: string;
+  repaired: boolean;
+  revision: number;
+}
+
 interface StoredSource {
   id: string;
   index: number;
@@ -201,7 +212,9 @@ export async function recordCitationAudit(opts: {
   userId: string;
   conversationId?: string | null;
   /** The assistant message the report was delivered as — how the UI finds this. */
-  messageId: string;
+  messageId?: string;
+  /** Attach the graph to the original durable run; legacy callers may omit it. */
+  runId?: string;
   goal: string;
   report: string;
   sources: ResearchCorpusSource[];
@@ -210,22 +223,31 @@ export async function recordCitationAudit(opts: {
   conversationProvider?: string | null;
   /** Override the model layer (tests, or a caller with its own judge). */
   judge?: CitationJudge;
-}): Promise<CitationAuditSummary | null> {
+}): Promise<CitationAuditResult | null> {
   const claims = extractClaims(opts.report).slice(0, MAX_CLAIMS);
   if (claims.length === 0 || opts.sources.length === 0) return null;
 
-  const run = await prisma.researchRun.create({
-    data: {
-      userId: opts.userId,
-      conversationId: opts.conversationId ?? null,
-      goal: opts.goal.slice(0, 4_000),
-      state: "validating_citations",
-      queries: opts.queries ?? [],
-      report: opts.report,
-      startedAt: new Date(),
-    },
-    select: { id: true },
-  });
+  const existing = opts.runId
+    ? await prisma.researchRun.findFirst({
+        where: { id: opts.runId, userId: opts.userId },
+        select: { id: true, goal: true, queries: true },
+      })
+    : null;
+  if (opts.runId && !existing) return null;
+  const run =
+    existing ??
+    (await prisma.researchRun.create({
+      data: {
+        userId: opts.userId,
+        conversationId: opts.conversationId ?? null,
+        goal: opts.goal.slice(0, 4_000),
+        state: "validating_citations",
+        queries: opts.queries ?? [],
+        report: opts.report,
+        startedAt: new Date(),
+      },
+      select: { id: true, goal: true, queries: true },
+    }));
 
   const stored = await storeCorpus({ userId: opts.userId, runId: run.id, sources: opts.sources });
   const duplicates = await markSyndication({ userId: opts.userId, stored, sources: opts.sources });
@@ -252,6 +274,7 @@ export async function recordCitationAudit(opts: {
   const passageIdOf = new Map<string, string>();
   for (const s of stored) for (const p of s.passages) passageIdOf.set(`${s.index}:${p.ordinal}`, p.id);
   const sourceByIndex = new Map(stored.map((s) => [s.index, s]));
+  const repairableClaims: RepairableClaim[] = [];
 
   let judgeCalls = 0;
   for (const claim of claims) {
@@ -330,13 +353,35 @@ export async function recordCitationAudit(opts: {
       data: { status, supportStrength },
     });
     tally(summary, status, supportStrength);
+    repairableClaims.push({ ...claim, status, supportStrength });
   }
 
+  const repaired = repairReportFromClaims(opts.report, repairableClaims);
+  const latestRevision = await prisma.researchReportRevision.findFirst({
+    where: { runId: run.id, userId: opts.userId },
+    orderBy: { revision: "desc" },
+    select: { revision: true },
+  });
+  const revision = (latestRevision?.revision ?? 0) + 1;
+  await prisma.researchReportRevision.create({
+    data: {
+      userId: opts.userId,
+      runId: run.id,
+      assistantMessageId: opts.messageId ?? null,
+      revision,
+      report: repaired.report,
+      audit: summaryCounts(summary),
+    },
+  });
   await prisma.researchRun.update({
     where: { id: run.id, userId: opts.userId },
     data: {
-      state: summary.unverified > 0 ? "partially_completed" : "completed",
-      finishedAt: new Date(),
+      report: repaired.report,
+      reportRevision: revision,
+      ...(opts.messageId ? { assistantMessageId: opts.messageId } : {}),
+      // Legacy callers own their temporary audit run. The original durable
+      // run's state is finalized by the engine after this pre-final audit.
+      ...(existing ? {} : { state: summary.unverified > 0 ? "partially_completed" : "completed", finishedAt: new Date() }),
     },
   });
 
@@ -347,22 +392,21 @@ export async function recordCitationAudit(opts: {
    * citation NUMBERS are a property of the corpus the model was shown, not of
    * any column, and the inspector has to line `[3]` up with the right row.
    */
-  await prisma.researchEvent.create({
-    data: {
-      userId: opts.userId,
-      runId: run.id,
-      seq: 1,
-      kind: "citation_audit",
-      payload: {
-        messageId: opts.messageId,
-        sourceOrder: stored.map((s) => s.id),
-        judgeCalls,
-        ...summaryCounts(summary),
-      },
+  await appendResearchEvent({
+    userId: opts.userId,
+    runId: run.id,
+    kind: "citation_audit",
+    payload: {
+      ...(opts.messageId ? { messageId: opts.messageId } : {}),
+      sourceOrder: stored.map((s) => s.id),
+      judgeCalls,
+      revision,
+      repaired: repaired.repaired,
+      ...summaryCounts(summary),
     },
   });
 
-  return summary;
+  return { ...summary, report: repaired.report, repaired: repaired.repaired, revision };
 }
 
 function summaryCounts(s: CitationAuditSummary) {
@@ -375,6 +419,43 @@ function summaryCounts(s: CitationAuditSummary) {
     unverified: s.unverified,
     duplicateSources: s.duplicateSources,
   };
+}
+
+async function appendResearchEvent(input: {
+  userId: string;
+  runId: string;
+  kind: string;
+  payload: Record<string, unknown>;
+}): Promise<void> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.researchRun.update({
+          where: { id: input.runId, userId: input.userId },
+          data: { updatedAt: new Date() },
+          select: { id: true },
+        });
+        const top = await tx.researchEvent.aggregate({
+          where: { runId: input.runId, userId: input.userId },
+          _max: { seq: true },
+        });
+        await tx.researchEvent.create({
+          data: {
+            userId: input.userId,
+            runId: input.runId,
+            seq: (top._max.seq ?? 0) + 1,
+            kind: input.kind,
+            payload: input.payload,
+          },
+        });
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  console.error("[research] could not append audit event", { runId: input.runId, error: lastError });
 }
 
 type CitationCounts = Omit<CitationAuditSummary, "runId">;
@@ -406,36 +487,66 @@ async function storeCorpus(opts: {
     const body = source.body?.trim() ? source.body : "";
     const passages = splitPassages(body, { maxPassages: MAX_PASSAGES_PER_SOURCE });
     const eventDate = extractEventDate(body, source.publishedAt ?? null);
-    const row = await prisma.researchSource.create({
-      data: {
+    const authority = scoreSource({
+      url: source.url,
+      text: body,
+      publishedAt: source.publishedAt ?? null,
+      eventDate: eventDate
+        ? new Date(Date.UTC(eventDate.year, (eventDate.month ?? 1) - 1, eventDate.day ?? 1))
+        : null,
+    }).authority;
+    const existingSource = await prisma.researchSource.findFirst({
+      where: {
         userId: opts.userId,
         runId: opts.runId,
-        url: source.url,
-        title: source.title.slice(0, 500),
-        publishedAt: source.publishedAt ?? null,
-        // The snapshot is what makes a report auditable after the page changes:
-        // the inspector quotes THIS, not a re-fetch that may say something else.
-        snapshot: body || null,
-        authority: scoreSource({
-          url: source.url,
-          text: body,
-          publishedAt: source.publishedAt ?? null,
-          eventDate: eventDate ? new Date(Date.UTC(eventDate.year, (eventDate.month ?? 1) - 1, eventDate.day ?? 1)) : null,
-        }).authority,
-        passages: {
-          create: passages.map((p) => ({
-            userId: opts.userId,
-            text: p.text,
-            locator: p.locator,
-            ordinal: p.ordinal,
-          })),
-        },
+        ...(source.sourceId ? { id: source.sourceId } : { url: source.url }),
       },
-      select: { id: true, passages: { select: { id: true, ordinal: true } } },
+      select: { id: true },
     });
-    const byOrdinal = new Map(row.passages.map((p) => [p.ordinal, p.id]));
+    const sourceRow = existingSource
+      ? await prisma.researchSource.update({
+          where: { id: existingSource.id },
+          data: {
+            title: source.title.slice(0, 500),
+            publishedAt: source.publishedAt ?? null,
+            ...(body ? { snapshot: body } : {}),
+            authority,
+          },
+          select: { id: true },
+        })
+      : await prisma.researchSource.create({
+          data: {
+            userId: opts.userId,
+            runId: opts.runId,
+            url: source.url,
+            title: source.title.slice(0, 500),
+            publishedAt: source.publishedAt ?? null,
+            // The snapshot is what makes a report auditable after the page changes:
+            // the inspector quotes THIS, not a re-fetch that may say something else.
+            snapshot: body || null,
+            authority,
+          },
+          select: { id: true },
+        });
+    await prisma.researchPassage.deleteMany({ where: { sourceId: sourceRow.id, userId: opts.userId } });
+    if (passages.length > 0) {
+      await prisma.researchPassage.createMany({
+        data: passages.map((p) => ({
+          userId: opts.userId,
+          sourceId: sourceRow.id,
+          text: p.text,
+          locator: p.locator,
+          ordinal: p.ordinal,
+        })),
+      });
+    }
+    const passageRows = await prisma.researchPassage.findMany({
+      where: { sourceId: sourceRow.id, userId: opts.userId },
+      select: { id: true, ordinal: true },
+    });
+    const byOrdinal = new Map(passageRows.map((p) => [p.ordinal, p.id]));
     stored.push({
-      id: row.id,
+      id: sourceRow.id,
       index: i + 1,
       title: source.title,
       url: source.url,

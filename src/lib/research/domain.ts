@@ -359,6 +359,9 @@ export const RESEARCH_EVENT_KINDS = [
   "coverage_matrix_updated",
   "follow_up_scheduled",
   "conflict_found",
+  // Legacy/chat audits use one durable receipt event; keep it in the shared
+  // vocabulary so API consumers do not downgrade it to an unknown error.
+  "citation_audit",
   "citation_audit_started",
   "citation_audit_completed",
   "report_repaired",
@@ -453,7 +456,8 @@ export const MAX_RESEARCH_OBJECTIVES = 8;
 export const MAX_EVIDENCE_REQUIREMENTS = 4;
 export const MAX_COVERAGE_ENTRIES = 32;
 export const MAX_CONFLICTS = 24;
-export const MAX_FOLLOW_UP_ROUNDS = 2;
+/** One bounded follow-up round keeps the first evidence loop predictable. */
+export const MAX_FOLLOW_UP_ROUNDS = 1;
 
 function cleanStringArray(value: unknown, max: number, chars: number): string[] {
   if (!Array.isArray(value)) return [];
@@ -598,14 +602,16 @@ function parseConflicts(value: unknown): ResearchConflict[] {
     .filter((raw): raw is Record<string, unknown> => !!raw && typeof raw === "object" && !Array.isArray(raw))
     .map((raw, index) => ({
       id: typeof raw.id === "string" && raw.id.trim() ? raw.id.slice(0, 80) : `conflict-${index + 1}`,
-      kind:
-        raw.kind === "contradictory_evidence" || raw.kind === "source_monoculture"
-          ? raw.kind
-          : "duplicate_source",
+      kind: (raw.kind === "contradictory_evidence" || raw.kind === "source_monoculture"
+        ? raw.kind
+        : "duplicate_source") as ResearchConflictKind,
       ...(typeof raw.objectiveId === "string" ? { objectiveId: raw.objectiveId.slice(0, 80) } : {}),
       sourceIds: cleanStringArray(raw.sourceIds, 16, 80),
       description: typeof raw.description === "string" ? raw.description.slice(0, 320) : "",
-      severity: raw.severity === "high" || raw.severity === "medium" ? raw.severity : "low",
+      severity: (raw.severity === "high" || raw.severity === "medium" ? raw.severity : "low") as
+        | "low"
+        | "medium"
+        | "high",
       resolved: raw.resolved === true,
     }))
     .filter((entry) => entry.description && entry.sourceIds.length > 0);

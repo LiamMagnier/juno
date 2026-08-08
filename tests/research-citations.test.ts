@@ -12,6 +12,7 @@ import {
   independentWitnessCount,
   parseAnswerSpan,
   resolveClaimStatus,
+  repairReportFromClaims,
   scoreSource,
   selectPassagesForClaim,
   splitPassages,
@@ -555,6 +556,18 @@ test("a claim marked unsupported carries a reason a reader can check", async () 
       `${fixture.id} was marked ${verdict.status} with no reason to show in the inspector`
     );
   }
+});
+
+test("report repair labels unsupported claims without inventing a replacement fact", () => {
+  const report = "# Report\n\nThe scheme cost taxpayers £2.7 billion. [1]";
+  const claims = extractClaims(report);
+  const repaired = repairReportFromClaims(report, [
+    { ...claims[0], status: "unsupported", supportStrength: 0.1 },
+  ]);
+  assert.equal(repaired.repaired, true);
+  assert.match(repaired.report, /The cited evidence is insufficient:/);
+  assert.match(repaired.report, /£2\.7 billion/);
+  assert.match(repaired.report, /does not establish this/);
 });
 
 test("with no model available nothing is marked supported, and nothing is marked unsupported either", async () => {

@@ -356,7 +356,10 @@ test("a client reading from a cursor sees every event exactly once", async () =>
   // Drain the log the way the panel does: page by page from the last seq seen.
   const seen: number[] = [];
   let cursor = 0;
-  for (let page = 0; page < 20; page += 1) {
+  // Coverage follow-ups add more durable events than the original one-pass
+  // pipeline. Keep a generous safety cap while draining until the store says
+  // there is no next page.
+  for (let page = 0; page < 1_000; page += 1) {
     const batch = await store.readEvents({
       runId: run.id,
       userId: run.userId,
@@ -400,8 +403,18 @@ test("a resumed run does not replay the events it already emitted", async () => 
     .filter((event) => event.runId === run.id && event.seq <= cursor)
     .map((event) => event.kind);
   assert.deepEqual(stillThere, beforeKinds);
-  const searchesAfterResume = after.filter((event) => event.kind === "query_issued").length;
-  assert.equal(searchesAfterResume, 0, "a resumed run must not re-issue queries it already paid for");
+  const previouslyIssued = new Set(
+    events
+      .filter((event) => event.runId === run.id && event.seq <= cursor && event.kind === "query_issued")
+      .map((event) => String((event.payload as { query?: unknown }).query ?? ""))
+  );
+  const resumedQueries = after
+    .filter((event) => event.kind === "query_issued")
+    .map((event) => String((event.payload as { query?: unknown }).query ?? ""));
+  assert.ok(
+    resumedQueries.every((query) => !previouslyIssued.has(query)),
+    "a resumed run may follow a new evidence gap, but it must not re-issue a query it already paid for"
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -491,12 +504,12 @@ test("a paused run does no work until it is resumed", async () => {
 
 test("a run needing confirmation stops before it spends on searching", async () => {
   const { store } = memoryStore();
-  let searches = 0;
+  const searchedQueries: string[] = [];
   const base = deps(store);
   const engine = createResearchEngine({
     ...base,
     async search(input) {
-      searches += 1;
+      searchedQueries.push(input.query);
       return base.search(input);
     },
   });
@@ -505,7 +518,7 @@ test("a run needing confirmation stops before it spends on searching", async () 
 
   const waiting = await store.loadRun(run.id, run.userId);
   assert.equal(waiting?.state, "awaiting_plan_confirmation");
-  assert.equal(searches, 0, "nothing expensive may happen before the user agrees to the plan");
+  assert.equal(searchedQueries.length, 0, "nothing expensive may happen before the user agrees to the plan");
 
   const decided = await engine.decidePlan({
     runId: run.id,
@@ -521,7 +534,8 @@ test("a run needing confirmation stops before it spends on searching", async () 
   );
 
   await engine.drive({ runId: run.id, userId: run.userId });
-  assert.equal(searches, 1);
+  assert.ok(searchedQueries.length >= 1, "confirmation must start at least one search");
+  assert.equal(searchedQueries[0], "the query the user actually wanted");
 });
 
 test("rejecting the plan cancels the run instead of running it anyway", async () => {
@@ -536,6 +550,81 @@ test("rejecting the plan cancels the run instead of running it anyway", async ()
   });
   assert.equal(decided.state, "cancelled");
   assert.equal((await store.loadRun(run.id, run.userId))?.state, "cancelled");
+});
+
+test("coverage is durable and an evidence gap schedules one bounded follow-up", async () => {
+  const { store, events } = memoryStore();
+  const searched: string[] = [];
+  const base = deps(store);
+  const engine = createResearchEngine({
+    ...base,
+    async plan() {
+      return { queries: ["adoption rate of the new standard"], costMicroUsd: 1_000 };
+    },
+    async search(input) {
+      searched.push(input.query);
+      return {
+        hits: [
+          {
+            url: `https://example.com/${searched.length}`,
+            title: `Result ${searched.length}`,
+            snippet: "A page about an unrelated topic.",
+          },
+        ],
+        costMicroUsd: 2_000,
+      };
+    },
+    async fetchPage({ url }) {
+      return {
+        title: `Fetched ${url}`,
+        text: `${"This page discusses coastal weather patterns and an unrelated transport history with no relevant measurements. ".repeat(5)}\n\n${"Its archive contains background material about rainfall, ports, and seasonal conditions rather than the requested subject. ".repeat(5)}`,
+        costMicroUsd: 500,
+      };
+    },
+  });
+  const run = await started(engine);
+  await engine.drive({ runId: run.id, userId: run.userId });
+
+  const saved = await store.loadRun(run.id, run.userId);
+  const plan = parsePlan(saved?.plan);
+  assert.equal(saved?.state, "completed");
+  assert.equal(searched.length, 2, "one bounded follow-up search should be issued after the first weak pass");
+  assert.equal(new Set(searched).size, searched.length, "the follow-up must not repeat the paid query");
+  assert.ok(plan.coverage?.some((entry) => entry.status === "missing"));
+  assert.equal(plan.followUpRound, 1);
+  assert.ok(events.some((event) => event.kind === "coverage_matrix_updated"));
+  assert.ok(events.some((event) => event.kind === "follow_up_scheduled"));
+});
+
+test("citation validation runs before the durable run becomes completed and stores the repaired report", async () => {
+  const { store, events } = memoryStore();
+  const base = deps(store);
+  const engine = createResearchEngine({
+    ...base,
+    async validateReport({ report }) {
+      return {
+        report: `${report}\n\nEvidence is incomplete: the audit found a limitation.`,
+        repaired: true,
+        summary: {
+          claims: 1,
+          supported: 0,
+          partiallySupported: 1,
+          unsupported: 0,
+          contradicted: 0,
+          unverified: 0,
+          duplicateSources: 0,
+        },
+      };
+    },
+  });
+  const run = await started(engine);
+  await engine.drive({ runId: run.id, userId: run.userId });
+  const finished = await store.loadRun(run.id, run.userId);
+  assert.equal(finished?.state, "completed");
+  assert.match(finished?.report ?? "", /Evidence is incomplete/);
+  assert.ok(events.some((event) => event.kind === "citation_audit_started"));
+  assert.ok(events.some((event) => event.kind === "citation_audit_completed"));
+  assert.ok(events.some((event) => event.kind === "report_repaired"));
 });
 
 // ---------------------------------------------------------------------------

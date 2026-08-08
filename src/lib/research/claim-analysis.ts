@@ -637,6 +637,66 @@ export function extractClaims(report: string): ExtractedClaim[] {
   return claims;
 }
 
+export interface RepairableClaim extends ExtractedClaim {
+  status: ClaimStatus;
+  supportStrength: number | null;
+}
+
+export interface ReportRepairResult {
+  report: string;
+  repaired: boolean;
+  repairedClaims: number;
+}
+
+/**
+ * Make a report honest without inventing replacement facts. Unsupported
+ * language is weakened in place, contradictions stay visible, and claims the
+ * bounded judge could not check are labelled as such. Replacements run from
+ * the end of the document so the stored answer spans remain valid while the
+ * repair is applied.
+ */
+export function repairReportFromClaims(report: string, claims: readonly RepairableClaim[]): ReportRepairResult {
+  const replacements = claims
+    .filter((claim) => claim.status !== "supported")
+    .map((claim) => {
+      const span = parseAnswerSpan(claim.answerSpan);
+      if (!span) return null;
+      const label = supportLabel(claim.status, claim.supportStrength);
+      const prefix =
+        claim.status === "contradicted"
+          ? "Conflicting evidence: "
+          : label === "partially supported"
+          ? "Evidence is incomplete: "
+          : claim.status === "unverified"
+          ? "Unverified: "
+          : "The cited evidence is insufficient: ";
+      const suffix =
+        claim.status === "contradicted"
+          ? " (the cited source reports conflicting evidence.)"
+          : label === "partially supported"
+          ? " (the cited source supports only part of this statement.)"
+          : claim.status === "unverified"
+          ? " (this claim could not be checked within the run limits.)"
+          : " (the cited passage does not establish this.)";
+      return { ...span, replacement: `${prefix}${report.slice(span.start, span.end).trim()}${suffix}` };
+    })
+    .filter((value): value is { start: number; end: number; replacement: string } => !!value)
+    .sort((a, b) => b.start - a.start);
+
+  let repairedReport = report;
+  for (const replacement of replacements) {
+    repairedReport =
+      repairedReport.slice(0, replacement.start) +
+      replacement.replacement +
+      repairedReport.slice(replacement.end);
+  }
+  return {
+    report: repairedReport,
+    repaired: replacements.length > 0,
+    repairedClaims: replacements.length,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Passages
 // ---------------------------------------------------------------------------

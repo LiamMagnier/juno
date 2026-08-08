@@ -55,6 +55,7 @@ import {
 } from "@/lib/spend";
 import { runDeepResearch, type ResearchCorpusPage } from "@/lib/deep-research";
 import { recordCitationAudit } from "@/lib/research/claims";
+import { finalizeChatResearchRun } from "@/lib/research/run";
 import { isWebSearchConfigured } from "@/lib/web-search";
 import { createSseSender, encodeChunk, SSE_HEADERS, type SseSender } from "@/lib/chat-stream";
 import { closeToolDetail, createToolDetailBudget, openToolDetail } from "@/lib/chat/tool-detail";
@@ -1610,6 +1611,7 @@ async function handleChat(req: Request) {
     goal: string;
     corpus: ResearchCorpusPage[];
     conversationProvider: string | null;
+    runId: string | null;
   } | null = null;
   let auditedMessageId: string | null = null;
 
@@ -1874,6 +1876,7 @@ async function handleChat(req: Request) {
             goal: researchPrompt,
             corpus: research.corpus,
             conversationProvider: modelInfo.provider,
+            runId: research.runId,
           };
         } else {
           sendActivity({
@@ -2412,10 +2415,11 @@ async function handleChat(req: Request) {
      */
     if (citationAuditInput && auditedMessageId && assistantFull) {
       const input: NonNullable<typeof citationAuditInput> = citationAuditInput;
-      await recordCitationAudit({
+      const audit = await recordCitationAudit({
         userId: user.id,
         conversationId: conversation.id,
         messageId: auditedMessageId,
+        runId: input.runId ?? undefined,
         goal: input.goal,
         report: assistantFull,
         sources: input.corpus,
@@ -2427,6 +2431,34 @@ async function handleChat(req: Request) {
         });
         return null;
       });
+      if (audit && auditedMessageId && audit.repaired && audit.report !== assistantFull) {
+        // The stream has already ended, but reloads must show the audited
+        // report. The durable revision row preserves what was initially
+        // delivered and the message remains encrypted at rest.
+        await prisma.message.update({
+          where: { id: auditedMessageId },
+          data: { content: encryptMessageText(audit.report) },
+        }).catch((err) => {
+          console.error("[chat] could not persist repaired research report", {
+            messageId: auditedMessageId,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        });
+        assistantFull = audit.report;
+      }
+      if (input.runId) {
+        await finalizeChatResearchRun({
+          runId: input.runId,
+          userId: user.id,
+          report: audit?.report ?? assistantFull,
+          partial: !audit,
+        }).catch((err) => {
+          console.error("[chat] could not finalize research run", {
+            runId: input.runId,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
     }
 
     const postWork = postGenerationPlan({ moderate, memoryEnabled, producedAnswer: !!assistantFull });

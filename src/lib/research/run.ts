@@ -17,11 +17,17 @@ import {
   parsePlan,
   planIsConfirmed,
   stageForState,
+  transitionAllowed,
   type ResearchEventDTO,
   type ResearchEventKind,
+  type ResearchConflict,
+  type ResearchCoverageEntry,
+  type ResearchObjective,
   type ResearchState,
+  type ResearchTerminalState,
 } from "@/lib/research/domain";
 import { fetchResearchPage, planResearchQueries, searchTheWeb, writeResearchReport } from "@/lib/research/tools";
+import { recordCitationAudit } from "@/lib/research/claims";
 
 /**
  * The durable research job, wired to Postgres and to the real search backend.
@@ -376,6 +382,36 @@ export function researchEngine(): ResearchEngine {
     search: searchTheWeb,
     fetchPage: fetchResearchPage,
     synthesize: writeResearchReport,
+    validateReport: async ({ userId, runId, goal, report, sources }) => {
+      const audit = await recordCitationAudit({
+        userId,
+        runId,
+        goal,
+        report,
+        sources: sources.map((source) => ({
+          sourceId: source.id,
+          url: source.url,
+          title: source.title,
+          body: source.snapshot ?? "",
+          publishedAt: source.publishedAt,
+          truncated: !source.snapshot,
+        })),
+      });
+      if (!audit) return null;
+      return {
+        report: audit.report,
+        repaired: audit.repaired,
+        summary: {
+          claims: audit.claims,
+          supported: audit.supported,
+          partiallySupported: audit.partiallySupported,
+          unsupported: audit.unsupported,
+          contradicted: audit.contradicted,
+          unverified: audit.unverified,
+          duplicateSources: audit.duplicateSources,
+        },
+      };
+    },
     hash: hashSnapshot,
     now: () => new Date(),
   };
@@ -412,7 +448,25 @@ export interface ResearchRunView {
   goal: string;
   state: string;
   stage: string;
-  plan: { queries: string[]; constraints: string[]; pinnedSources: string[]; confirmed: boolean };
+  plan: {
+    queries: string[];
+    constraints: string[];
+    pinnedSources: string[];
+    confirmed: boolean;
+    objectives: ResearchObjective[];
+    coverage: ResearchCoverageEntry[];
+    conflicts: ResearchConflict[];
+    followUpRound: number;
+  };
+  auditSummary: {
+    claims: number;
+    supported: number;
+    partiallySupported: number;
+    unsupported: number;
+    contradicted: number;
+    unverified: number;
+    duplicateSources: number;
+  } | null;
   /** Serialised as strings: BigInt does not survive JSON.stringify. */
   costMicroUsd: string;
   budgetMicroUsd: string | null;
@@ -460,6 +514,20 @@ export async function readResearchRun(input: {
   ]);
   const plan = parsePlan(run.plan);
   const state = isResearchState(run.state) ? run.state : "failed";
+  const auditEvent = [...events].reverse().find((event) => event.kind === "citation_audit");
+  const auditPayload = auditEvent?.payload;
+  const auditSummary =
+    auditPayload && typeof auditPayload === "object" && !Array.isArray(auditPayload)
+      ? {
+          claims: Number((auditPayload as Record<string, unknown>).claims ?? 0),
+          supported: Number((auditPayload as Record<string, unknown>).supported ?? 0),
+          partiallySupported: Number((auditPayload as Record<string, unknown>).partiallySupported ?? 0),
+          unsupported: Number((auditPayload as Record<string, unknown>).unsupported ?? 0),
+          contradicted: Number((auditPayload as Record<string, unknown>).contradicted ?? 0),
+          unverified: Number((auditPayload as Record<string, unknown>).unverified ?? 0),
+          duplicateSources: Number((auditPayload as Record<string, unknown>).duplicateSources ?? 0),
+        }
+      : null;
   return {
     run: {
       id: run.id,
@@ -472,7 +540,12 @@ export async function readResearchRun(input: {
         constraints: plan.constraints,
         pinnedSources: plan.pinnedSources,
         confirmed: planIsConfirmed(plan),
+        objectives: plan.objectives,
+        coverage: plan.coverage ?? [],
+        conflicts: plan.conflicts ?? [],
+        followUpRound: plan.followUpRound ?? 0,
       },
+      auditSummary,
       costMicroUsd: run.costMicroUsd.toString(),
       budgetMicroUsd: run.budgetMicroUsd === null ? null : run.budgetMicroUsd.toString(),
       error: run.error,
@@ -523,4 +596,63 @@ export function driveResearchInBackground(input: {
     .catch((e: unknown) => {
       console.error("[research] background drive failed", { runId: input.runId, error: e });
     });
+}
+
+/**
+ * The chat adapter writes the report through the user's selected model, so the
+ * durable job cannot use its normal synthesis stage. Once that stream has been
+ * audited, close the original run through the same transition/event contract as
+ * every standalone report. A canceled run can never be revived by this late
+ * callback.
+ */
+export async function finalizeChatResearchRun(input: {
+  runId: string;
+  userId: string;
+  report: string;
+  partial?: boolean;
+  error?: string | null;
+}): Promise<ResearchRunRow | null> {
+  const store = createPrismaResearchStore();
+  let run = await store.loadRun(input.runId, input.userId);
+  if (!run || isTerminalResearchState(run.state)) return run;
+  const target: ResearchTerminalState = input.partial ? "partially_completed" : "completed";
+  if (run.state === "synthesizing") {
+    const validating = await store.moveState({
+      runId: input.runId,
+      userId: input.userId,
+      from: ["synthesizing"],
+      to: "validating_citations",
+      patch: { report: input.report },
+    });
+    if (!validating) return store.loadRun(input.runId, input.userId);
+    await store.appendEvents({
+      runId: input.runId,
+      userId: input.userId,
+      events: [
+        { kind: "state_changed", payload: { from: "synthesizing", state: "validating_citations" } },
+      ],
+    });
+    run = validating;
+  }
+  if (!isResearchState(run.state) || !transitionAllowed(run.state, target)) return run;
+  const ended = await store.moveState({
+    runId: input.runId,
+    userId: input.userId,
+    from: [run.state as ResearchState],
+    to: target,
+    patch: { report: input.report, error: input.error ?? null },
+  });
+  if (!ended) return store.loadRun(input.runId, input.userId);
+  await store.appendEvents({
+    runId: input.runId,
+    userId: input.userId,
+    events: [
+      { kind: "state_changed", payload: { from: run.state, state: target } },
+      {
+        kind: "run_finished",
+        payload: { state: target, reason: input.partial ? "citation_audit_degraded" : "completed" },
+      },
+    ],
+  });
+  return ended;
 }

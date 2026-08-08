@@ -44,7 +44,32 @@ interface ResearchRunView {
   id: string;
   goal: string;
   state: string;
-  plan: { queries: string[]; constraints: string[]; pinnedSources: string[]; confirmed: boolean };
+  plan: {
+    queries: string[];
+    constraints: string[];
+    pinnedSources: string[];
+    confirmed: boolean;
+    objectives?: Array<{ id: string; question: string; status: string }>;
+    coverage?: Array<{
+      objectiveId: string;
+      requirementId: string;
+      status: string;
+      independentSourceCount: number;
+      evidenceStrength: number;
+      missingReason?: string;
+    }>;
+    conflicts?: Array<{ description: string; severity: string }>;
+    followUpRound?: number;
+  };
+  auditSummary?: {
+    claims: number;
+    supported: number;
+    partiallySupported: number;
+    unsupported: number;
+    contradicted: number;
+    unverified: number;
+    duplicateSources: number;
+  } | null;
   costMicroUsd: string;
   budgetMicroUsd: string | null;
   error: string | null;
@@ -262,6 +287,49 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
           );
         })}
       </ol>
+
+      {run.plan.objectives && run.plan.objectives.length > 0 && !awaitingPlan && (
+        <div className="mt-3 rounded-xl border border-border/50 bg-background/35 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-mono text-label uppercase text-muted-foreground">Evidence coverage</p>
+            {run.plan.followUpRound ? (
+              <span className="font-mono text-caption text-muted-foreground">
+                follow-up round {run.plan.followUpRound}
+              </span>
+            ) : null}
+          </div>
+          <ul className="mt-2 space-y-1.5">
+            {run.plan.objectives.slice(0, 8).map((objective) => {
+              const status = objective.status.replace("_", " ");
+              return (
+                <li key={objective.id} className="flex items-start gap-2 text-xs">
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full",
+                      objective.status === "covered" ? "bg-primary" : "bg-warning"
+                    )}
+                  />
+                  <span className="min-w-0 flex-1 text-muted-foreground">{truncate(objective.question, 96)}</span>
+                  <span className="shrink-0 font-mono text-caption text-muted-foreground/70">{status}</span>
+                </li>
+              );
+            })}
+          </ul>
+          {run.plan.conflicts && run.plan.conflicts.length > 0 && (
+            <p className="mt-2 text-caption text-warning-foreground">
+              {run.plan.conflicts.length} source conflict{run.plan.conflicts.length === 1 ? "" : "s"} remain visible.
+            </p>
+          )}
+        </div>
+      )}
+
+      {run.auditSummary && !run.live && (
+        <p className="mt-3 text-xs text-muted-foreground" role="status">
+          Citation check: {run.auditSummary.supported} supported · {run.auditSummary.partiallySupported} partial ·{" "}
+          {run.auditSummary.unsupported + run.auditSummary.contradicted + run.auditSummary.unverified} flagged.
+        </p>
+      )}
 
       {/* The plan gate: nothing expensive has happened yet, and these are the
           queries that will actually be issued. Editable, because the whole point

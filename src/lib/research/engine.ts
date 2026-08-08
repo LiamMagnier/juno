@@ -1,8 +1,10 @@
 import {
   EMPTY_PLAN,
+  MAX_FOLLOW_UP_ROUNDS,
   MAX_PLAN_CONSTRAINTS,
   MAX_PLAN_QUERIES,
   MAX_PINNED_SOURCES,
+  buildResearchObjectives,
   RESEARCH_LIVE_STATES,
   budgetAllows,
   budgetExhausted,
@@ -17,11 +19,14 @@ import {
   resumeStateFor,
   transitionAllowed,
   type ResearchEventKind,
+  type ResearchCoverageEntry,
+  type ResearchConflict,
   type ResearchPlan,
   type ResearchProgress,
   type ResearchState,
   type ResearchTerminalState,
 } from "@/lib/research/domain";
+import { hostOfUrl, scoreSource, tokenCoverage } from "@/lib/research/claim-analysis";
 
 /**
  * The durable research job.
@@ -74,6 +79,8 @@ export interface ResearchRunRow {
   updatedAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
+  /** Additive field; old test stores and old rows may not expose it. */
+  reportRevision?: number;
 }
 export interface ResearchSourceRow {
   id: string;
@@ -201,7 +208,11 @@ export interface ResearchDeps {
     goal: string;
     constraints: string[];
     signal?: AbortSignal;
-  }): Promise<{ queries: string[]; costMicroUsd: number }>;
+  }): Promise<{
+    queries: string[];
+    costMicroUsd: number;
+    objectives?: ResearchPlan["objectives"];
+  }>;
   search(input: { userId: string; query: string; signal?: AbortSignal }): Promise<{
     hits: ResearchHit[];
     costMicroUsd: number;
@@ -220,9 +231,34 @@ export interface ResearchDeps {
     sources: ResearchSourceRow[];
     signal?: AbortSignal;
   }): Promise<{ report: string; costMicroUsd: number }>;
+  /** Validates and, when safe, repairs a draft before the run becomes final. */
+  validateReport?(input: {
+    userId: string;
+    runId: string;
+    goal: string;
+    plan: ResearchPlan;
+    report: string;
+    sources: ResearchSourceRow[];
+    signal?: AbortSignal;
+  }): Promise<ResearchValidationResult | null>;
   /** Stable hash of fetched text, so a report stays auditable after the page changes. */
   hash(text: string): string;
   now(): Date;
+}
+
+export interface ResearchValidationResult {
+  report: string;
+  repaired: boolean;
+  /** A compact summary suitable for a user receipt and the event log. */
+  summary: {
+    claims: number;
+    supported: number;
+    partiallySupported: number;
+    unsupported: number;
+    contradicted: number;
+    unverified: number;
+    duplicateSources: number;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +288,130 @@ const MAX_PASSAGES_PER_SOURCE = 6;
 const MAX_STEPS = 40;
 /** The goal is a prompt, not an essay; the column is Text but the bill is not. */
 const MAX_GOAL_CHARS = 8_000;
+
+interface CoverageComputation {
+  objectives: ResearchPlan["objectives"];
+  coverage: ResearchCoverageEntry[];
+  conflicts: ResearchConflict[];
+  followUps: string[];
+}
+
+/**
+ * Cheap, deterministic coverage before synthesis. It is deliberately not a
+ * claim judge: at this stage there is no report claim to judge. Its job is to
+ * stop a plan that has only collected vaguely related pages from declaring
+ * itself ready, and to leave a durable matrix the user can inspect.
+ */
+function computeCoverage(plan: ResearchPlan, sources: ResearchSourceRow[]): CoverageComputation {
+  const objectives = plan.objectives.length
+    ? plan.objectives
+    : buildResearchObjectives("", plan.queries);
+  const coverage: ResearchCoverageEntry[] = [];
+  const updatedObjectives = objectives.map((objective) => {
+    const requirements = objective.evidenceRequirements.length
+      ? objective.evidenceRequirements
+      : buildResearchObjectives(objective.question, [objective.question])[0]?.evidenceRequirements ?? [];
+    const nextRequirements = requirements.map((requirement) => {
+      const scored = sources
+        .filter((source) => !!source.snapshot)
+        .map((source) => ({ source, strength: tokenCoverage(objective.question, source.snapshot ?? "") }))
+        .sort((a, b) => b.strength - a.strength);
+      const supporting = scored.filter((entry) => entry.strength >= 0.42);
+      const weak = scored.filter((entry) => entry.strength >= 0.22);
+      const independentHosts = new Set(supporting.map((entry) => hostOfUrl(entry.source.url)).filter(Boolean));
+      const best = scored[0]?.strength ?? 0;
+      let status: ResearchCoverageEntry["status"] = "missing";
+      let missingReason = "No read source directly addresses this requirement.";
+      if (supporting.length > 0 && independentHosts.size >= requirement.minimumIndependentSources) {
+        status = "satisfied";
+        missingReason = "";
+      } else if (weak.length > 0) {
+        status = "weak";
+        missingReason = "The sources are related, but the evidence is not direct or independent enough yet.";
+      }
+      const entry: ResearchCoverageEntry = {
+        objectiveId: objective.id,
+        requirementId: requirement.id,
+        status,
+        supportingSourceIds: supporting.slice(0, 8).map((item) => item.source.id),
+        contradictingSourceIds: [],
+        independentSourceCount: independentHosts.size,
+        evidenceStrength: best,
+        ...(missingReason ? { missingReason } : {}),
+      };
+      coverage.push(entry);
+      return { ...requirement, status };
+    });
+    const statuses = nextRequirements.map((requirement) => requirement.status);
+    const status: ResearchPlan["objectives"][number]["status"] =
+      statuses.length > 0 && statuses.every((value) => value === "satisfied")
+        ? "covered"
+        : statuses.some((value) => (value as string) === "conflicted")
+        ? "blocked"
+        : statuses.some((value) => value === "satisfied" || value === "weak")
+        ? "partially_covered"
+        : "open";
+    return { ...objective, status, evidenceRequirements: nextRequirements };
+  });
+
+  const conflicts: ResearchConflict[] = [];
+  const byHash = new Map<string, string[]>();
+  for (const source of sources) {
+    if (!source.contentHash) continue;
+    byHash.set(source.contentHash, [...(byHash.get(source.contentHash) ?? []), source.id]);
+  }
+  for (const [hash, sourceIds] of byHash) {
+    if (sourceIds.length < 2) continue;
+    conflicts.push({
+      id: `duplicate-${hash.slice(0, 12)}`,
+      kind: "duplicate_source",
+      sourceIds: sourceIds.slice(0, 8),
+      description: "Multiple results contain the same fetched content and count as one independent witness.",
+      severity: "medium",
+      resolved: false,
+    });
+  }
+  const hosts = new Set(sources.map((source) => hostOfUrl(source.url)).filter(Boolean));
+  if (sources.length >= 2 && hosts.size === 1) {
+    conflicts.push({
+      id: "source-monoculture",
+      kind: "source_monoculture",
+      sourceIds: sources.slice(0, 8).map((source) => source.id),
+      description: "The gathered evidence comes from one publisher host; an independent source is still needed.",
+      severity: "medium",
+      resolved: false,
+    });
+  }
+
+  const alreadyPlanned = new Set(plan.queries.map((query) => query.toLowerCase()));
+  const followUps: string[] = [];
+  for (const objective of updatedObjectives) {
+    const entry = coverage.find(
+      (item) => item.objectiveId === objective.id && (item.status === "missing" || item.status === "weak")
+    );
+    if (!entry) continue;
+    const suffix = entry.status === "missing" ? "primary source evidence" : "independent source and counter evidence";
+    const query = `${objective.question} ${suffix}`.replace(/\s+/g, " ").trim().slice(0, 400);
+    if (alreadyPlanned.has(query.toLowerCase())) continue;
+    alreadyPlanned.add(query.toLowerCase());
+    followUps.push(query);
+    if (followUps.length >= 1) break;
+  }
+  if (followUps.length === 0 && conflicts.some((conflict) => conflict.kind === "source_monoculture")) {
+    const objective = updatedObjectives.find((item) => item.status !== "covered");
+    if (objective) {
+      const query = `${objective.question} independent reporting different perspective`.slice(0, 400);
+      if (!alreadyPlanned.has(query.toLowerCase())) followUps.push(query);
+    }
+  }
+
+  return {
+    objectives: updatedObjectives,
+    coverage,
+    conflicts: conflicts.slice(0, 24),
+    followUps,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Engine
@@ -479,7 +639,18 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       0,
       MAX_PLAN_QUERIES
     );
-    const next: ResearchPlan = { ...plan, queries };
+    const objectives = drafted.objectives?.length
+      ? drafted.objectives
+      : buildResearchObjectives(run.goal, queries);
+    const next: ResearchPlan = {
+      ...plan,
+      queries,
+      objectives,
+      issuedQueries: [],
+      followUpRound: 0,
+      coverage: [],
+      conflicts: [],
+    };
     if (plan.confirmation === "auto" && !planIsConfirmed(next)) {
       next.confirmedAt = deps.now().toISOString();
     }
@@ -505,8 +676,13 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
   const doSearching = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
     const plan = parsePlan(run.plan);
     const queries = plan.queries.length ? plan.queries : [run.goal];
+    const plannedIssued = new Set(plan.issuedQueries ?? []);
+    // Legacy runs did not persist issuedQueries. Treat their first resumed
+    // search as unissued so a schema rollout cannot silently skip gathering.
+    const pending = plan.issuedQueries === undefined ? queries : queries.filter((query) => !plannedIssued.has(query));
     let current = run;
-    for (const query of queries) {
+    const issued = new Set(plannedIssued);
+    for (const query of pending) {
       if (!(await affordable(current, SEARCH_ESTIMATE_MICRO_USD))) {
         return stopForBudget(current, SEARCH_ESTIMATE_MICRO_USD);
       }
@@ -534,6 +710,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           url: hit.url,
           title: hit.title,
           ...(body ? { snapshot: body, contentHash: deps.hash(body) } : {}),
+          authority: scoreSource({ url: hit.url, text: body ?? hit.snippet }).authority,
         });
         if (stored.created) {
           await append(run.id, run.userId, [
@@ -541,6 +718,14 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           ]);
         }
       }
+      issued.add(query);
+      const latest = (await store.loadRun(current.id, current.userId)) ?? current;
+      const latestPlan = parsePlan(latest.plan);
+      await store.savePlan({
+        runId: current.id,
+        userId: current.userId,
+        plan: { ...latestPlan, issuedQueries: [...issued] },
+      });
     }
     const moved = await advance(current, "browsing");
     return moved ? { kind: "advanced", state: "browsing" } : { kind: "raced" };
@@ -611,7 +796,21 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
    * that can only cite half of what it read.
    */
   const doReading = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
-    const sources = await store.listSources(run.id, run.userId);
+    const sources = (await store.listSources(run.id, run.userId)).sort(
+      (a, b) => (b.authority ?? 0) - (a.authority ?? 0) || a.fetchedAt.getTime() - b.fetchedAt.getTime()
+    );
+    await append(run.id, run.userId, [
+      {
+        kind: "source_ranked",
+        payload: {
+          order: sources.slice(0, MAX_READ_SOURCES).map((source) => ({
+            sourceId: source.id,
+            host: hostOfUrl(source.url),
+            authority: source.authority ?? 0,
+          })),
+        },
+      },
+    ]);
     let current = run;
     let fetched = 0;
     let passages = 0;
@@ -647,6 +846,9 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         sourceId: source.id,
         passages: splitPassages(text),
       });
+      await append(run.id, run.userId, [
+        { kind: "source_read", payload: { url: source.url, title: source.title, ranked: true } },
+      ]);
     }
     await append(run.id, run.userId, [
       {
@@ -659,17 +861,15 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
   };
 
   /**
-   * COVERAGE: did the sources we have actually answer the plan?
+   * COVERAGE: persist the evidence matrix and schedule a bounded follow-up.
    *
-   * Cheap and local — it compares queries against the sources gathered rather
-   * than asking a model — because the expensive version of this check belongs
-   * after synthesis, where the claims exist to check. What it is really for is
-   * the one branch below: a plan with queries that produced nothing goes back
-   * to SEARCH once, and only once, tracked by the presence of sources so a run
-   * that genuinely cannot find anything terminates instead of looping.
+   * This is intentionally separate from the post-synthesis citation audit. A
+   * plan can have plenty of sources and still miss one of its questions; the
+   * controller must discover that while there is still budget to search.
    */
   const doCoverage = async (run: ResearchRunRow): Promise<StepOutcome> => {
     const progress = await store.progress(run.id, run.userId);
+    const plan = parsePlan(run.plan);
     await append(run.id, run.userId, [
       {
         kind: "coverage_checked",
@@ -686,6 +886,60 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         error: "No usable sources came back for this plan.",
       });
       return ended ? { kind: "finished", state: "failed" } : { kind: "raced" };
+    }
+
+    const computed = computeCoverage(plan, await store.listSources(run.id, run.userId));
+    const nextPlan: ResearchPlan = {
+      ...plan,
+      objectives: computed.objectives,
+      coverage: computed.coverage,
+      conflicts: computed.conflicts,
+    };
+    const round = plan.followUpRound ?? 0;
+    const availableSlots = Math.max(0, MAX_PLAN_QUERIES - nextPlan.queries.length);
+    const followUps = round < MAX_FOLLOW_UP_ROUNDS ? computed.followUps.slice(0, availableSlots) : [];
+    await store.savePlan({
+      runId: run.id,
+      userId: run.userId,
+      plan: {
+        ...nextPlan,
+        queries: [...nextPlan.queries, ...followUps],
+        followUpRound: followUps.length > 0 ? round + 1 : round,
+      },
+    });
+    if (followUps.length > 0) {
+      await store.recordQueries({
+        runId: run.id,
+        userId: run.userId,
+        queries: [...nextPlan.queries, ...followUps],
+      });
+    }
+    await append(run.id, run.userId, [
+      {
+        kind: "coverage_matrix_updated",
+        payload: {
+          objectives: computed.objectives.map((objective) => ({
+            id: objective.id,
+            question: objective.question,
+            status: objective.status,
+          })),
+          coverage: computed.coverage,
+          conflicts: computed.conflicts,
+        },
+      },
+    ]);
+    if (followUps.length > 0) {
+      await append(run.id, run.userId, [
+        {
+          kind: "follow_up_scheduled",
+          payload: { round: round + 1, queries: followUps, reason: "coverage_insufficient" },
+        },
+      ]);
+      const searching = await advance(
+        (await store.loadRun(run.id, run.userId)) ?? run,
+        "searching"
+      );
+      return searching ? { kind: "advanced", state: "searching" } : { kind: "raced" };
     }
     const moved = await advance(run, "resolving_conflicts");
     return moved ? { kind: "advanced", state: "resolving_conflicts" } : { kind: "raced" };
@@ -753,7 +1007,42 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
    */
   const doValidation = async (run: ResearchRunRow): Promise<StepOutcome> => {
     const sources = await store.listSources(run.id, run.userId);
-    const report = run.report ?? "";
+    let report = run.report ?? "";
+    if (deps.validateReport && report.trim()) {
+      await append(run.id, run.userId, [{ kind: "citation_audit_started", payload: { sources: sources.length } }]);
+      try {
+        const validated = await deps.validateReport({
+          userId: run.userId,
+          runId: run.id,
+          goal: run.goal,
+          plan: parsePlan(run.plan),
+          report,
+        sources,
+        });
+        if (validated) {
+          report = validated.report;
+          await append(run.id, run.userId, [
+            {
+              kind: "citation_audit_completed",
+              payload: validated.summary,
+            },
+            ...(validated.repaired
+              ? [{ kind: "report_repaired" as const, payload: { reason: "citation_validation" } }]
+              : []),
+          ]);
+        }
+      } catch (error) {
+        await append(run.id, run.userId, [
+          {
+            kind: "error",
+            payload: {
+              scope: "citation_audit",
+              message: error instanceof Error ? error.message : "Citation validation failed.",
+            },
+          },
+        ]);
+      }
+    }
     const cited = new Set<number>();
     for (const match of report.matchAll(/\[(\d{1,2})\]/g)) cited.add(Number(match[1]));
     const dangling = [...cited].filter((n) => n < 1 || n > Math.min(sources.length, MAX_SOURCES));
@@ -890,9 +1179,23 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           : { ok: false, state: run.state, reason: "already_finished" };
       }
       const current = parsePlan(run.plan);
+      const editedQueries = queries ?? current.queries;
+      const queryEdit = queries !== undefined;
       const edited: ResearchPlan = parsePlan({
         ...current,
-        queries: queries ?? current.queries,
+        queries: editedQueries,
+        // A confirmed plan may be edited before any paid work starts. Rebuild
+        // its evidence contract from the user's questions so coverage and
+        // follow-ups cannot continue pursuing the discarded draft.
+        ...(queryEdit
+          ? {
+              objectives: buildResearchObjectives(run.goal, editedQueries),
+              issuedQueries: [],
+              followUpRound: 0,
+              coverage: [],
+              conflicts: [],
+            }
+          : {}),
         constraints: constraints ?? current.constraints,
         pinnedSources: pinnedSources ?? current.pinnedSources,
         confirmedAt: deps.now().toISOString(),

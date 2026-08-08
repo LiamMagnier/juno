@@ -50,6 +50,7 @@ type SendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => Cl
  * separately, for the audit, and is not persisted on the message.
  */
 export interface ResearchCorpusPage {
+  sourceId?: string;
   url: string;
   title: string;
   body: string;
@@ -116,7 +117,7 @@ const EVENT_POLL_MS = 700;
  * what stage it is in, what it searched for, what it read, and what went wrong.
  */
 function toActivity(event: ResearchEventDTO): Omit<ClientActivityEvent, "id" | "createdAt"> | null {
-  const payload = event.payload as Record<string, string | number | undefined>;
+  const payload = event.payload as Record<string, unknown>;
   switch (event.kind) {
     case "state_changed": {
       const state = String(payload.state ?? "");
@@ -139,6 +140,24 @@ function toActivity(event: ResearchEventDTO): Omit<ClientActivityEvent, "id" | "
         url,
       };
     }
+    case "source_ranked":
+      return { kind: "reasoning", title: "Prioritizing the strongest sources" };
+    case "coverage_matrix_updated":
+      return { kind: "reasoning", title: "Checking each research question" };
+    case "follow_up_scheduled":
+      return {
+        kind: "search",
+        title: "Following an evidence gap",
+        detail: truncate(String((payload.queries as unknown[] | undefined)?.[0] ?? ""), 96),
+      };
+    case "citation_audit_started":
+      return { kind: "reasoning", title: "Checking every citation against its source" };
+    case "citation_audit_completed":
+      return { kind: "context", title: "Citation check complete" };
+    case "citation_audit":
+      return { kind: "context", title: "Citation check complete" };
+    case "report_repaired":
+      return { kind: "reasoning", title: "Labelling claims that need caution" };
     case "budget_exhausted":
       return {
         kind: "warning",
@@ -281,6 +300,7 @@ export async function runDeepResearch(opts: {
     // must judge a claim against the bytes the model was given, not against
     // whatever the page says now.
     corpus: sources.map((source) => ({
+      sourceId: source.id,
       url: source.url,
       title: source.title,
       body: source.snapshot ?? "",

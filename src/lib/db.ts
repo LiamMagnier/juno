@@ -103,6 +103,7 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["ResearchPassage", "userId"],
   ["ResearchClaim", "userId"],
   ["ResearchEvent", "userId"],
+  ["ResearchReportRevision", "userId"],
   // The last eight. Each had call sites that reached the database without a
   // userId — not leaks (every one was already behind an ownership check, an
   // owner-only admin gate, or a capability like a share token), but nothing

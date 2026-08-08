@@ -101,6 +101,7 @@ model User {
   researchPassages            ResearchPassage[]
   researchClaims              ResearchClaim[]
   researchEvents              ResearchEvent[]
+  researchReportRevisions     ResearchReportRevision[]
   actionApprovalGrants        ActionApprovalGrant[]
   workSessions                WorkSession[]
   workSessionConnectors       WorkSessionConnector[]
@@ -470,11 +471,11 @@ model Project {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conversations Conversation[]
-  files         Attachment[]
-  workSessions  WorkSession[]
-  workSkills    WorkSkill[]
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversations      Conversation[]
+  files              Attachment[]
+  workSessions       WorkSession[]
+  workSkills         WorkSkill[]
   knowledgeDocuments KnowledgeDocument[]
   memories           MemoryEntry[]
 
@@ -511,10 +512,12 @@ model Message {
   activity         Json? // visible generation timeline: [{ id, kind, title, detail?, url?, createdAt }]
   createdAt        DateTime  @default(now())
 
-  conversation Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  attachments  Attachment[]
-  artifacts    Artifact[]
-  versions     MessageVersion[]
+  conversation            Conversation             @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  attachments             Attachment[]
+  artifacts               Artifact[]
+  versions                MessageVersion[]
+  researchRuns            ResearchRun[]            @relation("ResearchRunAssistantMessage")
+  researchReportRevisions ResearchReportRevision[]
 
   @@unique([conversationId, clientId])
   @@index([conversationId, createdAt])
@@ -607,15 +610,15 @@ model Attachment {
 // ----------------------------------------------------------------------------
 
 model MemoryEntry {
-  id        String       @id @default(cuid())
-  userId    String
-  content   String       @db.Text
-  source    MemorySource @default(AUTO)
+  id              String       @id @default(cuid())
+  userId          String
+  content         String       @db.Text
+  source          MemorySource @default(AUTO)
   // FACT = remembered content · SUPPRESSION = "never remember this" (highest-
   // priority layer: filters candidate ingestion AND the consolidated summary).
-  kind      MemoryKind   @default(FACT)
+  kind            MemoryKind   @default(FACT)
   // Where this came from: a conversationId, "manual", or "edit".
-  sourceRef String?
+  sourceRef       String?
   // --- Memory v2 (program §7). All nullable/defaulted: existing rows keep
   // working, and an entry written by an older build simply has less known
   // about it rather than being invalid.
@@ -623,31 +626,31 @@ model MemoryEntry {
   // One of the categories in src/lib/memory-categories.ts: identity,
   // preferences, goals, studies, workflows, projects, relationships,
   // temporary, suppression.
-  category   String?
+  category        String?
   // Scope. null = the whole account; set = only this project's chats may see
   // it, which is what keeps course notes out of unrelated work.
-  projectId  String?
+  projectId       String?
   // Provenance, so "why do you know that?" has an answer with a link.
   sourceMessageId String?
   // 0..1. Explicit user statements enter high; inference enters lower.
-  confidence Float   @default(0.5)
+  confidence      Float        @default(0.5)
   // active | superseded | contradicted | suppressed | expired
-  status     String  @default("active")
+  status          String       @default("active")
   // Why the row last changed, in words — shown in the memory UI.
-  reason     String?
+  reason          String?
   // Temporary context disappears on its own rather than aging into a false
   // permanent fact.
-  expiresAt      DateTime?
-  lastUsedAt     DateTime?
-  lastVerifiedAt DateTime?
+  expiresAt       DateTime?
+  lastUsedAt      DateTime?
+  lastVerifiedAt  DateTime?
   // The entry that replaced this one. Supersession keeps the trail instead of
   // deleting the older belief.
-  supersededById String?
+  supersededById  String?
   // Comparable form used for duplicate and contradiction detection, so that
   // matching does not depend on how the sentence happened to be phrased.
-  normalized String? @db.Text
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  normalized      String?      @db.Text
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -2454,19 +2457,19 @@ model WorkAuditEvent {
 // ----------------------------------------------------------------------------
 
 model SpendPeriod {
-  id     String @id @default(cuid())
-  userId String
+  id                String   @id @default(cuid())
+  userId            String
   /// Billing-period key, matching the window ApiSpend is aggregated over.
-  period String
+  period            String
   /// Settled cost of finished work. Moves only when a reservation settles.
-  committedMicroUsd BigInt @default(0)
+  committedMicroUsd BigInt   @default(0)
   /// Estimated cost of work that is in flight. Held against the ceiling so a
   /// long stream cannot be joined by a second one that only sees settled spend.
-  reservedMicroUsd  BigInt @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  reservedMicroUsd  BigInt   @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   reservations SpendReservation[]
 
   @@unique([userId, period])
@@ -2474,24 +2477,24 @@ model SpendPeriod {
 }
 
 model SpendReservation {
-  id       String @id @default(cuid())
-  userId   String
-  periodId String
+  id               String    @id @default(cuid())
+  userId           String
+  periodId         String
   /// chat | work | voice | research | code | task | image | video
-  kind     String
+  kind             String
   /// What the caller expects to spend. Held until settle, then replaced by the
   /// real figure — so an over-estimate is refunded rather than kept.
   estimateMicroUsd BigInt
   /// open | settled | released
-  state    String   @default("open")
-  settledMicroUsd BigInt?
+  state            String    @default("open")
+  settledMicroUsd  BigInt?
   /// Caller-supplied identity (generationId, runId, sessionId) so a retry of
   /// the same unit of work reuses its reservation instead of opening a second.
-  ref      String
-  createdAt DateTime @default(now())
-  settledAt DateTime?
+  ref              String
+  createdAt        DateTime  @default(now())
+  settledAt        DateTime?
 
-  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   spendPeriod SpendPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
 
   @@unique([userId, ref])
@@ -2508,44 +2511,44 @@ model SpendReservation {
 // ----------------------------------------------------------------------------
 
 model KnowledgeDocument {
-  id           String  @id @default(cuid())
-  userId       String
-  projectId    String?
-  attachmentId String?
-  fileName     String
-  mimeType     String
+  id             String    @id @default(cuid())
+  userId         String
+  projectId      String?
+  attachmentId   String?
+  fileName       String
+  mimeType       String
   /// Content hash. Re-uploading identical bytes must not re-index them.
-  checksum     String
+  checksum       String
   /// queued | extracting | ocr | indexing | ready | degraded | failed | stale
-  state        String  @default("queued")
+  state          String    @default("queued")
   /// Which extractor produced the blocks, and its version, so a parser fix can
   /// find every document that needs reindexing.
-  parser        String?
-  parserVersion String?
+  parser         String?
+  parserVersion  String?
   /// Monotonic per (userId, checksum) chain. A replacement supersedes rather
   /// than overwrites, so citations into the old version keep resolving.
-  version        Int     @default(1)
+  version        Int       @default(1)
   supersededById String?
-  pageCount    Int?
+  pageCount      Int?
   /// Why the state is degraded or failed, in words a reader can act on.
-  error        String? @db.Text
-  createdAt    DateTime  @default(now())
-  indexedAt    DateTime?
-  updatedAt    DateTime  @updatedAt
+  error          String?   @db.Text
+  createdAt      DateTime  @default(now())
+  indexedAt      DateTime?
+  updatedAt      DateTime  @updatedAt
 
-  user    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project Project?           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   blocks  KnowledgeBlock[]
   chunks  KnowledgeChunk[]
   jobs    KnowledgeIndexJob[]
 
+  @@unique([userId, checksum, version])
   @@index([userId, state, createdAt])
   @@index([userId, projectId])
-  @@unique([userId, checksum, version])
 }
 
 model KnowledgeBlock {
-  id         String @id @default(cuid())
+  id         String   @id @default(cuid())
   userId     String
   documentId String
   /// Position in the document, used to restore reading order after retrieval.
@@ -2553,7 +2556,7 @@ model KnowledgeBlock {
   /// paragraph | heading | list_item | table | table_cell | slide_title |
   /// speaker_notes | code | caption | image
   type       String
-  text       String @db.Text
+  text       String   @db.Text
   /// Where this block physically is. Exactly which of these is set depends on
   /// the format, and that is the point: a citation must be able to say
   /// "page 4" for a PDF and "Sheet2!B7" for a workbook.
@@ -2580,22 +2583,22 @@ model KnowledgeBlock {
 }
 
 model KnowledgeChunk {
-  id         String @id @default(cuid())
-  userId     String
-  documentId String
-  ordinal    Int
-  text       String @db.Text
-  tokens     Int    @default(0)
+  id             String   @id @default(cuid())
+  userId         String
+  documentId     String
+  ordinal        Int
+  text           String   @db.Text
+  tokens         Int      @default(0)
   /// The blocks this chunk was packed from, in order — the citation targets.
-  blockIds   String[] @default([])
+  blockIds       String[] @default([])
   /// Embedding vector. Stored as float[] rather than a pgvector column so the
   /// deployment needs no extension; the corpus here is one person's library,
   /// where an indexed lexical prefilter plus in-process cosine is enough.
   /// `embeddingModel` is versioned so a model change can be reindexed
   /// deliberately instead of silently mixing two vector spaces.
-  embedding      Float[] @default([])
+  embedding      Float[]  @default([])
   embeddingModel String?
-  createdAt  DateTime @default(now())
+  createdAt      DateTime @default(now())
 
   user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
@@ -2605,13 +2608,13 @@ model KnowledgeChunk {
 }
 
 model KnowledgeIndexJob {
-  id         String @id @default(cuid())
+  id         String    @id @default(cuid())
   userId     String
   documentId String
   /// queued | running | done | failed
-  state      String @default("queued")
-  attempts   Int    @default(0)
-  error      String? @db.Text
+  state      String    @default("queued")
+  attempts   Int       @default(0)
+  error      String?   @db.Text
   createdAt  DateTime  @default(now())
   startedAt  DateTime?
   finishedAt DateTime?
@@ -2628,58 +2631,65 @@ model KnowledgeIndexJob {
 // ----------------------------------------------------------------------------
 
 model ResearchRun {
-  id             String  @id @default(cuid())
-  userId         String
-  conversationId String?
-  goal           String  @db.Text
+  id                 String    @id @default(cuid())
+  userId             String
+  conversationId     String?
+  goal               String    @db.Text
   /// accepted | planning | awaiting_plan_confirmation | searching | browsing |
   /// reading_documents | checking_coverage | resolving_conflicts | synthesizing |
   /// validating_citations | awaiting_user_input | paused | completed |
   /// partially_completed | failed | cancelled
-  state          String  @default("accepted")
+  state              String    @default("accepted")
   /// The editable plan, and the queries actually issued.
-  plan           Json?
-  queries        String[] @default([])
-  costMicroUsd   BigInt   @default(0)
+  plan               Json?
+  queries            String[]  @default([])
+  costMicroUsd       BigInt    @default(0)
   /// Per-run ceiling. A research run is the most expensive thing Juno does.
-  budgetMicroUsd BigInt?
-  error          String?  @db.Text
-  report         String?  @db.Text
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  startedAt   DateTime?
-  finishedAt  DateTime?
+  budgetMicroUsd     BigInt?
+  error              String?   @db.Text
+  report             String?   @db.Text
+  /// Assistant message that received the report, when the run came from chat.
+  assistantMessageId String?
+  /// Monotonic report revision written by the pre-final citation audit.
+  reportRevision     Int       @default(0)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  startedAt          DateTime?
+  finishedAt         DateTime?
 
-  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sources  ResearchSource[]
-  claims   ResearchClaim[]
-  events   ResearchEvent[]
+  user             User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sources          ResearchSource[]
+  claims           ResearchClaim[]
+  events           ResearchEvent[]
+  reportRevisions  ResearchReportRevision[]
+  assistantMessage Message?                 @relation("ResearchRunAssistantMessage", fields: [assistantMessageId], references: [id], onDelete: SetNull)
 
   @@index([userId, state, createdAt])
   @@index([conversationId, createdAt])
+  @@index([assistantMessageId])
 }
 
 model ResearchSource {
-  id     String @id @default(cuid())
-  userId String
-  runId  String
-  url    String  @db.Text
-  title  String  @db.Text
+  id            String    @id @default(cuid())
+  userId        String
+  runId         String
+  url           String    @db.Text
+  title         String    @db.Text
   /// Hash of the fetched body, so a report stays auditable after the page changes.
-  contentHash String?
-  snapshot    String? @db.Text
+  contentHash   String?
+  snapshot      String?   @db.Text
   /// Publication date as claimed by the source, distinct from the date of the
   /// event it describes — §8.2 requires telling those apart.
-  publishedAt DateTime?
-  fetchedAt   DateTime  @default(now())
+  publishedAt   DateTime?
+  fetchedAt     DateTime  @default(now())
   /// 0..1 heuristics recorded so a reader can see why a source was weighted.
-  authority   Float?
+  authority     Float?
   /// Set when this source is a syndicated copy of another, so two copies of one
   /// wire story never read as independent corroboration.
   duplicateOfId String?
 
-  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  run      ResearchRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  run      ResearchRun       @relation(fields: [runId], references: [id], onDelete: Cascade)
   passages ResearchPassage[]
 
   @@index([runId, fetchedAt])
@@ -2687,35 +2697,35 @@ model ResearchSource {
 }
 
 model ResearchPassage {
-  id       String @id @default(cuid())
+  id       String  @id @default(cuid())
   userId   String
   sourceId String
-  text     String @db.Text
+  text     String  @db.Text
   /// Where in the source this passage is (char offsets, page, or selector).
   locator  String?
-  ordinal  Int    @default(0)
+  ordinal  Int     @default(0)
 
-  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  source ResearchSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  user   User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source ResearchSource      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
   links  ResearchClaimLink[]
 
   @@index([sourceId, ordinal])
 }
 
 model ResearchClaim {
-  id     String @id @default(cuid())
-  userId String
-  runId  String
-  text   String @db.Text
+  id              String   @id @default(cuid())
+  userId          String
+  runId           String
+  text            String   @db.Text
   /// fact | statistic | quote | prediction | opinion
-  type   String @default("fact")
+  type            String   @default("fact")
   /// unverified | supported | contradicted | unsupported
-  status String @default("unverified")
+  status          String   @default("unverified")
   /// 0..1, from the validator that re-reads the cited passage.
   supportStrength Float?
   /// Where this claim sits in the final report, so the UI can mark the span.
-  answerSpan String?
-  createdAt DateTime @default(now())
+  answerSpan      String?
+  createdAt       DateTime @default(now())
 
   user  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   run   ResearchRun         @relation(fields: [runId], references: [id], onDelete: Cascade)
@@ -2755,4 +2765,26 @@ model ResearchEvent {
 
   @@unique([runId, seq])
   @@index([runId, createdAt])
+}
+
+/// Immutable report versions. The current report remains on ResearchRun for
+/// cheap reads; this table preserves the pre-repair draft and every later
+/// evidence-backed revision without overwriting what the user was shown.
+model ResearchReportRevision {
+  id                 String   @id @default(cuid())
+  userId             String
+  runId              String
+  assistantMessageId String?
+  revision           Int
+  report             String   @db.Text
+  audit              Json?
+  createdAt          DateTime @default(now())
+
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  run              ResearchRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  assistantMessage Message?    @relation(fields: [assistantMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([runId, revision])
+  @@index([userId, createdAt])
+  @@index([assistantMessageId])
 }
