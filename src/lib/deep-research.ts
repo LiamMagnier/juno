@@ -2,7 +2,8 @@ import "server-only";
 import { streamChat } from "@/lib/llm";
 import { utilityModelCandidates } from "@/lib/memory";
 import { PROVIDERS } from "@/lib/providers";
-import { recordSpend } from "@/lib/spend";
+import { randomUUID } from "node:crypto";
+import { recordSpend, reserveSpend, settleSpend } from "@/lib/spend";
 import { estimateGenerationCostUsd } from "@/lib/pricing";
 import { truncate } from "@/lib/utils";
 import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@/lib/untrusted-content";
@@ -37,6 +38,19 @@ const MAX_READ_PAGES = 8;
 /** Total numbered sources (read pages + snippet-only extras). */
 const MAX_SOURCES = 12;
 const PAGE_CONTENT_CHARS = 4_000;
+
+/**
+ * What one Tavily basic search costs, in micro-USD (one credit, ≈ $0.008 at the
+ * published rate).
+ *
+ * Deep research billed the planner call and nothing else, so the part of it
+ * that actually fans out — up to five searches, each returning five pages of
+ * raw content — was free to the ledger and invisible to every budget. A
+ * research turn could therefore cost real money against a ceiling that never
+ * saw a cent of it. Approximate by necessity (Tavily bills in credits, monthly,
+ * per key) and deliberately not free.
+ */
+const SEARCH_FEE_MICRO_USD = 8_000;
 
 type SendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => ClientActivityEvent;
 
@@ -312,56 +326,110 @@ export async function runDeepResearch(opts: {
   if (!prompt) return EMPTY;
   const deadline = Date.now() + PREP_DEADLINE_MS;
 
-  // ── PLAN ──────────────────────────────────────────────────────────────────
-  const planner = pickPlannerModel(opts.selectedModel);
-  opts.sendActivity({
-    kind: "reasoning",
-    title: "Planning research",
-    detail: `${PROVIDERS[planner.provider].label} · ${planner.name}`,
-  });
-  const plan = await planQueries({ userId: opts.userId, prompt, planner, client: opts.client, signal: opts.signal });
-  // A failed plan degrades to searching the prompt itself, not to a dead turn.
-  const queries = plan.queries.length ? plan.queries : [truncate(prompt, 300)];
-
-  // ── SEARCH (+ READ: Tavily returns raw page content in the same call) ─────
-  if (opts.signal?.aborted || Date.now() >= deadline) return { ...EMPTY, costUsd: plan.costUsd };
-  const { signal: searchSignal, release } = timeboxSignal(
-    opts.signal,
-    Math.min(SEARCH_TIMEOUT_MS, deadline - Date.now())
-  );
-  for (const query of queries) {
-    opts.sendActivity({ kind: "search", title: "Searching the web", detail: truncate(query, 96) });
-  }
-  const resultLists = await Promise.all(queries.map((q) => tavilySearch(q, searchSignal)));
-  release();
-
-  const pages = collectSources(resultLists);
-  if (pages.length === 0) return { ...EMPTY, costUsd: plan.costUsd };
-
-  const readUrls = new Set(pages.filter((p) => p.rawContent).slice(0, MAX_READ_PAGES).map((p) => p.url));
-  for (const page of pages) {
-    if (!readUrls.has(page.url)) continue;
+  /*
+   * Hold the run's estimated cost against the account before spending any of
+   * it, and give it a ceiling of its own.
+   *
+   * A research turn is the shape the monthly ceiling alone cannot see: one user
+   * message fans out into a planner call, up to five searches and a synthesis
+   * on the user's own (expensive) model, and every individual check passes
+   * while the turn as a whole eats a noticeable slice of the month.
+   *
+   * Refusal degrades — the chat route answers as ordinary chat with a warning —
+   * because a user who is out of budget should still get an answer, just not an
+   * expensive one.
+   */
+  const ref = `research:${randomUUID()}`;
+  const hold = await reserveSpend({ userId: opts.userId, kind: "research", ref });
+  if (!hold.allowed) {
     opts.sendActivity({
-      kind: "visit",
-      title: "Reading source",
-      detail: truncate(page.title && page.title !== page.url ? page.title : sourceHost(page.url), 96),
-      url: page.url,
+      kind: "warning",
+      title: "Research skipped",
+      detail:
+        hold.refusedBy === "unit"
+          ? "A single research run may not cost this much. Answering directly instead."
+          : "Not enough usage budget left for a research run. Answering directly instead.",
     });
+    return EMPTY;
   }
-  opts.sendActivity({
-    kind: "context",
-    title: "Research corpus ready",
-    detail: `${pages.length} source${pages.length === 1 ? "" : "s"} · ${queries.length} ${queries.length === 1 ? "search" : "searches"} · ${readUrls.size} read in full`,
-  });
 
-  return {
-    ok: true,
-    context: buildResearchContext(prompt, pages, readUrls),
-    // Strip rawContent: the client/persisted sources stay snippet-sized.
-    // `cited` marks these as the numbered corpus the model was actually given,
-    // which is what licenses the UI to resolve inline [n] markers positionally.
-    // Deep research is the ONLY path that numbers sources for the model.
-    sources: pages.map(({ title, url, snippet }) => ({ title, url, snippet, cited: true })),
-    costUsd: plan.costUsd,
-  };
+  let costUsd = 0;
+  try {
+    // ── PLAN ────────────────────────────────────────────────────────────────
+    const planner = pickPlannerModel(opts.selectedModel);
+    opts.sendActivity({
+      kind: "reasoning",
+      title: "Planning research",
+      detail: `${PROVIDERS[planner.provider].label} · ${planner.name}`,
+    });
+    const plan = await planQueries({ userId: opts.userId, prompt, planner, client: opts.client, signal: opts.signal });
+    costUsd = plan.costUsd;
+    // A failed plan degrades to searching the prompt itself, not to a dead turn.
+    const queries = plan.queries.length ? plan.queries : [truncate(prompt, 300)];
+
+    // ── SEARCH (+ READ: Tavily returns raw page content in the same call) ─────
+    if (opts.signal?.aborted || Date.now() >= deadline) return { ...EMPTY, costUsd };
+    const { signal: searchSignal, release } = timeboxSignal(
+      opts.signal,
+      Math.min(SEARCH_TIMEOUT_MS, deadline - Date.now())
+    );
+    for (const query of queries) {
+      opts.sendActivity({ kind: "search", title: "Searching the web", detail: truncate(query, 96) });
+    }
+    const resultLists = await Promise.all(queries.map((q) => tavilySearch(q, searchSignal)));
+    release();
+
+    // Bill the vendor fee for the searches that actually ran. Counted from the
+    // lists rather than from `queries` so a key-less deployment, where
+    // `tavilySearch` returns immediately without calling anyone, is billed
+    // nothing.
+    const searchesRun = resultLists.filter((list) => list.length > 0).length;
+    if (searchesRun > 0) {
+      const feeUsd = (searchesRun * SEARCH_FEE_MICRO_USD) / 1_000_000;
+      costUsd += feeUsd;
+      await recordSpend({
+        userId: opts.userId,
+        model: "tavily-search",
+        kind: "research",
+        source: opts.client,
+        costUsd: feeUsd,
+      });
+    }
+
+    const pages = collectSources(resultLists);
+    if (pages.length === 0) return { ...EMPTY, costUsd };
+
+    const readUrls = new Set(pages.filter((p) => p.rawContent).slice(0, MAX_READ_PAGES).map((p) => p.url));
+    for (const page of pages) {
+      if (!readUrls.has(page.url)) continue;
+      opts.sendActivity({
+        kind: "visit",
+        title: "Reading source",
+        detail: truncate(page.title && page.title !== page.url ? page.title : sourceHost(page.url), 96),
+        url: page.url,
+      });
+    }
+    opts.sendActivity({
+      kind: "context",
+      title: "Research corpus ready",
+      detail: `${pages.length} source${pages.length === 1 ? "" : "s"} · ${queries.length} ${queries.length === 1 ? "search" : "searches"} · ${readUrls.size} read in full`,
+    });
+
+    return {
+      ok: true,
+      context: buildResearchContext(prompt, pages, readUrls),
+      // Strip rawContent: the client/persisted sources stay snippet-sized.
+      // `cited` marks these as the numbered corpus the model was actually given,
+      // which is what licenses the UI to resolve inline [n] markers positionally.
+      // Deep research is the ONLY path that numbers sources for the model.
+      sources: pages.map(({ title, url, snippet }) => ({ title, url, snippet, cited: true })),
+      costUsd,
+    };
+  } finally {
+    // Every exit above returns, including the degraded ones, so the hold is
+    // released here or not at all. `settleSpend` replaces the estimate with
+    // what the run really cost; the money itself already reached the ledger
+    // through the `recordSpend` calls above, so this only frees the headroom.
+    await settleSpend(opts.userId, ref, Math.round(costUsd * 1_000_000));
+  }
 }

@@ -48,6 +48,7 @@ import {
   setSessionAttention,
   type WorkRunUsage,
 } from "@/lib/work/store";
+import { recordWorkRunSpend } from "@/lib/spend";
 import { actionDigest, policyDigest, verifyApproval } from "@/lib/work/digests";
 import { recordWorkAudit } from "@/lib/work/audit";
 import {
@@ -2425,6 +2426,7 @@ async function drive(runId: string, userId: string): Promise<void> {
       // lease only if this worker still owns it, so a fast Resume cannot be
       // overwritten by a late pause completion.
       await parkRun({ runId, userId, executorId: EXECUTOR_ID, usage: outcome.usage });
+      await billRunUsage(runId, userId, outcome.usage);
       return;
     }
 
@@ -2436,6 +2438,7 @@ async function drive(runId: string, userId: string): Promise<void> {
       executorId: EXECUTOR_ID,
       usage: outcome.usage,
     });
+    await billRunUsage(runId, userId, outcome.usage);
     if (!emittedRunFinished) {
       await emit("run_finished", { reason: outcome.reason, detail: outcome.detail });
     }
@@ -2456,6 +2459,10 @@ async function drive(runId: string, userId: string): Promise<void> {
         log("could not record the failure", { runId, error: String(finishError) });
       }
     );
+    // A run that threw still spent whatever it spent before it threw. No usage
+    // is in scope on this path, so the figure comes from the row's own
+    // checkpointed counters.
+    await billRunUsage(runId, userId, undefined);
   } finally {
     // Nothing queued may be dropped on the way out.
     //
@@ -2493,6 +2500,50 @@ async function drive(runId: string, userId: string): Promise<void> {
     if (!notified.delivered && notified.reason) {
       log("no notification sent", { runId, reason: notified.reason });
     }
+  }
+}
+
+/**
+ * Put a run's model spend on the account's ledger.
+ *
+ * `finishRun` and `parkRun` are the only two places where the user, the model
+ * and the cumulative usage are all in scope at once, and until now neither of
+ * them told `recordSpend` anything: Work could run all night on a frontier
+ * model and the account's usage tile would show what an idle account shows.
+ *
+ * Called AFTER the terminal write so the persisted counters are current, and
+ * with the runtime's cumulative figure — `recordWorkRunSpend` turns it into a
+ * delta against what the ledger already holds for this run, so a run that is
+ * parked and later resumed is billed once for each stretch and not twice for
+ * the first.
+ *
+ * Never throws, on any path. A billing row that will not insert must not turn a
+ * finished run into a failed one.
+ */
+async function billRunUsage(
+  runId: string,
+  userId: string,
+  usage: WorkRunUsage | undefined
+): Promise<void> {
+  try {
+    const run = await prisma.workRun.findFirst({
+      where: { id: runId, userId },
+      select: { effectiveModel: true, requestedModel: true, costMicroUsd: true },
+    });
+    if (!run) return;
+    await recordWorkRunSpend({
+      userId,
+      runId,
+      model: run.effectiveModel ?? run.requestedModel,
+      // The row is the fallback rather than the primary: on the terminal paths
+      // the runtime's figure is the fresher of the two, and on the throw path
+      // it is all there is.
+      cumulativeCostMicroUsd: usage?.costMicroUsd ?? run.costMicroUsd,
+      inputTokens: usage?.inputTokens,
+      outputTokens: usage?.outputTokens,
+    });
+  } catch (error) {
+    log("could not bill the run", { runId, error: String(error) });
   }
 }
 

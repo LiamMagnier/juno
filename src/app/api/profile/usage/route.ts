@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { getQuota } from "@/lib/usage";
-import { checkBudget, eurPerUsd, getUsageWindows, billingPeriodFor } from "@/lib/spend";
+import {
+  checkBudget,
+  eurPerUsd,
+  getUsageWindows,
+  billingPeriodFor,
+  resolveEffectiveBudget,
+} from "@/lib/spend";
 
 export const runtime = "nodejs";
 
@@ -21,10 +27,11 @@ export async function GET() {
     where: { userId: user.id },
     select: { createdAt: true, currentPeriodEnd: true, cancelAtPeriodEnd: true },
   });
-  const period = billingPeriodFor(quota.plan, subscription);
+  const period = billingPeriodFor(subscription);
+  const effective = await resolveEffectiveBudget(user.id, quota.plan);
   const [budget, windows] = await Promise.all([
-    checkBudget(user.id, quota.plan, period),
-    getUsageWindows(user.id, quota.plan, period),
+    checkBudget(user.id, quota.plan, period, effective),
+    getUsageWindows(user.id, effective.budgetMicroUsd, period),
   ]);
 
   return NextResponse.json({
@@ -34,6 +41,12 @@ export async function GET() {
       budgetMicroUsd: budget.budgetMicroUsd,
       remainingMicroUsd: budget.remainingMicroUsd,
       eurPerUsd: eurPerUsd(),
+      // The native clients draw the same meter, so they need the same reasons:
+      // a null budget here means enforcement is OFF, not that the plan is
+      // generous, and a Mac that renders those two identically is lying.
+      reservedMicroUsd: budget.reservedMicroUsd,
+      capSource: budget.capSource,
+      capDisabled: budget.capDisabled,
       windows: {
         session: {
           spentMicroUsd: windows.session.spentMicroUsd,
