@@ -2202,6 +2202,7 @@ model WorkSkill {
   @@unique([userId, slug])
   @@index([userId, enabled])
   @@index([projectId])
+  @@index([securityStatus])
 }
 
 model WorkSkillVersion {
@@ -2233,6 +2234,7 @@ model WorkSkillVersion {
   skill WorkSkill @relation(fields: [skillId], references: [id], onDelete: Cascade)
 
   @@unique([skillId, version])
+  @@index([securityStatus])
 }
 
 /// When and why a Work session runs without a person asking.
