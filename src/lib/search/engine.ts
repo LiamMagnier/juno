@@ -127,6 +127,23 @@ function unavailable(type: SearchType, detail: string): SearchCoverage {
   return { type, state: "unavailable", detail };
 }
 
+/**
+ * The coverage sentences that do not depend on a count.
+ *
+ * Held as `detail:` properties rather than written inline at the call site so
+ * scripts/generate-i18n-catalog.mjs can see them — the extractor reads copy
+ * properties, not function arguments. The counted sentences below ("3 documents
+ * are still being indexed") cannot be extracted this way and are the part of
+ * this surface that is still English-only.
+ */
+const COVERAGE_COPY = {
+  sourceFailed: { detail: "This part of your account could not be searched just now." },
+  messagesUnreadable: {
+    detail:
+      "Message text could not be read with the current encryption key, so messages were not searched.",
+  },
+} as const;
+
 /** "Showing the top 6 …" — said whenever a branch came back exactly full. */
 function truncated(type: SearchType, count: number, limit: number): SearchCoverage {
   return count >= limit
@@ -240,7 +257,7 @@ async function attempt(
     console.error("[search] source failed", { type, message: err instanceof Error ? err.message : String(err) });
     return {
       hits: [],
-      coverage: unavailable(type, "This part of your account could not be searched just now."),
+      coverage: unavailable(type, COVERAGE_COPY.sourceFailed.detail),
     };
   }
 }
@@ -562,10 +579,7 @@ export async function runUnifiedSearch(
         if (undecryptable > 0 && hits.length === 0) {
           return {
             hits: [],
-            coverage: unavailable(
-              "message",
-              "Message text could not be read with the current encryption key, so messages were not searched."
-            ),
+            coverage: unavailable("message", COVERAGE_COPY.messagesUnreadable.detail),
           };
         }
 
