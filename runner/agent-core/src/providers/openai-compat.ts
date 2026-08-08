@@ -60,7 +60,10 @@ export interface CompatProviderConfig {
 function toOpenAIEffort(
   effort: ReasoningEffort,
 ): NonNullable<OpenAI.Chat.Completions.ChatCompletionCreateParams['reasoning_effort']> {
-  return effort;
+  // Juno exposes the provider-neutral `max` tier; older OpenAI SDK typings do
+  // not include that newly supported wire value yet. Keep the runtime value
+  // intact while isolating the compatibility cast at this adapter boundary.
+  return effort as unknown as NonNullable<OpenAI.Chat.Completions.ChatCompletionCreateParams['reasoning_effort']>;
 }
 
 function caps(overrides: Partial<ModelCapabilities> = {}): ModelCapabilities {

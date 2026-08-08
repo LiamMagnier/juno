@@ -149,18 +149,36 @@ public struct JunoThinkingLadder: Equatable, Sendable {
     /// the product rather than inferred here — the reason a model has two stops
     /// is a fact about that model, not about the number two.
     public let caption: String?
+    /// What this model's premium serving tier multiplies its rates by, or nil
+    /// when it has no faster tier. The number rather than a flag, so the toggle
+    /// can name the premium it is asking the reader to accept.
+    public let fastModeRateMultiplier: Double?
+    /// Whether this model offers a deeper "pro" execution of the same request.
+    ///
+    /// Carried beside the ladder rather than added to it, because it is not a
+    /// rung: pro composes with whichever stop is selected instead of replacing
+    /// it, so a model can run pro at Low. Making it a stop would also mean
+    /// sending "pro" where the request expects a reasoning effort.
+    public let supportsProMode: Bool
 
     public init(
         stops: [JunoThinkingStop],
         isAutomatic: Bool = false,
         modelName: String = "",
-        caption: String? = nil
+        caption: String? = nil,
+        fastModeRateMultiplier: Double? = nil,
+        supportsProMode: Bool = false
     ) {
         self.stops = stops
         self.isAutomatic = isAutomatic
         self.modelName = modelName
         self.caption = caption
+        self.fastModeRateMultiplier = fastModeRateMultiplier
+        self.supportsProMode = supportsProMode
     }
+
+    /// Whether this model has a premium serving tier.
+    public var supportsFastMode: Bool { fastModeRateMultiplier != nil }
 
     /// A model that exposes no thinking control at all.
     public static let unavailable = JunoThinkingLadder(stops: [])

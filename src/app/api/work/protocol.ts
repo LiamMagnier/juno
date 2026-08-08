@@ -35,6 +35,7 @@ import {
 } from "@/lib/work/domain";
 import { hostCapabilityView, type WorkHostRow } from "@/lib/work/schedule";
 import { verifyApproval } from "@/lib/work/digests";
+import { MAX_SKILL_SLUG_CHARS } from "@/lib/work/skills";
 import { REASONING_TIERS } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 
@@ -169,6 +170,347 @@ export const patchSessionSchema = z
   // rename never happened. Unknown keys are stripped by zod, so `{ name: "x" }`
   // arrives here as `{}` and is refused, which is the point.
   .refine((body) => Object.keys(body).length > 0, { message: "no_recognised_fields" });
+
+// ---------------------------------------------------------------------------
+// Session context — editing a task after it exists
+// ---------------------------------------------------------------------------
+
+/**
+ * The body of `PATCH /api/work/sessions/[id]/context`.
+ *
+ * Separate from `patchSessionSchema` rather than folded into it, and the split
+ * is the point. That schema changes how a task is *filed* — its name, whether
+ * it is pinned, whether it is archived — and every one of those takes effect the
+ * instant the row is written. This one changes what a task may *reach*, and none
+ * of it is guaranteed to reach the attempt that is already running. Answering
+ * both from one handler would mean one response shape carrying two different
+ * promises, and the weaker promise is the one that would get lost.
+ *
+ * `goal` is deliberately absent and will stay absent. The schema documents it as
+ * what the user asked for verbatim, and it is the sentence a plan is checked
+ * back against; editing it mid-task would leave every attempt validated against
+ * a goal nobody wrote.
+ *
+ * Every list field is the WHOLE set, never a delta — the same contract
+ * `createSessionSchema` uses, for the same reason: a delta cannot express a
+ * removal without a second verb, and a reader editing a list is editing a set.
+ * Absent means "no opinion, leave it alone"; `[]` means "empty, on purpose".
+ *
+ * There is no idempotency key and there should not be one. Every operation here
+ * is a set assignment or a scalar assignment, so sending the same body twice
+ * converges on the same state and reports `unchanged` the second time. A key
+ * would be a token the route accepted and had no use for.
+ */
+export const patchSessionContextSchema = z
+  .object({
+    /**
+     * The files this task may read, by attachment id — the whole set.
+     *
+     * Bounded by `MAX_ATTACHMENTS`, imported rather than restated, exactly as in
+     * `createSessionSchema`: a cap that disagreed with the picker's would refuse
+     * a selection the UI had already accepted.
+     *
+     * Scoped to attached uploads. A folder on a Mac is a `WorkFileGrant` too,
+     * but it is granted and revoked through the host screen and the relay's
+     * `grant_folder`/`revoke_grant` commands, because only the Mac can resolve
+     * or release a bookmark. A route that silently swept those would revoke
+     * grants it never wrote.
+     */
+    attachmentIds: z.array(id).max(MAX_ATTACHMENTS).optional(),
+    /** The connected apps this task may reach, by provider id — the whole set. */
+    connectorIds: z.array(id).max(MAX_TASK_CONNECTORS).optional(),
+    /**
+     * Accepted, validated, and answered with a refusal. See
+     * `SKILL_NOT_EDITABLE` for why, and why that is better than a 400.
+     */
+    skillSlug: z.string().trim().min(1).max(MAX_SKILL_SLUG_CHARS).nullable().optional(),
+    model: z.string().trim().min(1).max(MAX_ID_CHARS).optional(),
+    reasoningEffort: reasoningEffort.optional(),
+    permissionPolicy: permissionPolicy.optional(),
+    /** The project this task is filed in. `null` unfiles it. */
+    projectId: id.nullable().optional(),
+  })
+  // Same refusal as `patchSessionSchema`, for the same reason: unknown keys are
+  // stripped by zod, so `{ files: [...] }` arrives as `{}` and is refused rather
+  // than answered with a cheerful 200 and a task nobody edited.
+  .refine((body) => Object.keys(body).length > 0, { message: "no_recognised_fields" });
+
+/** The controls this route can be asked about. One result per field, per request. */
+export const WORK_CONTEXT_FIELDS = [
+  "files",
+  "connectors",
+  "skill",
+  "model",
+  "reasoningEffort",
+  "permissionPolicy",
+  "project",
+] as const;
+
+export type WorkContextField = (typeof WORK_CONTEXT_FIELDS)[number];
+
+/**
+ * What a request did to one field.
+ *
+ * `narrowed` and `widened` are separate values rather than a single `changed`
+ * because they carry different promises, and that asymmetry is the whole design:
+ * taking a permission away is a safety action and lands as soon as it is
+ * written, while handing one over is a new grant and belongs to the attempt that
+ * is dispatched next. `mixed` is one request that did both — the common case for
+ * a file list, where a reader swapped one document for another.
+ */
+export const WORK_CONTEXT_CHANGES = [
+  "unchanged",
+  "narrowed",
+  "widened",
+  /** Both at once. Reported with the pessimistic effect; see `describeGrantChange`. */
+  "mixed",
+  /** Neither wider nor narrower — a different model, a different project. */
+  "replaced",
+  /** Understood, and cannot be done. The explanation says why. */
+  "refused",
+] as const;
+
+export type WorkContextChange = (typeof WORK_CONTEXT_CHANGES)[number];
+
+/**
+ * WHEN a change takes effect on what the task actually does.
+ *
+ * The definition matters more than the values, so it is written here once: this
+ * is not "when was the row written" — every accepted change is written before
+ * the response is sent. It is when the change alters the work. A progress bar
+ * that completes while the run never sees the file is the failure this whole
+ * type exists to prevent, so `now` is only ever claimed where the answer is
+ * true of the running attempt as well as of the next one.
+ */
+export const WORK_CONTEXT_EFFECTS = [
+  /** In force from the moment this response was written, for every attempt. */
+  "now",
+  /** The attempt in flight will not see it. The next dispatch will. */
+  "next_attempt",
+  /** Nothing changed, or the change was refused. */
+  "none",
+] as const;
+
+export type WorkContextEffect = (typeof WORK_CONTEXT_EFFECTS)[number];
+
+export interface WorkContextFieldResult {
+  field: WorkContextField;
+  change: WorkContextChange;
+  effect: WorkContextEffect;
+  /**
+   * One plain sentence, addressed to the reader, for the control that sent the
+   * change. Always present — a verdict with no sentence is a UI guessing.
+   */
+  explanation: string;
+  /**
+   * Present only when an attempt is executing right now and was already handed
+   * what has just been taken away.
+   *
+   * This is the field that keeps `effect: "now"` honest. Revoking a grant is
+   * immediate and binds everything from here on, but a run that has already been
+   * given a file's text, or has already opened a connector's socket, keeps what
+   * it has until it finishes — the executor reads both once, when it starts.
+   * Saying only "removed" at the control would tell somebody who has just pulled
+   * a document off a live task that the run can no longer see it, which is the
+   * one thing they most need to be right about.
+   */
+  inFlightCaveat?: string;
+}
+
+/**
+ * The skill a task runs under cannot be changed, and this says so out loud.
+ *
+ * `applySkill` in scripts/work-runner.ts resolves the skill from a leading
+ * `/slug` on `WorkSession.goal`, and the goal is verbatim by design. There is no
+ * second place the choice lives, so the only ways to make this control work
+ * would be to rewrite the goal — which detaches every attempt from the sentence
+ * its plan is validated against — or to add a column the executor does not read,
+ * which is a control that looks like a permission and grants nothing.
+ *
+ * Answered as a per-field refusal inside a 200 rather than as a 400 on the whole
+ * request, for two reasons. A UI that changes the model and the skill in one
+ * save should not lose the model change to the field that cannot land. And a
+ * refusal a client can read is a control it can disable with a sentence beside
+ * it, where a 400 is indistinguishable from a bug in the client.
+ */
+export const SKILL_NOT_EDITABLE: WorkContextFieldResult = {
+  field: "skill",
+  change: "refused",
+  effect: "none",
+  explanation:
+    "A task's skill comes from the slash command at the start of what you asked for, and Juno keeps that wording exactly as you wrote it because every attempt is checked back against it. Start a new task to run this under a different skill.",
+};
+
+export interface GrantChangeInput {
+  field: "files" | "connectors";
+  /** How many permissions this request took away. */
+  removed: number;
+  /** How many it handed over. */
+  added: number;
+  /**
+   * True when an attempt is executing right now — claimed, past the point where
+   * it read its files and opened its connectors. A queued or paused attempt has
+   * not read anything yet and is not in flight for this purpose.
+   */
+  runInFlight: boolean;
+  /**
+   * Connectors only: true when this request is the first time anybody answered
+   * the question for this task.
+   *
+   * It changes the verdict, and the reason is the `connectorsChosen` distinction
+   * the schema and src/lib/work/connectors.ts both turn on. A task that has never
+   * been asked carries `taskAllowed: null`, which means every app the account has
+   * linked. Any explicit list is therefore a subset of what the task could reach
+   * a moment ago — so the first answer is a pure narrowing however many apps it
+   * names, and the rows it writes record an allowlist rather than hand over reach
+   * the task did not already have. Reporting the named apps as a widening would
+   * defer a promise that was already true, and reporting 0/0 as `unchanged`
+   * would be worse: a reader who switched every app off would be told nothing
+   * happened, when what happened is that the task stopped reaching all of them.
+   *
+   * Meaningless for files, where there is no such flag: no grants means no files.
+   */
+  firstAnswer?: boolean;
+}
+
+/**
+ * Turns a reconciled grant set into the sentence and the promise for its control.
+ *
+ * The two halves are answered differently on purpose and the reason is the same
+ * one `narrowHostToggles` encodes for a Mac's capability switches: in this
+ * codebase permission only ever narrows on its way down. A removal is refused by
+ * nothing and is safe to apply the moment it is written. An addition has to pass
+ * through the layers a dispatch applies — the plan, the host, the project, the
+ * skill — and the only place all of them are in one room is the start of an
+ * attempt.
+ *
+ * A `mixed` request reports `next_attempt`, which is the pessimistic half. The
+ * removal really has landed and the sentence says so; the field as a whole is
+ * not in force until the addition is, and a UI told `now` would show a green
+ * tick over a task that cannot yet read the file the reader just attached.
+ */
+export function describeGrantChange(input: GrantChangeInput): WorkContextFieldResult {
+  const { field, removed, added, runInFlight } = input;
+  const thing = field === "files" ? "files" : "apps";
+  const caveat =
+    field === "files"
+      ? "The attempt running now was given its files when it started, so it still has what it has already read. Nothing after it will."
+      : "The attempt running now opened its connections when it started and keeps them until it finishes. Nothing after it will.";
+
+  // The first answer, before the add/remove arithmetic, because that arithmetic
+  // cannot see it: the counts describe rows, and what changed here is what the
+  // absence of rows meant. See `firstAnswer`.
+  if (input.firstAnswer) {
+    return {
+      field,
+      change: "narrowed",
+      effect: "now",
+      explanation:
+        added === 0
+          ? "This task can no longer reach any of your connected apps."
+          : `This task can now reach only the ${added === 1 ? "app" : `${added} apps`} you picked, and nothing else you have connected.`,
+      ...(runInFlight ? { inFlightCaveat: caveat } : {}),
+    };
+  }
+
+  if (removed === 0 && added === 0) {
+    return {
+      field,
+      change: "unchanged",
+      effect: "none",
+      explanation: `The ${thing} on this task are already the ones you sent.`,
+    };
+  }
+
+  const gone =
+    field === "files"
+      ? `${removed === 1 ? "That file is" : `Those ${removed} files are`} no longer part of this task.`
+      : `This task can no longer reach ${removed === 1 ? "that app" : `those ${removed} apps`}.`;
+  const arrived =
+    field === "files"
+      ? `Juno hands a task its files when an attempt starts, so ${added === 1 ? "the new file is" : `the ${added} new files are`} read from the next attempt.`
+      : `Juno connects a task's apps when an attempt starts, so ${added === 1 ? "the new app is" : `the ${added} new apps are`} reachable from the next attempt.`;
+
+  if (added === 0) {
+    return {
+      field,
+      change: "narrowed",
+      effect: "now",
+      explanation: gone,
+      ...(runInFlight ? { inFlightCaveat: caveat } : {}),
+    };
+  }
+  if (removed === 0) {
+    return { field, change: "widened", effect: "next_attempt", explanation: arrived };
+  }
+  return {
+    field,
+    change: "mixed",
+    effect: "next_attempt",
+    explanation: `${gone} ${arrived}`,
+    ...(runInFlight ? { inFlightCaveat: caveat } : {}),
+  };
+}
+
+/**
+ * Why each of the four settings below binds at dispatch and cannot bind sooner.
+ *
+ * One sentence each, written for the reader rather than for the log, and each
+ * one is a fact about this codebase rather than a hedge:
+ *
+ *  - the model and the thinking depth are `AgentLoopOptions`, fixed when the
+ *    loop is constructed, alongside the pricing the budget guard bills against;
+ *  - the approval mode is digested into every approval the run asks for, so
+ *    changing it under a live run would refuse the card already on somebody's
+ *    screen with `policy_changed`;
+ *  - a project's instructions are read into the run's opening context, once,
+ *    before the first turn.
+ */
+const SETTING_EXPLANATIONS: Record<
+  "model" | "reasoningEffort" | "permissionPolicy" | "project",
+  string
+> = {
+  model: "Juno picks up the model when an attempt starts, so this one runs from the next attempt.",
+  reasoningEffort:
+    "Juno sets the thinking depth when an attempt starts, so this applies from the next attempt.",
+  permissionPolicy:
+    "Every approval an attempt asks for is signed against the mode it started under, so this applies from the next attempt.",
+  project:
+    "Juno reads a project's instructions when an attempt starts, so this applies from the next attempt.",
+};
+
+export interface SettingChangeInput {
+  field: "model" | "reasoningEffort" | "permissionPolicy" | "project";
+  /** False when the value sent is the value already stored. */
+  changed: boolean;
+}
+
+/**
+ * The verdict for a setting that binds at dispatch.
+ *
+ * `next_attempt` unconditionally, including when nothing is running. That is not
+ * caution, it is accuracy: these four are read at exactly one moment, and when
+ * no attempt is in flight "the next attempt" is the run the reader is about to
+ * start — which is the sentence the control should be showing them anyway.
+ * Reporting `now` because nothing happens to be running would make the promise
+ * depend on the timing of the request rather than on what the executor does.
+ */
+export function describeSettingChange(input: SettingChangeInput): WorkContextFieldResult {
+  if (!input.changed) {
+    return {
+      field: input.field,
+      change: "unchanged",
+      effect: "none",
+      explanation: "That is already what this task is set to.",
+    };
+  }
+  return {
+    field: input.field,
+    change: "replaced",
+    effect: "next_attempt",
+    explanation: SETTING_EXPLANATIONS[input.field],
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Run bodies

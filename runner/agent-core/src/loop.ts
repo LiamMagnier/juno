@@ -34,7 +34,23 @@ export const DEFAULT_STREAM_SILENCE_MS = DEFAULT_REQUEST_TIMEOUT_MS;
 export interface AgentLoopOptions {
   provider: ProviderAdapter;
   model: string;
-  system: string;
+  /**
+   * The system prompt, or a function that builds it for each turn.
+   *
+   * A plain string was fine while the prompt described only things that could
+   * not change mid-run. It stopped being fine when the plan became something
+   * the model writes: `WorkAgentSession` renders the current plan into its
+   * prompt, the string was built once when these options were constructed, and
+   * every turn after the first therefore carried the *seed* plan — three
+   * placeholder steps with ids that `write_plan` had already deleted, under a
+   * line telling the model to call `write_plan` first. On turn thirty it was
+   * still being told to start planning, and any step id it read out of the
+   * prompt came back "No step with id".
+   *
+   * Passing a function moves the build to the moment of use, which is the only
+   * place it can be correct.
+   */
+  system: string | (() => string);
   /** The transcript, mutated in place (assistant + tool-result messages). */
   messages: ChatMessage[];
   tools: ToolSpec[];
@@ -233,7 +249,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
         listen();
         for await (const ev of opts.provider.stream({
           model: opts.model,
-          system: opts.system,
+          // Rebuilt per turn when the caller passed a builder — see the field.
+          system: typeof opts.system === 'function' ? opts.system() : opts.system,
           messages: opts.messages,
           tools: opts.tools,
           signal: turn.signal,

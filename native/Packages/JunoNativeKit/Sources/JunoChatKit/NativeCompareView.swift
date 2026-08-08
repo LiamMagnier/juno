@@ -162,11 +162,11 @@ public struct NativeCompareView: View {
             .padding(.bottom, JunoSpace.snug)
         }
         .background(
-            RoundedRectangle(cornerRadius: JunoCornerRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                 .fill(Color.junoSurface)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: JunoCornerRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                 .strokeBorder(Color.junoHairline)
         )
         .padding(.horizontal, JunoSpace.regular)

@@ -265,11 +265,11 @@ struct JunoMobileVoiceSelfView: View {
     private func preview(_ session: AVCaptureSession) -> some View {
         JunoCameraPreview(session: session)
             .frame(width: Self.width, height: Self.height)
-            .clipShape(RoundedRectangle(cornerRadius: JunoCornerRadius.row, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
             .overlay(alignment: .top) { seeingBadge }
             .overlay(alignment: .bottom) { controls }
             .overlay {
-                RoundedRectangle(cornerRadius: JunoCornerRadius.row, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
                     .strokeBorder(Color.junoHairline, lineWidth: 1)
             }
             .accessibilityElement(children: .contain)

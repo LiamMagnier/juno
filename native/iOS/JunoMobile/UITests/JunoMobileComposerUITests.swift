@@ -82,8 +82,8 @@ final class JunoMobileComposerUITests: XCTestCase {
         let chip = thinkingChip(app)
         require(chip, app)
         // The chip's value is deliberately verbose for VoiceOver
-        // ("Off. Available levels: …"); assert on the level it leads with.
-        XCTAssertEqual((chip.value as? String)?.prefix(3), "Off")
+        // ("Instant. Available levels: …"); assert on the level it leads with.
+        XCTAssertEqual((chip.value as? String)?.prefix(7), "Instant")
 
         chip.tap()
         let slider = thinkingSlider(app)
@@ -107,7 +107,7 @@ final class JunoMobileComposerUITests: XCTestCase {
                     withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5)
                 )
             )
-        XCTAssertEqual(slider.value as? String, "Thinking off")
+        XCTAssertEqual(slider.value as? String, "Instant, no thinking")
     }
 
     @MainActor
@@ -168,7 +168,7 @@ final class JunoMobileComposerUITests: XCTestCase {
         slider.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).tap()
         XCTAssertEqual(slider.value as? String, "Thinking on")
         slider.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5)).tap()
-        XCTAssertEqual(slider.value as? String, "Thinking off")
+        XCTAssertEqual(slider.value as? String, "Instant, no thinking")
     }
 
     @MainActor

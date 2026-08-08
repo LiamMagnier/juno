@@ -4,6 +4,7 @@ Juno is a production-grade, multimodal AI chat website: streaming chat across a
 large catalog of models, durable conversation history, long-term memory, a Canvas
 for live artifacts, file/image/PDF uploads, tool connectors (MCP), read-aloud +
 dictation + realtime speech-to-speech voice, cloud & device "Code" agent sessions,
+agentic "Work" tasks that plan themselves and stop to ask,
 an interface that auto-translates itself, and Stripe billing with server-side plan
 gating.
 
@@ -44,6 +45,11 @@ document the native clients themselves.
 19. [Configuration & environment variables](#19-configuration--environment-variables)
 20. [Deployment & operations](#20-deployment--operations)
 21. [Development: scripts & tests](#21-development-scripts--tests)
+
+Plus **[§9b Work: tasks, runs, plans & approvals](#9b-work-tasks-runs-plans--approvals)**,
+which sits between 9 and 10. It carries a letter rather than a number for the same reason
+§3.4b and §20.2b do: it was written after the numbering was set, and renumbering twelve
+sections would break every anchor anyone has linked to.
 
 ---
 
@@ -120,6 +126,8 @@ src/
       learning/             inline learning-block renderers
     canvas/                 canvas panel + sandboxed artifact renderer
     voice/                  realtime voice dock
+    work/                   Work threads: composer, plan/timeline, decisions,
+      voice/                a voice session briefed on one Work task (§9b, §10.2)
     signature/              dot/ASCII brand system (DotField, ThinkingDots, …)
     connections/ memory/ tasks/ roadmap/ compare/ share/ admin/ settings/ landing/ brand/ i18n/
   hooks/                    use-chat, use-uploads, use-realtime-voice, use-tts,
@@ -138,7 +146,8 @@ Key `src/lib` modules: `auth.ts` / `session.ts` / `native-auth*.ts` (auth),
 `anthropic.ts` / `llm.ts` / `openai-compat.ts` / `openai-responses.ts` (providers),
 `models.ts` / `model-metrics.ts` / `pricing.ts` / `auto-model.ts` (model registry),
 `memory.ts`, `connectors.ts` / `mcp.ts` / `mcp-oauth.ts`, `code-remote*.ts` /
-`cloud-code*.ts` / `github-oidc.ts` (Code), `plans.ts` / `usage.ts` / `spend.ts` /
+`cloud-code*.ts` / `github-oidc.ts` (Code), `work/*` (the Work vocabulary, store, relay,
+skills, connectors and approvals — §9b), `plans.ts` / `usage.ts` / `spend.ts` /
 `stripe.ts` / `rate-limit.ts` (billing), `moderation*.ts`, `storage.ts`,
 `message-crypto.ts` (at-rest encryption), `sync-*.ts` (native sync).
 
@@ -860,6 +869,146 @@ git worktrees, surfaced to the web UI as `agent` events.
 
 ---
 
+## 9b. Work: tasks, runs, plans & approvals
+
+Juno **Work** is the agentic surface for everything that is not code: you write a goal,
+Juno plans it, works it, stops to ask when only you can decide, and hands back a
+deliverable. It shares nothing with Code except the idea of a remote executor — its own
+vocabulary lives in `src/lib/work/domain.ts` (statuses, event kinds, capabilities, risk
+levels, command kinds), is mirrored to the native clients through
+`contracts/work/juno-work-v1.json`, and `src/lib/work/contract.ts` asserts at runtime that
+the two still agree. **A value that is not in `domain.ts` is not a value Work has.**
+
+Sixteen `Work*` Prisma models back it. The ones that carry the flow: `WorkSession` (the
+task: goal, target, model, reasoning effort, permission policy), `WorkRun` (one *attempt*
+at it), `WorkEvent` (the append-only log, `seq`-ordered, with a per-kind `visibility` of
+user / operator / internal), `WorkApproval`, `WorkRunIO` (an attempt's input manifest),
+`WorkFileGrant` + `WorkSessionConnector` (what the task may reach), `WorkHost` +
+`WorkCommand` (a paired Mac and the commands sent to it), `WorkSkill*`, `WorkSchedule` /
+`WorkTrigger`, `WorkArtifact*`, `WorkAuditEvent`.
+
+### 9b.1 A task, and its attempts
+
+`POST /api/work/sessions` creates a session in `draft`. `POST /api/work/sessions/[id]/runs`
+dispatches an attempt. A session is the task; a run is one try at it, numbered by
+`attempt`, and the run — never the session — is what an executor claims.
+
+Statuses (`WORK_LIVE_STATUSES` / `WORK_TERMINAL_STATUSES`):
+
+```
+draft → queued → preparing → running ⇄ waiting_input | waiting_approval | paused
+                                     → completed | failed | cancelled | interrupted
+                                     | host_offline | budget_exceeded | timed_out
+```
+
+`interrupted` is distinct from `failed` on purpose (the run itself decided `failed`; nobody
+decided `interrupted`), and `host_offline` is terminal but still counts as *needs
+attention*, because the user has a decision left to make. `WorkRun.terminalReason` adds
+`superseded` for an attempt a newer one took over.
+
+Dispatch decides four things: **where**, **on what**, **under which permission mode**, and
+**within what ceilings**. Target selection (`selectTarget`) matches the capabilities the
+goal implies (`inferCapabilities`) against what a paired Mac has actually advertised —
+nothing is assumed about a host — and `automatic` may legitimately move a task off the
+Mac. Model choice (`src/lib/work/models.ts`) reads back over at most the last 4 failures so
+a retry does not pick the model that just failed. Approval mode is
+`conservative | balanced | permissive`, defaulting to `balanced`, and a Mac may narrow it
+further (`approvalModeNarrowedByHost`). Ceilings are **$2 · 600,000 tokens · 20 minutes of
+running time** (`DEFAULT_RUN_BUDGET`); the clock suspends while the run waits on a person,
+so a question answered the next morning costs no runtime. A skill, schedule or host may
+lower any ceiling; nothing may raise one. Abuse controls: 10 dispatches/min/user and at
+most 3 live runs per user across all sessions.
+
+Two executors run the work and write the same events. The **cloud runner**
+(`scripts/work-runner.ts`) drives the vendored `runner/agent-core` Work session against
+`/api/agent`. A **Mac** claims a `start` command over the host command channel
+(`WORK_COMMAND_KINDS`: start, pause, resume, stop, answer, steer, approve, deny, undo,
+grant_folder, revoke_grant, refresh_capabilities, ping) and runs it locally. Clients read
+either the same way: `GET /api/work/sessions/[id]/events` is SSE with three frame types —
+`snapshot` on connect (and again when the run changes), `events` as the log grows, `done`
+at a terminal status — each carrying `{ session, run, events, approvals }`.
+`POST /api/work/runs/[id]/control` takes `pause | resume | cancel`.
+
+### 9b.2 The plan the model writes
+
+The plan is not a scratchpad. It is a small explicit state machine
+(`runner/agent-core/src/work/plan.ts`) with id-stable steps that survives a pause, a host
+going offline and a resume on a different executor, because it is what a person reads to
+understand a run they were not watching.
+
+A run starts with a generic three-step seed and the model is told, before any other tool,
+to replace it with `write_plan` — real steps, in the user's terms, not tool names. From
+then on `update_plan` moves each step through `pending → active → done | skipped | failed`,
+emitted as `plan_created` / `plan_updated` / `step_started` / `step_finished`. The UI
+rebuilds the plan from the **newest** plan event and then replays the step events after it
+(`derivePlan` in `src/components/work/work-timeline.tsx`) — never by patching the previous
+version, since a re-plan can drop or rename steps and a merge produces a list that was
+nobody's plan. A step still `active` when the run stopped is shown as `unreported`, a state
+only the reader can conclude and no executor may claim.
+
+Before a run may report success it faces `structuralValidation` (`work/session.ts`), a
+`validation_result` event with three checks: every planned step reached a conclusion; every
+step that was skipped or failed says *why*; and the run produced an artifact or a written
+answer. It is deliberately structural — it cannot judge whether a document is any good, and
+a check that claimed to would be worse than none.
+
+Progress is also policed: `DEFAULT_STALL_THRESHOLD = 6` consecutive tool calls that told
+the run *nothing new* (a repeat of a call signature it has already made), and
+`DEFAULT_REPETITION_THRESHOLD = 3` identical calls, mark it as going in circles.
+
+### 9b.3 Questions, steering and approvals
+
+**Questions.** `question_asked` puts the run in `waiting_input` and it stops.
+`POST /api/work/sessions/[id]/answer` with a `questionId` answers it; questions are matched
+by id, because two can be open at once.
+
+**Steering.** The same route *without* a `questionId` records a `user_message` — an
+instruction the run never asked for. Both executors read it: the cloud runner drains
+unconsumed steering events between turns and appends them as a user turn, and a Mac is
+handed a `steer` command it queues for the top of its next turn. Neither aborts the turn in
+flight, so the honest sentence is the one the route returns: *Juno reads this before its
+next step and works to it from there. What it has already done stands.* A run that is
+`waiting_input` refuses an instruction — it is stopped, and accepting one would tell the
+user their words were delivered to something that had not moved.
+
+**Approvals.** When a run wants to do something the permission mode does not cover it emits
+`approval_requested`, writes a `WorkApproval` and enters `waiting_approval`. The row carries
+an `actionDigest` (so a client can prove the card it drew is the row it is answering), a
+`policyDigest` (the mode in force when it was asked), and an `expiresAt`.
+`POST /api/work/approvals/[id]/decision` refuses five ways, each with its own sentence:
+`digest_mismatch`, `policy_changed` (the mode was narrowed after you were asked — Juno asks
+again), `expired`, `already_decided`, `not_standing_allowable` (an irreversible action can
+be allowed *this time* but never made standing). An expired approval is dropped from the
+read paths entirely rather than rendered with two buttons guaranteed to fail. A decision is
+then dispatched to the Mac over the command channel, because a decision that only lands in
+Postgres leaves a host holding a tool call forever.
+
+### 9b.4 A task's context, and when a change to it takes effect
+
+The goal, the files, the connectors and the skill are **fixed at dispatch**. The product
+rule that follows is worth stating plainly, because a control that implies otherwise is a
+progress bar that completes while the run never sees the file:
+
+> **A change made during an attempt takes effect on the NEXT attempt — except a message,
+> which the attempt in flight reads before its next step.**
+
+| Part of the context | Where it is fixed | When a change lands |
+|---|---|---|
+| **Goal** | `WorkSession.goal`, written once. `PATCH /api/work/sessions/[id]` accepts `title \| pinned \| archived` **only** | Never — it is what the plan is validated against. Say more by sending a message, or start a new task |
+| **Files** | `WorkRunIO` rows written once at dispatch by `recordRunInputsFromGrants` from the session's live `WorkFileGrant` rows | Next attempt. The manifest is a snapshot on purpose: revoking a grant mid-run must not rewrite what the run actually read |
+| **Connectors** | `WorkSessionConnector`, chosen at session creation; `evaluateConnector` refuses anything else with `not_selected_for_task` | Next attempt |
+| **Skill** | `applySkill` parses a `/slug` out of the goal at run start (or matches one at ≥ 0.75 confidence) | Next attempt |
+| **Model, reasoning effort, permission policy** | `POST …/runs` accepts all three, but they bind when the loop is constructed | Next attempt. Target and permission policy are attempt-scoped overrides; they do not edit the session |
+| **An answer or an instruction** | `POST …/answer` → `question_answered` / `user_message` | **This attempt**, at its next step. Nothing already done is undone |
+
+Two consequences worth remembering. A skill cannot widen a run: `resolveSkillPermissions`
+intersects what the skill asks for with what the run already had, so a shared or pasted
+skill can never add a tool. And the goal is deliberately left un-stripped of its `/slug`
+invocation — it is what the user actually wrote, and validating a run against an edited
+goal would validate it against something nobody asked for.
+
+---
+
 ## 10. Voice
 
 ### 10.1 Read-aloud & dictation
@@ -900,6 +1049,19 @@ by `NEXT_PUBLIC_VOICE_RELAY_URL`.
 
 > **GDPR note:** selecting Qwen sends user audio to Alibaba Cloud (Singapore). Disclose it
 > in the privacy policy and consider a consent notice when a user picks Qwen.
+
+**Voice about a Work task.** `src/components/work/voice/` opens the *same* session against
+one Work task instead of a chat: `buildWorkVoiceBriefing` turns the task's goal, status,
+plan, open questions, pending approvals and latest activity into the `history` array that
+`session.start` already accepts, and `WorkVoiceButton` mounts it. What that can and cannot
+be is set by the relay, not by the UI: providers are built from `seed.instructions` +
+`seed.transcript` and **no tools**, and `RelaySession` holds a user id and a socket and no
+database handle — so the voice knows exactly what the briefing said and can do nothing to
+the task. It therefore says so on screen while it is open; spoken words reach the task only
+through the thread's own send path, pressed deliberately; and because the relay seeds
+history once (`historySeeded`), a task that moves on is re-briefed by an explicit *bring
+Juno up to date* control that sends one labelled `input.text` turn rather than silently.
+The component is exported and not yet mounted by the thread composer.
 
 ---
 

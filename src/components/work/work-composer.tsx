@@ -74,6 +74,13 @@ import {
   type WorkTransportFailure,
 } from "@/components/work/work-transport";
 import { DegradationNotes, WorkStateNote } from "@/components/work/work-vocabulary";
+import {
+  appendClarifications,
+  derivePreflightQuestions,
+} from "@/components/work/clarify/preflight";
+import { WorkPreflightCard } from "@/components/work/clarify/preflight-card";
+import { WorkRunDisclosure } from "@/components/work/clarify/run-disclosure";
+import type { PreflightClarificationAnswer } from "@/lib/preflight-clarification";
 import { cn, formatBytes } from "@/lib/utils";
 
 /*
@@ -129,6 +136,26 @@ import { cn, formatBytes } from "@/lib/utils";
  * still loaded and still fed to the preview, because "no Mac is switched on for
  * Juno Work" is a real answer to "why will this not start"; it is simply
  * delivered as that one sentence rather than as an inventory.
+ *
+ * The pre-flight card below the surface is the third control to clear the bar
+ * the Apps chip and the approval mode set, and it clears it in the one way this
+ * surface had left uncovered. Everything above tells the reader what Juno read
+ * into their sentence; nothing asked them about the parts it could not read. A
+ * run holds a $2, 600,000-token, twenty-minute ceiling and nobody is watching
+ * it, so a misread goal is not a paragraph to ask again for — it is the whole
+ * ceiling spent on the wrong errand, discovered at the end.
+ *
+ * It is offered rather than imposed, and the send control never stops working
+ * while it is open: skipping it is the same key that has always started a task,
+ * which is the only arrangement under which "skip" is not the slow path. Its
+ * questions come from `derivePreflightQuestions`, which is regexes over the
+ * same goal text for the same reason `inferCapabilities` is — no round trip
+ * before the button works, no cost on a card the reader may ignore, and no
+ * failure mode where the feature is quietly absent on the day the provider is
+ * struggling. The answers land in the textarea in front of the reader rather
+ * than being posted behind it: `WorkSession.goal` is documented as verbatim and
+ * is what the plan is checked against, so the only honest way to add to it is
+ * to add to it where the reader can see it and take it back out.
  *
  * Starting is two requests, because the server splits them: POST /sessions
  * writes a draft that costs nothing and holds no executor, and POST
@@ -303,6 +330,17 @@ export function WorkComposer({
    * the one outcome the default exists to prevent.
    */
   const [connectorIds, setConnectorIds] = React.useState<string[]>([]);
+  /**
+   * The account's linked apps, loaded once and shared.
+   *
+   * Hoisted out of the Apps chip because two surfaces now need the same list
+   * and neither may have its own copy of it: the chip draws the switches, and
+   * the pre-flight card has to know that an app named in the goal is one this
+   * account has actually connected before it offers to switch it on. A second
+   * fetch would be a second answer to "is GitHub linked", and the two would
+   * disagree the first time somebody disconnected it in another tab.
+   */
+  const apps = useConnectedApps();
   const [model, setModel] = React.useState<ModelId>(defaultWorkModelId);
   const [submitting, setSubmitting] = React.useState(false);
   const [blocked, setBlocked] = React.useState<WorkBlocked | null>(null);
@@ -453,6 +491,73 @@ export function WorkComposer({
 
   /** What the goal looks like it will need, re-read on every keystroke. */
   const inference = React.useMemo(() => inferCapabilities(goal), [goal]);
+
+  /**
+   * The exact goal text the reader last settled the pre-flight card on, whether
+   * by answering it or by dismissing it.
+   *
+   * Compared against the whole string rather than held as a boolean, so the
+   * card comes back when the task changes and stays gone when it does not.
+   * A boolean would mean a reader who dismissed the questions for one errand,
+   * cleared the field and typed a different one would never be asked again;
+   * clearing on every keystroke would mean a dismissed card reappearing on the
+   * next character, which is a dismissal that does not dismiss.
+   */
+  const [preflightSettled, setPreflightSettled] = React.useState<string | null>(null);
+
+  const preflightQuestions = React.useMemo(
+    () =>
+      derivePreflightQuestions({
+        goal,
+        // The composer's own reading, not a second one. `inferCapabilities` has
+        // already been run for the caption below; a question that disagreed
+        // with the sentence directly under it would be two readings of the same
+        // text presented as one.
+        inferred: inference.capabilities,
+        connectors: (apps.connectors ?? []).map((connector) => ({
+          id: connector.id,
+          label: connector.label,
+        })),
+        selectedConnectorIds: connectorIds,
+      }),
+    [goal, inference.capabilities, apps.connectors, connectorIds]
+  );
+
+  const showPreflight =
+    !submitting && preflightQuestions.length > 0 && preflightSettled !== goal;
+
+  /**
+   * Writes the answers into the task and grants what they granted.
+   *
+   * The text goes into the textarea rather than onto the wire as a second
+   * field: `WorkSession.goal` is the sentence the plan is validated against and
+   * is documented as what the user actually asked for, so the answers have to
+   * arrive as something the reader watched appear and can still delete. The
+   * connector grants cannot travel that way — a sentence saying "reach GitHub"
+   * grants nothing, `evaluateConnector` reads the grant rows — so those are
+   * applied to the Apps chip in the same action, and the two cannot disagree
+   * because they are set from the same answer.
+   */
+  const acceptPreflight = React.useCallback(
+    (answers: PreflightClarificationAnswer[], grantConnectorIds: string[]) => {
+      const next = appendClarifications(goal, answers);
+      setGoal(next);
+      setPreflightSettled(next);
+      if (grantConnectorIds.length > 0) {
+        setConnectorIds((prev) => [
+          ...prev,
+          ...grantConnectorIds.filter((connectorId) => !prev.includes(connectorId)),
+        ]);
+      }
+      // Back to the field, where the reader can now see what was added and take
+      // any of it out again. Landing focus on a button they have just used
+      // would leave the one thing that changed off-screen on a phone.
+      textareaRef.current?.focus();
+    },
+    [goal]
+  );
+
+  const skipPreflight = React.useCallback(() => setPreflightSettled(goal), [goal]);
 
   const attachmentIds = React.useMemo(
     () => readyAttachments.map((attachment) => attachment.id),
@@ -620,6 +725,10 @@ export function WorkComposer({
 
     if (started.kind === "ok") {
       setGoal("");
+      // The next task gets asked its own questions. Left set, this would hold
+      // the empty string and match the empty field, so the first errand typed
+      // after a successful start would silently get no pre-flight at all.
+      setPreflightSettled(null);
       clear();
       // The next task starts from off, like this one did. Carrying the selection
       // forward would be the composer granting an app to a task nobody has
@@ -709,7 +818,14 @@ export function WorkComposer({
       <div className="composer-surface relative flex w-full flex-col rounded-[22px] border border-border/65 bg-card/95 backdrop-blur transition-[border-color,box-shadow] duration-base ease-spring focus-within:border-foreground/15 sm:rounded-[24px]">
         <div className="flex flex-wrap items-center gap-1.5 px-3 pb-0 pt-3 sm:px-3.5 sm:pt-3.5">
           <ProjectChip value={projectId} onChange={setProjectId} disabled={submitting} />
-          <AppsChip value={connectorIds} onChange={setConnectorIds} disabled={submitting} />
+          <AppsChip
+            value={connectorIds}
+            onChange={setConnectorIds}
+            disabled={submitting}
+            connectors={apps.connectors}
+            failed={apps.failed}
+            onRetry={apps.reload}
+          />
         </div>
 
         {canAttach && (
@@ -1004,6 +1120,26 @@ export function WorkComposer({
       </div>
 
       {/*
+       * The questions Juno would otherwise answer for itself.
+       *
+       * Between the surface and the approval control, because it is about this
+       * particular errand rather than about how the account likes tasks run,
+       * and because the reader's eye leaves the textarea downwards. It never
+       * gates `canStart`: pressing send with the card open starts the task on
+       * Juno's own answers, which is the same outcome as accepting it and one
+       * press cheaper — that is what makes skipping the fast path rather than
+       * the penalised one.
+       */}
+      {showPreflight && (
+        <WorkPreflightCard
+          questions={preflightQuestions}
+          disabled={submitting}
+          onAccept={acceptPreflight}
+          onSkip={skipPreflight}
+        />
+      )}
+
+      {/*
        * How often this task stops to ask.
        *
        * Below the surface rather than in the toolbar, and with its sentence
@@ -1042,6 +1178,25 @@ export function WorkComposer({
           {WORK_APPROVAL_MODE_SUMMARY[approvalMode]}
         </p>
       </div>
+
+      {/* What the run commits to, from the values that will be sent rather than
+          from a second computation of them: `selection` is the same object the
+          caption below reads, and the connector labels are the ones the reader
+          switched on in the chip above. Suppressed while the host list is in
+          flight, for the reason the degradation note below is: a "runs on
+          Juno's cloud" that corrects itself two hundred milliseconds later is
+          the one line here nobody can check. */}
+      {!loadingHosts && !executorsUnknown && blocked === null && (
+        <WorkRunDisclosure
+          target={selection.target}
+          hostName={
+            (hosts ?? []).find((host) => host.id === selection.hostId)?.displayName ?? null
+          }
+          connectorLabels={(apps.connectors ?? [])
+            .filter((connector) => connectorIds.includes(connector.id))
+            .map((connector) => connector.label)}
+        />
+      )}
 
       {(inferenceLine !== null || runLine !== null) && (
         <div className="mt-2.5 space-y-0.5 px-1.5">
@@ -1141,6 +1296,53 @@ export function WorkComposer({
       )}
     </div>
   );
+}
+
+/**
+ * The account's connected apps, loaded once for everything on this surface that
+ * needs them.
+ *
+ * Three things do now — the Apps chip that switches them on, the pre-flight
+ * question that offers to switch one on because the goal named it, and the
+ * disclosure that lists what the run will reach — and each of them asking
+ * `/api/connectors` for itself would be three answers to one question, arriving
+ * at three different moments. Only connected apps are kept: everything here is
+ * about narrowing what one task may reach inside what the account already
+ * permits, and an app nobody has linked is not a choice this surface can offer.
+ *
+ * A failed load is carried rather than swallowed, because "you have no
+ * connected apps" and "Juno could not find out" are different sentences and
+ * only the second one deserves a Retry.
+ */
+function useConnectedApps(): {
+  connectors: ConnectorStatus[] | null;
+  failed: boolean;
+  reload: () => void;
+} {
+  const [connectors, setConnectors] = React.useState<ConnectorStatus[] | null>(null);
+  const [failed, setFailed] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    setFailed(false);
+    try {
+      const response = await fetch("/api/connectors");
+      if (!response.ok) throw new Error("connectors");
+      const data = (await response.json()) as { connectors?: ConnectorStatus[] };
+      setConnectors((data.connectors ?? []).filter((connector) => connector.connected));
+    } catch {
+      setFailed(true);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
+
+  const reload = React.useCallback(() => {
+    void load();
+  }, [load]);
+
+  return { connectors, failed, reload };
 }
 
 /* ──────────────────────────────── the chips ──────────────────────────────── */
@@ -1369,35 +1571,30 @@ function ProjectChip({
  * the connections page read. A second endpoint written for Work would be a
  * second answer to "is Gmail linked", and the two would disagree the first time
  * somebody disconnected it from the other page.
+ *
+ * The load itself is `useConnectedApps` above rather than state in here, for the
+ * same argument one rung down: the pre-flight card and the run disclosure both
+ * need this list, and three copies of it would be three answers to the same
+ * question. The chip still owns everything else about the control — what it
+ * says, when it is drawn at all, and what an empty account sees.
  */
 function AppsChip({
   value,
   onChange,
   disabled,
+  connectors,
+  failed,
+  onRetry,
 }: {
   value: string[];
   onChange: (connectorIds: string[]) => void;
   disabled: boolean;
+  /** Null while the list is still in flight. */
+  connectors: ConnectorStatus[] | null;
+  failed: boolean;
+  onRetry: () => void;
 }) {
-  const [connectors, setConnectors] = React.useState<ConnectorStatus[] | null>(null);
-  const [failed, setFailed] = React.useState(false);
   const [open, setOpen] = React.useState(false);
-
-  const load = React.useCallback(async () => {
-    setFailed(false);
-    try {
-      const response = await fetch("/api/connectors");
-      if (!response.ok) throw new Error("connectors");
-      const data = (await response.json()) as { connectors?: ConnectorStatus[] };
-      setConnectors((data.connectors ?? []).filter((connector) => connector.connected));
-    } catch {
-      setFailed(true);
-    }
-  }, []);
-
-  React.useEffect(() => {
-    void load();
-  }, [load]);
 
   const toggle = React.useCallback(
     (connectorId: string) => {
@@ -1472,7 +1669,7 @@ function AppsChip({
               <p className="text-caption leading-relaxed text-muted-foreground">
                 Couldn’t read your connected apps. This task will reach none of them until it can.
               </p>
-              <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5">
+              <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5">
                 <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
               </Button>
             </div>

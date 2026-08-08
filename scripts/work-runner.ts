@@ -48,7 +48,7 @@ import {
   setSessionAttention,
   type WorkRunUsage,
 } from "@/lib/work/store";
-import { verifyApproval } from "@/lib/work/digests";
+import { actionDigest, policyDigest, verifyApproval } from "@/lib/work/digests";
 import { recordWorkAudit } from "@/lib/work/audit";
 import {
   RUN_LEASE_MS,
@@ -2923,9 +2923,38 @@ async function execute(input: ExecuteInput): Promise<ExecuteOutcome> {
             action: request.action,
             risk: request.risk,
             summary: request.summary,
-            detail: request.detail as never,
-            actionDigest: request.actionDigest,
-            policyDigest: request.policyDigest,
+            /*
+             * The bytes the digest was taken over, and digests this side can
+             * reproduce from them. Both halves matter, and getting either wrong
+             * makes every approval in the product unanswerable.
+             *
+             * The runtime hashes its own `digestInput` string and hands back
+             * `actionDigest: sha256(digestInput)`. This row used to store that
+             * hash beside `request.detail` — a *different* object from
+             * `JSON.parse(request.digestInput)`. The executor never noticed,
+             * because when the answer comes back it verifies against
+             * `JSON.parse(request.digestInput)` (see the `verifyApproval` call
+             * below) and so compares like with like. The website does not have
+             * `digestInput`; it recomputes `actionDigest(action, detail)` from
+             * the persisted row. Two schemes over two objects, so the two never
+             * agreed, and `classifyApprovalDecision` refused every decision with
+             * `digest_mismatch` — measured against a live pending approval:
+             *
+             *   stored     686be292e6e0e7a89c28bb0c4d9fe7302101d965b1d75e5597ad…
+             *   recomputed 25c36fa53ed1c41484fb0ae6e09a556e422715945849930e3d91…
+             *
+             * `policyDigest` was wrong the same way: the runtime's was a bare
+             * sha256 of "{}", while `policyDigest()` here is domain-separated.
+             *
+             * So the row now carries what the verifier can reproduce: the detail
+             * is the object the digest was taken over, and both digests come
+             * from `digests.ts`, which is the one authority both sides consult.
+             * The executor's own later check still passes, because it feeds that
+             * same object in.
+             */
+            detail: JSON.parse(request.digestInput) as never,
+            actionDigest: actionDigest(request.action, JSON.parse(request.digestInput)),
+            policyDigest: policyDigest((run.permissionPolicy ?? {}) as never),
             expiresAt: new Date(request.expiresAt),
           },
         });

@@ -224,3 +224,42 @@ test("preview detail preserves the action but removes credentials", () => {
     }
   );
 });
+
+/*
+ * Since tool detail shipped, this redactor is what stands between a connector
+ * argument and an unencrypted `Message.activity` row, on EVERY call rather than
+ * only the ones that raise an approval card. The spellings below are the ones
+ * an API key actually arrives under; the negatives are the innocent words that
+ * share a prefix with them, and blanking those would hollow out the very panel
+ * this protects.
+ */
+test("preview detail catches the credential spellings, and only those", () => {
+  const secret = "sk-live-DEADBEEF";
+  assert.deepEqual(
+    actionPreviewDetail({
+      apiKey: secret,
+      api_key: secret,
+      accessKey: secret,
+      bearer: secret,
+      passphrase: secret,
+      headers: { "x-api-key": secret, auth: secret },
+    }),
+    {
+      apiKey: "[redacted]",
+      api_key: "[redacted]",
+      accessKey: "[redacted]",
+      bearer: "[redacted]",
+      passphrase: "[redacted]",
+      headers: { "x-api-key": "[redacted]", auth: "[redacted]" },
+    }
+  );
+
+  // `author` is not `auth`, and an issue body the user asked to read back must
+  // survive intact — a redactor that eats real content is one people learn to
+  // ignore.
+  assert.deepEqual(actionPreviewDetail({ author: "liam", oauthProvider: "github", monkey: "yes" }), {
+    author: "liam",
+    oauthProvider: "github",
+    monkey: "yes",
+  });
+});

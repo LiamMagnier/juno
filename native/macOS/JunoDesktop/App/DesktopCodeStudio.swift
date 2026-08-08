@@ -1879,7 +1879,7 @@ struct DesktopCodeDraftDetail: View {
                 .frame(maxWidth: 680)
                 .junoGlass(
                     in: RoundedRectangle(
-                        cornerRadius: JunoCornerRadius.composer,
+                        cornerRadius: JunoRadius.composer,
                         style: .continuous
                     ),
                     tint: isDropTargeted ? Color.junoAccent.opacity(0.24) : nil
@@ -2932,7 +2932,7 @@ struct DesktopCodeAllProjects: View {
             }
         }
         .padding(JunoSpace.regular)
-        .junoCard(cornerRadius: JunoCornerRadius.card)
+        .junoCard(cornerRadius: JunoRadius.card)
         .contextMenu {
             Button("Show in Finder") {
                 revealInFinder(row.record.descriptor.localPathHint)

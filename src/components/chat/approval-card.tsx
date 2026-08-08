@@ -327,13 +327,19 @@ export function ApprovalCard({
       // preferred over ours because it is the only party that knows what
       // happened; failing that, the HTTP status is carried through verbatim.
       // Either is more use than a shrug, and neither invents a cause.
+      //
+      // `error` is read FIRST because that is the field the route actually
+      // sends (`{ error: result.message, code: result.code }`). Reading only
+      // `message` meant this branch could never show the server's sentence and
+      // always fell through to the bare status code — the one case where the
+      // card has nothing else to say is exactly the case it was dropping.
+      const serverSentence = [body?.error, body?.message].find(
+        (value): value is string => typeof value === "string" && value.trim().length > 0
+      );
       setOutcome({
         kind: "refused",
         code: null,
-        message:
-          typeof body?.message === "string" && body.message.trim().length > 0
-            ? body.message
-            : `${UNRECOGNISED_REFUSAL_COPY.message} (${response.status})`,
+        message: serverSentence ?? `${UNRECOGNISED_REFUSAL_COPY.message} (${response.status})`,
         terminal: false,
       });
     },

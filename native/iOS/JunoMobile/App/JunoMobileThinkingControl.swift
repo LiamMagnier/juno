@@ -15,6 +15,8 @@ import SwiftUI
 struct JunoMobileThinkingControl: View {
     let scale: NativeThinkingScale
     @Binding var effort: NativeReasoningEffort?
+    @Binding var fastMode: Bool
+    @Binding var proMode: Bool
 
     @State private var presented = false
     /// Bumped every time the ladder lands on its deepest stop, so the flourish
@@ -80,7 +82,13 @@ struct JunoMobileThinkingControl: View {
             .accessibilityHint(scale.isAdjustable ? "Opens the thinking level picker" : "")
             .accessibilityIdentifier("juno.mobile.chat-thinking")
             .popover(isPresented: $presented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
-                JunoThinkingPopover(scale: scale, effort: $effort, width: popoverWidth)
+                JunoThinkingPopover(
+                    scale: scale,
+                    effort: $effort,
+                    width: popoverWidth,
+                    fastMode: $fastMode,
+                    proMode: $proMode
+                )
                     // Stays a compact anchored popover on iPhone too: a full
                     // sheet would detach the control from the value it sets.
                     // The fixed size is also what keeps it off the keyboard.
@@ -110,7 +118,13 @@ struct JunoMobileThinkingControl: View {
         if scale.isAutomatic { return "Chosen automatically for each message" }
         guard let currentStop else { return "Off" }
         let range = scale.stops.map(\.label).joined(separator: ", ")
-        return "\(currentStop.label). Available levels: \(range)"
+        // The modes are announced here because they are set inside the popover
+        // this chip opens: without them a VoiceOver reader has no way to learn
+        // that Flash is on without opening the control to find out.
+        var value = "\(currentStop.label). Available levels: \(range)"
+        if scale.fastModeRateMultiplier != nil, fastMode { value += ". Flash on" }
+        if scale.supportsProMode, proMode { value += ". Pro on" }
+        return value
     }
 }
 

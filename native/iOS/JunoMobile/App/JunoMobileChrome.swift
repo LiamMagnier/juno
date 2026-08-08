@@ -137,11 +137,11 @@ struct JunoCard<Content: View>: View {
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: JunoCornerRadius.card, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                     .fill(Color.junoSurface)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: JunoCornerRadius.card, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                     .strokeBorder(Color.junoHairline, lineWidth: 1)
             )
     }
@@ -220,7 +220,7 @@ struct JunoInlineError: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(
-            RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
                 .fill(Color.junoCaution.opacity(0.10))
         )
         // `.contain`, not `.combine`. Combining flattened the strip into a

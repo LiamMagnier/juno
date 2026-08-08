@@ -261,6 +261,50 @@ registered in `src/lib/db.ts` `OWNER_COLUMN` as `userId`-scoped.
 
 ---
 
+## 5b. Verification actually performed
+
+Run against the exact commits pushed, in a **detached worktree off a fresh
+`origin/main`** rather than the working checkout. That distinction matters here:
+this repository is worked by several agent sessions at once, and a gate run
+against the live tree is a reading of whatever every session had half-written at
+that instant. Two readings during this run disagreed by 209 type errors purely
+because a concurrent edit was mid-flight.
+
+| Gate | Result |
+|---|---|
+| `npx tsc --noEmit` | 0 errors |
+| `npx eslint .` | clean |
+| `npx tsx --test tests/*.test.ts` | 1591 tests, 1589 pass, **0 fail**, 2 skipped |
+| `npm test --prefix runner/agent-core` | 152 pass, 0 fail |
+| `npm run build` | compiled, 104 static pages |
+| `npx prisma validate` | valid |
+| `node scripts/check-approval-dispatch.mjs` | pass (was 5 failures at the start of this run) |
+| `npm run capabilities:check` | pass |
+| `npm run work:contract:check` | pass |
+| `npm run work:sandbox:check` | pass |
+| `npm run design:contract:check` | pass |
+| `npm run design:editor:check` | pass (bundle was stale; rebuilt) |
+| `npm run native:contract:check` | pass |
+| `swift build` / `swift test` (JunoNativeKit) | builds; suites run 0 failures |
+| `npm run i18n:extract` | no-op against its own sources |
+
+**Not proven, and worth saying plainly:**
+
+- **No live Anthropic connector round trip was made.** The tool loop is covered
+  by `tests/anthropic-round.test.ts` (12 tests over hand-written stream events:
+  block reassembly, thinking-signature preservation, interleaved indices,
+  malformed JSON, usage arithmetic) but no request has been sent to the real API
+  with a real connector attached. This is the largest single risk in the slice,
+  because it is the primary provider's main path.
+- **No end-to-end click-through of the approval card.** It typechecks, lints and
+  builds; nobody has watched a real receipt appear and be answered. There is no
+  E2E layer in this repository to have done it with — see slice `product-e2e`.
+- **Local green is not CI green for timing-shaped failures.** This machine is
+  Node 24 on 12 cores; CI pins Node 20 on a 2–4 core runner. Nothing in this
+  slice is timer- or event-loop-shaped, but the rule stands.
+
+---
+
 ## 6. Decisions for the owner — not engineering calls
 
 1. **The published Terms promise more API budget than the code grants.**

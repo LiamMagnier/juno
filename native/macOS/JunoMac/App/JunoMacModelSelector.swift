@@ -81,6 +81,8 @@ struct JunoMacModelControl: View {
 struct JunoMacThinkingControl: View {
     let scale: NativeThinkingScale
     @Binding var effort: NativeReasoningEffort?
+    @Binding var fastMode: Bool
+    @Binding var proMode: Bool
 
     @State private var presented = false
 
@@ -134,8 +136,23 @@ struct JunoMacThinkingControl: View {
                 // measures itself (this one contains a GeometryReader) recurses
                 // through `_layoutSubtreeWithOldSize:` until the app dies —
                 // that shipped once, as the 3.0.5 thinking-slider crash.
-                JunoThinkingPopover(scale: scale, effort: $effort, width: 268)
-                    .frame(width: 268, height: scale.stops.count == 2 ? 116 : 92)
+                let popover = JunoThinkingPopover(
+                    scale: scale,
+                    effort: $effort,
+                    width: 268,
+                    fastMode: $fastMode,
+                    proMode: $proMode
+                )
+                // Still a fully fixed size — see the crash note above. The mode
+                // row is added to the height explicitly because the panel is not
+                // allowed to measure itself and say so; growing the content
+                // without growing this frame clips the toggles, on macOS only.
+                popover
+                    .frame(
+                        width: 268,
+                        height: (scale.stops.count == 2 ? 116 : 92)
+                            + (popover.showsModeToggles ? JunoThinkingMetrics.modeRowHeight : 0)
+                    )
             }
         }
     }
@@ -146,7 +163,10 @@ struct JunoMacThinkingControl: View {
             return "Off"
         }
         let range = scale.stops.map(\.label).joined(separator: ", ")
-        return "\(current.label). Available levels: \(range)"
+        var value = "\(current.label). Available levels: \(range)"
+        if scale.fastModeRateMultiplier != nil, fastMode { value += ". Flash on" }
+        if scale.supportsProMode, proMode { value += ". Pro on" }
+        return value
     }
 }
 

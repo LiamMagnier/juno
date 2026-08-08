@@ -4,8 +4,15 @@ import * as React from "react";
 import { ArrowUp, Loader2, Mic, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ComposerDictation } from "@/components/chat/composer-dictation";
-import { WorkThreadReach } from "@/components/work/composer/work-thread-reach";
+import { WorkThreadAddPanel } from "@/components/work/composer/work-thread-add-panel";
+import {
+  WorkThreadControls,
+  WorkThreadControlsNote,
+} from "@/components/work/composer/work-thread-controls";
+import { useWorkThreadContext } from "@/components/work/composer/use-work-thread-context";
+import type { ClientWorkSession } from "@/lib/work/serializers";
 import { cn } from "@/lib/utils";
 
 /**
@@ -37,6 +44,22 @@ import { cn } from "@/lib/utils";
  * `accepted: false`. Clearing on submit and hoping is how a refused send costs
  * somebody a paragraph they will not retype.
  *
+ * ── The controls around it ─────────────────────────────────────────────────
+ *
+ * Everything the home composer offers before a task exists is offered here
+ * while it runs: which model, how deeply it thinks, how often it stops to ask,
+ * where it is filed, and — behind the [+] — its files, its apps and its skill.
+ * They were absent for as long as there was no route that could change them,
+ * which meant a task started on the wrong model or on Skip could only be
+ * corrected by starting a different task.
+ *
+ * They all write through `PATCH /sessions/[id]/context`, and every one of them
+ * obeys the same rule, stated in one place in `useWorkThreadContext`: a run's
+ * inputs were fixed when it was dispatched, so a change made mid-task takes
+ * effect on the NEXT attempt unless the server says otherwise. The line under
+ * the controls says so before the change and reports the server's own answer
+ * after it. Nothing here animates into a state the run has not got.
+ *
  * ── It must not take focus while a run streams ─────────────────────────────
  *
  * There is no `autoFocus` here and nothing focuses the textarea except the
@@ -45,6 +68,15 @@ import { cn } from "@/lib/utils";
  * that flipped on any of those frames would blur whatever the reader was in the
  * middle of. Sending is gated on the button and on the Enter handler instead,
  * which is where the guard belongs.
+ *
+ * ── One primary button, three jobs ─────────────────────────────────────────
+ *
+ * The button on the right is the same control chat's composer runs: with
+ * nothing to send and a voice relay available it IS the voice launcher, and the
+ * moment there is anything to send it morphs into Send in place. See
+ * `showVoiceButton` in `chat/composer.tsx`. It used to be a second, separate
+ * button beside Send, which is two entry points a centimetre apart for a
+ * conversation and a message — and it drifted from chat within one release.
  */
 
 /** What the box is for right now. There is no "closed" — that was the bug. */
@@ -100,20 +132,46 @@ function sendLabel(mode: WorkComposerMode): string {
 }
 
 export function WorkThreadComposer({
+  session,
   mode,
   sending,
   onSend,
+  onOpenVoiceMode,
+  voiceActive = false,
 }: {
+  /** The task these controls change. Its own fields are the starting values. */
+  session: ClientWorkSession;
   mode: WorkComposerMode;
   /** A send is in flight. Locks the button, never the field. */
   sending: boolean;
   /** Resolves true when the words landed. False keeps them in the box. */
   onSend: (text: string) => Promise<boolean>;
+  /**
+   * Opens a spoken conversation about this task.
+   *
+   * Its ABSENCE is meaningful and is the whole gate: undefined means this
+   * deployment has no voice relay, or a session is already live, and in both
+   * cases the primary button stays a plain Send. Chat reads its own
+   * `onOpenVoiceMode` the same way. Passing a no-op instead would put wave bars
+   * on a build that cannot open a microphone.
+   */
+  onOpenVoiceMode?: () => void;
+  /** A voice session is live. Dictation and voice are the same microphone. */
+  voiceActive?: boolean;
 }) {
   const [draft, setDraft] = React.useState("");
   const [dictating, setDictating] = React.useState(false);
-  const [reachOpen, setReachOpen] = React.useState(false);
+  const [addOpen, setAddOpen] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  /*
+   * A run is under way in exactly the two modes that describe one: `steer` is a
+   * run going, and `answer` is a run stopped mid-turn waiting to be told
+   * something. `restart` and `start` have no attempt in flight for a change to
+   * miss, which is the difference the note under the controls turns on.
+   */
+  const live = mode.kind === "steer" || mode.kind === "answer";
+  const context = useWorkThreadContext({ session, live });
 
   const autoresize = React.useCallback(() => {
     const element = textareaRef.current;
@@ -173,6 +231,12 @@ export function WorkThreadComposer({
   );
 
   const canSend = draft.trim().length > 0 && !sending;
+  // Chat's rule, verbatim in shape: with nothing to send and voice available the
+  // primary button becomes the voice-conversation launcher; the moment there is
+  // sendable content it morphs back into Send. Keeping the two expressions the
+  // same is what stops the two composers behaving differently on the same
+  // keystroke.
+  const showVoiceButton = !sending && !canSend && !!onOpenVoiceMode;
 
   return (
     <div
@@ -251,50 +315,111 @@ export function WorkThreadComposer({
         />
 
         <div className="flex items-center gap-1.5">
-          <Popover open={reachOpen} onOpenChange={setReachOpen}>
+          <Popover open={addOpen} onOpenChange={setAddOpen}>
             <PopoverTrigger asChild>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                aria-label="What this task can reach"
-                className="shrink-0 rounded-[11px] text-muted-foreground hover:text-foreground"
+                aria-label="Add a file, an app or a skill to this task"
+                className={cn(
+                  "composer-add-button group shrink-0 rounded-[11px] text-muted-foreground hover:text-foreground",
+                  addOpen && "bg-accent"
+                )}
               >
-                <Plus className="h-4 w-4" aria-hidden="true" />
+                <Plus
+                  aria-hidden="true"
+                  strokeWidth={1.75}
+                  className="composer-add-icon h-4 w-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                />
               </Button>
             </PopoverTrigger>
+            {/* The panel's three requests are made when it mounts, which Radix
+                does on open — so a reader who never opens the [+] never makes
+                any of them. */}
             <PopoverContent align="start" side="top" sideOffset={10} className="w-80 p-0">
-              <WorkThreadReach onNavigate={() => setReachOpen(false)} />
+              <WorkThreadAddPanel context={context} />
             </PopoverContent>
           </Popover>
 
-          <div className="ml-auto flex items-center gap-1.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setDictating(true)}
-              aria-label="Dictate this message"
-              className="shrink-0 rounded-[11px] text-muted-foreground hover:text-foreground"
-            >
-              <Mic className="h-4 w-4" aria-hidden="true" />
-            </Button>
-            <Button
-              type="button"
-              size="icon-sm"
-              onClick={() => void submit(draft)}
-              disabled={!canSend}
-              aria-label={sendLabel(mode)}
-              className="composer-primary-action h-8 w-8 shrink-0 rounded-[11px]"
-            >
-              {sending ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-              ) : (
-                <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
-              )}
-            </Button>
+          <WorkThreadControls context={context} />
+
+          {/* Right: dictation mic + primary action (voice ⇄ send). */}
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => setDictating(true)}
+                  // Dictation and the voice conversation want the same
+                  // microphone, and the browser gives it to whoever asked last —
+                  // so opening one while the other is live steals the input
+                  // stream from a session still holding it. Chat locks the same
+                  // pair the same way.
+                  disabled={dictating || voiceActive}
+                  aria-label="Dictate this message"
+                  aria-pressed={dictating}
+                  className="composer-mic-button shrink-0 rounded-[11px] text-muted-foreground hover:text-foreground"
+                >
+                  <Mic className="composer-mic-icon h-4 w-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Dictate</TooltipContent>
+            </Tooltip>
+
+            {/* Primary action morphs in place: Voice (empty) → Send (has text). */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  onClick={showVoiceButton ? onOpenVoiceMode : () => void submit(draft)}
+                  disabled={showVoiceButton ? false : !canSend}
+                  aria-label={showVoiceButton ? "Talk to Juno about this task" : sendLabel(mode)}
+                  className={cn(
+                    // The same property list and easing chat transitions on, so
+                    // the two buttons morph identically. `width` and
+                    // `border-radius` are in it even though this composer holds
+                    // both fixed: dropping them here is how the lists drift and
+                    // a later shape change animates on one surface only.
+                    "composer-primary-action h-8 w-8 shrink-0 rounded-[11px]",
+                    "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring"
+                  )}
+                >
+                  {sending ? (
+                    // Work's busy state is a send in flight, not a stream being
+                    // generated — the composer has no stop path, that control is
+                    // in the page header. So this maps to chat's `checking`
+                    // spinner rather than to its Square.
+                    <Loader2
+                      key="sending"
+                      className="h-3.5 w-3.5 animate-spin motion-safe:animate-fade-in"
+                      aria-hidden="true"
+                    />
+                  ) : showVoiceButton ? (
+                    <span key="voice" className="composer-voice-wave motion-safe:animate-fade-in" aria-hidden="true">
+                      <span /><span /><span /><span /><span />
+                    </span>
+                  ) : (
+                    <ArrowUp
+                      key="send"
+                      className="composer-send-icon h-3.5 w-3.5 motion-safe:animate-fade-in"
+                      aria-hidden="true"
+                    />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{showVoiceButton ? "Voice conversation" : "Send"}</TooltipContent>
+            </Tooltip>
           </div>
         </div>
+
+        {/* Under the row rather than beside any one control: it is true of all
+            of them, and a caveat that wrapped in among the chips would be read
+            as a label for whichever one it landed next to. */}
+        <WorkThreadControlsNote context={context} live={live} />
       </div>
     </div>
   );

@@ -60,6 +60,11 @@ import type {
  *                                            revoked?: false } → { host, refused }
  *   DELETE /api/work/hosts/[id]            → { host, cancelledCommands }
  *   PATCH /api/work/sessions/[id]          { title?, pinned?, archived? } → { session }
+ *   PATCH /api/work/sessions/[id]/context  { model?, reasoningEffort?,
+ *                                            permissionPolicy?, projectId?,
+ *                                            connectorIds?, attachmentIds?,
+ *                                            skillSlug? }
+ *          → { session?, context?, applied?: [{ field, timing, explanation }] }
  *   GET  /api/work/schedules?limit=N       → { schedules: ClientWorkSchedule[] }
  *   POST /api/work/schedules               → 201 { schedule }
  *   GET|PATCH|DELETE /api/work/schedules/[id]
@@ -724,6 +729,219 @@ export function patchWorkSession(
       ...(input.archived === undefined ? {} : { archived: input.archived }),
     },
     (data) => data.session as ClientWorkSession
+  );
+}
+
+// ---------------------------------------------------------------------------
+// What a task is working with, changed while it is under way
+// ---------------------------------------------------------------------------
+
+/*
+ * `PATCH /api/work/sessions/[id]/context` — the one request behind every control
+ * on the thread composer.
+ *
+ * Deliberately one function for seven fields rather than seven functions. The
+ * route is owned by another surface and its exact shape is the thing most likely
+ * to move under this file; keeping the whole of the client's knowledge of it in
+ * one place is what makes a disagreement a ten-line fix instead of a hunt
+ * through components. Nothing in `composer/` calls `fetch` — it calls this.
+ *
+ * ── Why the response carries timing at all ─────────────────────────────────
+ *
+ * An active run's inputs were fixed at dispatch. `WorkRunIO` rows are written
+ * once from the session's file grants, `connectorIds` is read when the run's
+ * connector set resolves, and the model, effort and permission policy bind when
+ * the agent loop is constructed. So a change made mid-task usually takes effect
+ * on the NEXT attempt — usually, not always, and only the server is in a
+ * position to know which. `WorkContextChange.timing` is that answer, per field,
+ * and the composer prints it at the control.
+ *
+ * `unstated` is a real outcome and not an error. A route that saved the value
+ * without saying when it lands leaves the UI with one honest sentence available
+ * — that the attempt already running may not pick it up — and inventing "in
+ * effect now" on its behalf is the exact failure this whole path exists to
+ * avoid: a progress bar that completes while the run never sees the file.
+ */
+
+export const WORK_CONTEXT_FIELDS = [
+  "model",
+  "reasoningEffort",
+  "permissionPolicy",
+  "projectId",
+  "connectorIds",
+  "attachmentIds",
+  "skillSlug",
+] as const;
+
+export type WorkContextField = (typeof WORK_CONTEXT_FIELDS)[number];
+
+/** When a saved change reaches the work: now, at the next attempt, or unsaid. */
+export type WorkContextTiming = "now" | "next_attempt" | "unstated";
+
+export interface WorkContextChange {
+  field: WorkContextField;
+  timing: WorkContextTiming;
+  /** The server's own sentence about this field, when it wrote one. */
+  explanation: string | null;
+}
+
+/**
+ * What the task is working with, as the server holds it.
+ *
+ * Every field is optional and an absent one means the route did not say —
+ * distinct from `null`, which means it said "nothing". The three that have no
+ * column on `ClientWorkSession` (apps, files, skill) are the reason this type
+ * exists at all: without them the composer would have to draw switches for a
+ * selection it cannot read, and a switch shown off for an app the task actually
+ * holds is a lie about permission.
+ */
+export interface WorkSessionContext {
+  projectId?: string | null;
+  model?: string | null;
+  reasoningEffort?: string | null;
+  permissionPolicy?: WorkPermissionPolicy;
+  connectorIds?: string[];
+  attachmentIds?: string[];
+  skillSlug?: string | null;
+}
+
+export interface WorkSessionContextUpdate {
+  /** The session as the server now holds it, when it sent one back. */
+  session: ClientWorkSession | null;
+  context: WorkSessionContext;
+  changes: WorkContextChange[];
+}
+
+/** Only the fields the caller actually touched. An absent one is left alone. */
+export interface WorkSessionContextInput {
+  model?: string;
+  reasoningEffort?: string | null;
+  permissionPolicy?: WorkPermissionPolicy;
+  projectId?: string | null;
+  connectorIds?: readonly string[];
+  attachmentIds?: readonly string[];
+  skillSlug?: string | null;
+}
+
+const CONTEXT_FIELD_NAMES = new Set<string>(WORK_CONTEXT_FIELDS);
+const POLICY_NAMES = new Set<string>(WORK_PERMISSION_POLICIES);
+
+/**
+ * The timing of one field, read the several ways a route might state it.
+ *
+ * Tolerant in the direction that cannot mislead: anything unrecognised is
+ * `unstated` rather than `now`. Reading an unknown word as "in effect now" is
+ * how a UI comes to assert something the run never saw.
+ */
+function contextTiming(entry: Record<string, unknown>): WorkContextTiming {
+  if (entry.appliesNow === true) return "now";
+  if (entry.appliesNow === false) return "next_attempt";
+  const stated = text(entry, "timing") ?? text(entry, "appliesTo") ?? text(entry, "effective");
+  if (stated === null) return "unstated";
+  const word = stated.toLowerCase();
+  if (word.startsWith("now") || word.startsWith("immediate") || word.startsWith("in_flight")) {
+    return "now";
+  }
+  if (word.startsWith("next")) return "next_attempt";
+  return "unstated";
+}
+
+function contextChanges(raw: unknown): WorkContextChange[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const record = entry as Record<string, unknown>;
+    const field = text(record, "field") ?? text(record, "name");
+    // A field name this bundle does not know is dropped rather than carried as
+    // a string: everything downstream indexes a label off it, and an unlabelled
+    // note under the composer says less than no note at all.
+    if (field === null || !CONTEXT_FIELD_NAMES.has(field)) return [];
+    return [
+      {
+        field: field as WorkContextField,
+        timing: contextTiming(record),
+        explanation: text(record, "explanation") ?? text(record, "message"),
+      },
+    ];
+  });
+}
+
+function stringList(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw.filter((entry): entry is string => typeof entry === "string");
+}
+
+/** A key is copied only when the body carried it, so absent stays absent. */
+function contextValues(raw: unknown): WorkSessionContext {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const record = raw as Record<string, unknown>;
+  const context: WorkSessionContext = {};
+
+  if ("projectId" in record) {
+    context.projectId = typeof record.projectId === "string" ? record.projectId : null;
+  }
+  if ("model" in record) {
+    context.model = typeof record.model === "string" ? record.model : null;
+  }
+  if ("reasoningEffort" in record) {
+    context.reasoningEffort =
+      typeof record.reasoningEffort === "string" ? record.reasoningEffort : null;
+  }
+  if (typeof record.permissionPolicy === "string" && POLICY_NAMES.has(record.permissionPolicy)) {
+    context.permissionPolicy = record.permissionPolicy as WorkPermissionPolicy;
+  }
+  const connectorIds = stringList(record.connectorIds);
+  if (connectorIds !== undefined) context.connectorIds = connectorIds;
+  const attachmentIds = stringList(record.attachmentIds);
+  if (attachmentIds !== undefined) context.attachmentIds = attachmentIds;
+  if ("skillSlug" in record) {
+    context.skillSlug = typeof record.skillSlug === "string" ? record.skillSlug : null;
+  }
+  return context;
+}
+
+/**
+ * The context as it stands, for controls that cannot be drawn honestly without
+ * it — the app switches above all.
+ *
+ * A failure here is not worth a sentence of its own to the reader: the composer
+ * treats "could not read" as "do not claim", draws the affected section in its
+ * unknown state and says so there. Which is also what happens if the route
+ * turns out to have no GET at all.
+ */
+export function fetchWorkSessionContext(
+  sessionId: string
+): Promise<WorkResult<WorkSessionContext>> {
+  return get(`/api/work/sessions/${sessionId}/context`, (data) =>
+    contextValues(data.context ?? data)
+  );
+}
+
+export function updateWorkSessionContext(
+  sessionId: string,
+  input: WorkSessionContextInput
+): Promise<WorkResult<WorkSessionContextUpdate>> {
+  return patch(
+    `/api/work/sessions/${sessionId}/context`,
+    {
+      // Same rule as `patchWorkSession`: send only what was touched. A control
+      // that re-asserted every other field would let a model change quietly
+      // re-grant an app the reader had just switched off in another tab.
+      ...(input.model === undefined ? {} : { model: input.model }),
+      ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }),
+      ...(input.permissionPolicy === undefined
+        ? {}
+        : { permissionPolicy: input.permissionPolicy }),
+      ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
+      ...(input.connectorIds === undefined ? {} : { connectorIds: [...input.connectorIds] }),
+      ...(input.attachmentIds === undefined ? {} : { attachmentIds: [...input.attachmentIds] }),
+      ...(input.skillSlug === undefined ? {} : { skillSlug: input.skillSlug }),
+    },
+    (data) => ({
+      session: (data.session as ClientWorkSession | undefined) ?? null,
+      context: contextValues(data.context),
+      changes: contextChanges(data.applied ?? data.changes ?? data.fields),
+    })
   );
 }
 

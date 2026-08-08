@@ -584,7 +584,12 @@ struct JunoMobileComposer: View {
             .layoutPriority(1)
 
             if let thinkingScale {
-                JunoMobileThinkingControl(scale: thinkingScale, effort: $reasoningEffort)
+                JunoMobileThinkingControl(
+                    scale: thinkingScale,
+                    effort: $reasoningEffort,
+                    fastMode: $tools.fastMode,
+                    proMode: $tools.proMode
+                )
                     .layoutPriority(2)
             }
 
@@ -988,7 +993,9 @@ struct JunoMobileComposer: View {
             // Only ever sent as `false`. Canvas defaults to on server-side, so
             // `nil` is how "leave it alone" is said and `true` would be noise.
             canvasEnabled: options.canvas ? nil : false,
-            connectors: options.connectors
+            connectors: options.connectors,
+            fastMode: options.fastMode,
+            proMode: options.proMode
         )
         guard sent else { return }
         prompt = ""

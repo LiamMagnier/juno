@@ -26,6 +26,12 @@ struct JunoMacChatView: View {
     @State private var drafts: [String: String] = [:]
     @State private var selectedModelID = ""
     @State private var reasoningEffort: NativeReasoningEffort?
+    // @AppStorage, not @State: these are preferences, and the web keeps its
+    // equivalents in localStorage. Plain view state would make the same two
+    // switches sticky on iPhone (UserDefaults-backed) and amnesiac on Mac, from
+    // one shared package — which reads as a bug rather than a decision.
+    @AppStorage("juno.mac.composer.fast-mode") private var fastMode = false
+    @AppStorage("juno.mac.composer.pro-mode") private var proMode = false
     @State private var isNearBottom = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -204,6 +210,8 @@ struct JunoMacChatView: View {
                     catalog: model.selectableModels,
                     selectedModelID: $selectedModelID,
                     reasoningEffort: $reasoningEffort,
+                    fastMode: $fastMode,
+                    proMode: $proMode,
                     projectName: conversation.projectId.flatMap(projectName),
                     isGenerating: generatingHere,
                     canSend: !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -315,7 +323,9 @@ struct JunoMacChatView: View {
             conversationID: conversation.id,
             prompt: value,
             modelID: selectedModelID.isEmpty ? conversation.model : selectedModelID,
-            reasoningEffort: reasoningEffort
+            reasoningEffort: reasoningEffort,
+            fastMode: fastMode,
+            proMode: proMode
         ) {
             drafts[conversation.id] = ""
         }

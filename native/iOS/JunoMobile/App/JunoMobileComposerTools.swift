@@ -32,6 +32,8 @@ final class JunoMobileComposerTools {
     private enum Key {
         static let webSearch = "juno.mobile.composer.web-search"
         static let canvas = "juno.mobile.composer.canvas"
+        static let fastMode = "juno.mobile.composer.fast-mode"
+        static let proMode = "juno.mobile.composer.pro-mode"
     }
 
     /// Per-send. Cleared by ``consumeForSend()``.
@@ -43,6 +45,20 @@ final class JunoMobileComposerTools {
 
     var canvas: Bool {
         didSet { defaults.set(canvas, forKey: Key.canvas) }
+    }
+
+    /// Sticky, like the web's `ComposerPrefs.fastMode` — a reader who wants their
+    /// answers served fast wants that generally, not once. Sticky and OFF are
+    /// what make it safe: it never turns itself on, and `isArmed` lights the `+`
+    /// while it is on, so a 2.5x rate is never running unannounced.
+    var fastMode: Bool {
+        didSet { defaults.set(fastMode, forKey: Key.fastMode) }
+    }
+
+    /// Sticky for the same reason, and cheaper to leave on: pro spends more
+    /// tokens at the same rate rather than repricing them.
+    var proMode: Bool {
+        didSet { defaults.set(proMode, forKey: Key.proMode) }
     }
 
     /// Per-conversation, in the order they were picked.
@@ -57,6 +73,14 @@ final class JunoMobileComposerTools {
         // it would silently turn web search off for everyone on first launch.
         webSearch = defaults.object(forKey: Key.webSearch) as? Bool ?? true
         canvas = defaults.object(forKey: Key.canvas) as? Bool ?? true
+        // Plain `bool(forKey:)` here, deliberately NOT the `object(forKey:)`
+        // dance above. That dance exists only because those two default to ON
+        // and "never set" has to be told apart from "set to false". These
+        // default to OFF, where the two cases mean the same thing — and reusing
+        // the pattern with `?? true` would switch a premium rate on for every
+        // reader on first launch.
+        fastMode = defaults.bool(forKey: Key.fastMode)
+        proMode = defaults.bool(forKey: Key.proMode)
     }
 
     /// Whether anything is armed that the `+` should advertise.
@@ -66,7 +90,9 @@ final class JunoMobileComposerTools {
     /// nothing. This marks the two states a reader would be surprised by: a
     /// research turn is about to cost real time and money, and connectors mean
     /// this message can reach outside Juno.
-    var isArmed: Bool { deepResearch || !connectors.isEmpty }
+    /// Flash and Pro join the list for exactly the stated reason: each changes
+    /// what the next message costs, which is the surprise this dot exists for.
+    var isArmed: Bool { deepResearch || !connectors.isEmpty || fastMode || proMode }
 
     var canAddConnector: Bool { connectors.count < Self.connectorLimit }
 
@@ -98,8 +124,13 @@ final class JunoMobileComposerTools {
             deepResearch: deepResearch,
             webSearch: webSearch,
             canvas: canvas,
-            connectors: connectors
+            connectors: connectors,
+            fastMode: fastMode,
+            proMode: proMode
         )
+        // Only deepResearch is cleared. Flash and Pro are preferences, not
+        // instructions about one question, so they survive the send exactly as
+        // web search and canvas do.
         deepResearch = false
         return sent
     }
@@ -109,5 +140,7 @@ final class JunoMobileComposerTools {
         let webSearch: Bool
         let canvas: Bool
         let connectors: [String]
+        let fastMode: Bool
+        let proMode: Bool
     }
 }

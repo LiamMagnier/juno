@@ -150,3 +150,62 @@ describe("display order", () => {
     assert.equal(catalog.models.find((m) => m.id === "google:imagen-4")?.modality, "image");
   });
 });
+
+/*
+ * Fast mode and pro mode are NOT the same kind of thing, and the manifest is
+ * where that distinction is either preserved or quietly lost. Fast mode
+ * multiplies the rate (2x, or 2.5x on GPT-5.5); pro mode spends more tokens at
+ * the same rate. A client given two identical booleans would have to guess, and
+ * the one it would guess wrong about is the one that costs money.
+ */
+describe("native model catalog · premium modes", () => {
+  it("publishes the fast-mode multiplier, not merely a flag", () => {
+    const opus = entry(
+      nativeModelCatalog([fakeModel({ id: "anthropic:claude-opus-4-8", providerModel: "claude-opus-4-8" })]),
+      "anthropic:claude-opus-4-8"
+    );
+    assert.deepEqual(opus.fastMode, { rateMultiplier: 2 });
+  });
+
+  it("carries GPT-5.5's 2.5x rather than flattening it to the common 2x", () => {
+    const model = fakeModel({ provider: "openai", id: "openai:gpt-5.5", providerModel: "gpt-5.5" });
+    const published = entry(nativeModelCatalog([model]), "openai:gpt-5.5");
+    assert.deepEqual(published.fastMode, { rateMultiplier: 2.5 });
+  });
+
+  it("publishes null for a model with no faster tier", () => {
+    // The default fixture is claude-sonnet-4-6: Anthropic's fast mode is Opus
+    // 4.8 only, so this is a real negative and not an unset field.
+    const sonnet = entry(nativeModelCatalog([fakeModel()]), "anthropic:claude-sonnet-4-6");
+    assert.equal(sonnet.fastMode, null);
+  });
+
+  it("keeps pro mode under reasoning and fast mode out of it", () => {
+    const model = fakeModel({ provider: "openai", id: "openai:gpt-5.6-sol", providerModel: "gpt-5.6-sol" });
+    const sol = entry(nativeModelCatalog([model]), "openai:gpt-5.6-sol");
+
+    assert.equal(sol.reasoning.supportsProMode, true, "pro is a reasoning mode");
+    assert.deepEqual(sol.fastMode, { rateMultiplier: 2 }, "fast is a serving tier");
+    // Pro must never become a rung: it composes with the effort, and a stop that
+    // mapped to "pro" would be sent where a reasoningEffort is expected.
+    assert.equal(sol.supportedReasoningEfforts.includes("pro" as never), false);
+  });
+
+  it("offers neither mode on Auto, which picks the model per message", () => {
+    const auto = entry(nativeModelCatalog([fakeModel()]), AUTO_MODEL_ID);
+
+    assert.equal(auto.fastMode, null, "a premium agreed here would land on an unchosen model");
+    assert.equal(auto.reasoning.supportsProMode, false);
+  });
+
+  it("never nests fast mode inside pricing, which is null for Auto", () => {
+    const catalog = nativeModelCatalog([fakeModel()]);
+    for (const model of catalog.models) {
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(model, "fastMode"),
+        true,
+        `${model.id} must answer the fast-mode question at the top level`
+      );
+    }
+  });
+});

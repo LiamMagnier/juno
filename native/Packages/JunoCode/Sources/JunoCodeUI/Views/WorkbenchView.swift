@@ -169,18 +169,20 @@ public struct WorkbenchView<SidebarHeader: View>: View {
             }
         }
         .sheet(isPresented: $showingRemoteTasks) {
-            if let remoteTaskModel {
-                CodeRemoteTaskMonitorView(model: remoteTaskModel)
-            } else {
-                ContentUnavailableView(
-                    "Remote tasks unavailable",
-                    systemImage: "bolt.horizontal.circle",
-                    description: Text("Sign in to follow Cloud and Remote runs.")
-                )
+            // `Group` so the surface applies to both branches at once: the
+            // ground has to be under the unavailable state as well, or that
+            // case alone falls through to system window grey.
+            Group {
+                if let remoteTaskModel {
+                    CodeRemoteTaskMonitorView(model: remoteTaskModel)
+                } else {
+                    ContentUnavailableView(
+                        "Remote tasks unavailable",
+                        systemImage: "bolt.horizontal.circle",
+                        description: Text("Sign in to follow Cloud and Remote runs.")
+                    )
+                }
             }
-            // Applied to the sheet's content as a whole so the unavailable state
-            // stands on the same warm ground the monitor does — otherwise the
-            // empty case alone fell through to system window grey.
             .junoSheetSurface(.fitted)
         }
     }

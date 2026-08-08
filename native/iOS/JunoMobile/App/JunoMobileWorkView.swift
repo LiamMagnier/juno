@@ -591,7 +591,7 @@ private struct JunoMobileWorkThread: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
                     .fill(Color.junoCaution.opacity(0.10))
             )
         }
@@ -748,7 +748,7 @@ private struct JunoMobileWorkThread: View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: JunoCornerRadius.card, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                     .fill(Color.junoMuted)
             )
             .accessibilityIdentifier("juno.mobile.work.current-action")
@@ -1077,7 +1077,7 @@ private struct JunoMobileWorkApprovalCard: View {
             }
         }
         .overlay(
-            RoundedRectangle(cornerRadius: JunoCornerRadius.card, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.card, style: .continuous)
                 .strokeBorder(tint.opacity(0.45), lineWidth: 1)
         )
         .accessibilityIdentifier("juno.mobile.work.approval")
@@ -1183,7 +1183,7 @@ private struct JunoMobileWorkAnswerSheet: View {
                 .lineLimit(3...8)
                 .padding(12)
                 .background(
-                    RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
+                    RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
                         .fill(Color.junoMuted)
                 )
                 .focused($focused)
@@ -1328,7 +1328,7 @@ private struct JunoMobileWorkInstructionSheet: View {
                 .lineLimit(3...8)
                 .padding(12)
                 .background(
-                    RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
+                    RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
                         .fill(Color.junoMuted)
                 )
                 .focused($focused)

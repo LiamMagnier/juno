@@ -96,7 +96,9 @@ public final class NativePrivateChatModel {
     public func send(
         prompt: String,
         modelID: String,
-        reasoningEffort: NativeReasoningEffort?
+        reasoningEffort: NativeReasoningEffort?,
+        fastMode: Bool = false,
+        proMode: Bool = false
     ) {
         let content = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !content.isEmpty, let accountID, phase != .streaming else { return }
@@ -117,7 +119,9 @@ public final class NativePrivateChatModel {
             modelID: modelID,
             reasoningEffort: reasoningEffort,
             generationID: UUID().uuidString.lowercased(),
-            history: Array(history)
+            history: Array(history),
+            fastMode: fastMode,
+            proMode: proMode
         )
 
         generation = Task { [weak self] in

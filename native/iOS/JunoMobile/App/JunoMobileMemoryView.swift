@@ -129,11 +129,11 @@ struct JunoMobileMemoryView: View {
                     .scrollContentBackground(.hidden)
                     .padding(10)
                     .background(
-                        RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
+                        RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
                             .fill(Color.junoSurface)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
+                        RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
                             .strokeBorder(Color.junoHairline, lineWidth: 1)
                     )
                     .frame(minHeight: 130)

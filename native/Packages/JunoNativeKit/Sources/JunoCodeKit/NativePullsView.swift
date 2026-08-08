@@ -76,7 +76,7 @@ public struct NativePullsView: View {
     private var list: some View {
         List(pulls) { pull in
             Link(destination: pull.url) {
-                HStack(alignment: .top, spacing: JunoSpacing.control) {
+                HStack(alignment: .top, spacing: JunoSpace.cozy) {
                     // Colour AND glyph, so draft is legible without either one:
                     // an open PR is a filled arrow, a draft is a hollow one.
                     Image(systemName: pull.isDraft ? "arrow.trianglehead.pull" : "arrow.trianglehead.merge")
@@ -98,7 +98,7 @@ public struct NativePullsView: View {
                             .truncationMode(.middle)
                     }
 
-                    Spacer(minLength: JunoSpacing.small)
+                    Spacer(minLength: JunoSpace.snug)
 
                     if let updated = pull.updatedAt {
                         Text(updated, format: .relative(presentation: .numeric, unitsStyle: .narrow))

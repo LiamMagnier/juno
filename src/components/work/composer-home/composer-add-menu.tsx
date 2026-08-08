@@ -94,6 +94,20 @@ export function ComposerAddMenu({
 }) {
   const [open, setOpen] = React.useState(false);
 
+  /*
+   * A section is drawn only once it has something in it, and that rule is
+   * inherited rather than invented: the Apps chip this menu absorbed refused to
+   * render for an account with no linked apps, on the grounds that a control
+   * opening onto "you have none" offers a choice that does not exist. The same
+   * is true one level in. A list still in flight is treated as empty for the
+   * same reason it was there — a row that appears is better than a row that
+   * changes what it says — and a list that failed to load is treated as full,
+   * because "Juno could not find out" is a sentence somebody is owed and a
+   * Retry to act on.
+   */
+  const showSkills = skills !== undefined && (skills.failed || (skills.skills?.length ?? 0) > 0);
+  const showApps = apps !== undefined && (apps.failed || (apps.connectors?.length ?? 0) > 0);
+
   const selectedApps = (apps?.connectors ?? []).filter((connector) =>
     apps?.selected.includes(connector.id)
   );
@@ -103,6 +117,12 @@ export function ComposerAddMenu({
   // already see. A granted app is the one choice in here with no other trace on
   // the surface until the run disclosure resolves.
   const marked = selectedApps.length > 0;
+
+  // Nothing to add, so no plus. An account with no storage, no skills and no
+  // connected apps had no + at all before this menu existed, and drawing one
+  // that opens onto a heading and three absences would be a new way of saying
+  // nothing.
+  if (!attach && !showSkills && !showApps) return null;
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -163,9 +183,9 @@ export function ComposerAddMenu({
         {/* One rule instead of a rule per pair: the hairline separates "things
             you give this task" from "things you let it reach", and it is drawn
             only when both halves are actually present. */}
-        {attach && (skills || apps) && <DropdownMenuSeparator />}
-        {skills && <SkillsSubmenu section={skills} />}
-        {apps && <AppsSubmenu section={apps} />}
+        {attach && (showSkills || showApps) && <DropdownMenuSeparator />}
+        {showSkills && skills && <SkillsSubmenu section={skills} />}
+        {showApps && apps && <AppsSubmenu section={apps} />}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -207,18 +227,10 @@ function SkillsSubmenu({ section }: { section: ComposerSkillsSection }) {
                 <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
               </Button>
             </div>
-          ) : skills === null ? (
-            // A quiet placeholder rather than a spinner. This list is a step off
-            // the everyday path and the request is one small GET; a spinner here
-            // would be more motion than the wait deserves.
-            <p className="px-2 py-4 text-center text-caption text-muted-foreground">Loading…</p>
-          ) : skills.length === 0 ? (
-            <p className="px-2 py-4 text-center text-caption leading-relaxed text-muted-foreground">
-              No skills switched on yet. A skill is instructions Juno follows for a particular kind
-              of errand.
-            </p>
           ) : (
-            skills.map((skill) => {
+            // No loading state and no empty state: the caller does not draw this
+            // row until the list has arrived with something in it.
+            (skills ?? []).map((skill) => {
               const active = skill.slug === invokedSlug;
               return (
                 <DropdownMenuItem
@@ -295,14 +307,11 @@ function AppsSubmenu({ section }: { section: ComposerAppsSection }) {
                 <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
               </Button>
             </div>
-          ) : connectors === null ? (
-            <p className="px-2 py-4 text-center text-caption text-muted-foreground">Loading…</p>
-          ) : connectors.length === 0 ? (
-            <p className="px-2 py-4 text-center text-caption leading-relaxed text-muted-foreground">
-              No apps connected yet. Connect one and it can be switched on for a task.
-            </p>
           ) : (
-            connectors.map((connector) => {
+            // Same as the skills list above: the caller does not draw this row
+            // until there is something in it, so there is nothing to say here
+            // about loading or about an account with no apps.
+            (connectors ?? []).map((connector) => {
               const active = selected.includes(connector.id);
               return (
                 <DropdownMenuItem

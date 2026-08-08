@@ -587,7 +587,10 @@ export class WorkAgentSession {
       const result = await runAgentLoop({
         provider: this.options.provider,
         model: this.options.model,
-        system: this.buildSystemPrompt(),
+        // A builder, not a string: the prompt renders the plan, and the plan is
+        // now something the model rewrites on its first turn. See the field's
+        // note in AgentLoopOptions for what a frozen prompt did.
+        system: () => this.buildSystemPrompt(),
         messages: this.messages,
         tools: [
           ...this.tools.map((tool) => tool.spec),
@@ -1045,9 +1048,20 @@ export class WorkAgentSession {
   }
 
   private buildSystemPrompt(): string {
+    /*
+     * The id is in the line, and it has to be.
+     *
+     * This used to render `1. Title [pending]`, which names everything about a
+     * step except the one thing `update_plan` requires. The id reached the model
+     * exactly once, in the tool_result of `write_plan`, so concluding a step
+     * thirty turns later meant remembering a token from a single message far
+     * back in the transcript — and getting it wrong returns "No step with id".
+     * A step nothing can conclude is a step that stays `pending`, and a plan
+     * with a pending step fails `structuralValidation`.
+     */
     const steps = this.plan
       .snapshot()
-      .steps.map((step, index) => `${index + 1}. ${step.title} [${step.status}]`)
+      .steps.map((step) => `- ${step.id}: ${step.title} [${step.status}]`)
       .join('\n');
     return [
       'You are Juno, doing a piece of long-running work on the user\'s behalf. The user is not necessarily watching.',
@@ -1113,8 +1127,14 @@ export function structuralValidation(input: {
   // answered without touching the plan at all, which in practice means it
   // narrated an intention ("let me fetch that information") and called no tool.
   // Reporting that as "Still open: <every step>" points the reader at their
-  // plan, which is not where the problem is; the plan is a fixed three-step
-  // scaffold and identical on every run.
+  // plan, which is not where the problem is.
+  //
+  // (That last clause used to read "the plan is a fixed three-step scaffold and
+  // identical on every run", which `write_plan` made false. The distinction the
+  // check draws survives the change — a model that wrote a real plan and then
+  // touched none of it has still narrated instead of working — but the reason
+  // is now that the plan is not the problem, rather than that the plan is
+  // boilerplate.)
   const untouched = snapshot.steps.length > 0 && snapshot.steps.every((step) => step.status === 'pending');
   checks.push({
     claim: 'Every planned step reached a conclusion.',
@@ -1152,21 +1172,46 @@ export function structuralValidation(input: {
           : 'No artifact and no written answer.',
   });
 
-  // The step that silently vanished is the one this catches: a run that
-  // skipped a third of the plan and wrote a summary that never mentions it.
-  const lowered = answer.toLowerCase();
-  const unmentioned = snapshot.steps.filter(
-    (step) =>
-      (step.status === 'skipped' || step.status === 'failed') &&
-      !lowered.includes(step.title.toLowerCase()),
+  /*
+   * The check that used to be here demanded the step's ENTIRE TITLE, verbatim,
+   * as a lowercase substring of the final answer. It was catching something
+   * real — a run that skipped a third of the plan and wrote a summary that
+   * never mentions it — and it was tenable only because of an assumption stated
+   * a few lines above and no longer true: "the plan is a fixed three-step
+   * scaffold and identical on every run". Against `Understand what is being
+   * asked` a substring test is coarse but survivable.
+   *
+   * `write_plan` ended that. The model now writes its own titles, and it is
+   * told to write concrete ones — "Find the repositories with no README" — the
+   * kind of sentence a summary paraphrases and never quotes. So a skipped step
+   * failed this check essentially always, and a failed step did too. With
+   * `outstanding` above requiring every step to reach a terminal status, the
+   * three terminal statuses came to mean: `done` passes, `skipped` fails the
+   * run, `failed` fails the run. A model that wrote six steps and honestly
+   * concluded that two were unnecessary had no reachable passing state, and the
+   * only winning move was to claim it had done work it had not done. A check
+   * that makes honesty the losing option is worse than no check.
+   *
+   * What replaces it keeps the intent and drops the impossible test. A step
+   * that did not succeed must carry a reason — enforced immediately above, and
+   * `update_plan` already asks for one — and that reason travels with the step
+   * into `buildReport` and onto the plan panel, where the reader sees it beside
+   * the step itself rather than buried in prose. The record is what guarantees
+   * nothing vanished; the summary's wording is the model's business.
+   */
+  const concluded = snapshot.steps.filter(
+    (step) => step.status === 'skipped' || step.status === 'failed',
   );
   checks.push({
-    claim: 'Every step that did not succeed is named in the answer.',
-    satisfied: unmentioned.length === 0,
+    claim: 'Every step that did not succeed is accounted for.',
+    // Always satisfied when every such step has a reason, which `unexplained`
+    // above has already established. Kept as a visible check rather than
+    // deleted so the report still states the fact for the reader.
+    satisfied: true,
     evidence:
-      unmentioned.length === 0
-        ? 'Nothing incomplete was left out of the answer.'
-        : `Not mentioned: ${unmentioned.map((step) => step.title).join('; ')}.`,
+      concluded.length === 0
+        ? 'Every step succeeded.'
+        : `${concluded.length} step${concluded.length === 1 ? '' : 's'} did not succeed, each with a stated reason.`,
   });
 
   // `unmet` carries the *evidence*, not the claim.

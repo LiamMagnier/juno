@@ -116,21 +116,31 @@ final class JunoCapabilityContractTests: XCTestCase {
         XCTAssertNil(result.reasoning)
     }
 
-    /// Deliberately not pinned to a literal version.
+    /// v2 added `proMode` and `pro_mode_unavailable`; v3 added `actionApproval`
+    /// and `action_approval_unavailable`.
     ///
-    /// It was, and it went stale twice without anyone noticing — the manifest
-    /// reached 2 and then 3 while this still asserted 1, so the one test meant
-    /// to prove the generated contract is current was itself the thing out of
-    /// date. A literal here tests nothing about the contract: the number is
-    /// generated from the manifest and cannot disagree with it. What is worth
-    /// asserting is that the generator ran and stamped a real manifest, which
-    /// `npm run capabilities:check` enforces byte-for-byte on the other side.
+    /// Pinned to an exact number rather than `>= 1` on purpose: the version is
+    /// the one thing a client can gate a feature on, so it must move when the
+    /// manifest moves and must not move when it does not. Updating this line is
+    /// the point at which someone editing the manifest is made to notice they
+    /// changed a cross-platform contract.
     func testTheContractReportsTheManifestItWasBuiltFrom() {
-        XCTAssertGreaterThanOrEqual(JunoCapabilityContract.version, 1)
+        XCTAssertEqual(JunoCapabilityContract.version, 3)
         XCTAssertEqual(JunoCapabilityContract.digest.count, 64, "a SHA-256 hex digest")
         XCTAssertTrue(
             JunoCapabilityContract.digest.allSatisfy { $0.isHexDigit },
             "the digest must be hex, not a placeholder"
+        )
+    }
+
+    /// The capability added in v2. Present here so the enum and the manifest
+    /// cannot drift apart silently — the generated file is not hand-editable,
+    /// but nothing else asserts that a regeneration actually happened.
+    func testProModeIsPartOfTheContract() {
+        XCTAssertEqual(JunoCapability.proMode.rawValue, "proMode")
+        XCTAssertEqual(
+            JunoDegradationKind.proModeUnavailable.rawValue,
+            "pro_mode_unavailable"
         )
     }
 }
