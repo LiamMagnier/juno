@@ -690,6 +690,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Untitled design"
   },
   {
+    "id": "0c2ce5622ac2a5c0",
+    "source": "Only part of this file could be indexed."
+  },
+  {
     "id": "0c486180bb8a7b51",
     "source": "Kimi Code"
   },
@@ -816,6 +820,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0ebb2df5559c53a4",
     "source": "Bright and expressive"
+  },
+  {
+    "id": "0ede312062dc5883",
+    "source": "Indexing for search…"
   },
   {
     "id": "0f082e133791d7da",
@@ -4660,6 +4668,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5910c059eabab457",
     "source": "Download for macOS"
+  },
+  {
+    "id": "5912405353833008",
+    "source": "This file contains binary data, so there is no text to index. If it is a document, upload it in its original format."
   },
   {
     "id": "59272b33acad4386",
@@ -8766,6 +8778,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Model name"
   },
   {
+    "id": "a3ccc8b2b7ed1431",
+    "source": "Indexing failed unexpectedly."
+  },
+  {
     "id": "a3deee11a17f4082",
     "source": "Thinking about your request"
   },
@@ -11734,6 +11750,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Pull requests"
   },
   {
+    "id": "d9f500f5292e7081",
+    "source": "Indexed ·"
+  },
+  {
     "id": "d9f5c3356cdb6b0d",
     "source": "Upload limit reached. Try again later."
   },
@@ -12514,6 +12534,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Add PDFs, documents, or other text to reference in this project."
   },
   {
+    "id": "e7a90c1f14652064",
+    "source": "Invalid query."
+  },
+  {
     "id": "e7ae715d21b12b54",
     "source": "signin"
   },
@@ -13024,6 +13048,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f102986b39effb31",
     "source": "Scale"
+  },
+  {
+    "id": "f10ce0db60383ce1",
+    "source": "This file could not be indexed."
   },
   {
     "id": "f10ef39e449aace6",
