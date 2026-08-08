@@ -40,7 +40,8 @@ import {
 import { serializeMessage } from "@/lib/serializers";
 import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
 import { checkBudget, recordSpend, budgetExceededMessage, modelRatesMicroUsdPerToken } from "@/lib/spend";
-import { runDeepResearch } from "@/lib/deep-research";
+import { runDeepResearch, type ResearchCorpusPage } from "@/lib/deep-research";
+import { recordCitationAudit } from "@/lib/research/claims";
 import { isWebSearchConfigured } from "@/lib/web-search";
 import { createSseSender, encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
 import { truncate, currentPeriod } from "@/lib/utils";
@@ -1411,6 +1412,19 @@ async function handleChat(req: Request) {
     }
   };
   let assistantFull = ""; // captured for background memory extraction
+  /*
+   * Set only on a deep-research turn that produced an answer. The citation audit
+   * (§8.3) runs in `after`, not inline: it re-reads every cited passage with a
+   * utility model, which is far too slow to hold the stream open for, and the
+   * report is already correct-or-not by the time it is written — checking it
+   * later changes what the reader is TOLD about it, not what it says.
+   */
+  let citationAuditInput: {
+    goal: string;
+    corpus: ResearchCorpusPage[];
+    conversationProvider: string | null;
+  } | null = null;
+  let auditedMessageId: string | null = null;
   // Background memory work runs on the same speed-ranked utility models the
   // rest of the app uses, not on whichever FREE model happens to be listed first.
   const cheapModel =
@@ -1649,6 +1663,15 @@ async function handleChat(req: Request) {
           // the accumulator is seeded rather than told about them later.
           acc.seedSources(research.sources);
           if (acc.sources.length) send({ type: "sources", sources: acc.sources });
+          // Held for the post-response audit. `corpus` is the text the model was
+          // actually shown, which is the only thing a citation can honestly be
+          // checked against — a re-fetch would be checking a page that may have
+          // changed since the report was written.
+          citationAuditInput = {
+            goal: researchPrompt,
+            corpus: research.corpus,
+            conversationProvider: modelInfo.provider,
+          };
         } else {
           sendActivity({
             kind: "warning",
@@ -1838,6 +1861,7 @@ async function handleChat(req: Request) {
         });
 
         assistantFull = acc.text;
+        auditedMessageId = assistant.id;
 
         if (usage.totalInput || usage.output) {
           sendActivity({ kind: "usage", title: "Token usage recorded", detail: usage.detail });
@@ -2157,6 +2181,36 @@ async function handleChat(req: Request) {
     }
 
     await genPromise?.catch(() => {});
+
+    /*
+     * Citation audit (§8.3): extract the report's load-bearing claims, link each
+     * to the passages it cites, and re-read those passages to decide whether
+     * they genuinely support it. Anything they do not is marked unsupported —
+     * never dropped, and never left looking cited.
+     *
+     * Deliberately before the memory work: this is what the reader is waiting to
+     * see under the answer, and memory extraction is invisible to them.
+     * `.catch` because a failed audit must leave the answer intact — the footer
+     * simply shows nothing, which is what it shows for every ordinary reply.
+     */
+    if (citationAuditInput && auditedMessageId && assistantFull) {
+      const input: NonNullable<typeof citationAuditInput> = citationAuditInput;
+      await recordCitationAudit({
+        userId: user.id,
+        conversationId: conversation.id,
+        messageId: auditedMessageId,
+        goal: input.goal,
+        report: assistantFull,
+        sources: input.corpus,
+        conversationProvider: input.conversationProvider,
+      }).catch((err) => {
+        console.error("[chat] citation audit failed", {
+          conversationId: conversation.id,
+          message: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+      });
+    }
 
     const postWork = postGenerationPlan({ moderate, memoryEnabled, producedAnswer: !!assistantFull });
     if (postWork.extractsMemory) {

@@ -43,6 +43,24 @@ type SendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => Cl
 interface ResearchPage extends ClientSource {
   /** Tavily raw page content (already capped to PAGE_CONTENT_CHARS). */
   rawContent?: string;
+  /** Publication date as the search vendor reports it, when it reports one. */
+  publishedAt?: Date;
+}
+
+/**
+ * One numbered source, with the text the model was actually shown.
+ *
+ * The client-facing `sources` array is deliberately snippet-sized (it is
+ * persisted on every message), but the citation validator has to re-read the
+ * SAME text the model saw — checking a claim against a fresh fetch would be
+ * checking it against a page that may have changed since. So the corpus rides
+ * back separately, for the audit, and is not persisted on the message.
+ */
+export interface ResearchCorpusPage {
+  url: string;
+  title: string;
+  body: string;
+  publishedAt: Date | null;
 }
 
 export interface DeepResearchResult {
@@ -52,11 +70,13 @@ export interface DeepResearchResult {
   context: string;
   /** Numbered sources, in citation order — emit as the stream's sources chunk. */
   sources: ClientSource[];
+  /** The same sources with their full text, in the same order — for §8.3's audit. */
+  corpus: ResearchCorpusPage[];
   /** Planning-model spend in USD (already written to the ApiSpend ledger). */
   costUsd: number;
 }
 
-const EMPTY: DeepResearchResult = { ok: false, context: "", sources: [], costUsd: 0 };
+const EMPTY: DeepResearchResult = { ok: false, context: "", sources: [], corpus: [], costUsd: 0 };
 
 /** A child signal that aborts with its parent OR after `ms` — whichever first. */
 function timeboxSignal(parent: AbortSignal | undefined, ms: number): { signal: AbortSignal; release: () => void } {
@@ -198,6 +218,15 @@ async function planQueries(opts: {
   return { queries: parsePlan(out), costUsd };
 }
 
+/** Vendor dates are free text and occasionally nonsense; anything unparseable is no date. */
+function parsePublishedDate(value: string | null | undefined): Date | undefined {
+  if (!value) return undefined;
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return undefined;
+  // A publication date in the future is a broken feed, not a scoop.
+  return at.getTime() > Date.now() + 86_400_000 ? undefined : at;
+}
+
 /** SEARCH + READ in one call: Tavily returns each result's raw page content. */
 async function tavilySearch(query: string, signal: AbortSignal): Promise<ResearchPage[]> {
   const key = process.env.TAVILY_API_KEY?.trim();
@@ -220,7 +249,15 @@ async function tavilySearch(query: string, signal: AbortSignal): Promise<Researc
       return [];
     }
     const data = await res.json();
-    return ((data.results ?? []) as { url?: string; title?: string; content?: string; raw_content?: string | null }[])
+    return (
+      (data.results ?? []) as {
+        url?: string;
+        title?: string;
+        content?: string;
+        raw_content?: string | null;
+        published_date?: string | null;
+      }[]
+    )
       .filter((r) => r.url && r.title)
       .slice(0, RESULTS_PER_QUERY)
       .map((r) => ({
@@ -228,6 +265,10 @@ async function tavilySearch(query: string, signal: AbortSignal): Promise<Researc
         url: r.url!,
         snippet: (r.content ?? "").slice(0, 600),
         rawContent: typeof r.raw_content === "string" && r.raw_content.trim() ? r.raw_content.slice(0, PAGE_CONTENT_CHARS) : undefined,
+        // The vendor's date is the PUBLICATION date. Kept separate from any date
+        // in the text, because §8.2 turns on telling those two apart — a 2026
+        // page about a 2019 merger must not license "the merger closed in 2026".
+        publishedAt: parsePublishedDate(r.published_date),
       }));
   } catch (e) {
     if (!signal.aborted) console.error("[deep-research]", e);
@@ -362,6 +403,13 @@ export async function runDeepResearch(opts: {
     // which is what licenses the UI to resolve inline [n] markers positionally.
     // Deep research is the ONLY path that numbers sources for the model.
     sources: pages.map(({ title, url, snippet }) => ({ title, url, snippet, cited: true })),
+    // Same order as `sources`, so index n of both is the report's `[n + 1]`.
+    corpus: pages.map((p) => ({
+      title: p.title,
+      url: p.url,
+      body: readUrls.has(p.url) && p.rawContent ? p.rawContent : p.snippet,
+      publishedAt: p.publishedAt ?? null,
+    })),
     costUsd: plan.costUsd,
   };
 }
