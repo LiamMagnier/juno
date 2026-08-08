@@ -1,6 +1,6 @@
 # Juno Product Completion — execution ledger
 
-**Audit commit:** `b1248d04` (`feat/juno-work`, local production-hardening commit)
+**Audit commit:** `50374c17` (`feat/juno-work`, local production-hardening commit)
 **Audit date:** 2026-08-08
 **Method:** 12 parallel evidence-based subsystem readers over the source, then an
 adversarial re-check of every claim of "implemented" in the P0 areas. Findings
@@ -82,9 +82,12 @@ and idempotent replay checks. The live server was checked read-only:
 `ce36248fa1e466bccf8f52fed2e589b32b2d8951`, and the public UI smoke passed all
 public routes plus the `/chat` auth boundary. The remote production database
 reports 75 applied migrations and an up-to-date schema; all nine PM2 services
-are online. The current source at `b1248d04` includes quota hardening and
+are online. The current source at `50374c17` includes quota hardening and
 a fail-closed authenticated release smoke gate beyond that live artifact; no
-production deploy or migration was executed in this run.
+production deploy or migration was executed in this run. The remote environment
+currently lacks `ALLOWED_ORIGINS`, `JUNO_SMOKE_TOKEN`, and `JUNO_SMOKE_COOKIE`;
+the protected workflow intentionally refuses to deploy until those values are
+configured.
 
 ---
 
