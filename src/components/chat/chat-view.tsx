@@ -19,6 +19,7 @@ import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { ModelParamsPanel } from "@/components/chat/model-params-panel";
 import { CanvasPanel } from "@/components/canvas/canvas-panel";
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
+import { ResearchRunPanel } from "@/components/chat/research-run-panel";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { VoiceAura, voiceAuraStatus } from "@/components/voice/voice-aura";
@@ -1773,6 +1774,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 )}
                 {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                 {voiceSaveNotice}
+                {/* A deep-research turn gathers into a durable run attached to
+                    this conversation. The panel is what remains once the turn
+                    has streamed: stages, sources, and the pause/steer/cancel
+                    controls the in-request pipeline had nowhere to put. Never in
+                    incognito — that mode writes no rows to point at. */}
+                {!privateMode && !voiceOpen && (
+                  <ResearchRunPanel conversationId={currentConversationId} />
+                )}
                 {composer}
               </div>
               <p className="shrink-0 select-none pb-2 text-center text-[10px] leading-4 text-muted-foreground">

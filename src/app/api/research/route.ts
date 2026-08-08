@@ -97,12 +97,16 @@ export async function POST(req: Request) {
   return NextResponse.json(view, { status: 201 });
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // The chat panel asks "is there a run for this conversation?" and nothing
+  // else, so the filter belongs here rather than in a client that downloads
+  // every run the account has ever made and throws most of them away.
+  const conversationId = new URL(req.url).searchParams.get("conversationId");
   const rows = await prisma.researchRun.findMany({
-    where: { userId: user.id },
+    where: { userId: user.id, ...(conversationId ? { conversationId } : {}) },
     orderBy: { createdAt: "desc" },
     take: LIST_LIMIT,
     select: {
