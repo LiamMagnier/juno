@@ -230,4 +230,11 @@ export type BackgroundPurpose =
   | "moderation"
   | "research_planning"
   | "follow_ups"
-  | "translation";
+  | "translation"
+  /**
+   * Embedding a user's uploaded documents. The most content-revealing
+   * background job there is — indexing a library sends every paragraph of every
+   * file to a provider, not a summary of one conversation — so it goes through
+   * the same policy rather than around it. See src/lib/knowledge/embed.ts.
+   */
+  | "knowledge_embedding";

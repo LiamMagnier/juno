@@ -17,7 +17,14 @@ import { buildSystemPrompt, buildDynamicContext } from "@/lib/anthropic";
 import { finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
-import { getMemoryProfile, saveAutoMemories, extractConversationMemory, maybeConsolidate } from "@/lib/memory";
+import {
+  getMemoryProfile,
+  saveAutoMemories,
+  extractConversationMemory,
+  loadBackgroundProviderPolicy,
+  maybeConsolidate,
+  utilityModelCandidates,
+} from "@/lib/memory";
 import { memoryReceiptDetail } from "@/lib/memory-lifecycle";
 import { ArtifactVersionConflictError, persistArtifacts, persistTargetedArtifactEdit } from "@/lib/artifacts-store";
 import {
@@ -101,7 +108,9 @@ import {
   HISTORY_LIMIT,
   promptChars,
   replaceLastUserTurn,
+  type ProjectKnowledge,
 } from "@/lib/chat/context-assembly";
+import { retrieveProjectKnowledge } from "@/lib/knowledge/retrieve";
 import {
   codeSessionRefusal,
   emptySubmissionRefusal,
@@ -1279,14 +1288,58 @@ async function handleChat(req: Request) {
     : { summary: null, recent: [], used: [], usedTokens: 0, droppedForBudget: 0 };
 
   // Project context: instructions + reference file contents injected into the system prompt.
-  const projectContext = conversation.projectId
-    ? buildProjectContext(
-        await prisma.project.findUnique({
-          where: { id: conversation.projectId },
-          select: { name: true, instructions: true, files: { select: { fileName: true, extractedText: true } } },
-        })
-      )
-    : "";
+  //
+  // Reference files go in wholesale, which is correct while a project holds a
+  // handful of them and stops being correct the moment it holds a library. So
+  // where a project's documents have been indexed (lib/knowledge), the relevant
+  // extracts are retrieved for THIS question and the wholesale dump of those
+  // files is dropped — the prompt then grows with the question rather than with
+  // the library, and every extract carries the page it came from.
+  //
+  // The boundary is deliberately narrow. `retrieveProjectKnowledge` returns
+  // null after one indexed lookup when the project has nothing indexed, and
+  // `buildProjectContext` called without a knowledge argument is byte-identical
+  // to what it produced before any of this existed. Retrieval failing, or the
+  // background-provider policy permitting no embedding provider, both degrade
+  // to that same prior behaviour rather than to a dead turn.
+  const projectRow = conversation.projectId
+    ? await prisma.project.findUnique({
+        where: { id: conversation.projectId },
+        select: { name: true, instructions: true, files: { select: { fileName: true, extractedText: true } } },
+      })
+    : null;
+  let projectKnowledge: ProjectKnowledge | null = null;
+  if (conversation.projectId && projectRow) {
+    const knowledgeQuery =
+      [...modelHistory].reverse().find((m) => m.role === "USER")?.content ?? input.message?.trim() ?? "";
+    if (knowledgeQuery) {
+      try {
+        const retrieved = await retrieveProjectKnowledge({
+          userId: user.id,
+          projectId: conversation.projectId,
+          query: knowledgeQuery,
+          policy: await loadBackgroundProviderPolicy(user.id),
+          // Embedding the question is background work on the user's content, so
+          // it answers to the same provider policy as everything else — and
+          // `same_provider` means the provider they picked for this turn.
+          conversationProvider: modelInfo.provider,
+        });
+        if (retrieved && retrieved.passages.length > 0) {
+          projectKnowledge = {
+            passages: retrieved.passages,
+            indexedFileNames: retrieved.indexedFileNames,
+            degraded: retrieved.mode === "lexical",
+          };
+        }
+      } catch (error) {
+        console.error("[chat] project knowledge retrieval failed", {
+          conversationId: conversation.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+  const projectContext = buildProjectContext(projectRow, projectKnowledge);
 
   // Deep research: Tavily plan → search → read before synthesis. It replaces
   // native web search for this turn — the researched corpus IS the live web
@@ -1620,6 +1673,7 @@ async function handleChat(req: Request) {
           attachments: modelHistory.reduce((sum, msg) => sum + msg.attachments.length, 0),
           memories: memoryEnabled ? memoryProfile.recent.length : 0,
           hasProjectContext: !!projectContext,
+          documentPassages: projectKnowledge?.passages.length ?? 0,
         }),
       });
       // The memory receipt. A count ("3 memories") tells the user nothing they
