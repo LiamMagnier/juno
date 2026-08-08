@@ -253,7 +253,13 @@ export function EntryList({ memories, busyIds, paused, onEdit, onForget, onDelet
           Individual facts
         </h2>
         <p className="font-mono text-caption text-muted-foreground">
-          {active.length} in use{retired.length > 0 && ` · ${retired.length} retired`}
+          <span>{active.length}</span> <span>in use</span>
+          {retired.length > 0 && (
+            <>
+              {" · "}
+              <span>{retired.length}</span> <span>retired</span>
+            </>
+          )}
         </p>
       </div>
       <p className="px-4 pb-3 text-caption text-muted-foreground">
@@ -297,7 +303,10 @@ export function EntryList({ memories, busyIds, paused, onEdit, onForget, onDelet
               )}
               aria-hidden="true"
             />
-            What Juno stopped believing ({retired.length})
+            {/* The count sits in its own node so the localization extractor
+                sees a whole sentence rather than a fragment ending in "(". */}
+            <span>What Juno stopped believing</span>
+            <span className="font-mono text-caption">{retired.length}</span>
           </button>
           <AnimatePresence initial={false}>
             {showRetired && (
