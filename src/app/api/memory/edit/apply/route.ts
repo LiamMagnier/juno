@@ -3,6 +3,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { consolidateWithFallback, getMemorySummary } from "@/lib/memory";
+import { factFields } from "@/lib/memory-lifecycle";
+import { MEMORY_ENTRY_SELECT, serializeMemoryEntry } from "@/lib/memory-view";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -58,6 +60,10 @@ export async function POST(req: Request) {
   await prisma.$transaction(async (tx) => {
     for (const op of ops) {
       if (op.op === "add") {
+        // Classified and normalized on the same path as every other write: a
+        // fact added by an edit that carried no category would show up as
+        // "Uncategorised" and, worse, be invisible to duplicate detection.
+        const fields = factFields(op.content, { source: "MANUAL" });
         const created = await tx.memoryEntry.create({
           data: {
             userId: user.id,
@@ -65,16 +71,41 @@ export async function POST(req: Request) {
             source: "MANUAL",
             kind: op.suppress ? "SUPPRESSION" : "FACT",
             sourceRef: "edit",
+            category: op.suppress ? "suppression" : fields.category,
+            confidence: fields.confidence,
+            normalized: fields.normalized,
+            expiresAt: op.suppress ? null : fields.expiresAt,
+            lastVerifiedAt: new Date(),
           },
           select: { id: true },
         });
         inverse.push({ op: "remove", id: created.id, before: op.content });
       } else if (op.op === "update") {
         const before = byId.get(op.id)!.content;
-        await tx.memoryEntry.update({ where: { id: op.id, userId: user.id }, data: { content: op.content } });
+        const fields = factFields(op.content, { source: "MANUAL" });
+        await tx.memoryEntry.update({
+          where: { id: op.id, userId: user.id },
+          data: {
+            content: op.content,
+            category: fields.category,
+            confidence: fields.confidence,
+            normalized: fields.normalized,
+            expiresAt: fields.expiresAt,
+            status: "active",
+            reason: null,
+            supersededById: null,
+            lastVerifiedAt: new Date(),
+          },
+        });
         inverse.push({ op: "update", id: op.id, before: op.content, content: before });
       } else {
         const row = byId.get(op.id)!;
+        // Clear the back-pointers first: a row deleted while another names it
+        // as its replacement leaves a "replaced by" that resolves to nothing.
+        await tx.memoryEntry.updateMany({
+          where: { userId: user.id, supersededById: op.id },
+          data: { supersededById: null },
+        });
         await tx.memoryEntry.delete({ where: { id: op.id, userId: user.id } });
         // Undoing the removal must restore the same KIND (a deleted suppression
         // comes back as a suppression, not as a fact).
@@ -94,13 +125,13 @@ export async function POST(req: Request) {
     prisma.memoryEntry.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
-      select: { id: true, content: true, source: true, kind: true, sourceRef: true, createdAt: true },
+      select: MEMORY_ENTRY_SELECT,
     }),
     getMemorySummary(user.id),
   ]);
 
   return NextResponse.json({
-    memories: memories.map((m) => ({ ...m, createdAt: m.createdAt.toISOString() })),
+    memories: memories.map(serializeMemoryEntry),
     summary: summary
       ? { content: summary.content, updatedAt: summary.updatedAt.toISOString(), entryCount: summary.entryCount }
       : null,
