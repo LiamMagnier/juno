@@ -1498,6 +1498,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Edit applied — summary updated."
   },
   {
+    "id": "1b5a65c3cdba9e16",
+    "source": "Untitled project"
+  },
+  {
     "id": "1b876f2858fd4b9a",
     "source": "Space between"
   },
@@ -2014,10 +2018,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Attach as file"
   },
   {
-    "id": "25800e77e6d343ea",
-    "source": "No chats or projects yet"
-  },
-  {
     "id": "2596fe1e538548e1",
     "source": "Same account, same chats, offline-aware."
   },
@@ -2526,6 +2526,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Memory updated"
   },
   {
+    "id": "2e1c576cd38df94a",
+    "source": "Message text could not be read with the current encryption key, so messages were not searched."
+  },
+  {
     "id": "2e1cfa82b035c26c",
     "source": "empty"
   },
@@ -2548,10 +2552,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2e6869556d8d3493",
     "source": "Max ×20"
-  },
-  {
-    "id": "2e6d79de50dc4cdb",
-    "source": "Try a different search."
   },
   {
     "id": "2e816ddaed2b48f6",
@@ -2818,6 +2818,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No models found."
   },
   {
+    "id": "33ad4578e317c534",
+    "source": "Search everything in Juno"
+  },
+  {
     "id": "33b2ac9838d0f719",
     "source": "github_unreachable"
   },
@@ -3066,6 +3070,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Nothing new to import"
   },
   {
+    "id": "385d4932fa7d5e92",
+    "source": "Filter by date"
+  },
+  {
     "id": "38877434beb82aa6",
     "source": "Type a name with at least one letter or number in it."
   },
@@ -3168,6 +3176,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3a10096667af87d5",
     "source": "Streaming response text"
+  },
+  {
+    "id": "3a461f8b3b8b9534",
+    "source": "This part of your account could not be searched just now."
   },
   {
     "id": "3a4d01aafdb4b53b",
@@ -3500,6 +3512,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4145d75c834fd9b5",
     "source": "suppression de compte intégrée"
+  },
+  {
+    "id": "415155739590b1f9",
+    "source": "Search everything"
   },
   {
     "id": "4156e2cf1553d537",
@@ -4914,10 +4930,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Project actions"
   },
   {
-    "id": "5d4fbaa609ef425f",
-    "source": "Search all chats and projects"
-  },
-  {
     "id": "5d811d15b4c909fa",
     "source": "Strongest Kimi coding model — always-on thinking, agentic coding."
   },
@@ -5532,6 +5544,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "683a62ce15fbabb1",
     "source": "move"
+  },
+  {
+    "id": "683b1007e0e9265a",
+    "source": "[message could not be decrypted]"
   },
   {
     "id": "685fdb489644bc05",
@@ -7574,6 +7590,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Value"
   },
   {
+    "id": "8e4b299808fbc465",
+    "source": "Try fewer words, or widen the filters above."
+  },
+  {
     "id": "8e588cd187741f1c",
     "source": "Medium"
   },
@@ -8490,6 +8510,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "5. Durées de conservation"
   },
   {
+    "id": "9e2a0aec37e5b42d",
+    "source": "Filter by project"
+  },
+  {
     "id": "9e464626f293a8c9",
     "source": "Add an interaction"
   },
@@ -9278,6 +9302,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Skip to content"
   },
   {
+    "id": "ac7cb112aeb42f59",
+    "source": "Search chats, files, artifacts, memory and Work"
+  },
+  {
     "id": "acae3040216c72df",
     "source": "· not confirmed to open"
   },
@@ -9962,6 +9990,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Waiting on you · asked"
   },
   {
+    "id": "b9995db67b074b5e",
+    "source": "Search is unavailable right now."
+  },
+  {
     "id": "b9d59e285cedc267",
     "source": "Try another search or remove the current filter."
   },
@@ -10048,6 +10080,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bb65db55bb22cdbe",
     "source": "GPT-5.2 Pro"
+  },
+  {
+    "id": "bba431b22ab0a8ee",
+    "source": "Check your connection and try the search again."
   },
   {
     "id": "bba9af131107680a",
@@ -10396,6 +10432,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c3123ec25291b935",
     "source": "Payload too large"
+  },
+  {
+    "id": "c31723ab330289fe",
+    "source": "Searching…"
   },
   {
     "id": "c348e4f0010fc5e6",
@@ -11762,10 +11802,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "&rdquo; ·"
   },
   {
-    "id": "da22cb39366aa66b",
-    "source": "Start a chat or create a project to see it here."
-  },
-  {
     "id": "da371ee1e141c623",
     "source": "Revoke link"
   },
@@ -12570,6 +12606,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "I wrote it"
   },
   {
+    "id": "e8724a48892fbae1",
+    "source": "Chats and their messages, projects, files, artifacts, memories and Work."
+  },
+  {
     "id": "e87ba7a0b779d8b7",
     "source": "ended"
   },
@@ -12636,6 +12676,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e9bef0b0f3c25e6e",
     "source": "Keyboard shortcuts"
+  },
+  {
+    "id": "e9cb53e5459144a7",
+    "source": "more part of your account was searched only in part."
   },
   {
     "id": "e9cbb0224c4a3d23",
@@ -13688,6 +13732,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fd3bf01ac1dbce93",
     "source": "Grok Build"
+  },
+  {
+    "id": "fd6075a12012a2cc",
+    "source": "Nothing matches “"
   },
   {
     "id": "fd77fdf589d91cb5",
