@@ -77,6 +77,23 @@ final class JunoRecentActivityTests: XCTestCase {
         XCTAssertFalse(JunoRecentActivity.matches(completed, filter: .failed))
     }
 
+    func testFailedCodeTaskCanSurfaceInAttentionRail() {
+        let failed = JunoRecentItem(
+            sourceID: "code-1",
+            kind: .code,
+            title: "Build failed",
+            updatedAt: now,
+            status: "failed",
+            needsAttention: true
+        )
+
+        XCTAssertTrue(JunoRecentActivity.matches(failed, filter: .needsAttention))
+        XCTAssertEqual(
+            JunoRecentActivity.attentionItems(from: [failed]).map(\.sourceID),
+            ["code-1"]
+        )
+    }
+
     func testPerSourceLimitIsBoundedAndAttentionIsSorted() {
         XCTAssertEqual(JunoRecentActivity.perSourceLimit(-1), 1)
         XCTAssertEqual(JunoRecentActivity.perSourceLimit(50), 50)
