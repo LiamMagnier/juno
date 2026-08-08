@@ -212,6 +212,26 @@ export function classifyFact(content: string, opts: { source?: "AUTO" | "MANUAL"
   return { category, confidence: Number(confidence.toFixed(2)) };
 }
 
+/**
+ * The Memory v2 columns for a fact being written directly — a manual entry on
+ * the memory page, or an applied natural-language edit — where there is no
+ * candidate/existing comparison to run. Shares one implementation with the
+ * extraction path so a hand-typed fact and an extracted one are classified and
+ * normalized identically; if they were not, dedup would miss across the two.
+ */
+export function factFields(
+  content: string,
+  opts: { source: "AUTO" | "MANUAL"; now?: Date }
+): { category: MemoryCategory; confidence: number; normalized: string; expiresAt: Date | null } {
+  const { category, confidence } = classifyFact(content, { source: opts.source });
+  return {
+    category,
+    confidence,
+    normalized: normalizeFact(content),
+    expiresAt: expiresAtFor(category, opts.now ?? new Date()),
+  };
+}
+
 /** Temporary facts get a deadline; everything else is believed until replaced. */
 export function expiresAtFor(
   category: MemoryCategory,
