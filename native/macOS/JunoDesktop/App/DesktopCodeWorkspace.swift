@@ -160,6 +160,12 @@ struct DesktopCodeWorkspace: View {
     private var inspectorPresentation: Binding<Bool> {
         Binding(
             get: {
+                // The launchpad has no session-scoped evidence to inspect. Do
+                // not preserve a stale trailing pane from the last run and
+                // make a blank first screen look like missing product content.
+                guard case .session = selection.wrappedValue else {
+                    return false
+                }
                 #if DEBUG
                 if CommandLine.arguments.contains("--juno-preview-inspector") {
                     return true

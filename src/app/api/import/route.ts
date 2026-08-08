@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import JSZip from "jszip";
 import { Prisma, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -9,11 +10,12 @@ import { getSuppressions } from "@/lib/memory";
 import { guardedMemoryWrite } from "@/lib/memory-suppression";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
-import { buildObjectKey, deleteObject, putObject } from "@/lib/storage";
+import { buildImportObjectKey, deleteObject, putObject } from "@/lib/storage";
 import { isStorageAvailable } from "@/lib/env";
 import { planAttachmentUpload } from "@/lib/attachment-upload";
 import { libraryCapacity } from "@/lib/library";
 import { scheduleIngest } from "@/lib/knowledge";
+import { cleanupImportRun, IMPORT_RUN_LEASE_MS } from "@/lib/import-recovery";
 import {
   detectFormat,
   findConversationsEntry,
@@ -27,6 +29,30 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const MAX_BYTES = 100 * 1024 * 1024;
+
+type PlannedAttachment = Extract<ReturnType<typeof planAttachmentUpload>, { ok: true }>["plan"];
+
+type AttachmentSnapshotRow = {
+  version: number;
+  origin: string;
+  kind: "IMAGE" | "FILE";
+  fileName: string;
+  mimeType: string;
+  size: number;
+  storageKey: string;
+  extractedText: string | null;
+  parserState: string;
+  parserVersion: string | null;
+};
+
+type PreparedImportAttachment = {
+  raw: Record<string, unknown>;
+  bytes: Uint8Array;
+  plan: PlannedAttachment;
+  currentKey: string;
+  snapshotRows: AttachmentSnapshotRow[];
+  objectIds: string[];
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -95,8 +121,10 @@ export async function POST(req: Request) {
   let parsed;
   let sourceZip: JSZip | null = null;
   let junoPayload: Record<string, unknown> | null = null;
+  let archiveSha256 = "";
   try {
     const bytes = await file.arrayBuffer();
+    archiveSha256 = createHash("sha256").update(Buffer.from(bytes)).digest("hex");
     const isJson = file.type === "application/json" || file.name.toLowerCase().endsWith(".json");
     if (isJson) {
       const raw = new TextDecoder().decode(bytes);
@@ -141,11 +169,52 @@ export async function POST(req: Request) {
     );
   }
 
-  // All database mutations for one archive share a transaction. Storage cannot
-  // participate in the database transaction, so every key written below is
-  // also registered for whole-import compensation if the transaction aborts.
-  // This prevents a malformed later record from leaving an account half-restored
-  // or leaking objects that no Attachment row can ever reference.
+  // Claim the archive digest before any account mutation. A completed digest is
+  // a durable idempotent replay; an active digest is a concurrent retry; and an
+  // expired/failed run can be reclaimed after its staged objects are cleaned.
+  const now = new Date();
+  const leaseExpiresAt = new Date(now.getTime() + IMPORT_RUN_LEASE_MS);
+  let importRun = await prisma.importRun.findUnique({
+    where: { userId_archiveSha256: { userId: user.id, archiveSha256 } },
+  });
+  if (importRun?.status === "completed") {
+    return NextResponse.json(importRun.result ?? { imported: 0, skipped: 0, format: parsed.format, projectsImported: 0, memoriesImported: 0, attachmentsImported: 0, attachmentsSkipped: 0 });
+  }
+  if (importRun?.leaseExpiresAt && importRun.leaseExpiresAt > now) {
+    return NextResponse.json({ error: "An identical import is already in progress.", importRunId: importRun.id }, { status: 409 });
+  }
+  if (importRun) {
+    const claimed = await prisma.importRun.updateMany({
+      where: {
+        id: importRun.id,
+        userId: user.id,
+        status: { in: ["applying", "failed"] },
+        OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lt: now } }],
+      },
+      data: { status: "applying", result: Prisma.DbNull, error: null, completedAt: null, leaseExpiresAt },
+    });
+    if (claimed.count !== 1) {
+      return NextResponse.json({ error: "An identical import is already in progress.", importRunId: importRun.id }, { status: 409 });
+    }
+    importRun = await prisma.importRun.findFirstOrThrow({ where: { id: importRun.id, userId: user.id } });
+    await cleanupImportRun(user.id, importRun.id);
+  } else {
+    try {
+      importRun = await prisma.importRun.create({
+        data: { userId: user.id, archiveSha256, status: "applying", leaseExpiresAt },
+      });
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
+      const raced = await prisma.importRun.findUnique({ where: { userId_archiveSha256: { userId: user.id, archiveSha256 } } });
+      if (raced?.status === "completed") return NextResponse.json(raced.result);
+      return NextResponse.json({ error: "An identical import is already in progress.", importRunId: raced?.id }, { status: 409 });
+    }
+  }
+
+  // Relational state is committed in one transaction. Object storage cannot
+  // participate in that transaction, so every key is written through the
+  // durable ImportObject ledger before the byte upload and is compensated by
+  // the recovery worker if the process dies mid-import.
   const uploadedStorageKeys: string[] = [];
   const scheduledIngests: Parameters<typeof scheduleIngest>[0][] = [];
   const importedSuppressionsSnapshot =
@@ -164,6 +233,205 @@ export async function POST(req: Request) {
   };
 
   try {
+    const preparedAttachments: PreparedImportAttachment[] = [];
+    let attachmentsSkipped = 0;
+    const attachmentManifest =
+      parsed.format === "juno" && junoPayload && isRecord(junoPayload.attachments) && Array.isArray(junoPayload.attachments.items)
+        ? junoPayload.attachments.items.slice(0, 1_000)
+        : [];
+    const existingAttachmentByImportKey = new Map<string, string>();
+    const stagedAttachmentImportKeys = new Set<string>();
+    if (attachmentManifest.length > 0) {
+      const existingAttachments = await prisma.attachment.findMany({
+        where: { userId: user.id },
+        select: { id: true, idempotencyKey: true },
+      });
+      for (const attachment of existingAttachments) {
+        if (attachment.idempotencyKey) existingAttachmentByImportKey.set(attachment.idempotencyKey, attachment.id);
+      }
+    }
+
+    const plan = await getUserPlan(user.id);
+    let archiveBytesRead = 0;
+    let importStorageBytes = 0;
+    const archiveBytes = new Map<string, Uint8Array | null>();
+    const readArchiveBytes = async (path: string): Promise<Uint8Array | null> => {
+      if (archiveBytes.has(path)) return archiveBytes.get(path) ?? null;
+      if (!sourceZip || archiveBytesRead >= MAX_BYTES) {
+        archiveBytes.set(path, null);
+        return null;
+      }
+      const entry = sourceZip.file(path);
+      if (!entry || entry.dir) {
+        archiveBytes.set(path, null);
+        return null;
+      }
+      const metadata = (entry as unknown as { _data?: { uncompressedSize?: number } })._data;
+      const declaredSize = Number(metadata?.uncompressedSize ?? 0);
+      if (declaredSize > MAX_BYTES - archiveBytesRead) {
+        archiveBytes.set(path, null);
+        return null;
+      }
+      try {
+        const bytes = new Uint8Array(await entry.async("uint8array"));
+        if (bytes.byteLength > MAX_BYTES - archiveBytesRead) {
+          archiveBytes.set(path, null);
+          return null;
+        }
+        archiveBytesRead += bytes.byteLength;
+        archiveBytes.set(path, bytes);
+        return bytes;
+      } catch {
+        archiveBytes.set(path, null);
+        return null;
+      }
+    };
+
+    const stageObject = async (input: {
+      bytes: Uint8Array;
+      fileName: string;
+      contentType: string;
+      contentDisposition?: string;
+    }) => {
+      const storageKey = buildImportObjectKey(user.id, importRun.id, input.fileName);
+      const ledger = await prisma.importObject.create({
+        data: {
+          userId: user.id,
+          importRunId: importRun.id,
+          storageKey,
+          size: input.bytes.byteLength,
+          status: "staged",
+        },
+        select: { id: true },
+      });
+      // Register before the remote write: a storage provider can acknowledge a
+      // write and then lose the response, so registering after putObject leaves
+      // a crash window with no durable cleanup key.
+      uploadedStorageKeys.push(storageKey);
+      try {
+        await putObject(storageKey, input.bytes, input.contentType, input.contentDisposition);
+        await prisma.importObject.updateMany({
+          where: { id: ledger.id, userId: user.id, importRunId: importRun.id, status: "staged" },
+          data: { status: "uploaded" },
+        });
+        await prisma.importRun.updateMany({
+          where: { id: importRun.id, userId: user.id, status: "applying" },
+          data: { leaseExpiresAt: new Date(Date.now() + IMPORT_RUN_LEASE_MS) },
+        });
+        return { id: ledger.id, storageKey };
+      } catch (error) {
+        await prisma.importObject
+          .updateMany({ where: { id: ledger.id, userId: user.id, status: "staged" }, data: { status: "delete_pending" } })
+          .catch(() => undefined);
+        throw error;
+      }
+    };
+
+    for (const rawValue of attachmentManifest) {
+      if (!isRecord(rawValue) || !sourceZip || !isStorageAvailable()) {
+        attachmentsSkipped += 1;
+        continue;
+      }
+      const sourceAttachmentId = stringValue(rawValue.idempotencyKey, 200) ?? stringValue(rawValue.id, 200);
+      const importKey = sourceAttachmentId
+        ? sourceAttachmentId.startsWith("juno:") ? sourceAttachmentId : `juno:${sourceAttachmentId}`
+        : null;
+      if (importKey && (existingAttachmentByImportKey.has(importKey) || stagedAttachmentImportKeys.has(importKey))) {
+        attachmentsSkipped += 1;
+        continue;
+      }
+      const archivePath = safeArchivePath(rawValue.archivePath);
+      if (!archivePath || !archivePath.startsWith("attachments/")) {
+        attachmentsSkipped += 1;
+        continue;
+      }
+      const bytes = await readArchiveBytes(archivePath);
+      if (!bytes) {
+        attachmentsSkipped += 1;
+        continue;
+      }
+      const planned = planAttachmentUpload({
+        declaredMime: stringValue(rawValue.mimeType, 200) ?? "application/octet-stream",
+        fileName: stringValue(rawValue.fileName, 500) ?? "imported-file",
+        size: bytes.length,
+        bytes,
+        maxUploadMb: PLANS[plan].maxUploadMb,
+      });
+      if (!planned.ok) {
+        attachmentsSkipped += 1;
+        continue;
+      }
+      const capacity = await libraryCapacity(user.id, plan, bytes.length + importStorageBytes);
+      if (!capacity.allowed) {
+        attachmentsSkipped += 1;
+        continue;
+      }
+
+      const current = await stageObject({
+        bytes,
+        fileName: planned.plan.fileName,
+        contentType: planned.plan.storedContentType,
+        contentDisposition: planned.plan.contentDisposition,
+      });
+      importStorageBytes += bytes.length;
+      const objectIds = [current.id];
+      const currentVersion = positiveInt(rawValue.version, 1);
+      const snapshotRows: AttachmentSnapshotRow[] = [{
+        version: currentVersion,
+        origin: "import",
+        kind: planned.plan.kind,
+        fileName: planned.plan.fileName,
+        mimeType: planned.plan.storedMime,
+        size: bytes.length,
+        storageKey: current.storageKey,
+        extractedText: planned.plan.extractedText,
+        parserState: planned.plan.kind === "FILE" ? "queued" : "skipped",
+        parserVersion: null,
+      }];
+
+      const priorVersions = Array.isArray(rawValue.versions) ? rawValue.versions.slice(0, 100) : [];
+      for (const rawVersion of priorVersions) {
+        if (!isRecord(rawVersion)) continue;
+        const version = positiveInt(rawVersion.version, 0);
+        const path = safeArchivePath(rawVersion.archivePath);
+        if (!version || version === currentVersion || !path || !path.startsWith("attachments/")) continue;
+        const versionBytes = await readArchiveBytes(path);
+        if (!versionBytes) continue;
+        const versionPlan = planAttachmentUpload({
+          declaredMime: stringValue(rawVersion.mimeType, 200) ?? "application/octet-stream",
+          fileName: stringValue(rawVersion.fileName, 500) ?? planned.plan.fileName,
+          size: versionBytes.length,
+          bytes: versionBytes,
+          maxUploadMb: PLANS[plan].maxUploadMb,
+        });
+        if (!versionPlan.ok) continue;
+        const versionCapacity = await libraryCapacity(user.id, plan, versionBytes.length + importStorageBytes);
+        if (!versionCapacity.allowed) continue;
+        const versionObject = await stageObject({
+          bytes: versionBytes,
+          fileName: versionPlan.plan.fileName,
+          contentType: versionPlan.plan.storedContentType,
+          contentDisposition: versionPlan.plan.contentDisposition,
+        });
+        importStorageBytes += versionBytes.length;
+        objectIds.push(versionObject.id);
+        snapshotRows.push({
+          version,
+          origin: "import",
+          kind: versionPlan.plan.kind,
+          fileName: versionPlan.plan.fileName,
+          mimeType: versionPlan.plan.storedMime,
+          size: versionBytes.length,
+          storageKey: versionObject.storageKey,
+          extractedText: versionPlan.plan.extractedText,
+          parserState: versionPlan.plan.kind === "FILE" ? "ready" : "skipped",
+          parserVersion: null,
+        });
+      }
+      if (importKey) stagedAttachmentImportKeys.add(importKey);
+      preparedAttachments.push({ raw: rawValue, bytes, plan: planned.plan, currentKey: current.storageKey, snapshotRows, objectIds });
+    }
+
     const result = await prisma.$transaction(
       async (tx) => {
         // Preferences are account-scoped, so a user-initiated Juno restore applies
@@ -474,60 +742,9 @@ export async function POST(req: Request) {
     }
   }
 
-  let attachmentsImported = 0;
-  let attachmentsSkipped = 0;
-  const attachmentManifest =
-    parsed.format === "juno" && junoPayload && isRecord(junoPayload.attachments) && Array.isArray(junoPayload.attachments.items)
-      ? junoPayload.attachments.items.slice(0, 1_000)
-      : [];
-  if (attachmentManifest.length > 0) {
-    const existingAttachments = await tx.attachment.findMany({
-      where: { userId: user.id },
-      select: { id: true, idempotencyKey: true },
-    });
-    const existingAttachmentByImportKey = new Map(
-      existingAttachments.filter((attachment) => attachment.idempotencyKey).map((attachment) => [attachment.idempotencyKey!, attachment.id]),
-    );
-    const plan = await getUserPlan(user.id);
-    let archiveBytesRead = 0;
-    let importStorageBytes = 0;
-    const archiveBytes = new Map<string, Uint8Array | null>();
-    const readArchiveBytes = async (path: string): Promise<Uint8Array | null> => {
-      if (archiveBytes.has(path)) return archiveBytes.get(path) ?? null;
-      if (!sourceZip || archiveBytesRead >= MAX_BYTES) {
-        archiveBytes.set(path, null);
-        return null;
-      }
-      const entry = sourceZip.file(path);
-      if (!entry || entry.dir) {
-        archiveBytes.set(path, null);
-        return null;
-      }
-      const metadata = (entry as unknown as { _data?: { uncompressedSize?: number } })._data;
-      const declaredSize = Number(metadata?.uncompressedSize ?? 0);
-      if (declaredSize > MAX_BYTES - archiveBytesRead) {
-        archiveBytes.set(path, null);
-        return null;
-      }
-      try {
-        const bytes = new Uint8Array(await entry.async("uint8array"));
-        if (bytes.byteLength > MAX_BYTES - archiveBytesRead) {
-          archiveBytes.set(path, null);
-          return null;
-        }
-        archiveBytesRead += bytes.byteLength;
-        archiveBytes.set(path, bytes);
-        return bytes;
-      } catch {
-        archiveBytes.set(path, null);
-        return null;
-      }
-    };
-    for (const rawAttachment of attachmentManifest) {
-      if (!isRecord(rawAttachment) || !sourceZip || !isStorageAvailable()) {
-        attachmentsSkipped += 1;
-        continue;
-      }
+    let attachmentsImported = 0;
+    for (const prepared of preparedAttachments) {
+      const rawAttachment = prepared.raw;
       const sourceAttachmentId = stringValue(rawAttachment.idempotencyKey, 200) ?? stringValue(rawAttachment.id, 200);
       const importKey = sourceAttachmentId
         ? sourceAttachmentId.startsWith("juno:") ? sourceAttachmentId : `juno:${sourceAttachmentId}`
@@ -536,166 +753,69 @@ export async function POST(req: Request) {
         attachmentsSkipped += 1;
         continue;
       }
-      const archivePath = safeArchivePath(rawAttachment.archivePath);
-      if (!archivePath || !archivePath.startsWith("attachments/")) {
-        attachmentsSkipped += 1;
-        continue;
-      }
-      const uploadedKeys: string[] = [];
-      let attachmentStorageBytes = 0;
-      let attachmentCreated = false;
-      try {
-        const bytes = await readArchiveBytes(archivePath);
-        if (!bytes) {
-          attachmentsSkipped += 1;
-          continue;
-        }
-        const planned = planAttachmentUpload({
-          declaredMime: stringValue(rawAttachment.mimeType, 200) ?? "application/octet-stream",
-          fileName: stringValue(rawAttachment.fileName, 500) ?? "imported-file",
-          size: bytes.length,
-          bytes,
-          maxUploadMb: PLANS[plan].maxUploadMb,
+      const sourceMessageId = stringValue(rawAttachment.messageId, 200);
+      const messageId = sourceMessageId
+        ? sourceIdToMessageId.get(sourceMessageId) ?? null
+        : sourceAttachmentId
+          ? sourceAttachmentToMessageId.get(sourceAttachmentId) ?? null
+          : null;
+      const conversationId = stringValue(rawAttachment.conversationId, 200)
+        ? sourceIdToConversationId.get(stringValue(rawAttachment.conversationId, 200)!) ?? null
+        : messageId && sourceMessageId
+          ? sourceMessageToConversationId.get(sourceMessageId) ?? null
+          : null;
+      const deletedAt = dateValue(rawAttachment.deletedAt);
+      const created = await tx.attachment.create({
+        data: {
+          userId: user.id,
+          conversationId,
+          messageId,
+          projectId: stringValue(rawAttachment.projectId, 200)
+            ? sourceIdToProjectId.get(stringValue(rawAttachment.projectId, 200)!) ?? null
+            : null,
+          kind: prepared.plan.kind,
+          fileName: prepared.plan.fileName,
+          mimeType: prepared.plan.storedMime,
+          size: prepared.bytes.length,
+          storageKey: prepared.currentKey,
+          extractedText: stringValue(rawAttachment.extractedText, 200_000) ?? prepared.plan.extractedText,
+          width: nullableInt(rawAttachment.width),
+          height: nullableInt(rawAttachment.height),
+          ...(importKey ? { idempotencyKey: importKey } : {}),
+          version: positiveInt(rawAttachment.version, 1),
+          origin: "import",
+          parserState: deletedAt ? "deleted" : prepared.plan.kind === "FILE" ? "queued" : "skipped",
+          deletedAt,
+          versions: { create: prepared.snapshotRows },
+        },
+        select: { id: true, projectId: true, fileName: true, mimeType: true },
+      });
+      const attached = await tx.importObject.updateMany({
+        where: { id: { in: prepared.objectIds }, userId: user.id, importRunId: importRun.id, status: "uploaded" },
+        data: { status: "attached" },
+      });
+      if (attached.count !== prepared.objectIds.length) throw new Error("Import object ledger did not attach every staged object.");
+      if (!deletedAt && prepared.plan.kind === "FILE") {
+        scheduledIngests.push({
+          userId: user.id,
+          attachmentId: created.id,
+          projectId: created.projectId,
+          fileName: created.fileName,
+          mimeType: created.mimeType,
+          bytes: prepared.bytes,
         });
-        if (!planned.ok) {
-          attachmentsSkipped += 1;
-          continue;
-        }
-        const capacity = await libraryCapacity(user.id, plan, bytes.length + importStorageBytes);
-        if (!capacity.allowed) {
-          attachmentsSkipped += 1;
-          continue;
-        }
-
-        const currentKey = buildObjectKey(user.id, planned.plan.fileName);
-        await putObject(currentKey, bytes, planned.plan.storedContentType, planned.plan.contentDisposition);
-        uploadedKeys.push(currentKey);
-        uploadedStorageKeys.push(currentKey);
-        importStorageBytes += bytes.length;
-        attachmentStorageBytes += bytes.length;
-        const currentVersion = positiveInt(rawAttachment.version, 1);
-        const snapshotRows: {
-          version: number;
-          origin: string;
-          kind: "IMAGE" | "FILE";
-          fileName: string;
-          mimeType: string;
-          size: number;
-          storageKey: string;
-          extractedText: string | null;
-          parserState: string;
-          parserVersion: string | null;
-        }[] = [
-          {
-            version: currentVersion,
-            origin: "import",
-            kind: planned.plan.kind,
-            fileName: planned.plan.fileName,
-            mimeType: planned.plan.storedMime,
-            size: bytes.length,
-            storageKey: currentKey,
-            extractedText: planned.plan.extractedText,
-            parserState: planned.plan.kind === "FILE" ? "queued" : "skipped",
-            parserVersion: null,
-          },
-        ];
-
-        const priorVersions = Array.isArray(rawAttachment.versions) ? rawAttachment.versions.slice(0, 100) : [];
-        for (const rawVersion of priorVersions) {
-          if (!isRecord(rawVersion)) continue;
-          const version = positiveInt(rawVersion.version, 0);
-          const path = safeArchivePath(rawVersion.archivePath);
-          if (!version || version === currentVersion || !path || !path.startsWith("attachments/")) continue;
-          const versionBytes = await readArchiveBytes(path);
-          if (!versionBytes) continue;
-          const versionPlan = planAttachmentUpload({
-            declaredMime: stringValue(rawVersion.mimeType, 200) ?? "application/octet-stream",
-            fileName: stringValue(rawVersion.fileName, 500) ?? planned.plan.fileName,
-            size: versionBytes.length,
-            bytes: versionBytes,
-            maxUploadMb: PLANS[plan].maxUploadMb,
-          });
-          if (!versionPlan.ok) continue;
-          const versionCapacity = await libraryCapacity(user.id, plan, versionBytes.length + importStorageBytes);
-          if (!versionCapacity.allowed) continue;
-          const versionKey = buildObjectKey(user.id, versionPlan.plan.fileName);
-          await putObject(versionKey, versionBytes, versionPlan.plan.storedContentType, versionPlan.plan.contentDisposition);
-          uploadedKeys.push(versionKey);
-          uploadedStorageKeys.push(versionKey);
-          importStorageBytes += versionBytes.length;
-          attachmentStorageBytes += versionBytes.length;
-          snapshotRows.push({
-            version,
-            origin: "import",
-            kind: versionPlan.plan.kind,
-            fileName: versionPlan.plan.fileName,
-            mimeType: versionPlan.plan.storedMime,
-            size: versionBytes.length,
-            storageKey: versionKey,
-            extractedText: versionPlan.plan.extractedText,
-            parserState: versionPlan.plan.kind === "FILE" ? "ready" : "skipped",
-            parserVersion: null,
-          });
-        }
-
-        const sourceMessageId = stringValue(rawAttachment.messageId, 200);
-        const messageId = sourceMessageId
-          ? sourceIdToMessageId.get(sourceMessageId) ?? null
-          : sourceAttachmentId
-            ? sourceAttachmentToMessageId.get(sourceAttachmentId) ?? null
-            : null;
-        const conversationId = stringValue(rawAttachment.conversationId, 200)
-          ? sourceIdToConversationId.get(stringValue(rawAttachment.conversationId, 200)!) ?? null
-          : messageId && sourceMessageId
-            ? sourceMessageToConversationId.get(sourceMessageId) ?? null
-            : null;
-        const deletedAt = dateValue(rawAttachment.deletedAt);
-        const created = await tx.attachment.create({
-          data: {
-            userId: user.id,
-            conversationId,
-            messageId,
-            projectId: stringValue(rawAttachment.projectId, 200)
-              ? sourceIdToProjectId.get(stringValue(rawAttachment.projectId, 200)!) ?? null
-              : null,
-            kind: planned.plan.kind,
-            fileName: planned.plan.fileName,
-            mimeType: planned.plan.storedMime,
-            size: bytes.length,
-            storageKey: currentKey,
-            extractedText: stringValue(rawAttachment.extractedText, 200_000) ?? planned.plan.extractedText,
-            width: nullableInt(rawAttachment.width),
-            height: nullableInt(rawAttachment.height),
-            ...(importKey ? { idempotencyKey: importKey } : {}),
-            version: currentVersion,
-            origin: "import",
-            parserState: deletedAt ? "deleted" : planned.plan.kind === "FILE" ? "queued" : "skipped",
-            deletedAt,
-            versions: { create: snapshotRows },
-          },
-        });
-        attachmentCreated = true;
-        if (!deletedAt && planned.plan.kind === "FILE") {
-          scheduledIngests.push({
-            userId: user.id,
-            attachmentId: created.id,
-            projectId: created.projectId,
-            fileName: created.fileName,
-            mimeType: created.mimeType,
-            bytes,
-          });
-        }
-        attachmentsImported += 1;
-        if (importKey) existingAttachmentByImportKey.set(importKey, created.id);
-      } catch {
-        if (!attachmentCreated && uploadedKeys.length > 0) await cleanupStorageKeys(uploadedKeys);
-        importStorageBytes -= attachmentStorageBytes;
-        attachmentsSkipped += 1;
       }
+      attachmentsImported += 1;
+      if (importKey) existingAttachmentByImportKey.set(importKey, created.id);
     }
-  }
 
-        return { imported, skipped, format: parsed.format, projectsImported, memoriesImported, attachmentsImported, attachmentsSkipped };
+    const resultPayload = { imported, skipped, format: parsed.format, projectsImported, memoriesImported, attachmentsImported, attachmentsSkipped };
+    const completed = await tx.importRun.updateMany({
+      where: { id: importRun.id, userId: user.id, status: "applying" },
+      data: { status: "completed", result: resultPayload, error: null, leaseExpiresAt: null, completedAt: new Date() },
+    });
+    if (completed.count !== 1) throw new Error("Import run was lost before completion.");
+    return resultPayload;
       },
       {
         maxWait: 15_000,
@@ -703,9 +823,48 @@ export async function POST(req: Request) {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       },
     );
-    for (const ingest of scheduledIngests) scheduleIngest(ingest);
+    await cleanupImportRun(user.id, importRun.id).catch((cleanupError) => {
+      console.error("[import] post-commit cleanup of skipped objects failed", {
+        importRunId: importRun.id,
+        message: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      });
+    });
+    for (const ingest of scheduledIngests) {
+      try {
+        scheduleIngest(ingest);
+      } catch (error) {
+        // The attachment is committed and the recovery worker can re-enqueue
+        // queued files; a scheduling failure must not turn a successful import
+        // into a compensating delete after the transaction has committed.
+        console.error("[import] could not schedule knowledge ingest", {
+          attachmentId: ingest.attachmentId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     return NextResponse.json(result);
   } catch (error) {
+    await prisma.importRun
+      .updateMany({
+        where: { id: importRun.id, userId: user.id, status: "applying" },
+        data: {
+          status: "failed",
+          error: (error instanceof Error ? error.message : String(error)).slice(0, 4_000),
+          leaseExpiresAt: new Date(),
+        },
+      })
+      .catch((markError) => {
+        console.error("[import] could not mark failed import run", {
+          importRunId: importRun.id,
+          message: markError instanceof Error ? markError.message : String(markError),
+        });
+      });
+    await cleanupImportRun(user.id, importRun.id).catch((cleanupError) => {
+      console.error("[import] durable object compensation failed", {
+        importRunId: importRun.id,
+        message: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      });
+    });
     await cleanupStorageKeys(uploadedStorageKeys);
     throw error;
   }

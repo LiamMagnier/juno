@@ -5,8 +5,9 @@
  *
  * It is intentionally not a browser test: this exercises the deployed health,
  * native catalog, durable first-submission receipt, SSE completion and replay
- * contract with a dedicated staging/smoke account. Set JUNO_SMOKE_RUN_CHAT=1
- * only for an account whose plan/provider budget is reserved for this check.
+ * contract with a dedicated staging/smoke account. Authenticated runs always
+ * exercise the provider/replay path, so the account's plan/provider budget must
+ * be reserved for this check.
  */
 
 const baseUrl = (process.env.JUNO_SMOKE_BASE_URL ?? "").replace(/\/$/, "");
@@ -58,6 +59,9 @@ async function main() {
   if (requireAuth && !token && !cookie) {
     throw new Error("authenticated production smoke requires JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE");
   }
+  if (requireAuth && process.env.JUNO_SMOKE_RUN_CHAT !== "1") {
+    throw new Error("authenticated production smoke requires JUNO_SMOKE_RUN_CHAT=1");
+  }
 
   const healthResponse = await request("/api/health");
   const health = await json(healthResponse);
@@ -79,10 +83,7 @@ async function main() {
   assert(selected, "no available chat model was returned for the smoke account");
   console.log(`PASS catalog ${selected}`);
 
-  if (process.env.JUNO_SMOKE_RUN_CHAT !== "1") {
-    console.log("PASS authenticated catalog smoke (set JUNO_SMOKE_RUN_CHAT=1 to exercise provider/replay)");
-    return;
-  }
+  assert(process.env.JUNO_SMOKE_RUN_CHAT === "1", "authenticated smoke must run the provider/replay path");
 
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const clientRequestId = `smoke-request-${suffix}`;
@@ -102,6 +103,7 @@ async function main() {
   const first = await json(firstResponse);
   assert(firstResponse.ok, `chat submit failed (${firstResponse.status}): ${first.text.slice(0, 500)}`);
   assert(/(?:done|finishReason|receiptState)/i.test(first.text), "chat response never reached a terminal SSE/recovery marker");
+  assert(!/\"type\"\s*:\s*\"error\"/i.test(first.text), "chat smoke returned an error event");
   console.log("PASS chat submission reached a terminal response");
 
   let receipt = null;
@@ -115,6 +117,7 @@ async function main() {
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
   assert(receipt, "durable chat receipt did not become terminal within 30 seconds");
+  assert(receipt.receiptState === "completed", `durable chat receipt ended in ${receipt.receiptState}, not completed`);
   assert(receipt.userMessageId && receipt.conversationId, "terminal receipt omitted canonical ids");
   console.log(`PASS receipt ${receipt.receiptState}`);
 

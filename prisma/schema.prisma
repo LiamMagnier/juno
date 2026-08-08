@@ -116,6 +116,8 @@ model User {
   workSchedules               WorkSchedule[]
   workTriggers                WorkTrigger[]
   workAuditEvents             WorkAuditEvent[]
+  importRuns                  ImportRun[]
+  importObjects               ImportObject[]
 
   @@index([image])
 }
@@ -671,6 +673,48 @@ model AttachmentVersion {
 
   @@unique([attachmentId, version])
   @@index([attachmentId, createdAt])
+}
+
+// A durable operation record for account-history restores. Storage uploads are
+// not transactional with PostgreSQL, so the run and its object ledger make a
+// crash or timeout recoverable instead of leaving an ambiguous partial import.
+model ImportRun {
+  id             String    @id @default(cuid())
+  userId         String
+  archiveSha256  String
+  status         String    @default("applying") // applying | completed | failed
+  result         Json?
+  error          String?   @db.Text
+  leaseExpiresAt DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  objects ImportObject[]
+
+  @@unique([userId, archiveSha256])
+  @@index([userId, status, leaseExpiresAt])
+}
+
+// One row is written before an object upload and transitions to uploaded,
+// attached, or deleted. The recovery worker only deletes rows that are not
+// attached, so an object referenced by a committed Attachment is never swept.
+model ImportObject {
+  id          String   @id @default(cuid())
+  userId      String
+  importRunId String
+  storageKey  String
+  size        Int
+  status      String   @default("staged") // staged | uploaded | attached | delete_pending | deleted
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  importRun ImportRun @relation(fields: [importRunId], references: [id], onDelete: Cascade)
+
+  @@unique([importRunId, storageKey])
+  @@index([userId, status, updatedAt])
 }
 
 // ----------------------------------------------------------------------------

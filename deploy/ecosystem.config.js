@@ -200,6 +200,23 @@ module.exports = {
       merge_logs: true,
     },
     {
+      // Reclaims staged/imported objects after a request or VM dies before the
+      // relational import transaction can mark them attached. The ledger keeps
+      // this safe across restarts and multiple cleanup attempts.
+      name: "juno-import-recovery",
+      script: "npm",
+      args: "run import:recovery",
+      watch: false,
+      max_memory_restart: "300M",
+      env: {
+        NODE_ENV: "production",
+      },
+      error_file: "logs/import-recovery-err.log",
+      out_file: "logs/import-recovery-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+    },
+    {
       // Reconciles Cloud Code tasks whose runner stopped reporting before it
       // could post a terminal event. This is intentionally a long-lived,
       // single-instance loop rather than a best-effort manual command: a task

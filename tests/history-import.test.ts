@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { detectFormat, importArchiveBudgetProblems, parseHistoryExport } from "../src/lib/history-import";
 
 const IMPORT_ROUTE_SOURCE = readFileSync(new URL("../src/app/api/import/route.ts", import.meta.url), "utf8");
+const ACTIVE_IMPORT_ROUTE_SOURCE = IMPORT_ROUTE_SOURCE.replace(/\/\*[\s\S]*?\*\//g, "");
 
 test("detects Gemini Takeout entries without mistaking them for ChatGPT", () => {
   assert.equal(detectFormat(["My Activity.json", "Gemini Apps/readme.txt"]), "gemini");
@@ -144,10 +145,12 @@ test("import archive budgets reject ZIP inflation and case-folded collisions", (
 test("account imports commit database state atomically and schedule indexing after commit", () => {
   assert.match(IMPORT_ROUTE_SOURCE, /const result = await prisma\.\$transaction\(/);
   assert.match(IMPORT_ROUTE_SOURCE, /isolationLevel: Prisma\.TransactionIsolationLevel\.Serializable/);
+  assert.match(IMPORT_ROUTE_SOURCE, /archiveSha256/);
+  assert.match(IMPORT_ROUTE_SOURCE, /importObject\.create/);
   assert.match(IMPORT_ROUTE_SOURCE, /const uploadedStorageKeys: string\[\] = \[\]/);
   assert.match(IMPORT_ROUTE_SOURCE, /await cleanupStorageKeys\(uploadedStorageKeys\)/);
-  assert.doesNotMatch(IMPORT_ROUTE_SOURCE, /scheduleIngest\(\{/);
-  const transactionResult = IMPORT_ROUTE_SOURCE.indexOf("return { imported");
+  assert.doesNotMatch(ACTIVE_IMPORT_ROUTE_SOURCE, /scheduleIngest\(\{/);
+  const transactionResult = IMPORT_ROUTE_SOURCE.indexOf("return resultPayload");
   const postCommitScheduling = IMPORT_ROUTE_SOURCE.indexOf("for (const ingest of scheduledIngests)");
   assert.ok(transactionResult >= 0 && postCommitScheduling > transactionResult);
 });

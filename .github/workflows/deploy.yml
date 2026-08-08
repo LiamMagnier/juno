@@ -19,9 +19,9 @@ on:
 # --delete over the live VM tree and runs `prisma migrate deploy` against
 # production: a superseding run could sever that mid-flight.
 #
-# Deliberately NOT `deploy-${{ github.ref }}`: workflow_dispatch is not branch
-# restricted (build-and-deploy's only guard is the `if` below), so a ref-keyed
-# group would let a dispatch from any branch deploy concurrently with main.
+# Deliberately NOT `deploy-${{ github.ref }}`: all production-capable runs share
+# one serialized slot, while the deploy job below separately restricts manual
+# dispatches to the main branch.
 # Every deploying run therefore shares one serialised slot and queues; only PR
 # gating is per-branch and disposable.
 concurrency:
@@ -407,8 +407,11 @@ jobs:
 
   build-and-deploy:
     needs: [test, runner, migrations]
-    # Pull requests run test, migrations and runner — but never a deploy.
-    if: github.event_name != 'pull_request'
+    # Pull requests run test, migrations and runner — but never a deploy. A
+    # manual dispatch is production-capable only when launched from main; the
+    # ref is checked explicitly because workflow_dispatch is otherwise allowed
+    # from any branch.
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     # Deploys now queue rather than cancel each other (see `concurrency` above),
     # so a hung ssh/rsync would otherwise hold the single deploy slot for
@@ -426,6 +429,11 @@ jobs:
         env:
           PROD_ENV: ${{ secrets.PROD_ENV }}
         run: |
+          set -euo pipefail
+          if [ -z "$PROD_ENV" ]; then
+            echo "::error::PROD_ENV is not configured in the protected production environment."
+            exit 1
+          fi
           printf '%s\n' "$PROD_ENV" > .env
           # GET /api/health reports the running build so an uptime monitor — and
           # whoever is deciding whether a rollback actually took effect — can
@@ -434,6 +442,25 @@ jobs:
           # launches from deploy/ecosystem.config.js, so without this line the
           # endpoint reports "unknown" forever.
           printf 'GIT_SHA=%s\n' "$GITHUB_SHA" >> .env
+
+      - name: Validate production release inputs before building or shipping
+        env:
+          PROD_ENV: ${{ secrets.PROD_ENV }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in DATABASE_URL DIRECT_URL AUTH_SECRET; do
+            if ! printf '%s\n' "$PROD_ENV" | grep -Eq "^${name}=.+$"; then
+              echo "::error::PROD_ENV is missing required production key ${name}."
+              missing=1
+            fi
+          done
+          if ! printf '%s\n' "$PROD_ENV" | grep -Eq '^JUNO_SMOKE_TOKEN=.+$' && \
+             ! printf '%s\n' "$PROD_ENV" | grep -Eq '^JUNO_SMOKE_COOKIE=.+$'; then
+            echo "::error::PROD_ENV must include JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE for authenticated release smoke."
+            missing=1
+          fi
+          [ "$missing" -eq 0 ]
 
       - name: Install dependencies
         run: npm ci
@@ -628,18 +655,14 @@ jobs:
           # calls the glob tool, mid-run, with the lease still held.
           npm ci --omit=dev --prefix runner/agent-core
           npx prisma generate
-          # Historical deploys used db push and did not consistently record the
-          # matching migrations. Converge that history once, then use reviewed
-          # migrations exclusively on every subsequent deploy.
-          if node scripts/baseline-production-migrations.mjs --status; then
-            npx prisma migrate deploy
-          else
-            echo "Converging existing production schema with migration history…"
-            npx prisma db push --skip-generate
-            npx prisma db execute --file prisma/migrations/20260716200000_account_change_log/migration.sql --schema prisma/schema.prisma
-            JUNO_ALLOW_MIGRATION_BASELINE=1 node scripts/baseline-production-migrations.mjs --apply
-            npx prisma migrate deploy
+          # Production deploys are fail-closed: an unverified migration history
+          # requires a separately controlled baseline operation and can never
+          # silently mutate the schema through `prisma db push`.
+          if ! node scripts/baseline-production-migrations.mjs --status; then
+            echo "::error::Production migration history is not converged. Run the separately controlled baseline procedure before deploying."
+            exit 1
           fi
+          npx prisma migrate deploy
           mkdir -p logs
           # Raise nginx header/URI buffers if still on the 8×8k default that
           # returns 414 Request-URI Too Large on long request lines / cookies.
@@ -707,15 +730,11 @@ jobs:
           [ -n "$APP_URL" ] || APP_URL="https://chat.liams.dev"
           SMOKE_TOKEN="$(grep -m1 '^JUNO_SMOKE_TOKEN=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
           SMOKE_COOKIE="$(grep -m1 '^JUNO_SMOKE_COOKIE=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
-          if [ -n "$SMOKE_TOKEN" ] || [ -n "$SMOKE_COOKIE" ]; then
-            JUNO_SMOKE_BASE_URL="$APP_URL" \
-              JUNO_SMOKE_EXPECTED_SHA="$EXPECTED_SHA" \
-              JUNO_SMOKE_REQUIRE_AUTH=1 \
-              JUNO_SMOKE_TOKEN="$SMOKE_TOKEN" \
-              JUNO_SMOKE_COOKIE="$SMOKE_COOKIE" \
-              JUNO_SMOKE_RUN_CHAT="$(grep -m1 '^JUNO_SMOKE_RUN_CHAT=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)" \
-              node ~/juno/scripts/production-smoke.mjs
-          else
-            echo "Authenticated production smoke skipped: JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE is not configured."
-          fi
+          JUNO_SMOKE_BASE_URL="$APP_URL" \
+            JUNO_SMOKE_EXPECTED_SHA="$EXPECTED_SHA" \
+            JUNO_SMOKE_REQUIRE_AUTH=1 \
+            JUNO_SMOKE_TOKEN="$SMOKE_TOKEN" \
+            JUNO_SMOKE_COOKIE="$SMOKE_COOKIE" \
+            JUNO_SMOKE_RUN_CHAT=1 \
+            node ~/juno/scripts/production-smoke.mjs
           REMOTE

@@ -40,6 +40,7 @@
     "work:scheduler": "NODE_OPTIONS=--conditions=react-server tsx scripts/work-scheduler.ts",
     "work:trigger-poller": "NODE_OPTIONS=--conditions=react-server tsx scripts/work-trigger-poller.ts",
     "research:worker": "NODE_OPTIONS=--conditions=react-server tsx scripts/research-worker.ts",
+    "import:recovery": "NODE_OPTIONS=--conditions=react-server tsx scripts/sweep-import-runs.ts",
     "validate:models": "tsx scripts/validate-models.ts",
     "sync:models": "tsx scripts/sync-models.ts",
     "sync:prune": "tsx scripts/prune-sync.ts",

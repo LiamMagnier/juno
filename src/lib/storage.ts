@@ -52,6 +52,16 @@ export function buildObjectKey(userId: string, fileName: string): string {
   return `uploads/${userId}/${crypto.randomUUID()}-${safe}`;
 }
 
+/**
+ * Namespaced object key for an in-flight account import. The import ledger owns
+ * the lifecycle of this prefix, which lets recovery delete abandoned uploads
+ * without guessing whether an ordinary library object is still referenced.
+ */
+export function buildImportObjectKey(userId: string, importRunId: string, fileName: string): string {
+  const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
+  return `uploads/${userId}/imports/${importRunId}/${crypto.randomUUID()}-${safe}`;
+}
+
 export async function putObject(
   key: string,
   body: Uint8Array | Buffer,

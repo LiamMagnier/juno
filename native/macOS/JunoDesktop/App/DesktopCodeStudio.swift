@@ -616,20 +616,33 @@ struct DesktopCodeSidebar: View {
         )
     }
 
+    /// The compact history for the column. A local session has one home here;
+    /// active work lives above it, pinned work lives in Pinned, and projects are
+    /// represented by their own rows below. Keeping those sets disjoint is what
+    /// stops one session from appearing three times in the same sidebar.
+    private func recentRuns(from allRuns: [DesktopCodeRun]) -> [DesktopCodeRun] {
+        Array(
+            allRuns
+                .filter { run in
+                    guard !run.status.isActive, !isFavorite(run) else { return false }
+                    guard case .session(let id) = run.item,
+                          let session = workbench.sessions.first(where: { $0.id == id })
+                    else { return false }
+                    return session.workspaceID != nil
+                }
+                .sorted { $0.updatedAt > $1.updatedAt }
+                .prefix(10)
+        )
+    }
+
     var body: some View {
         let allRuns = runs
         let active = DesktopCodeNavigationState.active(allRuns)
         let groups = projectGroups(from: allRuns)
 
         return List(selection: $selection) {
-            // The way back to a blank composer, always in the same place.
-            //
-            // It is a selectable row rather than a button because it *is* a
-            // destination — the reader can leave a half-typed conversation to
-            // look at a project and select this again to return to it — and
-            // because ⌘N selects the same item, so the two agree.
             Label {
-                Text("New conversation").junoRowLabel()
+                Text("New task").junoRowLabel()
             } icon: {
                 JunoIconView(.new, size: 15)
                     .junoSidebarMarkInk(selected: selection == .draft)
@@ -638,10 +651,6 @@ struct DesktopCodeSidebar: View {
             .tag(DesktopCodeSidebarItem.draft)
             .accessibilityIdentifier("juno.code.new-conversation")
 
-            // Pull requests sit beside the composer rather than in Chat's
-            // sidebar, which is where the website has always filed them: a PR is
-            // what a coding session produced, and the reader checking on one is
-            // in the product that opened it.
             Label {
                 Text("Pull requests").junoRowLabel()
             } icon: {
@@ -652,11 +661,6 @@ struct DesktopCodeSidebar: View {
             .tag(DesktopCodeSidebarItem.pulls)
             .accessibilityIdentifier("juno.code.pulls")
 
-            // Plugins, filed where the website files them.
-            //
-            // `app-sidebar.tsx` keeps Connections in the Code nav, and the reason
-            // is right above this row: GitHub is granted on that page, and both
-            // the pull request list and every Cloud run depend on the grant.
             if session != nil {
                 Label {
                     Text("Connections").junoRowLabel()
@@ -669,29 +673,34 @@ struct DesktopCodeSidebar: View {
                 .accessibilityIdentifier("juno.code.connections")
             }
 
-            // Anything running comes first and is never nested. A run needing
-            // attention must not be one disclosure triangle away.
             if !active.isEmpty {
-                Section("Active") {
+                Section("Working now") {
                     ForEach(active) { row($0) }
                 }
             }
 
-            let favorites = workbench.favoriteSessions
-            if !favorites.isEmpty {
-                Section("Favorites") {
-                    ForEach(favorites, id: \.id) { session in
-                        if let run = allRuns.first(where: { $0.id == .session(session.id) }) {
-                            row(run)
-                        }
-                    }
+            let pinned = workbench.favoriteSessions.compactMap { session in
+                allRuns.first(where: { $0.id == .session(session.id) })
+            }.filter { run in
+                !active.contains(where: { $0.id == run.id })
+            }
+            if !pinned.isEmpty {
+                Section("Pinned") {
+                    ForEach(pinned) { row($0) }
                 }
             }
 
-            Section {
+            let recent = recentRuns(from: allRuns)
+            if !recent.isEmpty {
+                Section("Recent") {
+                    ForEach(recent) { row($0) }
+                }
+            }
+
+            Section("Projects") {
                 if groups.isEmpty {
                     VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                        Text("Add a project to let Juno read and change real files.")
+                        Text("Open a folder to let Juno read and change real files.")
                             .junoCaption()
                             .fixedSize(horizontal: false, vertical: true)
                         Button(action: openRepository) {
@@ -704,12 +713,6 @@ struct DesktopCodeSidebar: View {
                     .padding(.vertical, JunoSpace.hairline)
                     .selectionDisabled()
                 } else {
-                    // The index, above the projects it indexes.
-                    //
-                    // Every row under this header commits the reader to one
-                    // repository; without this there was no way to ask what Juno has
-                    // access to overall, which is the question "Projects" looks like
-                    // it should answer.
                     Label {
                         Text("All Projects").junoRowLabel()
                     } icon: {
@@ -721,29 +724,9 @@ struct DesktopCodeSidebar: View {
                     .tag(DesktopCodeSidebarItem.allProjects)
 
                     ForEach(groups) { group in
-                        projectRow(group)
-
-                        if !collapsedProjectIDs.contains(group.workspaceID.value) {
-                            if group.runs.isEmpty {
-                                Text("No sessions yet")
-                                    .junoCaption()
-                                    .padding(.leading, Self.childIndent)
-                                    .selectionDisabled()
-                            } else {
-                                ForEach(group.runs) { run in
-                                    row(run, nested: true)
-                                        .padding(.leading, Self.childIndent)
-                                }
-                            }
-                        }
+                        projectSummaryRow(group)
                     }
 
-                    // An ordinary row, not a button in the section header.
-                    //
-                    // The header this replaces pinned to the top of the List and
-                    // collided with the traffic lights, taking its "+" with it. A
-                    // row scrolls with the content like everything else, and says
-                    // what it does rather than being a bare glyph.
                     Button(action: openRepository) {
                         DesktopCodeAddProjectLabel()
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -755,26 +738,6 @@ struct DesktopCodeSidebar: View {
                     .selectionDisabled()
                 }
             }
-            // No header on this section, deliberately.
-            //
-            // A `.sidebar` List **pins** its section headers to the top of its own
-            // bounds, and a pinned header is not subject to the `safeAreaInset`
-            // that positions the scrolling content — so whichever section came
-            // first drew its title level with the traffic lights and behind the
-            // window's own title, while the rows underneath sat correctly below
-            // them. Raising the inset could not fix it: the header does not move
-            // with the content it heads. The opaque strip the switch now sits in
-            // changes what that looks like, not whether it is wrong — a pinned
-            // header no longer lands on the traffic lights, it lands behind the
-            // strip and is never seen at all, which is a worse thing to ship than
-            // no header.
-            //
-            // Nothing is lost by dropping it. "All Projects" is the first row and
-            // names the group better than a static caption did, and adding a
-            // project lives in the session-tools menu (⌘O) and in the empty state.
-            // The remaining sections keep their headers, because none of them is
-            // ever first — Active and Favourites precede them when non-empty, and
-            // Projects always precedes the rest.
 
             let relayed = relayedRuns(from: allRuns)
             if !relayed.isEmpty {
@@ -855,6 +818,38 @@ struct DesktopCodeSidebar: View {
 
     private var collapsedProjectIDs: Set<String> {
         Set(collapsedProjects.components(separatedBy: "\u{1f}").filter { !$0.isEmpty })
+    }
+
+    /// A project is a destination, not a second session history. Session rows
+    /// live in Recent/Pinned above, so this row only answers where work belongs
+    /// and how many local runs are available there.
+    private func projectSummaryRow(_ group: ProjectGroup) -> some View {
+        HStack(spacing: JunoSpace.tight) {
+            Label {
+                Text(group.name)
+                    .junoRowLabel()
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } icon: {
+                JunoIconView(.projects, size: 15)
+                    .junoSidebarMarkInk(selected: selection == .repository(group.workspaceID))
+            }
+
+            Spacer(minLength: JunoSpace.hairline)
+
+            if group.runs.count > 0 {
+                Text(group.runs.count, format: .number)
+                    .junoCaption()
+            }
+
+            projectMenu(group)
+        }
+        .junoSidebarRowInk()
+        .tag(DesktopCodeSidebarItem.repository(group.workspaceID))
+        .contextMenu {
+            projectActions(group)
+        }
+        .accessibilityIdentifier("juno.code.project.\(group.workspaceID.value)")
     }
 
     /// A project row: the platform's selection, one disclosure control, and
@@ -1598,26 +1593,117 @@ struct DesktopCodeDraftDetail: View {
             && pendingAttachments.count < 4
     }
 
+    /// A short set of useful first moves. These are prompts, not decoration:
+    /// choosing one fills the real composer so the user can edit the request,
+    /// change its contract, and send it through the same path as a typed task.
+    private struct LaunchIntent: Identifiable {
+        let id: String
+        let title: String
+        let detail: String
+        let prompt: String
+        let behavior: AgentBehavior
+        let icon: String
+    }
+
+    private var launchIntents: [LaunchIntent] {
+        if record == nil {
+            return [
+                LaunchIntent(
+                    id: "explain",
+                    title: "Explain an idea",
+                    detail: "Get a clear answer",
+                    prompt: "Explain this idea clearly, including the important trade-offs and a practical next step.",
+                    behavior: .ask,
+                    icon: "questionmark"
+                ),
+                LaunchIntent(
+                    id: "plan",
+                    title: "Make a plan",
+                    detail: "Turn a goal into steps",
+                    prompt: "Turn this goal into a focused implementation plan with milestones, risks, and the first step.",
+                    behavior: .plan,
+                    icon: "list.bullet"
+                ),
+                LaunchIntent(
+                    id: "draft",
+                    title: "Draft a feature",
+                    detail: "Start from an outcome",
+                    prompt: "Design and implement this feature from the outcome I describe, keeping the solution focused and maintainable.",
+                    behavior: .code,
+                    icon: "hammer"
+                ),
+                LaunchIntent(
+                    id: "troubleshoot",
+                    title: "Troubleshoot",
+                    detail: "Find the likely cause",
+                    prompt: "Help me diagnose this problem. Ask only the questions you need, then propose the smallest reliable fix.",
+                    behavior: .ask,
+                    icon: "stethoscope"
+                ),
+            ]
+        }
+
+        return [
+            LaunchIntent(
+                id: "explain-project",
+                title: "Explain this project",
+                detail: "Map the architecture",
+                prompt: "Explain the architecture of this project, its main entry points, and where a new contributor should start.",
+                behavior: .ask,
+                icon: "text.book.closed"
+            ),
+            LaunchIntent(
+                id: "review",
+                title: "Review current changes",
+                detail: "Spot risks before commit",
+                prompt: "Review the current working tree for correctness, regressions, and missing tests. Summarize the highest-value fixes.",
+                behavior: .ask,
+                icon: "checklist"
+            ),
+            LaunchIntent(
+                id: "fix",
+                title: "Fix a bug",
+                detail: "Trace it to the cause",
+                prompt: "Find the root cause of this bug, implement a focused fix, and add or update the smallest useful regression test.",
+                behavior: .code,
+                icon: "ladybug"
+            ),
+            LaunchIntent(
+                id: "tests",
+                title: "Run the tests",
+                detail: "Check the current state",
+                prompt: "Run the relevant test suite, report failures clearly, and fix failures that are caused by this project.",
+                behavior: .code,
+                icon: "checkmark.seal"
+            ),
+        ]
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             repositoryContextBar
             Divider()
 
-            Color.clear.overlay(alignment: .bottom) {
+            Color.clear.overlay {
                 VStack(spacing: JunoSpace.cozy) {
                     VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                        Text(record == nil ? "Start a conversation" : "Start a task")
-                            .font(.title2.weight(.semibold))
+                        Text(record == nil ? "What would you like to explore?" : "What are we working on?")
+                            .font(.system(size: 27, weight: .semibold, design: .rounded))
+                            .junoInk()
                         Text(
                             record == nil
-                                ? "Ask, plan, or think something through. Open a project when you want Juno to read and change real files."
-                                : "Describe the outcome. Juno will inspect the repository before it edits."
+                                ? "Ask a question, shape a plan, or open a project when you want Juno to work with files."
+                                : "Describe the outcome. Juno will inspect the repository before it changes anything."
                         )
                             .font(.callout)
                             .junoSecondaryInk()
                     }
-                    .frame(maxWidth: 760, alignment: .leading)
-                    .padding(.horizontal, JunoSpace.roomy)
+                    .frame(maxWidth: 680, alignment: .leading)
+
+                    if trimmedPrompt.isEmpty {
+                        launchIntentList
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
 
                     if let voiceDock {
                         voiceDock
@@ -1630,12 +1716,18 @@ struct DesktopCodeDraftDetail: View {
                         .junoMetaInk()
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, JunoSpace.roomy)
                         .accessibilityHidden(true)
                 }
-                .padding(.bottom, JunoSpace.region)
+                .frame(maxWidth: 760)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .padding(.horizontal, JunoSpace.roomy)
+                .padding(.vertical, JunoSpace.region)
             }
         }
+        .animation(
+            JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
+            value: trimmedPrompt.isEmpty
+        )
         .onAppear {
             configureModel()
             configureNativeTarget(target)
@@ -1644,6 +1736,69 @@ struct DesktopCodeDraftDetail: View {
         .onChange(of: workbench.availableModels.map(\.modelID)) { _, _ in
             configureModel()
         }
+    }
+
+    private var launchIntentList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Suggested starts")
+                .font(.caption.weight(.semibold))
+                .junoMetaInk()
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.top, JunoSpace.cozy)
+                .padding(.bottom, JunoSpace.tight)
+
+            ForEach(Array(launchIntents.enumerated()), id: \.element.id) { index, intent in
+                Button {
+                    apply(intent)
+                } label: {
+                    HStack(spacing: JunoSpace.snug) {
+                        Image(systemName: intent.icon)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color.junoAccent)
+                            .frame(width: 26, height: 26)
+                            .background(Color.junoAccent.opacity(0.10), in: Circle())
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(intent.title)
+                                .font(.callout.weight(.medium))
+                                .junoInk()
+                            Text(intent.detail)
+                                .font(.caption)
+                                .junoSecondaryInk()
+                        }
+
+                        Spacer(minLength: JunoSpace.snug)
+
+                        Image(systemName: "arrow.up.right")
+                            .font(.caption.weight(.semibold))
+                            .junoMetaInk()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, JunoSpace.cozy)
+                    .padding(.vertical, JunoSpace.snug)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("juno.code.launch-intent.\(intent.id)")
+
+                if index < launchIntents.count - 1 {
+                    Divider()
+                        .padding(.leading, 26 + JunoSpace.snug + JunoSpace.cozy)
+                }
+            }
+        }
+        .frame(maxWidth: 680, alignment: .leading)
+        .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                .stroke(Color.junoSeparator.opacity(0.65), lineWidth: 1)
+        }
+    }
+
+    private func apply(_ intent: LaunchIntent) {
+        prompt = intent.prompt
+        behavior = intent.behavior
+        focused = true
     }
 
     @ViewBuilder

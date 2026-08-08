@@ -109,7 +109,14 @@ private struct JunoDesktopPreviewWorkspace: View {
             pullsClient: NativeGitHubPullsClient(sender: sender),
             shareClient: NativeShareClient(sender: sender)
         )
-        workbenchModel = WorkbenchModel.preview()
+        // Keep the desktop host on the same fixture selector as the package
+        // preview. Without this, `--juno-code-preview-scenario` was accepted
+        // by the fixtures but silently ignored by the real macOS shell, which
+        // made approval, diff, terminal and failure states impossible to QA
+        // through the app people actually ship.
+        workbenchModel = WorkbenchModel.preview(
+            scenario: CodePreviewScenario.fromArguments(CommandLine.arguments)
+        )
         _product = State(initialValue: Self.requestedProduct)
     }
 

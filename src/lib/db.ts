@@ -141,6 +141,8 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["WorkSchedule", "userId"],
   ["WorkTrigger", "userId"],
   ["WorkAuditEvent", "userId"],
+  ["ImportRun", "userId"],
+  ["ImportObject", "userId"],
 ]);
 
 /**
