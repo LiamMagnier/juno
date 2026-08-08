@@ -176,7 +176,11 @@ atomic_symlink() {
   ln -s -- "$target" "$temporary"
   # The temporary symlink and its destination are on the same filesystem, so
   # rename is atomic and readers see either the old release or the new one.
-  mv -f -- "$temporary" "$pointer"
+  # `mv -f` follows a symlink whose target is a directory on GNU coreutils,
+  # turning a pointer replacement into an accidental move inside the target
+  # directory during rollback.  `-T` makes the destination the symlink itself
+  # and keeps the pointer swap atomic in both directions.
+  mv -Tf -- "$temporary" "$pointer"
 }
 
 restore_pointer() {

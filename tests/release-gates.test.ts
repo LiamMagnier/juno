@@ -181,7 +181,7 @@ test("deploy script builds before atomic activation and has an application rollb
   assert.ok(materialize < switchCurrent, "the built candidate must be finalized before current changes");
   assert.ok(switchCurrent < activate, "PM2 must activate only after the current pointer is switched");
   assert.match(DEPLOY_SCRIPT, /atomic_symlink\(\)/);
-  assert.match(DEPLOY_SCRIPT, /mv -f -- \"\$temporary\" \"\$pointer\"/);
+  assert.match(DEPLOY_SCRIPT, /mv -Tf -- \"\$temporary\" \"\$pointer\"/);
   assert.match(DEPLOY_SCRIPT, /ROLLBACK_NEEDED=1/);
   assert.match(DEPLOY_SCRIPT, /rollback_release\(\)/);
   assert.match(DEPLOY_SCRIPT, /restore_pointer \"\$CURRENT_LINK\"/);
