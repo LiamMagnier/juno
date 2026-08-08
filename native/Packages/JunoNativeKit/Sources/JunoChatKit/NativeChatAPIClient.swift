@@ -71,6 +71,10 @@ public enum NativeModelUnavailability: Equatable, Sendable {
     case comingSoon
     /// The account's plan cannot call it; the payload names the plan that can.
     case requiresPlan(String)
+    /// The provider/model health probe failed or has expired. The model stays
+    /// visible so a client can explain a temporary outage instead of silently
+    /// forgetting the user's saved choice.
+    case healthCheckFailed
     /// Present in the manifest but not a streaming chat model (image/video gen).
     case notAChatModel
 }
@@ -154,6 +158,7 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
         switch availability {
         case "available": return nil
         case "coming_soon": return .comingSoon
+        case "health_check_failed": return .healthCheckFailed
         default: return .requiresPlan(requiredPlan)
         }
     }

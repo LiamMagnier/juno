@@ -11,6 +11,7 @@ import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "
 import { AUTO_MODEL_ID, isAutoModelId, pickAutoModel } from "@/lib/auto-model";
 import { isProviderConfigured, configuredProviders, PROVIDERS, type Provider } from "@/lib/providers";
 import { providerHealthy } from "@/lib/provider-health";
+import { loadModelCapabilityMap, modelCanRoute } from "@/lib/model-capability";
 import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { isOwnerEmail } from "@/lib/owner";
 import { buildSystemPrompt, buildDynamicContext } from "@/lib/anthropic";
@@ -453,6 +454,12 @@ async function handleChat(req: Request) {
     modelInfo = getModel(requestedId);
   }
 
+  // Capability evidence is short-lived and model-specific. Loading it once
+  // keeps every fallback decision in this request on the same snapshot: a
+  // model cannot pass the explicit-selection check and fail the platform
+  // budget degradation check because two probes changed between them.
+  const capabilityProbes = await loadModelCapabilityMap(MODEL_LIST.map((model) => model.id));
+
   // Eligibility and fallback now live in `lib/model-selection.ts`. The rules
   // decide what a turn costs, and inline here they were reachable only by
   // standing up a request with auth, quota and a database behind it.
@@ -464,7 +471,8 @@ async function handleChat(req: Request) {
     !m.comingSoon &&
     !isAutoModelId(m.id) &&
     isProviderConfigured(m.provider) &&
-    canUseModel(plan, m.id);
+    canUseModel(plan, m.id) &&
+    modelCanRoute(m, capabilityProbes);
 
   const selection = selectModel<ModelInfo>({
     requestedId,

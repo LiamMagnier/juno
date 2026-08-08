@@ -3,6 +3,7 @@ import { loadSelectableModels, nativeModelCatalog } from "@/lib/model-catalog-ap
 import { sortModelsForDisplay } from "@/lib/model-metrics";
 import { getCurrentUser } from "@/lib/session";
 import { getUserPlan } from "@/lib/usage";
+import { loadModelCapabilityMap, nativeModelCapabilityVerdicts } from "@/lib/model-capability";
 
 export const runtime = "nodejs";
 
@@ -17,7 +18,8 @@ export async function GET() {
     loadSelectableModels().then(sortModelsForDisplay),
     getUserPlan(user.id),
   ]);
-  const catalog = nativeModelCatalog(models, plan);
+  const capabilityProbes = await loadModelCapabilityMap(models.map((model) => model.id));
+  const catalog = nativeModelCatalog(models, plan, nativeModelCapabilityVerdicts(models, capabilityProbes));
   return apiV1Json({ ...catalog, generatedAt: new Date().toISOString() }, {
     // The digest now varies with the account's plan; the cache was already
     // private, which is what keeps that per-account ETag correct.

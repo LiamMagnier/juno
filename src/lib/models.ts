@@ -517,6 +517,13 @@ const DISCOVERED_MODELS: ModelInfo[] = DISCOVERED.filter(
   legacy: false,
 }));
 
+const DISCOVERED_MODEL_IDS = new Set(DISCOVERED_MODELS.map((model) => model.id));
+
+/** True for provider-discovered entries that have not been hand-curated yet. */
+export function isDiscoveredModel(modelId: string): boolean {
+  return DISCOVERED_MODEL_IDS.has(modelId);
+}
+
 /** Raw curated lists (UNAVAILABLE entries included) — for scripts/validation. */
 export const CURATED_CHAT_MODELS: readonly ModelInfo[] = CURATED;
 export const CURATED_GEN_MODELS: readonly ModelInfo[] = GENERATIVE;

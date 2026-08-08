@@ -2,10 +2,11 @@ import { createHash } from "node:crypto";
 import type { Plan } from "@prisma/client";
 import { AUTO_MODEL_INFO, isAutoModelId } from "@/lib/auto-model";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
-import { imageEditSupport, isSupersededModel, type ModelInfo } from "@/lib/models";
+import { imageEditSupport, isDiscoveredModel, isSupersededModel, type ModelInfo } from "@/lib/models";
 import { effectiveMinPlan, planRank } from "@/lib/plans";
 import { fastModeMultiplier, supportsFastMode } from "@/lib/pricing";
 import { PROVIDERS } from "@/lib/providers";
+import { decideModelCapability, type ModelCapabilityEvidence } from "@/lib/model-capability-policy";
 
 /**
  * `canUseModel` re-looks-the-model-up in the global registry. Here the manifest
@@ -48,7 +49,39 @@ const AUTO_HIGHLIGHTS = [
  * tiers because the router — not the client — chooses the thinking depth for
  * every Auto message.
  */
-export function nativeModelCatalog(models: ModelInfo[], plan?: Plan) {
+export interface NativeModelCapabilityVerdict {
+  allowed: boolean;
+  reason?: string;
+}
+
+/** Persisted probe evidence accepted at the catalog boundary. */
+export interface NativeModelCapabilityEvidence {
+  status: string;
+  checkedAt: Date | null;
+  expiresAt: Date | null;
+  probeVersion: number;
+}
+
+type NativeModelCapability = NativeModelCapabilityVerdict | NativeModelCapabilityEvidence;
+
+function capabilityDecision(model: ModelInfo, capability: NativeModelCapability | undefined) {
+  if (!capability) return null;
+  if ("allowed" in capability) return capability;
+
+  const evidence: ModelCapabilityEvidence = {
+    status: capability.status === "passed" ? "passed" : "failed",
+    checkedAt: capability.checkedAt,
+    expiresAt: capability.expiresAt,
+    probeVersion: capability.probeVersion,
+  };
+  return decideModelCapability(model, isDiscoveredModel(model.id), evidence);
+}
+
+export function nativeModelCatalog(
+  models: ModelInfo[],
+  plan?: Plan,
+  capabilities?: ReadonlyMap<string, NativeModelCapability>,
+) {
   const chatModels = models.filter((model) => model.modality === "chat" && !model.comingSoon);
   const autoUsable = chatModels.some((model) => usable(model, plan));
   const listed = autoUsable ? [AUTO_MODEL_INFO, ...models] : models;
@@ -57,11 +90,16 @@ export function nativeModelCatalog(models: ModelInfo[], plan?: Plan) {
     const auto = isAutoModelId(model.id);
     const metrics = getModelMetrics(model);
     const reasoning = reasoningCaps(model);
+    const capability = auto ? undefined : capabilityDecision(model, capabilities?.get(model.id));
     const availability = model.comingSoon
       ? "coming_soon"
       : usable(model, plan)
         ? "available"
         : "requires_plan";
+    const effectiveAvailability =
+      availability === "available" && capability && !capability.allowed
+        ? "health_check_failed"
+        : availability;
     return {
       id: model.id,
       // Auto is Juno's own routing product, not the fallback provider its
@@ -80,7 +118,9 @@ export function nativeModelCatalog(models: ModelInfo[], plan?: Plan) {
       // "Older models" disclosure instead of interleaving them.
       legacy: auto ? false : isLegacy(model),
       released: auto ? null : model.released ?? null,
-      availability,
+      availability: effectiveAvailability,
+      availabilityReason:
+        effectiveAvailability === "health_check_failed" ? capability?.reason ?? "model_health_check" : null,
       minimumPlan: model.minPlan.toLowerCase(),
       // The plan `canUseModel` actually enforces (paid models are Pro-floored).
       // Auto is exempt — the router only ever picks models the plan can call.

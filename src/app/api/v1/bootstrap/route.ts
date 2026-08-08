@@ -5,6 +5,7 @@ import { getCompactionFloor } from "@/lib/sync-feed";
 import { loadSelectableModels, nativeModelCatalog } from "@/lib/model-catalog-api";
 import { sortModelsForDisplay } from "@/lib/model-metrics";
 import { getUserPlan } from "@/lib/usage";
+import { loadModelCapabilityMap, nativeModelCapabilityVerdicts } from "@/lib/model-capability";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,8 @@ export async function GET(request: Request) {
     ]);
     // Must be built with the same plan and order as GET /models, or a client
     // comparing manifest versions would refetch the catalog forever.
-    const modelCatalog = nativeModelCatalog(models, plan);
+    const capabilityProbes = await loadModelCapabilityMap(models.map((model) => model.id));
+    const modelCatalog = nativeModelCatalog(models, plan, nativeModelCapabilityVerdicts(models, capabilityProbes));
     return apiV1Json({
       profile: { id: current.user.id, name: current.user.name, email: current.user.email, image: current.user.image },
       subscription: subscription ? {

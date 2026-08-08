@@ -50,6 +50,7 @@ public enum NativeModelPresentation {
         case nil: nil
         case .comingSoon: "Coming soon"
         case .requiresPlan(let plan): "Requires \(planName(plan))"
+        case .healthCheckFailed: "Temporarily unavailable"
         case .notAChatModel: "Not available in chat"
         }
     }

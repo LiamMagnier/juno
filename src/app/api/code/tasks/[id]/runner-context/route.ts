@@ -5,6 +5,7 @@ import { decryptSecret } from "@/lib/crypto";
 import { isTerminalTaskStatus, requireOidcRunnerAuth } from "@/lib/code-remote";
 import { mintTaskToken } from "@/lib/cloud-code-token";
 import { backendAgentCatalog, loadAvailableModels } from "@/lib/model-catalog-api";
+import { loadModelCapabilityMap } from "@/lib/model-capability";
 
 export const runtime = "nodejs";
 
@@ -91,7 +92,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: "github_not_connected" }, { status: 409 });
   }
 
-  const models = backendAgentCatalog(await loadAvailableModels());
+  const availableModels = await loadAvailableModels();
+  const capabilityProbes = await loadModelCapabilityMap(availableModels.map((model) => model.id));
+  const models = backendAgentCatalog(availableModels, capabilityProbes);
 
   return NextResponse.json(
     {

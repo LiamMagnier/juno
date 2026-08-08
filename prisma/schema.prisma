@@ -374,6 +374,28 @@ model Settings {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// Human-reviewed model catalog entries may route with the catalog itself as
+// evidence. Provider-discovered entries are opt-in until this row records a
+// passing, time-bounded capability probe. The row is platform-scoped rather
+// than user-scoped: provider credentials belong to Juno, and one probe is
+// evidence for every account using that deployment.
+model ModelCapabilityProbe {
+  id           String   @id @default(cuid())
+  modelId      String   @unique
+  provider     String
+  status       String // passed | failed
+  probeVersion Int      @default(1)
+  evidence     Json     @default("{}")
+  detail       String?
+  checkedAt    DateTime
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status, expiresAt])
+  @@index([provider, status])
+}
+
 // ----------------------------------------------------------------------------
 // Conversations & messages
 // ----------------------------------------------------------------------------

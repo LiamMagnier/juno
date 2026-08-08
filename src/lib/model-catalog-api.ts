@@ -1,6 +1,8 @@
 import { discoverModels } from "@/lib/model-discovery";
 import { getModelMetrics, withSupersededMarked } from "@/lib/model-metrics";
 import { GEN_MODELS, type ModelInfo } from "@/lib/models";
+import type { ModelCapabilityProbe } from "@prisma/client";
+import { modelCanRoute } from "@/lib/model-capability";
 import { isWorkCapableModel } from "@/lib/work/models";
 import { configuredProviders, PROVIDERS } from "@/lib/providers";
 import { ensureProviderHealthFresh, providerHealthy } from "@/lib/provider-health";
@@ -85,7 +87,10 @@ export interface BackendAgentModel {
   contextWindow: number;
 }
 
-export function backendAgentCatalog(models: ModelInfo[]): BackendAgentModel[] {
+export function backendAgentCatalog(
+  models: ModelInfo[],
+  capabilities?: ReadonlyMap<string, Pick<ModelCapabilityProbe, "status" | "checkedAt" | "expiresAt" | "probeVersion">>,
+): BackendAgentModel[] {
   return models
     // `isWorkCapableModel`, called rather than copied.
     //
@@ -110,7 +115,12 @@ export function backendAgentCatalog(models: ModelInfo[]): BackendAgentModel[] {
         // would burn a task on a guaranteed 401. It was hardcoded `true` back
         // when loadAvailableModels had already dropped unhealthy providers;
         // now that the catalog lists them, the flag has to carry the fact.
-        available: providerHealthy(model.provider),
+        // A provider health verdict answers "is the lab answering?"; the
+        // capability probe answers "does this exact model id answer in the
+        // protocol the runner speaks?". Both must be true before a runner
+        // treats the entry as selectable. The optional map preserves the pure
+        // catalog contract for callers that only need its shape.
+        available: providerHealthy(model.provider) && (capabilities ? modelCanRoute(model, capabilities) : true),
         vision: model.vision,
         contextWindow: model.contextWindow ?? metrics.contextTokens,
       };
