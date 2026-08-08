@@ -73,7 +73,18 @@ struct NewSessionSheet: View {
                         Text("Reviewer").tag(AgentRole.reviewer)
                         Text("Explainer").tag(AgentRole.explainer)
                     }
-                    Picker("Permissions", selection: $permissionMode) {
+                    Picker(
+                        "Permissions",
+                        selection: Binding(
+                            get: { permissionMode },
+                            set: { newMode in
+                                Task { @MainActor in
+                                    await Task.yield()
+                                    permissionMode = newMode
+                                }
+                            }
+                        )
+                    ) {
                         Text("Read-only").tag(PermissionMode.readOnly)
                         Text("Ask before edits and commands").tag(PermissionMode.askBeforeChanges)
                         Text("Workspace write").tag(PermissionMode.workspaceWrite)

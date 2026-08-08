@@ -2100,23 +2100,31 @@ struct DesktopCodeDraftDetail: View {
 
     private var contractMenu: some View {
         Menu {
-            Picker("Mode", selection: $behavior) {
-                ForEach(AgentBehavior.allCases, id: \.self) { value in
-                    Label(
+            ForEach(AgentBehavior.allCases, id: \.self) { value in
+                Button {
+                    selectContract(value)
+                } label: {
+                    contractMenuItem(
                         AgentBehaviorLabel.text(for: value),
-                        systemImage: AgentBehaviorLabel.glyph(for: value)
+                        systemImage: AgentBehaviorLabel.glyph(for: value),
+                        selected: behavior == value
                     )
-                    .tag(value)
                 }
             }
 
             Divider()
 
-            Picker("Permissions", selection: $permissionMode) {
-                ForEach(PermissionMode.allCases, id: \.self) { value in
-                    Text(PermissionModeLabel.text(for: value))
-                        .tag(value)
+            ForEach(PermissionMode.allCases, id: \.self) { value in
+                Button {
+                    selectContract(value)
+                } label: {
+                    contractMenuItem(
+                        PermissionModeLabel.text(for: value),
+                        systemImage: PermissionModeLabel.glyph(for: value),
+                        selected: permissionMode == value
+                    )
                 }
+                .disabled(behavior != .code || record == nil)
             }
             // A permission level governs tools, and a conversation with no
             // project has none. `SessionController` pins such a session to
@@ -2140,6 +2148,41 @@ struct DesktopCodeDraftDetail: View {
         .accessibilityLabel("Access")
         .accessibilityValue(contractTitle)
         .accessibilityIdentifier("juno.code.launch-contract")
+    }
+
+    /// A menu selection can arrive while AppKit is still closing the menu
+    /// window. The contract label and footer both change for Full access, so a
+    /// synchronous state write makes SwiftUI lay out the anchor during that
+    /// dismissal and can crash in `NSPopover`/ViewBridge. Yield one main-actor
+    /// turn so the native menu is gone before the draft is relaid out.
+    private func selectContract(_ value: AgentBehavior) {
+        Task { @MainActor in
+            await Task.yield()
+            behavior = value
+        }
+    }
+
+    private func selectContract(_ value: PermissionMode) {
+        Task { @MainActor in
+            await Task.yield()
+            permissionMode = value
+        }
+    }
+
+    @ViewBuilder
+    private func contractMenuItem(
+        _ title: String,
+        systemImage: String,
+        selected: Bool
+    ) -> some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+            Spacer(minLength: JunoSpace.regular)
+            if selected {
+                Image(systemName: "checkmark")
+                    .accessibilityHidden(true)
+            }
+        }
     }
 
     @ViewBuilder

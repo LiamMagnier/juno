@@ -442,14 +442,20 @@ struct PermissionModePicker: View {
 
     var body: some View {
         Menu {
-            Picker("Permissions", selection: binding) {
-                ForEach(PermissionMode.allCases, id: \.self) { mode in
-                    Label(Self.label(for: mode), systemImage: Self.glyph(for: mode))
-                        .tag(mode)
+            ForEach(PermissionMode.allCases, id: \.self) { mode in
+                Button {
+                    select(mode)
+                } label: {
+                    HStack {
+                        Label(Self.label(for: mode), systemImage: Self.glyph(for: mode))
+                        Spacer(minLength: JunoSpace.regular)
+                        if controller.session.configuration.permissionMode == mode {
+                            Image(systemName: "checkmark")
+                                .accessibilityHidden(true)
+                        }
+                    }
                 }
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
         } label: {
             HStack(spacing: JunoSpace.hairline) {
                 Image(systemName: Self.glyph(for: mode)).imageScale(.small)
@@ -465,13 +471,11 @@ struct PermissionModePicker: View {
         .accessibilityValue(Self.label(for: mode))
     }
 
-    private var binding: Binding<PermissionMode> {
-        Binding(
-            get: { controller.session.configuration.permissionMode },
-            set: { newMode in
-                Task { await controller.setPermissionMode(newMode) }
-            }
-        )
+    private func select(_ newMode: PermissionMode) {
+        Task { @MainActor in
+            await Task.yield()
+            await controller.setPermissionMode(newMode)
+        }
     }
 }
 

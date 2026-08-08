@@ -258,7 +258,10 @@ struct ContextTab: View {
                     selection: Binding(
                         get: { controller.session.configuration.permissionMode },
                         set: { newMode in
-                            Task { await controller.setPermissionMode(newMode) }
+                            Task { @MainActor in
+                                await Task.yield()
+                                await controller.setPermissionMode(newMode)
+                            }
                         }
                     )
                 ) {

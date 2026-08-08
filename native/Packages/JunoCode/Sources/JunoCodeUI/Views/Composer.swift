@@ -999,32 +999,34 @@ struct TurnContractMenu: View {
 
     var body: some View {
         Menu {
-            Picker("Mode", selection: $behavior) {
-                ForEach(AgentBehavior.allCases, id: \.self) { mode in
-                    Label(
+            ForEach(AgentBehavior.allCases, id: \.self) { mode in
+                Button {
+                    select(mode)
+                } label: {
+                    menuItem(
                         AgentBehaviorLabel.text(for: mode),
-                        systemImage: AgentBehaviorLabel.glyph(for: mode)
+                        systemImage: AgentBehaviorLabel.glyph(for: mode),
+                        selected: behavior == mode
                     )
-                    .tag(mode)
                 }
             }
-            .pickerStyle(.inline)
 
             Text(AgentBehaviorLabel.explanation(for: behavior))
 
             Divider()
 
-            Picker("Permissions", selection: $storedPermissionMode) {
-                ForEach(PermissionMode.allCases, id: \.self) { mode in
-                    Label(
+            ForEach(PermissionMode.allCases, id: \.self) { mode in
+                Button {
+                    select(mode)
+                } label: {
+                    menuItem(
                         PermissionModeLabel.text(for: mode),
-                        systemImage: PermissionModeLabel.glyph(for: mode)
+                        systemImage: PermissionModeLabel.glyph(for: mode),
+                        selected: storedPermissionMode == mode
                     )
-                    .tag(mode)
                 }
+                .disabled(behavior != .code)
             }
-            .pickerStyle(.inline)
-            .disabled(behavior != .code)
 
             Text(PermissionModeLabel.explanation(for: permissionMode))
         } label: {
@@ -1047,6 +1049,42 @@ struct TurnContractMenu: View {
             "\(AgentBehaviorLabel.text(for: behavior)), \(PermissionModeLabel.text(for: permissionMode))"
         )
         .accessibilityIdentifier("juno.code.composer.mode")
+    }
+
+    /// SwiftUI updates a menu's selection binding before AppKit has finished
+    /// dismissing the menu window. Permission changes also update the label and
+    /// the surrounding composer, which can make SwiftUI try to re-order that
+    /// window during layout on current macOS releases. Let AppKit finish the
+    /// dismissal first; this keeps the selected value and all of its side
+    /// effects intact without racing the menu presentation.
+    private func select(_ mode: AgentBehavior) {
+        Task { @MainActor in
+            await Task.yield()
+            behavior = mode
+        }
+    }
+
+    private func select(_ mode: PermissionMode) {
+        Task { @MainActor in
+            await Task.yield()
+            storedPermissionMode = mode
+        }
+    }
+
+    @ViewBuilder
+    private func menuItem(
+        _ title: String,
+        systemImage: String,
+        selected: Bool
+    ) -> some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+            Spacer(minLength: JunoSpace.regular)
+            if selected {
+                Image(systemName: "checkmark")
+                    .accessibilityHidden(true)
+            }
+        }
     }
 }
 
