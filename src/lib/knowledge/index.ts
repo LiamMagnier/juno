@@ -140,6 +140,16 @@ export async function ingest(input: IngestInput): Promise<IngestOutcome> {
 export function scheduleIngest(input: IngestInput): void {
   after(async () => {
     try {
+      if (input.attachmentId) {
+        // Claim the attachment before doing any work. Import recovery uses the
+        // same state transition, so a duplicate after() callback or a second
+        // worker cannot index the same queued attachment concurrently.
+        const claimed = await prisma.attachment.updateMany({
+          where: { id: input.attachmentId, userId: input.userId, parserState: "queued" },
+          data: { parserState: "indexing", parserClaimedAt: new Date() },
+        });
+        if (claimed.count !== 1) return;
+      }
       const outcome = await ingest(input);
       if (input.attachmentId) {
         const parserState =
@@ -147,9 +157,11 @@ export function scheduleIngest(input: IngestInput): void {
             ? outcome.state
             : outcome.status === "reused"
               ? "ready"
-              : outcome.status;
+              : outcome.status === "unavailable"
+                ? "queued"
+                : outcome.status;
         await prisma.attachment
-          .updateMany({ where: { id: input.attachmentId, userId: input.userId }, data: { parserState } })
+          .updateMany({ where: { id: input.attachmentId, userId: input.userId }, data: { parserState, parserClaimedAt: null } })
           .catch((error) => {
             console.error("[knowledge] could not persist attachment parser state", {
               attachmentId: input.attachmentId,

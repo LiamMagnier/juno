@@ -849,7 +849,6 @@ struct DesktopCodeSidebar: View {
         .contextMenu {
             projectActions(group)
         }
-        .accessibilityIdentifier("juno.code.project.\(group.workspaceID.value)")
     }
 
     /// A project row: the platform's selection, one disclosure control, and
@@ -930,7 +929,6 @@ struct DesktopCodeSidebar: View {
                 .contentShape(.rect)
         }
         .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
         .fixedSize()
         .help("Project actions")
         .accessibilityLabel("Project actions for \(group.name)")

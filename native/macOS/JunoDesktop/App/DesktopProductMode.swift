@@ -74,7 +74,8 @@ struct DesktopProductSwitcher: View {
         DesktopSegmented(
             options: DesktopProductMode.allCases.map { .init($0, $0.label) },
             selection: $selection,
-            accessibilityLabel: "Juno product"
+            accessibilityLabel: "Juno product",
+            optionAccessibilityIdentifier: { "juno.product-brand.\($0.rawValue)" }
         )
         .accessibilityIdentifier("Juno product")
     }

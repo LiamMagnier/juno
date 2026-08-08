@@ -53,6 +53,7 @@ struct DesktopSegmented<Value: Hashable>: View {
     let options: [Option]
     @Binding var selection: Value
     var accessibilityLabel: String
+    var optionAccessibilityIdentifier: ((Value) -> String)? = nil
 
     @Namespace private var knob
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -84,6 +85,9 @@ struct DesktopSegmented<Value: Hashable>: View {
                     }
                     .buttonStyle(DesktopSegmentStyle())
                     .accessibilityLabel(option.title)
+                    .accessibilityIdentifier(
+                        optionAccessibilityIdentifier?(option.value) ?? ""
+                    )
                     .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
                 }
             }

@@ -622,6 +622,8 @@ model Attachment {
    * queued | indexing | ready | degraded | failed | skipped | deleted
    */
   parserState    String         @default("queued")
+  /// Lease timestamp for the indexing recovery worker. Null once indexing settles.
+  parserClaimedAt DateTime?
   parserVersion  String?
   deletedAt      DateTime?
   createdAt      DateTime       @default(now())

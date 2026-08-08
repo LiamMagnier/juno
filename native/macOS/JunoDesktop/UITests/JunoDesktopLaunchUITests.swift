@@ -70,6 +70,37 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         XCTAssertTrue(app.buttons["juno.code.review.toggle"].exists)
     }
 
+    func testCodeFullAccessMenuDismissesBeforeRelayout() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-ApplePersistenceIgnoreState", "YES",
+            "--juno-ui-preview",
+            "--juno-preview-tab", "code",
+            "--juno-preview-size", "1240x800",
+        ]
+        app.launch()
+        openMainWindowIfNeeded(in: app)
+
+        let contract = app.menuButtons["juno.code.launch-contract"]
+        XCTAssertTrue(contract.waitForExistence(timeout: 12))
+        contract.click()
+
+        let fullAccess = app.menuItems["Full access"]
+        XCTAssertTrue(fullAccess.waitForExistence(timeout: 5))
+        fullAccess.click()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.code.launch-contract"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.staticTexts
+                .matching(NSPredicate(format: "value CONTAINS[c] %@", "installs and pushes proceed"))
+                .firstMatch
+                .waitForExistence(timeout: 5)
+        )
+    }
+
     func testCodeLaunchIntentPopulatesTheRealComposer() {
         let app = XCUIApplication()
         app.launchArguments = [
