@@ -101,6 +101,27 @@ async function validateDesignAssets(doc: DesignDocument, userId: string): Promis
   return null;
 }
 
+/** A generated export must have the bytes and a minimally valid envelope before download. */
+function designExportProblem(format: "svg" | "pdf" | "html", content: string): string | null {
+  const trimmed = content.trim();
+  if (format === "svg") {
+    if (!/^<svg(?:\s|>)/i.test(trimmed) || !/<\/svg>\s*$/i.test(trimmed)) return "The SVG export did not contain a complete root element.";
+    if (/<(?:iframe|object|embed)\b|\bon[a-z]+\s*=|javascript:|<(?:script)\b/i.test(trimmed)) return "The SVG export contained unsafe markup.";
+    if (/(?:href|xlink:href|src)\s*=\s*["']\s*["']/i.test(trimmed)) return "The SVG export contained a missing asset reference.";
+    if (/(?:href|xlink:href|src)\s*=\s*["'](?:https?:|javascript:)/i.test(trimmed)) return "The SVG export contained a remote asset reference.";
+    return null;
+  }
+  if (format === "pdf") {
+    if (!/^%PDF-\d\.\d/.test(content) || !/startxref[\s\S]*%%EOF\s*$/.test(content)) return "The PDF export did not contain a complete PDF envelope.";
+    return null;
+  }
+  if (!/^<!doctype html>/i.test(trimmed) || !/<\/html>\s*$/i.test(trimmed)) return "The HTML export did not contain a complete document.";
+  if (/<(?:img|audio|video|source)\b[^>]*(?:src|poster)\s*=\s*["']\s*["']/i.test(trimmed)) return "The HTML export contained a missing asset reference.";
+  if (/<(?:img|audio|video|source)\b[^>]*(?:src|poster)\s*=\s*["'](?:https?:|javascript:)/i.test(trimmed)) return "The HTML export contained a remote asset reference.";
+  if (/(?:fetch|XMLHttpRequest|WebSocket)\s*\(/i.test(trimmed)) return "The HTML export contained an unexpected network call.";
+  return null;
+}
+
 /**
  * Export a design document.
  *
@@ -167,14 +188,21 @@ export async function GET(req: Request, { params }: { params: Promise<{ artifact
     switch (parsed.data.format) {
       case "svg": {
         const result = exportSvg(document, pageId, parsed.data.nodeId);
+        const problem = designExportProblem("svg", result.content);
+        if (problem) return NextResponse.json({ error: problem, code: "EXPORT_VERIFICATION_FAILED" }, { status: 500 });
         return download(result.content, result.fileName, result.mimeType);
       }
       case "png": {
         // Deliberately JSON: see the note above.
-        return NextResponse.json({ rasterize: pngRequest(document, pageId, parsed.data.nodeId) });
+        const rasterize = pngRequest(document, pageId, parsed.data.nodeId);
+        const problem = designExportProblem("svg", rasterize.svg);
+        if (problem) return NextResponse.json({ error: problem, code: "EXPORT_VERIFICATION_FAILED" }, { status: 500 });
+        return NextResponse.json({ rasterize });
       }
       case "pdf": {
         const result = exportPdf(drawn, pageId);
+        const problem = designExportProblem("pdf", result.content);
+        if (problem) return NextResponse.json({ error: problem, code: "EXPORT_VERIFICATION_FAILED" }, { status: 500 });
         return new NextResponse(result.content, {
           headers: {
             "Content-Type": result.mimeType,
@@ -188,6 +216,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ artifact
       }
       case "html": {
         const result = exportHtmlPrototype(drawn, pageId);
+        const problem = designExportProblem("html", result.content);
+        if (problem) return NextResponse.json({ error: problem, code: "EXPORT_VERIFICATION_FAILED" }, { status: 500 });
         return download(result.content, result.fileName, result.mimeType);
       }
       case "react": {
