@@ -23,7 +23,6 @@ import {
   extractConversationMemory,
   loadBackgroundProviderPolicy,
   maybeConsolidate,
-  utilityModelCandidates,
 } from "@/lib/memory";
 import { memoryReceiptDetail } from "@/lib/memory-lifecycle";
 import { ArtifactVersionConflictError, persistArtifacts, persistTargetedArtifactEdit } from "@/lib/artifacts-store";

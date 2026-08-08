@@ -171,7 +171,15 @@ export interface ResearchStore {
   }): Promise<number>;
   listSources(runId: string, userId: string): Promise<ResearchSourceRow[]>;
   /** Adds to `costMicroUsd` and returns the new total. */
-  addSpend(input: { runId: string; userId: string; microUsd: number }): Promise<bigint>;
+  /** `kind` distinguishes a vendor fee, which has no model behind it and so
+   *  needs the store to write the ledger row, from a model call that already
+   *  recorded its own spend. */
+  addSpend(input: {
+    runId: string;
+    userId: string;
+    microUsd: number;
+    kind: "search" | "model";
+  }): Promise<bigint>;
 }
 
 // ---------------------------------------------------------------------------
@@ -418,11 +426,32 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
     return ended ? { kind: "finished", state: to } : { kind: "raced" };
   };
 
+/**
+ * Steps whose cost is a VENDOR fee rather than a model call.
+ *
+ * `plan` and `synthesis` run a model and call recordSpend themselves, so
+ * billing them here again would double-count the same tokens. `search` and
+ * `fetch` are Tavily charges with no model behind them, which is exactly why
+ * they were free to the ledger before: nothing else was ever going to write
+ * the row. Listed explicitly rather than sniffed from the label, because a
+ * new step name matching the wrong pattern would silently double-bill or
+ * silently un-bill, and neither shows up as an error.
+ */
+const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
+
   /** Bills what a farmed-out call actually cost, and says so in the log. */
   const bill = async (run: ResearchRunRow, microUsd: number, what: string): Promise<void> => {
     const rounded = Math.max(0, Math.round(microUsd));
     if (rounded === 0) return;
-    const total = await store.addSpend({ runId: run.id, userId: run.userId, microUsd: rounded });
+    // A search fee is a vendor charge with no model to bill it; the planner
+    // and the report already call recordSpend themselves, so billing them
+    // again here would double-count the same tokens.
+    const total = await store.addSpend({
+      runId: run.id,
+      userId: run.userId,
+      microUsd: rounded,
+      kind: VENDOR_BILLED_STEPS.has(what) ? "search" : "model",
+    });
     await append(run.id, run.userId, [
       {
         kind: "spend_recorded",

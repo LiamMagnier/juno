@@ -1,4 +1,5 @@
 import "server-only";
+import { recordSpend } from "@/lib/spend";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import {
@@ -306,12 +307,34 @@ export function createPrismaResearchStore(): ResearchStore {
       });
     },
 
-    async addSpend({ runId, userId, microUsd }) {
+    async addSpend({ runId, userId, microUsd, kind }) {
       const updated = await prisma.researchRun.updateMany({
         where: { id: runId, userId },
         data: { costMicroUsd: { increment: BigInt(microUsd) } },
       });
       if (updated.count === 0) return BigInt(0);
+
+      /*
+       * The run row is the run's own odometer; the ledger is what the monthly
+       * ceiling reads. Incrementing only the former is how Work spent for
+       * months without moving a single account's budget, and search fees were
+       * about to repeat it: the planner and the report call recordSpend
+       * themselves, but a search vendor fee has no model behind it and so had
+       * no writer.
+       *
+       * `kind: "research"` rather than "chat" so a research turn is separable
+       * in the ledger. Fire-and-forget like every other recordSpend — a ledger
+       * outage must not fail a run that has already paid the vendor.
+       */
+      if (kind === "search" && microUsd > 0) {
+        await recordSpend({
+          userId,
+          model: "tavily-search",
+          kind: "research",
+          source: "web",
+          costUsd: microUsd / 1_000_000,
+        }).catch(() => {});
+      }
       const row = await prisma.researchRun.findFirst({
         where: { id: runId, userId },
         select: { costMicroUsd: true },
