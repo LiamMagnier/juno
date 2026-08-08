@@ -154,6 +154,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "OpenAI's most thorough reasoner — slow, expensive, extremely capable (Responses API)."
   },
   {
+    "id": "01dd14cebf483a8e",
+    "source": "Checking every citation against its source"
+  },
+  {
     "id": "01e2ee66432e2c4f",
     "source": "network_error"
   },
@@ -214,6 +218,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Duplicate"
   },
   {
+    "id": "02d6f58779049195",
+    "source": "Checking the plan is covered"
+  },
+  {
     "id": "02d9be75b85e3cc3",
     "source": "E-commerce"
   },
@@ -264,6 +272,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "038635e7bc3e725c",
     "source": "Read and change, nothing removed"
+  },
+  {
+    "id": "0389b81a8c747995",
+    "source": "Working out what to look up"
   },
   {
     "id": "03bd6fca9cf5c1fb",
@@ -426,6 +438,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Saved per model on this device."
   },
   {
+    "id": "06c640633333fdf0",
+    "source": "The report cited sources that are not in the corpus."
+  },
+  {
     "id": "06d57205cf40a649",
     "source": "Juno Code wants to:"
   },
@@ -490,10 +506,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Max results (default 25, max 25)."
   },
   {
-    "id": "07e14a54703bb5e4",
-    "source": "Planning research"
-  },
-  {
     "id": "07e564b385cc738f",
     "source": "Could not start the session. Check your connection and try again."
   },
@@ -556,6 +568,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "090512d93fcc3c0d",
     "source": "Integrations"
+  },
+  {
+    "id": "09137d69340c13a8",
+    "source": "Reading the sources in full"
   },
   {
     "id": "0924b7a76ad23a2f",
@@ -964,6 +980,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "120db99bfb50fc33",
     "source": "Memory instruction"
+  },
+  {
+    "id": "121a9afabb7bddf4",
+    "source": "Stopped early with what it had"
   },
   {
     "id": "123a3ebc57e39958",
@@ -1510,6 +1530,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The entity index limit must be between 1 and 500."
   },
   {
+    "id": "1c0aadd7ba644b00",
+    "source": "Stopped at the research budget"
+  },
+  {
     "id": "1c1fdd2b7c6912a6",
     "source": "Cheaper previous-generation workhorse."
   },
@@ -1804,6 +1828,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "21c4a0a31b6ac187",
     "source": "Scheduled tasks"
+  },
+  {
+    "id": "21cc305095786cd3",
+    "source": "Planning"
   },
   {
     "id": "21d886b74bc1abe1",
@@ -2414,6 +2442,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "sensitive"
   },
   {
+    "id": "2d7c384143bf58c5",
+    "source": "too_many_runs"
+  },
+  {
     "id": "2d85d5a0bd1a8c4b",
     "source": "Sites the browser may visit"
   },
@@ -2532,6 +2564,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2fbdad9e61c3e177",
     "source": "border-destructive/40 bg-destructive/5 text-destructive"
+  },
+  {
+    "id": "2fcbcaa000ccb326",
+    "source": "Hide this research run"
   },
   {
     "id": "2fd753b7ae8afaa0",
@@ -2864,6 +2900,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "36159af16ea00411",
     "source": "Certains de ces sous-traitants peuvent traiter des données en dehors de l'Union européenne ; ces transferts sont encadrés par des garanties appropriées (clauses contractuelles types de la Commission européenne ou mécanismes d'adéquation équivalents)."
+  },
+  {
+    "id": "3624caa5719a7a14",
+    "source": "This run is not waiting for a plan decision."
   },
   {
     "id": "3664895579f0a7e6",
@@ -3556,6 +3596,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "43a0b71c30fc5e12",
     "source": "Alibaba · Qwen"
+  },
+  {
+    "id": "43a221862fb0ae6c",
+    "source": "This run is not running."
   },
   {
     "id": "43a6a9f96158ff1a",
@@ -4454,6 +4498,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Coral"
   },
   {
+    "id": "56bccd9d49b0317a",
+    "source": "Cancel run"
+  },
+  {
     "id": "56ce55050e7ddc1c",
     "source": ": vous pouvez saisir la Commission nationale de l'informatique et des libertés (CNIL), 3 place de Fontenoy, TSA 80715, 75334 Paris Cedex 07 —"
   },
@@ -4666,6 +4714,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "droit français"
   },
   {
+    "id": "5af53f129aacd4c1",
+    "source": "Finding sources"
+  },
+  {
     "id": "5af6bfda460108c2",
     "source": "Open overlay"
   },
@@ -4708,6 +4760,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5bb95f1482c80987",
     "source": "Editing needs an image model — pick one and try again."
+  },
+  {
+    "id": "5bdc1c7880a221f5",
+    "source": "Answering from the sources gathered so far."
   },
   {
     "id": "5be1b402d626bad6",
@@ -5124,6 +5180,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "634de114775082f0",
     "source": "Attachments"
+  },
+  {
+    "id": "635c649247069212",
+    "source": "Add a constraint, or paste a source to include…"
   },
   {
     "id": "63acdaf1f268639a",
@@ -5890,6 +5950,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "/search"
   },
   {
+    "id": "6fbb8bcf8cc35572",
+    "source": "Give a constraint, a source, or both."
+  },
+  {
     "id": "6fcad7c8da7cff3a",
     "source": "Diff copied"
   },
@@ -5908,6 +5972,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6ffa9147d00cabde",
     "source": "task_terminal"
+  },
+  {
+    "id": "6ffc4b1eee91d406",
+    "source": "Deep research is available on a paid Juno plan."
   },
   {
     "id": "7013af4c42fe4380",
@@ -6148,6 +6216,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "740b1380bb6cf8a0",
     "source": "One line. This is what Juno reads when deciding whether a skill fits the task in front of it."
+  },
+  {
+    "id": "741d2d54005d8a4b",
+    "source": "Stopped after an error"
   },
   {
     "id": "74273989b0966e23",
@@ -6590,6 +6662,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Pick an element to ask about or modify"
   },
   {
+    "id": "7d923965f4c330f3",
+    "source": "A source could not be read"
+  },
+  {
     "id": "7d9eb7acb13e2462",
     "source": "Close"
   },
@@ -6954,6 +7030,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Read more"
   },
   {
+    "id": "83cb267757a3a271",
+    "source": "Writing the report"
+  },
+  {
     "id": "83da2d849a240967",
     "source": "Drop files here or click to browse — Juno references them in every chat."
   },
@@ -7182,6 +7262,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Accept"
   },
   {
+    "id": "898570576fc40dcd",
+    "source": "Waiting for you to confirm the plan"
+  },
+  {
     "id": "89c1d1e4d9158682",
     "source": "The task has moved on since Juno was briefed"
   },
@@ -7396,6 +7480,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8e37953d23daca5f",
     "source": "Value"
+  },
+  {
+    "id": "8e4b72ca2511e0bc",
+    "source": "Waiting for your answer"
   },
   {
     "id": "8e588cd187741f1c",
@@ -7674,6 +7762,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Which option fits best?"
   },
   {
+    "id": "93c34fa8be6dd2b8",
+    "source": "This run is not paused."
+  },
+  {
     "id": "93d67e433d6b537f",
     "source": "Visited source"
   },
@@ -7788,6 +7880,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "95b6156164e80bc8",
     "source": "That clip is too long."
+  },
+  {
+    "id": "95be0e356dd984c3",
+    "source": "No sources yet"
   },
   {
     "id": "95d3f179cfe80e1b",
@@ -8058,6 +8154,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Deep-reasoning Pro tier (preview) — 3.5 Flash now edges it on most benchmarks."
   },
   {
+    "id": "9a8831f13c449718",
+    "source": "Discard this run"
+  },
+  {
     "id": "9ada8e83c1186cd6",
     "source": "Noise"
   },
@@ -8180,6 +8280,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9c31be5d6b1cd1da",
     "source": "Message Juno…"
+  },
+  {
+    "id": "9c508bc480781017",
+    "source": "Getting ready"
   },
   {
     "id": "9c5884d8ec17c61c",
@@ -8730,6 +8834,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Link"
   },
   {
+    "id": "a6af1a26264783a5",
+    "source": "Working out where sources disagree"
+  },
+  {
     "id": "a6d883c223df8f7e",
     "source": "uses the selected area as guidance, so nearby details may also adjust."
   },
@@ -9020,6 +9128,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "abe7461461eadbf1",
     "source": "Links you create from a chat or artifact appear here, with view counts."
+  },
+  {
+    "id": "ac03f884c7e088ae",
+    "source": "That research run no longer exists."
   },
   {
     "id": "ac0a932eca1e8f9a",
@@ -9602,6 +9714,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "— base légale : exécution du contrat et obligations légales (comptabilité)."
   },
   {
+    "id": "b7573bd3a7eab26a",
+    "source": "Cross-checking"
+  },
+  {
     "id": "b758a8fb53d5dfd2",
     "source": "Used for new conversations. Choose Auto to route each prompt to the cheapest capable model."
   },
@@ -9696,6 +9812,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b8ed5279e897be5d",
     "source": "Sending…"
+  },
+  {
+    "id": "b8f249d935ea0753",
+    "source": "Too many research runs started. Try again shortly."
   },
   {
     "id": "b8fbf194aea9cf26",
@@ -10162,6 +10282,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Payload too large"
   },
   {
+    "id": "c321f5a6c554ec77",
+    "source": "Opening the most promising results"
+  },
+  {
     "id": "c348e4f0010fc5e6",
     "source": "Compte et conversations"
   },
@@ -10442,6 +10566,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Updated."
   },
   {
+    "id": "c8ca3745deb08449",
+    "source": "Only http and https sources can be added."
+  },
+  {
     "id": "c8cda5a7da6f2033",
     "source": "Open-weight multimodal model — very cheap, but benchmarks below Medium 3.5."
   },
@@ -10708,6 +10836,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cd7a7120bad25bb8",
     "source": "Loading connected apps…"
+  },
+  {
+    "id": "cd8397a78bb28193",
+    "source": "Research is not configured on this Juno deployment."
   },
   {
     "id": "cd83e6731d2b1736",
@@ -11322,6 +11454,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "· one place"
   },
   {
+    "id": "d768d2bf2f182c7d",
+    "source": "Steer this research run"
+  },
+  {
     "id": "d77cf999d9c25615",
     "source": "Past models ("
   },
@@ -11370,6 +11506,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Golden hour"
   },
   {
+    "id": "d831c3d280961984",
+    "source": "Start researching"
+  },
+  {
     "id": "d86793732bc9a818",
     "source": "Rename this task"
   },
@@ -11408,6 +11548,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d8b88d94c3955beb",
     "source": "This branch isn't saved — it continues from the fork point with full context."
+  },
+  {
+    "id": "d8c885f8623d2240",
+    "source": "Reading sources"
   },
   {
     "id": "d8da2c49df39d91d",
@@ -11714,8 +11858,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Cheaper multimodal Kimi, superseded by K2.6."
   },
   {
+    "id": "dd7276c2e9025bbd",
+    "source": "Add to this run"
+  },
+  {
     "id": "dd7802ebd942b61e",
     "source": "No connected apps yet. Connect one from All apps to get started."
+  },
+  {
+    "id": "dd8383dedd7f0e4f",
+    "source": "The run stopped making progress and was halted."
   },
   {
     "id": "dd9d24965dbedc02",
@@ -11788,6 +11940,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "df1510cd79d0d19b",
     "source": "As much as fits, then say what is left"
+  },
+  {
+    "id": "df61aaa010047da8",
+    "source": "No usable sources came back for this plan."
   },
   {
     "id": "df9b882aef17c7e0",
@@ -12830,6 +12986,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Web search unavailable"
   },
   {
+    "id": "f240bdc023eca52b",
+    "source": "Juno will search for these. Edit anything before it starts."
+  },
+  {
     "id": "f26efd3574998b71",
     "source": "View results"
   },
@@ -13342,6 +13502,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Product"
   },
   {
+    "id": "fbaa871b0d1f0702",
+    "source": "Research run"
+  },
+  {
     "id": "fbdfd981851d1dc3",
     "source": "Sign in with Apple to let Juno work with your Apple Music library. Apple hands back a music user token — Juno stores it encrypted and never sees your password."
   },
@@ -13480,6 +13644,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ff1cee74414621d8",
     "source": "Pin"
+  },
+  {
+    "id": "ff2ac3af4db00cc8",
+    "source": "Could not be read."
   },
   {
     "id": "ff2c4302ba7a16ec",
