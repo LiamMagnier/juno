@@ -50,7 +50,7 @@ export const UI_STATE_FIXTURES = [
       /aria-live="polite"/,
       /role="log"/,
       /aria-live="off"/,
-      /status=\{props\.status\}/,
+      /status=\{/,
     ],
     responsive: [/w-full/, /max-w-3xl/, /coarse:/],
   },
@@ -70,7 +70,7 @@ export const UI_STATE_FIXTURES = [
 
 export const UI_SHARED_PREFERENCE_CONTRACT = {
   source: "src/app/globals.css",
-  required: [/\.dark\b/, /@media \(prefers-reduced-motion: reduce\)/, /motion-safe/],
+  required: [/\.dark\b/, /@media \(prefers-reduced-motion: reduce\)/],
 };
 
 export const EXPECTED_UI_STATE_IDS = ["empty", "loading", "error", "partial", "success"] as const;

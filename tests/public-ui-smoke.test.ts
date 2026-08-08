@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
-import { checkPublicUi } from "../scripts/public-ui-smoke.mjs";
+import {
+  checkPublicUi,
+  checkPublicUiMatrix,
+  PUBLIC_ROUTES,
+} from "../scripts/public-ui-smoke.mjs";
+import { UI_PROFILES } from "../scripts/public-ui-matrix.mjs";
+import {
+  EXPECTED_UI_STATE_IDS,
+  UI_SHARED_PREFERENCE_CONTRACT,
+  UI_STATE_FIXTURES,
+} from "./fixtures/public-ui-state-matrix";
 
 const SECURITY_HEADERS = {
   "content-type": "text/html; charset=utf-8",
@@ -19,8 +31,26 @@ function bodyFor(route: string): string {
   return "<main>legal</main>";
 }
 
-async function startServer(omitHeaderFor?: string): Promise<{ server: Server; origin: string }> {
+type SeenRequest = {
+  path: string;
+  viewportWidth?: string;
+  mobile?: string;
+  colorScheme?: string;
+  reducedMotion?: string;
+};
+
+async function startServer(
+  omitHeaderFor?: string,
+  seen: SeenRequest[] = [],
+): Promise<{ server: Server; origin: string }> {
   const server = createServer((request, response) => {
+    seen.push({
+      path: request.url ?? "/",
+      viewportWidth: request.headers["viewport-width"],
+      mobile: request.headers["sec-ch-ua-mobile"],
+      colorScheme: request.headers["sec-ch-prefers-color-scheme"],
+      reducedMotion: request.headers["x-juno-test-reduced-motion"],
+    });
     if (request.url === "/chat") {
       response.writeHead(307, { ...SECURITY_HEADERS, location: "/sign-in" });
       response.end();
@@ -53,4 +83,48 @@ test("public UI smoke fails when a security header disappears", async () => {
   } finally {
     await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
   }
+});
+
+test("public UI matrix carries every viewport and preference profile through every route", async () => {
+  const seen: SeenRequest[] = [];
+  const { server, origin } = await startServer(undefined, seen);
+  try {
+    await checkPublicUiMatrix(origin);
+    const expectedPaths = [...PUBLIC_ROUTES.map((route) => route.path), "/chat"];
+    assert.equal(seen.length, UI_PROFILES.length * expectedPaths.length);
+    for (const profile of UI_PROFILES) {
+      for (const route of expectedPaths) {
+        const requests = seen.filter(
+          (request) =>
+            request.path === route &&
+            request.viewportWidth === String(profile.width) &&
+            request.colorScheme === profile.colorScheme &&
+            request.reducedMotion === (profile.reducedMotion ? "1" : "0"),
+        );
+        assert.equal(requests.length, 1, `${profile.id} should request ${route} exactly once`);
+        assert.equal(requests[0]?.mobile, profile.id.startsWith("phone-") ? "?1" : "?0");
+        assert.equal(requests[0]?.colorScheme, profile.colorScheme);
+        assert.equal(requests[0]?.reducedMotion, profile.reducedMotion ? "1" : "0");
+      }
+    }
+  } finally {
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+});
+
+test("UI state fixtures keep their semantic, responsive, and preference contracts", () => {
+  assert.deepEqual(
+    UI_STATE_FIXTURES.map((fixture) => fixture.id),
+    EXPECTED_UI_STATE_IDS,
+  );
+  for (const fixture of UI_STATE_FIXTURES) {
+    const source = fixture.sources
+      .map((relativePath) => readFileSync(path.join(process.cwd(), relativePath), "utf8"))
+      .join("\n");
+    for (const marker of fixture.required) assert.match(source, marker, `${fixture.id} lost ${marker}`);
+    for (const marker of fixture.responsive) assert.match(source, marker, `${fixture.id} lost ${marker}`);
+  }
+
+  const preferenceSource = readFileSync(path.join(process.cwd(), UI_SHARED_PREFERENCE_CONTRACT.source), "utf8");
+  for (const marker of UI_SHARED_PREFERENCE_CONTRACT.required) assert.match(preferenceSource, marker);
 });
