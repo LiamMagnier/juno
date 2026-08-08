@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const IOS_RELEASE = readFileSync(new URL("../.github/workflows/release-ios.yml", import.meta.url), "utf8");
+const MACOS_RELEASE = readFileSync(new URL("../native/Scripts/release-macos.sh", import.meta.url), "utf8");
 
 test("iOS production release is protected and fails closed on missing signing credentials", () => {
   assert.match(IOS_RELEASE, /permissions:\s*\n\s+contents:\s+read/);
@@ -31,4 +32,10 @@ test("iOS production release archives, validates, and uploads the exact signed I
   assert.match(IOS_RELEASE, /--api-issuer/);
   assert.match(IOS_RELEASE, /if: always\(\)/);
   assert.match(IOS_RELEASE, /Remove App Store Connect key from the runner/);
+});
+
+test("macOS publication reverts a public release when the updater feed cannot verify it", () => {
+  assert.match(MACOS_RELEASE, /gh api --method PATCH "repos\/\$REPO\/releases\/\$RELEASE_ID" -F draft=true/);
+  assert.match(MACOS_RELEASE, /reverted to draft/);
+  assert.match(MACOS_RELEASE, /could not revert the release to draft/);
 });
