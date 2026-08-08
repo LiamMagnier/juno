@@ -15,12 +15,12 @@ truth.
 ## Current reconciliation — 2026-08-08
 
 The current source tree now has passing repository-wide automated checks:
-**1,951 tests completed, 1,949 passed, 2 database-dependent tests skipped without a test
+**1,956 tests completed, 1,954 passed, 2 database-dependent tests skipped without a test
 database, 0 failed**; full ESLint, TypeScript, Prisma validation/generation,
 native/capability/Work contract checks, code wiring checks, sandbox checks, and
 design-contract checks also pass. The production Next build renders 110/110
 static pages successfully, and the voice relay has 3/3 security tests plus
-clean typecheck/build. The focused research evidence suite is 53/53,
+clean typecheck/build. The focused research evidence suite is 55/55,
 including the deterministic 100-claim validator benchmark. The full
 `JunoChatKitTests` target is 213/213, and unsigned JunoDesktop/JunoMobile
 Simulator builds pass with warnings treated as errors.
@@ -46,7 +46,8 @@ production entry points:
 - Research now persists objectives, evidence requirements, coverage, conflicts,
   source snapshots and policy scores; it performs a bounded follow-up, stores a
   claim/citation graph, validates before terminal completion, and preserves both
-  the delivered draft and repaired report revisions.
+  the delivered draft and repaired report revisions. Citation repair now has one
+  durable rewrite/revalidation pass with a hard loop cap.
 - Native chat approvals now decode non-terminal SSE approval frames, recover
   pending/recent receipts from `/api/approvals`, render a shared macOS/iOS
   approval card with exact redacted detail and expiry, and submit decisions only
@@ -69,18 +70,23 @@ production entry points:
   pending/unavailable PDF state instead of a misleading filename placeholder.
 - Backup tooling now creates a custom-format PostgreSQL dump plus a per-object
   SHA-256 manifest for local or S3-compatible storage, verifies every byte, and
-  restores only into explicitly non-production scratch targets. The restore
-  drill itself remains unexercised and is still a release gate.
+  restores only into explicitly non-production scratch targets. The disposable
+  local drill now round-trips three database rows and three object files with
+  matching digests; a remote scratch drill with measured RPO/RTO remains a gate.
 - The deploy workflow validates public HTML/security/auth-boundary routes and
   fails closed when authenticated smoke credentials are absent. Authenticated
   catalog/chat receipt/replay smoke is always required after deployment. The
   voice relay rejects unlisted browser origins, and auth pages expose a
   semantic main landmark; native Work mirrors web's parked and finished groups.
+  Public smoke also carries a 12-profile viewport/theme/reduced-motion matrix
+  and static contracts for empty/loading/error/partial/success states; browser
+  rendering and visual snapshots remain separate evidence.
 
 The core product slices are ready for a controlled production release, but the
 release program is not fully closed. Remaining gates are explicit in
 `status.json`: authenticated browser/native journeys and visual/accessibility
-matrices; a tested database/object-storage restore drill; and signed/notarized
+matrices; a remote scratch database/object-storage restore drill with measured
+RPO/RTO; and signed/notarized
 Apple artifacts. Read the historical sections below as traceability only; the
 current reconciliation and `status.json` are authoritative. The production workflow requires the core database/auth inputs, the explicit browser-origin allowlist, and one authenticated smoke credential. Authenticated smoke runs catalog, provider-backed chat, durable receipt and idempotent replay checks; it does not have an optional skip path. The live server was checked read-only:
 `https://chat.liams.dev/api/health` returned `ok`/`db: ok` for live artifact

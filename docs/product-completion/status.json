@@ -5,23 +5,23 @@
   "auditDate": "2026-08-08",
   "branch": "main",
   "verification": {
-    "fullTest": "passed: 1951 tests, 1949 passed, 2 skipped, 0 failed",
+    "fullTest": "passed: 1956 tests, 1954 passed, 2 skipped, 0 failed",
     "lint": "passed: eslint . --no-cache",
     "typecheck": "passed: npx tsc --noEmit --pretty false",
     "schema": "passed: npx prisma validate and prisma generate",
     "build": "passed: npm run build; Next.js compiled and generated 110/110 static pages",
     "relay": "passed: npm test --prefix relay (3/3), npm run typecheck --prefix relay, npm run build --prefix relay",
     "contractChecks": "passed: release gates, native, capabilities, work, code preview/remote/runtime, sandbox, design",
-    "focusedResearchTests": "passed: 53 passed, 0 failed",
+    "focusedResearchTests": "passed: 55 passed, 0 failed",
     "nativePackages": "passed: JunoChatKit 213/213 including native chat approval recovery/decision coverage; JunoWork 52/52; JunoCode 0 failures with 1 simulator skip; JunoDesktop 111 tests/0 failures; JunoMobile 66 tests/0 failures; unsigned JunoDesktop and JunoMobile Simulator builds passed with warnings-as-errors",
     "productionHealth": "partial read-only: https://chat.liams.dev/api/health returned ok/db ok for live artifact 5278c31b8d54a40b1e13bab5ca5bd014f28c2206 after a transient 15s timeout; the remote production database reports 75 applied migrations and an up-to-date schema, all nine PM2 services are online, and the wrapper-based juno-import-recovery worker remains online with exit code 0; a separate remote deployment shell still has an orphaned next build worker in uninterruptible I/O sleep under severe memory pressure; this assistant executed no production deploy or migration",
     "productionSmoke": "partial: public UI/auth-boundary smoke passed earlier; ALLOWED_ORIGINS and JUNO_SMOKE_COOKIE are present remotely, but authenticated catalog/chat receipt/replay smoke was not invoked because it creates real production receipt/chat activity; the protected release workflow requires and runs it during a controlled release",
-    "lastVerifiedAt": "2026-08-08T20:25:48+02:00"
+    "lastVerifiedAt": "2026-08-08T20:37:16+02:00"
   },
   "nextSlice": {
     "id": "product-e2e-and-release-gates",
     "state": "in_progress",
-    "reason": "The core slices are implemented and locally verified. The live server recovered after a transient health timeout, but an orphaned remote next build remains in uninterruptible I/O sleep under severe memory pressure. Remaining work also includes authenticated HTTP/browser/native journey coverage, visual/accessibility matrices, backup restore evidence, deployed runtime proof for import rollback/storage recovery and infrastructure egress enforcement, signed/notarized native artifacts, and authenticated production smoke. This assistant executed no production deploy or migration."
+    "reason": "The core slices are implemented and locally verified. The live server recovered after a transient health timeout, but an orphaned remote next build remains in uninterruptible I/O sleep under severe memory pressure. Remaining work also includes authenticated HTTP/browser/native journey coverage, browser visual/accessibility evidence, a remote scratch restore drill with measured RPO/RTO, deployed runtime proof for import rollback/storage recovery and infrastructure egress enforcement, signed/notarized native artifacts, and authenticated production smoke. This assistant executed no production deploy or migration."
   },
   "slices": [
     {
@@ -134,6 +134,7 @@
         { "id": "steering", "state": "verified", "text": "Editable plan, confirmation gate, pause/resume/cancel and steering are covered by tests/research-run.test.ts." },
         { "id": "claim-graph", "state": "implemented", "text": "ResearchClaim/Passage/ClaimLink rows persist supporting and contradicting passage ids, strength and status; database-backed inspector coverage remains." },
         { "id": "validator", "state": "verified", "text": "Post-synthesis audit validates and labels unsupported/partial/contradicted/unverified claims, preserves draft/final revisions, and clears the 100-claim >=95% precision benchmark in tests/research-citations.test.ts." },
+        { "id": "revision-loop", "state": "verified", "text": "Citation repair sends a durable report through one bounded rewrite and revalidation pass, replaces the current claim graph without erasing report history, and falls back safely when the rewrite is empty; covered by tests/research-run.test.ts." },
         { "id": "snapshots", "state": "implemented", "text": "Fetched source snapshots, hashes, publication dates and source-policy scores are persisted; source rank and syndication events are auditable." },
         { "id": "url-safety", "state": "verified", "text": "Third-party source URLs cannot become clickable links unless http(s). Fixed 2026-08-07 at the render chokepoint." }
       ]
@@ -190,10 +191,10 @@
       "dependsOn": ["approval-broker"],
       "acceptance": [
         { "id": "e2e-layer", "state": "implemented", "text": "Bounded production HTTP smoke exists for health, authenticated model-contract/provider-backed chat/receipt/replay, and public HTML/security/auth-boundary routes; the workflow requires authenticated smoke, while browser automation is still outstanding." },
-        { "id": "http-smoke", "state": "verified", "text": "Read-only health and public UI/auth-boundary smoke pass against chat.liams.dev on live artifact ce36248fa1e466bccf8f52fed2e589b32b2d8951; authenticated catalog/chat replay remains unrun without a dedicated smoke account." },
+        { "id": "http-smoke", "state": "verified", "text": "Read-only health and public UI/auth-boundary smoke pass against chat.liams.dev on live artifact 5278c31b8d54a40b1e13bab5ca5bd014f28c2206; authenticated catalog/chat replay remains unrun because it requires a controlled smoke account and creates real receipts." },
         { "id": "journeys", "state": "partial", "text": "HTTP health and fail-closed authenticated smoke hooks are wired; authenticated chat/citation/search/approval/budget/disconnect/recovery still need a configured staging credential plus browser/native execution." },
-        { "id": "states", "state": "missing", "text": "Desktop/tablet/phone, light/dark, reduced motion, empty/loading/error/partial/success, long and localized strings." },
-        { "id": "restore-drill", "state": "in_progress", "text": "Backup/verify/restore scripts and a scratch-only runbook now exist for PostgreSQL plus local/S3 objects, but a disposable database/object-storage restore drill with measured RPO/RTO has not yet been exercised." }
+        { "id": "states", "state": "implemented", "text": "A deterministic 12-profile desktop/tablet/phone × light/dark/reduced-motion request matrix and static source contracts cover empty/loading/error/partial/success; browser rendering, visual snapshots, long/localized strings and native execution remain release-gated. Covered by tests/public-ui-smoke.test.ts." },
+        { "id": "restore-drill", "state": "verified", "text": "scripts/restore-drill.mjs now runs a disposable local PostgreSQL backup→verify→restore round trip with three deterministic rows and three object fixtures, exact key/digest checks, and cleanup; covered by tests/restore-drill.test.ts. A remote scratch drill with measured RPO/RTO remains release-gated." }
       ]
     }
   ]
