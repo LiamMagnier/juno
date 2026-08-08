@@ -99,6 +99,19 @@ function safeArchivePath(value: unknown): string | null {
   return path;
 }
 
+/** Juno ZIP manifests carry a digest for every archived object when exported by current Juno. */
+function assertArchiveDigest(value: unknown, bytes: Uint8Array, label: string): void {
+  const expected = stringValue(value, 128);
+  if (!expected) return;
+  if (!/^[a-f0-9]{64}$/i.test(expected)) {
+    throw new HistoryImportError(`Juno restore aborted: ${label} has an invalid SHA-256 digest.`);
+  }
+  const actual = createHash("sha256").update(bytes).digest("hex");
+  if (actual !== expected.toLowerCase()) {
+    throw new HistoryImportError(`Juno restore aborted: ${label} failed its SHA-256 integrity check.`);
+  }
+}
+
 /**
  * POST /api/import — upload a ChatGPT, Claude, Gemini, or Juno export ZIP/JSON and recreate its
  * conversations for the current user. Titles and timestamps are preserved,
@@ -242,6 +255,11 @@ export async function POST(req: Request) {
       parsed.format === "juno" && junoPayload && isRecord(junoPayload.attachments) && Array.isArray(junoPayload.attachments.items)
         ? junoPayload.attachments.items.slice(0, 1_000)
         : [];
+    if (parsed.format === "juno" && attachmentManifest.length > 0 && (!sourceZip || !isStorageAvailable())) {
+      throw new HistoryImportError(
+        "Juno restore aborted: this export contains attachments but no complete attachment archive is available. Upload the Juno ZIP export instead of the metadata-only JSON export.",
+      );
+    }
     const existingAttachmentByImportKey = new Map<string, string>();
     const stagedAttachmentImportKeys = new Set<string>();
     if (attachmentManifest.length > 0) {
@@ -350,9 +368,8 @@ export async function POST(req: Request) {
     };
 
     for (const rawValue of attachmentManifest) {
-      if (!isRecord(rawValue) || !sourceZip || !isStorageAvailable()) {
-        attachmentsSkipped += 1;
-        continue;
+      if (!isRecord(rawValue)) {
+        throw new HistoryImportError("Juno restore aborted: an attachment manifest entry is malformed.");
       }
       const sourceAttachmentId = stringValue(rawValue.idempotencyKey, 200) ?? stringValue(rawValue.id, 200);
       const importKey = sourceAttachmentId
@@ -364,14 +381,15 @@ export async function POST(req: Request) {
       }
       const archivePath = safeArchivePath(rawValue.archivePath);
       if (!archivePath || !archivePath.startsWith("attachments/")) {
-        attachmentsSkipped += 1;
-        continue;
+        throw new HistoryImportError(
+          `Juno restore aborted: attachment ${sourceAttachmentId ?? "without an id"} has no safe archived byte path. Export the account again with the complete Juno ZIP.`,
+        );
       }
       const bytes = await readArchiveBytes(archivePath);
       if (!bytes) {
-        attachmentsSkipped += 1;
-        continue;
+        throw new HistoryImportError(`Juno restore aborted: attachment ${sourceAttachmentId ?? archivePath} is missing or unreadable in the archive.`);
       }
+      assertArchiveDigest(rawValue.archiveSha256, bytes, `attachment ${sourceAttachmentId ?? archivePath}`);
       const planned = planAttachmentUpload({
         declaredMime: stringValue(rawValue.mimeType, 200) ?? "application/octet-stream",
         fileName: stringValue(rawValue.fileName, 500) ?? "imported-file",
@@ -380,13 +398,13 @@ export async function POST(req: Request) {
         maxUploadMb: PLANS[plan].maxUploadMb,
       });
       if (!planned.ok) {
-        attachmentsSkipped += 1;
-        continue;
+        throw new HistoryImportError(`Juno restore aborted: attachment ${sourceAttachmentId ?? archivePath} failed validation.`);
       }
       const capacity = await libraryCapacity(user.id, plan, bytes.length + importStorageBytes);
       if (!capacity.allowed) {
-        attachmentsSkipped += 1;
-        continue;
+        throw new HistoryImportError(
+          `Juno restore aborted: restoring attachment ${sourceAttachmentId ?? archivePath} would exceed the account Library quota.`,
+        );
       }
 
       const current = await stageObject({
@@ -413,12 +431,20 @@ export async function POST(req: Request) {
 
       const priorVersions = Array.isArray(rawValue.versions) ? rawValue.versions.slice(0, 100) : [];
       for (const rawVersion of priorVersions) {
-        if (!isRecord(rawVersion)) continue;
+        if (!isRecord(rawVersion)) {
+          throw new HistoryImportError(`Juno restore aborted: attachment ${sourceAttachmentId ?? archivePath} has a malformed version entry.`);
+        }
         const version = positiveInt(rawVersion.version, 0);
         const path = safeArchivePath(rawVersion.archivePath);
-        if (!version || version === currentVersion || !path || !path.startsWith("attachments/")) continue;
+        if (!version || version === currentVersion) continue;
+        if (!path || !path.startsWith("attachments/")) {
+          throw new HistoryImportError(`Juno restore aborted: attachment ${sourceAttachmentId ?? archivePath} has an unsafe archived version path.`);
+        }
         const versionBytes = await readArchiveBytes(path);
-        if (!versionBytes) continue;
+        if (!versionBytes) {
+          throw new HistoryImportError(`Juno restore aborted: attachment ${sourceAttachmentId ?? archivePath} version ${version} is missing from the archive.`);
+        }
+        assertArchiveDigest(rawVersion.archiveSha256, versionBytes, `attachment ${sourceAttachmentId ?? archivePath} version ${version}`);
         const versionPlan = planAttachmentUpload({
           declaredMime: stringValue(rawVersion.mimeType, 200) ?? "application/octet-stream",
           fileName: stringValue(rawVersion.fileName, 500) ?? planned.plan.fileName,
@@ -426,9 +452,15 @@ export async function POST(req: Request) {
           bytes: versionBytes,
           maxUploadMb: PLANS[plan].maxUploadMb,
         });
-        if (!versionPlan.ok) continue;
+        if (!versionPlan.ok) {
+          throw new HistoryImportError(`Juno restore aborted: attachment ${sourceAttachmentId ?? archivePath} version ${version} failed validation.`);
+        }
         const versionCapacity = await libraryCapacity(user.id, plan, versionBytes.length + importStorageBytes);
-        if (!versionCapacity.allowed) continue;
+        if (!versionCapacity.allowed) {
+          throw new HistoryImportError(
+            `Juno restore aborted: restoring attachment ${sourceAttachmentId ?? archivePath} version ${version} would exceed the account Library quota.`,
+          );
+        }
         const versionObject = await stageObject({
           bytes: versionBytes,
           fileName: versionPlan.plan.fileName,
@@ -893,6 +925,9 @@ export async function POST(req: Request) {
       });
     });
     await cleanupStorageKeys(uploadedStorageKeys);
+    if (error instanceof HistoryImportError) {
+      return NextResponse.json({ error: error.message }, { status: 422 });
+    }
     if (error instanceof LibraryQuotaExceededError) {
       return NextResponse.json(
         {
