@@ -25,6 +25,13 @@ async function toGeminiContents(history: MessageForModel[], vision: boolean): Pr
           parts.push({ inlineData: { mimeType: att.mimeType, data: Buffer.from(bytes).toString("base64") } });
         } else if (att.extractedText) {
           parts.push({ text: `Attached file "${att.fileName}":\n\n${att.extractedText.slice(0, 100_000)}` });
+        } else {
+          const note = att.mimeType === "application/pdf"
+            ? " Juno could not extract readable text from this PDF, and this model does not receive raw PDF bytes. Open its Document Inspector or upload a text-readable copy."
+            : att.kind === "IMAGE" && !vision
+            ? " This model cannot view images."
+            : " This attachment has no extracted text.";
+          parts.push({ text: `[Attached file "${att.fileName}" (${att.mimeType}).${note}]` });
         }
       } catch {
         /* skip unreadable attachment */

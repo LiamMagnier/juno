@@ -22,10 +22,10 @@
  *   lines. That is where the `bbox` on each block comes from — it is measured,
  *   not invented.
  *
- * What it knowingly does NOT do, and reports instead of faking:
+ * What the native parser knowingly does NOT do, and reports instead of faking:
  *
- * - No OCR. A scanned page has no text objects at all, and comes back
- *   `degraded` saying so, rather than as an empty document that looks indexed.
+ * - No OCR in this pure parser. `extractDocument` owns the optional OCR fallback
+ *   so this function stays deterministic and citable when tested in isolation.
  * - No CID font decoding beyond an embedded `/ToUnicode` CMap. A font with
  *   neither a standard encoding nor a ToUnicode map yields bytes that are glyph
  *   ids, not characters; emitting those would fill the index with convincing
@@ -38,7 +38,7 @@ import { inflateSync, inflateRawSync } from "node:zlib";
 import { BlockCollector, EXTRACT_LIMITS, type ExtractedBlock, type ExtractionResult } from "./types";
 
 export const PDF_PARSER = "pdf";
-export const PDF_PARSER_VERSION = "1";
+export const PDF_PARSER_VERSION = "2-ocr1";
 
 /** Ceilings. Every one of these is reachable from a 20 KB hand-written file. */
 const MAX_OBJECTS = 100_000;

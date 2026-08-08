@@ -30,6 +30,7 @@ export async function GET(req: Request) {
         },
         orderBy: { version: "asc" },
         select: {
+          id: true,
           attachmentId: true,
           state: true,
           error: true,
@@ -46,6 +47,7 @@ export async function GET(req: Request) {
       .map((document) => [
         document.attachmentId as string,
         {
+          documentId: document.id,
           state: document.state,
           error: document.error,
           pageCount: document.pageCount,

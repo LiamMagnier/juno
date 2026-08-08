@@ -62,10 +62,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Uploading your export"
   },
   {
-    "id": "00a659675af3d2dc",
-    "source": "Extracted"
-  },
-  {
     "id": "00ac04d508e68515",
     "source": "juno:inspect-off"
   },
@@ -334,10 +330,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Projects"
   },
   {
-    "id": "04e37968cdefec06",
-    "source": "Extracting text"
-  },
-  {
     "id": "04f8996da763b7a9",
     "source": "user"
   },
@@ -404,6 +396,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "06271baf49532c87",
     "source": "info"
+  },
+  {
+    "id": "06386728930e209a",
+    "source": "Document inspector"
   },
   {
     "id": "0648d2111ec0ca3d",
@@ -634,6 +630,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Only my selected provider"
   },
   {
+    "id": "0a06b17b93ebf044",
+    "source": "Labelling claims that need caution"
+  },
+  {
     "id": "0a30a815d67d7dd2",
     "source": "Page"
   },
@@ -732,6 +732,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0c9c42b47f417e0e",
     "source": "Allow this once"
+  },
+  {
+    "id": "0ca3c6645415b83e",
+    "source": "Security review"
   },
   {
     "id": "0cab1c9617404faf",
@@ -1218,6 +1222,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Hide these controls"
   },
   {
+    "id": "156bfbb50cf51b21",
+    "source": "follow-up round"
+  },
+  {
     "id": "157f8a956dfba17b",
     "source": "Qwen 3.6 Plus"
   },
@@ -1392,6 +1400,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1934afbb86192490",
     "source": ".csv, .xlsx"
+  },
+  {
+    "id": "1938d2ccea53a0b3",
+    "source": "Multiple results contain the same fetched content and count as one independent witness."
   },
   {
     "id": "1940dc4bc3f9b854",
@@ -1586,6 +1598,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Stopped at the research budget"
   },
   {
+    "id": "1c0ba8c963d25e82",
+    "source": "A skill domain must be a concrete hostname; wildcard or URL-shaped declarations are blocked."
+  },
+  {
     "id": "1c1fdd2b7c6912a6",
     "source": "Cheaper previous-generation workhorse."
   },
@@ -1778,6 +1794,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Older Opus, 200K context."
   },
   {
+    "id": "1fb2018ad44c78f5",
+    "source": "This document could not be read."
+  },
+  {
     "id": "1fc9a387654d410f",
     "source": "Select all"
   },
@@ -1888,6 +1908,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "21b111cbfe6e8fca",
     "source": "Default"
+  },
+  {
+    "id": "21bf0c52780ba004",
+    "source": "Verified embedded text"
   },
   {
     "id": "21c4a0a31b6ac187",
@@ -2510,6 +2534,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Onyx"
   },
   {
+    "id": "2cc34d8d6f7cf22a",
+    "source": "This version widens the permissions requested by the previous version."
+  },
+  {
     "id": "2cff9baabf56ca00",
     "source": "Import"
   },
@@ -2540,6 +2568,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2d9c8e66ddf203a6",
     "source": "GPT Codex Mini"
+  },
+  {
+    "id": "2da98b8570910f39",
+    "source": "A skill blocked by its security scan cannot be enabled."
   },
   {
     "id": "2db54f592d548729",
@@ -2620,6 +2652,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2ea6c582c69d2ad1",
     "source": "Couldn’t reach Apple Music to verify the authorization. Please try again."
+  },
+  {
+    "id": "2ebc802a70c6e52c",
+    "source": "unknown parser"
   },
   {
     "id": "2ef42ec21d9300dd",
@@ -3406,6 +3442,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Your last change is still saving. Try again in a second."
   },
   {
+    "id": "3d434e99c204071a",
+    "source": "The version declares an unusually broad domain surface."
+  },
+  {
     "id": "3d6df245178e6076",
     "source": "connecting"
   },
@@ -3432,6 +3472,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3dd9df4441fb348f",
     "source": "New password"
+  },
+  {
+    "id": "3df463e2c3109237",
+    "source": "supported ·"
   },
   {
     "id": "3dfa14cf30343f3a",
@@ -3838,6 +3882,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Designs are artifacts, so they keep full version history and appear in"
   },
   {
+    "id": "454afd3d71933ce8",
+    "source": "The instructions attempt to bypass a safety or approval boundary."
+  },
+  {
     "id": "455c2892ad63fbea",
     "source": "Halfway there"
   },
@@ -3928,6 +3976,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "472590ae974d4c1f",
     "source": "Provider"
+  },
+  {
+    "id": "47305dedee9aa082",
+    "source": "invalid_version"
   },
   {
     "id": "473287f8298dba71",
@@ -4024,6 +4076,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "49774d1b090e3fe6",
     "source": "task_limit"
+  },
+  {
+    "id": "4977ccf40af4a648",
+    "source": "This model cannot view images."
   },
   {
     "id": "4980c07a32532205",
@@ -4322,6 +4378,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Check your inbox"
   },
   {
+    "id": "4ef5081dec165b4f",
+    "source": "Every version is scanned when it is saved. Blocked versions cannot run; a version that asks for more permissions waits for your approval."
+  },
+  {
     "id": "4f2c10ff7817dd0c",
     "source": "COMPOSIO_API_KEY"
   },
@@ -4374,6 +4434,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Duration"
   },
   {
+    "id": "4fd80e0bbfa6ef7a",
+    "source": "The instructions mention shell or arbitrary network execution; review the declared tools and domains."
+  },
+  {
     "id": "502396898f8e8c4f",
     "source": "Previous OpenAI image generation and editing model."
   },
@@ -4404,6 +4468,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "509c517ede79fef0",
     "source": "Zoom"
+  },
+  {
+    "id": "50a22112d18487d4",
+    "source": "The instructions mention encoded or obfuscated content that a reviewer should inspect."
   },
   {
     "id": "50a4122943273ad2",
@@ -4994,6 +5062,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "provider"
   },
   {
+    "id": "5c7069fe0ff0b76d",
+    "source": "Prioritizing the strongest sources"
+  },
+  {
     "id": "5ca985265db99164",
     "source": "This schedule is already running. Let it finish before starting another."
   },
@@ -5270,6 +5342,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Dark"
   },
   {
+    "id": "60d31c221925098c",
+    "source": "Juno could not extract readable text from this PDF, and this model does not receive raw PDF bytes. Open its Document Inspector or upload a text-readable copy."
+  },
+  {
     "id": "60d5d5b0b9ab69ab",
     "source": "Custom instructions"
   },
@@ -5368,6 +5444,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "62922190a059fda0",
     "source": "Back to chats"
+  },
+  {
+    "id": "62953c335fa4c192",
+    "source": "remain visible."
   },
   {
     "id": "62a2fed3d6e08c44",
@@ -5540,6 +5620,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "65f4c0abb9366471",
     "source": "Too many uploads — try again later."
+  },
+  {
+    "id": "65fa5ced64f0a758",
+    "source": "Citation check:"
   },
   {
     "id": "65ff83c565e3c6f9",
@@ -6706,6 +6790,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Play in reverse"
   },
   {
+    "id": "78709685d7df371e",
+    "source": "Citation validation returned no result; claims remain unverified."
+  },
+  {
     "id": "787548acd1883bc9",
     "source": "It plans the work, shows you every step as it goes, and asks first before anything it cannot undo."
   },
@@ -6994,6 +7082,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "remove"
   },
   {
+    "id": "7e596f2686bd7acd",
+    "source": "security_blocked"
+  },
+  {
     "id": "7e5de16799f09c23",
     "source": "], so counting both would be counting one witness twice."
   },
@@ -7136,6 +7228,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "802e9409ad7b0ac2",
     "source": "mentions légales"
+  },
+  {
+    "id": "8032f7b72896fd25",
+    "source": "Following an evidence gap"
   },
   {
     "id": "80425695ed675462",
@@ -7926,6 +8022,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "/projects"
   },
   {
+    "id": "903998a13c261114",
+    "source": "chunks"
+  },
+  {
     "id": "9041c6aa2c3d4670",
     "source": "Manage subscription"
   },
@@ -8004,6 +8104,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "91eb9e66e2321c6c",
     "source": "One earlier attempt ran before this one."
+  },
+  {
+    "id": "91ed0f7cdaa1385e",
+    "source": "application/pdf"
   },
   {
     "id": "91fe32b30bf6f588",
@@ -8318,6 +8422,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Developer tools"
   },
   {
+    "id": "96fa8f226d380174",
+    "source": "checksum"
+  },
+  {
     "id": "970b7b1658ce9142",
     "source": "Profile, settings, conversations, memories, projects, and file metadata."
   },
@@ -8418,6 +8526,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "answer_expected"
   },
   {
+    "id": "981ee1c9153a01a3",
+    "source": "Find in this document"
+  },
+  {
     "id": "982ab155613373a7",
     "source": "Remembered from your chats"
   },
@@ -8514,6 +8626,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Response language"
   },
   {
+    "id": "99d553e64b646c48",
+    "source": "No citable text matches this filter."
+  },
+  {
     "id": "99e8531bcf05fb25",
     "source": "Too many runs started. Try again shortly."
   },
@@ -8546,12 +8662,24 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Deep-reasoning Pro tier (preview) — 3.5 Flash now edges it on most benchmarks."
   },
   {
+    "id": "9a7ab8bbb2d70d55",
+    "source": "partial ·"
+  },
+  {
     "id": "9a8831f13c449718",
     "source": "Discard this run"
   },
   {
+    "id": "9a893d4f99cbc29e",
+    "source": "flagged."
+  },
+  {
     "id": "9ac2f9c5a2dbeccb",
     "source": "The passage touches the topic but does not cover most of what the claim names."
+  },
+  {
+    "id": "9ac6a4d7dc28b8ca",
+    "source": "passages ·"
   },
   {
     "id": "9ada8e83c1186cd6",
@@ -8750,6 +8878,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Focus"
   },
   {
+    "id": "9d3dabcff1422134",
+    "source": "This version contains a blocked security finding."
+  },
+  {
     "id": "9d5097a837102a17",
     "source": "All categories"
   },
@@ -8854,6 +8986,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Only when you press Run"
   },
   {
+    "id": "9f82c2f951f652ef",
+    "source": "Download original"
+  },
+  {
     "id": "9f872ed43d00d8bd",
     "source": "Fit"
   },
@@ -8876,6 +9012,14 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a00be7c6e120ac63",
     "source": "DeepSeek Pro"
+  },
+  {
+    "id": "a0298af63f4314d1",
+    "source": "An example names a tool the version does not declare."
+  },
+  {
+    "id": "a02b685402e18c95",
+    "source": "Citation check complete"
   },
   {
     "id": "a02cafdb30b12dc3",
@@ -9410,6 +9554,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Attachment not found."
   },
   {
+    "id": "a9e76af1a5ec284b",
+    "source": "Approve permissions"
+  },
+  {
     "id": "a9ee5495dfc2afa3",
     "source": "Scheduled task"
   },
@@ -9512,6 +9660,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ab48fcf706cb01d3",
     "source": "Accounting"
+  },
+  {
+    "id": "ab4b1910824348ce",
+    "source": "The gathered evidence comes from one publisher host; an independent source is still needed."
   },
   {
     "id": "ab530a13e4591498",
@@ -9986,6 +10138,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "· draft"
   },
   {
+    "id": "b3a1d96b9535f3f2",
+    "source": "Checking each research question"
+  },
+  {
     "id": "b3a60e61a5233d05",
     "source": "Tasks"
   },
@@ -10342,6 +10498,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Image editing isn't available in private chat."
   },
   {
+    "id": "ba1126238cb4f59e",
+    "source": "The version requests the broadest Work policy and needs explicit review."
+  },
+  {
     "id": "ba20f91e2c5209bb",
     "source": "Skill available"
   },
@@ -10622,6 +10782,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Connected apps"
   },
   {
+    "id": "c03b55e72e3b0cdd",
+    "source": "Waiting for indexing…"
+  },
+  {
     "id": "c064fbca9d9de8dd",
     "source": "memory"
   },
@@ -10732,6 +10896,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c27230cf0f21945d",
     "source": "Damping"
+  },
+  {
+    "id": "c27ef0066bb32a5b",
+    "source": "This version is superseded."
   },
   {
     "id": "c28402480c1f59cb",
@@ -11018,6 +11186,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "artifact"
   },
   {
+    "id": "c7ddc677813faa8c",
+    "source": "The instructions combine an outbound action with credentials or secrets."
+  },
+  {
     "id": "c7ed128a6cfbad32",
     "source": "Juno did not link this: it is not a web address."
   },
@@ -11040,6 +11212,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c82f5e6ea2eef76d",
     "source": "Invalid cursor or limit"
+  },
+  {
+    "id": "c83f8c69c8451ad8",
+    "source": "This attachment has no extracted text."
   },
   {
     "id": "c8455b911baef784",
@@ -12010,6 +12186,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Any of my Macs"
   },
   {
+    "id": "d7a546a8af6a8dc5",
+    "source": "— Juno could not extract readable text from this PDF, and this model does not receive raw PDF bytes; open its Document Inspector or upload a text-readable copy"
+  },
+  {
     "id": "d7cbbb688b2e506c",
     "source": "selected"
   },
@@ -12188,6 +12368,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "da371ee1e141c623",
     "source": "Revoke link"
+  },
+  {
+    "id": "da4824dd235f0e45",
+    "source": "The instructions ask the agent to conceal behavior or misrepresent a result."
   },
   {
     "id": "da9a3acba75737f7",
@@ -12498,6 +12682,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Unsaved changes · saves as v"
   },
   {
+    "id": "df9f89c67173caff",
+    "source": "source conflict"
+  },
+  {
     "id": "dfb167939789bfc4",
     "source": "Unknown locale"
   },
@@ -12558,6 +12746,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Last 53 weeks of billable generations."
   },
   {
+    "id": "e0723a86a5b9408a",
+    "source": "Inspect"
+  },
+  {
     "id": "e0ae591d2fd803d5",
     "source": "Every frontier model."
   },
@@ -12600,6 +12792,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e0e12b58c94422f6",
     "source": "GLM Turbo"
+  },
+  {
+    "id": "e0ef426eb002f04e",
+    "source": "The version requests a tool with filesystem, network or destructive capability."
   },
   {
     "id": "e10039a5fdef3ca4",
@@ -12804,6 +13000,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e43bd6db30b8aa29",
     "source": "&rdquo; · d"
+  },
+  {
+    "id": "e450e475b9f00e8d",
+    "source": "Evidence coverage"
   },
   {
     "id": "e46ee9fc0d6f038f",
@@ -13204,6 +13404,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "eb7955fc0c423bc6",
     "source": "Anthropic's frontier model — deepest reasoning, long-horizon agents."
+  },
+  {
+    "id": "eb81d01be8d7447b",
+    "source": "The instructions attempt to override a higher-priority instruction source."
   },
   {
     "id": "eb82a789be6c6584",
@@ -13620,6 +13824,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f299c26912e957af",
     "source": "Resize canvas"
+  },
+  {
+    "id": "f2ab6a5bd3e73a3d",
+    "source": "The instructions contain a destructive operation and must remain behind the normal approval broker."
   },
   {
     "id": "f2b74cd89de27f40",

@@ -51,7 +51,7 @@ interface LibItem {
   createdAt: string;
   conversationId: string | null;
   /** Structured-extraction state, or null when no extractor claims the format. */
-  knowledge?: KnowledgeIndexState | null;
+  knowledge?: (KnowledgeIndexState & { documentId?: string }) | null;
 }
 
 type LibraryFilter = "all" | LibItem["kind"];
@@ -353,7 +353,13 @@ function LibraryGridItem({
           <p className="mt-0.5 truncate text-[11px] tabular-nums text-muted-foreground">
             {formatBytes(item.size)} · {timeAgo(item.createdAt)}
           </p>
-          <IndexStatus status={item.knowledge ?? null} className="mt-0.5 max-w-full" />
+          {item.knowledge?.documentId ? (
+            <Link href={`/knowledge/documents/${item.knowledge.documentId}`} className="block max-w-full">
+              <IndexStatus status={item.knowledge} className="mt-0.5 max-w-full hover:underline" />
+            </Link>
+          ) : (
+            <IndexStatus status={item.knowledge ?? null} className="mt-0.5 max-w-full" />
+          )}
         </div>
         {item.conversationId && (
           <Link
@@ -834,7 +840,13 @@ export default function LibraryPage() {
                             <span className="truncate">{item.mimeType}</span>
                           )}
                         </div>
-                        <IndexStatus status={item.knowledge ?? null} className="mt-0.5 max-w-full" />
+                        {item.knowledge?.documentId ? (
+                          <Link href={`/knowledge/documents/${item.knowledge.documentId}`} className="block max-w-full">
+                            <IndexStatus status={item.knowledge} className="mt-0.5 max-w-full hover:underline" />
+                          </Link>
+                        ) : (
+                          <IndexStatus status={item.knowledge ?? null} className="mt-0.5 max-w-full" />
+                        )}
                       </div>
                     </div>
 

@@ -13,6 +13,7 @@ import { PDF_PARSER_VERSION, extractPdf } from "./pdf";
 import { PPTX_PARSER_VERSION, extractPptx } from "./pptx";
 import { TEXT_PARSER_VERSION, extractTextDocument, textFlavor } from "./text";
 import { XLSX_PARSER_VERSION, extractXlsx } from "./xlsx";
+import { ocrPdf, OCR_VERSION } from "../ocr";
 import type { ExtractionResult } from "./types";
 
 export type ExtractorId = "pdf" | "docx" | "pptx" | "xlsx" | "text";
@@ -102,7 +103,38 @@ export async function extractDocument(input: ExtractInput): Promise<ExtractionRe
   try {
     switch (extractor) {
       case "pdf":
-        return extractPdf(input);
+        {
+          const parsed = extractPdf(input);
+          // OCR is a fallback only. Preserve embedded text at confidence 1 and
+          // add OCR blocks only for pages the native parser could not read.
+          if (parsed.status !== "degraded" || parsed.pageCount === undefined) return parsed;
+          const ocr = await ocrPdf({
+            bytes: input.bytes,
+            fileName: input.fileName,
+            pageCount: parsed.pageCount,
+          });
+          if (ocr.status !== "ok") {
+            return {
+              ...parsed,
+              parserVersion: `${PDF_PARSER_VERSION}+ocr${OCR_VERSION}`,
+              reason: `${parsed.reason ?? "This PDF is only partially readable."} OCR fallback was unavailable: ${ocr.reason}`,
+            };
+          }
+          const embeddedPages = new Set(
+            parsed.blocks.map((block) => block.page).filter((page): page is number => typeof page === "number")
+          );
+          const ocrBlocks = ocr.blocks.filter(
+            (block) => typeof block.page === "number" && !embeddedPages.has(block.page)
+          );
+          const ocrPages = new Set(ocrBlocks.map((block) => block.page).filter((page): page is number => typeof page === "number"));
+          return {
+            ...parsed,
+            parserVersion: `${PDF_PARSER_VERSION}+ocr${OCR_VERSION}`,
+            status: "degraded",
+            blocks: [...parsed.blocks, ...ocrBlocks],
+            reason: `${parsed.reason ?? "Some PDF pages required OCR."} OCR recovered ${ocrPages.size} page${ocrPages.size === 1 ? "" : "s"} with measured confidence; verify OCR text against the original.`,
+          };
+        }
       case "docx":
         return await extractDocx(input);
       case "pptx":

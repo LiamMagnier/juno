@@ -23,6 +23,30 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   });
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  const knowledge = project.files.length
+    ? await prisma.knowledgeDocument.findMany({
+        where: {
+          userId: user.id,
+          attachmentId: { in: project.files.map((file) => file.id) },
+          state: { not: "stale" },
+        },
+        orderBy: { version: "asc" },
+        select: {
+          id: true,
+          attachmentId: true,
+          state: true,
+          error: true,
+          pageCount: true,
+          _count: { select: { blocks: true } },
+        },
+      })
+    : [];
+  const knowledgeByAttachment = new Map(
+    knowledge
+      .filter((document) => document.attachmentId)
+      .map((document) => [document.attachmentId as string, document])
+  );
+
   return NextResponse.json({
     project: {
       id: project.id,
@@ -37,7 +61,24 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       pinned: c.pinned,
       lastMessageAt: c.lastMessageAt.toISOString(),
     })),
-    files: await Promise.all(project.files.map((f) => serializeAttachment(f))),
+    files: await Promise.all(
+      project.files.map(async (file) => {
+        const serialized = await serializeAttachment(file);
+        const document = knowledgeByAttachment.get(file.id);
+        return {
+          ...serialized,
+          knowledge: document
+            ? {
+                documentId: document.id,
+                state: document.state,
+                error: document.error,
+                pageCount: document.pageCount,
+                blockCount: document._count.blocks,
+              }
+            : null,
+        };
+      })
+    ),
   });
 }
 

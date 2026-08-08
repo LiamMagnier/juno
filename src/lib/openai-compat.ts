@@ -80,7 +80,11 @@ async function toOpenAIMessages(
         } else if (att.extractedText) {
           parts.push({ type: "text", text: `Attached file "${att.fileName}":\n\n${att.extractedText.slice(0, 100_000)}` });
         } else {
-          const note = att.kind === "IMAGE" && !vision ? " — this model cannot view images" : "";
+          const note = att.mimeType === "application/pdf"
+            ? " — Juno could not extract readable text from this PDF, and this model does not receive raw PDF bytes; open its Document Inspector or upload a text-readable copy"
+            : att.kind === "IMAGE" && !vision
+            ? " — this model cannot view images"
+            : "";
           parts.push({ type: "text", text: `[Attached file "${att.fileName}" (${att.mimeType})${note}.]` });
         }
       } catch {

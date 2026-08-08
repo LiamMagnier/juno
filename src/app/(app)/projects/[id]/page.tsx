@@ -47,6 +47,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { formatBytes, formatTokens, cn } from "@/lib/utils";
+import { IndexStatus, type KnowledgeIndexState } from "@/components/library/index-status";
 import { useApp } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
 import type { ReasoningEffort } from "@/types/chat";
@@ -57,7 +58,15 @@ const INSTRUCTIONS_SOFT_WARN = 50_000;
 interface Detail {
   project: { id: string; name: string; instructions: string; starred: boolean; updatedAt: string };
   conversations: { id: string; title: string; lastMessageAt: string; pinned: boolean }[];
-  files: { id: string; fileName: string; mimeType: string; size: number; url: string; kind: string }[];
+  files: {
+    id: string;
+    fileName: string;
+    mimeType: string;
+    size: number;
+    url: string;
+    kind: string;
+    knowledge?: (KnowledgeIndexState & { documentId: string }) | null;
+  }[];
 }
 
 export default function ProjectDetailPage() {
@@ -80,8 +89,6 @@ export default function ProjectDetailPage() {
   // Workspace tab state
   const [tab, setTab] = React.useState("overview");
   const [savingInstructions, setSavingInstructions] = React.useState(false);
-  // Attachment ids uploaded this session — drive the cosmetic extraction progress bar.
-  const [freshIds, setFreshIds] = React.useState<Set<string>>(new Set());
   const [dragging, setDragging] = React.useState(false);
   const dragDepth = React.useRef(0);
 
@@ -124,6 +131,15 @@ export default function ProjectDetailPage() {
       setError("error");
     }
   }, [id]);
+
+  const refreshKnowledgeAfterUpload = React.useCallback(() => {
+    // These are bounded refreshes of the durable state machine, not a guessed
+    // progress animation. If the background invocation was killed, the UI
+    // stays at the honest queued/unknown state instead of claiming completion.
+    for (const delay of [900, 2_500, 6_000]) {
+      window.setTimeout(() => void load(), delay);
+    }
+  }, [load]);
 
   React.useEffect(() => {
     load();
@@ -234,15 +250,6 @@ export default function ProjectDetailPage() {
     discardInstructions();
   };
 
-  const clearFresh = React.useCallback((fileId: string) => {
-    setFreshIds((cur) => {
-      if (!cur.has(fileId)) return cur;
-      const next = new Set(cur);
-      next.delete(fileId);
-      return next;
-    });
-  }, []);
-
   const saveName = () => {
     const name = nameDraft.trim();
     setEditingName(false);
@@ -278,8 +285,27 @@ export default function ProjectDetailPage() {
       const r = await fetch("/api/upload", { method: "POST", body: form });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Upload failed.");
-      setData((cur) => (cur ? { ...cur, files: [d.attachment, ...cur.files] } : cur));
-      if (d.attachment?.id) setFreshIds((cur) => new Set(cur).add(d.attachment.id));
+      setData((cur) =>
+        cur
+          ? {
+              ...cur,
+              files: [
+                {
+                  ...d.attachment,
+                  knowledge: {
+                    documentId: "pending",
+                    state: "queued",
+                    error: null,
+                    pageCount: null,
+                    blockCount: 0,
+                  },
+                },
+                ...cur.files,
+              ],
+            }
+          : cur
+      );
+      refreshKnowledgeAfterUpload();
       toast.success("File added to project.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not upload.");
@@ -975,9 +1001,7 @@ export default function ProjectDetailPage() {
                         key={f.id}
                         file={f}
                         index={i}
-                        fresh={freshIds.has(f.id)}
                         onDelete={() => deleteFile(f.id)}
-                        onExtracted={clearFresh}
                       />
                     ))}
                   </ul>
@@ -1181,33 +1205,12 @@ function fileIconFor(mime: string) {
 function WorkspaceFileRow({
   file,
   index,
-  fresh,
   onDelete,
-  onExtracted,
 }: {
   file: Detail["files"][number];
   index: number;
-  fresh: boolean;
   onDelete: () => void;
-  onExtracted: (id: string) => void;
 }) {
-  const [extracting, setExtracting] = React.useState(fresh);
-  const [barFull, setBarFull] = React.useState(false);
-
-  // Cosmetic extraction pass on fresh uploads: bar fills over ~1.8s, then flips to the status pill.
-  React.useEffect(() => {
-    if (!fresh) return;
-    const start = setTimeout(() => setBarFull(true), 50);
-    const done = setTimeout(() => {
-      setExtracting(false);
-      onExtracted(file.id);
-    }, 1900);
-    return () => {
-      clearTimeout(start);
-      clearTimeout(done);
-    };
-  }, [fresh, file.id, onExtracted]);
-
   const isImage = file.mimeType.startsWith("image/");
   const extractable = isTextExtractable(file.mimeType);
   const Icon = fileIconFor(file.mimeType);
@@ -1230,12 +1233,13 @@ function WorkspaceFileRow({
         </a>
         <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-mono text-caption">
           <span className="text-muted-foreground">{formatBytes(file.size)}</span>
-          {!extracting &&
-            (extractable ? (
-              <span className="inline-flex items-center rounded-full border bg-background/60 px-2 py-0.5 font-medium text-muted-foreground">
-                ~{formatTokens(Math.round(file.size / 4))} tokens
-              </span>
-            ) : isImage ? (
+          {file.knowledge ? (
+            <IndexStatus status={file.knowledge} className="max-w-full" />
+          ) : extractable ? (
+            <span className="inline-flex items-center rounded-full border bg-background/60 px-2 py-0.5 font-medium text-muted-foreground">
+              Waiting for indexing…
+            </span>
+          ) : isImage ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-source/30 bg-background/60 px-2 py-0.5 font-medium text-source">
                 <ImageIcon className="h-3 w-3" /> Visual
               </span>
@@ -1243,20 +1247,15 @@ function WorkspaceFileRow({
               <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-background/60 px-2 py-0.5 font-medium text-warning">
                 <TriangleAlert className="h-3 w-3" /> No text extracted
               </span>
-            ))}
+            )}
         </div>
       </div>
 
-      {extracting ? (
-        <div className="h-1 w-20 shrink-0 overflow-hidden rounded-full bg-muted" aria-label="Extracting text">
-          <div
-            className="h-full rounded-full bg-primary transition-[width] duration-[1800ms] ease-out-soft motion-reduce:transition-none"
-            style={{ width: barFull ? "100%" : "0%" }}
-          />
-        </div>
+      {file.knowledge ? (
+        <IndexStatus status={file.knowledge} className="max-w-[14rem] shrink-0" />
       ) : extractable ? (
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-success/30 px-2 py-0.5 font-mono text-caption font-medium text-success">
-          <span className="size-1.5 rounded-full bg-success" /> Extracted
+          <span className="size-1.5 rounded-full bg-muted-foreground/60" /> Queued
         </span>
       ) : isImage ? (
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-source/30 px-2 py-0.5 font-mono text-caption font-medium text-source">
