@@ -350,12 +350,19 @@ export const RESEARCH_EVENT_KINDS = [
   "plan_revised",
   /** The only kind the stage list is built from. Payload carries `state`. */
   "state_changed",
+  "source_ranked",
   "query_issued",
   "source_found",
   "source_read",
   "passages_extracted",
   "coverage_checked",
+  "coverage_matrix_updated",
+  "follow_up_scheduled",
   "conflict_found",
+  "citation_audit_started",
+  "citation_audit_completed",
+  "report_repaired",
+  "report_revision",
   /** A constraint or a source the user added while the run was going. */
   "steering_applied",
   "spend_recorded",
@@ -389,6 +396,221 @@ export interface ResearchEventDTO {
 // Plan
 // ---------------------------------------------------------------------------
 
+export type ResearchObjectiveStatus = "open" | "partially_covered" | "covered" | "blocked";
+export type EvidenceRequirementStatus = "missing" | "weak" | "satisfied" | "conflicted";
+
+/** A durable, user-readable unit of research work. */
+export interface ResearchObjective {
+  id: string;
+  question: string;
+  importance: number;
+  status: ResearchObjectiveStatus;
+  evidenceRequirements: EvidenceRequirement[];
+  childObjectiveIds: string[];
+}
+
+/** The evidence contract the controller must satisfy before it stops. */
+export interface EvidenceRequirement {
+  id: string;
+  description: string;
+  preferredSourceTypes: string[];
+  minimumIndependentSources: number;
+  requiresPrimarySource: boolean;
+  freshnessRule?: string;
+  jurisdiction?: string;
+  status: EvidenceRequirementStatus;
+}
+
+/** Persisted coverage for one requirement, not just a source count. */
+export interface ResearchCoverageEntry {
+  objectiveId: string;
+  requirementId: string;
+  status: EvidenceRequirementStatus;
+  supportingSourceIds: string[];
+  contradictingSourceIds: string[];
+  independentSourceCount: number;
+  evidenceStrength: number;
+  missingReason?: string;
+}
+
+export type ResearchConflictKind =
+  | "duplicate_source"
+  | "contradictory_evidence"
+  | "source_monoculture";
+
+/** A conflict stays visible even when the report has a preferred conclusion. */
+export interface ResearchConflict {
+  id: string;
+  kind: ResearchConflictKind;
+  objectiveId?: string;
+  sourceIds: string[];
+  description: string;
+  severity: "low" | "medium" | "high";
+  resolved: boolean;
+}
+
+export const MAX_RESEARCH_OBJECTIVES = 8;
+export const MAX_EVIDENCE_REQUIREMENTS = 4;
+export const MAX_COVERAGE_ENTRIES = 32;
+export const MAX_CONFLICTS = 24;
+export const MAX_FOLLOW_UP_ROUNDS = 2;
+
+function cleanStringArray(value: unknown, max: number, chars: number): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const trimmed = item.trim().slice(0, chars);
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+function parseObjectiveStatus(value: unknown): ResearchObjectiveStatus {
+  return value === "partially_covered" || value === "covered" || value === "blocked" ? value : "open";
+}
+
+function parseRequirementStatus(value: unknown): EvidenceRequirementStatus {
+  return value === "weak" || value === "satisfied" || value === "conflicted" ? value : "missing";
+}
+
+/**
+ * A safe fallback when a provider returns only legacy query lines. It gives the
+ * controller a real evidence contract immediately, while richer planners may
+ * provide the same shape directly.
+ */
+export function buildResearchObjectives(goal: string, queries: string[]): ResearchObjective[] {
+  const questions = (queries.length ? queries : [goal]).slice(0, MAX_RESEARCH_OBJECTIVES);
+  return questions.filter(Boolean).map((question, index) => {
+    const id = `objective-${index + 1}`;
+    const normalized = question.trim().slice(0, MAX_QUERY_CHARS);
+    return {
+      id,
+      question: normalized,
+      importance: index === 0 ? 1 : Math.max(0.5, 1 - index * 0.1),
+      status: "open",
+      evidenceRequirements: [
+        {
+          id: `${id}-evidence-1`,
+          description: `Direct evidence answering: ${normalized}`,
+          preferredSourceTypes: ["official", "primary", "reputable_secondary"],
+          minimumIndependentSources: 1,
+          requiresPrimarySource: false,
+          status: "missing",
+        },
+      ],
+      childObjectiveIds: [],
+    };
+  });
+}
+
+function parseObjectives(value: unknown): ResearchObjective[] {
+  if (!Array.isArray(value)) return [];
+  const out: ResearchObjective[] = [];
+  const seen = new Set<string>();
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const item = raw as Record<string, unknown>;
+    const id = typeof item.id === "string" && item.id.trim() ? item.id.trim().slice(0, 80) : `objective-${out.length + 1}`;
+    if (seen.has(id)) continue;
+    const question = typeof item.question === "string" ? item.question.trim().slice(0, MAX_QUERY_CHARS) : "";
+    if (!question) continue;
+    const requirements: EvidenceRequirement[] = [];
+    if (Array.isArray(item.evidenceRequirements)) {
+      for (const rawRequirement of item.evidenceRequirements.slice(0, MAX_EVIDENCE_REQUIREMENTS)) {
+        if (!rawRequirement || typeof rawRequirement !== "object" || Array.isArray(rawRequirement)) continue;
+        const requirement = rawRequirement as Record<string, unknown>;
+        const requirementId =
+          typeof requirement.id === "string" && requirement.id.trim()
+            ? requirement.id.trim().slice(0, 80)
+            : `${id}-evidence-${requirements.length + 1}`;
+        const description =
+          typeof requirement.description === "string" ? requirement.description.trim().slice(0, 400) : "";
+        if (!description) continue;
+        requirements.push({
+          id: requirementId,
+          description,
+          preferredSourceTypes: cleanStringArray(requirement.preferredSourceTypes, 8, 80),
+          minimumIndependentSources:
+            typeof requirement.minimumIndependentSources === "number"
+              ? Math.max(1, Math.min(4, Math.floor(requirement.minimumIndependentSources)))
+              : 1,
+          requiresPrimarySource: requirement.requiresPrimarySource === true,
+          ...(typeof requirement.freshnessRule === "string"
+            ? { freshnessRule: requirement.freshnessRule.slice(0, 160) }
+            : {}),
+          ...(typeof requirement.jurisdiction === "string"
+            ? { jurisdiction: requirement.jurisdiction.slice(0, 160) }
+            : {}),
+          status: parseRequirementStatus(requirement.status),
+        });
+      }
+    }
+    out.push({
+      id,
+      question,
+      importance:
+        typeof item.importance === "number" && Number.isFinite(item.importance)
+          ? Math.max(0, Math.min(1, item.importance))
+          : Math.max(0.5, 1 - out.length * 0.1),
+      status: parseObjectiveStatus(item.status),
+      evidenceRequirements: requirements,
+      childObjectiveIds: cleanStringArray(item.childObjectiveIds, MAX_RESEARCH_OBJECTIVES, 80),
+    });
+    seen.add(id);
+    if (out.length >= MAX_RESEARCH_OBJECTIVES) break;
+  }
+  return out;
+}
+
+function parseCoverage(value: unknown): ResearchCoverageEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, MAX_COVERAGE_ENTRIES)
+    .filter((raw): raw is Record<string, unknown> => !!raw && typeof raw === "object" && !Array.isArray(raw))
+    .map((raw) => ({
+      objectiveId: typeof raw.objectiveId === "string" ? raw.objectiveId.slice(0, 80) : "",
+      requirementId: typeof raw.requirementId === "string" ? raw.requirementId.slice(0, 80) : "",
+      status: parseRequirementStatus(raw.status),
+      supportingSourceIds: cleanStringArray(raw.supportingSourceIds, 16, 80),
+      contradictingSourceIds: cleanStringArray(raw.contradictingSourceIds, 16, 80),
+      independentSourceCount:
+        typeof raw.independentSourceCount === "number" ? Math.max(0, Math.min(16, Math.floor(raw.independentSourceCount))) : 0,
+      evidenceStrength:
+        typeof raw.evidenceStrength === "number" && Number.isFinite(raw.evidenceStrength)
+          ? Math.max(0, Math.min(1, raw.evidenceStrength))
+          : 0,
+      ...(typeof raw.missingReason === "string" ? { missingReason: raw.missingReason.slice(0, 240) } : {}),
+    }))
+    .filter((entry) => entry.objectiveId && entry.requirementId);
+}
+
+function parseConflicts(value: unknown): ResearchConflict[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .slice(0, MAX_CONFLICTS)
+    .filter((raw): raw is Record<string, unknown> => !!raw && typeof raw === "object" && !Array.isArray(raw))
+    .map((raw, index) => ({
+      id: typeof raw.id === "string" && raw.id.trim() ? raw.id.slice(0, 80) : `conflict-${index + 1}`,
+      kind:
+        raw.kind === "contradictory_evidence" || raw.kind === "source_monoculture"
+          ? raw.kind
+          : "duplicate_source",
+      ...(typeof raw.objectiveId === "string" ? { objectiveId: raw.objectiveId.slice(0, 80) } : {}),
+      sourceIds: cleanStringArray(raw.sourceIds, 16, 80),
+      description: typeof raw.description === "string" ? raw.description.slice(0, 320) : "",
+      severity: raw.severity === "high" || raw.severity === "medium" ? raw.severity : "low",
+      resolved: raw.resolved === true,
+    }))
+    .filter((entry) => entry.description && entry.sourceIds.length > 0);
+}
+
 /**
  * The editable plan, as stored in `ResearchRun.plan`.
  *
@@ -401,6 +623,8 @@ export interface ResearchEventDTO {
 export interface ResearchPlan {
   /** Sub-questions the run will search for. The user may edit these. */
   queries: string[];
+  /** Structured questions and evidence requirements behind the query list. */
+  objectives: ResearchObjective[];
   /** Free-text steering: "only sources after 2023", "ignore press releases". */
   constraints: string[];
   /** URLs the user insisted on, always read regardless of search ranking. */
@@ -414,10 +638,19 @@ export interface ResearchPlan {
   confirmation: "auto" | "required";
   /** Set once the user (or `auto`) has agreed to it. */
   confirmedAt?: string;
+  /** Queries already paid for by the search stage. Additive for old plan JSON. */
+  issuedQueries?: string[];
+  /** Number of bounded evidence-driven search rounds already attempted. */
+  followUpRound?: number;
+  /** Last deterministic coverage matrix written by the controller. */
+  coverage?: ResearchCoverageEntry[];
+  /** Conflicts found while gathering or validating evidence. */
+  conflicts?: ResearchConflict[];
 }
 
 export const EMPTY_PLAN: ResearchPlan = {
   queries: [],
+  objectives: [],
   constraints: [],
   pinnedSources: [],
   confirmation: "required",
@@ -459,12 +692,23 @@ export function parsePlan(value: unknown): ResearchPlan {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return { ...EMPTY_PLAN };
   const raw = value as Record<string, unknown>;
   const confirmation = raw.confirmation === "auto" ? "auto" : "required";
+  const queries = cleanList(raw.queries, MAX_PLAN_QUERIES, MAX_QUERY_CHARS);
+  const parsedObjectives = parseObjectives(raw.objectives);
   return {
-    queries: cleanList(raw.queries, MAX_PLAN_QUERIES, MAX_QUERY_CHARS),
+    queries,
+    objectives: parsedObjectives.length ? parsedObjectives : buildResearchObjectives("", queries),
     constraints: cleanList(raw.constraints, MAX_PLAN_CONSTRAINTS, MAX_CONSTRAINT_CHARS),
     pinnedSources: cleanList(raw.pinnedSources, MAX_PINNED_SOURCES, MAX_QUERY_CHARS),
     confirmation,
     confirmedAt: typeof raw.confirmedAt === "string" ? raw.confirmedAt : undefined,
+    ...(Array.isArray(raw.issuedQueries)
+      ? { issuedQueries: cleanList(raw.issuedQueries, MAX_PLAN_QUERIES + MAX_FOLLOW_UP_ROUNDS * 4, MAX_QUERY_CHARS) }
+      : {}),
+    ...(typeof raw.followUpRound === "number"
+      ? { followUpRound: Math.max(0, Math.min(MAX_FOLLOW_UP_ROUNDS, Math.floor(raw.followUpRound))) }
+      : {}),
+    ...(Array.isArray(raw.coverage) ? { coverage: parseCoverage(raw.coverage) } : {}),
+    ...(Array.isArray(raw.conflicts) ? { conflicts: parseConflicts(raw.conflicts) } : {}),
   };
 }
 
