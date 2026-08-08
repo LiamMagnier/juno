@@ -151,6 +151,55 @@ const SCALES: Record<string, number> = {
 const NUMBER_RE =
   /(?<cur>[$€£])?\s?(?<num>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s?(?<scale>trillion|billion|million|thousand|bn|tn|mn|[kmb]\b)?\s?(?<pct>%|percent|per cent|percentage points?)?/gi;
 
+/*
+ * Reported prose spells small numbers out — "Seventy people were injured" —
+ * and a validator that only reads digits is blind to exactly the sentences
+ * where a transposed figure does the most damage. This lexicon is deliberately
+ * small: past a few hundred, publishers switch to digits anyway.
+ */
+const WORD_UNITS: Record<string, number> = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
+  seventeen: 17, eighteen: 18, nineteen: 19,
+};
+const WORD_TENS: Record<string, number> = {
+  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+};
+const WORD_SCALES: Record<string, number> = { hundred: 100, thousand: 1e3, million: 1e6, billion: 1e9, trillion: 1e12 };
+const WORD_NUMBER_RE = new RegExp(
+  String.raw`\b(?:${[...Object.keys(WORD_UNITS), ...Object.keys(WORD_TENS), ...Object.keys(WORD_SCALES)].join("|")})(?:[- ](?:${[
+    ...Object.keys(WORD_UNITS),
+    ...Object.keys(WORD_TENS),
+    ...Object.keys(WORD_SCALES),
+  ].join("|")}))*\b`,
+  "gi"
+);
+
+function evaluateWordNumber(phrase: string): number | null {
+  let total = 0;
+  let current = 0;
+  let seen = false;
+  for (const word of phrase.toLowerCase().split(/[- ]+/)) {
+    if (word in WORD_UNITS) {
+      current += WORD_UNITS[word];
+      seen = true;
+    } else if (word in WORD_TENS) {
+      current += WORD_TENS[word];
+      seen = true;
+    } else if (word === "hundred") {
+      current = (current || 1) * 100;
+      seen = true;
+    } else if (word in WORD_SCALES) {
+      total += (current || 1) * WORD_SCALES[word];
+      current = 0;
+      seen = true;
+    } else {
+      return null;
+    }
+  }
+  return seen ? total + current : null;
+}
+
 /**
  * Every quantity in the text, with the spans of anything that is really a date
  * removed first. Without that removal "in 2024" reads as the plain number 2024
@@ -160,13 +209,14 @@ const NUMBER_RE =
  */
 export function extractNumbers(text: string, skip: ReadonlyArray<{ start: number; end: number }> = []): NumericFact[] {
   const out: NumericFact[] = [];
+  const blocked = (start: number, end: number) => skip.some((s) => start < s.end && end > s.start);
   NUMBER_RE.lastIndex = 0;
   for (let m = NUMBER_RE.exec(text); m; m = NUMBER_RE.exec(text)) {
     const g = m.groups ?? {};
     if (!g.num) continue;
     const start = m.index;
     const end = m.index + m[0].length;
-    if (skip.some((s) => start < s.end && end > s.start)) continue;
+    if (blocked(start, end)) continue;
     const base = Number(g.num.replace(/,/g, ""));
     if (!Number.isFinite(base)) continue;
     const scale = g.scale ? SCALES[g.scale.toLowerCase()] ?? 1 : 1;
@@ -178,7 +228,47 @@ export function extractNumbers(text: string, skip: ReadonlyArray<{ start: number
       end,
     });
   }
-  return out;
+  WORD_NUMBER_RE.lastIndex = 0;
+  for (let m = WORD_NUMBER_RE.exec(text); m; m = WORD_NUMBER_RE.exec(text)) {
+    const start = m.index;
+    const end = start + m[0].length;
+    // A spelled scale word already consumed by the digit pass ("3.4 million")
+    // must not be counted a second time as the bare word "million".
+    if (blocked(start, end) || out.some((n) => start < n.end && end > n.start)) continue;
+    const value = evaluateWordNumber(m[0]);
+    if (value === null) continue;
+    out.push({ value, kind: "plain", raw: m[0], start, end });
+  }
+  return out.sort((a, b) => a.start - b.start);
+}
+
+/**
+ * What a figure is measuring, approximated from the words around it: the noun
+ * it counts, and the phrase that introduced it.
+ *
+ * This exists because "the passage gives a different number" is only a
+ * CONTRADICTION when the two numbers measure the same thing. A page saying "the
+ * union represents drivers at the three largest depots" contains the number
+ * three; a claim saying the union has 45,000 members is unsupported by it, not
+ * contradicted by it, and calling that a contradiction puts a false accusation
+ * in the inspector.
+ */
+function numberContext(text: string, n: NumericFact): { unit: string | null; before: Set<string> } {
+  const after = text.slice(n.end, n.end + 28);
+  const unit = [...contentTokens(after)][0] ?? null;
+  return { unit, before: contentTokens(text.slice(Math.max(0, n.start - 48), n.start)) };
+}
+
+/** Whether two figures are plausibly measuring the same quantity. */
+function measuresSameThing(claim: string, a: NumericFact, passage: string, b: NumericFact): boolean {
+  const ca = numberContext(claim, a);
+  const cb = numberContext(passage, b);
+  if (ca.unit && cb.unit && ca.unit === cb.unit) return true;
+  // A percentage or a currency amount carries its own unit, so for those the
+  // introducing phrase is enough ("The settlement was $50m" / "$500m").
+  if (a.kind === "plain") return false;
+  for (const t of ca.before) if (cb.before.has(t)) return true;
+  return false;
 }
 
 /**
@@ -339,8 +429,25 @@ export function negationParity(sentence: string): 0 | 1 {
   return (n % 2) as 0 | 1;
 }
 
+/*
+ * "would" is deliberately absent. In reported speech it is future-in-past, not
+ * uncertainty — "the executive said every unit would be replaced" is a firm
+ * commitment — and including it capped correctly cited quotations at the hedged
+ * ceiling, which is a false accusation against an honest citation.
+ */
 const HEDGES =
-  /\b(?:may|might|could|would|expected to|is likely|are likely|likely to|reportedly|allegedly|alleged|apparent|apparently|preliminary|unconfirmed|estimates?|projected|forecast|proposed|draft|if approved|plans to|aims to|intends to|on track to|suggests?|indicates?|potential(?:ly)?)\b/i;
+  /\b(?:might|could|expected to|is likely|are likely|likely to|reportedly|alleg(?:e|es|ed|edly|ation|ations)|apparent|apparently|preliminary|unconfirmed|estimates?|projected|forecast|proposed|draft|if approved|plans to|aims to|intends to|on track to|suggests?|indicates?|potential(?:ly)?)\b/i;
+/**
+ * "may" is a hedge and also a month. Case-sensitive and lowercase-only, because
+ * "in May 2024" is a date and treating it as uncertainty would cap every
+ * correctly cited May story at the hedged ceiling. The cost is a sentence that
+ * opens with "May" as a modal, which is vanishingly rare in reported prose.
+ */
+const HEDGE_MAY = /\bmay\b/;
+
+function isHedged(text: string): boolean {
+  return HEDGES.test(text) || HEDGE_MAY.test(text);
+}
 
 const SUPERLATIVES =
   /\b(?:first|only|sole|largest|biggest|smallest|best|worst|highest|lowest|fastest|slowest|leading|record|unprecedented|never before|all[- ]time)\b/i;
@@ -457,37 +564,76 @@ export function extractClaims(report: string): ExtractedClaim[] {
   const claims: ExtractedClaim[] = [];
   let offset = 0;
   let fenced = false;
-  for (const line of report.split("\n")) {
-    const lineStart = offset;
-    offset += line.length + 1;
-    const trimmed = line.trim();
-    if (/^(?:```|~~~)/.test(trimmed)) {
-      fenced = !fenced;
-      continue;
-    }
-    if (fenced || !trimmed) continue;
-    if (/^#{1,6}\s+(?:sources|references|citations)\b/i.test(trimmed)) break;
-    if (/^#{1,6}\s/.test(trimmed)) continue;
-    if (/^\|/.test(trimmed)) continue; // table row — cells are not sentences
+  let stop = false;
+  // The prose block being accumulated, as offsets into the report.
+  let blockStart = -1;
+  let blockEnd = -1;
 
-    const lead = /^\s*(?:[-*+]\s+|\d+[.)]\s+|>\s*)?/.exec(line)?.[0] ?? "";
-    for (const sentence of splitSentences(line.slice(lead.length), lineStart + lead.length)) {
+  const flush = () => {
+    if (blockStart < 0) return;
+    /*
+     * Newlines become spaces so a sentence the model wrapped across two lines
+     * is read as ONE sentence. A one-character-for-one-character replacement is
+     * the whole trick: every offset inside the block still points at the same
+     * character of the original report, so answerSpan stays usable by the UI.
+     */
+    const text = report.slice(blockStart, blockEnd).replace(/\n/g, " ");
+    for (const sentence of splitSentences(text, blockStart)) {
       const citations: number[] = [];
       CITATION_MARKER_RE.lastIndex = 0;
       for (let m = CITATION_MARKER_RE.exec(sentence.text); m; m = CITATION_MARKER_RE.exec(sentence.text)) {
         const n = Number(m[1]);
         if (n >= 1 && !citations.includes(n)) citations.push(n);
       }
-      const text = plainify(sentence.text);
-      if (!isLoadBearing(text, citations)) continue;
+      const plain = plainify(sentence.text);
+      if (!isLoadBearing(plain, citations)) continue;
       claims.push({
-        text,
-        type: classify(text),
+        text: plain,
+        type: classify(plain),
         answerSpan: formatAnswerSpan(sentence.start, sentence.end),
         citations,
       });
     }
+    blockStart = -1;
+  };
+
+  for (const line of report.split("\n")) {
+    const lineStart = offset;
+    offset += line.length + 1;
+    if (stop) continue;
+    const trimmed = line.trim();
+    if (/^(?:```|~~~)/.test(trimmed)) {
+      flush();
+      fenced = !fenced;
+      continue;
+    }
+    if (fenced) continue;
+    if (!trimmed) {
+      flush();
+      continue;
+    }
+    if (/^#{1,6}\s+(?:sources|references|citations)\b/i.test(trimmed)) {
+      flush();
+      stop = true;
+      continue;
+    }
+    // Headings assert nothing on their own, and a table row is cells rather
+    // than sentences. Both end whatever paragraph preceded them.
+    if (/^#{1,6}\s/.test(trimmed) || /^\|/.test(trimmed)) {
+      flush();
+      continue;
+    }
+    const lead = /^\s*(?:[-*+]\s+|\d+[.)]\s+|>\s*)/.exec(line)?.[0];
+    if (lead) {
+      // A new list item is a new claim, not a continuation of the last one.
+      flush();
+      blockStart = lineStart + lead.length;
+    } else if (blockStart < 0) {
+      blockStart = lineStart;
+    }
+    blockEnd = lineStart + line.length;
   }
+  flush();
   return claims;
 }
 
@@ -624,6 +770,7 @@ export function selectPassagesForClaim(
 /** A reason code plus the sentence a reader sees in the inspector. */
 export interface AuditReason {
   code:
+    | "enumeration_incomplete"
     | "figure_absent"
     | "figure_mismatch"
     | "date_absent"
@@ -735,14 +882,15 @@ export function auditEvidence(opts: {
   for (const n of claimNums) {
     const sameKind = passageNums.filter((p) => p.kind === n.kind);
     if (sameKind.some((p) => numbersAgree(p.value, n.value))) continue;
-    if (sameKind.length > 0) {
-      // The passage measures the same KIND of thing and says something else.
-      // That is a contradiction, not an omission — the difference matters,
-      // because a contradicted claim must never read as merely unverified.
+    const rival = sameKind.filter((p) => measuresSameThing(claim, n, passage, p));
+    if (rival.length > 0) {
+      // The passage measures the same thing and says something else. That is a
+      // contradiction, not an omission — the difference matters, because a
+      // contradicted claim must never read as merely unverified.
       contradicted = true;
       cap(0, {
         code: "figure_mismatch",
-        detail: `The passage gives ${sameKind.map((p) => p.raw).slice(0, 3).join(", ")} where the claim says ${n.raw}.`,
+        detail: `The passage gives ${rival.map((p) => p.raw).slice(0, 3).join(", ")} where the claim says ${n.raw}.`,
       });
     } else {
       cap(CEILING.figureAbsent, {
@@ -781,6 +929,27 @@ export function auditEvidence(opts: {
     });
   }
 
+  // ── Lists where the passage only covers part of the list ─────────────────
+  /*
+   * "The ban covers single-use plastics, packaging foam and disposable vapes"
+   * cited to a passage that covers only the plastics is a very common and very
+   * quiet failure: overall word overlap stays high, so neither the judge nor
+   * the coverage floor notices that a third of the sentence has no evidence
+   * behind it. Only enumerations of three or more are checked — a two-part
+   * sentence is usually one assertion with a qualifier, not a list.
+   */
+  const items = claim.split(/,\s+|\s+and\s+/).filter((seg) => contentTokens(seg).size > 0);
+  if (items.length >= 3) {
+    const passageTokens = contentTokens(passage);
+    const missing = items.filter((seg) => [...contentTokens(seg)].every((t) => !passageTokens.has(t)));
+    if (missing.length > 0) {
+      cap(CEILING.unstatedLeap, {
+        code: "enumeration_incomplete",
+        detail: `The passage says nothing about ${missing.map((s) => `“${s.trim()}”`).join(", ")}.`,
+      });
+    }
+  }
+
   // ── Leaps the passage never made ─────────────────────────────────────────
   if (SUPERLATIVES.test(claim) && !SUPERLATIVES.test(passage)) {
     cap(CEILING.unstatedLeap, {
@@ -799,7 +968,7 @@ export function auditEvidence(opts: {
   // A passage saying a merger "is expected to close" cannot support a report
   // saying it closed. Predictions are exempt: a hedged source is exactly the
   // right evidence for a claim that presents itself as a forecast.
-  if (claimType !== "prediction" && claimType !== "opinion" && HEDGES.test(focus) && !HEDGES.test(claim)) {
+  if (claimType !== "prediction" && claimType !== "opinion" && isHedged(focus) && !isHedged(claim)) {
     cap(CEILING.hedged, {
       code: "passage_hedged",
       detail: "The passage hedges what the claim states as settled fact.",
