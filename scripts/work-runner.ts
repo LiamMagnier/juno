@@ -30,7 +30,7 @@
 
 import "server-only";
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
 import * as http from "node:http";
 import * as https from "node:https";
@@ -92,6 +92,7 @@ import {
   provenanceForStorage,
 } from "@/lib/work/deliverables";
 import {
+  parseRequestedTools,
   parseSkillContract,
   parseSkillInvocation,
   resolveSkillPermissions,
@@ -108,6 +109,7 @@ import {
   type SkillSelectionVia,
   type SkillVersionRunReference,
 } from "@/lib/work/skills";
+import { scanSkillVersion } from "@/lib/work/skill-security";
 import type { Prisma } from "@prisma/client";
 
 /** How often to look for work. */
@@ -1839,6 +1841,14 @@ interface AppliedSkill {
   confidence: number;
 }
 
+/** A skill is data supplied by a user or an importer, not an executor grant. */
+class SkillSecurityError extends Error {
+  constructor(message: string) {
+    super(`Skill security gate: ${message}`);
+    this.name = "SkillSecurityError";
+  }
+}
+
 /**
  * How many opted-in skills are read and scored.
  *
@@ -1852,6 +1862,8 @@ const SKILL_AUTO_SELECT_MAX_CANDIDATES = 50;
 const SKILL_CANDIDATE_COLUMNS = {
   id: true,
   slug: true,
+  name: true,
+  description: true,
   enabled: true,
   trust: true,
   autoSelect: true,
@@ -1891,7 +1903,7 @@ async function skillFromInvocation(userId: string, slug: string): Promise<SkillS
 async function skillForGoal(userId: string, goal: string): Promise<SkillSelection> {
   const rows = await prisma.workSkill.findMany({
     where: { userId, deletedAt: null, enabled: true, autoSelect: true },
-    select: { ...SKILL_CANDIDATE_COLUMNS, name: true, description: true },
+    select: SKILL_CANDIDATE_COLUMNS,
     // Ordered so `take` keeps the same set on every run, rather than whichever
     // rows the query planner happened to return first.
     orderBy: { slug: "asc" },
@@ -1974,7 +1986,17 @@ async function applySkill(input: {
 
   const versions = await prisma.workSkillVersion.findMany({
     where: { skillId: chosen.id },
-    select: { id: true, version: true, instructions: true, contract: true, requestedTools: true },
+    select: {
+      id: true,
+      version: true,
+      instructions: true,
+      contract: true,
+      requestedTools: true,
+      securityStatus: true,
+      securityScan: true,
+      permissionDigest: true,
+      requiresConsent: true,
+    },
   });
   const choice = selectSkillVersion({
     slug: chosen.slug,
@@ -1985,6 +2007,54 @@ async function applySkill(input: {
 
   const row = versions.find((version) => version.version === choice.version);
   if (!row) return null;
+
+  /*
+   * The scan is persisted at upload time, but rows created before the scan
+   * migration have a `pending` default. Scan those once at the execution
+   * boundary as well, then persist the result. This makes a rolling deploy
+   * fail closed even if an old worker handed a legacy row to a new worker.
+   * Unknown states are refused rather than treated as clear.
+   */
+  let securityStatus = row.securityStatus;
+  if (securityStatus === "pending") {
+    const securityScan = scanSkillVersion({
+      name: chosen.name ?? chosen.slug,
+      description: chosen.description ?? "",
+      instructions: row.instructions,
+      requestedTools: parseRequestedTools(row.requestedTools),
+      contract: parseSkillContract(row.contract),
+    });
+    securityStatus = securityScan.status;
+    const permissionDigest = createHash("sha256")
+      .update(securityScan.permissionFingerprint)
+      .digest("hex");
+    await prisma.workSkillVersion.updateMany({
+      where: { id: row.id, skillId: chosen.id, securityStatus: "pending" },
+      data: {
+        securityStatus: securityScan.status,
+        securityScan: securityScan as unknown as Prisma.InputJsonValue,
+        permissionDigest,
+        requiresConsent: false,
+      },
+    });
+    if (choice.version === chosen.currentVersion) {
+      await prisma.workSkill.updateMany({
+        where: { id: chosen.id, userId: input.userId, securityStatus: "pending" },
+        data: { securityStatus: securityScan.status, securityUpdatedAt: new Date() },
+      });
+    }
+  }
+  if (securityStatus === "blocked") {
+    throw new SkillSecurityError("This version is blocked by its security scan.");
+  }
+  if (securityStatus !== "clear" && securityStatus !== "warning") {
+    throw new SkillSecurityError("This version has no trusted security state yet.");
+  }
+  if (row.requiresConsent) {
+    throw new SkillSecurityError(
+      "This version requests new permissions. Review the version and approve those permissions before running it."
+    );
+  }
 
   // Every grant layer this executor can see, passed separately rather than
   // pre-merged: `narrowestGrant` refuses an empty layer list, and a merged

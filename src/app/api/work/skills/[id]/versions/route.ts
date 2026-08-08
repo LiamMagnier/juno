@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
+import { recordWorkAudit } from "@/lib/work/audit";
 import {
   SKILL_CONTRACT_VERSION,
   emptySkillContract,
@@ -14,6 +16,11 @@ import {
   skillContractToJson,
   type WorkSkillVersionContent,
 } from "@/lib/work/skills";
+import {
+  permissionExpansion,
+  permissionSurfaceFromScan,
+  scanSkillVersion,
+} from "@/lib/work/skill-security";
 
 export const runtime = "nodejs";
 
@@ -38,7 +45,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // head is loaded with `userId` in the WHERE before anything else is read.
   const skill = await prisma.workSkill.findFirst({
     where: { id, userId: user.id, deletedAt: null },
-    select: { id: true },
+    select: { id: true, name: true, description: true },
   });
   if (!skill) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -80,7 +87,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const skill = await prisma.workSkill.findFirst({
     where: { id, userId: user.id, deletedAt: null },
-    select: { id: true },
+    select: { id: true, name: true, description: true },
   });
   if (!skill) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -118,6 +125,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }
 
+  const securityScan = scanSkillVersion({
+    name: skill.name,
+    description: skill.description,
+    instructions: content.instructions,
+    requestedTools: content.requestedTools,
+    contract: content.contract,
+  });
+  const permissionDigest = createHash("sha256").update(securityScan.permissionFingerprint).digest("hex");
+  const previousVersion = await prisma.workSkillVersion.findFirst({
+    where: { skillId: skill.id },
+    orderBy: { version: "desc" },
+    select: { securityScan: true },
+  });
+  const expansion = permissionExpansion(
+    permissionSurfaceFromScan(previousVersion?.securityScan),
+    securityScan.permissions
+  );
+  const requiresConsent = expansion.length > 0;
+
   for (let tries = 0; tries < VERSION_ALLOCATION_TRIES; tries++) {
     try {
       const minted = await prisma.$transaction(async (tx) => {
@@ -138,6 +164,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             contract: skillContractToJson(content.contract),
             contractVersion: content.contractVersion,
             requestedTools: content.requestedTools,
+            securityStatus: securityScan.status,
+            securityScan: securityScan as unknown as Prisma.InputJsonValue,
+            permissionDigest,
+            requiresConsent,
           },
         });
         // The pointer moves in the same transaction as the row it points at,
@@ -145,9 +175,30 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // that was never written.
         const updated = await tx.workSkill.update({
           where: { id: skill.id, userId: user.id },
-          data: { currentVersion: version.version },
+          data: {
+            currentVersion: version.version,
+            enabled: securityScan.status !== "blocked",
+            securityStatus: securityScan.status,
+            securityUpdatedAt: new Date(),
+          },
         });
         return { skill: updated, version };
+      });
+
+      await recordWorkAudit({
+        userId: user.id,
+        kind: "skill_security_scanned",
+        actor: "web",
+        severity: securityScan.status === "blocked" ? "refusal" : securityScan.status === "warning" ? "warning" : "info",
+        detail: {
+          skillId: minted.skill.id,
+          skillSlug: minted.skill.slug,
+          skillVersion: minted.version.version,
+          scanStatus: securityScan.status,
+          findingCount: securityScan.findings.length,
+          requiresConsent,
+          permissionAdditions: expansion,
+        },
       });
 
       return NextResponse.json(

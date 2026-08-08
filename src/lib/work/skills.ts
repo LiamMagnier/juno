@@ -852,6 +852,9 @@ export const SKILL_AUTO_SELECT_MIN_CONFIDENCE = 0.75;
 export interface SkillCandidate {
   id: string;
   slug: string;
+  /** Optional metadata used when a pre-scan legacy row is upgraded at runtime. */
+  name?: string;
+  description?: string;
   enabled: boolean;
   /** As stored. Coerced here rather than by the caller, and fails closed. */
   trust: string;
@@ -1540,6 +1543,8 @@ export interface ClientWorkSkill {
    * separately and only the pair is the answer.
    */
   autoSelect: boolean;
+  securityStatus: string;
+  securityUpdatedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1555,6 +1560,8 @@ export function serializeSkill(skill: WorkSkill): ClientWorkSkill {
     enabled: skill.enabled,
     trust: coerceSkillTrust(skill.trust),
     autoSelect: skill.autoSelect,
+    securityStatus: skill.securityStatus,
+    securityUpdatedAt: skill.securityUpdatedAt?.toISOString() ?? null,
     createdAt: skill.createdAt.toISOString(),
     updatedAt: skill.updatedAt.toISOString(),
   };
@@ -1569,6 +1576,10 @@ export interface ClientWorkSkillVersion {
   contractVersion: number;
   /** What this version asks for. Never what it was given. */
   requestedTools: string[];
+  securityStatus: string;
+  securityScan: unknown;
+  permissionDigest: string | null;
+  requiresConsent: boolean;
   createdAt: string;
 }
 
@@ -1581,6 +1592,10 @@ export function serializeSkillVersion(version: WorkSkillVersion): ClientWorkSkil
     contract: parseSkillContract(version.contract),
     contractVersion: version.contractVersion,
     requestedTools: parseRequestedTools(version.requestedTools),
+    securityStatus: version.securityStatus,
+    securityScan: version.securityScan,
+    permissionDigest: version.permissionDigest,
+    requiresConsent: version.requiresConsent,
     createdAt: version.createdAt.toISOString(),
   };
 }

@@ -1114,6 +1114,8 @@ function skillRow(overrides: Partial<WorkSkill> = {}): WorkSkill {
     enabled: true,
     trust: "user_authored",
     autoSelect: true,
+    securityStatus: "clear",
+    securityUpdatedAt: new Date("2026-01-02T00:00:00.000Z"),
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-02T00:00:00.000Z"),
     deletedAt: null,
@@ -1145,6 +1147,10 @@ test("a version serialises its request, never a grant", () => {
     contract,
     contractVersion: 1,
     requestedTools: ["work.file.move", 42],
+    securityStatus: "clear",
+    securityScan: {},
+    permissionDigest: null,
+    requiresConsent: false,
     createdAt: new Date("2026-01-02T00:00:00.000Z"),
   };
   const serialized = serializeSkillVersion(row);

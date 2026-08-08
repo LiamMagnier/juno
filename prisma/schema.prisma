@@ -2179,14 +2179,17 @@ model WorkSkill {
   description String @db.Text
 
   /// Which version is used when the skill is invoked without pinning one.
-  currentVersion Int     @default(1)
-  enabled        Boolean @default(true)
+  currentVersion    Int       @default(1)
+  enabled           Boolean   @default(true)
   /// untrusted | user_authored | verified. An imported skill starts untrusted
   /// and cannot be auto-selected until the user says otherwise.
-  trust          String  @default("user_authored")
+  trust             String    @default("user_authored")
+  /// clear | warning | blocked — result for the current version's scanner.
+  securityStatus    String    @default("pending")
+  securityUpdatedAt DateTime?
   /// Whether the planner may select this skill on its own when confidence is
   /// high, or only on explicit invocation.
-  autoSelect     Boolean @default(false)
+  autoSelect        Boolean   @default(false)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -2218,6 +2221,12 @@ model WorkSkillVersion {
   /// the resolver intersects it. A skill that could widen permissions would be
   /// a permission-escalation primitive shipped as a convenience feature.
   requestedTools Json @default("[]")
+
+  /// Bounded, non-secret scanner evidence and the permission surface it saw.
+  securityStatus   String  @default("pending")
+  securityScan     Json    @default("{}")
+  permissionDigest String?
+  requiresConsent  Boolean @default(false)
 
   createdAt DateTime @default(now())
 

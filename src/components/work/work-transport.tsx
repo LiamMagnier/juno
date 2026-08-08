@@ -1193,6 +1193,18 @@ export function mintWorkSkillVersion(
   return post(`/api/work/skills/${id}/versions`, input, (data) => data.version as ClientWorkSkillVersion);
 }
 
+/** Approves the permission expansion recorded on one immutable version. */
+export function consentWorkSkillVersion(
+  id: string,
+  version: number
+): Promise<WorkResult<ClientWorkSkillVersion>> {
+  return post(
+    `/api/work/skills/${id}/versions/${version}/consent`,
+    {},
+    (data) => data.version as ClientWorkSkillVersion
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Documents
 // ---------------------------------------------------------------------------

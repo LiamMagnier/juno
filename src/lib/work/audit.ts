@@ -71,6 +71,10 @@ const ALLOWED_AUDIT_KEYS: ReadonlySet<string> = new Set([
   "outcome",
   "reason",
   "severity",
+  "scanStatus",
+  "findingCount",
+  "requiresConsent",
+  "permissionAdditions",
   "allowed",
   "refused",
   // Whether a skill's instructions went into the system prompt inside the

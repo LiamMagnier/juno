@@ -10,7 +10,7 @@ public enum JunoWorkContract {
     /// Bumped whenever a value is added or its meaning changes.
     public static let version = 3
     /// SHA-256 of the contract this was generated from.
-    public static let digest = "6bb27a5f78f590a51d6f650f5d3e64ef08159dc800438f0d71ed0ca7a5c0194f"
+    public static let digest = "aafb373886edcb4596d60796fd3d0ff953a7a30d5e715b1347934c3ed79c9fca"
 }
 
 /// Every state a Work session or run can be in.
@@ -737,6 +737,10 @@ public enum JunoWorkAuditKind: String, CaseIterable, Codable, Sendable {
     case screenshotCaptured = "screenshot_captured"
     /// A skill version was loaded into a run.
     case skillApplied = "skill_applied"
+    /// A skill version was checked for suspicious instructions and permission surface.
+    case skillSecurityScanned = "skill_security_scanned"
+    /// A user explicitly accepted a skill version's expanded permission surface.
+    case skillPermissionConsent = "skill_permission_consent"
     /// A less precise tool was refused while a more precise one could serve the same intent.
     case tierDowngradeRefused = "tier_downgrade_refused"
 }

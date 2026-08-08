@@ -935,6 +935,14 @@
         },
         { "value": "skill_applied", "summary": "A skill version was loaded into a run." },
         {
+          "value": "skill_security_scanned",
+          "summary": "A skill version was checked for suspicious instructions and permission surface."
+        },
+        {
+          "value": "skill_permission_consent",
+          "summary": "A user explicitly accepted a skill version's expanded permission surface."
+        },
+        {
           "value": "tier_downgrade_refused",
           "summary": "A less precise tool was refused while a more precise one could serve the same intent."
         }

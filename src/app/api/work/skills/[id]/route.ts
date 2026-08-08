@@ -46,11 +46,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const existing = await prisma.workSkill.findFirst({
     where: { id, userId: user.id, deletedAt: null },
-    select: { trust: true, autoSelect: true },
+    select: { trust: true, autoSelect: true, securityStatus: true },
   });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { name, description, enabled, trust } = parsed.data;
+  if (enabled === true && existing.securityStatus === "blocked") {
+    return NextResponse.json(
+      { error: "security_blocked", message: "A skill blocked by its security scan cannot be enabled." },
+      { status: 409 }
+    );
+  }
 
   // Trust and automatic selection are decided together, against the merged
   // state, not one at a time against the patch. Withdrawing trust has to switch

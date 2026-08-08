@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
+import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { recordWorkAudit } from "@/lib/work/audit";
 import { requireUser } from "@/lib/code-remote";
 import {
   SKILL_CONTRACT_VERSION,
@@ -15,6 +17,7 @@ import {
   trustForOrigin,
   trustPermitsAutoSelection,
 } from "@/lib/work/skills";
+import { scanSkillVersion } from "@/lib/work/skill-security";
 
 export const runtime = "nodejs";
 
@@ -76,6 +79,14 @@ export async function POST(req: Request) {
   const trust = trustForOrigin(origin);
   const contract = parsed.data.contract ?? emptySkillContract();
   const requestedTools = parsed.data.requestedTools ?? [];
+  const securityScan = scanSkillVersion({
+    name,
+    description,
+    instructions,
+    requestedTools,
+    contract,
+  });
+  const permissionDigest = createHash("sha256").update(securityScan.permissionFingerprint).digest("hex");
 
   try {
     const created = await prisma.$transaction(async (tx) => {
@@ -87,8 +98,10 @@ export async function POST(req: Request) {
           name,
           description,
           currentVersion: 1,
-          enabled: true,
+          enabled: securityScan.status !== "blocked",
           trust,
+          securityStatus: securityScan.status,
+          securityUpdatedAt: new Date(),
           // Clamped rather than stored as asked. A row saying
           // `autoSelect: true, trust: "untrusted"` is a contradiction every
           // reader then has to resolve for itself, and the one that resolves it
@@ -108,9 +121,27 @@ export async function POST(req: Request) {
           contract: skillContractToJson(contract),
           contractVersion: SKILL_CONTRACT_VERSION,
           requestedTools,
+          securityStatus: securityScan.status,
+          securityScan: securityScan as unknown as Prisma.InputJsonValue,
+          permissionDigest,
+          requiresConsent: false,
         },
       });
       return { skill, version };
+    });
+
+    await recordWorkAudit({
+      userId: user.id,
+      kind: "skill_security_scanned",
+      actor: "web",
+      severity: securityScan.status === "blocked" ? "refusal" : securityScan.status === "warning" ? "warning" : "info",
+      detail: {
+        skillId: created.skill.id,
+        skillSlug: created.skill.slug,
+        skillVersion: created.version.version,
+        scanStatus: securityScan.status,
+        findingCount: securityScan.findings.length,
+      },
     });
 
     return NextResponse.json(

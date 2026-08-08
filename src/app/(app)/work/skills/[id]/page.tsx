@@ -28,6 +28,7 @@ import { WorkPageFrame } from "@/components/work/work-nav";
 import { trustLabel } from "@/components/work/work-skill-row";
 import {
   deleteWorkSkill,
+  consentWorkSkillVersion,
   fetchWorkSkill,
   fetchWorkSkillVersions,
   mintWorkSkillVersion,
@@ -35,6 +36,40 @@ import {
   type PatchWorkSkillInput,
 } from "@/components/work/work-transport";
 import { WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
+
+interface SkillSecurityFindingView {
+  code: string;
+  severity: string;
+  message: string;
+}
+
+function securityFindingsOf(raw: unknown): SkillSecurityFindingView[] {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return [];
+  const findings = (raw as { findings?: unknown }).findings;
+  if (!Array.isArray(findings)) return [];
+  return findings.flatMap((finding) => {
+    if (finding === null || typeof finding !== "object" || Array.isArray(finding)) return [];
+    const value = finding as Record<string, unknown>;
+    return typeof value.code === "string" &&
+      typeof value.severity === "string" &&
+      typeof value.message === "string"
+      ? [{ code: value.code, severity: value.severity, message: value.message }]
+      : [];
+  });
+}
+
+function securityLabel(status: string): string {
+  if (status === "clear") return "Clear";
+  if (status === "warning") return "Review recommended";
+  if (status === "blocked") return "Blocked";
+  return "Pending review";
+}
+
+function securityClassName(status: string): string {
+  if (status === "clear") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  if (status === "blocked") return "border-destructive/30 bg-destructive/10 text-destructive";
+  return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+}
 
 /**
  * One skill: what it says, what it is allowed to be, and everything it used to
@@ -121,7 +156,12 @@ export default function WorkSkillPage() {
     setBusy(false);
     if (result.kind === "ok") {
       setVersion(result.value);
-      setSkill({ ...skill, currentVersion: result.value.version });
+      setSkill({
+        ...skill,
+        currentVersion: result.value.version,
+        securityStatus: result.value.securityStatus,
+        securityUpdatedAt: new Date().toISOString(),
+      });
       void loadVersions();
       toast.success(`Saved as v${result.value.version}. The previous version is still readable.`);
       return;
@@ -141,7 +181,12 @@ export default function WorkSkillPage() {
     if (result.kind === "ok") {
       setVersion(result.value);
       setInstructions(result.value.instructions);
-      setSkill({ ...skill, currentVersion: result.value.version });
+      setSkill({
+        ...skill,
+        currentVersion: result.value.version,
+        securityStatus: result.value.securityStatus,
+        securityUpdatedAt: new Date().toISOString(),
+      });
       void loadVersions();
       toast.success(`v${restoreVersion} is back, saved as v${result.value.version}.`);
       return;
@@ -150,6 +195,29 @@ export default function WorkSkillPage() {
       result.kind === "blocked"
         ? "Someone else saved this skill at the same moment. Reload and try again."
         : "Couldn’t restore that version. Nothing changed."
+    );
+  };
+
+  const consent = async () => {
+    if (skill === null || version === null || !version.requiresConsent) return;
+    setBusy(true);
+    const result = await consentWorkSkillVersion(id, version.version);
+    setBusy(false);
+    if (result.kind === "ok") {
+      setVersion(result.value);
+      setSkill({
+        ...skill,
+        securityStatus: result.value.securityStatus,
+        securityUpdatedAt: new Date().toISOString(),
+      });
+      void loadVersions();
+      toast.success(`Permissions approved for v${result.value.version}.`);
+      return;
+    }
+    toast.error(
+      result.kind === "blocked"
+        ? result.explanation
+        : "Couldn’t approve these permissions. Nothing about the skill has changed."
     );
   };
 
@@ -223,6 +291,8 @@ export default function WorkSkillPage() {
   const settableTrust =
     skill.trust === "untrusted" || skill.trust === "user_authored" ? skill.trust : null;
   const instructionsChanged = version !== null && instructions.trim() !== version.instructions.trim();
+  const securityStatus = version?.securityStatus ?? skill.securityStatus;
+  const securityFindings = securityFindingsOf(version?.securityScan);
 
   return (
     <WorkPageFrame
@@ -352,6 +422,47 @@ export default function WorkSkillPage() {
               </p>
             )}
           </div>
+        </section>
+
+        <section className="space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-mono text-label text-muted-foreground">Security review</h2>
+            <span
+              className={`rounded-full border px-2 py-0.5 font-mono text-[10px] ${securityClassName(securityStatus)}`}
+            >
+              {securityLabel(securityStatus)}
+            </span>
+          </div>
+          <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+            Every version is scanned when it is saved. Blocked versions cannot run; a version that
+            asks for more permissions waits for your approval.
+          </p>
+          {version?.requiresConsent ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3.5 py-3">
+              <p className="text-[12px] leading-relaxed text-foreground">
+                This version widens the permissions requested by the previous version.
+              </p>
+              <Button
+                size="sm"
+                disabled={busy || securityStatus === "blocked"}
+                onClick={() => void consent()}
+              >
+                Approve permissions
+              </Button>
+            </div>
+          ) : null}
+          {securityFindings.length > 0 ? (
+            <ul className="space-y-1 rounded-xl border border-border/60 px-3.5 py-2.5">
+              {securityFindings.map((finding) => (
+                <li key={`${finding.code}-${finding.message}`} className="text-[11.5px] leading-relaxed text-muted-foreground">
+                  <span className="mr-1 font-mono text-[10px] uppercase text-foreground">
+                    {finding.severity}
+                  </span>
+                  {finding.message}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </section>
 
         <section>

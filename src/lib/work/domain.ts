@@ -1300,6 +1300,8 @@ export const WORK_AUDIT_KINDS = [
   "permanent_delete_requested",
   "screenshot_captured",
   "skill_applied",
+  "skill_security_scanned",
+  "skill_permission_consent",
   "tier_downgrade_refused",
 ] as const;
 
