@@ -2530,7 +2530,7 @@ model KnowledgeDocument {
   mimeType       String
   /// Content hash. Re-uploading identical bytes must not re-index them.
   checksum       String
-  /// queued | extracting | ocr | indexing | ready | degraded | failed | stale
+  /// queued | extracting | ocr | indexing | ready | degraded | failed | stale | tombstoned
   state          String    @default("queued")
   /// Which extractor produced the blocks, and its version, so a parser fix can
   /// find every document that needs reindexing.
@@ -2543,6 +2543,8 @@ model KnowledgeDocument {
   pageCount      Int?
   /// Why the state is degraded or failed, in words a reader can act on.
   error          String?   @db.Text
+  /// Tombstone retained so old citation ids resolve to a clear deletion state.
+  deletedAt      DateTime?
   createdAt      DateTime  @default(now())
   indexedAt      DateTime?
   updatedAt      DateTime  @updatedAt
@@ -2556,10 +2558,11 @@ model KnowledgeDocument {
   @@unique([userId, checksum, version])
   @@index([userId, state, createdAt])
   @@index([userId, projectId])
+  @@index([userId, deletedAt])
 }
 
 model KnowledgeBlock {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   userId     String
   documentId String
   /// Position in the document, used to restore reading order after retrieval.
@@ -2567,7 +2570,7 @@ model KnowledgeBlock {
   /// paragraph | heading | list_item | table | table_cell | slide_title |
   /// speaker_notes | code | caption | image
   type       String
-  text       String   @db.Text
+  text       String    @db.Text
   /// Where this block physically is. Exactly which of these is set depends on
   /// the format, and that is the point: a citation must be able to say
   /// "page 4" for a PDF and "Sheet2!B7" for a workbook.
@@ -2579,43 +2582,47 @@ model KnowledgeBlock {
   lineStart  Int?
   lineEnd    Int?
   /// Breadcrumb of enclosing headings, outermost first.
-  heading    String[] @default([])
+  heading    String[]  @default([])
   /// Layout box on the page, [x, y, w, h] in page units, when the parser knows it.
-  bbox       Float[]  @default([])
+  bbox       Float[]   @default([])
   /// 0..1. OCR output carries a real number here; verified embedded text is 1.
-  confidence Float    @default(1)
-  createdAt  DateTime @default(now())
+  confidence Float     @default(1)
+  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
 
   user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@index([documentId, ordinal])
   @@index([userId, documentId])
+  @@index([documentId, deletedAt])
 }
 
 model KnowledgeChunk {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   userId         String
   documentId     String
   ordinal        Int
-  text           String   @db.Text
-  tokens         Int      @default(0)
+  text           String    @db.Text
+  tokens         Int       @default(0)
   /// The blocks this chunk was packed from, in order — the citation targets.
-  blockIds       String[] @default([])
+  blockIds       String[]  @default([])
   /// Embedding vector. Stored as float[] rather than a pgvector column so the
   /// deployment needs no extension; the corpus here is one person's library,
   /// where an indexed lexical prefilter plus in-process cosine is enough.
   /// `embeddingModel` is versioned so a model change can be reindexed
   /// deliberately instead of silently mixing two vector spaces.
-  embedding      Float[]  @default([])
+  embedding      Float[]   @default([])
   embeddingModel String?
-  createdAt      DateTime @default(now())
+  deletedAt      DateTime?
+  createdAt      DateTime  @default(now())
 
   user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@index([documentId, ordinal])
   @@index([userId, embeddingModel])
+  @@index([documentId, deletedAt])
 }
 
 model KnowledgeIndexJob {
@@ -2626,6 +2633,7 @@ model KnowledgeIndexJob {
   state      String    @default("queued")
   attempts   Int       @default(0)
   error      String?   @db.Text
+  deletedAt  DateTime?
   createdAt  DateTime  @default(now())
   startedAt  DateTime?
   finishedAt DateTime?

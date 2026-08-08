@@ -29,6 +29,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
           userId: user.id,
           attachmentId: { in: project.files.map((file) => file.id) },
           state: { not: "stale" },
+          deletedAt: null,
         },
         orderBy: { version: "asc" },
         select: {

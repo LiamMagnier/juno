@@ -76,11 +76,60 @@ export async function DELETE(
     return NextResponse.json({ error: "Attachment not found." }, { status: 404 });
   }
 
-  // Delete the DB row first, then the object — but only if no other attachment
-  // still references the same stored object. Library "attach" clones share a
-  // storageKey, so deleting one clone must not pull the file out from under
-  // the original (or its siblings).
-  await prisma.attachment.delete({ where: { id: attachment.id, userId: user.id } });
+  // Tombstone the knowledge graph in the same transaction as the attachment
+  // delete. The block/chunk ids remain answerable as deleted citations, while
+  // their text and embeddings are redacted and retrieval can never use them.
+  await prisma.$transaction(async (tx) => {
+    const documents = await tx.knowledgeDocument.findMany({
+      where: { userId: user.id, attachmentId: attachment.id, deletedAt: null },
+      select: { id: true },
+    });
+    const documentIds = documents.map((document) => document.id);
+    if (documentIds.length > 0) {
+      const deletedAt = new Date();
+      await tx.knowledgeDocument.updateMany({
+        where: { userId: user.id, id: { in: documentIds } },
+        data: {
+          state: "tombstoned",
+          error: "This document was deleted from the library; its indexed content is no longer available.",
+          deletedAt,
+        },
+      });
+      await tx.knowledgeBlock.updateMany({
+        where: { userId: user.id, documentId: { in: documentIds }, deletedAt: null },
+        data: {
+          text: "[Document content deleted]",
+          heading: [],
+          bbox: [],
+          deletedAt,
+        },
+      });
+      await tx.knowledgeChunk.updateMany({
+        where: { userId: user.id, documentId: { in: documentIds }, deletedAt: null },
+        data: {
+          text: "[Document content deleted]",
+          embedding: [],
+          embeddingModel: null,
+          deletedAt,
+        },
+      });
+      await tx.knowledgeIndexJob.updateMany({
+        where: { userId: user.id, documentId: { in: documentIds }, deletedAt: null },
+        data: {
+          state: "tombstoned",
+          error: "The source attachment was deleted.",
+          deletedAt,
+          finishedAt: deletedAt,
+        },
+      });
+    }
+
+    // Delete the DB row first, then the object — but only if no other
+    // attachment still references the same stored object. Library "attach"
+    // clones share a storageKey, so deleting one clone must not pull the file
+    // out from under the original (or its siblings).
+    await tx.attachment.delete({ where: { id: attachment.id, userId: user.id } });
+  });
 
   const stillReferenced = await prisma.attachment.count({ where: { storageKey: attachment.storageKey } });
   if (stillReferenced === 0) {

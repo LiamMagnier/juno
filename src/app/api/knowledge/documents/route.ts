@@ -40,6 +40,7 @@ export async function GET(request: Request) {
     where: {
       userId: user.id,
       state: { not: "stale" },
+      deletedAt: null,
       ...(parsed.data.projectId ? { projectId: parsed.data.projectId } : {}),
     },
     orderBy: { createdAt: "desc" },

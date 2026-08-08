@@ -66,6 +66,8 @@ export function lexicalCandidateQuery(spec: LexicalQuerySpec): Prisma.Sql {
     // leaked.
     Prisma.sql`c."userId" = ${spec.userId}`,
     Prisma.sql`d."userId" = ${spec.userId}`,
+    Prisma.sql`c."deletedAt" IS NULL`,
+    Prisma.sql`d."deletedAt" IS NULL`,
     Prisma.sql`d."state" = ANY(${RETRIEVABLE_STATES})`,
     // A superseded version keeps its rows so old citations still resolve, but
     // answering from a replaced document is answering from a stale one.

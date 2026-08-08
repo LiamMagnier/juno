@@ -170,7 +170,7 @@ async function resolveLocators(
   if (ids.length === 0) return [...passages];
 
   const blocks = await prisma.knowledgeBlock.findMany({
-    where: { userId, id: { in: ids } },
+    where: { userId, id: { in: ids }, deletedAt: null },
     select: {
       id: true,
       page: true,
@@ -365,6 +365,7 @@ export async function retrieveProjectKnowledge(options: {
       userId: options.userId,
       projectId: options.projectId,
       state: { in: RETRIEVABLE_STATES },
+      deletedAt: null,
       supersededById: null,
     },
     select: { fileName: true },

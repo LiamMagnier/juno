@@ -27,6 +27,7 @@ export async function GET(req: Request) {
           userId: user.id,
           attachmentId: { in: atts.map((a) => a.id) },
           state: { not: "stale" },
+          deletedAt: null,
         },
         orderBy: { version: "asc" },
         select: {

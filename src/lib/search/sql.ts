@@ -298,6 +298,8 @@ export function knowledgeSearchSql(o: SearchSqlOptions): Prisma.Sql {
       LEFT JOIN "Attachment" att ON att."id" = d."attachmentId" AND att."userId" = ${o.userId}
      WHERE b."userId" = ${o.userId}
        AND d."userId" = ${o.userId}
+       AND b."deletedAt" IS NULL
+       AND d."deletedAt" IS NULL
        AND d."supersededById" IS NULL
        AND to_tsvector('simple', b."text") @@ ${query(o.tsquery)}${optional(
          o.since ? Prisma.sql`b."createdAt" >= ${o.since}` : null
@@ -517,7 +519,7 @@ export function knowledgeReadinessSql(userId: string): Prisma.Sql {
   return Prisma.sql`
     SELECT
       count(*) FILTER (WHERE d."state" IN ('queued', 'extracting', 'ocr', 'indexing'))::int AS pending,
-      count(*) FILTER (WHERE d."state" IN ('degraded', 'failed', 'stale'))::int AS impaired
+      count(*) FILTER (WHERE d."state" IN ('degraded', 'failed', 'stale', 'tombstoned') OR d."deletedAt" IS NOT NULL)::int AS impaired
       FROM "KnowledgeDocument" d
      WHERE d."userId" = ${userId}
        AND d."supersededById" IS NULL

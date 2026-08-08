@@ -52,6 +52,7 @@ export async function GET(
       createdAt: true,
       indexedAt: true,
       attachmentId: true,
+      deletedAt: true,
       _count: { select: { blocks: true, chunks: true } },
     },
   });
@@ -61,6 +62,7 @@ export async function GET(
     where: {
       userId: user.id,
       documentId: document.id,
+      deletedAt: null,
       ...(parsed.data.page !== undefined ? { page: parsed.data.page } : {}),
       ...(parsed.data.q ? { text: { contains: parsed.data.q, mode: "insensitive" } } : {}),
     },
