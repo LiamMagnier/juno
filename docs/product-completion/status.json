@@ -14,7 +14,7 @@
     "nativePackages": "passed: JunoChatKit 213/213 including native chat approval recovery/decision coverage; JunoWork 52/52; JunoCode 0 failures with 1 simulator skip; unsigned JunoDesktop and JunoMobile Simulator builds passed with warnings-as-errors",
     "productionHealth": "passed read-only: https://chat.liams.dev/api/health returned ok/db ok with live artifact a8c65342802ea4b3558183b798ee64f6c9630bd0; the server and checkout each report 72 applied migration files",
     "productionSmoke": "passed: health-only smoke against the live artifact; authenticated catalog/chat replay runs when JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE is configured and remains unrun without a dedicated smoke credential",
-    "lastVerifiedAt": "2026-08-08T17:56:58+02:00"
+    "lastVerifiedAt": "2026-08-08T18:01:04+02:00"
   },
   "nextSlice": {
     "id": "product-e2e-and-release-gates",
