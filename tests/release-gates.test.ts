@@ -147,6 +147,28 @@ test("deploy script builds before atomic activation and has an application rollb
   assert.match(DEPLOY_SCRIPT, /trap on_exit EXIT/);
 });
 
+test("production activation verifies every PM2 service, including workers and the relay", () => {
+  const required = [
+    "juno-backend",
+    "juno-scheduler",
+    "juno-work",
+    "juno-work-scheduler",
+    "juno-research",
+    "juno-work-triggers",
+    "juno-import-recovery",
+    "juno-code-sweeper",
+    "juno-voice-relay",
+  ];
+  for (const name of required) {
+    assert.match(DEPLOY_SCRIPT, new RegExp(name));
+    assert.match(DEPLOY_JOB, new RegExp(name));
+  }
+  assert.match(DEPLOY_SCRIPT, /pm2 jlist/);
+  assert.match(DEPLOY_JOB, /pm2 jlist/);
+  assert.match(DEPLOY_SCRIPT, /pm2_env\?\.status === "online"/);
+  assert.match(DEPLOY_JOB, /pm2_env\?\.status === "online"/);
+});
+
 test("deploy script does not pull or rewrite the live checkout", () => {
   assert.doesNotMatch(DEPLOY_SCRIPT, /git checkout|git pull/);
   assert.match(DEPLOY_SCRIPT, /git -C \"\$APP_HOME\" fetch --prune origin main/);
