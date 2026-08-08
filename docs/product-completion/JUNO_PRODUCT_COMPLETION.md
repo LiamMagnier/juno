@@ -120,7 +120,9 @@ The last confirmed stable health window was recorded at 20:37 CEST. Three
 subsequent read-only HTTPS checks and three SSH connection attempts around
 20:40 CEST timed out, so the current live state is not confirmed; no server
 process was killed or restarted because that intervention requires explicit
-authorization.
+authorization. An additional read-only HTTPS check, SSH banner check, and
+browser navigation at 21:08 CEST also timed out; this remains a network/runtime
+availability blocker, not evidence that the new local release is live.
 
 ---
 
