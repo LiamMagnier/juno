@@ -46,7 +46,16 @@ export interface DeepResearchResult {
   context: string;
   /** Numbered sources, in citation order — emit as the stream's sources chunk. */
   sources: ClientSource[];
-  /** What the gathering cost in USD (already written to the ApiSpend ledger). */
+  /**
+   * What the gathering cost in USD, as the run's own ledger has it.
+   *
+   * Wider than the number this used to return, which was the planning model's
+   * spend alone. It now also carries the search backend's per-call charge —
+   * real money the user was never shown, because Tavily bills us per request
+   * and nothing about that reached `ApiSpend`. The model portion is still
+   * written to `ApiSpend` by the tools; the search portion is on the run row
+   * only, which is why this is read from the run rather than accumulated here.
+   */
   costUsd: number;
   /**
    * The durable run this turn gathered into, so the client can open the panel
