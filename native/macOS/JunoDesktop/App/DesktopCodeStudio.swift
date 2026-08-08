@@ -520,19 +520,7 @@ struct DesktopCodeSidebar: View {
     let openRepository: () -> Void
     let newSession: (WorkspaceID) -> Void
     let rename: (CodeSession) -> Void
-    @SceneStorage("juno.code.collapsedProjects") private var collapsedProjects = ""
     @State private var projectPendingDeletion: ProjectGroup?
-    /// Which project row the pointer is over, so its actions menu can appear only
-    /// on approach instead of sitting on every row at rest.
-    @State private var hoveredProject: WorkspaceID?
-
-    /// How far a session sits inside its project.
-    ///
-    /// One constant rather than the 22 and 28 that were written separately at the
-    /// two call sites, which is why a session and its project's "No sessions yet"
-    /// placeholder used to hang on different left edges. It lines the child's icon
-    /// up under the parent's name: the chevron's 12pt frame plus the row spacing.
-    private static let childIndent: CGFloat = 12 + JunoSpace.tight + JunoSpace.snug
 
     private var runs: [DesktopCodeRun] {
         DesktopCodeRunBuilder.runs(
@@ -546,16 +534,9 @@ struct DesktopCodeSidebar: View {
         )
     }
 
-    /// A project is the unit of work; a session belongs to one.
-    ///
-    /// The column used to be grouped purely by recency, which meant a repository's
-    /// sessions were scattered through Today / Yesterday / Earlier and the only
-    /// way to see "everything I have done in this repo" was to search for it.
-    /// Grouping by project and nesting the sessions under it — a `DisclosureGroup`
-    /// inside a `.sidebar` list, which is the platform's own outline row — makes
-    /// the project the thing you navigate and the session the thing you open.
-    /// Recency still exists, as a flat Recents section for crossing between
-    /// projects.
+    /// A project destination keeps repository identity and its session count
+    /// together. Session history remains flat in Recent/Pinned above, so the
+    /// sidebar never repeats the same run under multiple project disclosures.
     private struct ProjectGroup: Identifiable {
         let workspaceID: WorkspaceID
         let name: String
@@ -798,28 +779,6 @@ struct DesktopCodeSidebar: View {
         return workbench.sessions.first { $0.id == id }?.isFavorite == true
     }
 
-    /// Which projects are collapsed, restored across launches.
-    ///
-    /// Stored as one delimited string because `@SceneStorage` takes only
-    /// `RawRepresentable` values, and a `Set<WorkspaceID>` is not one. Collapsed
-    /// state is the interesting half to persist: a reader with eight granted
-    /// repositories collapses the seven they are not working in, and having that
-    /// undone on every launch is what makes an outline sidebar annoying rather
-    /// than useful.
-    private func toggleExpansion(for id: WorkspaceID) {
-        var collapsed = collapsedProjectIDs
-        if collapsed.contains(id.value) {
-            collapsed.remove(id.value)
-        } else {
-            collapsed.insert(id.value)
-        }
-        collapsedProjects = collapsed.sorted().joined(separator: "\u{1f}")
-    }
-
-    private var collapsedProjectIDs: Set<String> {
-        Set(collapsedProjects.components(separatedBy: "\u{1f}").filter { !$0.isEmpty })
-    }
-
     /// A project is a destination, not a second session history. Session rows
     /// live in Recent/Pinned above, so this row only answers where work belongs
     /// and how many local runs are available there.
@@ -846,75 +805,6 @@ struct DesktopCodeSidebar: View {
         }
         .junoSidebarRowInk()
         .tag(DesktopCodeSidebarItem.repository(group.workspaceID))
-        .contextMenu {
-            projectActions(group)
-        }
-    }
-
-    /// A project row: the platform's selection, one disclosure control, and
-    /// actions that appear on approach.
-    ///
-    /// **The name is not a `Button`, and that is the fix.** It used to be, which
-    /// meant the row had two competing click targets and the `List`'s own
-    /// selection was never what responded — a `Button` inside a selectable row
-    /// consumes the click, so the row was selected only because the button's action
-    /// assigned `selection` by hand. Everything the platform gives a source list
-    /// for free was lost with it: arrow-key traversal past the row, type-select,
-    /// the focus ring, and click-and-drag across rows. `.tag()` on a plain row
-    /// restores all of it, and the assignment by hand is no longer needed.
-    ///
-    /// The disclosure chevron stays a button because it genuinely is a second
-    /// action on one row, and keeping the `Menu` out of the row's own content is
-    /// what gives it a precise accessibility frame on macOS.
-    private func projectRow(_ group: ProjectGroup) -> some View {
-        let isExpanded = !collapsedProjectIDs.contains(group.workspaceID.value)
-        return HStack(spacing: JunoSpace.tight) {
-            Button {
-                withAnimation(JunoMotion.fast) {
-                    toggleExpansion(for: group.workspaceID)
-                }
-            } label: {
-                // One glyph rotated rather than two swapped, so the chevron turns
-                // the way every other outline row on the system turns.
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .frame(width: 12, height: 16)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .help(isExpanded ? "Collapse \(group.name)" : "Expand \(group.name)")
-            .accessibilityLabel(isExpanded ? "Collapse \(group.name)" : "Expand \(group.name)")
-
-            Label {
-                Text(group.name)
-                    .junoRowLabel()
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            } icon: {
-                JunoIconView(.projects, size: 15)
-                    .junoSidebarMarkInk(selected: selection == .repository(group.workspaceID))
-            }
-
-            Spacer(minLength: JunoSpace.hairline)
-
-            // Revealed on approach. Shown unconditionally it put a second glyph on
-            // every project row at rest, which is most of what made the column read
-            // as cluttered — and it duplicates a context menu that is always there.
-            if hoveredProject == group.workspaceID {
-                projectMenu(group)
-                    .transition(.opacity)
-            }
-        }
-        .junoSidebarRowInk()
-        // The system's own trailing count, rather than a hand-placed caption. It
-        // gets the platform's metrics, its dimmed-on-selection treatment and its
-        // VoiceOver phrasing for free.
-        .badge(group.runs.count)
-        .tag(DesktopCodeSidebarItem.repository(group.workspaceID))
-        .onHover { inside in
-            hoveredProject = inside ? group.workspaceID : nil
-        }
         .contextMenu {
             projectActions(group)
         }
@@ -1922,9 +1812,12 @@ struct DesktopCodeDraftDetail: View {
                     URL(fileURLWithPath: record.descriptor.localPathHint)
                 ])
             } label: {
-                JunoIconLabel(verbatim: "Show in Finder", icon: .external, size: 14)
+                Image(systemName: "arrow.up.right.square")
+                    .font(.system(size: 14, weight: .medium))
+                    .junoSecondaryInk()
+                    .frame(width: 28, height: 28)
             }
-            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
             .help("Show this repository in Finder")
             .accessibilityLabel("Show repository in Finder")
             .accessibilityIdentifier("juno.code.show-in-finder")

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import JSZip from "jszip";
 import { Prisma, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -174,6 +174,7 @@ export async function POST(req: Request) {
   // expired/failed run can be reclaimed after its staged objects are cleaned.
   const now = new Date();
   const leaseExpiresAt = new Date(now.getTime() + IMPORT_RUN_LEASE_MS);
+  const attemptLeaseToken = randomUUID();
   let importRun = await prisma.importRun.findUnique({
     where: { userId_archiveSha256: { userId: user.id, archiveSha256 } },
   });
@@ -184,24 +185,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "An identical import is already in progress.", importRunId: importRun.id }, { status: 409 });
   }
   if (importRun) {
+    const previousLeaseToken = importRun.leaseToken;
     const claimed = await prisma.importRun.updateMany({
       where: {
         id: importRun.id,
         userId: user.id,
         status: { in: ["applying", "failed"] },
+        leaseToken: previousLeaseToken,
         OR: [{ leaseExpiresAt: null }, { leaseExpiresAt: { lt: now } }],
       },
-      data: { status: "applying", result: Prisma.DbNull, error: null, completedAt: null, leaseExpiresAt },
+      data: { status: "applying", result: Prisma.DbNull, error: null, completedAt: null, leaseExpiresAt, leaseToken: attemptLeaseToken },
     });
     if (claimed.count !== 1) {
       return NextResponse.json({ error: "An identical import is already in progress.", importRunId: importRun.id }, { status: 409 });
     }
     importRun = await prisma.importRun.findFirstOrThrow({ where: { id: importRun.id, userId: user.id } });
-    await cleanupImportRun(user.id, importRun.id);
+    await cleanupImportRun(user.id, importRun.id, previousLeaseToken);
   } else {
     try {
       importRun = await prisma.importRun.create({
-        data: { userId: user.id, archiveSha256, status: "applying", leaseExpiresAt },
+        data: { userId: user.id, archiveSha256, status: "applying", leaseExpiresAt, leaseToken: attemptLeaseToken },
       });
     } catch (error) {
       if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") throw error;
@@ -294,34 +297,53 @@ export async function POST(req: Request) {
       contentDisposition?: string;
     }) => {
       const storageKey = buildImportObjectKey(user.id, importRun.id, input.fileName);
-      const ledger = await prisma.importObject.create({
-        data: {
-          userId: user.id,
-          importRunId: importRun.id,
-          storageKey,
-          size: input.bytes.byteLength,
-          status: "staged",
+      const ledger = await prisma.$transaction(
+        async (tx) => {
+          const renewed = await tx.importRun.updateMany({
+            where: {
+              id: importRun.id,
+              userId: user.id,
+              status: "applying",
+              leaseToken: importRun.leaseToken,
+              leaseExpiresAt: { gt: new Date() },
+            },
+            data: { leaseExpiresAt: new Date(Date.now() + IMPORT_RUN_LEASE_MS) },
+          });
+          if (renewed.count !== 1) throw new Error("Import lease was reclaimed before an attachment could be staged.");
+          return tx.importObject.create({
+            data: {
+              userId: user.id,
+              importRunId: importRun.id,
+              leaseToken: importRun.leaseToken,
+              storageKey,
+              size: input.bytes.byteLength,
+              status: "staged",
+            },
+            select: { id: true },
+          });
         },
-        select: { id: true },
-      });
+        { maxWait: 15_000, timeout: 30_000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
       // Register before the remote write: a storage provider can acknowledge a
       // write and then lose the response, so registering after putObject leaves
       // a crash window with no durable cleanup key.
       uploadedStorageKeys.push(storageKey);
       try {
         await putObject(storageKey, input.bytes, input.contentType, input.contentDisposition);
-        await prisma.importObject.updateMany({
-          where: { id: ledger.id, userId: user.id, importRunId: importRun.id, status: "staged" },
+        const uploaded = await prisma.importObject.updateMany({
+          where: { id: ledger.id, userId: user.id, importRunId: importRun.id, leaseToken: importRun.leaseToken, status: "staged" },
           data: { status: "uploaded" },
         });
-        await prisma.importRun.updateMany({
-          where: { id: importRun.id, userId: user.id, status: "applying" },
+        if (uploaded.count !== 1) throw new Error("Import lease was reclaimed while an attachment was uploading.");
+        const renewed = await prisma.importRun.updateMany({
+          where: { id: importRun.id, userId: user.id, status: "applying", leaseToken: importRun.leaseToken, leaseExpiresAt: { gt: new Date() } },
           data: { leaseExpiresAt: new Date(Date.now() + IMPORT_RUN_LEASE_MS) },
         });
+        if (renewed.count !== 1) throw new Error("Import lease was reclaimed after an attachment upload.");
         return { id: ledger.id, storageKey };
       } catch (error) {
         await prisma.importObject
-          .updateMany({ where: { id: ledger.id, userId: user.id, status: "staged" }, data: { status: "delete_pending" } })
+          .updateMany({ where: { id: ledger.id, userId: user.id, leaseToken: importRun.leaseToken, status: { in: ["staged", "uploaded"] } }, data: { status: "delete_pending" } })
           .catch(() => undefined);
         throw error;
       }
@@ -791,7 +813,7 @@ export async function POST(req: Request) {
         select: { id: true, projectId: true, fileName: true, mimeType: true },
       });
       const attached = await tx.importObject.updateMany({
-        where: { id: { in: prepared.objectIds }, userId: user.id, importRunId: importRun.id, status: "uploaded" },
+        where: { id: { in: prepared.objectIds }, userId: user.id, importRunId: importRun.id, leaseToken: importRun.leaseToken, status: "uploaded" },
         data: { status: "attached" },
       });
       if (attached.count !== prepared.objectIds.length) throw new Error("Import object ledger did not attach every staged object.");
@@ -811,7 +833,7 @@ export async function POST(req: Request) {
 
     const resultPayload = { imported, skipped, format: parsed.format, projectsImported, memoriesImported, attachmentsImported, attachmentsSkipped };
     const completed = await tx.importRun.updateMany({
-      where: { id: importRun.id, userId: user.id, status: "applying" },
+      where: { id: importRun.id, userId: user.id, status: "applying", leaseToken: importRun.leaseToken },
       data: { status: "completed", result: resultPayload, error: null, leaseExpiresAt: null, completedAt: new Date() },
     });
     if (completed.count !== 1) throw new Error("Import run was lost before completion.");
@@ -823,7 +845,7 @@ export async function POST(req: Request) {
         isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
       },
     );
-    await cleanupImportRun(user.id, importRun.id).catch((cleanupError) => {
+    await cleanupImportRun(user.id, importRun.id, importRun.leaseToken).catch((cleanupError) => {
       console.error("[import] post-commit cleanup of skipped objects failed", {
         importRunId: importRun.id,
         message: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
@@ -846,7 +868,7 @@ export async function POST(req: Request) {
   } catch (error) {
     await prisma.importRun
       .updateMany({
-        where: { id: importRun.id, userId: user.id, status: "applying" },
+        where: { id: importRun.id, userId: user.id, status: "applying", leaseToken: importRun.leaseToken },
         data: {
           status: "failed",
           error: (error instanceof Error ? error.message : String(error)).slice(0, 4_000),
@@ -859,7 +881,7 @@ export async function POST(req: Request) {
           message: markError instanceof Error ? markError.message : String(markError),
         });
       });
-    await cleanupImportRun(user.id, importRun.id).catch((cleanupError) => {
+    await cleanupImportRun(user.id, importRun.id, importRun.leaseToken).catch((cleanupError) => {
       console.error("[import] durable object compensation failed", {
         importRunId: importRun.id,
         message: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),

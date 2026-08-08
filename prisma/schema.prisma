@@ -684,6 +684,7 @@ model ImportRun {
   id             String    @id @default(cuid())
   userId         String
   archiveSha256  String
+  leaseToken     String
   status         String    @default("applying") // applying | completed | failed
   result         Json?
   error          String?   @db.Text
@@ -706,6 +707,7 @@ model ImportObject {
   id          String   @id @default(cuid())
   userId      String
   importRunId String
+  leaseToken  String
   storageKey  String
   size        Int
   status      String   @default("staged") // staged | uploaded | attached | delete_pending | deleted

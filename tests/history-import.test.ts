@@ -146,6 +146,8 @@ test("account imports commit database state atomically and schedule indexing aft
   assert.match(IMPORT_ROUTE_SOURCE, /const result = await prisma\.\$transaction\(/);
   assert.match(IMPORT_ROUTE_SOURCE, /isolationLevel: Prisma\.TransactionIsolationLevel\.Serializable/);
   assert.match(IMPORT_ROUTE_SOURCE, /archiveSha256/);
+  assert.match(IMPORT_ROUTE_SOURCE, /attemptLeaseToken = randomUUID/);
+  assert.match(IMPORT_ROUTE_SOURCE, /leaseToken: importRun\.leaseToken/);
   assert.match(IMPORT_ROUTE_SOURCE, /importObject\.create/);
   assert.match(IMPORT_ROUTE_SOURCE, /const uploadedStorageKeys: string\[\] = \[\]/);
   assert.match(IMPORT_ROUTE_SOURCE, /await cleanupStorageKeys\(uploadedStorageKeys\)/);
