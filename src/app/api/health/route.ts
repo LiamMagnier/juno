@@ -1,29 +1,31 @@
 import { NextResponse } from "next/server";
 import { prismaUnguarded } from "@/lib/prisma";
-import { getOwnerUser } from "@/lib/admin";
-import { providerHealthSnapshot, ensureProviderHealthFresh } from "@/lib/provider-health";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Liveness + readiness, for an external uptime monitor.
+ * Cheap liveness for an external uptime monitor.
  *
- * PM2 knows the process exists; it does not know the process can serve. This is
- * the endpoint that tells the difference, and the thing every other alert hangs
- * off — nothing else in the deployment currently reports that the app is
- * unhealthy until a user complains.
+ * PM2 knows the process exists; it does not know the process can serve. This
+ * endpoint checks only the database and never authenticates a user, calls a
+ * provider, refreshes a cache, or emits an operator alert. Provider readiness
+ * is an explicitly requested, owner-gated diagnostic mode below.
  *
- * Public payload is deliberately thin: `ok`, `db`, `version`, `uptime`. The
- * per-provider map is reconnaissance (it enumerates which LLM vendors this
- * deployment holds keys for), so it is owner-only, matching the rest of the
- * admin surface. An uptime monitor does not need it.
+ * Public payload is deliberately thin: `ok`, `db`, `version`, `uptime`.
  *
  * Returns 503 when the database is unreachable so a monitor's default
  * status-code rule catches it without extra configuration.
+ *
+ * For an authenticated operator diagnostic, use one of the explicit query
+ * modes `?readiness=1`, `?diagnostic=1`, or the historical `?probe=1` alias.
+ * That mode may perform provider probes and send transition alerts; it is not
+ * liveness and must never be used as the ordinary uptime check.
  */
 
 const startedAt = Date.now();
+const DATABASE_CHECK_TIMEOUT_MS = 1_500;
+const DATABASE_TRANSACTION_MAX_WAIT_MS = 250;
 
 function version(): string {
   return (
@@ -34,14 +36,39 @@ function version(): string {
   );
 }
 
+/**
+ * The only supported way to opt into provider diagnostics on this route.
+ * Keeping the legacy `probe=1` spelling avoids breaking an operator command
+ * that followed the old provider-health comment while making the opt-in
+ * explicit and exact.
+ */
+function isDiagnosticHealthRequest(request: Request): boolean {
+  const params = new URL(request.url).searchParams;
+  return ["readiness", "diagnostic", "probe"].some((key) => params.get(key) === "1");
+}
+
 async function databaseOk(): Promise<boolean> {
   try {
-    // Cheapest possible round trip that proves the pooler and Postgres are both
-    // answering. Bounded so a hung database cannot hold the health check open.
-    await Promise.race([
-      prismaUnguarded.$queryRaw`SELECT 1`,
-      new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 4000)),
-    ]);
+    /*
+     * Do not use Promise.race here. It abandons the JavaScript wait but leaves
+     * the Prisma/Postgres query running, which can occupy a pool connection
+     * after the monitor has already received 503. A short-lived interactive
+     * transaction gives Postgres a statement-level cancellation boundary and
+     * Prisma a transaction/connection-acquisition deadline.
+     *
+     * `set_config(..., true)` is transaction-local, so this cannot leak a
+     * statement timeout into an application connection after the check ends.
+     */
+    await prismaUnguarded.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT set_config('statement_timeout', ${`${DATABASE_CHECK_TIMEOUT_MS}ms`}, true)`;
+        await tx.$queryRaw`SELECT 1`;
+      },
+      {
+        maxWait: DATABASE_TRANSACTION_MAX_WAIT_MS,
+        timeout: DATABASE_CHECK_TIMEOUT_MS,
+      },
+    );
     return true;
   } catch (err) {
     console.error("[health] database check failed", {
@@ -51,38 +78,67 @@ async function databaseOk(): Promise<boolean> {
   }
 }
 
-export async function GET() {
-  // Opportunistically refresh stale provider verdicts. Fire-and-forget: a
-  // health check must stay fast and must never depend on provider latency.
-  ensureProviderHealthFresh();
-
-  const db = (await databaseOk()) ? "ok" : "fail";
+async function diagnosticResponse(): Promise<NextResponse> {
+  // Authentication stays off the ordinary liveness path. The provider module
+  // is loaded only after the owner check so an unauthorized diagnostic request
+  // cannot even initialize the paid-probe/alert code.
+  const { getOwnerUser } = await import("@/lib/admin");
   const owner = await getOwnerUser();
+  if (!owner) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const body: Record<string, unknown> = {
-    ok: db === "ok",
-    db,
-    version: version(),
-    uptime: Math.round((Date.now() - startedAt) / 1000),
-  };
+  const { probeAllProviders, providerHealthSnapshot } = await import("@/lib/provider-health");
 
-  if (owner) {
-    const providers = providerHealthSnapshot();
-    body.providers = Object.fromEntries(
-      providers.map((p) => [
-        p.provider,
-        {
-          healthy: p.healthy,
-          checkedAt: p.checkedAt,
-          ...(p.failure ? { failure: p.failure, detail: p.detail } : {}),
-        },
-      ])
-    );
-    body.providersUnhealthy = providers.filter((p) => !p.healthy).map((p) => p.provider);
-  }
+  const [dbOk] = await Promise.all([
+    databaseOk(),
+    // The provider module applies a per-request deadline and aborts each
+    // provider fetch when this diagnostic window closes.
+    probeAllProviders({ timeoutMs: 10_000 }),
+  ]);
+  const providers = providerHealthSnapshot();
+  const providersUnhealthy = providers.filter((p) => !p.healthy).map((p) => p.provider);
 
-  return NextResponse.json(body, {
-    status: db === "ok" ? 200 : 503,
-    headers: { "Cache-Control": "no-store" },
-  });
+  return NextResponse.json(
+    {
+      ok: dbOk && providersUnhealthy.length === 0,
+      db: dbOk ? "ok" : "fail",
+      version: version(),
+      uptime: Math.round((Date.now() - startedAt) / 1000),
+      providers: Object.fromEntries(
+        providers.map((p) => [
+          p.provider,
+          {
+            healthy: p.healthy,
+            checkedAt: p.checkedAt,
+            ...(p.failure ? { failure: p.failure, detail: p.detail } : {}),
+          },
+        ]),
+      ),
+      providersUnhealthy,
+    },
+    {
+      status: dbOk && providersUnhealthy.length === 0 ? 200 : 503,
+      headers: { "Cache-Control": "no-store" },
+    },
+  );
+}
+
+export async function GET(request: Request) {
+  if (isDiagnosticHealthRequest(request)) return diagnosticResponse();
+
+  // Ordinary health checks must stay side-effect-free: no provider I/O,
+  // provider cache refresh, owner lookup, or alert path is reachable here.
+  const db = (await databaseOk()) ? "ok" : "fail";
+
+  return NextResponse.json(
+    {
+      ok: db === "ok",
+      db,
+      version: version(),
+      uptime: Math.round((Date.now() - startedAt) / 1000),
+    },
+    {
+      status: db === "ok" ? 200 : 503,
+      headers: { "Cache-Control": "no-store" },
+    },
+  );
 }

@@ -56,10 +56,43 @@ import {
 /** Re-exported so callers need only this module. */
 export type ProviderHealth = ProviderHealthState;
 
-const PROBE_TIMEOUT_MS = 8_000;
+export const PROVIDER_PROBE_TIMEOUT_MS = 8_000;
+export const PROVIDER_DIAGNOSTIC_TIMEOUT_MS = PROVIDER_PROBE_TIMEOUT_MS + 2_000;
 
 const health = new Map<Provider, ProviderHealth>();
 const inFlight = new Map<Provider, Promise<void>>();
+
+interface BoundedSignal {
+  signal: AbortSignal;
+  cleanup: () => void;
+}
+
+/**
+ * Create a cancellable, cleaned-up deadline for provider I/O.
+ *
+ * AbortSignal.timeout() is convenient, but a composed signal is needed here:
+ * the explicit readiness request has its own batch deadline while every
+ * provider fetch also needs a shorter per-provider deadline. The listener and
+ * timer are always removed so a diagnostic request cannot leave work attached
+ * to the process after it has completed.
+ */
+function boundedSignal(parent: AbortSignal | undefined, timeoutMs: number): BoundedSignal {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  timeout.unref?.();
+
+  const forwardAbort = () => controller.abort(parent?.reason);
+  if (parent?.aborted) forwardAbort();
+  else parent?.addEventListener("abort", forwardAbort, { once: true });
+
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timeout);
+      parent?.removeEventListener("abort", forwardAbort);
+    },
+  };
+}
 
 /** Cheapest curated chat model for a provider — the probe should cost nothing. */
 function probeModel(provider: Provider): string | null {
@@ -72,7 +105,7 @@ function probeModel(provider: Provider): string | null {
 }
 
 /** Issue the smallest possible completion. Resolves on success, throws on failure. */
-async function probeOnce(provider: Provider): Promise<void> {
+async function probeOnce(provider: Provider, parentSignal?: AbortSignal): Promise<void> {
   const apiKey = providerApiKey(provider);
   if (!apiKey) throw Object.assign(new Error("No API key configured"), { status: 401 });
 
@@ -83,35 +116,40 @@ async function probeOnce(provider: Provider): Promise<void> {
   const isAnthropic = def.kind === "anthropic";
   const base = (providerBaseUrl(provider) ?? "https://api.anthropic.com").replace(/\/$/, "");
   const url = isAnthropic ? `${base}/v1/messages` : `${base}/chat/completions`;
+  const deadline = boundedSignal(parentSignal, PROVIDER_PROBE_TIMEOUT_MS);
 
-  const res = await fetch(url, {
-    method: "POST",
-    signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-    headers: isAnthropic
-      ? { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
-      : { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      max_tokens: 1,
-      messages: [{ role: "user", content: "hi" }],
-    }),
-  });
-
-  if (res.ok) return;
-
-  const text = await res.text().catch(() => "");
-  let parsed: unknown = undefined;
   try {
-    parsed = JSON.parse(text);
-  } catch {
-    /* a non-JSON body is fine; the raw text still classifies */
+    const res = await fetch(url, {
+      method: "POST",
+      signal: deadline.signal,
+      headers: isAnthropic
+        ? { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
+        : { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        max_tokens: 1,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+    });
+
+    if (res.ok) return;
+
+    const text = await res.text().catch(() => "");
+    let parsed: unknown = undefined;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      /* a non-JSON body is fine; the raw text still classifies */
+    }
+    const body = parsed as { error?: { message?: string; type?: string; code?: string } } | undefined;
+    throw {
+      status: res.status,
+      error: body?.error ?? { message: text.slice(0, 300) },
+      message: `${res.status} ${text.slice(0, 300)}`,
+    };
+  } finally {
+    deadline.cleanup();
   }
-  const body = parsed as { error?: { message?: string; type?: string; code?: string } } | undefined;
-  throw {
-    status: res.status,
-    error: body?.error ?? { message: text.slice(0, 300) },
-    message: `${res.status} ${text.slice(0, 300)}`,
-  };
 }
 
 function record(provider: Provider, next: ProviderHealth): void {
@@ -165,16 +203,32 @@ function record(provider: Provider, next: ProviderHealth): void {
   }
 }
 
-async function refresh(provider: Provider): Promise<void> {
+async function refresh(provider: Provider, signal?: AbortSignal): Promise<void> {
   let outcome: ProbeOutcome;
   try {
-    await probeOnce(provider);
+    await probeOnce(provider, signal);
     outcome = { ok: true };
   } catch (err) {
     const { class: klass, status, raw } = classifyProviderError(err);
     outcome = { ok: false, class: klass, status, raw };
   }
   record(provider, nextHealthState(provider, health.get(provider), outcome, Date.now()));
+}
+
+function startRefresh(provider: Provider, signal?: AbortSignal): Promise<void> {
+  const existing = inFlight.get(provider);
+  if (existing) return existing;
+
+  const run = refresh(provider, signal)
+    .catch((err) => {
+      console.error("[provider-health] probe failed", {
+        provider,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    })
+    .finally(() => inFlight.delete(provider));
+  inFlight.set(provider, run);
+  return run;
 }
 
 /**
@@ -185,16 +239,7 @@ export function ensureProviderHealthFresh(): void {
   const now = Date.now();
   for (const provider of configuredProviders()) {
     if (!isHealthStale(health.get(provider), now)) continue;
-    if (inFlight.has(provider)) continue;
-    const run = refresh(provider)
-      .catch((err) => {
-        console.error("[provider-health] probe failed", {
-          provider,
-          message: err instanceof Error ? err.message : String(err),
-        });
-      })
-      .finally(() => inFlight.delete(provider));
-    inFlight.set(provider, run);
+    startRefresh(provider);
   }
 }
 
@@ -208,7 +253,7 @@ export function providerHealthy(provider: Provider): boolean {
   return health.get(provider)?.healthy ?? true;
 }
 
-/** Every configured provider's current verdict, for /api/health. */
+/** Every configured provider's current verdict, for the owner diagnostic path. */
 export function providerHealthSnapshot(): ProviderHealth[] {
   return configuredProviders().map(
     (provider) =>
@@ -222,10 +267,27 @@ export function providerHealthSnapshot(): ProviderHealth[] {
   );
 }
 
-/** Probe everything now and wait. For /api/health?probe=1 and for tests. */
-export async function probeAllProviders(): Promise<ProviderHealth[]> {
-  await Promise.all(configuredProviders().map((p) => refresh(p)));
-  return providerHealthSnapshot();
+/**
+ * Probe everything now and wait. This is intentionally an explicit operation
+ * for the owner-gated diagnostic/readiness path, not part of ordinary
+ * liveness. Every provider fetch is aborted after its per-provider deadline;
+ * the batch deadline also bounds a diagnostic request if a provider client
+ * misbehaves.
+ */
+export async function probeAllProviders(options: {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+} = {}): Promise<ProviderHealth[]> {
+  const deadline = boundedSignal(
+    options.signal,
+    options.timeoutMs ?? PROVIDER_DIAGNOSTIC_TIMEOUT_MS,
+  );
+  try {
+    await Promise.all(configuredProviders().map((provider) => startRefresh(provider, deadline.signal)));
+    return providerHealthSnapshot();
+  } finally {
+    deadline.cleanup();
+  }
 }
 
 /** Test seam. */

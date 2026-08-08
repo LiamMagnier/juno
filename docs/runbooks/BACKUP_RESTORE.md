@@ -65,10 +65,16 @@ S3-compatible, the script uses the `S3_*` variables. Otherwise set
 ## Restore into scratch targets
 
 The restore command refuses production-looking database hostnames and requires
-an explicit scratch target. Use an empty database and an empty bucket/directory
-in the same region as the real service:
+an explicit scratch target. The local object target must already exist, be a
+real directory (not a symlink), and be empty; the restore command never creates
+or cleans it for you. The S3 target bucket must also be empty: the command
+performs a `ListObjectsV2` preflight and refuses any visible objects. Prepare
+the local target explicitly and check it before starting:
 
 ```bash
+mkdir -p /srv/juno-restore-objects
+test -z "$(find /srv/juno-restore-objects -mindepth 1 -maxdepth 1 -print -quit)"
+
 JUNO_RESTORE_CONFIRM=RESTORE_TO_SCRATCH \
 JUNO_BACKUP_DIR=/srv/juno-backups/<timestamp> \
 RESTORE_DATABASE_URL='postgresql://…/juno_restore' \
@@ -76,9 +82,14 @@ RESTORE_UPLOADS_DIR=/srv/juno-restore-objects \
 npm run backup:restore
 ```
 
-For an S3 scratch bucket, provide `RESTORE_S3_BUCKET`,
-`RESTORE_S3_ACCESS_KEY_ID`, `RESTORE_S3_SECRET_ACCESS_KEY` and the optional
-`RESTORE_S3_*` endpoint/region settings instead of `RESTORE_UPLOADS_DIR`.
+For an S3 scratch bucket, create an empty non-production bucket and provide
+`RESTORE_S3_BUCKET`, `RESTORE_S3_ACCESS_KEY_ID`,
+`RESTORE_S3_SECRET_ACCESS_KEY` and the optional `RESTORE_S3_*` endpoint/region
+settings instead of `RESTORE_UPLOADS_DIR`. The command rejects absolute paths,
+`.`/`..` traversal, empty path segments, path separators that are not `/`, and
+any manifest object key or backup-relative path that resolves outside its
+allowed root. It validates every manifest entry and object digest before
+writing any object bytes.
 
 After restoration, run `npx prisma migrate status` against the scratch
 database, compare row/object counts, and run the public plus authenticated

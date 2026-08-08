@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 
 const DEPLOY_WORKFLOW = readFileSync(new URL("../.github/workflows/deploy.yml", import.meta.url), "utf8");
 const PRODUCTION_SMOKE = readFileSync(new URL("../scripts/production-smoke.mjs", import.meta.url), "utf8");
+const DEPLOY_SCRIPT = readFileSync(new URL("../deploy/deploy.sh", import.meta.url), "utf8");
 
 function sectionAfter(source: string, marker: string, nextMarker: string): string {
   const start = source.indexOf(marker);
@@ -52,6 +53,34 @@ test("production release preflight requires an explicit browser origin allowlist
   assert.match(RELEASE_PREFLIGHT, /for name in DATABASE_URL DIRECT_URL AUTH_SECRET ALLOWED_ORIGINS;/);
 });
 
+test("production deploy is protected and pins the VM host key", () => {
+  assert.match(DEPLOY_WORKFLOW, /permissions:\s*\n\s+contents:\s+read/);
+  assert.match(DEPLOY_JOB, /environment:\s+Production/);
+  assert.match(DEPLOY_JOB, /VM_KNOWN_HOSTS:/);
+  assert.match(DEPLOY_JOB, /StrictHostKeyChecking=yes/);
+  assert.match(DEPLOY_JOB, /UserKnownHostsFile=/);
+  assert.doesNotMatch(DEPLOY_JOB, /StrictHostKeyChecking=accept-new/);
+});
+
+test("production deploy proves public reachability and attempts code rollback on failed checks", () => {
+  assert.match(DEPLOY_JOB, /Verify public production health externally/);
+  assert.match(DEPLOY_JOB, /JUNO_PUBLIC_UI_BASE_URL=\"\$PUBLIC_APP_URL\" node scripts\/public-ui-smoke\.mjs/);
+  assert.match(DEPLOY_JOB, /Roll back failed application release/);
+  assert.match(DEPLOY_JOB, /if: failure\(\)/);
+  assert.match(DEPLOY_JOB, /database state was not rewound/);
+});
+
+test("production deploy handles a first-deploy environment without copying a missing file", () => {
+  assert.match(DEPLOY_JOB, /if \[ -f \.env \]; then\s+cp \.env \.env\.bak/s);
+  assert.match(DEPLOY_JOB, /: > \.env/);
+});
+
+test("production nginx changes fail closed and restore the prior configuration", () => {
+  assert.match(DEPLOY_JOB, /nginx -t failed; restoring the previous site configuration and aborting the deploy/);
+  assert.match(DEPLOY_JOB, /sudo cp \"\$NGINX_BACKUP\" \"\$NGINX_SITE\"/);
+  assert.doesNotMatch(DEPLOY_JOB, /WARNING: nginx -t failed/);
+});
+
 test("deploy smoke passes authentication and public UI checks without an optional skip", () => {
   assert.notEqual(SMOKE_REMOTE_BLOCK, "", "production smoke step is missing its remote block");
   assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_REQUIRE_AUTH\s*=\s*1\b/);
@@ -84,6 +113,44 @@ test("deploy job has no executable prisma db push or db execute fallback", () =>
     /\b(?:npx\s+)?prisma\s+db\s+(?:push|execute)\b/i,
     "production deploys must use the controlled migration path, never db push/db execute",
   );
+});
+
+test("deploy script only applies committed Prisma migrations", () => {
+  assert.match(DEPLOY_SCRIPT, /set -Eeuo pipefail/);
+  assert.match(DEPLOY_SCRIPT, /reviewed_migrations_exist\(\)/);
+  assert.match(DEPLOY_SCRIPT, /git -C \"\$APP_HOME\" ls-tree/);
+  assert.match(DEPLOY_SCRIPT, /npx prisma migrate deploy/);
+  assert.doesNotMatch(
+    withoutCommentLines(DEPLOY_SCRIPT),
+    /\b(?:npx\s+)?prisma\s+db\s+(?:push|execute)\b/i,
+    "the standalone deploy script must fail closed instead of converging schema outside reviewed migrations",
+  );
+});
+
+test("deploy script builds before atomic activation and has an application rollback path", () => {
+  const archive = DEPLOY_SCRIPT.indexOf('git -C "$APP_HOME" archive');
+  const migrate = DEPLOY_SCRIPT.indexOf('run_in_release "$STAGING_DIR" npx prisma migrate deploy');
+  const materialize = DEPLOY_SCRIPT.indexOf('mv -- "$STAGING_DIR" "$RELEASE_DIR"');
+  const switchCurrent = DEPLOY_SCRIPT.indexOf('atomic_symlink "$RELEASE_DIR" "$CURRENT_LINK"');
+  const activate = DEPLOY_SCRIPT.indexOf('reload_release "$RELEASE_DIR" "$TARGET_SHA"');
+
+  assert.ok(archive >= 0, "the target commit must be archived into a candidate release");
+  assert.ok(archive < migrate, "migrations must run from the candidate release");
+  assert.ok(migrate < materialize, "the candidate must pass migrations before publication");
+  assert.ok(materialize < switchCurrent, "the built candidate must be finalized before current changes");
+  assert.ok(switchCurrent < activate, "PM2 must activate only after the current pointer is switched");
+  assert.match(DEPLOY_SCRIPT, /atomic_symlink\(\)/);
+  assert.match(DEPLOY_SCRIPT, /mv -f -- \"\$temporary\" \"\$pointer\"/);
+  assert.match(DEPLOY_SCRIPT, /ROLLBACK_NEEDED=1/);
+  assert.match(DEPLOY_SCRIPT, /rollback_release\(\)/);
+  assert.match(DEPLOY_SCRIPT, /restore_pointer \"\$CURRENT_LINK\"/);
+  assert.match(DEPLOY_SCRIPT, /trap on_exit EXIT/);
+});
+
+test("deploy script does not pull or rewrite the live checkout", () => {
+  assert.doesNotMatch(DEPLOY_SCRIPT, /git checkout|git pull/);
+  assert.match(DEPLOY_SCRIPT, /git -C \"\$APP_HOME\" fetch --prune origin main/);
+  assert.match(DEPLOY_SCRIPT, /git -C \"\$APP_HOME\" diff --quiet/);
 });
 
 test("deploy validates the voice relay before shipping it", () => {
