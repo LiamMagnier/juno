@@ -111,6 +111,11 @@ The remote environment now reports `ALLOWED_ORIGINS` and
 `JUNO_SMOKE_COOKIE` present. Authenticated smoke remains unexecuted in this
 audit because it creates real production receipt/chat activity; the protected
 workflow will run it as part of a controlled release.
+The last confirmed stable health window was recorded at 20:37 CEST. Three
+subsequent read-only HTTPS checks and three SSH connection attempts around
+20:40 CEST timed out, so the current live state is not confirmed; no server
+process was killed or restarted because that intervention requires explicit
+authorization.
 
 ---
 
