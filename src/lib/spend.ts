@@ -282,6 +282,77 @@ export async function recordSpend(input: RecordSpendInput): Promise<void> {
   }
 }
 
+/**
+ * Bill a Work run's model spend to the shared ledger.
+ *
+ * Work never called `recordSpend` at all: a run could loop for an hour on a
+ * frontier model and the usage tile would show the same figure as an idle
+ * account. `WorkRun.costMicroUsd` tracked it perfectly and nothing else ever
+ * read that column.
+ *
+ * DELTAS, not the cumulative total. A parked run reports its usage at the pause
+ * boundary and again at the finish after resuming, and billing the cumulative
+ * figure twice would double-charge every run a user ever paused. The
+ * already-billed figure is read back from the ledger rather than from
+ * `WorkRun.costMicroUsd`, because checkpoints advance that column mid-run
+ * without billing anything — reading it would make the delta zero.
+ *
+ * The idempotency key carries the cumulative total, so a terminal write that
+ * the runner retries lands once. Fire-and-forget, like every other ledger
+ * writer: a run that finished must not be marked failed because a billing row
+ * would not insert.
+ */
+export async function recordWorkRunSpend(input: {
+  userId: string;
+  runId: string;
+  model: string | null;
+  cumulativeCostMicroUsd: number;
+  inputTokens?: number;
+  outputTokens?: number;
+}): Promise<void> {
+  try {
+    const cumulative = Math.max(0, Math.round(input.cumulativeCostMicroUsd));
+    if (cumulative <= 0) return;
+    const prefix = `work:${input.runId}:`;
+    const billed = await prisma.apiSpend.aggregate({
+      where: { userId: input.userId, idempotencyKey: { startsWith: prefix } },
+      _sum: { costMicroUsd: true, promptTokens: true, completionTokens: true },
+    });
+    const delta = cumulative - (billed._sum.costMicroUsd ?? 0);
+    if (delta <= 0) return;
+
+    // The token counts are cumulative too, and `recordSpend` re-costs from them
+    // and keeps the HIGHER of the two figures. Handing it cumulative tokens
+    // beside a delta cost would therefore bill the whole run again at the
+    // second terminal point, which is the exact bug deltas exist to avoid.
+    const promptDelta = Math.max(0, (input.inputTokens ?? 0) - (billed._sum.promptTokens ?? 0));
+    const completionDelta = Math.max(
+      0,
+      (input.outputTokens ?? 0) - (billed._sum.completionTokens ?? 0)
+    );
+
+    await recordSpend({
+      userId: input.userId,
+      // A run whose model was never resolved still spent money; naming it
+      // honestly beats attributing the cost to a model that did not run.
+      model: input.model ?? "unknown",
+      kind: "work",
+      promptTokens: promptDelta,
+      completionTokens: completionDelta,
+      // The runner's own accounting includes tool fees and every non-chat call
+      // the run made, so it is the floor rather than a hint.
+      costUsd: delta / 1_000_000,
+      idempotencyKey: `${prefix}${cumulative}`,
+    });
+  } catch (err) {
+    console.error("[spend] failed to bill a work run", {
+      userId: input.userId,
+      runId: input.runId,
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 // Usage windows for the settings gauge (DISPLAY ONLY — the billing-period gate
 // in checkBudget is the sole hard limit; windows never block on their own).
 // Each window's budget is its exact TIME-PROPORTIONAL share of the period, so
