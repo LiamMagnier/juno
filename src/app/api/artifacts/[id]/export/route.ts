@@ -13,6 +13,7 @@ import {
   extensionFor,
   type OfficeFormat,
 } from "@/lib/office-export";
+import { exportVerificationMessage, verifyOfficeExport } from "@/lib/office-export-verify";
 
 // docx/exceljs/pptxgenjs are Node libraries — they do not run on Edge.
 export const runtime = "nodejs";
@@ -54,6 +55,10 @@ function encodeRfc5987(value: string): string {
  * GET ?format=docx|xlsx|pptx -> the binary. Omit `format` and it answers with the
  * formats this artifact's content can actually produce, so the client can offer
  * only those without pulling the (heavy, Node-only) converters into the bundle.
+ *
+ * Nothing is streamed until it has been re-opened and read back. See
+ * `verifyOfficeExport`: the builder finishing is not the same claim as the file
+ * opening, and this route serves the second one.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -112,6 +117,26 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: "Could not build the file." }, { status: 500 });
   }
 
+  // The builder returning a Buffer is not evidence the file opens, and this
+  // route used to treat it as though it were: a docx whose word/document.xml is
+  // missing, or a deck that came out with no slides, streamed with a 200 and an
+  // Office content type and failed on the reader's machine. Re-open it with a
+  // reader that had no part in writing it — the same check the Work pipeline
+  // applies to the same three formats — and refuse rather than serve.
+  const verification = await verifyOfficeExport(format, buffer);
+  if (!verification.ok) {
+    // The report is what makes this diagnosable after the fact: which build's
+    // rules judged it, what the reader found, and how big the file was. It goes
+    // to the log in full and to the client alongside the message, because the
+    // person who hit it is the only one who can say which artifact and which
+    // edit produced it, and asking them to reproduce it later loses that.
+    console.error("[artifacts/export] verification failed", { id, format, verification });
+    return NextResponse.json(
+      { error: exportVerificationMessage(format), verification },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
   const base = sanitizeName(artifact.title) || sanitizeName(artifact.identifier) || "artifact";
   const ext = extensionFor(format);
   const fileName = `${base}.${ext}`;
@@ -129,6 +154,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       "Content-Length": String(buffer.byteLength),
       "Content-Disposition": `attachment; filename="${asciiBase}.${ext}"; filename*=UTF-8''${encodeRfc5987(fileName)}`,
       "Cache-Control": "no-store",
+      // Which build's rules cleared these bytes. A download that arrives with no
+      // such header came from a deployment that did not check, and telling those
+      // two apart from a saved response is the whole reason it is stamped here
+      // rather than only written to a log the file outlives.
+      "X-Juno-Export-Validator": verification.validator,
     },
   });
 }
