@@ -719,6 +719,7 @@ model ImportObject {
 
   @@unique([importRunId, storageKey])
   @@index([userId, status, updatedAt])
+  @@index([userId, leaseToken, status])
 }
 
 // ----------------------------------------------------------------------------
