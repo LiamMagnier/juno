@@ -14,9 +14,9 @@
     "contractChecks": "passed: release gates, native, capabilities, work, code preview/remote/runtime, sandbox, design",
     "focusedResearchTests": "passed: 53 passed, 0 failed",
     "nativePackages": "passed: JunoChatKit 213/213 including native chat approval recovery/decision coverage; JunoWork 52/52; JunoCode 0 failures with 1 simulator skip; JunoDesktop 111 tests/0 failures; JunoMobile 66 tests/0 failures; unsigned JunoDesktop and JunoMobile Simulator builds passed with warnings-as-errors",
-    "productionHealth": "partial read-only: https://chat.liams.dev/api/health returned ok/db ok with live artifact 6cb75e06167e18fa6f8e41f12c3fc861612a04dc; the remote production database reports 75 applied migrations and an up-to-date schema and all nine PM2 services were online on recheck, including the wrapper-based juno-import-recovery worker; a separate remote deployment shell is still blocked in next build with a worker in uninterruptible I/O sleep under severe memory pressure, so ccc7c237 post-deploy health is not verified; this assistant executed no production deploy or migration",
+    "productionHealth": "partial read-only: https://chat.liams.dev/api/health returned ok/db ok with live artifact ccc7c237e1ae99c1d24a6de53fbd7f1a86b008c6; the remote production database reports 75 applied migrations and an up-to-date schema and all nine PM2 services were online on recheck, including the wrapper-based juno-import-recovery worker with exit code 0; a separate remote deployment shell still has an orphaned next build worker in uninterruptible I/O sleep under severe memory pressure, which is an unresolved operational hazard; this assistant executed no production deploy or migration",
     "productionSmoke": "partial: unauthenticated health plus public UI/auth-boundary smoke against https://chat.liams.dev passed; ALLOWED_ORIGINS and JUNO_SMOKE_COOKIE are present remotely, but authenticated catalog/chat receipt/replay smoke was not invoked in this audit because it creates real production receipt/chat activity; the protected release workflow requires and runs it during a controlled release",
-    "lastVerifiedAt": "2026-08-08T20:21:10+02:00"
+    "lastVerifiedAt": "2026-08-08T20:21:57+02:00"
   },
   "nextSlice": {
     "id": "product-e2e-and-release-gates",
