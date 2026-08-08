@@ -1,6 +1,6 @@
 # Juno Product Completion — execution ledger
 
-**Audit commit:** `ee4cc386` (`main`, production-hardening commit)
+**Audit commit:** `ccc7c237` (`main`, production-hardening commit)
 **Audit date:** 2026-08-08
 **Method:** 12 parallel evidence-based subsystem readers over the source, then an
 adversarial re-check of every claim of "implemented" in the P0 areas. Findings
@@ -15,7 +15,7 @@ truth.
 ## Current reconciliation — 2026-08-08
 
 The current source tree now has passing repository-wide automated checks:
-**1,950 tests completed, 1,948 passed, 2 database-dependent tests skipped without a test
+**1,951 tests completed, 1,949 passed, 2 database-dependent tests skipped without a test
 database, 0 failed**; full ESLint, TypeScript, Prisma validation/generation,
 native/capability/Work contract checks, code wiring checks, sandbox checks, and
 design-contract checks also pass. The production Next build renders 110/110
@@ -84,15 +84,19 @@ matrices; a tested database/object-storage restore drill; and signed/notarized
 Apple artifacts. Read the historical sections below as traceability only; the
 current reconciliation and `status.json` are authoritative. The production workflow requires the core database/auth inputs, the explicit browser-origin allowlist, and one authenticated smoke credential. Authenticated smoke runs catalog, provider-backed chat, durable receipt and idempotent replay checks; it does not have an optional skip path. The live server was checked read-only:
 `https://chat.liams.dev/api/health` returned `ok`/`db: ok` for artifact
-`ce36248fa1e466bccf8f52fed2e589b32b2d8951`, and the public UI smoke passed all
+`ccc7c237e1ae99c1d24a6de53fbd7f1a86b008c6`, and the public UI smoke passed all
 public routes plus the `/chat` auth boundary. The remote production database
 reports 75 applied migrations and an up-to-date schema; all nine PM2 services
-are online. The current source at `ee4cc386` includes quota hardening, relay
+are online on the final read-only recheck. The import-recovery process had a
+historical restart loop in PM2, but its wrapper-based worker entrypoint is now
+stable online; no restart was issued by this audit. The current source at
+`ccc7c237` includes quota hardening, relay
 boundary hardening, the one-voice-session ceiling, import integrity/recovery,
 parked Work parity and the desktop Work-search fix beyond that live artifact.
-The remote environment currently lacks `ALLOWED_ORIGINS` and both dedicated
-smoke credentials, so the protected workflow intentionally refuses to deploy
-until they are configured.
+The remote environment now reports `ALLOWED_ORIGINS` and
+`JUNO_SMOKE_COOKIE` present. Authenticated smoke remains unexecuted in this
+audit because it creates real production receipt/chat activity; the protected
+workflow will run it as part of a controlled release.
 
 ---
 

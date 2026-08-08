@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import {
   createStallWatchdog,
@@ -26,11 +26,12 @@ test("fires when the stream goes quiet", async () => {
   wd.stop();
 });
 
-test("a stream that keeps producing never fires", async () => {
+test("a stream that keeps producing never fires", (t: TestContext) => {
   let fired = 0;
+  t.mock.timers.enable({ apis: ["setTimeout"] });
   const wd = createStallWatchdog(() => fired++, 40, 1_000);
   for (let i = 0; i < 6; i++) {
-    await sleep(15);
+    t.mock.timers.tick(15);
     wd.touch();
   }
   assert.equal(fired, 0, "touching within the window must keep resetting the clock");

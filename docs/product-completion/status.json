@@ -1,11 +1,11 @@
 {
   "$comment": "Machine-readable execution ledger for the Juno completion program. States: missing | in_progress | blocked | implemented | verified. 'verified' requires a named test. Prose and evidence live in JUNO_PRODUCT_COMPLETION.md.",
   "schemaVersion": 1,
-  "auditCommit": "ee4cc386",
+  "auditCommit": "ccc7c237",
   "auditDate": "2026-08-08",
   "branch": "main",
   "verification": {
-    "fullTest": "passed: 1950 tests, 1948 passed, 2 skipped, 0 failed",
+    "fullTest": "passed: 1951 tests, 1949 passed, 2 skipped, 0 failed",
     "lint": "passed: eslint . --no-cache",
     "typecheck": "passed: npx tsc --noEmit --pretty false",
     "schema": "passed: npx prisma validate and prisma generate",
@@ -14,9 +14,9 @@
     "contractChecks": "passed: release gates, native, capabilities, work, code preview/remote/runtime, sandbox, design",
     "focusedResearchTests": "passed: 53 passed, 0 failed",
     "nativePackages": "passed: JunoChatKit 213/213 including native chat approval recovery/decision coverage; JunoWork 52/52; JunoCode 0 failures with 1 simulator skip; JunoDesktop 111 tests/0 failures; JunoMobile 66 tests/0 failures; unsigned JunoDesktop and JunoMobile Simulator builds passed with warnings-as-errors",
-    "productionHealth": "passed read-only: https://chat.liams.dev/api/health returned ok/db ok with the prior live artifact; the remote production database reports 75 applied migrations and an up-to-date schema and all nine PM2 services are online; source ee4cc386 includes direct attachment retrieval, public UI smoke, relay boundary hardening, the global voice-session ceiling, import integrity/recovery, parked Work parity, backup/restore tooling, and the desktop work-search fix; no production deploy or migration was executed",
-    "productionSmoke": "passed: unauthenticated health plus public UI/auth-boundary smoke against https://chat.liams.dev; authenticated catalog/chat receipt/replay smoke is not run because both JUNO_SMOKE_TOKEN and JUNO_SMOKE_COOKIE are absent on the remote, and the protected release workflow now fails closed until one is configured; ALLOWED_ORIGINS is also absent",
-    "lastVerifiedAt": "2026-08-08T20:08:15+02:00"
+    "productionHealth": "passed read-only: https://chat.liams.dev/api/health returned ok/db ok with live artifact ccc7c237e1ae99c1d24a6de53fbd7f1a86b008c6; the remote production database reports 75 applied migrations and an up-to-date schema and all nine PM2 services are online on the final recheck; juno-import-recovery had a historical restart loop but was stable online on recheck; live source ccc7c237 includes direct attachment retrieval, public UI smoke, relay boundary hardening, the global voice-session ceiling, import integrity/recovery, parked Work parity, and the desktop work-search fix; no production deploy or migration was executed",
+    "productionSmoke": "partial: unauthenticated health plus public UI/auth-boundary smoke against https://chat.liams.dev passed; ALLOWED_ORIGINS and JUNO_SMOKE_COOKIE are present remotely, but authenticated catalog/chat receipt/replay smoke was not invoked in this audit because it creates real production receipt/chat activity; the protected release workflow requires and runs it during a controlled release",
+    "lastVerifiedAt": "2026-08-08T20:15:20+02:00"
   },
   "nextSlice": {
     "id": "product-e2e-and-release-gates",
