@@ -62,6 +62,22 @@ test("production deploy is protected and pins the VM host key", () => {
   assert.doesNotMatch(DEPLOY_JOB, /StrictHostKeyChecking=accept-new/);
 });
 
+test("the canonical CI deploy uses the immutable VM transaction, not in-place rsync", () => {
+  assert.match(DEPLOY_JOB, /Deploy the exact reviewed commit through the immutable VM transaction/);
+  assert.match(DEPLOY_JOB, /git bundle create/);
+  assert.match(DEPLOY_JOB, /JUNO_DEPLOY_BUNDLE/);
+  assert.match(DEPLOY_JOB, /JUNO_APP_HOME=/);
+  assert.match(DEPLOY_JOB, /JUNO_INITIAL_RELEASE_TARGET=/);
+  for (const marker of [
+    "Snapshot the current build for rollback",
+    "Ship build to the VM",
+    "Post-deploy on the VM (install-if-changed, migrate, reload)",
+  ]) {
+    const section = sectionAfter(DEPLOY_JOB, `      - name: ${marker}\n`, "\n      - name: ");
+    assert.match(section, /if:\s*\$\{\{\s*false\s*\}\}/, `${marker} must remain disabled legacy code`);
+  }
+});
+
 test("production deploy proves public reachability and attempts code rollback on failed checks", () => {
   assert.match(DEPLOY_JOB, /Verify public production health externally/);
   assert.match(DEPLOY_JOB, /JUNO_PUBLIC_UI_BASE_URL=\"\$PUBLIC_APP_URL\" node scripts\/public-ui-smoke\.mjs/);
@@ -71,8 +87,8 @@ test("production deploy proves public reachability and attempts code rollback on
 });
 
 test("production deploy handles a first-deploy environment without copying a missing file", () => {
-  assert.match(DEPLOY_JOB, /if \[ -f \.env \]; then\s+cp \.env \.env\.bak/s);
-  assert.match(DEPLOY_JOB, /: > \.env/);
+  assert.match(DEPLOY_JOB, /INCOMING_ENV=.*\.env\.incoming-/);
+  assert.match(DEPLOY_JOB, /install -m 600 "\$INCOMING_ENV" "\$LIVE_ROOT\/\.env"/);
 });
 
 test("production nginx changes fail closed and restore the prior configuration", () => {
@@ -176,6 +192,11 @@ test("production activation verifies every PM2 service, including workers and th
   assert.match(DEPLOY_JOB, /pm2 jlist/);
   assert.match(DEPLOY_SCRIPT, /pm2_env\?\.status === "online"/);
   assert.match(DEPLOY_JOB, /pm2_env\?\.status === "online"/);
+});
+
+test("external release failures use the same verified rollback transaction", () => {
+  assert.match(DEPLOY_JOB, /bash "\$SOURCE_ROOT\/deploy\/deploy\.sh" --rollback/);
+  assert.doesNotMatch(DEPLOY_JOB, /juno-previous/);
 });
 
 test("deploy script does not pull or rewrite the live checkout", () => {
