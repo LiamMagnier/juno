@@ -935,31 +935,14 @@ jobs:
           ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
             "$VM_USER@$VM_HOST" "RUN_ID='$RUN_ID' bash -s" <<'REMOTE'
           set -euo pipefail
-          if [ ! -d ~/juno-previous ]; then
-            echo "::error::No previous application snapshot exists; automatic rollback is unavailable." >&2
-            exit 1
-          fi
-          failed="$HOME/juno-failed-${RUN_ID}"
-          if [ -e "$HOME/juno" ] || [ -L "$HOME/juno" ]; then
-            mv "$HOME/juno" "$failed"
-          fi
-          # The snapshot intentionally excludes persistent runtime state. Move
-          # the current environment and preserve uploads/logs before activating
-          # the code snapshot, or the rollback would boot without credentials
-          # and could hide user attachments.
-          if [ -f "$failed/.env" ]; then
-            cp "$failed/.env" "$HOME/juno-previous/.env"
-            chmod 600 "$HOME/juno-previous/.env"
-          fi
-          if [ -d "$failed/.uploads" ]; then
-            rsync -a "$failed/.uploads/" "$HOME/juno-previous/.uploads/"
-          fi
-          if [ -d "$failed/logs" ]; then
-            rsync -a "$failed/logs/" "$HOME/juno-previous/logs/"
-          fi
-          mv "$HOME/juno-previous" "$HOME/juno"
-          cd "$HOME/juno"
-          pm2 startOrReload deploy/ecosystem.config.js --update-env
-          pm2 save
-          echo "Rolled back application code to the previous snapshot; database state was not rewound."
+          SOURCE_ROOT="$HOME/juno-source"
+          LIVE_ROOT="$HOME/juno"
+          JUNO_APP_HOME="$SOURCE_ROOT" \
+            JUNO_RELEASES_DIR="$LIVE_ROOT/releases" \
+            JUNO_CURRENT_LINK="$LIVE_ROOT/current" \
+            JUNO_PREVIOUS_LINK="$LIVE_ROOT/previous" \
+            JUNO_INITIAL_RELEASE_TARGET="$LIVE_ROOT" \
+            JUNO_ENV_FILE="$LIVE_ROOT/.env" \
+            bash "$SOURCE_ROOT/deploy/deploy.sh" --rollback
+          echo "Rolled back the immutable application pointer; database state was not rewound."
           REMOTE
