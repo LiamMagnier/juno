@@ -12,7 +12,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-APP_HOME="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
+APP_HOME="${JUNO_APP_HOME:-$(cd -- "$SCRIPT_DIR/.." && pwd -P)}"
 RELEASES_DIR="${JUNO_RELEASES_DIR:-$APP_HOME/releases}"
 CURRENT_LINK="${JUNO_CURRENT_LINK:-$APP_HOME/current}"
 PREVIOUS_LINK="${JUNO_PREVIOUS_LINK:-$APP_HOME/previous}"
@@ -60,7 +60,7 @@ env_has_value() {
 require_deploy_environment() {
   [[ -f "$ENV_FILE" ]] || fail "Deployment environment file is missing: $ENV_FILE"
   local name
-  for name in DATABASE_URL AUTH_SECRET AUTH_URL ALLOWED_ORIGINS; do
+  for name in DATABASE_URL DIRECT_URL AUTH_SECRET AUTH_URL ALLOWED_ORIGINS; do
     env_has_value "$name" || fail "$name must be set in the reviewed deployment environment"
   done
 }
@@ -300,6 +300,12 @@ main() {
   say "${YELLOW}📦 Materializing commit $TARGET_SHA into a staged release...${NC}"
   git -C "$APP_HOME" archive --format=tar "$TARGET_SHA" | tar -xf - -C "$STAGING_DIR"
   install -m 600 -- "$ENV_FILE" "$STAGING_DIR/.env"
+  # Storage and logs are deployment-scoped persistent state. Keep them outside
+  # the immutable release and expose them through symlinks so a release switch
+  # cannot strand uploaded files or split logs across release directories.
+  mkdir -p -- "$APP_HOME/.uploads" "$APP_HOME/logs"
+  ln -s -- "$APP_HOME/.uploads" "$STAGING_DIR/.uploads"
+  ln -s -- "$APP_HOME/logs" "$STAGING_DIR/logs"
   printf '%s\n' "$TARGET_SHA" > "$STAGING_DIR/.juno-release-sha"
   validate_release "$STAGING_DIR"
 
@@ -308,11 +314,6 @@ main() {
 
   say "${YELLOW}💎 Generating Prisma client...${NC}"
   run_in_release "$STAGING_DIR" npx prisma generate
-
-  say "${YELLOW}🤖 Syncing model registry inside the candidate release...${NC}"
-  if ! run_in_release "$STAGING_DIR" npm run sync:models:write; then
-    say "${RED}⚠️ Model sync failed — continuing with the committed registry in the candidate release.${NC}" >&2
-  fi
 
   say "${YELLOW}🏗️ Building the candidate application...${NC}"
   run_in_release "$STAGING_DIR" npm run build
