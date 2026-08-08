@@ -194,6 +194,31 @@ function shapesOf(xml: string): Shape[] {
   return shapes;
 }
 
+/** Longest a heading breadcrumb is worth carrying — past this it is a paragraph. */
+const MAX_INFERRED_TITLE_CHARS = 120;
+
+/**
+ * The title of a slide that declares no title placeholder.
+ *
+ * Placeholders come from the slide layout, and generators that build shapes by
+ * absolute position never write them — `pptxgenjs`, which this repo itself uses
+ * in `src/lib/office-export.ts`, emits `<p:nvPr></p:nvPr>` with nothing inside.
+ * So a user who asks Juno for a deck, downloads it and uploads it back would get
+ * a deck with no titles and therefore no breadcrumb on any block.
+ *
+ * The heuristic is deliberately timid: only the first shape on the slide, only
+ * when it is a single short line. It reads the slide the way a person does —
+ * the thing at the top, on its own, is the title — and declines whenever that
+ * is not obviously what it is looking at.
+ */
+function inferredTitle(shapes: Shape[]): Shape | undefined {
+  const first = shapes[0];
+  if (!first) return undefined;
+  const lines = first.paragraphs.filter((p) => p.trim());
+  if (lines.length !== 1) return undefined;
+  return lines[0].trim().length <= MAX_INFERRED_TITLE_CHARS ? first : undefined;
+}
+
 export async function extractPptx(input: { bytes: Uint8Array; fileName: string }): Promise<ExtractionResult> {
   const base = { parser: PPTX_PARSER, parserVersion: PPTX_PARSER_VERSION };
 
@@ -221,7 +246,7 @@ export async function extractPptx(input: { bytes: Uint8Array; fileName: string }
     if (!xml) continue;
 
     const shapes = shapesOf(xml);
-    const titleShape = shapes.find((s) => s.isTitle);
+    const titleShape = shapes.find((s) => s.isTitle) ?? inferredTitle(shapes);
     const title = titleShape ? titleShape.paragraphs.join(" ").trim() : "";
     // Every block on the slide is filed under the slide's title, so a retrieved
     // bullet can say which slide it belongs to without re-reading the deck.

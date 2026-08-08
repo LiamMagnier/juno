@@ -323,6 +323,33 @@ test("pptx blocks carry the presentation-order slide number, title and notes", a
   assert.ok(!result.blocks.some((b) => b.text === "7"));
 });
 
+test("a deck with no placeholders still gets a title, because generators omit them", async () => {
+  // pptxgenjs — which this repo uses to generate decks — writes shapes with an
+  // empty <p:nvPr/> and no <p:ph>. Without the fallback, a deck Juno produced
+  // and the user re-uploaded would have no titles and no breadcrumbs at all.
+  const bytes = await zipOf({
+    "[Content_Types].xml": '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+    "ppt/slides/slide1.xml": slideXml(shape("Fourth Quarter") + shape("Revenue up 12%\nChurn flat")),
+  });
+
+  const result = await extractPptx({ bytes, fileName: "generated.pptx" });
+  const title = blockAt(result.blocks, (b) => b.type === "slide_title");
+  assert.equal(title.text, "Fourth Quarter");
+  assert.deepEqual(blockAt(result.blocks, (b) => b.text.includes("Churn")).heading, ["Fourth Quarter"]);
+});
+
+test("a slide opening with a paragraph of prose is not given a fake title", async () => {
+  const bytes = await zipOf({
+    "[Content_Types].xml": '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"/>',
+    "ppt/slides/slide1.xml": slideXml(
+      shape("Revenue up 12%\nChurn flat") + shape("Second box")
+    ),
+  });
+  const result = await extractPptx({ bytes, fileName: "prose.pptx" });
+  assert.ok(!result.blocks.some((b) => b.type === "slide_title"), "two paragraphs is not a title");
+  assert.deepEqual(result.blocks[0].heading, []);
+});
+
 /* -------------------------------------------------------------------------- */
 /* XLSX                                                                        */
 /* -------------------------------------------------------------------------- */
