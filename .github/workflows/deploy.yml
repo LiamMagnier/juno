@@ -502,6 +502,7 @@ jobs:
           npm run build --prefix runner/agent-core
 
       - name: Configure SSH
+        id: configure_ssh
         env:
           VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
           VM_KNOWN_HOSTS: ${{ secrets.VM_KNOWN_HOSTS }}
@@ -934,7 +935,7 @@ jobs:
       # migration is reversible; migration compatibility remains a release
       # design requirement and the failed run is still surfaced to operators.
       - name: Roll back failed application release
-        if: failure()
+        if: ${{ failure() && steps.configure_ssh.outcome == 'success' }}
         env:
           VM_USER: ${{ secrets.VM_USER }}
           VM_HOST: ${{ secrets.VM_HOST }}

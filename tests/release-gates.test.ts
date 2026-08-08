@@ -87,7 +87,7 @@ test("production deploy proves public reachability and attempts code rollback on
   assert.match(DEPLOY_JOB, /Verify public production health externally/);
   assert.match(DEPLOY_JOB, /JUNO_PUBLIC_UI_BASE_URL=\"\$PUBLIC_APP_URL\" node scripts\/public-ui-smoke\.mjs/);
   assert.match(DEPLOY_JOB, /Roll back failed application release/);
-  assert.match(DEPLOY_JOB, /if: failure\(\)/);
+  assert.match(DEPLOY_JOB, /if: \$\{\{ failure\(\) && steps\.configure_ssh\.outcome ===? 'success' \}\}/);
   assert.match(DEPLOY_JOB, /database state was not rewound/);
 });
 
