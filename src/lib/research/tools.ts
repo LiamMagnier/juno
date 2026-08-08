@@ -30,6 +30,7 @@ const PAGE_CONTENT_CHARS = 8_000;
 /** What one Tavily basic search costs us, for the pre-spend estimate. */
 const TAVILY_SEARCH_MICRO_USD = 8_000;
 const TAVILY_EXTRACT_MICRO_USD = 2_000;
+const REVISION_REPORT_CHARS = 32_000;
 
 const PLANNER_SYSTEM = `You are a research planner. Break the user's request into focused web-search sub-questions.
 Reply with ONLY the sub-questions, one per line — no numbering, no bullets, no commentary.
@@ -349,12 +350,27 @@ export const writeResearchReport: NonNullable<ResearchDeps["synthesize"]> = asyn
   plan,
   sources,
   signal,
+  revision,
 }) => {
   const model = researchPlannerModel();
   const readable = sources.filter((source) => source.snapshot);
   if (!model || readable.length === 0) return { report: "", costMicroUsd: 0 };
 
-  const system = buildResearchCorpus(goal, plan, readable);
+  const system = [
+    buildResearchCorpus(goal, plan, readable),
+    ...(revision
+      ? [
+          `# Citation-driven revision (round ${revision.round})
+Rewrite the draft below into a complete replacement report for the original request. Keep only claims that the numbered source material supports, preserve or correct citation numbers, and state any remaining uncertainty plainly. Return the full markdown report only; do not describe the revision process.`,
+        ]
+      : []),
+  ].join("\n\n");
+  const historyContent = revision
+    ? [
+        "Revise this previously audited draft against the source material and return the complete replacement report:",
+        wrapUntrusted("previous research draft", revision.report.slice(0, REVISION_REPORT_CHARS)),
+      ].join("\n\n")
+    : truncate(goal, 2_000);
   let out = "";
   let input: number | undefined;
   let output: number | undefined;
@@ -362,7 +378,7 @@ export const writeResearchReport: NonNullable<ResearchDeps["synthesize"]> = asyn
     for await (const ev of streamChat({
       model,
       system,
-      history: [{ role: "USER", content: truncate(goal, 2_000), attachments: [] }],
+      history: [{ role: "USER", content: historyContent, attachments: [] }],
       maxTokens: 8_192,
       signal,
     })) {

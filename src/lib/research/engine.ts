@@ -1,6 +1,7 @@
 import {
   EMPTY_PLAN,
   MAX_FOLLOW_UP_ROUNDS,
+  MAX_REVISION_ROUNDS,
   MAX_PLAN_CONSTRAINTS,
   MAX_PLAN_QUERIES,
   MAX_PINNED_SOURCES,
@@ -262,6 +263,11 @@ export interface ResearchDeps {
     plan: ResearchPlan;
     sources: ResearchSourceRow[];
     signal?: AbortSignal;
+    /** Present only for the one bounded citation-driven rewrite. */
+    revision?: {
+      report: string;
+      round: number;
+    };
   }): Promise<{ report: string; costMicroUsd: number }>;
   /** Validates and, when safe, repairs a draft before the run becomes final. */
   validateReport?(input: {
@@ -1138,19 +1144,33 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     if (!(await affordable(run, SYNTHESIS_ESTIMATE_MICRO_USD))) {
       return stopForBudget(run, SYNTHESIS_ESTIMATE_MICRO_USD);
     }
+    const plan = parsePlan(run.plan);
+    const revisionRound = plan.revisionRound ?? 0;
+    const revision =
+      revisionRound > 0 && run.report?.trim()
+        ? { report: run.report, round: revisionRound }
+        : undefined;
     const sources = (await store.listSources(run.id, run.userId)).slice(0, MAX_SOURCES);
     const written = await deps.synthesize({
       userId: run.userId,
       goal: run.goal,
-      plan: parsePlan(run.plan),
+      plan,
       sources,
       signal,
+      ...(revision ? { revision } : {}),
     });
     await bill(run, written.costMicroUsd, "synthesis");
     const fresh = (await store.loadRun(run.id, run.userId)) ?? run;
     if (fresh.state !== "synthesizing") return { kind: "raced" };
-    const moved = await advance(fresh, "validating_citations", { report: written.report }, [
-      { kind: "report_ready", payload: { chars: written.report.length } },
+    // A failed rewrite must not erase the already audited report. Initial
+    // synthesis keeps its historical behavior (an empty writer result remains
+    // empty), while a revision falls back to the evidence-backed draft.
+    const report = written.report.trim() || revision?.report || "";
+    const moved = await advance(fresh, "validating_citations", { report }, [
+      {
+        kind: "report_ready",
+        payload: { chars: report.length, ...(revision ? { revisionRound } : {}) },
+      },
     ]);
     return moved ? { kind: "advanced", state: "validating_citations" } : { kind: "raced" };
   };
@@ -1160,33 +1180,35 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
    *
    * A citation to source 14 of a 9-source corpus is the failure this catches,
    * and it is a failure the synthesis model makes often enough to be worth a
-   * deterministic check. It does not rewrite the report — a report with one bad
-   * marker is still worth reading — it records what it found so the UI can say
-   * which claims are unbacked.
+   * deterministic check. The validator may repair the draft; the bounded
+   * revision branch below then gives the writer one chance to produce a clean
+   * replacement before the run becomes terminal.
    */
-  const doValidation = async (run: ResearchRunRow): Promise<StepOutcome> => {
+  const doValidation = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
     const sources = await store.listSources(run.id, run.userId);
     let report = run.report ?? "";
     let auditDegraded = false;
+    let validation: ResearchValidationResult | null = null;
     if (deps.validateReport && report.trim()) {
       await append(run.id, run.userId, [{ kind: "citation_audit_started", payload: { sources: sources.length } }]);
       try {
-        const validated = await deps.validateReport({
+        validation = await deps.validateReport({
           userId: run.userId,
           runId: run.id,
           goal: run.goal,
           plan: parsePlan(run.plan),
           report,
+          signal,
           sources,
         });
-        if (validated) {
-          report = validated.report;
+        if (validation) {
+          report = validation.report;
           await append(run.id, run.userId, [
             {
               kind: "citation_audit_completed",
-              payload: validated.summary,
+              payload: validation.summary,
             },
-            ...(validated.repaired
+            ...(validation.repaired
               ? [{ kind: "report_repaired" as const, payload: { reason: "citation_validation" } }]
               : []),
           ]);
@@ -1229,6 +1251,44 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           },
         },
       ]);
+    }
+
+    /*
+     * A repaired report is evidence that the writer's first pass was not good
+     * enough. Send it back through the same durable synthesis stage once, then
+     * validate the replacement again. `revisionRound` lives in the plan JSON so
+     * a worker crash between these two transitions cannot reopen an unbounded
+     * paid loop. The repaired report is patched together with the state move,
+     * so the next worker has a useful draft even if it starts at synthesizing.
+     */
+    const plan = parsePlan(run.plan);
+    const revisionRound = plan.revisionRound ?? 0;
+    const shouldRevise =
+      !!deps.synthesize &&
+      !!validation &&
+      report.trim().length > 0 &&
+      revisionRound < MAX_REVISION_ROUNDS &&
+      (validation.repaired || dangling.length > 0);
+    if (shouldRevise && validation) {
+      const nextPlan = parsePlan({ ...plan, revisionRound: revisionRound + 1 });
+      const moved = await advance(
+        run,
+        "synthesizing",
+        { plan: nextPlan, report },
+        [
+          {
+            kind: "report_revision",
+            payload: {
+              phase: "requested",
+              round: nextPlan.revisionRound,
+              reason: "citation_validation",
+              danglingCitations: dangling,
+              ...validation.summary,
+            },
+          },
+        ]
+      );
+      return moved ? { kind: "advanced", state: "synthesizing" } : { kind: "raced" };
     }
     const to: ResearchTerminalState = dangling.length > 0 || auditDegraded ? "partially_completed" : "completed";
     const ended = await finish(run, to, {
@@ -1279,7 +1339,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       case "synthesizing":
         return doSynthesis(run, signal);
       case "validating_citations":
-        return doValidation(run);
+        return doValidation(run, signal);
     }
   };
 

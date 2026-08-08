@@ -261,6 +261,18 @@ export async function recordCitationAudit(opts: {
       select: { id: true, goal: true, queries: true },
     }));
 
+  if (existing) {
+    /*
+     * ResearchClaim is the graph for the current report, not a second revision
+     * history. A durable revise loop audits the same run more than once; leaving
+     * the old rows in place would make the inspector count both generations as
+     * one answer. The immutable report text and audit summaries remain in
+     * ResearchReportRevision, so replacing this current graph does not erase the
+     * report history a reader may need.
+     */
+    await prisma.researchClaim.deleteMany({ where: { runId: run.id, userId: opts.userId } });
+  }
+
   const stored = await storeCorpus({ userId: opts.userId, runId: run.id, sources: opts.sources });
   const duplicates = await markSyndication({ userId: opts.userId, stored, sources: opts.sources });
 

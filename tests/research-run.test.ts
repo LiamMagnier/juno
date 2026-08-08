@@ -630,12 +630,35 @@ test("coverage is durable and an evidence gap schedules one bounded follow-up", 
   assert.ok(events.some((event) => event.kind === "follow_up_scheduled"));
 });
 
-test("citation validation runs before the durable run becomes completed and stores the repaired report", async () => {
+test("citation validation automatically revises once and revalidates the durable report", async () => {
   const { store, events } = memoryStore();
   const base = deps(store);
+  let audits = 0;
+  const revisions: Array<{ report: string; round: number } | undefined> = [];
   const engine = createResearchEngine({
     ...base,
+    async synthesize(input) {
+      revisions.push(input.revision);
+      if (input.revision) return { report: "# Revised report\n\nA better finding [1].", costMicroUsd: 1_000 };
+      return base.synthesize!(input);
+    },
     async validateReport({ report }) {
+      audits += 1;
+      if (audits > 1) {
+        return {
+          report,
+          repaired: false,
+          summary: {
+            claims: 1,
+            supported: 1,
+            partiallySupported: 0,
+            unsupported: 0,
+            contradicted: 0,
+            unverified: 0,
+            duplicateSources: 0,
+          },
+        };
+      }
       return {
         report: `${report}\n\nEvidence is incomplete: the audit found a limitation.`,
         repaired: true,
@@ -655,10 +678,72 @@ test("citation validation runs before the durable run becomes completed and stor
   await engine.drive({ runId: run.id, userId: run.userId });
   const finished = await store.loadRun(run.id, run.userId);
   assert.equal(finished?.state, "completed");
-  assert.match(finished?.report ?? "", /Evidence is incomplete/);
+  assert.equal(audits, 2, "the replacement must be audited before the run becomes terminal");
+  assert.equal(revisions.length, 2, "one initial synthesis and one citation-driven rewrite");
+  assert.deepEqual(revisions[1], {
+    report: "# Report\n\nA finding [1].\n\nEvidence is incomplete: the audit found a limitation.",
+    round: 1,
+  });
+  assert.equal(parsePlan(finished?.plan).revisionRound, 1, "the loop counter is durable in the plan");
+  assert.equal(finished?.report, "# Revised report\n\nA better finding [1].");
   assert.ok(events.some((event) => event.kind === "citation_audit_started"));
   assert.ok(events.some((event) => event.kind === "citation_audit_completed"));
   assert.ok(events.some((event) => event.kind === "report_repaired"));
+  assert.ok(
+    events.some(
+      (event) =>
+        event.kind === "report_revision" &&
+        (event.payload as { phase?: string; round?: number }).phase === "requested" &&
+        (event.payload as { phase?: string; round?: number }).round === 1
+    )
+  );
+});
+
+test("a citation validator that keeps repairing cannot create an unbounded paid loop", async () => {
+  const { store, events } = memoryStore();
+  const base = deps(store);
+  let audits = 0;
+  let synthesisCalls = 0;
+  const engine = createResearchEngine({
+    ...base,
+    async synthesize(input) {
+      synthesisCalls += 1;
+      return {
+        report: input.revision ? `# Revision ${synthesisCalls}\n\nA finding [1].` : "# Draft\n\nA finding [1].",
+        costMicroUsd: 1_000,
+      };
+    },
+    async validateReport({ report }) {
+      audits += 1;
+      return {
+        report: `${report}\n\nThe citation audit added a limitation.`,
+        repaired: true,
+        summary: {
+          claims: 1,
+          supported: 0,
+          partiallySupported: 1,
+          unsupported: 0,
+          contradicted: 0,
+          unverified: 0,
+          duplicateSources: 0,
+        },
+      };
+    },
+  });
+  const run = await started(engine);
+  await engine.drive({ runId: run.id, userId: run.userId });
+
+  assert.equal(audits, 2);
+  assert.equal(synthesisCalls, 2);
+  assert.equal((await store.loadRun(run.id, run.userId))?.state, "completed");
+  assert.equal(
+    events.filter(
+      (event) =>
+        event.kind === "report_revision" &&
+        (event.payload as { phase?: string }).phase === "requested"
+    ).length,
+    1
+  );
 });
 
 // ---------------------------------------------------------------------------

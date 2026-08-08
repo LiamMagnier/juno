@@ -459,6 +459,12 @@ export const MAX_COVERAGE_ENTRIES = 32;
 export const MAX_CONFLICTS = 24;
 /** One bounded follow-up round keeps the first evidence loop predictable. */
 export const MAX_FOLLOW_UP_ROUNDS = 1;
+/**
+ * Citation repair may send a report through the writer once more. Keeping this
+ * in the durable plan, rather than in a worker-local counter, makes a restart
+ * unable to turn a bad report into an unbounded paid loop.
+ */
+export const MAX_REVISION_ROUNDS = 1;
 /** A crashed driver leaves a run claimable again after this interval. */
 export const RESEARCH_WORKER_LEASE_MS = 2 * 60 * 1000;
 
@@ -651,6 +657,8 @@ export interface ResearchPlan {
   issuedQueries?: string[];
   /** Number of bounded evidence-driven search rounds already attempted. */
   followUpRound?: number;
+  /** Number of citation-driven report rewrites already scheduled. */
+  revisionRound?: number;
   /** Last deterministic coverage matrix written by the controller. */
   coverage?: ResearchCoverageEntry[];
   /** Conflicts found while gathering or validating evidence. */
@@ -715,6 +723,9 @@ export function parsePlan(value: unknown): ResearchPlan {
       : {}),
     ...(typeof raw.followUpRound === "number"
       ? { followUpRound: Math.max(0, Math.min(MAX_FOLLOW_UP_ROUNDS, Math.floor(raw.followUpRound))) }
+      : {}),
+    ...(typeof raw.revisionRound === "number"
+      ? { revisionRound: Math.max(0, Math.min(MAX_REVISION_ROUNDS, Math.floor(raw.revisionRound))) }
       : {}),
     ...(Array.isArray(raw.coverage) ? { coverage: parseCoverage(raw.coverage) } : {}),
     ...(Array.isArray(raw.conflicts) ? { conflicts: parseConflicts(raw.conflicts) } : {}),
