@@ -485,21 +485,39 @@ jobs:
       # its first claimed run with an unresolvable module — after the run has
       # been marked `preparing`, which looks to the user like a task that hangs.
       #
-      # `dist/` is gitignored, so it reaches the VM only because the rsync below
-      # ships this checkout rather than the repository. The `runner` job builds
-      # the same output, but that is a different job with a different checkout
-      # and its dist never leaves it.
+      # `dist/` is gitignored, so it reaches the VM through the reviewed build
+      # artifact packaged immediately after this step. The `runner` job builds
+      # the same output for its own test gate, but that is a different job with
+      # a different checkout and its dist never leaves it.
       #
       # This is one of three parts and all three have to land together: the
-      # build here, `npm ci --omit=dev --prefix runner/agent-core` in the
-      # post-deploy step (node_modules is excluded from the rsync, so the
-      # runtime dependencies are not shipped), and the pm2 app in
+      # build here, the dependency/output archive below, and the PM2 app in
       # deploy/ecosystem.config.js. Two of the three produce a worker that looks
       # deployed and never starts.
       - name: Build the vendored runner core
         run: |
           npm ci --prefix runner/agent-core
           npm run build --prefix runner/agent-core
+
+      # The VM is intentionally small. Ship the exact outputs produced by the
+      # reviewed runner instead of asking production to run Next, TypeScript or
+      # npm's dependency solver while the old release is still serving traffic.
+      - name: Package the reviewed CI build artifact
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          build_artifact="juno-${GITHUB_SHA}.build.tar.gz"
+          build_checksum="${build_artifact}.sha256"
+          tar --exclude='.next/cache' \
+            --exclude='node_modules/.cache' \
+            --exclude='relay/node_modules/.cache' \
+            --exclude='runner/agent-core/node_modules/.cache' \
+            -czf "$build_artifact" \
+            .next node_modules relay/node_modules relay/dist \
+            runner/agent-core/node_modules runner/agent-core/dist
+          sha256sum "$build_artifact" | cut -d' ' -f1 > "$build_checksum"
+          du -h "$build_artifact" "$build_checksum"
 
       - name: Configure SSH
         id: configure_ssh
@@ -791,6 +809,8 @@ jobs:
           set -euo pipefail
           archive="juno-${GITHUB_SHA}.tar.gz"
           archive_checksum="${archive}.sha256"
+          build_artifact="juno-${GITHUB_SHA}.build.tar.gz"
+          build_checksum="${build_artifact}.sha256"
           remote_env="juno-${RUN_ID}.env"
           umask 077
           git rev-parse --verify "$GITHUB_SHA^{commit}" >/dev/null
@@ -802,18 +822,20 @@ jobs:
           sha256sum "$archive" | cut -d' ' -f1 > "$archive_checksum"
           printf '%s\n' "$PROD_ENV" > "$remote_env"
           scp -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
-            "$archive" "$archive_checksum" "$remote_env" "$VM_USER@$VM_HOST:/tmp/"
+            "$archive" "$archive_checksum" "$build_artifact" "$build_checksum" "$remote_env" "$VM_USER@$VM_HOST:/tmp/"
           ssh -i ~/.ssh/id_deploy -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -o StrictHostKeyChecking=yes \
-            "$VM_USER@$VM_HOST" "GITHUB_SHA='$GITHUB_SHA' RUN_ID='$RUN_ID' bash -s" <<'REMOTE'
+            "$VM_USER@$VM_HOST" "GITHUB_SHA='$GITHUB_SHA' RUN_ID='$RUN_ID' JUNO_BUILD_ROOT='$GITHUB_WORKSPACE' bash -s" <<'REMOTE'
           set -euo pipefail
           LIVE_ROOT="$HOME/juno"
           ARCHIVE="/tmp/juno-${GITHUB_SHA}.tar.gz"
           ARCHIVE_CHECKSUM="/tmp/juno-${GITHUB_SHA}.tar.gz.sha256"
+          BUILD_ARTIFACT="/tmp/juno-${GITHUB_SHA}.build.tar.gz"
+          BUILD_CHECKSUM="/tmp/juno-${GITHUB_SHA}.build.tar.gz.sha256"
           REMOTE_ENV="/tmp/juno-${RUN_ID}.env"
           INCOMING_ENV="$LIVE_ROOT/.env.incoming-${RUN_ID}"
           SOURCE_STAGE="$HOME/.juno-source-${RUN_ID}"
           cleanup() {
-            rm -f -- "$ARCHIVE" "$ARCHIVE_CHECKSUM" "$REMOTE_ENV" "$INCOMING_ENV"
+            rm -f -- "$ARCHIVE" "$ARCHIVE_CHECKSUM" "$BUILD_ARTIFACT" "$BUILD_CHECKSUM" "$REMOTE_ENV" "$INCOMING_ENV"
             if [ -d "$SOURCE_STAGE" ]; then
               rm -rf -- "$SOURCE_STAGE"
             fi
@@ -824,6 +846,10 @@ jobs:
           expected_checksum="$(cat "$ARCHIVE_CHECKSUM")"
           actual_checksum="$(sha256sum "$ARCHIVE" | cut -d' ' -f1)"
           [ "$actual_checksum" = "$expected_checksum" ] || { echo "::error::Source archive checksum mismatch." >&2; exit 1; }
+          expected_build_checksum="$(cat "$BUILD_CHECKSUM")"
+          printf '%s' "$expected_build_checksum" | grep -Eq '^[0-9a-f]{64}$' || { echo "::error::Build artifact checksum is malformed." >&2; exit 1; }
+          actual_build_checksum="$(sha256sum "$BUILD_ARTIFACT" | cut -d' ' -f1)"
+          [ "$actual_build_checksum" = "$expected_build_checksum" ] || { echo "::error::Build artifact checksum mismatch." >&2; exit 1; }
           [ ! -e "$SOURCE_STAGE" ] || { echo "::error::Source staging path already exists: $SOURCE_STAGE" >&2; exit 1; }
           mkdir "$SOURCE_STAGE"
           set +o pipefail
@@ -842,12 +868,14 @@ jobs:
             JUNO_ENV_FILE="$INCOMING_ENV" \
             JUNO_DEPLOY_REF="$GITHUB_SHA" \
             JUNO_DEPLOY_ARCHIVE="$ARCHIVE" \
+            JUNO_BUILD_ARTIFACT="$BUILD_ARTIFACT" \
+            JUNO_BUILD_ARTIFACT_SHA256="$expected_build_checksum" \
             bash "$SOURCE_STAGE/deploy/deploy.sh"
           sudo nginx -t
           install -m 600 "$INCOMING_ENV" "$LIVE_ROOT/.env"
           echo "Immutable release transaction complete for $GITHUB_SHA."
           REMOTE
-          rm -f -- "$archive" "$archive_checksum" "$remote_env"
+          rm -f -- "$archive" "$archive_checksum" "$build_artifact" "$build_checksum" "$remote_env"
 
       - name: Verify production health and version
         env:

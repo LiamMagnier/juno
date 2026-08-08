@@ -21,6 +21,9 @@ LOCK_FILE="${JUNO_DEPLOY_LOCK:-$APP_HOME/.deploy.lock}"
 DEPLOY_REF="${JUNO_DEPLOY_REF:-origin/main}"
 DEPLOY_BUNDLE="${JUNO_DEPLOY_BUNDLE:-}"
 DEPLOY_ARCHIVE="${JUNO_DEPLOY_ARCHIVE:-}"
+BUILD_ARTIFACT="${JUNO_BUILD_ARTIFACT:-}"
+BUILD_ARTIFACT_SHA256="${JUNO_BUILD_ARTIFACT_SHA256:-}"
+BUILD_ROOT="${JUNO_BUILD_ROOT:-}"
 INITIAL_RELEASE_TARGET="${JUNO_INITIAL_RELEASE_TARGET:-$APP_HOME}"
 PERSISTENT_DATA_ROOT="${JUNO_PERSISTENT_DATA_ROOT:-$APP_HOME}"
 
@@ -103,6 +106,33 @@ verify_source_archive() {
   fi
   set -o pipefail
   [[ "$archive_sha" == "$expected_sha" ]] || fail "The source archive commit $archive_sha does not match reviewed commit $expected_sha"
+}
+
+verify_build_artifact() {
+  local artifact="$1"
+  [[ -f "$artifact" ]] || fail "The reviewed build artifact is missing: $artifact"
+  if [[ -n "$BUILD_ARTIFACT_SHA256" ]]; then
+    [[ "$BUILD_ARTIFACT_SHA256" =~ ^[0-9a-f]{64}$ ]] || fail "JUNO_BUILD_ARTIFACT_SHA256 must be a lowercase SHA-256 digest"
+    require_command sha256sum
+    local actual_sha
+    actual_sha="$(sha256sum "$artifact" | awk '{print $1}')"
+    [[ "$actual_sha" == "$BUILD_ARTIFACT_SHA256" ]] || fail "The build artifact checksum $actual_sha does not match the reviewed checksum"
+  fi
+}
+
+normalize_next_build_paths() {
+  local directory="$1"
+  [[ -n "$BUILD_ROOT" && -d "$directory/.next" ]] || return 0
+  require_command perl
+
+  local file
+  while IFS= read -r -d '' file; do
+    if grep -Iq -- "$BUILD_ROOT" "$file"; then
+      BUILD_ROOT="$BUILD_ROOT" \
+        RUNTIME_ROOT="$directory" \
+        perl -pi -e 's/\Q$ENV{BUILD_ROOT}\E/$ENV{RUNTIME_ROOT}/g' "$file"
+    fi
+  done < <(find "$directory/.next" -path "$directory/.next/cache" -prune -o -type f -print0)
 }
 
 validate_release() {
@@ -323,6 +353,10 @@ main() {
   require_command pm2
   require_command curl
 
+  if [[ -n "$BUILD_ARTIFACT" ]]; then
+    verify_build_artifact "$BUILD_ARTIFACT"
+  fi
+
   if [[ "${1:-}" == "--rollback" ]]; then
     umask 077
     exec 9>"$LOCK_FILE"
@@ -375,6 +409,10 @@ main() {
   else
     git -C "$APP_HOME" archive --format=tar "$TARGET_SHA" | tar -xf - -C "$STAGING_DIR"
   fi
+  if [[ -n "$BUILD_ARTIFACT" ]]; then
+    say "${YELLOW}📦 Installing the reviewed CI build artifact...${NC}"
+    tar -xzf "$BUILD_ARTIFACT" -C "$STAGING_DIR" --no-same-owner --no-same-permissions
+  fi
   install -m 600 -- "$ENV_FILE" "$STAGING_DIR/.env"
   # Storage and logs are deployment-scoped persistent state. Keep them outside
   # the immutable release and expose them through symlinks so a release switch
@@ -385,18 +423,30 @@ main() {
   printf '%s\n' "$TARGET_SHA" > "$STAGING_DIR/.juno-release-sha"
   validate_release "$STAGING_DIR"
 
-  say "${YELLOW}📦 Installing application dependencies...${NC}"
-  run_in_release "$STAGING_DIR" npm ci
+  if [[ -n "$BUILD_ARTIFACT" ]]; then
+    [[ -x "$STAGING_DIR/node_modules/.bin/prisma" ]] || fail "The CI build artifact is missing the Prisma CLI"
+    [[ -f "$STAGING_DIR/.next/BUILD_ID" ]] || fail "The CI build artifact is missing the Next.js build"
+    [[ -f "$STAGING_DIR/relay/dist/server.js" ]] || fail "The CI build artifact is missing the voice relay build"
+    [[ -f "$STAGING_DIR/runner/agent-core/dist/index.js" ]] || fail "The CI build artifact is missing the vendored runner build"
+    normalize_next_build_paths "$STAGING_DIR"
+  else
+    say "${YELLOW}📦 Installing application dependencies...${NC}"
+    run_in_release "$STAGING_DIR" npm ci
 
-  say "${YELLOW}💎 Generating Prisma client...${NC}"
-  run_in_release "$STAGING_DIR" npx prisma generate
+    say "${YELLOW}💎 Generating Prisma client...${NC}"
+    run_in_release "$STAGING_DIR" npx prisma generate
 
-  say "${YELLOW}🏗️ Building the candidate application...${NC}"
-  run_in_release "$STAGING_DIR" npm run build
+    say "${YELLOW}🏗️ Building the candidate application...${NC}"
+    run_in_release "$STAGING_DIR" npm run build
 
-  say "${YELLOW}🎙️ Building the candidate voice relay...${NC}"
-  run_in_release "$STAGING_DIR/relay" npm ci
-  run_in_release "$STAGING_DIR/relay" npm run build
+    say "${YELLOW}🎙️ Building the candidate voice relay...${NC}"
+    run_in_release "$STAGING_DIR/relay" npm ci
+    run_in_release "$STAGING_DIR/relay" npm run build
+
+    say "${YELLOW}🧠 Building the vendored runner core...${NC}"
+    run_in_release "$STAGING_DIR" npm ci --prefix runner/agent-core
+    run_in_release "$STAGING_DIR" npm run build --prefix runner/agent-core
+  fi
 
   say "${YELLOW}🗄️ Applying reviewed Prisma migrations...${NC}"
   if ! run_in_release "$STAGING_DIR" node scripts/baseline-production-migrations.mjs --status; then

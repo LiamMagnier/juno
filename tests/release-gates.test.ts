@@ -68,7 +68,11 @@ test("the canonical CI deploy uses the immutable VM transaction, not in-place rs
   assert.match(DEPLOY_JOB, /git get-tar-commit-id/);
   assert.match(DEPLOY_JOB, /sha256sum "\$archive"/);
   assert.match(DEPLOY_JOB, /actual_checksum=.*sha256sum/);
+  assert.match(DEPLOY_JOB, /Package the reviewed CI build artifact/);
+  assert.match(DEPLOY_JOB, /juno-\$\{GITHUB_SHA\}\.build\.tar\.gz/);
+  assert.match(DEPLOY_JOB, /actual_build_checksum=.*sha256sum/);
   assert.match(DEPLOY_JOB, /JUNO_DEPLOY_ARCHIVE/);
+  assert.match(DEPLOY_JOB, /JUNO_BUILD_ARTIFACT/);
   assert.match(DEPLOY_JOB, /JUNO_APP_HOME=/);
   assert.match(DEPLOY_JOB, /JUNO_INITIAL_RELEASE_TARGET=/);
   assert.match(DEPLOY_JOB, /JUNO_PERSISTENT_DATA_ROOT=/);
@@ -153,6 +157,9 @@ test("manual deployment requires a direct schema connection and never mutates th
   assert.match(DEPLOY_SCRIPT, /JUNO_APP_HOME/);
   assert.match(DEPLOY_SCRIPT, /verify_source_archive\(\)/);
   assert.match(DEPLOY_SCRIPT, /git get-tar-commit-id/);
+  assert.match(DEPLOY_SCRIPT, /verify_build_artifact\(\)/);
+  assert.match(DEPLOY_SCRIPT, /normalize_next_build_paths\(\)/);
+  assert.match(DEPLOY_SCRIPT, /runner\/agent-core\/dist\/index\.js/);
   assert.doesNotMatch(DEPLOY_SCRIPT, /sync:models:write/);
   assert.match(DEPLOY_SCRIPT, /JUNO_PERSISTENT_DATA_ROOT/);
   assert.match(DEPLOY_SCRIPT, /mkdir -p -- "\$PERSISTENT_DATA_ROOT\/\.uploads" "\$PERSISTENT_DATA_ROOT\/logs"/);
