@@ -299,7 +299,7 @@ struct DesktopWorkWorkspace: View {
         } else {
             DesktopWorkOverview(
                 model: model,
-                sessions: visibleSessions,
+                sessions: visibleSessions.filter { filter.includes($0, model: model) },
                 filter: filter,
                 selection: selection,
                 hostModel: hostModel,
@@ -543,6 +543,7 @@ enum DesktopWorkFilter: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    @MainActor
     func includes(_ session: WorkSessionSummary?, model: NativeWorkModel) -> Bool {
         guard let session else { return false }
         let status = model.displayStatus(of: session)
@@ -561,6 +562,7 @@ enum DesktopWorkFilter: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    @MainActor
     func count(in sessions: [WorkSessionSummary], model: NativeWorkModel) -> Int {
         sessions.filter { includes($0, model: model) }.count
     }
@@ -1512,6 +1514,7 @@ private struct DesktopWorkThread: View {
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 390)
+            .labelsHidden()
             .accessibilityIdentifier("juno.work.surface")
         }
         .padding(.horizontal, JunoSpace.hairline)
@@ -1540,7 +1543,8 @@ private struct DesktopWorkThread: View {
         return VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             HStack(alignment: .firstTextBaseline, spacing: JunoSpace.cozy) {
                 Text(session.title)
-                    .font(JunoSerif.pageHeading())
+                    .font(.system(size: 28, weight: .semibold, design: .rounded))
+                    .lineLimit(2)
                     .textSelection(.enabled)
                 Spacer(minLength: JunoSpace.snug)
                 DesktopWorkStatusPill(status: status)
@@ -1556,16 +1560,14 @@ private struct DesktopWorkThread: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
 
-            // One metadata line, not three stacked ones.
-            //
-            // The status sentence, where it runs and which model answered were
-            // three separate `Text`s at three different styles — one of them
-            // monospaced — which is why the header read as a form rather than as
-            // a heading. They are one interpuncted line now: the same facts, one
-            // reading order, one style.
+            // The status sentence is kept as prose. The structured run facts
+            // below carry provenance and cost in a scannable row, so this line
+            // can stay human rather than becoming a wall of metadata.
             Text(metadataLine(style: style))
                 .junoCaption()
                 .fixedSize(horizontal: false, vertical: true)
+
+            runFacts
 
             // Every reason the run is not what was asked for, in the server's
             // own words. A degradation the client cannot name shows the user
@@ -1596,19 +1598,56 @@ private struct DesktopWorkThread: View {
         }
     }
 
-    /// The header's single line of provenance: what the status means, where the
-    /// task runs, and which model answered.
-    ///
-    /// Interpuncted rather than stacked because these are three facts of equal
-    /// weight about one task, and three lines gave them three weights. The model
-    /// is included only once a run has chosen one — naming a model on a task that
-    /// has never run would be an invention.
+    /// The header's sentence is the status in the user's vocabulary. Where the
+    /// task ran, which model answered and what it cost are rendered as labelled
+    /// facts beside it, not buried in one long interpuncted line.
     private func metadataLine(style: DesktopWorkStatusStyle) -> String {
-        var parts = [style.sentence, runningWhere]
-        if let model = run?.effectiveModel, !model.isEmpty {
-            parts.append("Answered by \(model)")
+        style.sentence
+    }
+
+    private var runFacts: some View {
+        HStack(spacing: 0) {
+            fact("Where", value: runningWhere, symbol: "location")
+            Divider().frame(height: 38)
+            fact("Model", value: effectiveModelLabel, symbol: "cpu")
+            Divider().frame(height: 38)
+            fact("Spent", value: spentLabel, symbol: "dollarsign.circle")
+            Divider().frame(height: 38)
+            fact("Attempt", value: run.map { $0.attempt.formatted() } ?? "Not started", symbol: "arrow.counterclockwise")
         }
-        return parts.joined(separator: "  ·  ")
+        .padding(.horizontal, JunoSpace.regular)
+        .padding(.vertical, JunoSpace.cozy)
+        .junoCard()
+        .accessibilityIdentifier("juno.work.run-facts")
+    }
+
+    private var effectiveModelLabel: String {
+        guard let model = run?.effectiveModel, !model.isEmpty else { return "Not chosen" }
+        return model
+    }
+
+    private var spentLabel: String {
+        guard let run else { return "Not started" }
+        let spent = Double(run.costMicroUsd) / 1_000_000
+        return spent.formatted(.currency(code: "USD"))
+    }
+
+    private func fact(_ label: String, value: String, symbol: String) -> some View {
+        HStack(alignment: .top, spacing: JunoSpace.snug) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.junoAccent)
+                .frame(width: 16, alignment: .center)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .junoCaption()
+                Text(value)
+                    .font(.system(.callout, design: .default, weight: .medium))
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Where the task ran, named from the run rather than from the request.
@@ -2291,12 +2330,13 @@ private struct DesktopWorkComposer: View {
     let started: (WorkSessionSummary) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var taskTitle = ""
     @State private var goal = ""
     @State private var target = JunoWorkTarget.automatic
     @State private var preferredHostID: String?
 
     private static let width: CGFloat = 560
-    private static let height: CGFloat = 420
+    private static let height: CGFloat = 480
 
     private var canStart: Bool {
         !goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isMutating
@@ -2311,13 +2351,17 @@ private struct DesktopWorkComposer: View {
                 .junoCaption()
                 .fixedSize(horizontal: false, vertical: true)
 
+            TextField("Task name (optional)", text: $taskTitle)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("juno.work.composer.title")
+
             TextEditor(text: $goal)
                 .font(.system(.body))
                 // `TextEditor` paints its own opaque scroll background, which
                 // sits on top of the panel fill and leaves the editor as a
                 // white rectangle inside a rounded one.
                 .scrollContentBackground(.hidden)
-                .frame(minHeight: 132)
+                .frame(minHeight: 118)
                 .padding(JunoSpace.snug)
                 .junoPanel()
                 .accessibilityIdentifier("juno.work.composer.goal")
@@ -2354,7 +2398,7 @@ private struct DesktopWorkComposer: View {
             HStack {
                 Spacer(minLength: JunoSpace.regular)
                 Button("Cancel", role: .cancel) { dismiss() }
-                Button("Start") { start() }
+                Button("Start task") { start() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canStart)
                     .accessibilityIdentifier("juno.work.composer.start")
@@ -2369,10 +2413,12 @@ private struct DesktopWorkComposer: View {
 
     private func start() {
         guard canStart else { return }
+        let title = taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         let text = goal
         Task {
             guard let session = await model.startTask(
                 goal: text,
+                title: title.isEmpty ? nil : title,
                 target: target,
                 preferredHostID: target == .local ? preferredHostID : nil
             ) else { return }

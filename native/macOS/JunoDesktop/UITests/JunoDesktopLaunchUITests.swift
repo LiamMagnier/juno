@@ -215,6 +215,56 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         XCTAssertTrue(app.exists)
     }
 
+    func testWorkPreviewHasActionableOverviewFiltersAndTaskSurfaces() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-ApplePersistenceIgnoreState", "YES",
+            "--juno-ui-preview",
+            "--juno-preview-tab", "work",
+            "--juno-preview-size", "1240x800",
+        ]
+        app.launch()
+        openMainWindowIfNeeded(in: app)
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.work.surface"]
+                .waitForExistence(timeout: 12)
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.work.run-facts"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.work.approval"]
+                .waitForExistence(timeout: 5)
+        )
+
+        let newTask = app.descendants(matching: .any)["juno.work.new-task"]
+        XCTAssertTrue(newTask.exists)
+        newTask.click()
+        XCTAssertTrue(
+            app.textFields["juno.work.composer.title"].waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.textFields["juno.work.composer.goal"].exists)
+        app.buttons["Cancel"].click()
+
+        let completed = app.descendants(matching: .any)["juno.work.filter.completed"]
+        XCTAssertTrue(completed.waitForExistence(timeout: 5))
+        completed.click()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.work.overview.metrics"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(
+            app.buttons["juno.work.overview.new-task"].exists
+                || app.descendants(matching: .any)["juno.work.overview.new-task"].exists
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.work.overview.task.wk-receipts"]
+                .exists
+        )
+    }
+
     func testProjectsOpenOnTheIndexAndCanStartAScopedChatInsideAProject() {
         let app = XCUIApplication()
         app.launchArguments = [
