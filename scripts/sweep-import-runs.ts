@@ -26,13 +26,22 @@ async function tick() {
   }
 }
 
-async function shutdown() {
-  clearInterval(timer);
-  await prismaUnguarded.$disconnect();
-  process.exit(0);
+async function main() {
+  await tick();
+  const timer = setInterval(tick, IMPORT_RECOVERY_INTERVAL_MS);
+
+  async function shutdown() {
+    clearInterval(timer);
+    await prismaUnguarded.$disconnect();
+    process.exit(0);
+  }
+
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
 }
 
-await tick();
-const timer = setInterval(tick, IMPORT_RECOVERY_INTERVAL_MS);
-process.once("SIGTERM", shutdown);
-process.once("SIGINT", shutdown);
+void main().catch(async (error) => {
+  console.error("[import-recovery] worker failed to start", error instanceof Error ? error.message : String(error));
+  await prismaUnguarded.$disconnect().catch(() => undefined);
+  process.exitCode = 1;
+});
