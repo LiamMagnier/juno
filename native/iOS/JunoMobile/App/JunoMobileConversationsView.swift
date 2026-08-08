@@ -702,6 +702,12 @@ private struct JunoMobileConversationDetail: View {
                             && !model.isGenerating
                             ? { model.retryLastMessage(conversationID: conversation.id) }
                             : nil,
+                        continueResponse: voiceSession == nil
+                            && message.id == messages.last?.id
+                            && message.role == .assistant
+                            && model.canContinueSelectedConversation
+                            ? { _ = model.continueLastResponse(conversationID: conversation.id) }
+                            : nil,
                         branch: branchAction,
                         setFeedback: feedbackAction
                     )
@@ -1275,6 +1281,9 @@ private struct JunoMobileMessageRow: View {
     /// Offered only on the last answer, as the web does — regenerating anything
     /// earlier would silently discard every turn after it.
     var regenerate: (() -> Void)?
+    /// Offered for a length/network boundary, preserving the partial answer and
+    /// sending the website's continuation prompt as a new turn.
+    var continueResponse: (() -> Void)? = nil
     var branch: ((String) -> Void)?
     var setFeedback: ((String, NativeChatFeedback?) -> Void)?
     /// Whether this is a line of a call in progress rather than a filed message.
@@ -1662,6 +1671,18 @@ private struct JunoMobileMessageRow: View {
                         label: "message.regenerate",
                         identifier: "juno.mobile.message-regenerate",
                         action: regenerate
+                    )
+                }
+
+                if let continueResponse,
+                    message.finishReason == .length
+                        || message.finishReason == .networkError
+                {
+                    actionButton(
+                        systemImage: "arrow.down.circle",
+                        label: "message.continue",
+                        identifier: "juno.mobile.message-continue",
+                        action: continueResponse
                     )
                 }
 

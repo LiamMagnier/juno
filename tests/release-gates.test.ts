@@ -64,10 +64,15 @@ test("production deploy is protected and pins the VM host key", () => {
 
 test("the canonical CI deploy uses the immutable VM transaction, not in-place rsync", () => {
   assert.match(DEPLOY_JOB, /Deploy the exact reviewed commit through the immutable VM transaction/);
-  assert.match(DEPLOY_JOB, /git bundle create/);
-  assert.match(DEPLOY_JOB, /JUNO_DEPLOY_BUNDLE/);
+  assert.match(DEPLOY_JOB, /git archive --format=tar/);
+  assert.match(DEPLOY_JOB, /git get-tar-commit-id/);
+  assert.match(DEPLOY_JOB, /sha256sum "\$archive"/);
+  assert.match(DEPLOY_JOB, /actual_checksum=.*sha256sum/);
+  assert.match(DEPLOY_JOB, /JUNO_DEPLOY_ARCHIVE/);
   assert.match(DEPLOY_JOB, /JUNO_APP_HOME=/);
   assert.match(DEPLOY_JOB, /JUNO_INITIAL_RELEASE_TARGET=/);
+  assert.match(DEPLOY_JOB, /JUNO_PERSISTENT_DATA_ROOT=/);
+  assert.doesNotMatch(DEPLOY_JOB, /git bundle create/);
   for (const marker of [
     "Snapshot the current build for rollback",
     "Ship build to the VM",
@@ -146,10 +151,13 @@ test("deploy script only applies committed Prisma migrations", () => {
 test("manual deployment requires a direct schema connection and never mutates the model registry", () => {
   assert.match(DEPLOY_SCRIPT, /for name in DATABASE_URL DIRECT_URL AUTH_SECRET AUTH_URL ALLOWED_ORIGINS/);
   assert.match(DEPLOY_SCRIPT, /JUNO_APP_HOME/);
+  assert.match(DEPLOY_SCRIPT, /verify_source_archive\(\)/);
+  assert.match(DEPLOY_SCRIPT, /git get-tar-commit-id/);
   assert.doesNotMatch(DEPLOY_SCRIPT, /sync:models:write/);
-  assert.match(DEPLOY_SCRIPT, /mkdir -p -- "\$APP_HOME\/\.uploads" "\$APP_HOME\/logs"/);
-  assert.match(DEPLOY_SCRIPT, /ln -s -- "\$APP_HOME\/\.uploads" "\$STAGING_DIR\/\.uploads"/);
-  assert.match(DEPLOY_SCRIPT, /ln -s -- "\$APP_HOME\/logs" "\$STAGING_DIR\/logs"/);
+  assert.match(DEPLOY_SCRIPT, /JUNO_PERSISTENT_DATA_ROOT/);
+  assert.match(DEPLOY_SCRIPT, /mkdir -p -- "\$PERSISTENT_DATA_ROOT\/\.uploads" "\$PERSISTENT_DATA_ROOT\/logs"/);
+  assert.match(DEPLOY_SCRIPT, /ln -s -- "\$PERSISTENT_DATA_ROOT\/\.uploads" "\$STAGING_DIR\/\.uploads"/);
+  assert.match(DEPLOY_SCRIPT, /ln -s -- "\$PERSISTENT_DATA_ROOT\/logs" "\$STAGING_DIR\/logs"/);
 });
 
 test("deploy script builds before atomic activation and has an application rollback path", () => {
@@ -196,7 +204,8 @@ test("production activation verifies every PM2 service, including workers and th
 
 test("external release failures use the same verified rollback transaction", () => {
   const rollbackStep = DEPLOY_JOB.slice(DEPLOY_JOB.indexOf("      - name: Roll back failed application release"));
-  assert.match(rollbackStep, /bash "\$SOURCE_ROOT\/deploy\/deploy\.sh" --rollback/);
+  assert.match(rollbackStep, /bash "\$DEPLOY_SCRIPT" --rollback/);
+  assert.match(rollbackStep, /CURRENT_SHA.*GITHUB_SHA/);
   assert.doesNotMatch(rollbackStep, /juno-previous/);
 });
 

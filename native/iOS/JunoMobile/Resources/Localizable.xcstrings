@@ -4543,6 +4543,23 @@
         }
       }
     },
+    "message.continue" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continuer"
+          }
+        }
+      }
+    },
     "message.good" : {
       "extractionState" : "manual",
       "localizations" : {

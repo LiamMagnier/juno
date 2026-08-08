@@ -20,7 +20,9 @@ ENV_FILE="${JUNO_ENV_FILE:-$APP_HOME/.env}"
 LOCK_FILE="${JUNO_DEPLOY_LOCK:-$APP_HOME/.deploy.lock}"
 DEPLOY_REF="${JUNO_DEPLOY_REF:-origin/main}"
 DEPLOY_BUNDLE="${JUNO_DEPLOY_BUNDLE:-}"
+DEPLOY_ARCHIVE="${JUNO_DEPLOY_ARCHIVE:-}"
 INITIAL_RELEASE_TARGET="${JUNO_INITIAL_RELEASE_TARGET:-$APP_HOME}"
+PERSISTENT_DATA_ROOT="${JUNO_PERSISTENT_DATA_ROOT:-$APP_HOME}"
 
 STAGING_DIR=''
 RELEASE_DIR=''
@@ -75,8 +77,26 @@ require_clean_checkout() {
 reviewed_migrations_exist() {
   local target_sha="$1"
   local migration_files
-  migration_files="$(git -C "$APP_HOME" ls-tree -r --name-only "$target_sha" -- prisma/migrations | awk '/\/migration\.sql$/')"
+  if git -C "$APP_HOME" rev-parse --git-dir >/dev/null 2>&1; then
+    migration_files="$(git -C "$APP_HOME" ls-tree -r --name-only "$target_sha" -- prisma/migrations | awk '/\/migration\.sql$/')"
+  else
+    # CI can deliver a SHA-verified `git archive` instead of a full history.
+    # The archive has already been authenticated with git get-tar-commit-id;
+    # validate the materialized migration ledger before building it.
+    migration_files="$(find "$APP_HOME/prisma/migrations" -mindepth 2 -maxdepth 2 -type f -name migration.sql -print -quit 2>/dev/null || true)"
+  fi
   [[ -n "$migration_files" ]] || fail "The reviewed commit contains no Prisma migration files"
+}
+
+verify_source_archive() {
+  local archive="$1"
+  local expected_sha="$2"
+  local archive_sha
+
+  if ! archive_sha="$(gzip -cd "$archive" | git get-tar-commit-id)"; then
+    fail "The reviewed source archive is not a valid Git tar archive: $archive"
+  fi
+  [[ "$archive_sha" == "$expected_sha" ]] || fail "The source archive commit $archive_sha does not match reviewed commit $expected_sha"
 }
 
 validate_release() {
@@ -291,6 +311,7 @@ main() {
   require_command npm
   require_command npx
   require_command tar
+  require_command gzip
   require_command find
   require_command flock
   require_command pm2
@@ -312,15 +333,23 @@ main() {
 
   say "${BLUE}🚀 Starting Juno release deployment...${NC}"
   require_deploy_environment
-  require_clean_checkout
+  if [[ -z "$DEPLOY_ARCHIVE" ]]; then
+    require_clean_checkout
+  fi
 
   say "${YELLOW}📥 Fetching the reviewed Git ref...${NC}"
-  if [[ -n "$DEPLOY_BUNDLE" ]]; then
+  if [[ -n "$DEPLOY_ARCHIVE" ]]; then
+    [[ -f "$DEPLOY_ARCHIVE" ]] || fail "The reviewed source archive is missing: $DEPLOY_ARCHIVE"
+    [[ "$DEPLOY_REF" =~ ^[0-9a-f]{40}$ ]] || fail "JUNO_DEPLOY_REF must be a full SHA when deploying an archive"
+    verify_source_archive "$DEPLOY_ARCHIVE" "$DEPLOY_REF"
+    TARGET_SHA="$DEPLOY_REF"
+  elif [[ -n "$DEPLOY_BUNDLE" ]]; then
     git -C "$APP_HOME" fetch --no-tags "$DEPLOY_BUNDLE" "$DEPLOY_REF"
+    TARGET_SHA="$(git -C "$APP_HOME" rev-parse --verify "${DEPLOY_REF}^{commit}")"
   else
     git -C "$APP_HOME" fetch --prune origin main
+    TARGET_SHA="$(git -C "$APP_HOME" rev-parse --verify "${DEPLOY_REF}^{commit}")"
   fi
-  TARGET_SHA="$(git -C "$APP_HOME" rev-parse --verify "${DEPLOY_REF}^{commit}")"
   reviewed_migrations_exist "$TARGET_SHA"
 
   if [[ -e "$RELEASES_DIR" && ! -d "$RELEASES_DIR" ]]; then
@@ -335,14 +364,18 @@ main() {
   mkdir -- "$STAGING_DIR"
 
   say "${YELLOW}📦 Materializing commit $TARGET_SHA into a staged release...${NC}"
-  git -C "$APP_HOME" archive --format=tar "$TARGET_SHA" | tar -xf - -C "$STAGING_DIR"
+  if [[ -n "$DEPLOY_ARCHIVE" ]]; then
+    tar -xzf "$DEPLOY_ARCHIVE" -C "$STAGING_DIR"
+  else
+    git -C "$APP_HOME" archive --format=tar "$TARGET_SHA" | tar -xf - -C "$STAGING_DIR"
+  fi
   install -m 600 -- "$ENV_FILE" "$STAGING_DIR/.env"
   # Storage and logs are deployment-scoped persistent state. Keep them outside
   # the immutable release and expose them through symlinks so a release switch
   # cannot strand uploaded files or split logs across release directories.
-  mkdir -p -- "$APP_HOME/.uploads" "$APP_HOME/logs"
-  ln -s -- "$APP_HOME/.uploads" "$STAGING_DIR/.uploads"
-  ln -s -- "$APP_HOME/logs" "$STAGING_DIR/logs"
+  mkdir -p -- "$PERSISTENT_DATA_ROOT/.uploads" "$PERSISTENT_DATA_ROOT/logs"
+  ln -s -- "$PERSISTENT_DATA_ROOT/.uploads" "$STAGING_DIR/.uploads"
+  ln -s -- "$PERSISTENT_DATA_ROOT/logs" "$STAGING_DIR/logs"
   printf '%s\n' "$TARGET_SHA" > "$STAGING_DIR/.juno-release-sha"
   validate_release "$STAGING_DIR"
 

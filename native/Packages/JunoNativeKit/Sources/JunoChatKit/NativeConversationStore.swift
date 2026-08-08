@@ -494,6 +494,22 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         selectedConversationID.flatMap { retryContexts[$0] } != nil
     }
 
+    /// Whether the last response ended at a recoverable boundary rather than a
+    /// terminal error. The web offers this as "Continue" for the two cases
+    /// where the reader has a useful partial answer; native used to expose only
+    /// Retry, which discarded that partial answer and re-ran the original turn.
+    public var canContinueSelectedConversation: Bool {
+        guard !chatPhase.isActive,
+            let conversationID = selectedConversationID,
+            retryContexts[conversationID] != nil,
+            let lastAssistant = visibleMessages(for: conversationID).last(where: {
+                $0.role == .assistant
+            })
+        else { return false }
+        return lastAssistant.finishReason == .length
+            || lastAssistant.finishReason == .networkError
+    }
+
     /// The conversation whose title the server has just replaced, so the screen
     /// showing it can animate the change rather than swapping the text under the
     /// reader's eyes. Cleared by ``acknowledgeTitleAnimation(for:)``.
@@ -1169,6 +1185,31 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         removeTransientAssistant(for: conversationID)
         appendAssistantPlaceholder(for: context)
         launchGeneration(context, needsAppend: context.userMessageID == nil)
+    }
+
+    /// Starts a fresh turn that asks the model to continue a response it ended
+    /// part-way through. This mirrors the web's continuation prompt: it keeps
+    /// the partial answer visible and gives the provider a normal new user turn,
+    /// rather than replaying the original prompt as Retry does.
+    @discardableResult
+    public func continueLastResponse(conversationID: String) -> Bool {
+        guard canContinueSelectedConversation,
+            let context = retryContexts[conversationID],
+            accountID == context.accountID
+        else { return false }
+
+        return sendMessage(
+            conversationID: conversationID,
+            prompt: "Continue from where you left off.",
+            modelID: context.modelID,
+            reasoningEffort: context.reasoningEffort,
+            deepResearch: context.deepResearch,
+            webSearch: context.webSearch,
+            canvasEnabled: context.canvasEnabled,
+            connectors: context.connectors,
+            fastMode: context.fastMode,
+            proMode: context.proMode
+        )
     }
 
     public func stopGeneration() {

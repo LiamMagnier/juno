@@ -1163,6 +1163,14 @@ private struct DesktopTranscript: View {
                                 }
                                 model.retryLastMessage(conversationID: conversationID)
                             },
+                            continueResponse: model.canContinueSelectedConversation
+                                ? {
+                                    guard let conversationID = model.selectedConversationID else {
+                                        return
+                                    }
+                                    _ = model.continueLastResponse(conversationID: conversationID)
+                                }
+                                : nil,
                             branch: messageActions.map { _ in
                                 { branch(from: message) }
                             },
@@ -1221,6 +1229,7 @@ private struct DesktopTranscript: View {
                                 copy(NativeMessageContent.plainText(of: message.content))
                             },
                             regenerate: nil,
+                            continueResponse: nil,
                             branch: nil,
                             setFeedback: nil,
                             readAloud: nil,
@@ -1473,6 +1482,9 @@ private struct DesktopMessageRow: View {
     /// absence `branch` and `setFeedback` express, rather than a closure that
     /// does nothing.
     let regenerate: (() -> Void)?
+    /// Nil unless the last answer ended at a resumable boundary. Continue is a
+    /// new user turn; unlike regenerate it leaves the partial answer visible.
+    let continueResponse: (() -> Void)?
     let branch: (() -> Void)?
     let setFeedback: ((NativeChatFeedback?) -> Void)?
     let readAloud: (() -> Void)?
@@ -1747,6 +1759,17 @@ private struct DesktopMessageRow: View {
                                 "Regenerate",
                                 symbol: "arrow.clockwise",
                                 action: regenerate
+                            )
+                        }
+                        if isLastAssistant,
+                            let continueResponse,
+                            message.finishReason == .length
+                                || message.finishReason == .networkError
+                        {
+                            messageAction(
+                                "Continue",
+                                symbol: "arrow.down.circle",
+                                action: continueResponse
                             )
                         }
                         if let setFeedback {
