@@ -5,6 +5,7 @@ import { requireNativeRequest } from "@/lib/native-request";
 import { prismaUnguarded } from "@/lib/prisma";
 import { isModelId } from "@/lib/models";
 import { mutationRequestSchema, type MutationOperation } from "@/lib/sync-mutations";
+import { guardedMemoryWrite, type MemoryEntryKind } from "@/lib/memory-suppression";
 
 export const runtime = "nodejs";
 
@@ -177,13 +178,32 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
     }
     case "memory.create": {
       if (baseRevision !== 0) throw new ApiV1Error("invalid_request", 400, "Create mutations must start at revision zero.");
-      const row = await tx.memoryEntry.create({ data: { userId: accountId, content: op.content, source: "MANUAL", sourceRef: "native" } });
+      // Through the same door the web writes go through. A memory typed on the
+      // Mac or iPhone used to land in the table unscreened, so "forget my old
+      // job" held on the web and quietly failed to hold anywhere else.
+      const outcome = await guardedMemoryWrite({
+        content: op.content,
+        loadSuppressions: () => accountSuppressions(tx, accountId),
+        write: (content) =>
+          tx.memoryEntry.create({ data: { userId: accountId, content, source: "MANUAL", sourceRef: "native" } }),
+      });
+      const row = requireWritten(outcome);
       return { entityMappings: op.clientEntityId ? { [op.clientEntityId]: row.id } : {}, entity: { id: row.id, revision: await nextRevision(tx, accountId, "memory", row.id) } };
     }
     case "memory.update": {
       await requireRevision(tx, accountId, "memory", op.entityId, baseRevision);
-      const updated = await tx.memoryEntry.updateMany({ where: { id: op.entityId, userId: accountId }, data: { content: op.content, source: "MANUAL" } });
-      if (!updated.count) throw new ApiV1Error("not_found", 404, "The memory was not found.");
+      const existing = await tx.memoryEntry.findFirst({ where: { id: op.entityId, userId: accountId }, select: { kind: true } });
+      if (!existing) throw new ApiV1Error("not_found", 404, "The memory was not found.");
+      const outcome = await guardedMemoryWrite({
+        content: op.content,
+        // Rewording a suppression must stay possible; the block-list cannot
+        // block edits to itself.
+        kind: existing.kind as MemoryEntryKind,
+        loadSuppressions: () => accountSuppressions(tx, accountId),
+        write: (content) =>
+          tx.memoryEntry.updateMany({ where: { id: op.entityId, userId: accountId }, data: { content, source: "MANUAL" } }),
+      });
+      if (!requireWritten(outcome).count) throw new ApiV1Error("not_found", 404, "The memory was not found.");
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "memory", op.entityId) } };
     }
     case "memory.delete": {
@@ -200,6 +220,34 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
       return { entity: { id: row.id, revision: await nextRevision(tx, accountId, "settings", row.id) } };
     }
   }
+}
+
+/** The account's block-list, read inside the mutation's own transaction. */
+async function accountSuppressions(tx: Tx, accountId: string): Promise<string[]> {
+  const rows = await tx.memoryEntry.findMany({
+    where: { userId: accountId, kind: "SUPPRESSION" },
+    select: { content: true },
+  });
+  return rows.map((r) => r.content);
+}
+
+/**
+ * Turn a refused memory write into the contract's error shape.
+ *
+ * `conflict` rather than `invalid_request`: the content is well-formed, it is
+ * the account's own state that forbids it. A native client that queued this
+ * mutation offline needs to drop it and tell the user which "forget" it
+ * collided with, not retry it forever — hence retryable=false and the
+ * suppression in `details`.
+ */
+function requireWritten<T>(outcome: Awaited<ReturnType<typeof guardedMemoryWrite<T>>>): T {
+  if (outcome.ok) return outcome.value;
+  if (outcome.reason === "suppressed") {
+    throw new ApiV1Error("suppressed_by_memory", 409, outcome.message, false, {
+      suppression: outcome.suppression,
+    });
+  }
+  throw new ApiV1Error("invalid_request", 400, "The memory text is empty.");
 }
 
 async function requireOwnedConversationReferences(

@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { runUtilityPrompt, utilityModelCandidates } from "@/lib/memory";
+import { backgroundDenialMessage } from "@/lib/background-provider-policy";
+import {
+  accountBackgroundProvider,
+  loadBackgroundProviderPolicy,
+  runUtilityPrompt,
+  utilityModelCandidates,
+} from "@/lib/memory";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -76,9 +82,21 @@ Rules:
       : "(none yet)"
   }\n\nInstruction: ${parsed.data.instruction}\n\nReturn the JSON.`;
 
-  // Walk the candidate models (with a one-shot retry for transiently
+  // The instruction is the user's own words about their own memory, so where it
+  // may be sent is the background-provider policy's call — this route used to
+  // pass neither a policy nor a provider, and the default `same_provider` mode
+  // matched a null provider against nothing. Result: on a stock account the
+  // memory editor was denied every single time and reported it as a rate limit.
+  // The account's default chat model names the provider the user has already
+  // chosen to trust with this content.
+  const [policy, conversationProvider] = await Promise.all([
+    loadBackgroundProviderPolicy(user.id),
+    accountBackgroundProvider(user.id),
+  ]);
+
+  // Walk the permitted models (with a one-shot retry for transiently
   // rate-limited providers) and be honest about why it failed if it does.
-  const { result: drafted, transient } = await runUtilityPrompt({
+  const { result: drafted, transient, deniedByPolicy, deniedReason, mode } = await runUtilityPrompt({
     system,
     userMsg,
     maxTokens: 600,
@@ -87,13 +105,31 @@ Rules:
       const attempt = modelOutSchema.safeParse(extractJson(text));
       return attempt.success ? attempt.data : null;
     },
+    policy,
+    conversationProvider,
+    purpose: "memory_edit",
   });
+
+  // A policy denial and a provider failure look identical from here unless the
+  // walk says which it was — and reporting one as the other is what made this
+  // route lie. 409 (a rule refused) rather than 502 (upstream failed).
+  if (deniedByPolicy) {
+    return NextResponse.json(
+      {
+        error: backgroundDenialMessage(deniedReason, mode ?? policy.mode),
+        code: "background_policy_denied",
+        policyMode: mode ?? policy.mode,
+      },
+      { status: 409 }
+    );
+  }
   if (!drafted) {
     return NextResponse.json(
       {
         error: transient
-          ? "The AI providers are rate-limited right now — wait a minute and try again."
-          : "Every configured AI provider is out of credits, so Juno can’t draft changes right now. Add credit to a provider and try again.",
+          ? "The AI provider is busy right now — wait a minute and try again."
+          : "Juno couldn’t draft that change — the provider returned nothing usable. Try again in a moment.",
+        code: "provider_failed",
       },
       { status: 502 }
     );

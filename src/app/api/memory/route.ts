@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { getMemorySummary } from "@/lib/memory";
+import { getMemorySummary, getSuppressions } from "@/lib/memory";
+import { guardedMemoryWrite } from "@/lib/memory-suppression";
 
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -62,9 +63,29 @@ export async function POST(req: Request) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const memory = await prisma.memoryEntry.create({
-    data: { userId: user.id, content: parsed.data.content, source: "MANUAL" },
-    select: { id: true, content: true, source: true, createdAt: true },
+  // Through the door, like every other write. A manual add used to skip the
+  // block-list entirely, so typing back something the user had asked Juno to
+  // forget quietly restored it — and nothing in the UI said the "forget" had
+  // been overruled.
+  const outcome = await guardedMemoryWrite({
+    content: parsed.data.content,
+    kind: "FACT",
+    loadSuppressions: () => getSuppressions(user.id),
+    write: (content) =>
+      prisma.memoryEntry.create({
+        data: { userId: user.id, content, source: "MANUAL" },
+        select: { id: true, content: true, source: true, createdAt: true },
+      }),
   });
+
+  if (!outcome.ok) {
+    if (outcome.reason === "empty") return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+    return NextResponse.json(
+      { error: outcome.message, code: "suppressed", suppression: outcome.suppression },
+      { status: 409 }
+    );
+  }
+
+  const memory = outcome.value;
   return NextResponse.json({ memory: { ...memory, createdAt: memory.createdAt.toISOString() } }, { status: 201 });
 }

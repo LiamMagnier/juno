@@ -159,6 +159,40 @@ export function resolveBackgroundCandidates<T extends UtilityCandidate>(opts: {
 }
 
 /**
+ * A sentence explaining a denial, for the surfaces that have to tell the user
+ * why nothing happened.
+ *
+ * It exists because the alternative shipped: /api/memory/edit could not
+ * distinguish "the policy refused" from "every provider failed", so it reported
+ * a policy denial as "The AI providers are rate-limited right now" — a claim
+ * that was false, unactionable, and told the user to wait for a condition that
+ * would never change. A refusal has to name the rule that refused and where to
+ * change it, or it is worse than no message at all.
+ */
+export function backgroundDenialMessage(
+  reason: BackgroundDenialReason | undefined,
+  mode: BackgroundProviderMode
+): string {
+  const setting = "You can change this under Settings → Memory → Background processing.";
+  switch (reason) {
+    case "no_candidate_for_conversation_provider":
+      return `Juno keeps background work with the provider you chat with, and that provider has no model free for it right now. ${setting}`;
+    case "selected_provider_unavailable":
+      return `Background work is pinned to one provider, and it isn’t configured or has no model available. ${setting}`;
+    case "no_local_model":
+      return `Background work is limited to on-device models, and none is available in this deployment. ${setting}`;
+    case "excluded_by_allowlist":
+      return "This deployment’s provider allowlist rules out every provider that could do this work. Your administrator sets that list.";
+    case "no_candidates":
+      // Not a policy decision at all — nothing is configured to deny. Providers
+      // are a deployment concern here, so there is no setting to point at.
+      return "No AI provider is configured for background work in this deployment yet.";
+    default:
+      return `Your background-processing setting (${mode}) left no provider allowed to do this. ${setting}`;
+  }
+}
+
+/**
  * What a background job did, recorded so the choice is auditable.
  *
  * Carries no content and no identifiers beyond the account — the point is to
@@ -177,6 +211,8 @@ export interface BackgroundProcessingRecord {
 export type BackgroundPurpose =
   | "memory_extraction"
   | "memory_consolidation"
+  /** Drafting a memory change from the user's natural-language instruction. */
+  | "memory_edit"
   | "title"
   | "moderation"
   | "research_planning"

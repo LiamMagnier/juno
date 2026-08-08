@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { consolidateWithFallback, getMemorySummary } from "@/lib/memory";
+import { guardedMemoryWrite, type MemoryWriteRefusal } from "@/lib/memory-suppression";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -55,33 +56,83 @@ export async function POST(req: Request) {
   }
 
   const inverse: Operation[] = [];
-  await prisma.$transaction(async (tx) => {
-    for (const op of ops) {
-      if (op.op === "add") {
-        const created = await tx.memoryEntry.create({
-          data: {
-            userId: user.id,
+  // A refused write aborts the whole edit rather than applying the rest of it:
+  // these operations are one intent ("swap my job for the new one"), and a
+  // half-applied intent is worse than a rejected one. The throw rolls the
+  // transaction back; the refusal is reported outside it.
+  let refusal: MemoryWriteRefusal | null = null;
+  class SuppressedWrite extends Error {}
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // The block-list is read inside the transaction, so an op that ADDS a
+      // suppression in this same batch is enforced against the ops after it.
+      const suppressions = async () =>
+        (
+          await tx.memoryEntry.findMany({
+            where: { userId: user.id, kind: "SUPPRESSION" },
+            select: { content: true },
+          })
+        ).map((r) => r.content);
+
+      for (const op of ops) {
+        if (op.op === "add") {
+          // Applied edits wrote straight to the table, so "forget my old job"
+          // followed by any instruction that re-stated it put it right back.
+          const outcome = await guardedMemoryWrite({
             content: op.content,
-            source: "MANUAL",
             kind: op.suppress ? "SUPPRESSION" : "FACT",
-            sourceRef: "edit",
-          },
-          select: { id: true },
-        });
-        inverse.push({ op: "remove", id: created.id, before: op.content });
-      } else if (op.op === "update") {
-        const before = byId.get(op.id)!.content;
-        await tx.memoryEntry.update({ where: { id: op.id, userId: user.id }, data: { content: op.content } });
-        inverse.push({ op: "update", id: op.id, before: op.content, content: before });
-      } else {
-        const row = byId.get(op.id)!;
-        await tx.memoryEntry.delete({ where: { id: op.id, userId: user.id } });
-        // Undoing the removal must restore the same KIND (a deleted suppression
-        // comes back as a suppression, not as a fact).
-        inverse.push({ op: "add", content: row.content, ...(row.kind === "SUPPRESSION" ? { suppress: true } : {}) });
+            loadSuppressions: suppressions,
+            write: (content) =>
+              tx.memoryEntry.create({
+                data: {
+                  userId: user.id,
+                  content,
+                  source: "MANUAL",
+                  kind: op.suppress ? "SUPPRESSION" : "FACT",
+                  sourceRef: "edit",
+                },
+                select: { id: true },
+              }),
+          });
+          if (!outcome.ok) {
+            refusal = outcome;
+            throw new SuppressedWrite();
+          }
+          inverse.push({ op: "remove", id: outcome.value.id, before: op.content });
+        } else if (op.op === "update") {
+          const row = byId.get(op.id)!;
+          const outcome = await guardedMemoryWrite({
+            content: op.content,
+            kind: row.kind,
+            loadSuppressions: suppressions,
+            write: (content) => tx.memoryEntry.update({ where: { id: op.id, userId: user.id }, data: { content } }),
+          });
+          if (!outcome.ok) {
+            refusal = outcome;
+            throw new SuppressedWrite();
+          }
+          inverse.push({ op: "update", id: op.id, before: op.content, content: row.content });
+        } else {
+          const row = byId.get(op.id)!;
+          await tx.memoryEntry.delete({ where: { id: op.id, userId: user.id } });
+          // Undoing the removal must restore the same KIND (a deleted suppression
+          // comes back as a suppression, not as a fact).
+          inverse.push({ op: "add", content: row.content, ...(row.kind === "SUPPRESSION" ? { suppress: true } : {}) });
+        }
       }
+    });
+  } catch (e) {
+    if (!(e instanceof SuppressedWrite)) throw e;
+    const refused = refusal as MemoryWriteRefusal | null;
+    if (refused?.reason === "suppressed") {
+      return NextResponse.json(
+        { error: refused.message, code: "suppressed", suppression: refused.suppression },
+        { status: 409 }
+      );
     }
-  });
+    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+  }
   inverse.reverse();
 
   // Re-consolidate so the summary reflects the change. Best effort and bounded —
