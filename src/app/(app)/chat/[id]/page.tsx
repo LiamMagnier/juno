@@ -9,11 +9,13 @@ export default async function ConversationPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ artifact?: string }>;
+  // `m` is global search landing on the message it matched (see
+  // src/lib/search/engine.ts); `artifact` is the library's canvas deep link.
+  searchParams: Promise<{ artifact?: string; m?: string }>;
 }) {
   const user = await requireUser();
   const { id } = await params;
-  const { artifact } = await searchParams;
+  const { artifact, m } = await searchParams;
   const thread = await getConversationThread(user.id, id);
   if (!thread) notFound();
 
@@ -42,6 +44,7 @@ export default async function ConversationPage({
       projectId={thread.conversation.projectId ?? undefined}
       initialConnectors={thread.conversation.activeConnectors}
       initialArtifactIdentifier={typeof artifact === "string" && artifact ? artifact : undefined}
+      initialFocusMessageId={typeof m === "string" && m ? m : undefined}
     />
   );
 }

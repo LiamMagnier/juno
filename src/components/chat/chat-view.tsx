@@ -47,6 +47,8 @@ interface ChatViewProps {
   initialConnectors?: string[];
   /** Open this artifact's canvas on arrival (?artifact= deep link from the library). */
   initialArtifactIdentifier?: string;
+  /** Scroll to and briefly mark this message on arrival (?m= deep link from search). */
+  initialFocusMessageId?: string;
 }
 
 type AutoTitlePhase = "first_user" | "thinking" | "writing" | "completed" | "stopped";
@@ -171,7 +173,7 @@ function PrivateGhostMark({ className }: { className?: string }) {
   );
 }
 
-export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt, initialPromptResearch, initialReasoningEffort, initialConnectors, initialArtifactIdentifier }: ChatViewProps) {
+export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt, initialPromptResearch, initialReasoningEffort, initialConnectors, initialArtifactIdentifier, initialFocusMessageId }: ChatViewProps) {
   const {
     settings,
     quota,
@@ -803,6 +805,37 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     setOpenArtifactId(a.id);
     setThoughtOpenId(null);
   }, [chat.artifacts, initialArtifactIdentifier]);
+
+  /**
+   * ?m= deep link — global search landing on the exact message it matched.
+   *
+   * A search result that only opens the conversation makes the reader find the
+   * line again themselves, in a transcript that can be hundreds of turns long;
+   * finding it was the thing they asked for. The anchor is the per-message
+   * wrapper MessageList renders (`data-message-id`), the same one
+   * ConversationFind jumps to, so this stays independent of how a message is
+   * laid out.
+   *
+   * Consumed once per id, and only after the message is actually in the DOM:
+   * MessageList virtualises nothing but does mount after the first paint, so a
+   * single unconditional scroll on mount lands on nothing. `behavior: "auto"`
+   * rather than "smooth" because MessageList pins scrollTop to the bottom on
+   * mount, and a smooth scroll would spend half a second losing that fight in
+   * full view of the user.
+   */
+  const focusedMessageRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    focusedMessageRef.current = null;
+  }, [conversationId]);
+  React.useEffect(() => {
+    if (!initialFocusMessageId || focusedMessageRef.current === initialFocusMessageId) return;
+    const el = document.querySelector<HTMLElement>(
+      `[data-message-id="${CSS.escape(initialFocusMessageId)}"]`
+    );
+    if (!el) return;
+    focusedMessageRef.current = initialFocusMessageId;
+    el.scrollIntoView({ block: "center" });
+  }, [chat.messages, initialFocusMessageId]);
 
   // Keep the panel mounted through its slide-out; reopening cancels the exit.
   const closeArtifact = React.useCallback(() => {
