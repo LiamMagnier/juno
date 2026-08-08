@@ -13,6 +13,10 @@ import { isWebSearchConfigured } from "@/lib/web-search";
 import { isOwnerEmail } from "@/lib/owner";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { AUTO_LOCALE } from "@/lib/i18n";
+import {
+  normalizeBackgroundProviderPolicy,
+  type BackgroundProviderMode,
+} from "@/lib/background-provider-policy";
 import type { AppBootstrap, ClientSettings } from "@/types/app";
 import type { SessionUser } from "@/lib/session";
 
@@ -53,6 +57,12 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     responseLanguage: settings?.responseLanguage ?? "auto",
     uiLocale: settings?.uiLocale ?? AUTO_LOCALE,
     memoryEnabled: settings?.memoryEnabled ?? true,
+    // Read through the normalizer rather than cast: the column is TEXT, and a
+    // value this build does not recognise must show as the safe mode rather
+    // than as a blank control the user cannot reason about.
+    backgroundProviderMode: normalizeBackgroundProviderPolicy({
+      mode: settings?.backgroundProviderMode as BackgroundProviderMode,
+    }).mode,
     voiceId: settings?.voiceId ?? null,
     favoriteModels: settings?.favoriteModels ?? [],
     emailBudgetAlerts: settings?.emailBudgetAlerts ?? true,

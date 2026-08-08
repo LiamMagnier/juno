@@ -775,6 +775,38 @@ export default function SettingsPage() {
               </div>
               <Switch checked={settings.memoryEnabled} onCheckedChange={(v) => save({ memoryEnabled: v })} aria-label="Toggle memory" />
             </div>
+
+            {/* Background processing. This is the setting that decides whether
+                memory work runs at all, and until now it had no control at
+                all — so an account on the default mode watched "Regenerate
+                summary" and every memory edit fail with nothing to change. */}
+            <div className="mt-4">
+              <label htmlFor="background-processing" className="text-sm font-medium">
+                Background processing
+              </label>
+              <p id="background-processing-note" className="mb-2 mt-0.5 text-xs text-muted-foreground">
+                Which providers may read your chats to build memory, titles and summaries — work you never see.
+              </p>
+              <Select
+                value={settings.backgroundProviderMode}
+                onValueChange={(v) => save({ backgroundProviderMode: v as ClientSettings["backgroundProviderMode"] })}
+              >
+                <SelectTrigger
+                  id="background-processing"
+                  aria-label="Background processing"
+                  aria-describedby="background-processing-note"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="same_provider">Only the provider I chat with</SelectItem>
+                  <SelectItem value="selected_provider">Only my selected provider</SelectItem>
+                  <SelectItem value="any_allowed_provider">Any configured provider</SelectItem>
+                  <SelectItem value="local_only">On-device models only</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="mt-auto pt-4">
               <Button asChild variant="outline" size="sm" className="w-full">
                 <Link href="/memory">Open memory manager</Link>

@@ -31,6 +31,10 @@ export default function MemoryPage() {
   const [summary, setSummary] = React.useState<SummaryData | null>(null);
   const [loadError, setLoadError] = React.useState(false);
   const [consolidating, setConsolidating] = React.useState(false);
+  // A background-provider policy denial is a setting, not a blip: a toast that
+  // fades leaves the user watching a button do nothing forever. It stays on
+  // screen with the way out until the next attempt clears it.
+  const [policyNotice, setPolicyNotice] = React.useState<string | null>(null);
 
   // Drafted natural-language edits (review queue) — persisted locally per user.
   const [edits, setEdits] = React.useState<MemoryEditRecord[]>([]);
@@ -80,7 +84,15 @@ export default function MemoryPage() {
       try {
         const res = await fetch("/api/memory/consolidate", { method: "POST" });
         const data = await res.json().catch(() => ({}));
+        // A policy denial is shown even on the silent auto-run: it is the whole
+        // reason the page looks empty, and staying quiet about it is what made
+        // this feel broken rather than configured.
+        if (data.code === "background_policy_denied") {
+          setPolicyNotice(data.error);
+          return;
+        }
         if (!res.ok) throw new Error(data.error ?? "Could not rebuild the summary.");
+        setPolicyNotice(null);
         setSummary(data.summary ?? null);
         if (!opts?.silent) toast.success(data.summary ? "Summary updated." : "Nothing to summarize yet.");
       } catch (e) {
@@ -166,7 +178,16 @@ export default function MemoryPage() {
         body: JSON.stringify({ instruction }),
       });
       const data = await res.json().catch(() => ({}));
+      // The policy refused to send the instruction anywhere. Not a failure to
+      // retry — the route used to call this a rate limit and the user waited
+      // for a minute that never ended.
+      if (data.code === "background_policy_denied") {
+        setPolicyNotice(data.error);
+        toast.error("Juno isn’t allowed to process this — see the note above.");
+        return false;
+      }
       if (!res.ok) throw new Error(data.error ?? "Couldn’t draft that change — try again.");
+      setPolicyNotice(null);
 
       if ("refusal" in data) {
         setEdits((prev) => [
@@ -198,8 +219,14 @@ export default function MemoryPage() {
         setEdits((prev) => [{ ...base, status: "applied", inverse }, ...prev]);
         toast.success("Memory updated — undo it under Manage edits if needed.");
       } catch (e) {
-        // Applying failed (providers down) — keep it pending; Accept retries.
-        setEdits((prev) => [{ ...base, status: "pending" }, ...prev]);
+        // A suppressed write is a decision, not an outage: retrying it will be
+        // refused for exactly the same reason forever, so it is recorded as
+        // rejected with the explanation rather than parked as pending.
+        const suppressed = (e as { code?: string }).code === "suppressed";
+        setEdits((prev) => [
+          { ...base, status: suppressed ? "rejected" : "pending", ...(suppressed ? { note: (e as Error).message } : {}) },
+          ...prev,
+        ]);
         setEditsOpen(true);
         toast.error(e instanceof Error ? e.message : "Couldn’t apply the change — it’s pending under Manage edits.");
       }
@@ -217,7 +244,13 @@ export default function MemoryPage() {
       body: JSON.stringify({ operations }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw Object.assign(new Error(data.error ?? "Couldn’t apply that edit."), { status: res.status });
+    // `code` travels with the error so callers can tell a refusal ("you asked
+    // Juno to forget this") from a stale draft or a transport failure.
+    if (!res.ok)
+      throw Object.assign(new Error(data.error ?? "Couldn’t apply that edit."), {
+        status: res.status,
+        code: data.code as string | undefined,
+      });
     setMemories(data.memories);
     setSummary(data.summary ?? null);
     return data.inverse as Operation[];
@@ -350,6 +383,21 @@ export default function MemoryPage() {
                 onRegenerate={() => void regenerate()}
                 onInstruction={submitInstruction}
               />
+              {policyNotice && (
+                // aria-live so the explanation reaches a screen reader when it
+                // appears after a button press, not only on a fresh render.
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 text-sm"
+                >
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <p className="min-w-0 flex-1 text-muted-foreground">{policyNotice}</p>
+                  <Button variant="outline" size="sm" onClick={() => router.push("/settings")}>
+                    Open settings
+                  </Button>
+                </div>
+              )}
               {backfillRemaining !== null && (
                 <p role="status" className="flex items-center gap-2.5 px-1.5 text-caption text-muted-foreground">
                   <ThinkingDots />

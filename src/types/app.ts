@@ -1,6 +1,7 @@
 import type { Plan } from "@prisma/client";
 import type { ClientConversation, ClientQuota } from "@/types/chat";
 import type { Provider } from "@/lib/providers";
+import type { BackgroundProviderMode } from "@/lib/background-provider-policy";
 
 export interface AppUser {
   id: string;
@@ -25,6 +26,14 @@ export interface ClientSettings {
   /** Interface language: "auto" (follow the browser) or a BCP-47 tag. */
   uiLocale: string;
   memoryEnabled: boolean;
+  /**
+   * Where invisible work on this account's content may be sent — memory
+   * extraction and consolidation, titles, moderation. See
+   * @/lib/background-provider-policy. Surfaced because a policy that silently
+   * refuses is indistinguishable from a broken feature: the memory manager
+   * spent a release reporting "same_provider denied it" as a provider outage.
+   */
+  backgroundProviderMode: BackgroundProviderMode;
   voiceId: string | null;
   favoriteModels: string[];
   /** Lifecycle email opt-ins — no-ops until email delivery is configured. */
