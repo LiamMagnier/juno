@@ -146,6 +146,85 @@ final class NativeChatAPIClientTests: XCTestCase {
         }
     }
 
+    func testChatApprovalStreamRecoveryAndDigestBoundDecision() async throws {
+        let pending = """
+        {"id":"approval_12345678","surface":"chat","sessionId":"generation_12345678","conversationId":"conv_12345678","connectorId":"apple-mail","connectorLabel":"Apple Mail","toolName":"send_message","action":"send_message","riskClass":"external_write","preview":"Apple Mail wants to send a message.","detail":{"to":"person@example.com","subject":"Hello","body":"Safe preview"},"receiptDigest":"digest_12345678","status":"pending","decision":null,"canAllowScope":false,"derivedFromUntrusted":false,"expiresAt":"2026-07-22T00:15:00.000Z","decidedAt":null,"completedAt":null,"createdAt":"2026-07-22T00:00:00.000Z"}
+        """
+        let decided = """
+        {"id":"approval_12345678","surface":"chat","sessionId":"generation_12345678","conversationId":"conv_12345678","connectorId":"apple-mail","connectorLabel":"Apple Mail","toolName":"send_message","action":"send_message","riskClass":"external_write","preview":"Apple Mail wants to send a message.","detail":{"to":"person@example.com","subject":"Hello","body":"Safe preview"},"receiptDigest":"digest_12345678","status":"allowed","decision":"allow_once","canAllowScope":false,"derivedFromUntrusted":false,"expiresAt":"2026-07-22T00:15:00.000Z","decidedAt":"2026-07-22T00:01:00.000Z","completedAt":null,"createdAt":"2026-07-22T00:00:00.000Z"}
+        """
+        let streamBody = """
+        data: {"type":"meta","conversationId":"conv_12345678","userMessageId":null,"title":"Approval chat","generationId":"juno-native-generation-approval"}
+
+        data: {"type":"approval","approval":\(pending)}
+
+        data: {"type":"done","message":{"id":"assistant_12345678","role":"ASSISTANT","content":"Done","reasoning":null,"model":"openai:gpt-5","createdAt":"2026-07-22T00:02:00.000Z","sources":[]},"finishReason":"stop"}
+
+        """
+        let streamer = ChatQueueStreamer(responses: [streamResponse(streamBody)])
+        let sender = ChatQueueSender(responses: [
+            response(#"{"approvals":[\#(pending)]}"#),
+            response(#"{"approval":\#(decided)}"#),
+        ])
+        let client = NativeChatAPIClient(sender: sender, streamer: streamer)
+
+        let events = try await collect(
+            client.generationEvents(
+                NativeChatGenerationRequest(
+                    conversationID: "conv_12345678",
+                    modelID: "openai:gpt-5",
+                    reasoningEffort: nil,
+                    generationID: "juno-native-generation-approval"
+                ),
+                for: accountID
+            )
+        )
+        guard case .approval(let streamedApproval) = events[1] else {
+            return XCTFail("Expected the streamed approval receipt")
+        }
+        XCTAssertEqual(streamedApproval.receiptDigest, "digest_12345678")
+        XCTAssertEqual(streamedApproval.detail["to"]?.stringValue, "person@example.com")
+
+        let recovered = try await client.chatApprovals(
+            conversationID: "conv_12345678",
+            includeRecent: true,
+            for: accountID
+        )
+        let approval = try XCTUnwrap(recovered.first)
+        let result = try await client.decideChatApproval(
+            approval,
+            decision: .allowOnce,
+            for: accountID
+        )
+        XCTAssertEqual(result.status, .allowed)
+        XCTAssertEqual(result.receiptDigest, approval.receiptDigest)
+
+        let requests = await sender.requests
+        XCTAssertEqual(requests[0].path, "/api/approvals")
+        XCTAssertEqual(
+            requests[0].queryItems,
+            [
+                URLQueryItem(name: "conversationId", value: "conv_12345678"),
+                URLQueryItem(name: "includeRecent", value: "1"),
+            ]
+        )
+        XCTAssertEqual(requests[1].path, "/api/approvals/approval_12345678")
+        let decisionBody = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: XCTUnwrap(requests[1].body))
+                as? [String: String]
+        )
+        XCTAssertEqual(decisionBody["decision"], "allow_once")
+        XCTAssertEqual(decisionBody["receiptDigest"], "digest_12345678")
+    }
+
+    private func collect(
+        _ stream: AsyncThrowingStream<NativeChatServerEvent, any Error>
+    ) async throws -> [NativeChatServerEvent] {
+        var events: [NativeChatServerEvent] = []
+        for try await event in stream { events.append(event) }
+        return events
+    }
+
     private func response(_ body: String, statusCode: Int = 200) -> HTTPResponse {
         HTTPResponse(
             statusCode: statusCode,

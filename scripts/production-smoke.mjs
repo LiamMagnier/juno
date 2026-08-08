@@ -14,6 +14,7 @@ const token = process.env.JUNO_SMOKE_TOKEN ?? "";
 const cookie = process.env.JUNO_SMOKE_COOKIE ?? "";
 const expectedVersion = process.env.JUNO_SMOKE_EXPECTED_SHA ?? "";
 const timeoutMs = Number(process.env.JUNO_SMOKE_TIMEOUT_MS ?? 20_000);
+const requireAuth = process.env.JUNO_SMOKE_REQUIRE_AUTH === "1";
 
 if (!baseUrl) {
   console.error("JUNO_SMOKE_BASE_URL is required.");
@@ -54,6 +55,10 @@ function assert(condition, message) {
 }
 
 async function main() {
+  if (requireAuth && !token && !cookie) {
+    throw new Error("authenticated production smoke requires JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE");
+  }
+
   const healthResponse = await request("/api/health");
   const health = await json(healthResponse);
   assert(healthResponse.ok && health.value?.ok === true, `health failed: ${health.text.slice(0, 500)}`);

@@ -706,13 +706,16 @@ jobs:
           APP_URL="${APP_URL%/}"
           [ -n "$APP_URL" ] || APP_URL="https://chat.liams.dev"
           SMOKE_TOKEN="$(grep -m1 '^JUNO_SMOKE_TOKEN=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
-          if [ -n "$SMOKE_TOKEN" ]; then
+          SMOKE_COOKIE="$(grep -m1 '^JUNO_SMOKE_COOKIE=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
+          if [ -n "$SMOKE_TOKEN" ] || [ -n "$SMOKE_COOKIE" ]; then
             JUNO_SMOKE_BASE_URL="$APP_URL" \
               JUNO_SMOKE_EXPECTED_SHA="$EXPECTED_SHA" \
+              JUNO_SMOKE_REQUIRE_AUTH=1 \
               JUNO_SMOKE_TOKEN="$SMOKE_TOKEN" \
+              JUNO_SMOKE_COOKIE="$SMOKE_COOKIE" \
               JUNO_SMOKE_RUN_CHAT="$(grep -m1 '^JUNO_SMOKE_RUN_CHAT=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)" \
               node ~/juno/scripts/production-smoke.mjs
           else
-            echo "Authenticated production smoke skipped: JUNO_SMOKE_TOKEN is not configured."
+            echo "Authenticated production smoke skipped: JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE is not configured."
           fi
           REMOTE

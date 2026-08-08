@@ -97,6 +97,14 @@ The production package checks completed as follows:
 - `JunoDesktop` Debug unsigned build: passed after correcting the sidebar
   binding deep-link handler.
 - `JunoMobile` generic iOS Simulator unsigned build: passed.
+- macOS `JunoDesktopTests`: passed.
+- iOS `JunoMobileTests` on an iPhone 17 Pro iOS 27 simulator: passed.
+- The targeted iOS composer UI journey passed. The targeted macOS UI journey
+  failed before test bootstrap because `JunoDesktopUITests-Runner` was killed;
+  an explicit arm64 retry reproduced the same environment-level runner exit.
+- Existing design-system and reduced-motion checks in the package suite passed;
+  the new activity row has no animation of its own, and its parent shells use
+  the existing `JunoMotion.reduced` policy for motion they already own.
 - `git diff --check`: passed.
 
 The exact build/test commands were:

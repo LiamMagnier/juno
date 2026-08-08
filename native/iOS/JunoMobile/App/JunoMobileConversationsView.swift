@@ -137,6 +137,12 @@ struct JunoMobileChatDetailScreen: View {
             // over a different conversation is the one thing this must not do.
             readAloud?.stop()
         }
+        .task(id: "\(accountID?.rawValue ?? ""):\(model.selectedConversationID ?? "")") {
+            await model.refreshChatApprovals(
+                conversationID: model.selectedConversationID,
+                includeRecent: true
+            )
+        }
         .task(id: accountID?.rawValue) {
             readAloud = JunoMobileReadAloud(client: messageActions, accountID: accountID)
         }
@@ -706,6 +712,25 @@ private struct JunoMobileConversationDetail: View {
                     // already there on the first layout, so a loaded history
                     // arrives settled rather than cascading up the screen.
                     .transition(JunoMobileMotion.riseInTransition)
+                }
+
+                // Approval receipts are rendered as their own safety surface,
+                // beside the turn they block. They are also recovered from the
+                // server on selection, so a missed stream cannot strand an
+                // action behind an invisible native-only state.
+                ForEach(model.chatApprovals(for: conversation.id)) { approval in
+                    NativeChatApprovalCard(
+                        approval: approval,
+                        isBusy: model.chatApprovalInFlightID == approval.id,
+                        errorMessage: model.chatApprovalError(for: approval.id),
+                        canAllowScope: model.canAllowChatApprovalScope(approval),
+                        decide: { decision in
+                            Task {
+                                await model.decideChatApproval(approval, decision: decision)
+                            }
+                        }
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 // The call, still being spoken, after the messages that are

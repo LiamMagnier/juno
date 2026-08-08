@@ -456,6 +456,14 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     public private(set) var chatPhase: NativeChatGenerationPhase = .idle
     public private(set) var chatErrorDescription: String?
     public private(set) var activeChatConversationID: String?
+    /// Approval receipts raised by chat connector calls, keyed by conversation.
+    ///
+    /// They are kept outside persisted message rows because the receipt itself
+    /// is the durable record and `/api/approvals` is the recovery source. The
+    /// live SSE adds to this map immediately; a cold native launch fills it from
+    /// the same route so a missed stream cannot leave an action unanswerable.
+    public private(set) var chatApprovalsByConversation: [String: [NativeChatApproval]] = [:]
+    public private(set) var chatApprovalInFlightID: String?
     public var selectedConversationID: String?
     /// True while the reader is composing a chat that does not exist yet. It
     /// suppresses the "open the most recent conversation" fallback in
@@ -517,6 +525,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     private var retryContexts: [String: RetryContext] = [:]
     private var generationTask: Task<Void, Never>?
     private var activeGenerationID: String?
+    private var chatApprovalErrors: [String: String] = [:]
+    private var chatApprovalScopeRefusals = Set<String>()
 
     /// Steps the server has reported for the generation in flight, newest last.
     ///
@@ -616,6 +626,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         await reload()
         await reconcilePendingMutations()
         await reloadModelCatalog()
+        await refreshChatApprovals(includeRecent: true)
     }
 
     public func stop() {
@@ -627,6 +638,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         messagesByConversation = [:]
         transientMessagesByConversation = [:]
         retryContexts = [:]
+        chatApprovalsByConversation = [:]
+        chatApprovalInFlightID = nil
+        chatApprovalErrors = [:]
+        chatApprovalScopeRefusals = []
         pendingMutationCount = 0
         conflictedMutationCount = 0
         lastErrorDescription = nil
@@ -786,6 +801,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         if wasSelected, selectedConversationID == id {
             selectedConversationID = nil
         }
+        chatApprovalsByConversation.removeValue(forKey: id)
         titlePhasesRun[id] = nil
     }
 
@@ -949,6 +965,90 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
 
     public func messages(for conversationID: String) -> [NativeChatMessage] {
         visibleMessages(for: conversationID)
+    }
+
+    /// The approvals relevant to one visible conversation, oldest first.
+    public func chatApprovals(for conversationID: String) -> [NativeChatApproval] {
+        chatApprovalsByConversation[conversationID] ?? []
+    }
+
+    public func chatApprovalError(for approvalID: String) -> String? {
+        chatApprovalErrors[approvalID]
+    }
+
+    public func canAllowChatApprovalScope(_ approval: NativeChatApproval) -> Bool {
+        approval.canAllowScope && !chatApprovalScopeRefusals.contains(approval.id)
+    }
+
+    /// Refreshes the receipt list for a cold launch, a selected conversation,
+    /// or both. Errors are intentionally kept out of `chatErrorDescription`:
+    /// inability to refresh a recovery card must not overwrite an unrelated
+    /// streaming error or make an otherwise usable chat look failed.
+    public func refreshChatApprovals(
+        conversationID: String? = nil,
+        includeRecent: Bool = true
+    ) async {
+        guard let accountID, let chatClient else { return }
+        do {
+            let approvals = try await chatClient.chatApprovals(
+                conversationID: conversationID,
+                includeRecent: includeRecent,
+                for: accountID
+            )
+            guard self.accountID == accountID else { return }
+            if let conversationID {
+                mergeChatApprovals(approvals, into: conversationID)
+            } else {
+                let grouped = Dictionary(grouping: approvals) {
+                    $0.conversationID ?? ""
+                }
+                for (conversationID, group) in grouped where !conversationID.isEmpty {
+                    mergeChatApprovals(group, into: conversationID)
+                }
+            }
+        } catch {
+            // The live stream and the decision endpoint remain authoritative;
+            // a recovery read is best effort while offline.
+        }
+    }
+
+    /// Answers one chat approval and replaces the local receipt with the
+    /// server's response. The digest check is performed by the API client before
+    /// this update, so a stale card can never become a locally shown success.
+    public func decideChatApproval(
+        _ approval: NativeChatApproval,
+        decision: NativeChatApprovalDecision
+    ) async {
+        guard approval.isPending,
+            chatApprovalInFlightID == nil,
+            let accountID,
+            let chatClient
+        else { return }
+        chatApprovalInFlightID = approval.id
+        chatApprovalErrors[approval.id] = nil
+        defer {
+            if chatApprovalInFlightID == approval.id {
+                chatApprovalInFlightID = nil
+            }
+        }
+        do {
+            let decided = try await chatClient.decideChatApproval(
+                approval,
+                decision: decision,
+                for: accountID
+            )
+            guard self.accountID == accountID else { return }
+            upsertChatApproval(decided)
+        } catch {
+            guard self.accountID == accountID else { return }
+            if let apiError = error as? NativeChatAPIError,
+                case .server(_, let code, _, _) = apiError,
+                code == "not_scope_allowable"
+            {
+                chatApprovalScopeRefusals.insert(approval.id)
+            }
+            chatApprovalErrors[approval.id] = presentChatApprovalError(error)
+        }
     }
 
     public func reloadModelCatalog() async {
@@ -1188,6 +1288,11 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     updateAssistantSources(sources, conversationID: context.conversationID)
                 case .activity(let activity):
                     recordActivity(activity, conversationID: context.conversationID)
+                case .approval(let approval):
+                    guard approval.conversationID == nil
+                        || approval.conversationID == context.conversationID
+                    else { throw NativeChatAPIError.malformedResponse }
+                    upsertChatApproval(approval, conversationID: context.conversationID)
                 case .mediaProgress(let progress):
                     // The one stage that is not a stage: `uploading` is Juno
                     // storing the finished file, so the picture already exists and
@@ -1372,6 +1477,65 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         conversationID: String
     ) {
         updateTransientAssistant(for: conversationID) { $0.sources = sources }
+    }
+
+    private func mergeChatApprovals(
+        _ approvals: [NativeChatApproval],
+        into conversationID: String
+    ) {
+        guard !conversationID.isEmpty else { return }
+        var current = chatApprovalsByConversation[conversationID] ?? []
+        for approval in approvals {
+            guard approval.conversationID == nil
+                || approval.conversationID == conversationID
+            else { continue }
+            if let index = current.firstIndex(where: { $0.id == approval.id }) {
+                current[index] = approval
+            } else {
+                current.append(approval)
+            }
+            if approval.status != .pending {
+                chatApprovalErrors[approval.id] = nil
+            }
+        }
+        current.sort {
+            $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt < $1.createdAt
+        }
+        chatApprovalsByConversation[conversationID] = current
+    }
+
+    private func upsertChatApproval(
+        _ approval: NativeChatApproval,
+        conversationID: String? = nil
+    ) {
+        guard let conversationID = conversationID ?? approval.conversationID,
+            !conversationID.isEmpty
+        else { return }
+        mergeChatApprovals([approval], into: conversationID)
+    }
+
+    private func presentChatApprovalError(_ error: Error) -> String {
+        if let apiError = error as? NativeChatAPIError,
+            case .server(_, let code, let message, _) = apiError
+        {
+            switch code {
+            case "digest_mismatch":
+                return "This approval no longer matches the action Juno showed. Nothing was sent."
+            case "policy_changed":
+                return "Your permissions changed, so Juno refused this approval. Nothing was sent."
+            case "expired":
+                return "This approval expired before it was answered. Nothing was sent."
+            case "already_decided":
+                return "This approval was already answered, possibly on another device."
+            case "not_scope_allowable":
+                return "Juno cannot remember this permission. Allow once or deny it."
+            case "blocked":
+                return "Your permissions blocked this action. Nothing was sent."
+            default:
+                return message
+            }
+        }
+        return error.localizedDescription
     }
 
     private func updateTransientAssistant(

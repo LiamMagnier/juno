@@ -781,6 +781,12 @@ struct DesktopConversationView: View {
             .onChange(of: model.selectedConversationID) { _, _ in
                 openArtifact = nil
             }
+            .task(id: "\(session.profile.id.rawValue):\(model.selectedConversationID ?? "")") {
+                await model.refreshChatApprovals(
+                    conversationID: model.selectedConversationID,
+                    includeRecent: true
+                )
+            }
             // The web's COEXISTENCE RULE, in the one shape this window has for
             // it: the canvas and a live call are both large right-hand claims on
             // the conversation column, and the call also lights the whole column
@@ -1174,8 +1180,30 @@ private struct DesktopTranscript: View {
                             },
                             openArtifact: openArtifact
                         )
-                            .modifier(DesktopMessageRise(rises: index >= animateFrom))
-                            .id(message.id)
+                        .modifier(DesktopMessageRise(rises: index >= animateFrom))
+                        .id(message.id)
+                    }
+
+                    // Connector approvals are not prose and must stay above the
+                    // pending answer they block. The receipt is recovered from
+                    // `/api/approvals` as well as from the live stream, so this
+                    // card remains answerable after a cold launch or a missed
+                    // SSE frame.
+                    if let conversationID = model.selectedConversationID {
+                        ForEach(model.chatApprovals(for: conversationID)) { approval in
+                            NativeChatApprovalCard(
+                                approval: approval,
+                                isBusy: model.chatApprovalInFlightID == approval.id,
+                                errorMessage: model.chatApprovalError(for: approval.id),
+                                canAllowScope: model.canAllowChatApprovalScope(approval),
+                                decide: { decision in
+                                    Task {
+                                        await model.decideChatApproval(approval, decision: decision)
+                                    }
+                                }
+                            )
+                            .frame(maxWidth: Self.readingWidth, alignment: .leading)
+                        }
                     }
 
                     // The call, in the transcript it belongs to. Same rows, same

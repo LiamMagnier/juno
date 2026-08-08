@@ -1,6 +1,6 @@
 # Juno Product Completion — execution ledger
 
-**Audit commit:** `cd34a1f7` (`feat/juno-work`)
+**Audit commit:** `a8c65342` (`main`)
 **Audit date:** 2026-08-08
 **Method:** 12 parallel evidence-based subsystem readers over the source, then an
 adversarial re-check of every claim of "implemented" in the P0 areas. Findings
@@ -14,38 +14,53 @@ truth.
 
 ## Current reconciliation — 2026-08-08
 
-The branch now has passing repository-wide automated checks: **1,899 tests
-passed, 2 database-dependent tests skipped without a test database, 0 failed**;
-full ESLint, TypeScript, Prisma validation/generation, native/capability/Work
-contract checks, code wiring checks, sandbox checks, and design-contract checks
-also pass. The focused research evidence suite is 53/53, including the
-deterministic 100-claim validator benchmark.
+The branch now has passing repository-wide automated checks: **1,925 tests
+completed, 1,923 passed, 2 database-dependent tests skipped without a test
+database, 0 failed**; full ESLint, TypeScript, Prisma validation/generation,
+native/capability/Work contract checks, code wiring checks, sandbox checks, and
+design-contract checks also pass. The focused research evidence suite is 53/53,
+including the deterministic 100-claim validator benchmark. The full
+`JunoChatKitTests` target is 213/213, and unsigned JunoDesktop/JunoMobile
+Simulator builds pass with warnings treated as errors.
 
 Since the 2026-08-07 audit, the following slices are real and wired into
 production entry points:
 
 - Knowledge extraction and retrieval cover PDF, DOCX, PPTX, XLSX and text with
-  durable document/block/chunk/index-job rows, versioning, bounded hybrid
-  retrieval, citations and honest degraded states.
+  durable document/block/chunk/index-job rows, bounded OCR fallback, versioning,
+  bounded hybrid retrieval, citations and honest degraded states.
 - Unified search fans out across the account corpus with snippets, marked terms,
-  destinations and per-source coverage.
+  destinations and per-source coverage; Library versions, tombstones, quotas
+  and revision restore are wired.
 - Memory suppression/lifecycle gates every write path, with categories,
   deduplication, contradiction/supersession and expiry.
 - Shared spend reservations and the ApiSpend ledger cover chat, voice, Work and
   research vendor fees; the personal account defaults to a finite €15 monthly
   ceiling.
-- Artifact exports are re-opened and verified before Office bytes are served;
-  model sync opens a reviewed PR instead of deploying a bot-discovered model.
+- Artifact exports are re-opened and verified before Office/design bytes are
+  served; package inflation, formula, asset, markup and preview-egress checks
+  fail closed. Model sync opens a reviewed PR instead of deploying a
+  bot-discovered model.
 - Research now persists objectives, evidence requirements, coverage, conflicts,
   source snapshots and policy scores; it performs a bounded follow-up, stores a
   claim/citation graph, validates before terminal completion, and preserves both
   the delivered draft and repaired report revisions.
+- Native chat approvals now decode non-terminal SSE approval frames, recover
+  pending/recent receipts from `/api/approvals`, render a shared macOS/iOS
+  approval card with exact redacted detail and expiry, and submit decisions only
+  with the displayed `receiptDigest`. The focused native contract test covers
+  the stream, recovery query, decision route and digest.
 
-The product is not yet “production complete.” The highest remaining blockers
-are explicit in `status.json`: OCR and a document inspector; skill/plugin
-scanning and network egress allowlists; native chat approval parity; runtime
-model capability probes; and an end-to-end/restore-drill layer. These are not
-marked verified merely because adjacent code exists.
+The core product slices are ready for a controlled production release, but the
+release program is not fully closed. Remaining gates are explicit in
+`status.json`: authenticated browser/native journeys and visual/accessibility
+matrices; a tested database/object-storage restore drill; and signed/notarized
+Apple artifacts. The production smoke workflow runs the authenticated checks
+when `JUNO_SMOKE_TOKEN` or `JUNO_SMOKE_COOKIE` is configured and otherwise
+keeps the existing health-only gate. The live server was checked read-only:
+`https://chat.liams.dev/api/health` returned `ok`/`db: ok` for artifact
+`a8c65342802ea4b3558183b798ee64f6c9630bd0`; the deployed database and this
+checkout both contain 72 migrations.
 
 ---
 
@@ -246,6 +261,16 @@ with five errors. This run closed that.
    both the inline chip and the source list at the render chokepoint — the one
    place every producer converges — showing non-http(s) sources as inert text
    rather than dropping the citation.
+9. **Native chat approval parity is now wired.** `NativeChatAPIClient` decodes
+   approval SSE frames as non-terminal events, recovers recent receipts from
+   `/api/approvals`, and verifies the server echoes the displayed receipt
+   digest before accepting a decision. `NativeConversationStore` keeps the
+   approval state account/session scoped, and the shared
+   `NativeChatApprovalCard` is rendered by both macOS and iOS with exact
+   redacted detail, expiry, Allow once, scoped allow when permitted, and Deny.
+   `NativeChatAPIClientTests.testChatApprovalStreamRecoveryAndDigestBoundDecision`
+   covers the wire contract; the full JunoChatKit target and both app builds
+   pass.
 
 ---
 

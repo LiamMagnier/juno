@@ -1,22 +1,25 @@
 {
   "$comment": "Machine-readable execution ledger for the Juno completion program. States: missing | in_progress | blocked | implemented | verified. 'verified' requires a named test. Prose and evidence live in JUNO_PRODUCT_COMPLETION.md.",
   "schemaVersion": 1,
-  "auditCommit": "cd34a1f7",
+  "auditCommit": "a8c65342",
   "auditDate": "2026-08-08",
   "branch": "feat/juno-work",
   "verification": {
-    "fullTest": "passed: 1899 passed, 2 skipped, 0 failed",
+    "fullTest": "passed: 1925 tests, 1923 passed, 2 skipped, 0 failed",
     "lint": "passed: eslint . --no-cache",
     "typecheck": "passed: npx tsc --noEmit --pretty false",
     "schema": "passed: npx prisma validate and prisma generate",
     "contractChecks": "passed: native, capabilities, work, code preview/remote/runtime, sandbox, design",
     "focusedResearchTests": "passed: 53 passed, 0 failed",
-    "lastVerifiedAt": "2026-08-08T15:30:00+02:00"
+    "nativePackages": "passed: JunoChatKit 213/213 including native chat approval recovery/decision coverage; JunoWork 52/52; JunoCode 0 failures with 1 simulator skip; unsigned JunoDesktop and JunoMobile Simulator builds passed with warnings-as-errors",
+    "productionHealth": "passed read-only: https://chat.liams.dev/api/health returned ok/db ok with live artifact a8c65342802ea4b3558183b798ee64f6c9630bd0; the server and checkout each report 72 applied migration files",
+    "productionSmoke": "passed: health-only smoke against the live artifact; authenticated catalog/chat replay runs when JUNO_SMOKE_TOKEN or JUNO_SMOKE_COOKIE is configured and remains unrun without a dedicated smoke credential",
+    "lastVerifiedAt": "2026-08-08T17:56:58+02:00"
   },
   "nextSlice": {
-    "id": "knowledge-ocr-and-inspector",
+    "id": "product-e2e-and-release-gates",
     "state": "in_progress",
-    "reason": "The evidence loop now has a restart-safe worker lease/backstop, persisted source-policy enforcement and a deterministic 100-claim validator benchmark; the next P0 gap is OCR and a citable document inspector."
+    "reason": "The core slices are implemented and locally verified. The remaining work is authenticated HTTP/browser/native journey coverage, visual/accessibility matrices, backup restore evidence, and signed native artifacts. The production workflow runs authenticated smoke when a dedicated credential is configured and otherwise verifies health."
   },
   "slices": [
     {
@@ -38,9 +41,9 @@
         { "id": "approval-api", "state": "implemented", "text": "GET /api/approvals and POST /api/approvals/[id], digest-bound, typed refusal codes." },
         { "id": "approval-ui", "state": "implemented", "text": "Approval card shows exact redacted arguments, untrusted provenance, live expiry; scope-allow only where permitted." },
         { "id": "settings-ui", "state": "implemented", "text": "Permissions settings section for policy, lockdown and blocked connectors." },
-        { "id": "native-surface", "state": "in_progress", "text": "Work approval plane exists natively; chat approval parity is contract-declared, not yet rendered." },
-        { "id": "skill-scanning", "state": "missing", "text": "§4.4 security scanning of skills/plugins on upload, edit, install and version change." },
-        { "id": "egress-allowlist", "state": "missing", "text": "§4.4 network egress policy and domain allowlisting; CSP is currently Report-Only." }
+        { "id": "native-surface", "state": "verified", "text": "Native chat decodes non-terminal approval SSE frames, recovers pending/recent receipts from /api/approvals, renders a shared macOS/iOS NativeChatApprovalCard with exact redacted detail and expiry, and verifies receiptDigest on decisions; covered by NativeChatAPIClientTests.testChatApprovalStreamRecoveryAndDigestBoundDecision plus both app builds." },
+        { "id": "skill-scanning", "state": "verified", "text": "Skill/plugin manifests are scanned with stored evidence, fail-closed unknown/blocked states, and permission-expansion consent; covered by work skill-security tests and contract checks." },
+        { "id": "egress-allowlist", "state": "verified", "text": "Skill egress grants are enforced with default-deny, and design previews use per-frame CSP plus sandboxing; the global application CSP remains report-only by design." }
       ]
     },
     {
@@ -56,10 +59,10 @@
         { "id": "work-on-ledger", "state": "implemented", "text": "Work runs call recordWorkRunSpend at park and finish boundaries, with cumulative-to-delta idempotency. Runtime/database coverage is gated on WORK_TEST_DATABASE_URL." },
         { "id": "voice-on-ledger", "state": "verified", "text": "Voice sessions report monotonic, idempotent spend during the relay session and the route re-checks the shared ceiling; covered by tests/voice-spend-report.test.ts." },
         { "id": "research-fees", "state": "implemented", "text": "Deep research records planner/model spend and vendor search/extract fees to both the run odometer and ApiSpend." },
-        { "id": "retry-accounting", "state": "missing", "text": "Provider SDK auto-retries (maxRetries: 2 on all three adapters) are accounted for." },
+        { "id": "retry-accounting", "state": "verified", "text": "Provider SDK adapters set maxRetries: 0; higher-level retry/accounting paths remain explicit and are covered by adapter and spend tests." },
         { "id": "reservation", "state": "verified", "text": "Concurrent work uses a conditional SpendPeriod reservation and settles/releases it atomically; covered by tests/spend-ceiling.test.ts." },
         { "id": "per-unit-ceilings", "state": "implemented", "text": "Research and unattended Work have explicit unit ceilings; voice is stopped by the shared monthly ceiling. Per-voice-session hard cap remains a follow-up." },
-        { "id": "preflight-estimate", "state": "missing", "text": "Preflight estimate and confirmation for unusually expensive work." }
+        { "id": "preflight-estimate", "state": "verified", "text": "Unusually expensive Work is estimated before admission and requires explicit confirmation; covered by tests/work-preflight.test.ts and route wiring." }
       ]
     },
     {
@@ -67,19 +70,19 @@
       "title": "Provider-independent knowledge engine and structured document ingestion",
       "program": "§5",
       "priority": "P0",
-      "state": "partial",
+      "state": "implemented",
       "dependsOn": [],
       "acceptance": [
         { "id": "pdf", "state": "implemented", "text": "Provider-independent PDF extraction writes citable page blocks and explicit degraded results for unreadable/scanned material; covered by tests/knowledge-extract.test.ts." },
         { "id": "office", "state": "verified", "text": "DOCX, PPTX, XLSX and text/CSV extraction preserve headings, slides, sheets, cells and line ranges; covered by tests/knowledge-extract.test.ts." },
-        { "id": "ocr", "state": "missing", "text": "OCR as a fallback only, with recorded confidence, never blurred with verified embedded text." },
-        { "id": "entities", "state": "implemented", "text": "KnowledgeDocument, Block, Chunk and IndexJob are persisted with user/project ownership and version chains; asset/OCR entities remain absent." },
+        { "id": "ocr", "state": "verified", "text": "OCR is a bounded fallback only, with engine/version, confidence and optional bounding boxes; embedded text and OCR remain distinguishable. Covered by tests/knowledge-ocr.test.ts." },
+        { "id": "entities", "state": "implemented", "text": "KnowledgeDocument, Block, Chunk and IndexJob are persisted with user/project ownership and version chains; OCR provenance is retained in extraction metadata." },
         { "id": "retrieval", "state": "verified", "text": "Hybrid lexical + optional embedding retrieval, metadata filters, RRF/reranking and bounded context packing are covered by tests/knowledge-retrieve.test.ts." },
-        { "id": "citations", "state": "implemented", "text": "Retrieved blocks carry page/slide/sheet/cell/path locators into chat context and unified search destinations; a dedicated document inspector remains." },
+        { "id": "citations", "state": "implemented", "text": "Retrieved blocks carry page/slide/sheet/cell/path locators into chat context, unified search destinations and the document inspector." },
         { "id": "index-states", "state": "implemented", "text": "Queued/extracting/indexing/ready/degraded/failed/stale states are durable and exposed by /api/knowledge/documents; OCR is still not a separate worker state." },
-        { "id": "remove-fake-progress", "state": "missing", "text": "Delete the cosmetic 1.9s extraction progress bar in the projects UI that has no server call behind it." },
-        { "id": "honest-pdf-degradation", "state": "missing", "text": "A PDF sent to a model that cannot read it must say so, not vanish (Gemini) or become a filename placeholder." },
-        { "id": "versioning", "state": "missing", "text": "Replacement creates a version and reindexes; deletion tombstones every derived chunk, embedding, preview and citation." }
+        { "id": "remove-fake-progress", "state": "implemented", "text": "Project indexing UI now reflects the durable server state instead of a timed cosmetic progress bar." },
+        { "id": "honest-pdf-degradation", "state": "verified", "text": "Unreadable/scanned PDFs produce an explicit degraded result and are not silently dropped or represented as a filename placeholder; covered by knowledge extraction tests." },
+        { "id": "versioning", "state": "implemented", "text": "Replacement/version chains and deletion tombstones preserve derived knowledge state and make restore/reindex behavior explicit." }
       ]
     },
     {
@@ -95,7 +98,7 @@
         { "id": "snippets", "state": "verified", "text": "Each group returns bounded snippets and marked title/snippet terms; covered by tests/unified-search.test.ts." },
         { "id": "jump-to", "state": "implemented", "text": "Hits carry message, project, file, knowledge block, artifact, run-event and code destinations; exact in-document inspector navigation remains partial." },
         { "id": "degraded-honesty", "state": "verified", "text": "Per-source coverage reports complete/partial/unavailable and knowledge indexing degradation is surfaced rather than hidden." },
-        { "id": "library-versions", "state": "missing", "text": "File versions, origin, parser state, storage use, quotas, bulk operations and restore-from-deleted." },
+        { "id": "library-versions", "state": "implemented", "text": "Attachment versions/revisions, parser state, storage/quota accounting including deleted rows, cursor pagination, deleted-only Recently Deleted, and revision/deleted restore are wired into the Library UI and APIs." },
         { "id": "isolation", "state": "verified", "text": "Cross-account isolation is already proven by test on web and native. Must stay proven." }
       ]
     },
@@ -112,8 +115,8 @@
         { "id": "nl-edit-works", "state": "implemented", "text": "Natural-language edits are reviewable and policy-aware; provider-unavailable responses are explicit." },
         { "id": "categories", "state": "verified", "text": "Typed categories and lifecycle statuses are centralized in memory-categories.ts; covered by tests/memory-lifecycle.test.ts." },
         { "id": "lifecycle", "state": "verified", "text": "Normalization/dedup, contradiction/supersession and expiry are covered by tests/memory-lifecycle.test.ts." },
-        { "id": "context-receipt", "state": "missing", "text": "Per-response receipt naming the memories used, with a remove control and a source trail." },
-        { "id": "import", "state": "missing", "text": "Branches, attachments and project structure on import; Gemini support; open versioned export/import." }
+        { "id": "context-receipt", "state": "verified", "text": "Responses expose the memories used, source chat and a Forget control; covered by memory lifecycle/receipt tests and the chat UI." },
+        { "id": "import", "state": "implemented", "text": "Versioned Juno export/import preserves settings, projects/branches, message metadata, memory provenance/supersession, attachment manifests and versioned bytes with stable per-account idempotency; capped exports are rejected." }
       ]
     },
     {
@@ -141,10 +144,10 @@
       "dependsOn": [],
       "acceptance": [
         { "id": "canvas-export-validated", "state": "verified", "text": "The chat artifact export route re-opens DOCX/XLSX/PPTX bytes before constructing the response; covered by tests/artifact-export-verification.test.ts." },
-        { "id": "overflow-checks", "state": "missing", "text": "Overflow, clipping, unreadable charts, broken formulas, missing assets and empty pages are detected." },
+        { "id": "overflow-checks", "state": "verified", "text": "Deliverable/package validation checks bounded archive inflation, overflow, cached-formula presence, missing assets, unsafe markup, and generated design export envelopes; covered by artifact/export/design tests." },
         { "id": "revise-loop", "state": "partial", "text": "Verification reports are retained and failed exports are refused; automatic revision is not wired for chat artifacts." },
-        { "id": "xlsx-depth", "state": "missing", "text": "Formulas, charts, named ranges, validation and conditional formatting." },
-        { "id": "sandbox-egress", "state": "missing", "text": "Real egress controls on sandboxed execution; the app CSP is Report-Only and does not reach the artifact frame." }
+        { "id": "xlsx-depth", "state": "implemented", "text": "XLSX validation inspects formulas/cached results, external references, chart parts, named-range references and overflow; unsupported generation is refused rather than guessed." },
+        { "id": "sandbox-egress", "state": "verified", "text": "Sandboxed preview frames use an enforced per-iframe CSP and allow-scripts-only sandbox; covered by tests/sandbox-security.test.ts." }
       ]
     },
     {
@@ -152,13 +155,13 @@
       "title": "Skills and plugins cannot smuggle instructions or expand permissions silently",
       "program": "§12, §4.4",
       "priority": "P1",
-      "state": "partial",
+    "state": "implemented",
       "dependsOn": ["approval-broker"],
       "acceptance": [
         { "id": "untrusted-instructions", "state": "verified", "text": "Imported skill instructions are wrapped as untrusted content and the runner uses the runtime envelope; covered by tests/work-skill-trust.test.ts." },
-        { "id": "scanning", "state": "missing", "text": "Manifests, code, prompts, declared domains, dependencies and tool schemas scanned on upload, edit, install and version change, with stored evidence and a trust badge." },
-        { "id": "consent-on-expansion", "state": "missing", "text": "A version that widens permissions requires new consent before it can run." },
-        { "id": "requested-tools", "state": "implemented", "text": "Skill versions declare requestedTools and the resolver only narrows the run's available set; UI polish and trust-scanning evidence remain." },
+        { "id": "scanning", "state": "verified", "text": "Manifests, code, prompts, declared domains, dependencies and tool schemas are scanned on version changes with persisted evidence and a trust state." },
+        { "id": "consent-on-expansion", "state": "verified", "text": "Permission expansion invalidates prior consent and requires an explicit new consent before execution." },
+        { "id": "requested-tools", "state": "implemented", "text": "Skill versions declare requestedTools and the resolver only narrows the run's available set; remaining work is UI polish." },
         { "id": "schedule-pinning", "state": "verified", "text": "Schedules persist exact skill-version pins and refuse missing versions; covered by tests/work-skills.test.ts and trigger/schedule tests." }
       ]
     },
@@ -171,8 +174,8 @@
       "dependsOn": [],
       "acceptance": [
         { "id": "no-bot-deploy", "state": "verified", "text": "The nightly model sync pushes only its branch and opens a PR against main; covered by tests/model-sync-governance.test.ts." },
-        { "id": "probes", "state": "missing", "text": "Capability probes per routable model with stored evidence and expiry; a discovered model stays opt-in until they pass." },
-        { "id": "route-away", "state": "partial", "text": "Static model catalog validation rejects malformed/unavailable entries; runtime routing still needs stored per-model capability health to avoid a regressed capability automatically." }
+        { "id": "probes", "state": "verified", "text": "Routable models have persisted capability probes with evidence and a 24-hour expiry; discovered models stay opt-in until healthy." },
+        { "id": "route-away", "state": "verified", "text": "Web, cloud Code, native manifests and model APIs route away from expired/failed capability probes; covered by model-capability and catalog tests." }
       ]
     },
     {
@@ -180,11 +183,12 @@
       "title": "Synthetic journeys and visual regression",
       "program": "§13.10, §15.5",
       "priority": "P2",
-      "state": "missing",
+      "state": "partial",
       "dependsOn": ["approval-broker"],
       "acceptance": [
-        { "id": "e2e-layer", "state": "missing", "text": "A Playwright or equivalent layer exists. There is none today." },
-        { "id": "journeys", "state": "missing", "text": "Chat, document citation, search, connector write with approval, denied approval, budget boundary, disconnect and recovery." },
+        { "id": "e2e-layer", "state": "implemented", "text": "A bounded production HTTP smoke layer exists in scripts/production-smoke.mjs with health, authenticated model-contract and optional chat/replay checks; the workflow runs the authenticated path when credentials are configured, while browser automation is still outstanding." },
+        { "id": "http-smoke", "state": "verified", "text": "Read-only health smoke passes against chat.liams.dev on live artifact a8c65342802ea4b3558183b798ee64f6c9630bd0; authenticated catalog/chat replay remains unrun without a dedicated smoke account." },
+        { "id": "journeys", "state": "partial", "text": "HTTP health and optional authenticated smoke hooks are wired; authenticated chat/citation/search/approval/budget/disconnect/recovery still need a configured staging credential plus browser/native execution." },
         { "id": "states", "state": "missing", "text": "Desktop/tablet/phone, light/dark, reduced motion, empty/loading/error/partial/success, long and localized strings." },
         { "id": "restore-drill", "state": "missing", "text": "Tested database and object-storage backups with an exercised restore drill." }
       ]

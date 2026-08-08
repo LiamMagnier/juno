@@ -351,6 +351,10 @@ public enum NativeChatServerEvent: Equatable, Sendable {
     case reasoningDelta(String)
     case sources([NativeChatSource])
     case activity(NativeChatActivity)
+    /// A connector action is blocked until the person answers. This is not a
+    /// terminal frame: the server keeps the provider/tool loop alive while the
+    /// card is answered through `/api/approvals/:id`.
+    case approval(NativeChatApproval)
     case completed(NativeCompletedChatMessage)
     case failed(
         message: String,
@@ -583,6 +587,7 @@ public enum NativeChatAPIError: Error, Equatable, LocalizedError, Sendable {
     case eventLineTooLarge
     case eventPayloadTooLarge
     case streamEndedWithoutTerminalEvent
+    case approvalDigestMismatch
     case server(
         statusCode: Int,
         code: String?,
@@ -610,6 +615,8 @@ public enum NativeChatAPIError: Error, Equatable, LocalizedError, Sendable {
             "Juno returned an invalid chat response."
         case .streamEndedWithoutTerminalEvent:
             "The live response was interrupted. Juno is reconnecting to saved data."
+        case .approvalDigestMismatch:
+            "Juno refused this approval because the action changed. Nothing was sent."
         case .server(_, _, let message, _):
             message
         }
@@ -818,6 +825,77 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             content: message.content,
             createdAt: createdAt
         )
+    }
+
+    /// Loads the approval receipt list used for recovery when a native client
+    /// opens after the live chat stream was missed. `includeRecent` also brings
+    /// back decided/expired receipts so the card can truthfully show what
+    /// happened on another device rather than presenting a stale Allow button.
+    public func chatApprovals(
+        conversationID: String? = nil,
+        includeRecent: Bool = false,
+        for accountID: AccountID
+    ) async throws -> [NativeChatApproval] {
+        if let conversationID { try requireIdentifier(conversationID) }
+        var queryItems: [URLQueryItem] = []
+        if let conversationID {
+            queryItems.append(URLQueryItem(name: "conversationId", value: conversationID))
+        }
+        if includeRecent {
+            queryItems.append(URLQueryItem(name: "includeRecent", value: "1"))
+        }
+        let response = try await sender.send(
+            try NativeBearerRequest(path: "/api/approvals", queryItems: queryItems),
+            for: accountID
+        )
+        guard (200...299).contains(response.statusCode) else {
+            throw serverError(response)
+        }
+        let wire: ApprovalListWire
+        do { wire = try JSONDecoder().decode(ApprovalListWire.self, from: response.body) }
+        catch { throw NativeChatAPIError.malformedResponse }
+        guard wire.approvals.count <= 50 else { throw NativeChatAPIError.malformedResponse }
+        return try wire.approvals.map(decodeApproval)
+    }
+
+    /// Records one user decision. The receipt digest is always echoed from the
+    /// object that was rendered; the server re-checks it against the action and
+    /// policy before allowing any connector call to proceed.
+    public func decideChatApproval(
+        _ approval: NativeChatApproval,
+        decision: NativeChatApprovalDecision,
+        for accountID: AccountID
+    ) async throws -> NativeChatApproval {
+        try requireIdentifier(approval.id)
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/approvals/\(approval.id)",
+                method: .post,
+                headers: try HTTPHeaders(["Content-Type": "application/json"]),
+                body: try JSONEncoder().encode(ApprovalDecisionWire(
+                    decision: decision.rawValue,
+                    receiptDigest: approval.receiptDigest
+                ))
+            ),
+            for: accountID
+        )
+        guard (200...299).contains(response.statusCode) else {
+            throw serverError(response)
+        }
+        let wire: ApprovalDecisionResponseWire
+        do {
+            wire = try JSONDecoder().decode(
+                ApprovalDecisionResponseWire.self,
+                from: response.body
+            )
+        } catch {
+            throw NativeChatAPIError.malformedResponse
+        }
+        let decided = try decodeApproval(wire.approval)
+        guard decided.id == approval.id,
+            decided.receiptDigest == approval.receiptDigest
+        else { throw NativeChatAPIError.approvalDigestMismatch }
+        return decided
     }
 
     /// Streams an incognito turn. Nothing about it is persisted anywhere — not on
@@ -1092,6 +1170,11 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                 detail: event.detail,
                 url: event.url
             ))
+        case "approval":
+            guard let approval = envelope.approval else {
+                throw NativeChatAPIError.malformedResponse
+            }
+            return .approval(try decodeApproval(approval))
         case "progress":
             // The wire frame names a stage and sometimes a percentage; it does
             // NOT name the modality, because the caller already chose the model.
@@ -1119,6 +1202,61 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
             url.host != nil
         else { throw NativeChatAPIError.malformedResponse }
         return NativeChatSource(title: wire.title, url: url, snippet: wire.snippet)
+    }
+
+    private func decodeApproval(_ wire: ApprovalWire) throws -> NativeChatApproval {
+        guard validText(wire.id, maximum: 256),
+            validText(wire.surface, maximum: 80),
+            validText(wire.sessionId, maximum: 256),
+            validText(wire.connectorId, maximum: 200),
+            validText(wire.connectorLabel, maximum: 300),
+            validText(wire.toolName, maximum: 300),
+            validText(wire.action, maximum: 300),
+            validText(wire.preview, maximum: 8 * 1_024),
+            validText(wire.receiptDigest, maximum: 200),
+            let expiresAt = parseDate(wire.expiresAt),
+            let createdAt = parseDate(wire.createdAt),
+            wire.detail.count <= 100
+        else { throw NativeChatAPIError.malformedResponse }
+
+        if let conversationID = wire.conversationId,
+            !validText(conversationID, maximum: 256)
+        { throw NativeChatAPIError.malformedResponse }
+        if let decidedAt = wire.decidedAt, parseDate(decidedAt) == nil {
+            throw NativeChatAPIError.malformedResponse
+        }
+        if let completedAt = wire.completedAt, parseDate(completedAt) == nil {
+            throw NativeChatAPIError.malformedResponse
+        }
+
+        // The server's serialiser already clamps these unions. A new value is
+        // treated as unknown/blocked so a native build never turns an unfamiliar
+        // status into an actionable button.
+        let riskClass = NativeChatApprovalRiskClass(rawValue: wire.riskClass)
+            ?? .unknown
+        let status = NativeChatApprovalStatus(rawValue: wire.status) ?? .blocked
+        return NativeChatApproval(
+            id: wire.id,
+            surface: wire.surface,
+            sessionID: wire.sessionId,
+            conversationID: wire.conversationId,
+            connectorID: wire.connectorId,
+            connectorLabel: wire.connectorLabel,
+            toolName: wire.toolName,
+            action: wire.action,
+            riskClass: riskClass,
+            preview: wire.preview,
+            detail: wire.detail,
+            receiptDigest: wire.receiptDigest,
+            status: status,
+            decision: wire.decision,
+            canAllowScope: wire.canAllowScope,
+            derivedFromUntrusted: wire.derivedFromUntrusted,
+            expiresAt: expiresAt,
+            decidedAt: wire.decidedAt.flatMap(parseDate),
+            completedAt: wire.completedAt.flatMap(parseDate),
+            createdAt: createdAt
+        )
     }
 
     private func serverError(_ response: HTTPResponse) -> NativeChatAPIError {
@@ -1375,6 +1513,42 @@ private struct SourceWire: Decodable {
     let snippet: String
 }
 
+private struct ApprovalWire: Decodable {
+    let id: String
+    let surface: String
+    let sessionId: String
+    let conversationId: String?
+    let connectorId: String
+    let connectorLabel: String
+    let toolName: String
+    let action: String
+    let riskClass: String
+    let preview: String
+    let detail: [String: JunoJSONValue]
+    let receiptDigest: String
+    let status: String
+    let decision: String?
+    let canAllowScope: Bool
+    let derivedFromUntrusted: Bool
+    let expiresAt: String
+    let decidedAt: String?
+    let completedAt: String?
+    let createdAt: String
+}
+
+private struct ApprovalListWire: Decodable {
+    let approvals: [ApprovalWire]
+}
+
+private struct ApprovalDecisionWire: Encodable {
+    let decision: String
+    let receiptDigest: String
+}
+
+private struct ApprovalDecisionResponseWire: Decodable {
+    let approval: ApprovalWire
+}
+
 private struct EventEnvelopeWire: Decodable {
     struct ActivityWire: Decodable {
         let id: String
@@ -1406,6 +1580,7 @@ private struct EventEnvelopeWire: Decodable {
     let message: Message?
     let messageText: String?
     let event: ActivityWire?
+    let approval: ApprovalWire?
     let error: String?
     let finishReason: String?
     /// `progress` frames only.
@@ -1414,7 +1589,7 @@ private struct EventEnvelopeWire: Decodable {
 
     private enum CodingKeys: String, CodingKey {
         case type, conversationId, userMessageId, title, generationId, text,
-             sources, message, event, error, finishReason, stage, pct
+             sources, message, event, approval, error, finishReason, stage, pct
     }
 
     init(from decoder: any Decoder) throws {
@@ -1435,6 +1610,7 @@ private struct EventEnvelopeWire: Decodable {
         // Tolerant on purpose: an activity payload this build cannot read must
         // not fail the whole stream, since the report itself is unaffected.
         event = try? container.decodeIfPresent(ActivityWire.self, forKey: .event)
+        approval = try? container.decodeIfPresent(ApprovalWire.self, forKey: .approval)
         error = try container.decodeIfPresent(String.self, forKey: .error)
         finishReason = try container.decodeIfPresent(String.self, forKey: .finishReason)
     }
