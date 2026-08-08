@@ -8,6 +8,9 @@ test("iOS production release is protected and fails closed on missing signing cr
   assert.match(IOS_RELEASE, /permissions:\s*\n\s+contents:\s+read/);
   assert.match(IOS_RELEASE, /environment:\s+Production/);
   assert.match(IOS_RELEASE, /if: github\.ref == 'refs\/heads\/main'/);
+  assert.match(IOS_RELEASE, /ref: \$\{\{ github\.sha \}\}/);
+  assert.match(IOS_RELEASE, /test "\$\(git rev-parse HEAD\)" = "\$GITHUB_SHA"/);
+  assert.match(IOS_RELEASE, /\.\/scripts\/release-gates\.sh/);
   assert.match(IOS_RELEASE, /IOS_ASC_KEY_ID/);
   assert.match(IOS_RELEASE, /IOS_ASC_ISSUER_ID/);
   assert.match(IOS_RELEASE, /IOS_ASC_PRIVATE_KEY_BASE64/);

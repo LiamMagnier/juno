@@ -592,4 +592,7 @@ for attempt in $(seq 1 18); do
   sleep 5
 done
 
-die "GitHub published v$VERSION, but https://chat.liams.dev/api/downloads did not expose the exact Mac artifact and checksum. The release is public; repair the feed before telling users to update."
+if gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" -F draft=true >/dev/null 2>&1; then
+  die "GitHub published v$VERSION, but the live updater feed did not expose the exact Mac artifact and checksum. The release was reverted to draft; repair the feed before publishing again."
+fi
+die "GitHub published v$VERSION, but the live updater feed did not expose the exact Mac artifact and checksum, and GitHub could not revert the release to draft. Treat the public release as unsafe until the feed is repaired."
