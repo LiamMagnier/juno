@@ -1,6 +1,8 @@
 import type { Plan } from "@prisma/client";
 import type { ClientConversation, ClientQuota } from "@/types/chat";
 import type { Provider } from "@/lib/providers";
+import type { BackgroundProviderMode } from "@/lib/background-provider-policy";
+import type { BudgetCapSource } from "@/lib/spend-ceiling";
 
 export interface AppUser {
   id: string;
@@ -25,6 +27,14 @@ export interface ClientSettings {
   /** Interface language: "auto" (follow the browser) or a BCP-47 tag. */
   uiLocale: string;
   memoryEnabled: boolean;
+  /**
+   * Where invisible work on this account's content may be sent — memory
+   * extraction and consolidation, titles, moderation. See
+   * @/lib/background-provider-policy. Surfaced because a policy that silently
+   * refuses is indistinguishable from a broken feature: the memory manager
+   * spent a release reporting "same_provider denied it" as a provider outage.
+   */
+  backgroundProviderMode: BackgroundProviderMode;
   voiceId: string | null;
   favoriteModels: string[];
   /** Lifecycle email opt-ins — no-ops until email delivery is configured. */
@@ -43,10 +53,24 @@ export interface ClientUsageWindow {
 /** Usage status for the settings gauge (micro-USD integers). */
 export interface ClientSpend {
   spentMicroUsd: number;
-  /** null = unlimited (owner). */
+  /**
+   * The ceiling actually enforced. null now means ONE thing — the account has
+   * switched enforcement off — and never "this plan has no figure". Every
+   * surface that reads it must say which, because they are opposite states.
+   */
   budgetMicroUsd: number | null;
   /** EUR per USD of model spend (display conversion; defaults to 1). */
   eurPerUsd: number;
+  /** Micro-USD held by generations still running, already netted off the meter. */
+  reservedMicroUsd: number;
+  /** Who set the binding ceiling — "plan", "user", "personal-default", "disabled". */
+  capSource: BudgetCapSource;
+  /** `Settings.spendCapDisabled`. Rendered loudly, never as a silent state. */
+  capDisabled: boolean;
+  /** The account's own stored number in EUR, or null if it has never set one. */
+  userCapEur: number | null;
+  /** The plan's own figure, so the UI can say what the ceiling may be raised to. */
+  planBudgetMicroUsd: number | null;
   /** Rolling windows, as percentages. The period total is shown in euros
    *  alongside them — see the Usage tile in settings. */
   windows: { session: ClientUsageWindow; weekly: ClientUsageWindow };

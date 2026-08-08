@@ -16,6 +16,7 @@ import { ThinkingState } from "@/components/aicss/thinking-state";
 import { ActivityTimeline } from "@/components/chat/activity-timeline";
 import { ApprovalCard } from "@/components/chat/approval-card";
 import { SourcesPill } from "@/components/chat/sources-pill";
+import { CitationAuditPanel, isAuditableAnswer, useCitationAudit } from "@/components/chat/citation-audit";
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 import { ImageEditOverlay } from "@/components/chat/image-edit-overlay";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
@@ -556,6 +557,16 @@ export function MessageItem({
     [isUser, view.content, sources],
   );
 
+  /*
+   * The citation audit (§8.3) for THIS answer. Gated on the numbered-corpus
+   * contract — the same `cited` flag that licenses the inline [n] chips — so an
+   * ordinary reply issues no request and grows no footer. It is keyed on
+   * message.id rather than the version being viewed: the audit was run against
+   * the report that was persisted, and an older version's citations were never
+   * checked.
+   */
+  const citationAudit = useCitationAudit(message.id, isAuditableAnswer(sources, message.streaming));
+
 
   const copy = async () => {
     await navigator.clipboard.writeText(view.content).catch(() => {});
@@ -820,7 +831,12 @@ export function MessageItem({
 
         {/* Footer, below the answer it backs — the inline chips are the citation,
             this is the bibliography. */}
-        {sources && sources.length > 0 && <SourcesPill sources={sources} />}
+        {sources && sources.length > 0 && (
+          <SourcesPill sources={sources} audit={citationAudit.phase === "ready" ? citationAudit.audit : undefined} />
+        )}
+        {/* Above the model/cost line but below the bibliography: what the answer
+            rests on, then how well it rests on it. */}
+        <CitationAuditPanel state={citationAudit} />
 
         {!isVoice && !message.streaming && !message.error && (modelName || hasUsage) && (
           <Tooltip>

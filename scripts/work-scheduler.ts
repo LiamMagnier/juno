@@ -44,6 +44,7 @@ import "server-only";
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget } from "@/lib/spend";
+import { unattendedRunCeiling } from "@/lib/spend-ceiling";
 import {
   createRun,
   createWorkSession,
@@ -539,7 +540,13 @@ async function dispatchOne(
           degradation: decision.degradation,
           permissionPolicy: policy,
           budget: {
-            maxCostMicroUsd: schedule.maxCostMicroUsd,
+            // 0 means UNLIMITED to `budgetExceeded`, and a schedule that never
+            // set a figure defaulted to 0 — so the runs firing at 03:00 with
+            // nobody watching were the only ones with no cost ceiling at all,
+            // while a manually started run got $2. Substituted here rather than
+            // in `budgetExceeded` because 0-means-unlimited is the persisted
+            // contract the column and every client already speak.
+            maxCostMicroUsd: unattendedRunCeiling(schedule.maxCostMicroUsd),
             maxTokens: schedule.maxTokens,
             maxRuntimeMs: schedule.maxRuntimeMs,
           },

@@ -9,6 +9,7 @@ import { buildObjectKey, putObject } from "@/lib/storage";
 import { isAcceptedMime } from "@/lib/uploads";
 import { planAttachmentUpload } from "@/lib/attachment-upload";
 import { serializeAttachment } from "@/lib/serializers";
+import { scheduleIngest } from "@/lib/knowledge";
 import { isOwnerEmail } from "@/lib/owner";
 
 export const runtime = "nodejs";
@@ -90,6 +91,19 @@ export async function POST(req: Request) {
       storageKey: key,
       extractedText,
     },
+  });
+
+
+  // Structured extraction (program §5.1): the same bytes become citable blocks
+  // with page / slide / sheet / line locators, beside the flat `extractedText`
+  // above. Scheduled, not awaited — see `scheduleIngest`.
+  scheduleIngest({
+    userId: user.id,
+    attachmentId: attachment.id,
+    projectId: projectId ?? null,
+    fileName,
+    mimeType: storedMime,
+    bytes,
   });
 
   return NextResponse.json({ attachment: await serializeAttachment(attachment) }, { status: 201 });

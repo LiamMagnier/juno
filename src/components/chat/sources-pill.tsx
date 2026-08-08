@@ -2,6 +2,13 @@
 
 import * as React from "react";
 import { ArrowUpRight, ChevronDown } from "lucide-react";
+import {
+  AUDIT_COPY,
+  ScoreMeter,
+  SupportBadge,
+  evidenceForSource,
+  type CitationAudit,
+} from "@/components/chat/citation-audit";
 import { SourceFavicon, hostOf, isRenderableSourceUrl, titleOf } from "@/components/chat/source-chip";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
@@ -9,7 +16,102 @@ import type { ClientSource } from "@/types/chat";
 /** How many logos the collapsed pill shows before it just reports the count. */
 const CLUSTER_MAX = 3;
 
-function SourceRow({ source, index }: { source: ClientSource; index: number }) {
+/**
+ * What a source turned out to be worth, once its citations were checked (§8.3).
+ *
+ * This extends the bibliography rather than sitting beside it, because the
+ * question it answers — "is this link any good?" — is the one a reader already
+ * has open the list to ask. It shows the exact passages that were used as
+ * evidence, quoted from the snapshot taken when the report was written, so a
+ * reader can check the citation without leaving the page or trusting a badge.
+ */
+function SourceAudit({ audit, index }: { audit: CitationAudit; index: number }) {
+  const [open, setOpen] = React.useState(false);
+  const panelId = React.useId();
+  const source = audit.sources.find((s) => s.index === index);
+  const evidence = React.useMemo(() => evidenceForSource(audit, index), [audit, index]);
+  if (!source) return null;
+
+  const supported = evidence.filter((e) => e.claim.label === "supported").length;
+  const summary = evidence.length
+    ? `${evidence.length} ${evidence.length === 1 ? AUDIT_COPY.oneClaimCited : AUDIT_COPY.claimsCited} · ${supported} ${AUDIT_COPY.supported}`
+    : AUDIT_COPY.notUsedAsEvidence;
+
+  return (
+    <div className="pl-[38px]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className={cn(
+          "inline-flex min-h-11 items-center gap-1.5 rounded-[10px] px-1.5 font-mono text-caption text-muted-foreground",
+          "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
+          "hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          source.duplicateOfIndex != null && "text-warning-foreground"
+        )}
+      >
+        {source.duplicateOfIndex != null
+          ? `${AUDIT_COPY.syndicatedCopyOf} [${source.duplicateOfIndex}]`
+          : summary}
+        <ChevronDown
+          aria-hidden="true"
+          className={cn("size-3 transition-transform duration-base ease-out-soft motion-reduce:transition-none", open && "rotate-180")}
+        />
+      </button>
+      <div
+        id={panelId}
+        className={cn(
+          "grid transition-[grid-template-rows] duration-base ease-out-soft motion-reduce:transition-none",
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        )}
+      >
+        <div className="min-h-0 overflow-hidden" inert={!open}>
+          <div className="mb-2 rounded-[14px] border border-border/70 bg-muted/35 p-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              <ScoreMeter label="Authority" value={source.authority ?? 0} />
+              <ScoreMeter label="Freshness" value={source.freshness} />
+              <ScoreMeter label="Directness" value={source.directness} />
+              <ScoreMeter label="Independence" value={source.independence} />
+            </div>
+            <p className="mt-2 font-mono text-caption text-muted-foreground/70">
+              {source.publishedAt
+                ? `Published ${source.publishedAt.slice(0, 10)}`
+                : "No publication date — this source cannot be placed in time."}
+            </p>
+            {source.duplicateOfIndex != null && (
+              <p className="mt-1 text-caption text-warning-foreground">
+                The same story as source [{source.duplicateOfIndex}], so counting both would be counting one witness
+                twice.
+              </p>
+            )}
+            {evidence.map(({ claim, link }, i) => (
+              <div key={`${claim.id}-${i}`} className="mt-3 border-t border-border/60 pt-3">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <SupportBadge label={claim.label} />
+                  {link.stance === "contradicts" && (
+                    <span className="font-mono text-caption text-destructive-ink">this passage contradicts it</span>
+                  )}
+                </div>
+                <p className="mt-1.5 text-body leading-snug text-foreground/90">{claim.text}</p>
+                <blockquote className="mt-1.5 border-l-2 border-border pl-3 text-body leading-relaxed text-muted-foreground">
+                  {link.passage}
+                </blockquote>
+                {link.reasons.map((reason, r) => (
+                  <p key={r} className="mt-1 text-caption leading-snug text-muted-foreground">
+                    {reason}
+                  </p>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SourceRow({ source, index, audit }: { source: ClientSource; index: number; audit?: CitationAudit }) {
   // Same rule as the inline chip: a non-http(s) source is still listed, because
   // the answer used it and hiding it would misrepresent what the answer rests
   // on — but it is not made clickable. See isRenderableSourceUrl.
@@ -47,6 +149,7 @@ function SourceRow({ source, index }: { source: ClientSource; index: number }) {
           className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-base ease-out-soft group-hover/row:opacity-100 motion-reduce:transition-none"
         />
       </Row>
+      {audit && <SourceAudit audit={audit} index={index} />}
     </li>
   );
 }
@@ -55,7 +158,16 @@ function SourceRow({ source, index }: { source: ClientSource; index: number }) {
  * The message's source footer: a pill carrying a stacked logo cluster, which
  * expands into the full cited list.
  */
-export function SourcesPill({ sources, className }: { sources: ClientSource[]; className?: string }) {
+export function SourcesPill({
+  sources,
+  className,
+  audit,
+}: {
+  sources: ClientSource[];
+  className?: string;
+  /** Present only on a research answer whose citations have been checked. */
+  audit?: CitationAudit;
+}) {
   const [open, setOpen] = React.useState(false);
   const listId = React.useId();
 
@@ -149,7 +261,7 @@ export function SourcesPill({ sources, className }: { sources: ClientSource[]; c
             {sources.map((source, i) => (
               // Sources can repeat a URL across citations, so the index has to
               // be part of the key — it's also what the row displays.
-              <SourceRow key={`${i}-${source.url}`} source={source} index={i + 1} />
+              <SourceRow key={`${i}-${source.url}`} source={source} index={i + 1} audit={audit} />
             ))}
           </ul>
         </div>

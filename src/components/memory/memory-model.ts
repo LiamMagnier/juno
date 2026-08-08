@@ -13,9 +13,28 @@ export interface Memory {
   source: "AUTO" | "MANUAL";
   /** FACT = remembered · SUPPRESSION = "never remember this" (block-list). */
   kind: "FACT" | "SUPPRESSION";
-  /** conversationId | "manual" | "edit" — where this entry came from. */
+  /** conversationId | "manual" | "edit" | "forget" — where this entry came from. */
   sourceRef: string | null;
   createdAt: string;
+  // --- Memory v2. Widened rather than narrowed on purpose: `category` and
+  // `status` arrive as plain strings because a row written by an older build
+  // has no category at all, and a row written by a NEWER one could carry a
+  // value this bundle has never heard of. The page renders both as unknown
+  // instead of crashing on a value it cannot name.
+  category: string | null;
+  projectId: string | null;
+  /** Resolved server-side so a scope chip needs no second request. */
+  projectName: string | null;
+  /** The message this was learned from, when it is known. */
+  sourceMessageId: string | null;
+  confidence: number;
+  status: string;
+  /** Why the entry last changed, in words. */
+  reason: string | null;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  lastVerifiedAt: string | null;
+  supersededById: string | null;
 }
 
 export interface SummaryData {

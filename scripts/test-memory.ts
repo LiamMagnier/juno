@@ -165,7 +165,10 @@ async function main() {
     check("other old facts survived the round trip", await factExists(user.id, "token:OLD2."));
 
     // Rebuild the summary and prove the suppression layer reaches it.
-    const summary = await consolidateMemories({ userId: user.id, llm: fakeConsolidator });
+    const consolidation = await consolidateMemories({ userId: user.id, llm: fakeConsolidator });
+    // consolidateMemories now reports WHY it produced nothing (empty / denied by
+    // the background-provider policy / provider failure) instead of a bare null.
+    const summary = consolidation.status === "updated" ? consolidation.content : null;
     check("summary rebuilt", !!summary);
     check(
       "consolidator was told about the suppression",

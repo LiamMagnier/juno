@@ -31,6 +31,13 @@ const schema = z.object({
   favoriteModels: z.array(z.string().max(120)).max(200).optional(),
   emailBudgetAlerts: z.boolean().optional(),
   emailWeeklyDigest: z.boolean().optional(),
+  // The account's own monthly API-spend ceiling in EUR. null restores "use the
+  // plan's figure" — which for an account whose plan states none is
+  // PERSONAL_DEFAULT_CAP_EUR, not "no ceiling". Bounded rather than open: the
+  // effective ceiling is the MINIMUM of this and the plan's, so a large number
+  // can never buy more than the plan already permits, but an unbounded one
+  // would still overflow the Int column on the way in.
+  monthlySpendCapEur: z.int().min(0).max(100_000).nullable().optional(),
   // How much Juno must ask before an action leaves the account. Enumerated for
   // the same reason as backgroundProviderMode: the column is TEXT, and an
   // unrecognised value falls back to the default at read time, so a typo stored
@@ -77,6 +84,12 @@ export async function GET() {
       actionApprovalPolicy: true,
       lockdownMode: true,
       blockedConnectors: true,
+      // The spend ceiling and its one bypass. Both exposed read-only here so
+      // macOS and iOS can draw the same "who set this ceiling" line the web
+      // does — and, in particular, so a client can never render an account with
+      // enforcement switched off as an account on a generous plan.
+      monthlySpendCapEur: true,
+      spendCapDisabled: true,
     },
   });
   if (!settings) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -126,6 +139,11 @@ export async function PATCH(req: Request) {
       ...(d.favoriteModels !== undefined ? { favoriteModels: d.favoriteModels } : {}),
       ...(d.emailBudgetAlerts !== undefined ? { emailBudgetAlerts: d.emailBudgetAlerts } : {}),
       ...(d.emailWeeklyDigest !== undefined ? { emailWeeklyDigest: d.emailWeeklyDigest } : {}),
+      // Note what is NOT writable here: `spendCapDisabled`. It is the single
+      // bypass for the spend ceiling and the one control a compromised session
+      // must not be able to flip, so it stays out of the client's reach
+      // entirely — a deliberate development escape hatch, set in the database.
+      ...(d.monthlySpendCapEur !== undefined ? { monthlySpendCapEur: d.monthlySpendCapEur } : {}),
       ...(d.actionApprovalPolicy !== undefined ? { actionApprovalPolicy: d.actionApprovalPolicy } : {}),
       ...(d.lockdownMode !== undefined ? { lockdownMode: d.lockdownMode } : {}),
       // Deduplicated on the way in. `resolveActionPolicy` sorts and de-dupes
