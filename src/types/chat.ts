@@ -193,6 +193,16 @@ export interface ClientToolDetail {
   durationMs?: number;
 }
 
+/** Exact saved facts injected into one turn, with enough provenance for the
+ * thought-process panel to offer a source/manage link and a one-click forget. */
+export interface ClientMemoryReceipt {
+  id: string;
+  content: string;
+  category?: string | null;
+  sourceRef?: string | null;
+  sourceMessageId?: string | null;
+}
+
 export interface ClientActivityEvent {
   id: string;
   kind: ActivityKind;
@@ -206,6 +216,8 @@ export interface ClientActivityEvent {
    *  shipped, which is what makes replay degrade to the old name-only row with
    *  no version check anywhere. */
   tool?: ClientToolDetail;
+  /** Structured memory receipt; detail remains a compact legacy-friendly line. */
+  memoryReceipt?: ClientMemoryReceipt[];
 }
 
 /** How an artifact version came to be. Null on rows older than the column. */

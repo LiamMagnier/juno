@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { serializeAttachment } from "@/lib/serializers";
+import { getUserPlan } from "@/lib/usage";
+import { libraryQuotaBytes, libraryUsageBytes } from "@/lib/library";
 
 export const runtime = "nodejs";
 
@@ -11,10 +13,16 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const kind = new URL(req.url).searchParams.get("kind");
+  const includeDeleted = new URL(req.url).searchParams.get("includeDeleted") === "true";
   const atts = await prisma.attachment.findMany({
-    where: { userId: user.id, ...(kind === "IMAGE" || kind === "FILE" ? { kind } : {}) },
+    where: {
+      userId: user.id,
+      ...(includeDeleted ? {} : { deletedAt: null }),
+      ...(kind === "IMAGE" || kind === "FILE" ? { kind } : {}),
+    },
     orderBy: { createdAt: "desc" },
     take: 300,
+    include: { _count: { select: { versions: true } } },
   });
 
   // Structured-extraction state, joined in one query rather than per row.
@@ -62,11 +70,22 @@ export async function GET(req: Request) {
       ...(await serializeAttachment(a)),
       createdAt: a.createdAt.toISOString(),
       conversationId: a.conversationId,
+      version: a.version,
+      versionCount: a._count.versions,
+      origin: a.origin,
+      parserState: a.parserState,
+      parserVersion: a.parserVersion,
+      deletedAt: a.deletedAt?.toISOString() ?? null,
       // null for anything no extractor claims — a photo is not a document that
       // failed to index, and the UI renders nothing for it.
       knowledge: byAttachment.get(a.id) ?? null,
     }))
   );
 
-  return NextResponse.json({ items });
+  const [plan, usedBytes] = await Promise.all([getUserPlan(user.id), libraryUsageBytes(user.id)]);
+  const quotaBytes = libraryQuotaBytes(plan);
+  return NextResponse.json({
+    items,
+    storage: { usedBytes, quotaBytes, remainingBytes: Math.max(0, quotaBytes - usedBytes) },
+  });
 }

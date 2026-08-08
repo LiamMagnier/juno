@@ -10,6 +10,7 @@ import { planAttachmentUpload } from "@/lib/attachment-upload";
 import { serializeAttachment } from "@/lib/serializers";
 import { scheduleIngest } from "@/lib/knowledge";
 import { isOwnerEmail } from "@/lib/owner";
+import { libraryCapacity } from "@/lib/library";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -100,6 +101,10 @@ export async function POST(request: Request) {
     if (!planned.ok) {
       throw new ApiV1Error(planned.error.code, planned.error.status, planned.error.message);
     }
+    const capacity = await libraryCapacity(user.id, plan, file.size);
+    if (!capacity.allowed) {
+      throw new ApiV1Error("library_quota_exceeded", 413, "Library storage limit reached.");
+    }
     const { fileName, kind, storedMime, storedContentType, contentDisposition, extractedText } =
       planned.plan;
 
@@ -124,19 +129,37 @@ export async function POST(request: Request) {
     const key = buildObjectKey(user.id, fileName);
     await putObject(key, bytes, storedContentType, contentDisposition);
 
-    const attachment = await prisma.attachment.create({
-      data: {
-        userId: user.id,
-        conversationId: conversationId ?? null,
-        projectId: projectId ?? null,
-        kind,
-        fileName,
-        mimeType: storedMime,
-        size: file.size,
-        storageKey: key,
-        extractedText,
-        idempotencyKey,
-      },
+    const attachment = await prisma.$transaction(async (tx) => {
+      const created = await tx.attachment.create({
+        data: {
+          userId: user.id,
+          conversationId: conversationId ?? null,
+          projectId: projectId ?? null,
+          kind,
+          fileName,
+          mimeType: storedMime,
+          size: file.size,
+          storageKey: key,
+          extractedText,
+          idempotencyKey,
+          origin: "upload",
+          parserState: "queued",
+        },
+      });
+      await tx.attachmentVersion.create({
+        data: {
+          attachmentId: created.id,
+          version: created.version,
+          origin: "upload",
+          fileName,
+          mimeType: storedMime,
+          size: file.size,
+          storageKey: key,
+          extractedText,
+          parserState: "queued",
+        },
+      });
+      return created;
     });
 
 

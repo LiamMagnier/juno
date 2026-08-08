@@ -141,6 +141,22 @@ export function scheduleIngest(input: IngestInput): void {
   after(async () => {
     try {
       const outcome = await ingest(input);
+      if (input.attachmentId) {
+        const parserState =
+          outcome.status === "indexed"
+            ? outcome.state
+            : outcome.status === "reused"
+              ? "ready"
+              : outcome.status;
+        await prisma.attachment
+          .updateMany({ where: { id: input.attachmentId, userId: input.userId }, data: { parserState } })
+          .catch((error) => {
+            console.error("[knowledge] could not persist attachment parser state", {
+              attachmentId: input.attachmentId,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          });
+      }
       logSync(outcome.status === "unavailable" ? "warn" : "info", "knowledge.ingest", {
         status: outcome.status,
         fileName: input.fileName,

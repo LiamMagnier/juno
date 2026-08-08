@@ -11,6 +11,7 @@ import { planAttachmentUpload } from "@/lib/attachment-upload";
 import { serializeAttachment } from "@/lib/serializers";
 import { scheduleIngest } from "@/lib/knowledge";
 import { isOwnerEmail } from "@/lib/owner";
+import { libraryCapacity } from "@/lib/library";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -73,24 +74,55 @@ export async function POST(req: Request) {
   if (!planned.ok) {
     return NextResponse.json({ error: planned.error.message }, { status: planned.error.status });
   }
+  const capacity = await libraryCapacity(user.id, plan, file.size);
+  if (!capacity.allowed) {
+    return NextResponse.json(
+      {
+        error: "Library storage limit reached.",
+        code: "LIBRARY_QUOTA_EXCEEDED",
+        usedBytes: capacity.usedBytes,
+        quotaBytes: capacity.quotaBytes,
+        remainingBytes: capacity.remainingBytes,
+      },
+      { status: 413 },
+    );
+  }
   const { fileName, kind, storedMime, storedContentType, contentDisposition, extractedText } =
     planned.plan;
 
   const key = buildObjectKey(user.id, fileName);
   await putObject(key, bytes, storedContentType, contentDisposition);
 
-  const attachment = await prisma.attachment.create({
-    data: {
-      userId: user.id,
-      conversationId: conversationId ?? null,
-      projectId: projectId ?? null,
-      kind,
-      fileName,
-      mimeType: storedMime,
-      size: file.size,
-      storageKey: key,
-      extractedText,
-    },
+  const attachment = await prisma.$transaction(async (tx) => {
+    const created = await tx.attachment.create({
+      data: {
+        userId: user.id,
+        conversationId: conversationId ?? null,
+        projectId: projectId ?? null,
+        kind,
+        fileName,
+        mimeType: storedMime,
+        size: file.size,
+        storageKey: key,
+        extractedText,
+        origin: "upload",
+        parserState: "queued",
+      },
+    });
+    await tx.attachmentVersion.create({
+      data: {
+        attachmentId: created.id,
+        version: created.version,
+        origin: "upload",
+        fileName,
+        mimeType: storedMime,
+        size: file.size,
+        storageKey: key,
+        extractedText,
+        parserState: "queued",
+      },
+    });
+    return created;
   });
 
 

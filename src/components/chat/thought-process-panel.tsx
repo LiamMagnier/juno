@@ -244,6 +244,7 @@ export interface RunModel {
   t0: number | null;
   phases: Phase[];
   facts: Fact[];
+  memoryReceipt: NonNullable<ClientActivityEvent["memoryReceipt"]>;
   calls: Call[];
   /** `title` is the producer's own `detail` for the visit — the page title, or
    *  the host when the page had none (see the `visit` sends in route.ts and
@@ -304,6 +305,7 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
   const effortEv = events.find((e) => e.kind === "reasoning" && e.title === T_EFFORT);
   const connectorsEv = events.find((e) => e.kind === "tool" && e.title === T_CONNECTORS);
   const contextEv = events.find((e) => e.kind === "context" && e.title !== T_CORPUS);
+  const memoryEv = events.find((e) => e.kind === "context" && e.title === "Remembered about you");
   const corpusEv = events.find((e) => e.kind === "context" && e.title === T_CORPUS);
   // Only deep research's per-query sends are real searches. "Preparing web
   // search" is an INTENT, not work — counting it would inflate the noun.
@@ -434,6 +436,7 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
     t0,
     phases,
     facts,
+    memoryReceipt: memoryEv?.memoryReceipt ?? [],
     calls,
     sources,
     searches: searchEvs.length,
@@ -820,6 +823,34 @@ export function ThoughtProcessPanel({
     });
   }, []);
 
+  // A receipt is not only an explanation — it is a direct control surface for
+  // the exact facts this turn used. Forgetting writes the durable suppression
+  // through the same authenticated memory route as the Memory page, then hides
+  // only the local receipt row; the persisted chat remains an honest historical
+  // record of what the model saw.
+  const [forgottenMemories, setForgottenMemories] = React.useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
+  const [forgettingMemory, setForgettingMemory] = React.useState<string | null>(null);
+  const [memoryError, setMemoryError] = React.useState<string | null>(null);
+  const forgetMemory = React.useCallback(async (memoryId: string) => {
+    setForgettingMemory(memoryId);
+    setMemoryError(null);
+    try {
+      const response = await fetch(`/api/memory/${encodeURIComponent(memoryId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ forget: true }),
+      });
+      if (!response.ok) throw new Error("Could not forget that memory.");
+      setForgottenMemories((previous) => new Set([...previous, memoryId]));
+    } catch (error) {
+      setMemoryError(error instanceof Error ? error.message : "Could not forget that memory.");
+    } finally {
+      setForgettingMemory(null);
+    }
+  }, []);
+
   /**
    * STEPS — the model's own words, or nothing.
    *
@@ -923,7 +954,9 @@ export function ThoughtProcessPanel({
   // idiom for unknown, so it is used here rather than a placeholder with a
   // "pending" caption beside it.
   const showCost = money !== null && !streaming;
-  const showSetup = setupRows.length > 0;
+  const visibleMemoryReceipt = run.memoryReceipt.filter((memory) => !forgottenMemories.has(memory.id));
+  const showMemoryReceipt = visibleMemoryReceipt.length > 0;
+  const showSetup = setupRows.length > 0 || showMemoryReceipt;
   // WIDENED GATE. A search that returned nothing used to show no query, no
   // search line and no evidence a search had happened at all — the run's most
   // interesting outcome rendered as a gap.
@@ -1143,6 +1176,51 @@ export function ThoughtProcessPanel({
                 </React.Fragment>
               ))}
             </dl>
+            {showMemoryReceipt && (
+              <div className="mt-5 border-t border-border/45 pt-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="font-mono text-label uppercase text-muted-foreground">Memory used</h4>
+                  <a
+                    href="/memory"
+                    className="text-caption text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    Manage all
+                  </a>
+                </div>
+                <ul className="mt-2.5 space-y-2">
+                  {visibleMemoryReceipt.map((memory) => {
+                    const sourceHref =
+                      memory.sourceRef && !["manual", "edit", "forget"].includes(memory.sourceRef)
+                        ? `/chat/${memory.sourceRef}`
+                        : null;
+                    return (
+                      <li key={memory.id} className="rounded-control border border-border/45 bg-muted/20 px-3 py-2">
+                        <p className="break-words text-body text-foreground/85">{memory.content}</p>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted-foreground">
+                          {sourceHref && (
+                            <a
+                              href={sourceHref}
+                              className="underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            >
+                              Open source chat
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            disabled={forgettingMemory === memory.id}
+                            onClick={() => void forgetMemory(memory.id)}
+                            className="underline-offset-4 hover:text-destructive hover:underline disabled:cursor-wait disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {forgettingMemory === memory.id ? "Forgetting…" : "Forget this"}
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {memoryError && <p className="mt-2 text-caption text-destructive">{memoryError}</p>}
+              </div>
+            )}
           </section>
         )}
 

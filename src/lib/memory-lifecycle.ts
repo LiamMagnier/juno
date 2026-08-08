@@ -258,6 +258,8 @@ export interface LifecycleEntry {
   normalized: string | null;
   category: string | null;
   projectId: string | null;
+  sourceRef?: string | null;
+  sourceMessageId?: string | null;
   source: "AUTO" | "MANUAL";
   kind: "FACT" | "SUPPRESSION";
   confidence: number;
@@ -564,6 +566,8 @@ export interface SelectedMemory {
   content: string;
   category: string | null;
   projectId: string | null;
+  sourceRef: string | null;
+  sourceMessageId: string | null;
   confidence: number;
   createdAt: Date;
   tokens: number;
@@ -672,6 +676,8 @@ export function selectMemoriesForContext(
       content: candidate.entry.content,
       category: candidate.entry.category,
       projectId: candidate.entry.projectId,
+      sourceRef: candidate.entry.sourceRef ?? null,
+      sourceMessageId: candidate.entry.sourceMessageId ?? null,
       confidence: candidate.entry.confidence,
       createdAt: candidate.entry.createdAt,
       tokens: candidate.tokens,

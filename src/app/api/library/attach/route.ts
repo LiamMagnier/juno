@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   // Only the user's own attachments, de-duplicated, order preserved.
   const uniqueIds = [...new Set(parsed.data.attachmentIds)];
   const sources = await prisma.attachment.findMany({
-    where: { id: { in: uniqueIds }, userId: user.id },
+    where: { id: { in: uniqueIds }, userId: user.id, deletedAt: null },
   });
   if (sources.length === 0) return NextResponse.json({ error: "No matching files." }, { status: 404 });
   const byId = new Map(sources.map((a) => [a.id, a]));
@@ -46,10 +46,28 @@ export async function POST(req: Request) {
             extractedText: src.extractedText,
             width: src.width,
             height: src.height,
+            origin: "library_clone",
+            parserState: src.parserState,
+            parserVersion: src.parserVersion,
           },
         });
       })
   );
+
+  await prisma.attachmentVersion.createMany({
+    data: clones.map((clone) => ({
+      attachmentId: clone.id,
+      version: clone.version,
+      origin: "library_clone",
+      fileName: clone.fileName,
+      mimeType: clone.mimeType,
+      size: clone.size,
+      storageKey: clone.storageKey,
+      extractedText: clone.extractedText,
+      parserState: clone.parserState,
+      parserVersion: clone.parserVersion,
+    })),
+  });
 
   const attachments = await Promise.all(clones.map(serializeAttachment));
   return NextResponse.json({ attachments }, { status: 201 });

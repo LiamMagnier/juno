@@ -302,6 +302,8 @@ const LIFECYCLE_SELECT = {
   normalized: true,
   category: true,
   projectId: true,
+  sourceRef: true,
+  sourceMessageId: true,
   source: true,
   kind: true,
   confidence: true,
@@ -496,7 +498,7 @@ export async function extractConversationMemory(opts: {
     await prisma.message.findMany({
       where: { conversationId: convo.id, role: "USER", ...(since ? { createdAt: { gt: since } } : {}) },
       orderBy: { createdAt: "asc" },
-      select: { content: true, createdAt: true },
+      select: { id: true, content: true, createdAt: true },
     })
   ).map((m) => ({ ...m, content: decryptMessageText(m.content) }));
 
@@ -536,8 +538,8 @@ export async function extractConversationMemory(opts: {
   }
 
   // Chunk by count + chars.
-  const chunks: { content: string; createdAt: Date }[][] = [];
-  let current: { content: string; createdAt: Date }[] = [];
+  const chunks: { id: string; content: string; createdAt: Date }[][] = [];
+  let current: { id: string; content: string; createdAt: Date }[] = [];
   let chars = 0;
   for (const m of messages) {
     const text = m.content.replace(/\s+/g, " ").trim().slice(0, 1200);
@@ -547,7 +549,7 @@ export async function extractConversationMemory(opts: {
       current = [];
       chars = 0;
     }
-    current.push({ content: text, createdAt: m.createdAt });
+    current.push({ id: m.id, content: text, createdAt: m.createdAt });
     chars += text.length;
   }
   if (current.length) chunks.push(current);
@@ -600,6 +602,11 @@ Return ONLY JSON: {"facts":["<short third-person fact>", ...],"digest":"<one lin
     // notes learned in "Japanese" must not surface in an unrelated work chat.
     const { created: createdInChunk } = await saveCandidates(opts.userId, result.facts, convo.id, {
       projectId: convo.projectId,
+      // The extractor returns facts for a bounded group rather than a
+      // per-fact source map. Point at the last user message in that group —
+      // the conversation id remains the authoritative provenance, and this
+      // optional anchor gives the UI a useful place to reopen the source.
+      sourceMessageId: chunk.at(-1)?.id ?? null,
     });
     created += createdInChunk;
     const isLastChunkOverall = processed + 1 === chunks.length;

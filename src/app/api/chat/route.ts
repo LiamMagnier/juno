@@ -1797,6 +1797,13 @@ async function handleChat(req: Request) {
             selected: memoryProfile.used,
             droppedForBudget: memoryProfile.droppedForBudget,
           }),
+          memoryReceipt: memoryProfile.used.map((memory) => ({
+            id: memory.id,
+            content: memory.content,
+            category: memory.category,
+            sourceRef: memory.sourceRef,
+            sourceMessageId: memory.sourceMessageId,
+          })),
         });
       }
       if (artifactEditTarget) {
