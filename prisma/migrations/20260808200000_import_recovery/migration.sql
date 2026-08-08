@@ -11,7 +11,7 @@ CREATE TABLE "ImportRun" (
     "leaseExpiresAt" TIMESTAMP(3),
     "completedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "ImportRun_pkey" PRIMARY KEY ("id")
 );
@@ -24,7 +24,7 @@ CREATE TABLE "ImportObject" (
     "size" INTEGER NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'staged',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "ImportObject_pkey" PRIMARY KEY ("id")
 );
