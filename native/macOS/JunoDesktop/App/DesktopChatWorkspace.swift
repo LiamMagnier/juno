@@ -3,11 +3,13 @@ import AppKit
 import Foundation
 import JunoAuth
 import JunoChatKit
+import JunoCodeKit
 import JunoCore
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import JunoVoiceKit
+import JunoWorkKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -149,6 +151,8 @@ struct DesktopChatWorkspace: View {
                 model: model,
                 syncModel: configuration.syncModel,
                 avatarModel: configuration.avatarModel,
+                workModel: configuration.workModel,
+                codeModel: configuration.codeModel,
                 session: session,
                 product: $product,
                 destination: destination,
@@ -408,6 +412,8 @@ private struct DesktopChatSidebar: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     let avatarModel: NativeAvatarModel?
+    let workModel: NativeWorkModel?
+    let codeModel: NativeCodeModel?
     let session: NativeAuthenticatedSession
     @Binding var product: DesktopProductMode
     @Binding var destination: DesktopDestination
@@ -425,8 +431,50 @@ private struct DesktopChatSidebar: View {
             .filter { $0.bucket != .archived }
     }
 
+    /// Cross-product attention is a compact bridge into the owning product.
+    /// The source models remain authoritative; this sidebar only projects their
+    /// current rows and opens the selected record in its native workspace.
+    private var attentionItems: [JunoRecentItem] {
+        var items: [[JunoRecentItem]] = []
+        if let workModel {
+            items.append(
+                workModel.sessionsNeedingAttention
+                    .filter { !$0.archived }
+                    .map(\.junoRecentItem)
+            )
+        }
+        if let codeModel {
+            items.append(
+                codeModel.tasks
+                    .filter { $0.status == .awaitingApproval || $0.status == .failed }
+                    .map(\.junoRecentItem)
+            )
+        }
+        return JunoRecentActivity.attentionItems(
+            from: JunoRecentActivity.merge(items, limit: 20),
+            limit: 8
+        )
+    }
+
     var body: some View {
         List(selection: $selection) {
+            if !attentionItems.isEmpty {
+                Section {
+                    ForEach(attentionItems) { item in
+                        Button {
+                            openAttention(item)
+                        } label: {
+                            JunoRecentActivityRow(item: item)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("juno.desktop.attention.\(item.id)")
+                    }
+                } header: {
+                    Text("Attention Required")
+                        .junoSidebarSection()
+                }
+            }
+
             Section {
                 ForEach(DesktopDestination.sidebarCases) { item in
                     destinationRow(item)
@@ -453,6 +501,24 @@ private struct DesktopChatSidebar: View {
             accountFooter
         }
         .junoSidebarScrollEdge()
+    }
+
+    private func openAttention(_ item: JunoRecentItem) {
+        switch item.kind {
+        case .work:
+            guard let session = workModel?.sessions.first(where: { $0.id == item.sourceID }) else { return }
+            workModel?.open(session)
+            product = .work
+        case .code:
+            guard let task = codeModel?.tasks.first(where: { $0.id == item.sourceID }) else { return }
+            codeModel?.open(task)
+            product = .code
+        case .chat:
+            model.selectedConversationID = item.sourceID
+            destination.wrappedValue = .chat
+        case .project:
+            destination.wrappedValue = .projects
+        }
     }
 
     private func destinationRow(_ item: DesktopDestination) -> some View {

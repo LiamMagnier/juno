@@ -172,18 +172,15 @@ function SelectCheck({
 }
 
 function ItemPreview({ item }: { item: LibItem }) {
-  return (
-    <a
-      href={item.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={`Open ${item.fileName}`}
-      className="group/preview relative size-11 shrink-0 overflow-hidden rounded-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-    >
-      {/* No excerpt at 44px — six lines of 8px type is a grey smudge, and the
-          fetch would buy nothing. The extension is what identifies a file at
-          this size, and `FilePreview` falls back to exactly that. */}
-      <FilePreview item={item} className="absolute inset-0" sizes="44px" excerpt={false} />
+  const preview = (
+    <FilePreview item={item} className="absolute inset-0" sizes="44px" excerpt={false} />
+  );
+  const className = "group/preview relative size-11 shrink-0 overflow-hidden rounded-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+  return item.deletedAt ? (
+    <div className={className} aria-label={`${item.fileName} is deleted`}>{preview}</div>
+  ) : (
+    <a href={item.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${item.fileName}`} className={className}>
+      {preview}
     </a>
   );
 }
@@ -230,6 +227,7 @@ function ItemAction({
 }
 
 function DownloadAction({ item }: { item: LibItem }) {
+  if (item.deletedAt) return null;
   return (
     <Button
       variant="ghost"
@@ -381,11 +379,13 @@ function MobileItemMenu({
           </DropdownMenuItem>
         )}
         {item.versionCount > 0 && <DropdownMenuItem onSelect={onVersions}><History /> Versions</DropdownMenuItem>}
-        <DropdownMenuItem asChild>
-          <a href={item.url} target="_blank" rel="noopener noreferrer" download={item.fileName}>
-            <Download /> Download
-          </a>
-        </DropdownMenuItem>
+        {!item.deletedAt && (
+          <DropdownMenuItem asChild>
+            <a href={item.url} target="_blank" rel="noopener noreferrer" download={item.fileName}>
+              <Download /> Download
+            </a>
+          </DropdownMenuItem>
+        )}
         {item.conversationId && (
           <DropdownMenuItem asChild>
             <Link href={`/chat/${item.conversationId}`}>
@@ -407,22 +407,12 @@ function MobileItemMenu({
 }
 
 function GridItemPreview({ item }: { item: LibItem }) {
-  return (
-    <a
-      href={item.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label={`Open ${item.fileName}`}
-      className="group/preview block size-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-    >
-      {/* Grid view exists to be recognised at a glance, so a document shows its
-          own first lines here rather than the same glyph every other document
-          shows. See `FilePreview`. */}
-      <FilePreview
-        item={item}
-        className="size-full"
-        sizes="(max-width: 639px) 50vw, (max-width: 1023px) 33vw, 25vw"
-      />
+  const preview = <FilePreview item={item} className="size-full" sizes="(max-width: 639px) 50vw, (max-width: 1023px) 33vw, 25vw" />;
+  return item.deletedAt ? (
+    <div className="group/preview block size-full" aria-label={`${item.fileName} is deleted`}>{preview}</div>
+  ) : (
+    <a href={item.url} target="_blank" rel="noopener noreferrer" aria-label={`Open ${item.fileName}`} className="group/preview block size-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+      {preview}
     </a>
   );
 }
@@ -474,15 +464,21 @@ function LibraryGridItem({
 
       <div className="flex min-w-0 items-start gap-2 px-1 pb-1 pt-2.5">
         <div className="min-w-0 flex-1">
-          <a
-            href={item.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={item.fileName}
-            className="block truncate text-[13px] font-medium underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {item.fileName}
-          </a>
+          {item.deletedAt ? (
+            <p className="block truncate text-[13px] font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
+              {item.fileName}
+            </p>
+          ) : (
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={item.fileName}
+              className="block truncate text-[13px] font-medium underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {item.fileName}
+            </a>
+          )}
           <p className="mt-0.5 truncate text-[11px] tabular-nums text-muted-foreground">
             {formatBytes(item.size)} · {timeAgo(item.createdAt)}
           </p>
@@ -999,15 +995,21 @@ export default function LibraryPage() {
                     <div className="flex min-w-0 items-center gap-3 py-2.5">
                       <ItemPreview item={item} />
                       <div className="min-w-0">
-                        <a
-                          href={item.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block truncate text-[13px] font-medium text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          title={item.fileName}
-                        >
-                          {item.fileName}
-                        </a>
+                        {item.deletedAt ? (
+                          <p className="block truncate text-[13px] font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
+                            {item.fileName}
+                          </p>
+                        ) : (
+                          <a
+                            href={item.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block truncate text-[13px] font-medium text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            title={item.fileName}
+                          >
+                            {item.fileName}
+                          </a>
+                        )}
                         <p className="mt-0.5 truncate text-[11px] tabular-nums text-muted-foreground sm:hidden">
                           {typeLabel(item)} · {formatBytes(item.size)} · {timeAgo(item.createdAt)}
                         </p>

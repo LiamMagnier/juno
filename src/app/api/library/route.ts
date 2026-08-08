@@ -73,20 +73,24 @@ export async function GET(req: Request) {
   );
 
   const items = await Promise.all(
-    page.map(async (a) => ({
-      ...(await serializeAttachment(a)),
-      createdAt: a.createdAt.toISOString(),
-      conversationId: a.conversationId,
-      version: a.version,
-      versionCount: a._count.versions,
-      origin: a.origin,
-      parserState: a.parserState,
-      parserVersion: a.parserVersion,
-      deletedAt: a.deletedAt?.toISOString() ?? null,
-      // null for anything no extractor claims — a photo is not a document that
-      // failed to index, and the UI renders nothing for it.
-      knowledge: byAttachment.get(a.id) ?? null,
-    }))
+    page.map(async (a) => {
+      const serialized = await serializeAttachment(a);
+      return {
+        ...serialized,
+        ...(a.deletedAt ? { url: "" } : {}),
+        createdAt: a.createdAt.toISOString(),
+        conversationId: a.conversationId,
+        version: a.version,
+        versionCount: a._count.versions,
+        origin: a.origin,
+        parserState: a.parserState,
+        parserVersion: a.parserVersion,
+        deletedAt: a.deletedAt?.toISOString() ?? null,
+        // null for anything no extractor claims — a photo is not a document that
+        // failed to index, and the UI renders nothing for it.
+        knowledge: byAttachment.get(a.id) ?? null,
+      };
+    }),
   );
 
   const [plan, usedBytes] = await Promise.all([getUserPlan(user.id), libraryUsageBytes(user.id)]);

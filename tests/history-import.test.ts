@@ -86,3 +86,38 @@ test("round-trips the Juno export marker and branch/project pointers", () => {
   assert.equal(parsed.conversations[0].messages[0].sourceId, "message-source");
   assert.deepEqual(parsed.conversations[0].messages[0].attachmentSourceIds, ["attachment-source"]);
 });
+
+test("preserves Juno message metadata and recognizes a full JSON account snapshot", () => {
+  const parsed = parseHistoryExport(
+    JSON.stringify({
+      settings: { theme: "DARK" },
+      memories: [{ id: "memory-source", content: "Prefers short answers." }],
+      conversations: [{
+        id: "conversation-source",
+        model: "gpt-5.6-sol",
+        pinned: true,
+        messages: [{
+          id: "message-source",
+          role: "assistant",
+          content: "Short answer.",
+          reasoning: "Checked the constraints.",
+          reasoningParts: ["Checked the constraints."],
+          model: "gpt-5.6-sol",
+          promptTokens: 12,
+          completionTokens: 4,
+          costMicroUsd: 99,
+          sources: [{ title: "Juno", url: "https://example.com" }],
+          activity: [{ id: "a1", kind: "done", title: "Done", createdAt: "2026-08-08T10:00:00.000Z" }],
+        }],
+      }],
+    }),
+    "juno",
+  );
+
+  assert.equal(parsed.format, "juno");
+  assert.equal(parsed.conversations[0].model, "gpt-5.6-sol");
+  assert.equal(parsed.conversations[0].pinned, true);
+  assert.equal(parsed.conversations[0].messages[0].reasoning, "Checked the constraints.");
+  assert.equal(parsed.conversations[0].messages[0].costMicroUsd, 99);
+  assert.deepEqual(parsed.conversations[0].messages[0].sources, [{ title: "Juno", url: "https://example.com" }]);
+});

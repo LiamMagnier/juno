@@ -1,6 +1,7 @@
 import JunoAuth
 import JunoChatKit
 import JunoCodeKit
+import JunoCore
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
@@ -490,11 +491,14 @@ struct JunoMobileRootView: View {
             JunoMobileSidebarDrawer(
                 selection: $selection,
                 conversationModel: conversationModel,
+                workModel: workModel,
+                codeModel: codeModel,
                 session: session,
                 avatarData: avatarModel?.imageData,
                 canCreateChat: conversationModel != nil,
                 openDestination: openSidebarDestination,
                 openConversation: openSidebarConversation,
+                openRecent: openRecent,
                 newChat: startNewChat
             )
             .frame(width: revealed, alignment: .leading)
@@ -580,10 +584,13 @@ struct JunoMobileRootView: View {
         JunoMobileSidebarDrawer(
             selection: $selection,
             conversationModel: conversationModel,
+            workModel: workModel,
+            codeModel: codeModel,
             session: session,
             avatarData: avatarModel?.imageData,
             openDestination: openSidebarDestination,
             openConversation: openSidebarConversation,
+            openRecent: openRecent,
             newChat: startNewChat
         )
     }
@@ -612,6 +619,26 @@ struct JunoMobileRootView: View {
         conversationModel?.selectedConversationID = id
         selection = .chat
         setSidebar(false)
+    }
+
+    private func openRecent(_ item: JunoRecentItem) {
+        switch item.kind {
+        case .chat:
+            openSidebarConversation(item.sourceID)
+        case .work:
+            guard let session = workModel?.sessions.first(where: { $0.id == item.sourceID }) else { return }
+            workModel?.open(session)
+            selection = .work
+            setSidebar(false)
+        case .code:
+            guard let task = codeModel?.tasks.first(where: { $0.id == item.sourceID }) else { return }
+            codeModel?.open(task)
+            selection = .code
+            setSidebar(false)
+        case .project:
+            selection = .projects
+            setSidebar(false)
+        }
     }
 
     /// New chat opens a *draft*: an empty composer under the greeting, with no
@@ -927,6 +954,8 @@ struct JunoMobileRootView: View {
 private struct JunoMobileSidebarDrawer: View {
     @Binding var selection: JunoMobileSection
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
+    let workModel: NativeWorkModel?
+    let codeModel: NativeCodeModel?
     let session: NativeAuthenticatedSession
     /// The account photo's bytes, already fetched through the authenticated file
     /// route. Nil falls back to initials.
@@ -934,6 +963,7 @@ private struct JunoMobileSidebarDrawer: View {
     var canCreateChat: Bool = true
     let openDestination: (JunoMobileSection) -> Void
     let openConversation: (String) -> Void
+    let openRecent: (JunoRecentItem) -> Void
     let newChat: () -> Void
 
     @State private var renameTarget: NativeConversation?
@@ -953,11 +983,45 @@ private struct JunoMobileSidebarDrawer: View {
             .map { $0 }
     }
 
+    private var attentionItems: [JunoRecentItem] {
+        var sources: [[JunoRecentItem]] = []
+        if let workModel {
+            sources.append(
+                workModel.sessionsNeedingAttention
+                    .filter { !$0.archived }
+                    .map(\.junoRecentItem)
+            )
+        }
+        if let codeModel {
+            sources.append(
+                codeModel.tasks
+                    .filter { $0.status == .awaitingApproval || $0.status == .failed }
+                    .map(\.junoRecentItem)
+            )
+        }
+        return JunoRecentActivity.attentionItems(
+            from: JunoRecentActivity.merge(sources, limit: 20),
+            limit: 6
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
+                    if !attentionItems.isEmpty {
+                        sectionLabel("Attention Required")
+                        ForEach(attentionItems) { item in
+                            Button { openRecent(item) } label: {
+                                JunoRecentActivityRow(item: item)
+                                    .padding(.horizontal, 8)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("juno.mobile.attention.\(item.id)")
+                        }
+                    }
+
                     ForEach(JunoMobileSection.drawerDestinations) { destination in
                         JunoMobileSidebarRow(
                             junoIcon: destination.junoIcon,
