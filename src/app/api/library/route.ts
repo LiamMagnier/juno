@@ -13,27 +13,34 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const kind = new URL(req.url).searchParams.get("kind");
-  const includeDeleted = new URL(req.url).searchParams.get("includeDeleted") === "true";
+  const searchParams = new URL(req.url).searchParams;
+  const includeDeleted = searchParams.get("includeDeleted") === "true";
+  const requestedLimit = Number(searchParams.get("limit") ?? "100");
+  const limit = Number.isInteger(requestedLimit) ? Math.min(300, Math.max(1, requestedLimit)) : 100;
+  const cursor = searchParams.get("cursor");
   const atts = await prisma.attachment.findMany({
     where: {
       userId: user.id,
-      ...(includeDeleted ? {} : { deletedAt: null }),
+      deletedAt: includeDeleted ? { not: null } : null,
       ...(kind === "IMAGE" || kind === "FILE" ? { kind } : {}),
     },
-    orderBy: { createdAt: "desc" },
-    take: 300,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    take: limit + 1,
     include: { _count: { select: { versions: true } } },
   });
+  const hasMore = atts.length > limit;
+  const page = hasMore ? atts.slice(0, limit) : atts;
 
   // Structured-extraction state, joined in one query rather than per row.
   // Ingest runs after the upload response, so this is the only place the user
   // finds out that their scan produced nothing citable — and `error` is carried
   // through verbatim because the extractor already wrote it to be read.
-  const documents = atts.length
+  const documents = page.length
     ? await prisma.knowledgeDocument.findMany({
         where: {
           userId: user.id,
-          attachmentId: { in: atts.map((a) => a.id) },
+          attachmentId: { in: page.map((a) => a.id) },
           state: { not: "stale" },
           deletedAt: null,
         },
@@ -66,7 +73,7 @@ export async function GET(req: Request) {
   );
 
   const items = await Promise.all(
-    atts.map(async (a) => ({
+    page.map(async (a) => ({
       ...(await serializeAttachment(a)),
       createdAt: a.createdAt.toISOString(),
       conversationId: a.conversationId,
@@ -86,6 +93,7 @@ export async function GET(req: Request) {
   const quotaBytes = libraryQuotaBytes(plan);
   return NextResponse.json({
     items,
+    nextCursor: hasMore ? page[page.length - 1]?.id ?? null : null,
     storage: { usedBytes, quotaBytes, remainingBytes: Math.max(0, quotaBytes - usedBytes) },
   });
 }

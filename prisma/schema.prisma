@@ -490,6 +490,9 @@ model Project {
   /// host already allow; the resolver intersects, and nothing here can widen.
   workDefaults        Json     @default("{}")
   workDefaultsVersion Int      @default(1)
+  // Stable source identity for idempotent Juno package imports. Nullable so
+  // ordinary projects and legacy rows remain untouched.
+  importSourceId      String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -502,6 +505,7 @@ model Project {
   memories           MemoryEntry[]
 
   @@index([userId, updatedAt])
+  @@unique([userId, importSourceId])
 }
 
 model Message {
@@ -713,6 +717,8 @@ model MemoryEntry {
   // Comparable form used for duplicate and contradiction detection, so that
   // matching does not depend on how the sentence happened to be phrased.
   normalized      String?      @db.Text
+  // Stable source identity for idempotent Juno memory imports.
+  importSourceId  String?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
@@ -724,6 +730,7 @@ model MemoryEntry {
   @@index([userId, status, category])
   @@index([userId, projectId, status])
   @@index([userId, expiresAt])
+  @@unique([userId, importSourceId])
 }
 
 // Per-conversation extraction state: messages up to `processedAt` have been

@@ -61,6 +61,15 @@ export async function GET(req: Request) {
           memoryEnabled: true,
           voiceId: true,
           favoriteModels: true,
+          backgroundProviderMode: true,
+          backgroundProviderSelected: true,
+          emailBudgetAlerts: true,
+          emailWeeklyDigest: true,
+          actionApprovalPolicy: true,
+          lockdownMode: true,
+          blockedConnectors: true,
+          monthlySpendCapEur: true,
+          spendCapDisabled: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -71,11 +80,19 @@ export async function GET(req: Request) {
         select: {
           id: true,
           title: true,
+          titleSource: true,
+          clientRequestId: true,
           model: true,
           kind: true,
           origin: true,
           projectId: true,
           forkedFromId: true,
+          codeWorkspaceName: true,
+          codeWorkspacePath: true,
+          codeWorkspaceKey: true,
+          pinned: true,
+          archivedAt: true,
+          activeConnectors: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -87,12 +104,18 @@ export async function GET(req: Request) {
         select: {
           id: true,
           conversationId: true,
+          clientId: true,
           role: true,
           content: true,
           reasoning: true,
+          reasoningParts: true,
           model: true,
+          feedback: true,
           promptTokens: true,
           completionTokens: true,
+          costMicroUsd: true,
+          sources: true,
+          activity: true,
           createdAt: true,
           attachments: { select: { id: true } },
         },
@@ -100,11 +123,31 @@ export async function GET(req: Request) {
       prisma.memoryEntry.findMany({
         where: { userId: user.id },
         orderBy: { createdAt: "asc" },
-        select: { id: true, content: true, source: true, kind: true, category: true, sourceRef: true, sourceMessageId: true, createdAt: true },
+        select: {
+          id: true,
+          content: true,
+          source: true,
+          kind: true,
+          category: true,
+          projectId: true,
+          sourceRef: true,
+          sourceMessageId: true,
+          confidence: true,
+          status: true,
+          reason: true,
+          expiresAt: true,
+          lastUsedAt: true,
+          lastVerifiedAt: true,
+          supersededById: true,
+          normalized: true,
+          importSourceId: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       }),
       prisma.memorySummary.findUnique({
         where: { userId: user.id },
-        select: { content: true, entryCount: true, updatedAt: true },
+        select: { content: true, entryCount: true, createdAt: true, updatedAt: true },
       }),
       prisma.project.findMany({
         where: { userId: user.id },
@@ -117,6 +160,7 @@ export async function GET(req: Request) {
           starred: true,
           workDefaults: true,
           workDefaultsVersion: true,
+          importSourceId: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -136,6 +180,8 @@ export async function GET(req: Request) {
           width: true,
           height: true,
           storageKey: true,
+          extractedText: true,
+          idempotencyKey: true,
           version: true,
           origin: true,
           parserState: true,
@@ -154,6 +200,7 @@ export async function GET(req: Request) {
               storageKey: true,
               parserState: true,
               parserVersion: true,
+              extractedText: true,
               createdAt: true,
             },
           },
@@ -177,6 +224,9 @@ export async function GET(req: Request) {
     ...m,
     content: decryptMessageTextSafe(m.content),
     reasoning: decryptMessageTextSafe(m.reasoning),
+    reasoningParts: Array.isArray(m.reasoningParts)
+      ? m.reasoningParts.filter((part): part is string => typeof part === "string").map((part) => decryptMessageTextSafe(part))
+      : null,
   }));
 
   if (format === "csv") {
@@ -202,16 +252,54 @@ export async function GET(req: Request) {
   }
 
   const byConversation = new Map<string, object[]>();
+  const stableConversationId = new Map(
+    conversations.map((conversation) => [
+      conversation.id,
+      conversation.clientRequestId?.startsWith("juno:") ? conversation.clientRequestId.slice("juno:".length) : conversation.id,
+    ]),
+  );
+  const stableProjectId = new Map(
+    projects.map((project) => [
+      project.id,
+      project.importSourceId?.startsWith("juno:") ? project.importSourceId.slice("juno:".length) : project.id,
+    ]),
+  );
+  const stableAttachmentId = new Map(
+    attachments.map((attachment) => [
+      attachment.id,
+      attachment.idempotencyKey?.startsWith("juno:") ? attachment.idempotencyKey.slice("juno:".length) : attachment.id,
+    ]),
+  );
+  const stableMessageId = new Map(
+    rawMessages.map((message) => [
+      message.id,
+      message.clientId?.startsWith("juno:") ? message.clientId.slice("juno:".length) : message.id,
+    ]),
+  );
+  const stableMemoryId = new Map(
+    memories.map((memory) => [
+      memory.id,
+      memory.importSourceId?.startsWith("juno:memory:") ? memory.importSourceId.slice("juno:memory:".length) : memory.id,
+    ]),
+  );
   for (const m of messages) {
     const row = {
       id: m.id,
+      sourceId: m.clientId?.startsWith("juno:") ? m.clientId.slice("juno:".length) : m.id,
+      clientId: m.clientId,
       role: m.role,
       content: m.content,
       reasoning: m.reasoning,
+      reasoningParts: m.reasoningParts,
       model: m.model,
+      feedback: m.feedback,
       promptTokens: m.promptTokens,
       completionTokens: m.completionTokens,
-      attachmentIds: m.attachments.map((attachment) => attachment.id),
+      costMicroUsd: m.costMicroUsd,
+      sources: m.sources,
+      activity: m.activity,
+      attachmentIds: m.attachments.map((attachment) => stableAttachmentId.get(attachment.id) ?? attachment.id),
+      attachmentSourceIds: m.attachments.map((attachment) => stableAttachmentId.get(attachment.id) ?? attachment.id),
       createdAt: m.createdAt,
     };
     const list = byConversation.get(m.conversationId);
@@ -261,21 +349,24 @@ export async function GET(req: Request) {
         size: version.size,
         parserState: version.parserState,
         parserVersion: version.parserVersion,
+        extractedText: version.extractedText,
         createdAt: version.createdAt,
         archivePath: await addAttachmentBytes(version.storageKey, path, version.size),
       });
     }
     attachmentItems.push({
-      id: attachment.id,
-      conversationId: attachment.conversationId,
-      messageId: attachment.messageId,
-      projectId: attachment.projectId,
+      id: stableAttachmentId.get(attachment.id) ?? attachment.id,
+      conversationId: attachment.conversationId ? stableConversationId.get(attachment.conversationId) ?? attachment.conversationId : null,
+      messageId: attachment.messageId ? stableMessageId.get(attachment.messageId) ?? attachment.messageId : null,
+      projectId: attachment.projectId ? stableProjectId.get(attachment.projectId) ?? attachment.projectId : null,
       fileName: attachment.fileName,
       mimeType: attachment.mimeType,
       kind: attachment.kind,
       size: attachment.size,
       width: attachment.width,
       height: attachment.height,
+      extractedText: attachment.extractedText,
+      idempotencyKey: attachment.idempotencyKey,
       version: attachment.version,
       origin: attachment.origin,
       parserState: attachment.parserState,
@@ -298,9 +389,20 @@ export async function GET(req: Request) {
       plan,
     },
     settings,
-    memories,
+    memories: memories.map((memory) => ({
+      ...memory,
+      id: stableMemoryId.get(memory.id) ?? memory.id,
+      projectId: memory.projectId ? stableProjectId.get(memory.projectId) ?? memory.projectId : null,
+      sourceMessageId: memory.sourceMessageId ? stableMessageId.get(memory.sourceMessageId) ?? memory.sourceMessageId : null,
+      supersededById: memory.supersededById ? stableMemoryId.get(memory.supersededById) ?? memory.supersededById : null,
+      createdAt: memory.createdAt,
+      updatedAt: memory.updatedAt,
+    })),
     memorySummary,
-    projects,
+    projects: projects.map((project) => ({
+      ...project,
+      id: stableProjectId.get(project.id) ?? project.id,
+    })),
     attachments: {
       note: isJuno
         ? "Juno packages include file bytes until the 100 MB archive cap; each omitted archivePath is an explicit unavailable object."
@@ -324,12 +426,21 @@ export async function GET(req: Request) {
       : {}),
     conversations: conversations.map((c) => ({
       id: c.id,
+      sourceId: stableConversationId.get(c.id) ?? c.id,
       title: c.title,
+      titleSource: c.titleSource,
+      clientRequestId: c.clientRequestId,
       model: c.model,
       kind: c.kind,
       origin: c.origin,
-      projectId: c.projectId,
-      forkedFromId: c.forkedFromId,
+      projectId: c.projectId ? stableProjectId.get(c.projectId) ?? c.projectId : null,
+      forkedFromId: c.forkedFromId ? stableConversationId.get(c.forkedFromId) ?? c.forkedFromId : null,
+      codeWorkspaceName: c.codeWorkspaceName,
+      codeWorkspacePath: c.codeWorkspacePath,
+      codeWorkspaceKey: c.codeWorkspaceKey,
+      pinned: c.pinned,
+      archivedAt: c.archivedAt,
+      activeConnectors: c.activeConnectors,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
       messages: byConversation.get(c.id) ?? [],

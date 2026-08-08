@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import JSZip from "jszip";
+import { Workbook } from "exceljs";
 import { generateDeliverable } from "@/lib/work/deliverables";
 import type { DocumentSpec, PresentationSpec, SpreadsheetSpec } from "@/lib/work/deliverables";
 import {
@@ -9,6 +10,7 @@ import {
   exportVerificationMessage,
   verifyOfficeExport,
 } from "@/lib/office-export-verify";
+import { validateDeliverable } from "@/lib/work/deliverables/validate";
 
 /*
  * Whether an exported artifact is checked before it is handed over.
@@ -143,6 +145,32 @@ test("a workbook of arbitrary bytes fails rather than throwing out of the route"
   const verdict = await verifyOfficeExport("xlsx", Buffer.from("not a workbook at all"));
   assert.equal(verdict.ok, false);
   assert.ok(verdict.problems.length > 0);
+});
+
+test("spreadsheet verification refuses formulas without a safe cached result", async () => {
+  const workbook = new Workbook();
+  const sheet = workbook.addWorksheet("Summary");
+  sheet.addRow(["Total"]);
+  sheet.addRow([{ formula: "1+1" }]);
+  const bytes = Buffer.from(await workbook.xlsx.writeBuffer());
+
+  const verdict = await validateDeliverable("spreadsheet", bytes);
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.details.formulaCount, 1);
+  assert.match(verdict.problems.join(" "), /Formula A2 has no safe cached result/);
+});
+
+test("spreadsheet verification refuses visible values that would be clipped", async () => {
+  const workbook = new Workbook();
+  const sheet = workbook.addWorksheet("Summary");
+  sheet.getColumn(1).width = 8;
+  sheet.addRow(["This sentence is deliberately wider than the column"]);
+  const bytes = Buffer.from(await workbook.xlsx.writeBuffer());
+
+  const verdict = await validateDeliverable("spreadsheet", bytes);
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.details.overflowCount, 1);
+  assert.match(verdict.problems.join(" "), /unwrapped column/);
 });
 
 test("the refusal message tells the user nothing was downloaded and names the format", () => {

@@ -23,12 +23,34 @@ export interface ImportedMessage {
   sourceId?: string;
   /** Attachment ids from a Juno export, used only to reconnect metadata. */
   attachmentSourceIds?: string[];
+  /** Juno-only message metadata preserved for a lossless account round trip. */
+  clientId?: string | null;
+  reasoning?: string | null;
+  reasoningParts?: string[] | null;
+  model?: string | null;
+  feedback?: "UP" | "DOWN" | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  costMicroUsd?: number | null;
+  sources?: unknown;
+  activity?: unknown;
 }
 
 export interface ImportedConversation {
   title: string;
   createdAt: Date;
   messages: ImportedMessage[];
+  /** Juno-only conversation metadata. */
+  model?: string | null;
+  kind?: string | null;
+  titleSource?: string | null;
+  pinned?: boolean;
+  archivedAt?: Date | null;
+  activeConnectors?: string[];
+  codeWorkspaceName?: string | null;
+  codeWorkspacePath?: string | null;
+  codeWorkspaceKey?: string | null;
+  lastMessageAt?: Date | null;
   /** Stable id from an export, used only to reconnect imported branches. */
   sourceId?: string;
   /** Export id of the conversation this branch was forked from. */
@@ -331,16 +353,34 @@ function parseJunoConversation(item: Record<string, unknown>): ImportedConversat
     if (!role) continue;
     const text = textFromGeminiContent(entry.content ?? entry.parts ?? entry.text ?? entry.message);
     if (!text) continue;
-    const sourceId = typeof entry.id === "string" && entry.id.length <= 200 ? entry.id : undefined;
-    const attachmentSourceIds = Array.isArray(entry.attachmentIds)
-      ? entry.attachmentIds.filter((id): id is string => typeof id === "string" && id.length <= 200)
+    const sourceIdValue = entry.sourceId ?? entry.id;
+    const sourceId = typeof sourceIdValue === "string" && sourceIdValue.length <= 200 ? sourceIdValue : undefined;
+    const attachmentIds = entry.attachmentSourceIds ?? entry.attachmentIds;
+    const attachmentSourceIds = Array.isArray(attachmentIds)
+      ? attachmentIds.filter((id): id is string => typeof id === "string" && id.length <= 200)
       : undefined;
+    const reasoningParts = Array.isArray(entry.reasoningParts)
+      ? entry.reasoningParts.filter((part): part is string => typeof part === "string").slice(0, 200)
+      : null;
+    const feedback = entry.feedback === "UP" || entry.feedback === "DOWN" ? entry.feedback : null;
+    const numberValue = (value: unknown) => (typeof value === "number" && Number.isInteger(value) ? value : null);
+    const jsonValue = (value: unknown) => (value && typeof value === "object" ? value : null);
     raw.push({
       role,
       content: clampContent(text),
       createdAt: dateFromFlexible(entry.createTime, entry.createdAt, entry.created_at, entry.time, entry.timestamp),
       ...(sourceId ? { sourceId } : {}),
       ...(attachmentSourceIds?.length ? { attachmentSourceIds } : {}),
+      clientId: typeof entry.clientId === "string" && entry.clientId.length <= 200 ? entry.clientId : null,
+      reasoning: typeof entry.reasoning === "string" ? clampContent(entry.reasoning) : null,
+      reasoningParts,
+      model: typeof entry.model === "string" && entry.model.length <= 200 ? entry.model : null,
+      feedback,
+      promptTokens: numberValue(entry.promptTokens),
+      completionTokens: numberValue(entry.completionTokens),
+      costMicroUsd: numberValue(entry.costMicroUsd),
+      sources: jsonValue(entry.sources),
+      activity: jsonValue(entry.activity),
     });
   }
   if (raw.length === 0) return null;
@@ -356,7 +396,7 @@ function parseJunoConversation(item: Record<string, unknown>): ImportedConversat
       item.time,
     ) ?? raw.find((message) => message.createdAt)?.createdAt ?? new Date();
   const title = cleanTitle(conversation.title ?? conversation.name ?? item.title ?? item.name);
-  const sourceIdValue = conversation.id ?? item.id;
+  const sourceIdValue = conversation.sourceId ?? conversation.id ?? item.id;
   const sourceId = typeof sourceIdValue === "string" && sourceIdValue.length <= 200 ? sourceIdValue : undefined;
   const forkedFromSourceId =
     typeof (conversation.forkedFromId ?? item.forkedFromId) === "string" &&
@@ -365,10 +405,23 @@ function parseJunoConversation(item: Record<string, unknown>): ImportedConversat
       : null;
   const projectValue = conversation.projectId ?? item.projectId;
   const projectSourceId = typeof projectValue === "string" && projectValue.length <= 200 ? projectValue : null;
+  const optionalDate = (...values: unknown[]) => dateFromFlexible(...values);
   return {
     title,
     createdAt,
     messages: normalizeMessageDates(createdAt, raw),
+    model: typeof conversation.model === "string" && conversation.model.length <= 200 ? conversation.model : null,
+    kind: typeof conversation.kind === "string" && conversation.kind.length <= 50 ? conversation.kind : null,
+    titleSource: typeof conversation.titleSource === "string" && conversation.titleSource.length <= 50 ? conversation.titleSource : null,
+    pinned: conversation.pinned === true,
+    archivedAt: optionalDate(conversation.archivedAt),
+    activeConnectors: Array.isArray(conversation.activeConnectors)
+      ? conversation.activeConnectors.filter((value): value is string => typeof value === "string").slice(0, 100)
+      : [],
+    codeWorkspaceName: typeof conversation.codeWorkspaceName === "string" ? conversation.codeWorkspaceName.slice(0, 500) : null,
+    codeWorkspacePath: typeof conversation.codeWorkspacePath === "string" ? conversation.codeWorkspacePath.slice(0, 2_000) : null,
+    codeWorkspaceKey: typeof conversation.codeWorkspaceKey === "string" ? conversation.codeWorkspaceKey.slice(0, 500) : null,
+    lastMessageAt: optionalDate(conversation.lastMessageAt),
     sourceId,
     forkedFromSourceId,
     projectSourceId,
@@ -414,7 +467,10 @@ export function parseHistoryExport(raw: string, formatHint: ImportFormat | null 
         : null
     : null;
   const isJuno =
-    isRecord(data) && typeof data.schemaVersion === "string" && /^juno\.export\./i.test(data.schemaVersion);
+    isRecord(data) && (
+      (typeof data.schemaVersion === "string" && /^juno\.export\./i.test(data.schemaVersion)) ||
+      (formatHint === "juno" && ("settings" in data || "memories" in data || "projects" in data))
+    );
   const format: ImportFormat | null = isJuno ? "juno" : sniffedFormat ?? formatHint;
   if (!format) {
     throw new HistoryImportError("This file doesn't look like a ChatGPT, Claude, Gemini, or Juno export.");

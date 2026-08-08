@@ -14,7 +14,16 @@ type Phase =
   | { name: "idle" }
   | { name: "uploading"; progress: number } // 0..1 of bytes on the wire
   | { name: "importing" } // upload finished; server is unzipping + writing
-  | { name: "done"; imported: number; skipped: number; providerLabel: string }
+  | {
+      name: "done";
+      imported: number;
+      skipped: number;
+      projectsImported: number;
+      memoriesImported: number;
+      attachmentsImported: number;
+      attachmentsSkipped: number;
+      providerLabel: string;
+    }
   | { name: "error"; message: string };
 
 /**
@@ -64,7 +73,16 @@ export function ImportHistoryCard() {
     xhr.upload.onload = () => setPhase({ name: "importing" });
     xhr.onerror = () => setPhase({ name: "error", message: "Upload failed — check your connection and try again." });
     xhr.onload = () => {
-      const body = (xhr.response ?? {}) as { imported?: number; skipped?: number; format?: string; error?: string };
+      const body = (xhr.response ?? {}) as {
+        imported?: number;
+        skipped?: number;
+        projectsImported?: number;
+        memoriesImported?: number;
+        attachmentsImported?: number;
+        attachmentsSkipped?: number;
+        format?: string;
+        error?: string;
+      };
       if (xhr.status >= 200 && xhr.status < 300 && typeof body.imported === "number") {
         const imported = body.imported;
         const providerLabel =
@@ -77,7 +95,16 @@ export function ImportHistoryCard() {
                 : body.format === "juno"
                   ? "Juno"
                   : "the export";
-        setPhase({ name: "done", imported, skipped: body.skipped ?? 0, providerLabel });
+        setPhase({
+          name: "done",
+          imported,
+          skipped: body.skipped ?? 0,
+          projectsImported: body.projectsImported ?? 0,
+          memoriesImported: body.memoriesImported ?? 0,
+          attachmentsImported: body.attachmentsImported ?? 0,
+          attachmentsSkipped: body.attachmentsSkipped ?? 0,
+          providerLabel,
+        });
         if (imported > 0) {
           toast.success(`Imported ${imported} conversation${imported === 1 ? "" : "s"} from ${providerLabel}.`);
           void refreshSidebar();
@@ -139,9 +166,9 @@ export function ImportHistoryCard() {
                 : "Nothing new to import"}
             </p>
             <p className="pt-1 text-sm text-muted-foreground">
-              {phase.imported > 0
-                ? `They're in your sidebar with their original dates${phase.skipped > 0 ? ` — ${phase.skipped.toLocaleString()} already here or empty, skipped` : ""}.`
-                : "Every conversation in that export already exists here."}
+              {phase.imported > 0 || phase.projectsImported > 0 || phase.memoriesImported > 0 || phase.attachmentsImported > 0
+                ? `${phase.imported.toLocaleString()} conversation${phase.imported === 1 ? "" : "s"}, ${phase.projectsImported.toLocaleString()} project${phase.projectsImported === 1 ? "" : "s"}, ${phase.memoriesImported.toLocaleString()} memor${phase.memoriesImported === 1 ? "y" : "ies"}, and ${phase.attachmentsImported.toLocaleString()} file${phase.attachmentsImported === 1 ? "" : "s"} restored.${phase.skipped > 0 || phase.attachmentsSkipped > 0 ? ` ${phase.skipped + phase.attachmentsSkipped} already present or unavailable.` : ""}`
+                : "Everything in that export is already here."}
             </p>
             <Button variant="outline" size="sm" className="mt-4" onClick={pick}>
               Import another

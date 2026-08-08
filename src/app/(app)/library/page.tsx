@@ -9,6 +9,7 @@ import {
   ArrowLeft,
   Check,
   Download,
+  History,
   LayoutGrid,
   List as ListIcon,
   MessageCircle,
@@ -59,6 +60,18 @@ interface LibItem {
   deletedAt: string | null;
   /** Structured-extraction state, or null when no extractor claims the format. */
   knowledge?: (KnowledgeIndexState & { documentId?: string }) | null;
+}
+
+interface LibVersion {
+  version: number;
+  current: boolean;
+  origin: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  parserState: string;
+  createdAt: string;
+  url: string;
 }
 
 type LibraryFilter = "all" | LibItem["kind"];
@@ -238,17 +251,111 @@ function DownloadAction({ item }: { item: LibItem }) {
   );
 }
 
+function VersionsDialog({
+  item,
+  open,
+  onOpenChange,
+  onRestored,
+}: {
+  item: LibItem | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onRestored: () => void;
+}) {
+  const [versions, setVersions] = React.useState<LibVersion[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [restoring, setRestoring] = React.useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (!open || !item) return;
+    let cancelled = false;
+    setLoading(true);
+    fetch(`/api/attachments/${item.id}/versions`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error();
+        return (await response.json()) as { versions?: LibVersion[] };
+      })
+      .then((data) => {
+        if (!cancelled) setVersions(data.versions ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) toast.error("Couldn’t load file versions.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, item]);
+
+  const restore = async (version: LibVersion) => {
+    if (!item || version.current) return;
+    setRestoring(version.version);
+    try {
+      const response = await fetch(`/api/attachments/${item.id}/versions/${version.version}/restore`, { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error ?? "Couldn’t restore that version.");
+      toast.success(`Restored version ${version.version}.`);
+      onOpenChange(false);
+      onRestored();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn’t restore that version.");
+    } finally {
+      setRestoring(null);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>File versions</DialogTitle>
+          <DialogDescription>{item?.fileName ?? ""} — prior bytes remain recoverable.</DialogDescription>
+        </DialogHeader>
+        <div className="max-h-72 space-y-2 overflow-y-auto">
+          {loading ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Loading versions…</p>
+          ) : versions.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">No saved versions yet.</p>
+          ) : (
+            versions.map((version) => (
+              <div key={version.version} className="flex items-center gap-3 rounded-xl border border-border/60 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">
+                    v{version.version} {version.current ? "· current" : ""}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {version.fileName} · {formatBytes(version.size)} · {timeAgo(version.createdAt)}
+                  </p>
+                </div>
+                {!version.current && (
+                  <Button size="sm" variant="outline" onClick={() => restore(version)} disabled={restoring !== null}>
+                    {restoring === version.version ? "Restoring…" : "Restore"}
+                  </Button>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function MobileItemMenu({
   item,
   onRename,
   onDelete,
   onRestore,
+  onVersions,
   triggerClassName,
 }: {
   item: LibItem;
   onRename: () => void;
   onDelete: () => void;
   onRestore: () => void;
+  onVersions: () => void;
   triggerClassName?: string;
 }) {
   return (
@@ -273,6 +380,7 @@ function MobileItemMenu({
             <Pencil /> Rename
           </DropdownMenuItem>
         )}
+        {item.versionCount > 0 && <DropdownMenuItem onSelect={onVersions}><History /> Versions</DropdownMenuItem>}
         <DropdownMenuItem asChild>
           <a href={item.url} target="_blank" rel="noopener noreferrer" download={item.fileName}>
             <Download /> Download
@@ -326,6 +434,7 @@ function LibraryGridItem({
   onRename,
   onDelete,
   onRestore,
+  onVersions,
 }: {
   item: LibItem;
   selected: boolean;
@@ -333,6 +442,7 @@ function LibraryGridItem({
   onRename: () => void;
   onDelete: () => void;
   onRestore: () => void;
+  onVersions: () => void;
 }) {
   return (
     <article role="listitem" aria-label={item.fileName} className="group/card min-w-0">
@@ -357,6 +467,7 @@ function LibraryGridItem({
           onRename={onRename}
           onDelete={onDelete}
           onRestore={onRestore}
+          onVersions={onVersions}
           triggerClassName="absolute right-2 top-2 z-10 bg-background/90 text-foreground opacity-0 shadow-pop backdrop-blur-sm transition-opacity duration-fast hover:bg-background group-focus-within/card:opacity-100 group-hover/card:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
         />
       </div>
@@ -459,20 +570,32 @@ export default function LibraryPage() {
   const [deleteTargets, setDeleteTargets] = React.useState<LibItem[] | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [showDeleted, setShowDeleted] = React.useState(false);
+  const [versionsTarget, setVersionsTarget] = React.useState<LibItem | null>(null);
+  const [nextCursor, setNextCursor] = React.useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = React.useState(false);
 
-  const load = React.useCallback(async () => {
+  const load = React.useCallback(async (append = false, cursor: string | null = null) => {
     setError(false);
+    if (append) setLoadingMore(true);
     try {
-      const response = await fetch(`/api/library${showDeleted ? "?includeDeleted=true" : ""}`);
+      const params = new URLSearchParams({ limit: "100" });
+      if (showDeleted) params.set("includeDeleted", "true");
+      if (cursor) params.set("cursor", cursor);
+      const response = await fetch(`/api/library?${params.toString()}`);
       if (!response.ok) throw new Error();
-      setItems((await response.json()).items);
+      const data = await response.json();
+      setItems((previous) => (append ? [...(previous ?? []), ...(data.items ?? [])] : data.items ?? []));
+      setNextCursor(data.nextCursor ?? null);
     } catch {
       setError(true);
-      setItems([]);
+      if (!append) setItems([]);
+    } finally {
+      if (append) setLoadingMore(false);
     }
   }, [showDeleted]);
 
   React.useEffect(() => {
+    setNextCursor(null);
     load();
   }, [load]);
 
@@ -783,7 +906,7 @@ export default function LibraryPage() {
           <div className="mt-6 flex min-h-64 flex-col items-center justify-center border-y border-border/60 px-5 py-16 text-center">
             <p className="text-sm font-medium">Couldn’t load your library.</p>
             <p className="mt-1 max-w-xs text-sm text-muted-foreground">Check your connection and try once more.</p>
-            <Button variant="outline" size="sm" onClick={load} className="group/retry mt-4 gap-2">
+            <Button variant="outline" size="sm" onClick={() => load()} className="group/retry mt-4 gap-2">
               <RefreshCw className="size-3.5 transition-transform duration-base group-hover/retry:rotate-45 motion-reduce:transition-none" />
               Try again
             </Button>
@@ -826,6 +949,7 @@ export default function LibraryPage() {
                   onRename={() => openRename(item)}
                   onDelete={() => setDeleteTargets([item])}
                   onRestore={() => void restoreItems([item])}
+                  onVersions={() => setVersionsTarget(item)}
                 />
               ))}
             </div>
@@ -922,6 +1046,9 @@ export default function LibraryPage() {
 
                     <div className="hidden items-center justify-end gap-0.5 sm:flex">
                       <ItemAction icon={Pencil} label={`Rename ${item.fileName}`} onClick={() => openRename(item)} motion="edit" />
+                      {item.versionCount > 0 && (
+                        <ItemAction icon={History} label={`View versions of ${item.fileName}`} onClick={() => setVersionsTarget(item)} />
+                      )}
                       <DownloadAction item={item} />
                       <ItemAction
                         icon={showDeleted ? RotateCcw : Trash2}
@@ -936,12 +1063,26 @@ export default function LibraryPage() {
                       onRename={() => openRename(item)}
                       onDelete={() => setDeleteTargets([item])}
                       onRestore={() => void restoreItems([item])}
+                      onVersions={() => setVersionsTarget(item)}
                     />
                   </article>
                 );
               })}
             </div>
           </section>
+        )}
+
+        {nextCursor && !loading && !error && (
+          <div className="mt-5 flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => load(true, nextCursor)}
+              disabled={loadingMore}
+            >
+              {loadingMore ? "Loading…" : "Load more files"}
+            </Button>
+          </div>
         )}
       </main>
 
@@ -970,6 +1111,13 @@ export default function LibraryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <VersionsDialog
+        item={versionsTarget}
+        open={!!versionsTarget}
+        onOpenChange={(open) => !open && setVersionsTarget(null)}
+        onRestored={() => void load()}
+      />
 
       <Dialog open={!!deleteTargets} onOpenChange={(open) => !open && setDeleteTargets(null)}>
         <DialogContent className="max-w-sm">
