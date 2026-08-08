@@ -582,9 +582,10 @@ jobs:
         env:
           VM_USER: ${{ secrets.VM_USER }}
           VM_HOST: ${{ secrets.VM_HOST }}
+          JUNO_BUILD_ROOT: ${{ github.workspace }}
         run: |
           ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new \
-            "$VM_USER@$VM_HOST" 'bash -s' <<'REMOTE'
+            "$VM_USER@$VM_HOST" "JUNO_BUILD_ROOT='$JUNO_BUILD_ROOT' bash -s" <<'REMOTE'
           set -e
           cd ~/juno
           # Upsert every PROD_ENV key shipped alongside the build into the
@@ -664,6 +665,22 @@ jobs:
             exit 1
           fi
           npx prisma migrate deploy
+          # Next's React Server manifests record absolute module paths. The
+          # build runs in GitHub's checkout, while the VM serves from ~/juno;
+          # without this normalization a page render asks Node to load a
+          # module from /home/runner/work/... and returns HTTP 500. Keep the
+          # rewrite on the VM, alongside the artifact it repairs, so local
+          # and hosted deploys use the same path-safe handoff.
+          if [ -n "${JUNO_BUILD_ROOT:-}" ] && [ -d .next ]; then
+            while IFS= read -r -d '' file; do
+              if grep -Iq -- "$JUNO_BUILD_ROOT" "$file"; then
+                JUNO_BUILD_ROOT="$JUNO_BUILD_ROOT" \
+                  JUNO_RUNTIME_ROOT="$PWD" \
+                  perl -pi -e 's/\Q$ENV{JUNO_BUILD_ROOT}\E/$ENV{JUNO_RUNTIME_ROOT}/g' "$file"
+              fi
+            done < <(find .next -path './.next/cache' -prune -o -type f -print0)
+            echo "Normalized Next build paths from $JUNO_BUILD_ROOT to $PWD."
+          fi
           mkdir -p logs
           # Raise nginx header/URI buffers if still on the 8×8k default that
           # returns 414 Request-URI Too Large on long request lines / cookies.
