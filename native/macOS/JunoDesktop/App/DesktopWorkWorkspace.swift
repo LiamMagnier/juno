@@ -886,7 +886,7 @@ private struct DesktopWorkOverview: View {
                     heading
                     metrics
 
-                    if !attention.isEmpty {
+                    if filter == .all, !attention.isEmpty {
                         DesktopWorkOverviewSection(
                             title: "Needs your attention",
                             subtitle: "These tasks cannot continue without you."
@@ -897,7 +897,7 @@ private struct DesktopWorkOverview: View {
                         }
                     }
 
-                    if !active.isEmpty {
+                    if filter == .all, !active.isEmpty {
                         DesktopWorkOverviewSection(
                             title: "In progress",
                             subtitle: "Juno is handling these in the background."
@@ -2355,13 +2355,23 @@ private struct DesktopWorkComposer: View {
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("juno.work.composer.title")
 
-            TextEditor(text: $goal)
-                .font(.system(.body))
-                // `TextEditor` paints its own opaque scroll background, which
-                // sits on top of the panel fill and leaves the editor as a
-                // white rectangle inside a rounded one.
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 118)
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $goal)
+                    .font(.system(.body))
+                    // `TextEditor` paints its own opaque scroll background,
+                    // which sits on top of the panel fill and leaves the editor
+                    // as a white rectangle inside a rounded one.
+                    .scrollContentBackground(.hidden)
+
+                if goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("Describe what you want Juno to accomplish…")
+                        .junoCaption()
+                        .padding(.horizontal, JunoSpace.snug)
+                        .padding(.vertical, JunoSpace.cozy)
+                        .allowsHitTesting(false)
+                }
+            }
+                .frame(height: 136)
                 .padding(JunoSpace.snug)
                 .junoPanel()
                 .accessibilityIdentifier("juno.work.composer.goal")

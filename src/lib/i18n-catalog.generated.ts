@@ -5406,10 +5406,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Dark"
   },
   {
-    "id": "60d31c221925098c",
-    "source": "Juno could not extract readable text from this PDF, and this model does not receive raw PDF bytes. Open its Document Inspector or upload a text-readable copy."
-  },
-  {
     "id": "60d5d5b0b9ab69ab",
     "source": "Custom instructions"
   },
@@ -12304,10 +12300,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d796288eeb38b8dd",
     "source": "Any of my Macs"
-  },
-  {
-    "id": "d7a546a8af6a8dc5",
-    "source": "— Juno could not extract readable text from this PDF, and this model does not receive raw PDF bytes; open its Document Inspector or upload a text-readable copy"
   },
   {
     "id": "d7cbbb688b2e506c",

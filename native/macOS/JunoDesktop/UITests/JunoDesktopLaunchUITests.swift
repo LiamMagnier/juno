@@ -245,7 +245,9 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         XCTAssertTrue(
             app.textFields["juno.work.composer.title"].waitForExistence(timeout: 5)
         )
-        XCTAssertTrue(app.textFields["juno.work.composer.goal"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.work.composer.goal"].exists
+        )
         app.buttons["Cancel"].click()
 
         let completed = app.descendants(matching: .any)["juno.work.filter.completed"]
