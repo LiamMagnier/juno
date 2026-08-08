@@ -61,6 +61,12 @@ for (const [key, value] of Object.entries(rootEnv)) {
   }
 }
 
+// PM2 keeps environment keys from the previous process when an ecosystem file
+// does not declare them.  Declare the reviewed release SHA in the ecosystem so
+// a reload cannot leave /api/health (or worker diagnostics) reporting the
+// previous release after the current symlink has switched.
+const releaseEnv = process.env.GIT_SHA ? { GIT_SHA: process.env.GIT_SHA } : {};
+
 module.exports = {
   apps: [
     {
@@ -72,6 +78,7 @@ module.exports = {
       // and leaving the browser on a blank page after Send.
       max_memory_restart: "1400M",
       env: {
+        ...releaseEnv,
         PORT: 3000,
         NODE_ENV: "production",
         // Higher default HTTP header limit (16kb) and heap for big chat bodies.
@@ -91,6 +98,7 @@ module.exports = {
       watch: false,
       max_memory_restart: "400M",
       env: {
+        ...releaseEnv,
         NODE_ENV: "production",
       },
       error_file: "logs/scheduler-err.log",
@@ -117,6 +125,7 @@ module.exports = {
       watch: false,
       max_memory_restart: "900M",
       env: {
+        ...releaseEnv,
         NODE_ENV: "production",
       },
       error_file: "logs/work-err.log",
@@ -140,6 +149,7 @@ module.exports = {
       watch: false,
       max_memory_restart: "400M",
       env: {
+        ...releaseEnv,
         NODE_ENV: "production",
         NODE_OPTIONS: "--conditions=react-server",
       },
@@ -159,6 +169,7 @@ module.exports = {
       watch: false,
       max_memory_restart: "600M",
       env: {
+        ...releaseEnv,
         NODE_ENV: "production",
         NODE_OPTIONS: "--conditions=react-server",
       },
@@ -191,6 +202,7 @@ module.exports = {
       watch: false,
       max_memory_restart: "400M",
       env: {
+        ...releaseEnv,
         NODE_ENV: "production",
         NODE_OPTIONS: "--conditions=react-server",
       },
@@ -209,6 +221,7 @@ module.exports = {
       watch: false,
       max_memory_restart: "300M",
       env: {
+        ...releaseEnv,
         NODE_ENV: "production",
       },
       error_file: "logs/import-recovery-err.log",
@@ -227,6 +240,7 @@ module.exports = {
       watch: false,
       max_memory_restart: "400M",
       env: {
+        ...releaseEnv,
         NODE_ENV: "production",
       },
       error_file: "logs/code-sweeper-err.log",
@@ -242,6 +256,7 @@ module.exports = {
       watch: false,
       max_memory_restart: "300M",
       env: {
+        ...releaseEnv,
         PORT: 8787,
         NODE_ENV: "production",
         ALLOWED_ORIGINS: "https://chat.liams.dev,http://localhost:3000",
