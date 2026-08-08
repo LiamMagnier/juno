@@ -50,7 +50,7 @@ test("production release preflight requires one smoke credential", () => {
 });
 
 test("production release preflight requires an explicit browser origin allowlist", () => {
-  assert.match(RELEASE_PREFLIGHT, /for name in DATABASE_URL DIRECT_URL AUTH_SECRET ALLOWED_ORIGINS;/);
+  assert.match(RELEASE_PREFLIGHT, /for name in DATABASE_URL DIRECT_URL AUTH_SECRET AUTH_URL NEXT_PUBLIC_APP_URL ALLOWED_ORIGINS;/);
 });
 
 test("production deploy is protected and pins the VM host key", () => {
@@ -149,7 +149,7 @@ test("deploy script only applies committed Prisma migrations", () => {
 });
 
 test("manual deployment requires a direct schema connection and never mutates the model registry", () => {
-  assert.match(DEPLOY_SCRIPT, /for name in DATABASE_URL DIRECT_URL AUTH_SECRET AUTH_URL ALLOWED_ORIGINS/);
+  assert.match(DEPLOY_SCRIPT, /for name in DATABASE_URL DIRECT_URL AUTH_SECRET AUTH_URL NEXT_PUBLIC_APP_URL ALLOWED_ORIGINS/);
   assert.match(DEPLOY_SCRIPT, /JUNO_APP_HOME/);
   assert.match(DEPLOY_SCRIPT, /verify_source_archive\(\)/);
   assert.match(DEPLOY_SCRIPT, /git get-tar-commit-id/);

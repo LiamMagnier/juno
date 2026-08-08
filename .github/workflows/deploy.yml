@@ -455,7 +455,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          for name in DATABASE_URL DIRECT_URL AUTH_SECRET ALLOWED_ORIGINS; do
+          for name in DATABASE_URL DIRECT_URL AUTH_SECRET AUTH_URL NEXT_PUBLIC_APP_URL ALLOWED_ORIGINS; do
             if ! printf '%s\n' "$PROD_ENV" | grep -Eq "^${name}=.+$"; then
               echo "::error::PROD_ENV is missing required production key ${name}."
               missing=1

@@ -64,7 +64,7 @@ env_has_value() {
 require_deploy_environment() {
   [[ -f "$ENV_FILE" ]] || fail "Deployment environment file is missing: $ENV_FILE"
   local name
-  for name in DATABASE_URL DIRECT_URL AUTH_SECRET AUTH_URL ALLOWED_ORIGINS; do
+  for name in DATABASE_URL DIRECT_URL AUTH_SECRET AUTH_URL NEXT_PUBLIC_APP_URL ALLOWED_ORIGINS; do
     env_has_value "$name" || fail "$name must be set in the reviewed deployment environment"
   done
 }

@@ -143,7 +143,9 @@ nine PM2 services were online, and the public UI smoke passed. The VM is still
 running the legacy in-place `/home/liammgnr/juno` layout without immutable
 `current`/`previous` release pointers, so the new archive deployment path has
 not been claimed live and no production deploy, migration, kill, or restart was
-run.
+run. The same read-only audit found `AUTH_URL` and `JUNO_SMOKE_TOKEN` absent
+from the live `.env` (`JUNO_SMOKE_COOKIE` is present); the protected release
+preflight now fails early until the reviewed `PROD_ENV` contains those inputs.
 
 ---
 
