@@ -103,6 +103,10 @@ request timed out during that period, but a later stability window returned
 The current source at `5278c31b` includes quota hardening, relay boundary
 hardening, the one-voice-session ceiling, import integrity/recovery, parked
 Work parity and the desktop Work-search fix beyond that live artifact.
+The current source tree additionally contains the durable research revision loop,
+the executable public UI state matrix, and the disposable restore-drill harness;
+those additions are locally verified but are not claimed live until a controlled
+release deploys and rechecks them.
 The remote environment now reports `ALLOWED_ORIGINS` and
 `JUNO_SMOKE_COOKIE` present. Authenticated smoke remains unexecuted in this
 audit because it creates real production receipt/chat activity; the protected
