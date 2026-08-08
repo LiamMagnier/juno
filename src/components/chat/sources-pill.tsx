@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ArrowUpRight, ChevronDown } from "lucide-react";
 import {
+  AUDIT_COPY,
   ScoreMeter,
   SupportBadge,
   evidenceForSource,
@@ -33,8 +34,8 @@ function SourceAudit({ audit, index }: { audit: CitationAudit; index: number }) 
 
   const supported = evidence.filter((e) => e.claim.label === "supported").length;
   const summary = evidence.length
-    ? `${evidence.length} ${evidence.length === 1 ? "claim" : "claims"} · ${supported} supported`
-    : "not used as evidence for any claim";
+    ? `${evidence.length} ${evidence.length === 1 ? AUDIT_COPY.oneClaimCited : AUDIT_COPY.claimsCited} · ${supported} ${AUDIT_COPY.supported}`
+    : AUDIT_COPY.notUsedAsEvidence;
 
   return (
     <div className="pl-[38px]">
@@ -50,7 +51,9 @@ function SourceAudit({ audit, index }: { audit: CitationAudit; index: number }) 
           source.duplicateOfIndex != null && "text-warning-foreground"
         )}
       >
-        {source.duplicateOfIndex != null ? `syndicated copy of [${source.duplicateOfIndex}]` : summary}
+        {source.duplicateOfIndex != null
+          ? `${AUDIT_COPY.syndicatedCopyOf} [${source.duplicateOfIndex}]`
+          : summary}
         <ChevronDown
           aria-hidden="true"
           className={cn("size-3 transition-transform duration-base ease-out-soft motion-reduce:transition-none", open && "rotate-180")}

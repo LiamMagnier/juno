@@ -147,32 +147,54 @@ const STATES = {
     Icon: BadgeCheck,
     tone: "text-success-ink border-success/35 bg-success/10",
     dot: "bg-success",
-    word: "Supported",
+    // `label`, not `word`: it is a COPY_PROPERTY, so the five state names reach
+    // scripts/generate-i18n-catalog.mjs and can be translated.
+    label: "Supported",
   },
   "partially supported": {
     Icon: CircleDashed,
     tone: "text-warning-foreground border-warning/35 bg-warning/10",
     dot: "bg-warning",
-    word: "Partly supported",
+    label: "Partly supported",
   },
   unsupported: {
     Icon: AlertTriangle,
     tone: "text-warning-foreground border-warning/45 bg-warning/12",
     dot: "bg-warning",
-    word: "Unsupported",
+    label: "Unsupported",
   },
   contradicted: {
     Icon: CircleSlash,
     tone: "text-destructive-ink border-destructive/40 bg-destructive/10",
     dot: "bg-destructive",
-    word: "Contradicted",
+    label: "Contradicted",
   },
   unverified: {
     Icon: CircleDashed,
     tone: "text-muted-foreground border-border/70 bg-muted/50",
     dot: "bg-muted-foreground/50",
-    word: "Not checked",
+    label: "Not checked",
   },
+} as const;
+
+/**
+ * Phrases this component composes with counts at runtime. A template literal is
+ * invisible to the catalog extractor, so the fixed halves live here — the name
+ * ends in `COPY`, which is what makes the generator collect them.
+ */
+export const AUDIT_COPY = {
+  nothingToCheck: "No checkable claims in this answer",
+  allSupported: "Every claim checks out against its sources",
+  claimsSupported: "claims supported",
+  contradicted: "contradicted",
+  unsupported: "unsupported",
+  partlySupported: "partly supported",
+  notChecked: "not checked",
+  claimsCited: "claims cited",
+  oneClaimCited: "claim cited",
+  supported: "supported",
+  notUsedAsEvidence: "not used as evidence for any claim",
+  syndicatedCopyOf: "syndicated copy of",
 } as const;
 
 export function SupportBadge({ label }: { label: CitationAuditClaim["label"] }) {
@@ -185,7 +207,7 @@ export function SupportBadge({ label }: { label: CitationAuditClaim["label"] }) 
       )}
     >
       <state.Icon aria-hidden="true" className="size-3" />
-      {state.word}
+      {state.label}
     </span>
   );
 }
@@ -380,13 +402,13 @@ function ClaimRow({ claim, sources }: { claim: CitationAuditClaim; sources: Cita
 function headline(audit: CitationAudit): string {
   const s = audit.summary;
   const problems = s.unsupported + s.partiallySupported + s.contradicted;
-  if (s.claims === 0) return "No checkable claims in this answer";
-  if (problems === 0 && s.unverified === 0) return `All ${s.claims} claims check out against their sources`;
-  const parts = [`${s.supported} of ${s.claims} claims supported`];
-  if (s.contradicted) parts.push(`${s.contradicted} contradicted`);
-  if (s.unsupported) parts.push(`${s.unsupported} unsupported`);
-  if (s.partiallySupported) parts.push(`${s.partiallySupported} partly supported`);
-  if (s.unverified) parts.push(`${s.unverified} not checked`);
+  if (s.claims === 0) return AUDIT_COPY.nothingToCheck;
+  if (problems === 0 && s.unverified === 0) return AUDIT_COPY.allSupported;
+  const parts = [`${s.supported}/${s.claims} ${AUDIT_COPY.claimsSupported}`];
+  if (s.contradicted) parts.push(`${s.contradicted} ${AUDIT_COPY.contradicted}`);
+  if (s.unsupported) parts.push(`${s.unsupported} ${AUDIT_COPY.unsupported}`);
+  if (s.partiallySupported) parts.push(`${s.partiallySupported} ${AUDIT_COPY.partlySupported}`);
+  if (s.unverified) parts.push(`${s.unverified} ${AUDIT_COPY.notChecked}`);
   return parts.join(" · ");
 }
 

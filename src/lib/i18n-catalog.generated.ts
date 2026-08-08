@@ -662,6 +662,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No chats yet — start one to see your mix."
   },
   {
+    "id": "0bca07421df3f618",
+    "source": "Directness"
+  },
+  {
     "id": "0bcd66e677f4ee72",
     "source": "Layers"
   },
@@ -932,6 +936,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "11a6767d5674c7e4",
     "source": "Done"
+  },
+  {
+    "id": "11bff41258da6e56",
+    "source": "The cited passage barely shares any subject matter with this claim."
   },
   {
     "id": "11dfda878bc5b676",
@@ -1446,6 +1454,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Remove stop"
   },
   {
+    "id": "1af293e87a0170d4",
+    "source": "contradicted"
+  },
+  {
     "id": "1af851907331c0ed",
     "source": "Size"
   },
@@ -1768,6 +1780,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "210484111d9c09ca",
     "source": "After a delay"
+  },
+  {
+    "id": "212a77f64e92b41c",
+    "source": "The passage attributes this to someone; the claim presents it as established."
   },
   {
     "id": "2132e79193336c63",
@@ -2276,6 +2292,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2a7e0dd5cf9e8b56",
     "source": ". It is what older tasks already refer to, so it is chosen once and never rewritten."
+  },
+  {
+    "id": "2a94ca733d3260c2",
+    "source": "partly supported"
   },
   {
     "id": "2a9ed28027540d66",
@@ -2846,6 +2866,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The new name shows everywhere this artifact appears."
   },
   {
+    "id": "35ac2cc97fbf8edc",
+    "source": "Passage copied"
+  },
+  {
     "id": "35db9d14d73d8743",
     "source": "Tell Juno what to remember, update, or forget…"
   },
@@ -2940,6 +2964,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "37b1e91016d32186",
     "source": "Gemini Pro"
+  },
+  {
+    "id": "37b322c559d476e5",
+    "source": "supported"
   },
   {
     "id": "37ca715f53b6bb83",
@@ -3182,6 +3210,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Delete task"
   },
   {
+    "id": "3bbd6dc435466097",
+    "source": "Every claim checks out against its sources"
+  },
+  {
     "id": "3bce1c1392deb744",
     "source": "Create a calendar event. Times are ISO 8601 (converted to UTC)."
   },
@@ -3196,6 +3228,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3bfe906202773afa",
     "source": "New schedule"
+  },
+  {
+    "id": "3c04e4a39df33a1d",
+    "source": "No checkable claims in this answer"
   },
   {
     "id": "3c229f983516a163",
@@ -3274,6 +3310,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Couldn’t load your connections."
   },
   {
+    "id": "3dfa2a419272ff36",
+    "source": "Citation audit unavailable"
+  },
+  {
     "id": "3e186ddf0659304d",
     "source": "Soft and unhurried"
   },
@@ -3288,6 +3328,14 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3e34102190fa5b31",
     "source": "Juno — chat.liams.dev · ©"
+  },
+  {
+    "id": "3e61193910e7b273",
+    "source": "Partly supported"
+  },
+  {
+    "id": "3e7e865494ae3316",
+    "source": "not used as evidence for any claim"
   },
   {
     "id": "3e84ec26822a848f",
@@ -4066,6 +4114,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Shortest meeting (minutes)"
   },
   {
+    "id": "4d3af0084b756ef2",
+    "source": "Cited source"
+  },
+  {
     "id": "4d5c5fd482f67348",
     "source": "Delete this task?"
   },
@@ -4092,6 +4144,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4e116b841dd0b5d6",
     "source": "(Stripe Payments Europe, Ltd.) : traitement des paiements. Vos données bancaires sont transmises directement à Stripe et ne transitent jamais par nos serveurs."
+  },
+  {
+    "id": "4e655bc9c765b7f1",
+    "source": "research/citation"
   },
   {
     "id": "4e917cf200726bf5",
@@ -4342,6 +4398,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Project renamed."
   },
   {
+    "id": "54324658e2eba91c",
+    "source": "Unsupported"
+  },
+  {
     "id": "5438d8b4420e296a",
     "source": "2. Add"
   },
@@ -4360,6 +4420,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "54a0e8c17ebb21a1",
     "source": "Error"
+  },
+  {
+    "id": "54a1db1416f6ce46",
+    "source": "The same story as source ["
   },
   {
     "id": "54ad84a8516e1561",
@@ -4588,6 +4652,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5978844cb61782ef",
     "source": "Back to chat"
+  },
+  {
+    "id": "59889450ccf2e4ab",
+    "source": "Copy the cited passage"
   },
   {
     "id": "59be71333c960fd0",
@@ -4986,6 +5054,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Invalid JSON body."
   },
   {
+    "id": "60945d49535300be",
+    "source": "unsupported"
+  },
+  {
     "id": "60965168ce762e94",
     "source": "chatgpt"
   },
@@ -5088,6 +5160,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "626c72f78152d8c2",
     "source": "Sorts incoming invoices into the right folder and renames them."
+  },
+  {
+    "id": "62849b956e0e29ae",
+    "source": "not checked"
   },
   {
     "id": "62922190a059fda0",
@@ -5486,6 +5562,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Most subscriptions sell a vague number of messages. Juno meters your plan in the only unit that's real — what the model providers actually charge."
   },
   {
+    "id": "6955065e5a7bcb15",
+    "source": "The passage hedges what the claim states as settled fact."
+  },
+  {
     "id": "6956e0a324f8ed1b",
     "source": "Mistral Small"
   },
@@ -5540,6 +5620,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "69f7c3488b1f4e05",
     "source": "Encouraging"
+  },
+  {
+    "id": "6a1cfdf599246310",
+    "source": "Independence"
   },
   {
     "id": "6a28ddf18e33e570",
@@ -6028,6 +6112,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "71b99d22644e131c",
     "source": "idempotent first-submission keys are only valid for a new saved conversation"
+  },
+  {
+    "id": "71bd1ce76625a47d",
+    "source": "this passage contradicts it"
   },
   {
     "id": "71d3848b3f3ea07a",
@@ -6626,6 +6714,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "remove"
   },
   {
+    "id": "7e5de16799f09c23",
+    "source": "], so counting both would be counting one witness twice."
+  },
+  {
     "id": "7e675bdb426ebd85",
     "source": "kind_conflict"
   },
@@ -6930,6 +7022,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "log"
   },
   {
+    "id": "837ce2ec974efdb1",
+    "source": "No publication date — this source cannot be placed in time."
+  },
+  {
     "id": "837ecbeced3c7ce0",
     "source": "Portabilité"
   },
@@ -6984,6 +7080,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "84f5c145778fe87c",
     "source": "Reversible change"
+  },
+  {
+    "id": "850bea47ce230cdf",
+    "source": "The passage states the opposite of this claim."
   },
   {
     "id": "85113963b501a6ad",
@@ -7222,6 +7322,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Do the rest, and say what it skipped"
   },
   {
+    "id": "8a6be05198a5a62f",
+    "source": "out of 100"
+  },
+  {
     "id": "8aa61dbfb4db7d8b",
     "source": "Close history"
   },
@@ -7338,6 +7442,14 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "confirmEmail is required."
   },
   {
+    "id": "8cafcb387472995b",
+    "source": "claims supported"
+  },
+  {
+    "id": "8ccf0bda3bf5a3fc",
+    "source": "The report states this without citing anything. Juno could not check it against a source, so treat it as unverified."
+  },
+  {
     "id": "8cd2c7deefc5d6e0",
     "source": "Malformed Step Lab data."
   },
@@ -7432,6 +7544,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8f2364e11b8be3ff",
     "source": "Day"
+  },
+  {
+    "id": "8f3dc3703e8d493b",
+    "source": "contradicts"
   },
   {
     "id": "8f420fb43089f71b",
@@ -7658,6 +7774,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "model"
   },
   {
+    "id": "937463a08c3b59bf",
+    "source": "The claim asserts a first/largest/only that the passage never states."
+  },
+  {
     "id": "937bac3b450f954d",
     "source": "process-timeline"
   },
@@ -7696,6 +7816,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "94683bc66f53f383",
     "source": "Admin sections"
+  },
+  {
+    "id": "9475c79a60d186cf",
+    "source": "], so it is not separate corroboration."
   },
   {
     "id": "94807f4e86a4ace9",
@@ -7898,6 +8022,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Turn on Pro for deeper reasoning (same rate, more tokens)"
   },
   {
+    "id": "9795ab50f1d8bd62",
+    "source": "Citation check unavailable — the sources below have not been verified."
+  },
+  {
     "id": "9795c5ff8937f235",
     "source": "pong"
   },
@@ -7920,6 +8048,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "97b4d24168b89b56",
     "source": "Couldn’t read your connected apps, so there is nothing to switch here."
+  },
+  {
+    "id": "97b7e2db799e2b79",
+    "source": "unverified"
   },
   {
     "id": "97c52f5b20a90bfb",
@@ -8056,6 +8188,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9a71d40796c4b68a",
     "source": "Deep-reasoning Pro tier (preview) — 3.5 Flash now edges it on most benchmarks."
+  },
+  {
+    "id": "9ac2f9c5a2dbeccb",
+    "source": "The passage touches the topic but does not cover most of what the claim names."
   },
   {
     "id": "9ada8e83c1186cd6",
@@ -9634,6 +9770,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This trigger still asks for it, so it will not start a run until the condition is removed."
   },
   {
+    "id": "b80e403d2645d45e",
+    "source": "Authority"
+  },
+  {
     "id": "b812e1ce4b4d28e3",
     "source": "Hit its limit"
   },
@@ -9700,6 +9840,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b8fbf194aea9cf26",
     "source": "MiMo V2.5 Pro"
+  },
+  {
+    "id": "b92014d12975b1ef",
+    "source": "This answer makes no checkable factual claims, so there was nothing to verify."
   },
   {
     "id": "b9202fd8ee975989",
@@ -9860,6 +10004,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bc7b631a689b45ca",
     "source": "Zoom out"
+  },
+  {
+    "id": "bcace40815d0bb17",
+    "source": "no citation on this sentence"
   },
   {
     "id": "bcda257cf2693ac6",
@@ -10076,6 +10224,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c1502c6a02e67c77",
     "source": "Quick check"
+  },
+  {
+    "id": "c165800065d11429",
+    "source": "Supported"
   },
   {
     "id": "c184b97e1c59acfb",
@@ -10742,6 +10894,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Refuse every connector action, including ones that only read. This overrides the choice above and every approval you have already given, until you turn it off."
   },
   {
+    "id": "cde4eb3cc3d18df7",
+    "source": "Freshness"
+  },
+  {
     "id": "cde62cdf22a36bf9",
     "source": "Couldn’t load more apps."
   },
@@ -10792,6 +10948,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cee720864b83cffa",
     "source": "github_unauthorized"
+  },
+  {
+    "id": "ceea5d5ad484b746",
+    "source": "· no publication date"
   },
   {
     "id": "cef04ae241fccaaf",
@@ -10972,6 +11132,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d15f47202352035b",
     "source": "Day of month"
+  },
+  {
+    "id": "d16948e73a680090",
+    "source": "Not checked"
   },
   {
     "id": "d174c5c1195b5de7",
@@ -11176,6 +11340,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d4dfd9dc5986d613",
     "source": "Couldn’t load your Macs. This page is empty because the request failed, not because you have none — anything already signed in is still reachable by Juno, with whatever permissions it had."
+  },
+  {
+    "id": "d4ea4de6477412cc",
+    "source": "claim cited"
   },
   {
     "id": "d4fb1b323f045871",
@@ -11698,6 +11866,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Not configured"
   },
   {
+    "id": "dd24906cc36e5519",
+    "source": "Contradicted"
+  },
+  {
     "id": "dd3eaa2308c4573b",
     "source": "Short / simple → budget models · Instant"
   },
@@ -12138,6 +12310,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Voice mode can receive images, but not document attachments yet."
   },
   {
+    "id": "e5176a8cacaaa852",
+    "source": "claims cited"
+  },
+  {
     "id": "e527cc7487c267d5",
     "source": "Provider API cost from the spend ledger — input + output tokens for every model call, including thinking. Not reset by deleting chats."
   },
@@ -12276,6 +12452,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e7fb0fb77395f010",
     "source": "Reviewed by Juno"
+  },
+  {
+    "id": "e825fb5113d3717e",
+    "source": "The claim asserts a cause the passage does not draw."
   },
   {
     "id": "e83dfa18ddbba942",
@@ -12566,6 +12746,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Resize thought process panel"
   },
   {
+    "id": "ecec9552a5f4d754",
+    "source": "This is a syndicated copy of source ["
+  },
+  {
     "id": "ecf84bc72cf06348",
     "source": "Open-weight MoE flagship (235B total / 22B active), superseded in hosted Model Studio."
   },
@@ -12584,6 +12768,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ed54ddfc60ac2e58",
     "source": "Move in without leaving anything behind."
+  },
+  {
+    "id": "ed5b72431ea6da4e",
+    "source": "syndicated copy of"
   },
   {
     "id": "ed880dc9b9cbfc38",
@@ -13460,6 +13648,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "feb759874d757af0",
     "source": "device_does_not_serve_queued_tasks"
+  },
+  {
+    "id": "feb773405c3d001d",
+    "source": "Checking citations…"
   },
   {
     "id": "fedbf8833875004d",
