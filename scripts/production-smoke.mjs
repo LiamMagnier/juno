@@ -127,10 +127,18 @@ async function main() {
     body,
   });
   const replay = await json(replayResponse);
-  assert(replayResponse.ok, `idempotent replay failed (${replayResponse.status}): ${replay.text.slice(0, 500)}`);
+  // The durable route intentionally answers a duplicate with a typed 409 so a
+  // caller cannot mistake a replay for a fresh generation. It is still a
+  // successful idempotent replay when the canonical receipt ids match.
+  const duplicate = replayResponse.status === 409 && replay.value?.code === "REQUEST_ALREADY_SUBMITTED";
+  assert(replayResponse.ok || duplicate, `idempotent replay failed (${replayResponse.status}): ${replay.text.slice(0, 500)}`);
   assert(
-    !replay.value?.userMessageId || replay.value.userMessageId === receipt.userMessageId,
+    replay.value?.userMessageId === undefined || replay.value.userMessageId === receipt.userMessageId,
     "idempotent replay returned a different user message",
+  );
+  assert(
+    replay.value?.conversationId === undefined || replay.value.conversationId === receipt.conversationId,
+    "idempotent replay returned a different conversation",
   );
   console.log("PASS idempotent replay returned the canonical receipt");
 }

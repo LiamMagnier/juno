@@ -111,6 +111,7 @@ test("deploy smoke passes authentication and public UI checks without an optiona
   assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_REQUIRE_AUTH\s*=\s*1\b/);
   assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_TOKEN\s*=\s*"\$SMOKE_TOKEN"/);
   assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_COOKIE\s*=\s*"\$SMOKE_COOKIE"/);
+  assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_MODEL\s*=\s*"\$SMOKE_MODEL"/);
   assert.match(SMOKE_REMOTE_BLOCK, /\bJUNO_SMOKE_RUN_CHAT\s*=\s*1\b/);
   assert.doesNotMatch(
     SMOKE_REMOTE_BLOCK,

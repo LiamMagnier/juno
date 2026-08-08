@@ -946,11 +946,13 @@ jobs:
           [ -n "$APP_URL" ] || APP_URL="https://chat.liams.dev"
           SMOKE_TOKEN="$(grep -m1 '^JUNO_SMOKE_TOKEN=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
           SMOKE_COOKIE="$(grep -m1 '^JUNO_SMOKE_COOKIE=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
+          SMOKE_MODEL="$(grep -m1 '^JUNO_SMOKE_MODEL=' ~/juno/.env | cut -d= -f2- | tr -d '\"' | tr -d "'" | tr -d '\r' || true)"
           JUNO_SMOKE_BASE_URL="$APP_URL" \
             JUNO_SMOKE_EXPECTED_SHA="$EXPECTED_SHA" \
             JUNO_SMOKE_REQUIRE_AUTH=1 \
             JUNO_SMOKE_TOKEN="$SMOKE_TOKEN" \
             JUNO_SMOKE_COOKIE="$SMOKE_COOKIE" \
+            JUNO_SMOKE_MODEL="$SMOKE_MODEL" \
             JUNO_SMOKE_RUN_CHAT=1 \
             node ~/juno/scripts/production-smoke.mjs
           JUNO_PUBLIC_UI_BASE_URL="$APP_URL" \
