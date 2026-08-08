@@ -252,7 +252,10 @@ export function EntryList({ memories, busyIds, paused, onEdit, onForget, onDelet
         <h2 id="memory-entries-heading" className="font-serif text-heading">
           Individual facts
         </h2>
-        <p className="font-mono text-caption text-muted-foreground">
+        {/* Forgetting or deleting a fact removes a row and changes nothing
+            else on screen; announcing the tally is how that reaches a screen
+            reader as an outcome rather than as silence. */}
+        <p role="status" aria-live="polite" className="font-mono text-caption text-muted-foreground">
           <span>{active.length}</span> <span>in use</span>
           {retired.length > 0 && (
             <>
