@@ -83,16 +83,18 @@ release program is not fully closed. Remaining gates are explicit in
 matrices; a tested database/object-storage restore drill; and signed/notarized
 Apple artifacts. Read the historical sections below as traceability only; the
 current reconciliation and `status.json` are authoritative. The production workflow requires the core database/auth inputs, the explicit browser-origin allowlist, and one authenticated smoke credential. Authenticated smoke runs catalog, provider-backed chat, durable receipt and idempotent replay checks; it does not have an optional skip path. The live server was checked read-only:
-`https://chat.liams.dev/api/health` returned `ok`/`db: ok` for artifact
-`ccc7c237e1ae99c1d24a6de53fbd7f1a86b008c6`, and the public UI smoke passed all
+`https://chat.liams.dev/api/health` returned `ok`/`db: ok` for live artifact
+`6cb75e06167e18fa6f8e41f12c3fc861612a04dc`, and the public UI smoke passed all
 public routes plus the `/chat` auth boundary. The remote production database
 reports 75 applied migrations and an up-to-date schema; all nine PM2 services
-are online on the final read-only recheck. The import-recovery process had a
-historical restart loop in PM2, but its wrapper-based worker entrypoint is now
-stable online; no restart was issued by this audit. The current source at
-`ccc7c237` includes quota hardening, relay
-boundary hardening, the one-voice-session ceiling, import integrity/recovery,
-parked Work parity and the desktop Work-search fix beyond that live artifact.
+were online on the read-only recheck, including the wrapper-based
+import-recovery worker beyond its historical CJS restart loop. A separate
+remote deployment shell is still running `next build`; its worker has been in
+uninterruptible I/O sleep under severe memory pressure for more than 15
+minutes, so the `ccc7c237` post-deploy artifact has not been verified live.
+The current source at `ccc7c237` includes quota hardening, relay boundary
+hardening, the one-voice-session ceiling, import integrity/recovery, parked
+Work parity and the desktop Work-search fix beyond that live artifact.
 The remote environment now reports `ALLOWED_ORIGINS` and
 `JUNO_SMOKE_COOKIE` present. Authenticated smoke remains unexecuted in this
 audit because it creates real production receipt/chat activity; the protected
