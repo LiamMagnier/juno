@@ -137,6 +137,14 @@ unresolved publisher, SIREN/address/contact, tax, director, and hosting
 placeholders; owner-provided legal facts and a subprocessor/hosting review are
 therefore release gates, not values engineering can safely invent.
 
+At approximately 21:39 CEST, the live health endpoint and SSH path recovered:
+read-only health returned `ok`/`db: ok` for the older `5278c31b` artifact, all
+nine PM2 services were online, and the public UI smoke passed. The VM is still
+running the legacy in-place `/home/liammgnr/juno` layout without immutable
+`current`/`previous` release pointers, so the new archive deployment path has
+not been claimed live and no production deploy, migration, kill, or restart was
+run.
+
 ---
 
 ## 1. Headline
