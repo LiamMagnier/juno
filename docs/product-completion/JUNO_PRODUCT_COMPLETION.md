@@ -1,6 +1,6 @@
 # Juno Product Completion — execution ledger
 
-**Audit commit:** `ccc7c237` (`main`, production-hardening commit)
+**Audit commit:** `5278c31b` (`main`, production-hardening commit)
 **Audit date:** 2026-08-08
 **Method:** 12 parallel evidence-based subsystem readers over the source, then an
 adversarial re-check of every claim of "implemented" in the P0 areas. Findings
@@ -84,17 +84,17 @@ matrices; a tested database/object-storage restore drill; and signed/notarized
 Apple artifacts. Read the historical sections below as traceability only; the
 current reconciliation and `status.json` are authoritative. The production workflow requires the core database/auth inputs, the explicit browser-origin allowlist, and one authenticated smoke credential. Authenticated smoke runs catalog, provider-backed chat, durable receipt and idempotent replay checks; it does not have an optional skip path. The live server was checked read-only:
 `https://chat.liams.dev/api/health` returned `ok`/`db: ok` for live artifact
-`ccc7c237e1ae99c1d24a6de53fbd7f1a86b008c6`, and the public UI smoke passed all
+`5278c31b8d54a40b1e13bab5ca5bd014f28c2206`, and the public UI smoke passed all
 public routes plus the `/chat` auth boundary. The remote production database
 reports 75 applied migrations and an up-to-date schema; all nine PM2 services
 were online on the read-only recheck, including the wrapper-based
-import-recovery worker beyond its historical CJS restart loop. The `ccc7c237`
+import-recovery worker beyond its historical CJS restart loop. The `5278c31b`
 artifact is now live, but a separate remote deployment shell is still running
 an orphaned `next build`; its worker has been in uninterruptible I/O sleep under
-severe memory pressure for more than 15 minutes. A later read-only health
-request timed out after 15 seconds while PM2 still reported the backend online,
-so production is currently degraded and the rollout is not complete.
-The current source at `ccc7c237` includes quota hardening, relay boundary
+severe memory pressure for more than 15 minutes. A transient read-only health
+request timed out during that period, but a later stability window returned
+`ok`/`db: ok`; the orphaned build remains an unresolved operational hazard.
+The current source at `5278c31b` includes quota hardening, relay boundary
 hardening, the one-voice-session ceiling, import integrity/recovery, parked
 Work parity and the desktop Work-search fix beyond that live artifact.
 The remote environment now reports `ALLOWED_ORIGINS` and
