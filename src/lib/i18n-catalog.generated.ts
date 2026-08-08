@@ -34,6 +34,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Video — 16:9"
   },
   {
+    "id": "004ab1d4e617e8ac",
+    "source": "Unknown or unavailable model."
+  },
+  {
     "id": "0053158e65d79389",
     "source": "Group related work, attach files, and let Juno carry context across conversations — when you want it to."
   },
@@ -56,6 +60,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "008dacb6d1e85bd8",
     "source": "Full"
+  },
+  {
+    "id": "008e42d222771576",
+    "source": "Back to library"
   },
   {
     "id": "00a54f38dceaac87",
@@ -92,6 +100,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "00d60e31a4e6b834",
     "source": "Run"
+  },
+  {
+    "id": "00e0802158139bdc",
+    "source": "Everything in that export is already here."
   },
   {
     "id": "00e13ed7af55b276",
@@ -348,10 +360,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "056a3c0be22d937d",
     "source": "Juno — every frontier AI model, one honest subscription"
-  },
-  {
-    "id": "05717271864944c6",
-    "source": "That file isn't a readable ZIP — upload the export archive exactly as ChatGPT or Claude gave it to you."
   },
   {
     "id": "057589b74dc2806a",
@@ -1866,6 +1874,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Couldn’t load your stats."
   },
   {
+    "id": "20f9fded12d9e418",
+    "source": "The source attachment was deleted."
+  },
+  {
     "id": "210484111d9c09ca",
     "source": "After a delay"
   },
@@ -2178,6 +2190,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "New design"
   },
   {
+    "id": "2795af2817d3745e",
+    "source": "File versions"
+  },
+  {
     "id": "27990eb1bc893206",
     "source": "Couldn’t copy to clipboard"
   },
@@ -2356,6 +2372,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "29887a5ff9846ccc",
     "source": "Share"
+  },
+  {
+    "id": "299fa61e71d0f12c",
+    "source": "This moves"
   },
   {
     "id": "29a40861bafe31e7",
@@ -2642,6 +2662,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Could not cancel the task. Check your connection and try again."
   },
   {
+    "id": "2e8762d3c6eb2dd2",
+    "source": "Version not found."
+  },
+  {
     "id": "2e93d59058864213",
     "source": "Your access has been paused"
   },
@@ -2878,6 +2902,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "&rdquo; → &ldquo;"
   },
   {
+    "id": "32d370857304ef0f",
+    "source": "Get the ZIP from ChatGPT under Settings → Data controls → Export data, Claude under Settings → Privacy → Export data, or export a Juno JSON from your profile. Imported messages are encrypted at rest like everything else."
+  },
+  {
     "id": "32dfed947e8bca93",
     "source": "rectangle"
   },
@@ -2900,6 +2928,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "33300d8584268377",
     "source": "Reading its history…"
+  },
+  {
+    "id": "3339589ca259643a",
+    "source": "Confirm and start"
   },
   {
     "id": "3373b282ac129322",
@@ -2946,6 +2978,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Could not restore this version."
   },
   {
+    "id": "33e06e0094e334f0",
+    "source": "No replacement file provided."
+  },
+  {
     "id": "340f463033e0fd5d",
     "source": "Code"
   },
@@ -2974,6 +3010,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Group"
   },
   {
+    "id": "34d56dcc9a0ddce7",
+    "source": "Deleted attachment not found."
+  },
+  {
     "id": "34ef549e008d55ee",
     "source": "Up before the sun"
   },
@@ -2984,10 +3024,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "353d7016825b01b7",
     "source": "Plans & upgrade"
-  },
-  {
-    "id": "3556ce01781738cc",
-    "source": "This permanently removes"
   },
   {
     "id": "3579d1de91e7e03c",
@@ -3172,6 +3208,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "384fa594c2803226",
     "source": "Nothing new to import"
+  },
+  {
+    "id": "385cfdbc00ec3203",
+    "source": "unit"
   },
   {
     "id": "385d4932fa7d5e92",
@@ -3506,6 +3546,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Partly supported"
   },
   {
+    "id": "3e64d2ee5b43b4a7",
+    "source": "Juno package"
+  },
+  {
     "id": "3e7e865494ae3316",
     "source": "not used as evidence for any claim"
   },
@@ -3604,10 +3648,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "404d5580f12f5918",
     "source": "Move chat to another project"
-  },
-  {
-    "id": "4051ef6f84eee57f",
-    "source": "ChatGPT or Claude export (.zip) — drop it here, up to 100 MB."
   },
   {
     "id": "405ba7d9f632df66",
@@ -4130,6 +4170,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Verdict"
   },
   {
+    "id": "4a416eb66ed60cd5",
+    "source": "This document was deleted from the library; its indexed content is no longer available."
+  },
+  {
     "id": "4a42c5b542df0e4d",
     "source": "Ask Juno to change this design"
   },
@@ -4328,6 +4372,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4d3af0084b756ef2",
     "source": "Cited source"
+  },
+  {
+    "id": "4d40b1e1c2a65641",
+    "source": "This Juno export is incomplete because its message cap was reached. Export the full account again before importing."
   },
   {
     "id": "4d5c5fd482f67348",
@@ -5058,6 +5106,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Moderate"
   },
   {
+    "id": "5c455f6d7ca7799d",
+    "source": "Load more files"
+  },
+  {
     "id": "5c4c1964340aca5b",
     "source": "provider"
   },
@@ -5080,6 +5132,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5ce44dd77dae789f",
     "source": "Uploading…"
+  },
+  {
+    "id": "5cff08a1120e50ff",
+    "source": "Profile, settings, conversations, memories, projects, and file metadata. The Juno package also carries Library bytes and revisions when they fit the archive cap."
   },
   {
     "id": "5cff2e01c83af161",
@@ -5134,6 +5190,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Project actions"
   },
   {
+    "id": "5d72436256ada538",
+    "source": "gemini"
+  },
+  {
     "id": "5d811d15b4c909fa",
     "source": "Strongest Kimi coding model — always-on thinking, agentic coding."
   },
@@ -5184,10 +5244,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5e39fb68aeccf8c0",
     "source": "Still generating in the background — you can leave and come back."
-  },
-  {
-    "id": "5e3dac9e209cf1d2",
-    "source": "Couldn't find conversations.json — is this the export ZIP from ChatGPT or Claude?"
   },
   {
     "id": "5e4546f83f27304e",
@@ -5722,6 +5778,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "[Nom et prénom du directeur de la publication]"
   },
   {
+    "id": "6755d89b3830398b",
+    "source": "Provider is not configured."
+  },
+  {
     "id": "6762de723e443630",
     "source": "Every version of this design and its history will be permanently removed. This cannot be undone."
   },
@@ -5910,6 +5970,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "horizontal"
   },
   {
+    "id": "69ca287acbd59988",
+    "source": "Choose a .zip or .json export from ChatGPT, Claude, Gemini, or Juno."
+  },
+  {
     "id": "69cd18cde40cca47",
     "source": "Gradient radius"
   },
@@ -5940,6 +6004,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6a822da0d9dba422",
     "source": "Tint"
+  },
+  {
+    "id": "6a845edfd9ff8f25",
+    "source": "This task is above Juno’s per-run spending ceiling, so nothing was started. Lower its scope or choose a less expensive model."
   },
   {
     "id": "6a99d260101cfcbe",
@@ -6234,6 +6302,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "List"
   },
   {
+    "id": "6f2091a19c87d185",
+    "source": "The stored file is unavailable and cannot be restored."
+  },
+  {
     "id": "6f2a13583fbb80d0",
     "source": "Voice model"
   },
@@ -6248,6 +6320,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6f4fb24ea2a2e419",
     "source": "request_already_submitted"
+  },
+  {
+    "id": "6f527b6a886bd944",
+    "source": "expensive_work"
   },
   {
     "id": "6f541e1b25319db5",
@@ -6570,6 +6646,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Redo"
   },
   {
+    "id": "745127105a41bf17",
+    "source": "No saved versions yet."
+  },
+  {
     "id": "746e2b10e553f709",
     "source": "Drag to select. Keyboard: Enter, arrows, Shift + arrows, Escape."
   },
@@ -6866,6 +6946,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Runs a command"
   },
   {
+    "id": "79e96a17676bde04",
+    "source": "Forget this"
+  },
+  {
     "id": "79f63f84895d9dfd",
     "source": "Control your screen"
   },
@@ -7012,10 +7096,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7d6cc963dc39c054",
     "source": "Minutes past the hour"
-  },
-  {
-    "id": "7d7cc21948c9596a",
-    "source": "That's not a .zip — upload the export archive exactly as ChatGPT or Claude gave it to you."
   },
   {
     "id": "7d815fe95a43e38f",
@@ -7246,10 +7326,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "flag"
   },
   {
-    "id": "8096babd83a043ad",
-    "source": "from your library and storage. This can’t be undone."
-  },
-  {
     "id": "80c66f498e9b1bdf",
     "source": "Conversational video generation and editing (preview)."
   },
@@ -7408,6 +7484,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "837ecbeced3c7ce0",
     "source": "Portabilité"
+  },
+  {
+    "id": "8380085857b20ae6",
+    "source": "ChatGPT, Claude, Gemini, or Juno export (.zip or .json) — drop it here, up to 100 MB."
   },
   {
     "id": "83918ed6bc4f1898",
@@ -7906,10 +7986,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Agentic coding without 1M context — superseded by M3."
   },
   {
-    "id": "8e0d5ade32a840b0",
-    "source": "Get the ZIP from ChatGPT under Settings → Data controls → Export data, or from Claude under Settings → Privacy → Export data. Imported messages are encrypted at rest like everything else."
-  },
-  {
     "id": "8e2c7ac508139a02",
     "source": "offline"
   },
@@ -8044,6 +8120,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "907ccb2ff91ca91a",
     "source": "Started. This run is extra — the schedule still fires when it was going to."
+  },
+  {
+    "id": "90a0c00f7933cf77",
+    "source": "Recently deleted"
   },
   {
     "id": "90a90a48e23dcc51",
@@ -8426,10 +8506,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "checksum"
   },
   {
-    "id": "970b7b1658ce9142",
-    "source": "Profile, settings, conversations, memories, projects, and file metadata."
-  },
-  {
     "id": "971831fc31ec5580",
     "source": "This permanently deletes the account and all of its data. This cannot be undone. Type the user&rsquo;s email to confirm."
   },
@@ -8454,12 +8530,20 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Paste the results here"
   },
   {
+    "id": "9767142b4df01756",
+    "source": "Estimate: $"
+  },
+  {
     "id": "977703be9d76ad8f",
     "source": "&rdquo; —"
   },
   {
     "id": "977f3b2676a91a7f",
     "source": "At least 8 characters"
+  },
+  {
+    "id": "9780e2c99c1b82b2",
+    "source": "Loading versions…"
   },
   {
     "id": "9783d67132021b87",
@@ -8600,6 +8684,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "99825c3b217d0016",
     "source": "First GPT-5 release."
+  },
+  {
+    "id": "999526830b7ff71f",
+    "source": "Memory used"
   },
   {
     "id": "999f23fcd7bec707",
@@ -8938,6 +9026,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Your background-processing setting left no provider allowed to do this. You can change it under Settings → Memory → Background processing."
   },
   {
+    "id": "9e606e1cdf606269",
+    "source": "· current"
+  },
+  {
     "id": "9e6ad6db21dbc4cc",
     "source": "Smart"
   },
@@ -9198,6 +9290,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Delete account"
   },
   {
+    "id": "a2e227c038aa9aae",
+    "source": "Starting this task would exceed your current spending ceiling, so nothing was started. Finish or stop another run, or lower the account cap."
+  },
+  {
     "id": "a2f4f36e49789c04",
     "source": "Juno runs this prompt on a schedule — results land in a chat thread."
   },
@@ -9256,6 +9352,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a4245a3c4f566cab",
     "source": "Tip"
+  },
+  {
+    "id": "a43688480cabbac6",
+    "source": "expensive_confirmation_required"
   },
   {
     "id": "a46825514c22acda",
@@ -9656,6 +9756,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ab4388461a3d2487",
     "source": "command_conflict"
+  },
+  {
+    "id": "ab47fe52a5aec1a0",
+    "source": "spend_cap_exceeded"
   },
   {
     "id": "ab48fcf706cb01d3",
@@ -10518,6 +10622,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Visual"
   },
   {
+    "id": "ba3bbbe10d8bef66",
+    "source": "Loading…"
+  },
+  {
     "id": "ba445cff3898a3f2",
     "source": "Privacy policy"
   },
@@ -11230,6 +11338,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "claude"
   },
   {
+    "id": "c86dc97a411c5633",
+    "source": "The stored version is unavailable."
+  },
+  {
     "id": "c87d165a1f409b27",
     "source": "The model stopped at its token limit."
   },
@@ -11324,10 +11436,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ca184496974204a0",
     "source": "Unavailable"
-  },
-  {
-    "id": "ca348b969b098669",
-    "source": "Every conversation in that export already exists here."
   },
   {
     "id": "ca381c1e76e681b6",
@@ -11712,6 +11820,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d04fc7d7e19702f8",
     "source": "Web Search"
+  },
+  {
+    "id": "d066b56d365c50a8",
+    "source": "Couldn’t load file versions."
   },
   {
     "id": "d06981ca7c17d8a1",
@@ -12438,6 +12550,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "With header — the panel's resting form"
   },
   {
+    "id": "db84038646262e8a",
+    "source": "to Recently deleted. You can restore the original bytes later."
+  },
+  {
     "id": "db91d1287668a746",
     "source": "Juno is speaking"
   },
@@ -12552,6 +12668,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dd0ae7a5cbcf2339",
     "source": "Save changes"
+  },
+  {
+    "id": "dd0eb4b2f924e190",
+    "source": "Library storage limit reached."
   },
   {
     "id": "dd0f3e8db3bc4314",
@@ -12854,6 +12974,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Chats aren't saved, added to memory, or used to train models."
   },
   {
+    "id": "e267c77d67df204b",
+    "source": "— prior bytes remain recoverable."
+  },
+  {
     "id": "e27affcf37b2553d",
     "source": "Download the app"
   },
@@ -13000,6 +13124,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e43bd6db30b8aa29",
     "source": "&rdquo; · d"
+  },
+  {
+    "id": "e4411eb4db190c10",
+    "source": "Manage all"
   },
   {
     "id": "e450e475b9f00e8d",
@@ -13806,6 +13934,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno will search for these. Edit anything before it starts."
   },
   {
+    "id": "f243cc31cb576293",
+    "source": "Invalid version."
+  },
+  {
     "id": "f26efd3574998b71",
     "source": "View results"
   },
@@ -14046,6 +14178,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Send backward"
   },
   {
+    "id": "f6ece80b88d6dfbd",
+    "source": "Gemini"
+  },
+  {
     "id": "f6edd5adc6eac6be",
     "source": "Connectors (MCP)"
   },
@@ -14204,6 +14340,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f91ef5a33fc33e8c",
     "source": "Every frontier AI model — Claude, GPT, Gemini and a dozen more labs — in one calm workspace, metered by what answers actually cost."
+  },
+  {
+    "id": "f935bf31caf8e3a9",
+    "source": "Forgetting…"
   },
   {
     "id": "f972a24cc81efff9",

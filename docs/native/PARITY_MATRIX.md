@@ -2,6 +2,24 @@
 
 Initial handoff snapshot: 2026-07-21.
 
+## Current re-audit — 2026-08-08
+
+The matrix below is the historical handoff baseline. This re-audit records the
+state observed in the active checkout before the current native slice, so the
+older rows are not mistaken for a live inventory.
+
+| Area | Web/source of truth | Native state observed | Current session result |
+|---|---|---|---|
+| Semantic design system | `src/app/globals.css`, `tailwind.config.ts`, app icons and motion tokens | `JunoDesignSystem` already has semantic colors, typography, spacing/radius tokens, native material policy, motion tiers, Dynamic Type and reduced-motion handling | Reused the existing token/material/motion layer; no parallel palette or glass recipe added |
+| Chat and composer | `ChatView`, message list, attachment/model/reasoning controls and progressive composer | `JunoChatKit` owns native conversations, streaming/composer behavior and server-backed state | Kept ownership in `JunoChatKit`; the new slice only projects activity and routes back to the source model |
+| Recents and attention | `src/lib/work/recents.ts` and `/api/recents` merge chat/work/code/projects; attention excludes running | Native clients had product-local navigation and Work/Code lists, but no cross-product projection | Added the shared native projection, pure parity rules, and attention rails on macOS/iOS |
+| macOS shell | Web sidebar has Home/Work/Code modes and source-backed recents | `JunoDesktop` has a native split-view shell; `JunoMac` and standalone `JunoCode` remain separate audited surfaces | Added attention entry points to `DesktopChatSidebar`; did not duplicate the slice in `JunoCode`/`JunoMac` |
+| iPhone/iPad shell | Web uses adaptive sidebar/sheet behavior | `JunoMobileRootView` has compact drawer and iPad split-view paths | Added the same attention projection and native deep links to Work/Code |
+| Native Code workbench | Web and native code surfaces exist, but the native workbench needs real-data stress work | `WorkbenchView` is the canonical package route; the audit found eager whole-review loading, non-virtualized diffs/output, collapsed activity, and weak diagnostics/retry surfaces | Recorded those as follow-up blockers; the current slice does not pretend to solve them |
+
+See the evidence-backed session report in
+[`docs/native/SESSION_REPORT_2026-08-08.md`](SESSION_REPORT_2026-08-08.md).
+
 This document separates server capabilities that already exist in the active
 checkout from work that is still required in the native clients. A server route
 or Web screen is not evidence that the corresponding macOS or iOS/iPadOS

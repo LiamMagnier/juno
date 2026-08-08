@@ -515,9 +515,9 @@ private struct DesktopChatSidebar: View {
             product = .code
         case .chat:
             model.selectedConversationID = item.sourceID
-            destination.wrappedValue = .chat
+            destination = .chat
         case .project:
-            destination.wrappedValue = .projects
+            destination = .projects
         }
     }
 

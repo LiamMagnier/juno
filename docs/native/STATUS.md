@@ -1,6 +1,10 @@
 # Juno Native — Status
 
-Last updated: 2026-07-22 21:15 Europe/Paris
+Last updated: 2026-08-08 18:00 Europe/Paris
+
+Current session: [`SESSION_REPORT_2026-08-08.md`](SESSION_REPORT_2026-08-08.md).
+The report is the authoritative status for the 2026-08-08 native parity
+re-audit and first vertical slice; the history below is retained for context.
 
 > **Start a new session at `docs/native/NEXT_PROMPT.md`.** It carries the exact
 > worktree, branch, head, next task and the live hazards. This file is the
