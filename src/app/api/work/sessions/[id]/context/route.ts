@@ -154,7 +154,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const wanted = [...new Set(body.attachmentIds)];
     if (wanted.length > 0) {
       const rows = await prisma.attachment.findMany({
-        where: { id: { in: wanted }, userId: user.id },
+        where: { id: { in: wanted }, userId: user.id, deletedAt: null },
         select: { id: true, fileName: true },
       });
       if (rows.length !== wanted.length) {

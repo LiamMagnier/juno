@@ -88,7 +88,7 @@ export async function GET(
 
   const attachment = document.attachmentId
     ? await prisma.attachment.findFirst({
-        where: { id: document.attachmentId, userId: user.id },
+        where: { id: document.attachmentId, userId: user.id, deletedAt: null },
         select: { storageKey: true },
       })
     : null;

@@ -18,7 +18,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         orderBy: { lastMessageAt: "desc" },
         select: { id: true, title: true, lastMessageAt: true, pinned: true },
       },
-      files: { orderBy: { createdAt: "desc" } },
+      files: { where: { deletedAt: null }, orderBy: { createdAt: "desc" } },
     },
   });
   if (!project) return NextResponse.json({ error: "Not found" }, { status: 404 });

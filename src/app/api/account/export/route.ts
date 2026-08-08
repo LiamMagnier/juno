@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
+import JSZip from "jszip";
 import { prisma } from "@/lib/prisma";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
+import { isStorageAvailable } from "@/lib/env";
+import { getObjectBytes } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -23,7 +26,9 @@ function csvField(value: string | null | undefined): string {
 
 /**
  * GDPR data export. `GET` returns the full account snapshot as JSON;
- * `?format=csv` returns the message history as a CSV instead.
+ * `?format=csv` returns the message history as a CSV instead. `?format=juno`
+ * stamps the JSON as the open, versioned Juno interchange format so it can be
+ * uploaded back through /api/import.
  */
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -34,7 +39,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Too many exports — try again later." }, { status: 429 });
   }
 
-  const format = new URL(req.url).searchParams.get("format") === "csv" ? "csv" : "json";
+  const requestedFormat = new URL(req.url).searchParams.get("format");
+  const format = requestedFormat === "csv" ? "csv" : requestedFormat === "juno" ? "juno" : "json";
+  const isJuno = format === "juno";
   const date = new Date().toISOString().slice(0, 10);
 
   const [account, plan, settings, conversations, rawMessages, memories, memorySummary, projects, attachments, spendTotals, spendByKind] =
@@ -61,13 +68,24 @@ export async function GET(req: Request) {
       prisma.conversation.findMany({
         where: { userId: user.id },
         orderBy: { createdAt: "asc" },
-        select: { id: true, title: true, model: true, createdAt: true, updatedAt: true },
+        select: {
+          id: true,
+          title: true,
+          model: true,
+          kind: true,
+          origin: true,
+          projectId: true,
+          forkedFromId: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       }),
       prisma.message.findMany({
         where: { conversation: { userId: user.id } },
         orderBy: { createdAt: "asc" },
         take: MAX_MESSAGE_ROWS + 1,
         select: {
+          id: true,
           conversationId: true,
           role: true,
           content: true,
@@ -76,12 +94,13 @@ export async function GET(req: Request) {
           promptTokens: true,
           completionTokens: true,
           createdAt: true,
+          attachments: { select: { id: true } },
         },
       }),
       prisma.memoryEntry.findMany({
         where: { userId: user.id },
         orderBy: { createdAt: "asc" },
-        select: { content: true, source: true, kind: true, createdAt: true },
+        select: { id: true, content: true, source: true, kind: true, category: true, sourceRef: true, sourceMessageId: true, createdAt: true },
       }),
       prisma.memorySummary.findUnique({
         where: { userId: user.id },
@@ -90,12 +109,55 @@ export async function GET(req: Request) {
       prisma.project.findMany({
         where: { userId: user.id },
         orderBy: { createdAt: "asc" },
-        select: { name: true, instructions: true, createdAt: true, updatedAt: true },
+        select: {
+          id: true,
+          name: true,
+          nameSource: true,
+          instructions: true,
+          starred: true,
+          workDefaults: true,
+          workDefaultsVersion: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       }),
       prisma.attachment.findMany({
         where: { userId: user.id },
         orderBy: { createdAt: "asc" },
-        select: { fileName: true, mimeType: true, kind: true, size: true, createdAt: true },
+        select: {
+          id: true,
+          conversationId: true,
+          messageId: true,
+          projectId: true,
+          fileName: true,
+          mimeType: true,
+          kind: true,
+          size: true,
+          width: true,
+          height: true,
+          storageKey: true,
+          version: true,
+          origin: true,
+          parserState: true,
+          parserVersion: true,
+          deletedAt: true,
+          createdAt: true,
+          versions: {
+            orderBy: { version: "asc" },
+            select: {
+              version: true,
+              origin: true,
+              kind: true,
+              fileName: true,
+              mimeType: true,
+              size: true,
+              storageKey: true,
+              parserState: true,
+              parserVersion: true,
+              createdAt: true,
+            },
+          },
+        },
       }),
       prisma.apiSpend.aggregate({
         where: { userId: user.id },
@@ -142,12 +204,14 @@ export async function GET(req: Request) {
   const byConversation = new Map<string, object[]>();
   for (const m of messages) {
     const row = {
+      id: m.id,
       role: m.role,
       content: m.content,
       reasoning: m.reasoning,
       model: m.model,
       promptTokens: m.promptTokens,
       completionTokens: m.completionTokens,
+      attachmentIds: m.attachments.map((attachment) => attachment.id),
       createdAt: m.createdAt,
     };
     const list = byConversation.get(m.conversationId);
@@ -155,7 +219,77 @@ export async function GET(req: Request) {
     else byConversation.set(m.conversationId, [row]);
   }
 
+  // A Juno package is still open JSON, but it may also carry the actual
+  // Library bytes. The cap keeps a forgotten export from becoming an
+  // unbounded server-side download; omitted objects remain explicit in the
+  // manifest and can be downloaded separately from the source account.
+  const MAX_JUNO_ARCHIVE_BYTES = 100 * 1024 * 1024;
+  const junoZip = isJuno && isStorageAvailable() ? new JSZip() : null;
+  const archivePathByStorageKey = new Map<string, string>();
+  let archivedBytes = 0;
+  const safeArchiveName = (name: string) => name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80) || "file";
+  const addAttachmentBytes = async (storageKey: string, path: string, declaredSize: number) => {
+    if (!junoZip) return null;
+    const existing = archivePathByStorageKey.get(storageKey);
+    if (existing) return existing;
+    if (archivedBytes >= MAX_JUNO_ARCHIVE_BYTES || declaredSize > MAX_JUNO_ARCHIVE_BYTES - archivedBytes) return null;
+    try {
+      const object = await getObjectBytes(storageKey);
+      if (object.bytes.length > MAX_JUNO_ARCHIVE_BYTES - archivedBytes) return null;
+      junoZip.file(path, object.bytes);
+      archivedBytes += object.bytes.length;
+      archivePathByStorageKey.set(storageKey, path);
+      return path;
+    } catch {
+      return null;
+    }
+  };
+
+  const attachmentItems = [];
+  for (const attachment of attachments) {
+    const currentPath = `attachments/${attachment.id}/v${attachment.version}-${safeArchiveName(attachment.fileName)}`;
+    const currentArchivePath = await addAttachmentBytes(attachment.storageKey, currentPath, attachment.size);
+    const priorVersions = [];
+    for (const version of attachment.versions) {
+      const path = `attachments/${attachment.id}/v${version.version}-${safeArchiveName(version.fileName)}`;
+      priorVersions.push({
+        version: version.version,
+        origin: version.origin,
+        kind: version.kind,
+        fileName: version.fileName,
+        mimeType: version.mimeType,
+        size: version.size,
+        parserState: version.parserState,
+        parserVersion: version.parserVersion,
+        createdAt: version.createdAt,
+        archivePath: await addAttachmentBytes(version.storageKey, path, version.size),
+      });
+    }
+    attachmentItems.push({
+      id: attachment.id,
+      conversationId: attachment.conversationId,
+      messageId: attachment.messageId,
+      projectId: attachment.projectId,
+      fileName: attachment.fileName,
+      mimeType: attachment.mimeType,
+      kind: attachment.kind,
+      size: attachment.size,
+      width: attachment.width,
+      height: attachment.height,
+      version: attachment.version,
+      origin: attachment.origin,
+      parserState: attachment.parserState,
+      parserVersion: attachment.parserVersion,
+      deletedAt: attachment.deletedAt,
+      createdAt: attachment.createdAt,
+      archivePath: currentArchivePath,
+      versions: priorVersions,
+    });
+  }
+
   const payload = {
+    schemaVersion: isJuno ? "juno.export.v2" : undefined,
+    format: isJuno ? "juno" : undefined,
     exportedAt: new Date().toISOString(),
     profile: {
       name: account?.name ?? null,
@@ -168,8 +302,10 @@ export async function GET(req: Request) {
     memorySummary,
     projects,
     attachments: {
-      note: "File metadata only — the files themselves can be downloaded from the app.",
-      items: attachments,
+      note: isJuno
+        ? "Juno packages include file bytes until the 100 MB archive cap; each omitted archivePath is an explicit unavailable object."
+        : "This JSON preserves file metadata and revision history. File bytes remain in the source Library and are not embedded in this JSON export.",
+      items: attachmentItems,
     },
     apiSpend: {
       requestCount: spendTotals._count,
@@ -187,13 +323,29 @@ export async function GET(req: Request) {
       ? { truncationNote: `Message export is capped at ${MAX_MESSAGE_ROWS.toLocaleString("en-US")} rows; older messages are included first.` }
       : {}),
     conversations: conversations.map((c) => ({
+      id: c.id,
       title: c.title,
       model: c.model,
+      kind: c.kind,
+      origin: c.origin,
+      projectId: c.projectId,
+      forkedFromId: c.forkedFromId,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
       messages: byConversation.get(c.id) ?? [],
     })),
   };
+
+  if (isJuno && junoZip) {
+    junoZip.file("juno-export.json", JSON.stringify(payload, null, 2));
+    const archive = await junoZip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
+    return new NextResponse(new Uint8Array(archive), {
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="juno-export-${date}.zip"`,
+      },
+    });
+  }
 
   return new NextResponse(JSON.stringify(payload, null, 2), {
     headers: {

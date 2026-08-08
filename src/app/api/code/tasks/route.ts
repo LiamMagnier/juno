@@ -75,7 +75,7 @@ async function enrichPromptWithAttachments(
 ): Promise<string> {
   if (attachmentIds.length === 0) return prompt;
   const atts = await prisma.attachment.findMany({
-    where: { id: { in: attachmentIds }, userId },
+    where: { id: { in: attachmentIds }, userId, deletedAt: null },
     select: { fileName: true, kind: true, mimeType: true, extractedText: true },
   });
   if (atts.length === 0) return prompt || "See attached files.";
@@ -188,7 +188,7 @@ export async function POST(req: Request) {
   // user doesn't own / already spent on another message.
   if (attachmentIds.length > 0) {
     const available = await prisma.attachment.count({
-      where: { id: { in: attachmentIds }, userId: user.id, messageId: null },
+      where: { id: { in: attachmentIds }, userId: user.id, messageId: null, deletedAt: null },
     });
     if (available !== attachmentIds.length) {
       return NextResponse.json({ error: "attachment_claim_failed" }, { status: 409 });
@@ -214,7 +214,7 @@ export async function POST(req: Request) {
         // transaction is harmless: the agent already has the enriched prompt;
         // the attachment simply remains unlinked rather than being stolen.
         await tx.attachment.updateMany({
-          where: { id: { in: attachmentIds }, userId: user.id, messageId: null },
+          where: { id: { in: attachmentIds }, userId: user.id, messageId: null, deletedAt: null },
           data: { messageId: message.id, conversationId },
         });
       }
@@ -224,7 +224,7 @@ export async function POST(req: Request) {
       });
       return tx.message.findUniqueOrThrow({
         where: { id: message.id },
-        include: { attachments: true },
+        include: { attachments: { where: { deletedAt: null } } },
       });
     });
     return serializeMessage(created);

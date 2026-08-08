@@ -421,7 +421,7 @@ async function handleChat(req: Request) {
     let hasImages = false;
     if ((input.attachmentIds?.length ?? 0) > 0) {
       const imageHit = await prisma.attachment.findFirst({
-        where: { id: { in: input.attachmentIds! }, userId: user.id, kind: "IMAGE" },
+        where: { id: { in: input.attachmentIds! }, userId: user.id, kind: "IMAGE", deletedAt: null },
         select: { id: true },
       });
       hasImages = !!imageHit;
@@ -1114,7 +1114,7 @@ async function handleChat(req: Request) {
         const attachmentIds = [...new Set(input.attachmentIds ?? [])];
         if (attachmentIds.length > 0) {
           const claimed = await tx.attachment.updateMany({
-            where: { id: { in: attachmentIds }, userId: user.id, messageId: null },
+            where: { id: { in: attachmentIds }, userId: user.id, messageId: null, deletedAt: null },
             data: { messageId: message.id, conversationId: acceptedConversation.id },
           });
           if (claimed.count !== attachmentIds.length) throw new AttachmentClaimError();
@@ -1290,7 +1290,7 @@ async function handleChat(req: Request) {
         const attachmentIds = [...new Set(input.attachmentIds ?? [])];
         if (attachmentIds.length > 0) {
           const claimed = await tx.attachment.updateMany({
-            where: { id: { in: attachmentIds }, userId: user.id, messageId: null },
+            where: { id: { in: attachmentIds }, userId: user.id, messageId: null, deletedAt: null },
             data: { messageId: message.id, conversationId: conversation.id },
           });
           // Invalid, cross-account, or concurrently claimed IDs must fail the
@@ -1357,7 +1357,7 @@ async function handleChat(req: Request) {
   const recent = await prisma.message.findMany({
     where: { conversationId: conversation.id },
     orderBy: { createdAt: "asc" },
-    include: { attachments: true },
+    include: { attachments: { where: { deletedAt: null } } },
     skip: historyWindowStart(totalMessages),
   });
   const history = recent
@@ -1680,7 +1680,7 @@ async function handleChat(req: Request) {
         const sources = acc.sources;
         // Metadata for the pager rides along on the done chunk.
         const include = {
-          attachments: true,
+          attachments: { where: { deletedAt: null } },
           versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" as const } },
         };
         if (mode === "supersede" && stale) {
@@ -2115,7 +2115,7 @@ async function handleChat(req: Request) {
           where: { id: assistant.id },
           data: { activity: activityLog as unknown as Prisma.InputJsonValue },
           include: {
-            attachments: true,
+            attachments: { where: { deletedAt: null } },
             versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" } },
           },
         });
@@ -2226,7 +2226,7 @@ async function handleChat(req: Request) {
               where: { id: assistant.id },
               data: { activity: activityLog as unknown as Prisma.InputJsonValue },
               include: {
-                attachments: true,
+                attachments: { where: { deletedAt: null } },
                 versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" } },
               },
             });

@@ -52,3 +52,37 @@ test("keeps ChatGPT and Claude shape sniffing when callers use the JSON path", (
   assert.equal(chatgpt.format, "chatgpt");
   assert.equal(chatgpt.conversations[0].messages.length, 2);
 });
+
+test("round-trips the Juno export marker and branch/project pointers", () => {
+  const parsed = parseHistoryExport(
+    JSON.stringify({
+      schemaVersion: "juno.export.v2",
+      projects: [{ id: "project-source" }],
+      conversations: [
+        {
+          id: "root-source",
+          projectId: "project-source",
+          title: "Root",
+          createdAt: "2026-08-08T10:00:00.000Z",
+          messages: [{ id: "message-source", role: "USER", content: "Start", attachmentIds: ["attachment-source"] }],
+        },
+        {
+          id: "branch-source",
+          projectId: "project-source",
+          forkedFromId: "root-source",
+          title: "Root (branch)",
+          createdAt: "2026-08-08T10:01:00.000Z",
+          messages: [{ role: "USER", content: "Continue differently" }],
+        },
+      ],
+    }),
+    "gemini",
+  );
+
+  assert.equal(parsed.format, "juno");
+  assert.equal(parsed.conversations[1].sourceId, "branch-source");
+  assert.equal(parsed.conversations[1].forkedFromSourceId, "root-source");
+  assert.equal(parsed.conversations[1].projectSourceId, "project-source");
+  assert.equal(parsed.conversations[0].messages[0].sourceId, "message-source");
+  assert.deepEqual(parsed.conversations[0].messages[0].attachmentSourceIds, ["attachment-source"]);
+});

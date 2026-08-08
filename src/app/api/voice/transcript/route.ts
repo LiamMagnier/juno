@@ -39,7 +39,7 @@ async function serializeSavedSession(userId: string, sessionId: string) {
   const rows = await prisma.message.findMany({
     where: { id: { in: saved.messageIds }, conversationId: saved.conversationId },
     include: {
-      attachments: true,
+      attachments: { where: { deletedAt: null } },
       versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" } },
     },
   });
@@ -105,7 +105,7 @@ export async function POST(req: Request) {
       const requestedAttachmentIds = [...new Set(input.turns.flatMap((turn) => turn.attachmentIds))];
       const availableAttachments = requestedAttachmentIds.length
         ? await tx.attachment.findMany({
-            where: { id: { in: requestedAttachmentIds }, userId: user.id, kind: "IMAGE", messageId: null },
+            where: { id: { in: requestedAttachmentIds }, userId: user.id, kind: "IMAGE", messageId: null, deletedAt: null },
             select: { id: true },
           })
         : [];
@@ -135,7 +135,7 @@ export async function POST(req: Request) {
         if (turn.role === "USER" && turn.attachmentIds.length > 0) {
           const ids = [...new Set(turn.attachmentIds)];
           const updated = await tx.attachment.updateMany({
-            where: { id: { in: ids }, userId: user.id, kind: "IMAGE", messageId: null },
+            where: { id: { in: ids }, userId: user.id, kind: "IMAGE", messageId: null, deletedAt: null },
             data: { messageId: message.id, conversationId: conversation.id },
           });
           if (updated.count !== ids.length) throw new AttachmentConflictError("A voice image was already used.");

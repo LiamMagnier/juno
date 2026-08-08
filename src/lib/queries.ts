@@ -77,7 +77,7 @@ export async function getConversationThread(
         // and thrown away on every thread load — and use-chat polls
         // GET /api/conversations/[id] every 12s for up to an hour to recover a
         // dropped stream, so one bad connection could pay that cost ~300 times.
-        attachments: { select: ATTACHMENT_CLIENT_SELECT },
+        attachments: { where: { deletedAt: null }, select: ATTACHMENT_CLIENT_SELECT },
         // Version metadata only (the pager's "‹ 2/3 ›") — contents stay
         // server-side until GET /api/messages/[id]/versions pages them in.
         versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" } },

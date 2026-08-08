@@ -11,6 +11,13 @@ const BABEL_CDN = "https://unpkg.com/@babel/standalone/babel.min.js";
 const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
 const PYODIDE_INDEX = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/";
 
+// The preview is an opaque-origin iframe, but scripts can still exfiltrate via
+// fetch/images/forms unless the document also has an enforcing policy. Keep the
+// small, explicitly required CDN set for the existing React/Babel/Python/
+// Mermaid runtimes; artifact code itself gets no arbitrary network, frame,
+// popup, form or object capability.
+const SANDBOX_CSP_META = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; base-uri 'none'; script-src 'unsafe-inline' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src https://cdn.jsdelivr.net; media-src data: blob:; frame-src 'none'; form-action 'none'; object-src 'none'">`;
+
 const BASE_STYLE = `<style>body{margin:0;font-family:ui-sans-serif,system-ui,sans-serif;color:#111}</style>`;
 const CLOSE_SCRIPT = /<\/script/gi;
 const esc = (s: string) => s.replace(CLOSE_SCRIPT, "<\\/script");
@@ -323,7 +330,7 @@ function withChrome(doc: string, statusLite = false): string {
   // Shim first (before console bridge), so storage/history are safe before any
   // artifact or bridge code runs.
   const chrome = SANDBOX_SHIM + (statusLite ? STATUS_LITE : "") + CONSOLE_BRIDGE;
-  const out = head !== -1 ? doc.slice(0, head) + chrome + doc.slice(head) : chrome + doc;
+  const out = head !== -1 ? doc.slice(0, head) + SANDBOX_CSP_META + chrome + doc.slice(head) : SANDBOX_CSP_META + chrome + doc;
   const body = out.lastIndexOf("</body>");
   return body !== -1 ? out.slice(0, body) + INSPECTOR_SCRIPT + out.slice(body) : out + INSPECTOR_SCRIPT;
 }
@@ -502,7 +509,7 @@ function consoleDoc(rawCode: string, engine: "js" | "python" | "unsupported", la
       : `run(body);`
   }`;
 
-  return `<!doctype html><html><head><meta charset="utf-8"/>${SANDBOX_SHIM}${TERMINAL_STYLE}${
+  return `<!doctype html><html><head><meta charset="utf-8"/>${SANDBOX_CSP_META}${SANDBOX_SHIM}${TERMINAL_STYLE}${
     lang === "typescript" ? `<script src="${BABEL_CDN}"></script>` : ""
   }</head>
 <body><div id="wrap"><div id="bar"><span id="dot"></span><span id="label">${escapeHtml(label ?? lang)}</span><span id="st" style="margin-left:auto"></span></div><div id="term"></div></div>
@@ -536,7 +543,7 @@ export function buildSandboxDoc(type: ArtifactType, content: string, language?: 
     case "css":
       return withChrome(cssDoc(content), true);
     case "mermaid":
-      return mermaidDoc(content);
+      return withChrome(mermaidDoc(content), true);
     default:
       return withChrome(htmlDoc(`<pre style="padding:16px;white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace">${escapeHtml(content)}</pre>`), true);
   }
@@ -643,7 +650,7 @@ export function SandboxFrame({
         if (inspectEnabled) postInspect(true);
       }}
       // Opaque origin (no allow-same-origin) so artifact code cannot touch the app, cookies, or storage.
-      sandbox="allow-scripts allow-popups allow-forms allow-modals"
+      sandbox="allow-scripts"
       className={className ?? `h-full w-full border-0 ${isDark ? "bg-[#0b0b0e]" : "bg-white"}`}
     />
   );

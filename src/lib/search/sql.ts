@@ -295,7 +295,7 @@ export function knowledgeSearchSql(o: SearchSqlOptions): Prisma.Sql {
            ts_rank(to_tsvector('simple', b."text"), ${query(o.tsquery)}) AS rank
       FROM "KnowledgeBlock" b
       JOIN "KnowledgeDocument" d ON d."id" = b."documentId"
-      LEFT JOIN "Attachment" att ON att."id" = d."attachmentId" AND att."userId" = ${o.userId}
+      LEFT JOIN "Attachment" att ON att."id" = d."attachmentId" AND att."userId" = ${o.userId} AND att."deletedAt" IS NULL
      WHERE b."userId" = ${o.userId}
        AND d."userId" = ${o.userId}
        AND b."deletedAt" IS NULL

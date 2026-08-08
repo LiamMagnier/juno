@@ -171,7 +171,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
               for (;;) {
                 const row = await prisma.message.findFirst({
                   where: { id: codeTaskMessageId(current.id), conversationId: current.conversationId },
-                  include: { attachments: true },
+                  include: { attachments: { where: { deletedAt: null } } },
                 });
                 if (row) {
                   message = await serializeMessage(row);

@@ -115,7 +115,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const attachmentIds = [...new Set(turn.attachmentIds ?? [])];
         if (attachmentIds.length > 0) {
           const claimed = await tx.attachment.updateMany({
-            where: { id: { in: attachmentIds }, userId: user.id, messageId: null },
+            where: { id: { in: attachmentIds }, userId: user.id, messageId: null, deletedAt: null },
             data: { messageId: row.id, conversationId: id },
           });
           if (claimed.count !== attachmentIds.length) {

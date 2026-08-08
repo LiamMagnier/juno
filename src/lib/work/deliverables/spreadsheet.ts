@@ -248,6 +248,18 @@ export async function buildSpreadsheet(spec: SpreadsheetSpec): Promise<Buffer> {
             worksheet.getCell(rowNumber, index + 1).numFmt = format;
           }
         }
+
+        // The autofit cap keeps a pathological sentence from creating a
+        // one-mile-wide worksheet. When a value no longer fits the capped
+        // column, wrap it instead of handing Excel a visually clipped cell;
+        // the export validator checks the same invariant on the bytes.
+        const width = worksheetColumn.width ?? 10;
+        for (let rowNumber = 2; rowNumber <= sheet.rows.length + 1; rowNumber++) {
+          const cell = worksheet.getCell(rowNumber, index + 1);
+          if (typeof cell.value === "string" && cell.value.length > width) {
+            cell.alignment = { ...cell.alignment, wrapText: true, vertical: "top" };
+          }
+        }
       }
     }
 

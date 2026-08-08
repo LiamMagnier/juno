@@ -18,8 +18,8 @@ type Phase =
   | { name: "error"; message: string };
 
 /**
- * "Import your history" card for the profile page: drop (or pick) a ChatGPT
- * or Claude export ZIP and POST it to /api/import. Uses XHR instead of fetch
+ * "Import your history" card for the profile page: drop (or pick) a ChatGPT,
+ * Claude, Gemini, or Juno export ZIP/JSON and POST it to /api/import. Uses XHR instead of fetch
  * so the upload of a large archive shows real progress before the server-side
  * importing phase takes over.
  */
@@ -45,8 +45,8 @@ export function ImportHistoryCard() {
 
   const start = (file: File) => {
     if (busy) return;
-    if (!/\.zip$/i.test(file.name)) {
-      setPhase({ name: "error", message: "That's not a .zip — upload the export archive exactly as ChatGPT or Claude gave it to you." });
+    if (!/\.(zip|json)$/i.test(file.name)) {
+      setPhase({ name: "error", message: "Choose a .zip or .json export from ChatGPT, Claude, Gemini, or Juno." });
       return;
     }
     if (file.size > MAX_BYTES) {
@@ -67,7 +67,16 @@ export function ImportHistoryCard() {
       const body = (xhr.response ?? {}) as { imported?: number; skipped?: number; format?: string; error?: string };
       if (xhr.status >= 200 && xhr.status < 300 && typeof body.imported === "number") {
         const imported = body.imported;
-        const providerLabel = body.format === "chatgpt" ? "ChatGPT" : body.format === "claude" ? "Claude" : "the export";
+        const providerLabel =
+          body.format === "chatgpt"
+            ? "ChatGPT"
+            : body.format === "claude"
+              ? "Claude"
+              : body.format === "gemini"
+                ? "Gemini"
+                : body.format === "juno"
+                  ? "Juno"
+                  : "the export";
         setPhase({ name: "done", imported, skipped: body.skipped ?? 0, providerLabel });
         if (imported > 0) {
           toast.success(`Imported ${imported} conversation${imported === 1 ? "" : "s"} from ${providerLabel}.`);
@@ -152,7 +161,7 @@ export function ImportHistoryCard() {
             <FileUp className="mx-auto mb-2 h-6 w-6 text-muted-foreground/60" />
             <p className="font-serif text-heading">Import your history</p>
             <p className="pt-1 text-sm text-muted-foreground">
-              ChatGPT or Claude export (.zip) — drop it here, up to 100 MB.
+              ChatGPT, Claude, Gemini, or Juno export (.zip or .json) — drop it here, up to 100 MB.
             </p>
             <Button size="sm" className="mt-4" onClick={pick}>
               Choose file
@@ -162,14 +171,14 @@ export function ImportHistoryCard() {
       </div>
 
       <p className="mt-3 text-xs text-muted-foreground">
-        Get the ZIP from ChatGPT under Settings → Data controls → Export data, or from Claude under Settings → Privacy →
-        Export data. Imported messages are encrypted at rest like everything else.
+        Get the ZIP from ChatGPT under Settings → Data controls → Export data, Claude under Settings → Privacy → Export
+        data, or export a Juno JSON from your profile. Imported messages are encrypted at rest like everything else.
       </p>
 
       <input
         ref={fileRef}
         type="file"
-        accept=".zip,application/zip"
+        accept=".zip,.json,application/zip,application/json"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];

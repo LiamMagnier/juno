@@ -160,7 +160,7 @@ const loaders: Record<string, EntityLoader> = {
     );
   },
   attachment: async (accountId, ids) => {
-    const rows = await prisma.attachment.findMany({ where: { id: { in: ids }, userId: accountId } });
+    const rows = await prisma.attachment.findMany({ where: { id: { in: ids }, userId: accountId, deletedAt: null } });
     const entries = await Promise.all(
       rows.map(async (row): Promise<[string, EntityData]> => [
         row.id,

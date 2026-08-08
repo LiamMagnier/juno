@@ -100,7 +100,7 @@ export async function POST(req: Request) {
       );
     }
     const att = await prisma.attachment.findFirst({
-      where: { id: edit.attachmentId, userId: user.id, kind: "IMAGE" },
+      where: { id: edit.attachmentId, userId: user.id, kind: "IMAGE", deletedAt: null },
       select: { storageKey: true, mimeType: true },
     });
     if (!att) return NextResponse.json({ error: "Source image not found." }, { status: 404 });
@@ -232,10 +232,24 @@ export async function POST(req: Request) {
                 mimeType,
                 size: bytes.length,
                 storageKey: key,
+                origin: "generated",
+                parserState: "skipped",
+                versions: {
+                  create: {
+                    version: 1,
+                    origin: "generated",
+                    kind,
+                    fileName: fileName.slice(0, 120),
+                    mimeType,
+                    size: bytes.length,
+                    storageKey: key,
+                    parserState: "skipped",
+                  },
+                },
               },
             },
           },
-          include: { attachments: true },
+          include: { attachments: { where: { deletedAt: null } } },
         });
 
         await prisma.conversation.update({ where: { id: conversationId!, userId: user.id }, data: { lastMessageAt: new Date() } });

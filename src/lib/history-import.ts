@@ -1,6 +1,7 @@
 /*
- * Parsers for ChatGPT and Claude data-export ZIPs. Both providers ship a
- * conversations.json inside the archive, but the shapes differ completely:
+ * Parsers for ChatGPT, Claude, Gemini and Juno data-export ZIPs. The providers
+ * ship different shapes, while Juno's own export is a versioned superset that
+ * can be re-imported without losing branch pointers:
  *
  *  - ChatGPT: each conversation is a mapping TREE of nodes; the canonical
  *    thread is the `current_node` parent chain (regenerated branches hang off
@@ -12,18 +13,28 @@
  * (src/app/api/import/route.ts) owns dedupe, encryption, and persistence.
  */
 
-export type ImportFormat = "chatgpt" | "claude" | "gemini";
+export type ImportFormat = "chatgpt" | "claude" | "gemini" | "juno";
 
 export interface ImportedMessage {
   role: "user" | "assistant";
   content: string;
   createdAt: Date;
+  /** Stable id from a Juno export, used only to reconnect metadata. */
+  sourceId?: string;
+  /** Attachment ids from a Juno export, used only to reconnect metadata. */
+  attachmentSourceIds?: string[];
 }
 
 export interface ImportedConversation {
   title: string;
   createdAt: Date;
   messages: ImportedMessage[];
+  /** Stable id from an export, used only to reconnect imported branches. */
+  sourceId?: string;
+  /** Export id of the conversation this branch was forked from. */
+  forkedFromSourceId?: string | null;
+  /** Export id of the project this conversation belongs to. */
+  projectSourceId?: string | null;
 }
 
 export interface ParsedHistoryExport {
@@ -50,7 +61,13 @@ const MAX_TITLE_CHARS = 200; // matches the conversation PATCH schema
  * match by basename and prefer the shallowest hit.
  */
 export function findConversationsEntry(zipEntries: string[]): string | null {
-  const candidateNames = new Set(["conversations.json", "My Activity.json", "my_activity.json", "gemini.json"]);
+  const candidateNames = new Set([
+    "conversations.json",
+    "My Activity.json",
+    "my_activity.json",
+    "gemini.json",
+    "juno-export.json",
+  ]);
   const hits = zipEntries
     .filter((path) => !path.endsWith("/") && candidateNames.has(path.split("/").pop() ?? ""))
     .sort((a, b) => {
@@ -68,6 +85,7 @@ export function findConversationsEntry(zipEntries: string[]): string | null {
 export function detectFormat(zipEntries: string[]): ImportFormat | null {
   if (!findConversationsEntry(zipEntries)) return null;
   const names = new Set(zipEntries.map((path) => path.split("/").pop() ?? path));
+  if ([...names].some((name) => /juno-export/i.test(name))) return "juno";
   if ([...names].some((name) => /gemini|my activity/i.test(name))) return "gemini";
   if (names.has("chat.html") || names.has("user.json") || names.has("message_feedback.json")) return "chatgpt";
   if (names.has("projects.json") || names.has("users.json")) return "claude";
@@ -120,6 +138,8 @@ function dateFromFlexible(...values: unknown[]): Date | null {
   return null;
 }
 
+type ImportedMessageDraft = Omit<ImportedMessage, "createdAt"> & { createdAt: Date | null };
+
 /**
  * Fill missing message dates and force a strictly-increasing sequence so the
  * thread renders in import order (messages are sorted by createdAt on read,
@@ -127,14 +147,14 @@ function dateFromFlexible(...values: unknown[]): Date | null {
  */
 function normalizeMessageDates(
   conversationCreatedAt: Date,
-  messages: { role: "user" | "assistant"; content: string; createdAt: Date | null }[],
+  messages: ImportedMessageDraft[],
 ): ImportedMessage[] {
   let previous = conversationCreatedAt.getTime();
   return messages.map((message) => {
     const raw = message.createdAt?.getTime();
     const time = raw != null && raw > previous ? raw : previous + 1000;
     previous = time;
-    return { role: message.role, content: message.content, createdAt: new Date(time) };
+    return { ...message, createdAt: new Date(time) };
   });
 }
 
@@ -292,6 +312,69 @@ function parseGeminiConversation(item: Record<string, unknown>): ImportedConvers
   return { title, createdAt, messages: normalizeMessageDates(createdAt, raw) };
 }
 
+/** Juno exports intentionally use the same tolerant turn reader as Gemini,
+ * but carry stable ids so branch relationships can be recreated on import. */
+function parseJunoConversation(item: Record<string, unknown>): ImportedConversation | null {
+  const conversation = isRecord(item.conversation) ? item.conversation : item;
+  const messages =
+    (Array.isArray(conversation.messages) && conversation.messages) ||
+    (Array.isArray(conversation.turns) && conversation.turns) ||
+    (Array.isArray(item.messages) && item.messages) ||
+    (Array.isArray(item.turns) && item.turns) ||
+    [];
+  if (messages.length === 0) return null;
+
+  const raw: ImportedMessageDraft[] = [];
+  for (const entry of messages) {
+    if (!isRecord(entry)) continue;
+    const role = geminiRole(entry);
+    if (!role) continue;
+    const text = textFromGeminiContent(entry.content ?? entry.parts ?? entry.text ?? entry.message);
+    if (!text) continue;
+    const sourceId = typeof entry.id === "string" && entry.id.length <= 200 ? entry.id : undefined;
+    const attachmentSourceIds = Array.isArray(entry.attachmentIds)
+      ? entry.attachmentIds.filter((id): id is string => typeof id === "string" && id.length <= 200)
+      : undefined;
+    raw.push({
+      role,
+      content: clampContent(text),
+      createdAt: dateFromFlexible(entry.createTime, entry.createdAt, entry.created_at, entry.time, entry.timestamp),
+      ...(sourceId ? { sourceId } : {}),
+      ...(attachmentSourceIds?.length ? { attachmentSourceIds } : {}),
+    });
+  }
+  if (raw.length === 0) return null;
+
+  const createdAt =
+    dateFromFlexible(
+      conversation.createTime,
+      conversation.createdAt,
+      conversation.created_at,
+      item.createTime,
+      item.createdAt,
+      item.created_at,
+      item.time,
+    ) ?? raw.find((message) => message.createdAt)?.createdAt ?? new Date();
+  const title = cleanTitle(conversation.title ?? conversation.name ?? item.title ?? item.name);
+  const sourceIdValue = conversation.id ?? item.id;
+  const sourceId = typeof sourceIdValue === "string" && sourceIdValue.length <= 200 ? sourceIdValue : undefined;
+  const forkedFromSourceId =
+    typeof (conversation.forkedFromId ?? item.forkedFromId) === "string" &&
+    String(conversation.forkedFromId ?? item.forkedFromId).length <= 200
+      ? String(conversation.forkedFromId ?? item.forkedFromId)
+      : null;
+  const projectValue = conversation.projectId ?? item.projectId;
+  const projectSourceId = typeof projectValue === "string" && projectValue.length <= 200 ? projectValue : null;
+  return {
+    title,
+    createdAt,
+    messages: normalizeMessageDates(createdAt, raw),
+    sourceId,
+    forkedFromSourceId,
+    projectSourceId,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -300,6 +383,8 @@ function parseGeminiConversation(item: Record<string, unknown>): ImportedConvers
  * Parse the raw text of conversations.json into normalized conversations.
  * The format is sniffed from the JSON shape (`mapping` vs `chat_messages`),
  * falling back to `formatHint` from detectFormat for empty/ambiguous files.
+ * Juno's `schemaVersion` marker wins over the generic `messages` shape so a
+ * native export is reported honestly.
  * Throws HistoryImportError with an uploader-facing message on junk input.
  */
 export function parseHistoryExport(raw: string, formatHint: ImportFormat | null = null): ParsedHistoryExport {
@@ -316,7 +401,7 @@ export function parseHistoryExport(raw: string, formatHint: ImportFormat | null 
       : isRecord(data) && Array.isArray(data.chats)
         ? data.chats
         : null;
-  if (!items) throw new HistoryImportError("This file doesn't look like a ChatGPT, Claude, or Gemini export.");
+  if (!items) throw new HistoryImportError("This file doesn't look like a ChatGPT, Claude, Gemini, or Juno export.");
 
   const sample = items.find(isRecord);
   const sniffedFormat: ImportFormat | null = sample
@@ -328,12 +413,21 @@ export function parseHistoryExport(raw: string, formatHint: ImportFormat | null 
             ? "gemini"
         : null
     : null;
-  const format: ImportFormat | null = sniffedFormat ?? formatHint;
+  const isJuno =
+    isRecord(data) && typeof data.schemaVersion === "string" && /^juno\.export\./i.test(data.schemaVersion);
+  const format: ImportFormat | null = isJuno ? "juno" : sniffedFormat ?? formatHint;
   if (!format) {
-    throw new HistoryImportError("This file doesn't look like a ChatGPT, Claude, or Gemini export.");
+    throw new HistoryImportError("This file doesn't look like a ChatGPT, Claude, Gemini, or Juno export.");
   }
 
-  const parse = format === "chatgpt" ? parseChatGptConversation : format === "claude" ? parseClaudeConversation : parseGeminiConversation;
+  const parse =
+    format === "chatgpt"
+      ? parseChatGptConversation
+      : format === "claude"
+        ? parseClaudeConversation
+        : format === "juno"
+          ? parseJunoConversation
+          : parseGeminiConversation;
   const conversations: ImportedConversation[] = [];
   let skipped = 0;
   for (const item of items) {

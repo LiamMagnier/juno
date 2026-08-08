@@ -267,6 +267,16 @@ export interface DeliverableValidationDetails {
   entryCount?: number;
   /** Entry names, capped — enough to see what is in a bundle, not a manifest. */
   entryNames?: string[];
+  /** Spreadsheet formula cells that were re-opened and checked. */
+  formulaCount?: number;
+  /** Spreadsheet chart parts that were found in the package. */
+  chartCount?: number;
+  /** Workbook defined names that were checked for external/missing targets. */
+  namedRangeCount?: number;
+  /** Cells whose visible value would overflow an unwrapped column. */
+  overflowCount?: number;
+  /** Internal OOXML relationship targets that were absent. */
+  missingAssetCount?: number;
 }
 
 export interface DeliverableValidation {
@@ -380,6 +390,78 @@ const DOCX_PARAGRAPH = /<w:p(?=[ />])/g;
 const DOCX_TEXT = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g;
 const PPTX_SLIDE = /^ppt\/slides\/slide\d+\.xml$/;
 
+/** Inflation limits protect the validator itself from a tiny ZIP bomb. */
+const MAX_PACKAGE_ENTRIES = 2_000;
+const MAX_PACKAGE_UNCOMPRESSED_BYTES = 256 * 1024 * 1024;
+const MAX_PACKAGE_ENTRY_BYTES = 64 * 1024 * 1024;
+const MAX_PACKAGE_COMPRESSION_RATIO = 200;
+
+function packageBudgetProblems(zip: JSZip): string[] {
+  const entries = Object.values(zip.files).filter((entry) => !entry.dir);
+  const problems: string[] = [];
+  if (entries.length > MAX_PACKAGE_ENTRIES) {
+    problems.push(`The package has ${entries.length} entries, over the ${MAX_PACKAGE_ENTRIES}-entry safety limit.`);
+  }
+  let total = 0;
+  const names = new Set<string>();
+  for (const entry of entries) {
+    const normalized = (entry.unsafeOriginalName ?? entry.name).toLowerCase();
+    if (names.has(normalized)) problems.push(`The package contains duplicate entry names differing only by case: ${entry.name}.`);
+    names.add(normalized);
+    const data = (entry as unknown as { _data?: { uncompressedSize?: number; compressedSize?: number } })._data;
+    const uncompressed = Number(data?.uncompressedSize ?? 0);
+    const compressed = Number(data?.compressedSize ?? 0);
+    if (uncompressed > MAX_PACKAGE_ENTRY_BYTES) {
+      problems.push(`Entry ${entry.name} expands to ${formatBytes(uncompressed)}, over the ${formatBytes(MAX_PACKAGE_ENTRY_BYTES)} per-entry limit.`);
+    }
+    total += Number.isFinite(uncompressed) ? uncompressed : 0;
+    if (compressed > 0 && uncompressed / compressed > MAX_PACKAGE_COMPRESSION_RATIO) {
+      problems.push(`Entry ${entry.name} has an unsafe compression ratio.`);
+    }
+  }
+  if (total > MAX_PACKAGE_UNCOMPRESSED_BYTES) {
+    problems.push(`The package expands to ${formatBytes(total)}, over the ${formatBytes(MAX_PACKAGE_UNCOMPRESSED_BYTES)} total limit.`);
+  }
+  return problems;
+}
+
+function normalizeZipTarget(baseDirectory: string, target: string): string | null {
+  const stack = baseDirectory.split("/").filter(Boolean);
+  for (const segment of target.replace(/^\/+/, "").split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      if (stack.length === 0) return null;
+      stack.pop();
+    } else {
+      stack.push(segment);
+    }
+  }
+  return stack.join("/");
+}
+
+/** Check internal OOXML relationships before a reader follows a missing asset. */
+async function packageRelationshipProblems(zip: JSZip): Promise<string[]> {
+  const problems: string[] = [];
+  for (const entry of Object.values(zip.files).filter((candidate) => !candidate.dir && candidate.name.endsWith(".rels"))) {
+    // OOXML relationship parts are small; keeping this bounded also prevents a
+    // malformed package from turning validation into an unbounded string read.
+    const xml = await entry.async("string");
+    const rels = xml.match(/<Relationship\b[^>]*>/g) ?? [];
+    const marker = entry.name.indexOf("/_rels/");
+    const baseDirectory = marker >= 0 ? entry.name.slice(0, marker) : "";
+    for (const relation of rels) {
+      const target = /\bTarget\s*=\s*["']([^"']+)["']/i.exec(relation)?.[1];
+      const mode = /\bTargetMode\s*=\s*["']([^"']+)["']/i.exec(relation)?.[1];
+      if (!target || mode?.toLowerCase() === "external" || /^(?:[a-z]+:)?\/\//i.test(target)) continue;
+      const resolved = normalizeZipTarget(baseDirectory, target);
+      if (!resolved || !zip.file(resolved)) {
+        problems.push(`${entry.name} points to missing internal asset ${target}.`);
+      }
+    }
+  }
+  return problems;
+}
+
 /** The five entities an OOXML text node may carry. Enough to count characters. */
 function decodeXmlText(raw: string): string {
   return raw
@@ -392,7 +474,8 @@ function decodeXmlText(raw: string): string {
 
 async function inspectDocx(bytes: Buffer): Promise<Verdict> {
   const zip = await JSZip.loadAsync(bytes);
-  const problems: string[] = [];
+  const relationshipProblems = await packageRelationshipProblems(zip);
+  const problems: string[] = [...packageBudgetProblems(zip), ...relationshipProblems];
   const observations: string[] = [];
 
   if (!zip.file("[Content_Types].xml")) {
@@ -406,7 +489,7 @@ async function inspectDocx(bytes: Buffer): Promise<Verdict> {
     return {
       observations,
       problems: [...problems, "The package has no word/document.xml, so there is no document to read."],
-      details: {},
+      details: { missingAssetCount: relationshipProblems.length },
     };
   }
 
@@ -422,12 +505,13 @@ async function inspectDocx(bytes: Buffer): Promise<Verdict> {
     `Unzipped the package and read word/document.xml: ${paragraphCount} paragraphs, ` +
       `${text.length} characters of text.`
   );
-  return { observations, problems, details: { paragraphCount, characterCount: text.length } };
+  return { observations, problems, details: { paragraphCount, characterCount: text.length, missingAssetCount: relationshipProblems.length } };
 }
 
 async function inspectPptx(bytes: Buffer): Promise<Verdict> {
   const zip = await JSZip.loadAsync(bytes);
-  const problems: string[] = [];
+  const relationshipProblems = await packageRelationshipProblems(zip);
+  const problems: string[] = [...packageBudgetProblems(zip), ...relationshipProblems];
   const slides = Object.keys(zip.files).filter((name) => PPTX_SLIDE.test(name));
 
   if (!zip.file("ppt/presentation.xml")) {
@@ -442,7 +526,7 @@ async function inspectPptx(bytes: Buffer): Promise<Verdict> {
   return {
     observations: [`Unzipped the package and counted ${slides.length} slide parts.`],
     problems,
-    details: { slideCount: slides.length },
+    details: { slideCount: slides.length, missingAssetCount: relationshipProblems.length },
   };
 }
 
@@ -463,18 +547,69 @@ async function inspectXlsx(bytes: Buffer): Promise<Verdict> {
   // fails here and would fail identically in Excel.
   await workbook.xlsx.load(bytes as unknown as XlsxLoadInput);
 
+  const zip = await JSZip.loadAsync(bytes);
+  const relationshipProblems = await packageRelationshipProblems(zip);
+  const problems: string[] = [...packageBudgetProblems(zip), ...relationshipProblems];
   const sheets = workbook.worksheets.map((sheet) => sheet.name);
   const rowCounts = workbook.worksheets.map((sheet) => sheet.rowCount);
-  const problems: string[] = [];
   if (sheets.length === 0) problems.push("The workbook has no worksheets.");
+
+  let formulaCount = 0;
+  let overflowCount = 0;
+  for (const sheet of workbook.worksheets) {
+    const cells: import("exceljs").Cell[] = [];
+    sheet.eachRow({ includeEmpty: false }, (row) => row.eachCell({ includeEmpty: false }, (cell) => cells.push(cell)));
+    for (const cell of cells) {
+        const value = cell.value;
+        if (value && typeof value === "object" && "formula" in value) {
+          formulaCount += 1;
+          const formula = String((value as { formula?: unknown }).formula ?? "");
+          const result = (value as { result?: unknown }).result;
+          if (!formula || result === undefined || (typeof result === "string" && /^#(?:REF|DIV\/0|VALUE|NAME|N\/A)!?/i.test(result))) {
+            problems.push(`Formula ${cell.address} has no safe cached result.`);
+          }
+          if (/\[[^\]]+\]|https?:\/\//i.test(formula)) {
+            problems.push(`Formula ${cell.address} references an external workbook or URL.`);
+          }
+        }
+        if (typeof value === "string" && !cell.alignment?.wrapText) {
+          const width = sheet.getColumn(cell.col).width ?? 10;
+          if (value.length > Math.max(8, width * 2)) overflowCount += 1;
+        }
+    }
+  }
+
+  const chartCount = Object.keys(zip.files).filter((name) => /^xl\/charts\/chart\d+\.xml$/i.test(name)).length;
+  let namedRangeCount = 0;
+  const workbookXml = zip.file("xl/workbook.xml");
+  if (workbookXml) {
+    const xml = await workbookXml.async("string");
+    const names = [...xml.matchAll(/<definedName\b[^>]*>([\s\S]*?)<\/definedName>/gi)];
+    namedRangeCount = names.length;
+    const knownSheets = new Set(sheets.map((sheet) => sheet.toLowerCase()));
+    for (const match of names) {
+      const target = decodeXmlText(match[1]).trim();
+      if (/\[[^\]]+\]|https?:\/\//i.test(target) || /#REF!/i.test(target)) {
+        problems.push(`Named range points outside the workbook or at a missing reference: ${target}.`);
+        continue;
+      }
+      const bang = target.indexOf("!");
+      if (bang > 0) {
+        const sheetName = target.slice(0, bang).replace(/^'|'$/g, "").replace(/''/g, "'");
+        if (!knownSheets.has(sheetName.toLowerCase())) problems.push(`Named range references missing sheet ${sheetName}.`);
+      }
+    }
+  }
+  if (overflowCount > 0) problems.push(`${overflowCount} cell(s) would overflow an unwrapped column.`);
 
   return {
     observations: [
       `Opened the workbook with a reader that did not write it: ${sheets.length} sheet(s) — ` +
         `${sheets.join(", ")}.`,
+      `Checked ${formulaCount} formula cell(s), ${chartCount} chart part(s), ${namedRangeCount} named range(s), and ${overflowCount} unwrapped overflow risk(s).`,
     ],
     problems,
-    details: { sheets, rowCounts },
+    details: { sheets, rowCounts, formulaCount, chartCount, namedRangeCount, overflowCount, missingAssetCount: relationshipProblems.length },
   };
 }
 
@@ -500,13 +635,15 @@ const UNSAFE_MARKUP: readonly { pattern: RegExp; problem: string }[] = [
   { pattern: /\son[a-z]+\s*=/i, problem: "an inline event handler attribute" },
   { pattern: /javascript:/i, problem: "a javascript: URL" },
   { pattern: /<link\b[^>]*href\s*=\s*["']?(?:https?:)?\/\//i, problem: "a remote stylesheet" },
-  { pattern: /<img\b[^>]*src\s*=\s*["']?(?:https?:)?\/\//i, problem: "a remote image" },
+  { pattern: /<(?:img|audio|video|source)\b[^>]*(?:src|poster)\s*=\s*["']?(?:https?:)?\/\//i, problem: "a remote media resource" },
   { pattern: /@import\b/i, problem: "a CSS @import" },
+  { pattern: /url\(\s*["']?(?:https?:)?\/\//i, problem: "a remote CSS resource" },
+  { pattern: /(?:fetch|XMLHttpRequest|WebSocket)\s*\(/i, problem: "a browser network call" },
 ];
 
 async function inspectZip(bytes: Buffer, options: { site: boolean }): Promise<Verdict> {
   const zip = await JSZip.loadAsync(bytes);
-  const problems: string[] = [];
+  const problems: string[] = packageBudgetProblems(zip);
   const observations: string[] = [];
   const entries = Object.values(zip.files).filter((entry) => !entry.dir);
   const entryNames = entries.map((entry) => entry.name);

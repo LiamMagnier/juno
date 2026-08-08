@@ -320,13 +320,18 @@ function AccountCard({ email }: { email: string }) {
         <div className="min-w-0">
           <p className="text-sm font-medium">Export your data</p>
           <p className="text-sm text-muted-foreground">
-            Profile, settings, conversations, memories, projects, and file metadata.
+            Profile, settings, conversations, memories, projects, and file metadata. The Juno package also carries Library bytes and revisions when they fit the archive cap.
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
           <Button variant="outline" size="sm" asChild>
             <a href="/api/account/export" download>
               <Download className="h-3.5 w-3.5" /> JSON
+            </a>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <a href="/api/account/export?format=juno" download>
+              <Download className="h-3.5 w-3.5" /> Juno package
             </a>
           </Button>
           <Button variant="outline" size="sm" asChild>
