@@ -39,7 +39,13 @@ import {
 } from "@/lib/preflight-clarification";
 import { serializeMessage } from "@/lib/serializers";
 import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
-import { checkBudget, recordSpend, budgetExceededMessage, modelRatesMicroUsdPerToken } from "@/lib/spend";
+import {
+  checkBudget,
+  recordSpend,
+  reserveSpend,
+  budgetExceededMessage,
+  modelRatesMicroUsdPerToken,
+} from "@/lib/spend";
 import { runDeepResearch } from "@/lib/deep-research";
 import { isWebSearchConfigured } from "@/lib/web-search";
 import { createSseSender, encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
@@ -461,6 +467,22 @@ async function handleChat(req: Request) {
     // expressions that happened to agree.
     const system = composeSystemPrompt({ base: baseSystem, webSearch: useWebSearch, canvasOn: false });
     const generationId = input.generationId ?? crypto.randomUUID();
+  /*
+     * Hold this turn's estimated cost against the ceiling for as long as it runs.
+     *
+     * `checkBudget` above is read-then-act: it reads SETTLED spend, and the
+     * ledger is only written when a turn ENDS, so the window in which two turns
+     * can both be admitted is the whole duration of every in-flight generation.
+     * The hold closes it — `checkBudget` subtracts open reservations, so the next
+     * turn sees this one coming.
+     *
+     * Deliberately NOT a second gate. This turn was already admitted, and
+     * refusing it here would mean unwinding an accepted durable receipt; a
+     * refused hold simply means no headroom was taken and nothing to settle. The
+     * hold is settled by `recordSpend` below, which is the one place every
+     * streaming path passes through.
+     */
+    await reserveSpend({ userId: user.id, kind: "chat", ref: generationId, plan });
     const generationController = new AbortController();
     const unregisterGeneration = registerGeneration(generationId, {
       userId: user.id,
@@ -658,6 +680,7 @@ async function handleChat(req: Request) {
             model: modelId,
             kind: "chat",
             source: legacyClient,
+            ref: generationId,
             promptTokens: usage.totalInput || undefined,
             completionTokens: usage.output || undefined,
             reasoningTokens: acc.tokens.reasoningTokens || undefined,
@@ -732,6 +755,7 @@ async function handleChat(req: Request) {
                 model: modelId,
                 kind: "chat",
                 source: legacyClient,
+                ref: generationId,
                 promptTokens: partialUsage.totalInput || undefined,
                 completionTokens: partialUsage.output || undefined,
                 reasoningTokens: acc.tokens.reasoningTokens || undefined,
@@ -1322,6 +1346,22 @@ async function handleChat(req: Request) {
       throw new Error("Durable first-submission receipt could not enter the running state.");
     }
   }
+  /*
+   * Hold this turn's estimated cost against the ceiling for as long as it runs.
+   *
+   * `checkBudget` above is read-then-act: it reads SETTLED spend, and the
+   * ledger is only written when a turn ENDS, so the window in which two turns
+   * can both be admitted is the whole duration of every in-flight generation.
+   * The hold closes it — `checkBudget` subtracts open reservations, so the next
+   * turn sees this one coming.
+   *
+   * Deliberately NOT a second gate. This turn was already admitted, and
+   * refusing it here would mean unwinding an accepted durable receipt; a
+   * refused hold simply means no headroom was taken and nothing to settle. The
+   * hold is settled by `recordSpend` below, which is the one place every
+   * streaming path passes through.
+   */
+  await reserveSpend({ userId: user.id, kind: "chat", ref: generationId, plan });
   const generationController = new AbortController();
   const unregisterGeneration = registerGeneration(generationId, {
     userId: user.id,
@@ -1882,6 +1922,7 @@ async function handleChat(req: Request) {
           model: modelId,
           kind: "chat",
           source: legacyClient,
+          ref: generationId,
           promptTokens: usage.totalInput || undefined,
           completionTokens: usage.output || undefined,
           reasoningTokens: acc.tokens.reasoningTokens || undefined,
@@ -1992,6 +2033,7 @@ async function handleChat(req: Request) {
                 model: modelId,
                 kind: "chat",
                 source: legacyClient,
+                ref: generationId,
                 promptTokens: partialUsage.totalInput || undefined,
                 completionTokens: partialUsage.output || undefined,
                 reasoningTokens: acc.tokens.reasoningTokens || undefined,
