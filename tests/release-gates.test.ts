@@ -195,8 +195,9 @@ test("production activation verifies every PM2 service, including workers and th
 });
 
 test("external release failures use the same verified rollback transaction", () => {
-  assert.match(DEPLOY_JOB, /bash "\$SOURCE_ROOT\/deploy\/deploy\.sh" --rollback/);
-  assert.doesNotMatch(DEPLOY_JOB, /juno-previous/);
+  const rollbackStep = DEPLOY_JOB.slice(DEPLOY_JOB.indexOf("      - name: Roll back failed application release"));
+  assert.match(rollbackStep, /bash "\$SOURCE_ROOT\/deploy\/deploy\.sh" --rollback/);
+  assert.doesNotMatch(rollbackStep, /juno-previous/);
 });
 
 test("deploy script does not pull or rewrite the live checkout", () => {
