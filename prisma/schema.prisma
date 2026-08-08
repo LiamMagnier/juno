@@ -2652,6 +2652,10 @@ model ResearchRun {
   assistantMessageId String?
   /// Monotonic report revision written by the pre-final citation audit.
   reportRevision     Int       @default(0)
+  /// Restart-safe worker fencing. An expired lease is claimable by another worker.
+  workerLeaseOwner   String?
+  workerLeaseUntil   DateTime?
+  lastHeartbeatAt    DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   startedAt          DateTime?
@@ -2667,6 +2671,7 @@ model ResearchRun {
   @@index([userId, state, createdAt])
   @@index([conversationId, createdAt])
   @@index([assistantMessageId])
+  @@index([state, workerLeaseUntil])
 }
 
 model ResearchSource {
@@ -2690,6 +2695,8 @@ model ResearchSource {
   directness    Float?
   independence  Float?
   composite     Float?
+  /// official | primary | reputable_secondary | general | user_generated | unknown
+  sourceType    String?
   /// Set when this source is a syndicated copy of another, so two copies of one
   /// wire story never read as independent corroboration.
   duplicateOfId String?

@@ -366,6 +366,7 @@ export const RESEARCH_EVENT_KINDS = [
   "citation_audit_completed",
   "report_repaired",
   "report_revision",
+  "worker_lease_acquired",
   /** A constraint or a source the user added while the run was going. */
   "steering_applied",
   "spend_recorded",
@@ -458,6 +459,8 @@ export const MAX_COVERAGE_ENTRIES = 32;
 export const MAX_CONFLICTS = 24;
 /** One bounded follow-up round keeps the first evidence loop predictable. */
 export const MAX_FOLLOW_UP_ROUNDS = 1;
+/** A crashed driver leaves a run claimable again after this interval. */
+export const RESEARCH_WORKER_LEASE_MS = 2 * 60 * 1000;
 
 function cleanStringArray(value: unknown, max: number, chars: number): string[] {
   if (!Array.isArray(value)) return [];

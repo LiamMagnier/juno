@@ -1203,6 +1203,15 @@ export interface SourceScore {
   composite: number;
 }
 
+/** Coarse policy classes used by an evidence requirement. */
+export type ResearchSourceType =
+  | "official"
+  | "primary"
+  | "reputable_secondary"
+  | "general"
+  | "user_generated"
+  | "unknown";
+
 /*
  * Authority is a host heuristic, not a verdict on truth. It is recorded (the
  * schema keeps it on the row) precisely so a reader can see WHY a source was
@@ -1236,6 +1245,50 @@ export function authorityOf(url: string): number {
   // to hyphenate and stack keywords into the host; that is a weak signal and it
   // is treated as one.
   return /-.*-/.test(host.split(".")[0] ?? "") ? 0.3 : 0.45;
+}
+
+const OFFICIAL_HOST =
+  /(?:^|\.)(?:gov|gov\.[a-z]{2,3}|mil|int|edu|ac\.[a-z]{2}|europa\.eu|who\.int|un\.org|oecd\.org|imf\.org|worldbank\.org|iea\.org)$/i;
+const USER_GENERATED_HOST =
+  /(?:^|\.)(?:reddit|quora|facebook|x|twitter|tiktok|pinterest|medium|substack|blogspot|wordpress|tumblr)\.(?:com|org)$/i;
+
+/**
+ * Classifies a source for a requirement without pretending that a hostname is
+ * a truth verdict. The class is persisted beside the snapshot so an old run
+ * remains explainable when this heuristic changes.
+ */
+export function sourceTypeOf(input: {
+  url: string;
+  text: string;
+  authority?: number | null;
+}): ResearchSourceType {
+  const host = hostOfUrl(input.url);
+  if (!host) return "unknown";
+  if (OFFICIAL_HOST.test(host)) return "official";
+  if (USER_GENERATED_HOST.test(host)) return "user_generated";
+  if (
+    PRIMARY_MARKERS.test(input.text) ||
+    /\/(?:filings?|datasets?|data|transcripts?|press[-_ ]?releases?|statements?|methodology)\b/i.test(input.url)
+  ) {
+    return "primary";
+  }
+  const authority = input.authority ?? authorityOf(input.url);
+  if (authority >= 0.72) return "reputable_secondary";
+  return "general";
+}
+
+/** Whether a classified source satisfies a persisted source-type contract. */
+export function sourceTypeMatchesRequirement(
+  sourceType: ResearchSourceType,
+  preferredSourceTypes: readonly string[],
+  requiresPrimarySource: boolean
+): boolean {
+  if (requiresPrimarySource && sourceType !== "official" && sourceType !== "primary") return false;
+  if (preferredSourceTypes.length === 0) return true;
+  return preferredSourceTypes.some((preferred) => {
+    const normalized = preferred.trim().toLowerCase().replace(/[ -]+/g, "_");
+    return normalized === sourceType || (normalized === "primary" && sourceType === "official");
+  });
 }
 
 /** Six months of half-life: news decays fast, a standards document barely at all. */

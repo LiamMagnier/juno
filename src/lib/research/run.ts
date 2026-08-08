@@ -11,6 +11,8 @@ import {
 } from "@/lib/research/engine";
 import {
   MAX_PLAN_QUERIES,
+  RESEARCH_WORKER_LEASE_MS,
+  RESEARCH_WORKING_STATES,
   isResearchEventKind,
   isResearchState,
   isTerminalResearchState,
@@ -63,6 +65,9 @@ interface PrismaResearchRun {
   startedAt: Date | null;
   finishedAt: Date | null;
   reportRevision?: number;
+  workerLeaseOwner?: string | null;
+  workerLeaseUntil?: Date | null;
+  lastHeartbeatAt?: Date | null;
 }
 
 function toRunRow(row: PrismaResearchRun): ResearchRunRow {
@@ -83,11 +88,16 @@ function toRunRow(row: PrismaResearchRun): ResearchRunRow {
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
     reportRevision: row.reportRevision,
+    workerLeaseOwner: row.workerLeaseOwner,
+    workerLeaseUntil: row.workerLeaseUntil,
+    lastHeartbeatAt: row.lastHeartbeatAt,
   };
 }
 
 const TERMINAL_PATCH = (to: ResearchState) =>
-  isTerminalResearchState(to) ? { finishedAt: new Date() } : {};
+  isTerminalResearchState(to)
+    ? { finishedAt: new Date(), workerLeaseOwner: null, workerLeaseUntil: null }
+    : {};
 
 export function createPrismaResearchStore(): ResearchStore {
   return {
@@ -107,6 +117,32 @@ export function createPrismaResearchStore(): ResearchStore {
     },
 
     async loadRun(runId, userId) {
+      const row = await prisma.researchRun.findFirst({ where: { id: runId, userId } });
+      return row ? toRunRow(row) : null;
+    },
+
+    async claimRun({ runId, userId, workerId, leaseMs }) {
+      const now = new Date();
+      const boundedLeaseMs = Math.max(30_000, Math.min(10 * 60_000, leaseMs ?? RESEARCH_WORKER_LEASE_MS));
+      const leaseUntil = new Date(now.getTime() + boundedLeaseMs);
+      const claimed = await prisma.researchRun.updateMany({
+        where: {
+          id: runId,
+          userId,
+          state: { in: ["accepted", ...RESEARCH_WORKING_STATES] },
+          OR: [
+            { workerLeaseUntil: null },
+            { workerLeaseUntil: { lte: now } },
+            { workerLeaseOwner: workerId },
+          ],
+        },
+        data: {
+          workerLeaseOwner: workerId,
+          workerLeaseUntil: leaseUntil,
+          lastHeartbeatAt: now,
+        },
+      });
+      if (claimed.count === 0) return null;
       const row = await prisma.researchRun.findFirst({ where: { id: runId, userId } });
       return row ? toRunRow(row) : null;
     },
@@ -257,6 +293,7 @@ export function createPrismaResearchStore(): ResearchStore {
       directness,
       independence,
       composite,
+      sourceType,
     }) {
       // No unique index on (runId, url) to upsert against, so this is a read
       // then a write. The race it leaves is two rows for one URL, which costs a
@@ -279,6 +316,7 @@ export function createPrismaResearchStore(): ResearchStore {
             ...(directness !== undefined ? { directness } : {}),
             ...(independence !== undefined ? { independence } : {}),
             ...(composite !== undefined ? { composite } : {}),
+            ...(sourceType !== undefined ? { sourceType } : {}),
           },
         });
         return { id: existing.id, created: false };
@@ -297,6 +335,7 @@ export function createPrismaResearchStore(): ResearchStore {
           directness: directness ?? null,
           independence: independence ?? null,
           composite: composite ?? null,
+          sourceType: sourceType ?? null,
         },
         select: { id: true },
       });
@@ -337,6 +376,7 @@ export function createPrismaResearchStore(): ResearchStore {
           directness: true,
           independence: true,
           composite: true,
+          sourceType: true,
           fetchedAt: true,
         },
       });
@@ -631,10 +671,15 @@ export function driveResearchInBackground(input: {
   runId: string;
   userId: string;
   engine?: ResearchEngine;
+  workerId?: string;
 }): void {
   const driver = input.engine ?? researchEngine();
   void driver
-    .drive({ runId: input.runId, userId: input.userId })
+    .drive({
+      runId: input.runId,
+      userId: input.userId,
+      workerId: input.workerId ?? `research-web:${input.runId}:${Date.now()}`,
+    })
     .catch((e: unknown) => {
       console.error("[research] background drive failed", { runId: input.runId, error: e });
     });

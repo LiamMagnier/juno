@@ -149,6 +149,25 @@ module.exports = {
       merge_logs: true,
     },
     {
+      // Restart-safe research executor: adopts accepted and working research
+      // rows whose lease is absent or expired (scripts/research-worker.ts).
+      // The API still nudges fresh runs for low latency; this process is the
+      // durable backstop after deploys, crashes and machine restarts.
+      name: "juno-research",
+      script: "npm",
+      args: "run research:worker",
+      watch: false,
+      max_memory_restart: "600M",
+      env: {
+        NODE_ENV: "production",
+        NODE_OPTIONS: "--conditions=react-server",
+      },
+      error_file: "logs/research-err.log",
+      out_file: "logs/research-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+    },
+    {
       // Event triggers: polls the sources a WorkTrigger watches and turns a
       // match into a queued WorkRun (scripts/work-trigger-poller.ts).
       //

@@ -4,6 +4,7 @@ import {
   MAX_PLAN_CONSTRAINTS,
   MAX_PLAN_QUERIES,
   MAX_PINNED_SOURCES,
+  RESEARCH_WORKER_LEASE_MS,
   buildResearchObjectives,
   RESEARCH_LIVE_STATES,
   budgetAllows,
@@ -26,7 +27,15 @@ import {
   type ResearchState,
   type ResearchTerminalState,
 } from "@/lib/research/domain";
-import { hostOfUrl, scoreSource, tokenCoverage } from "@/lib/research/claim-analysis";
+import {
+  hostOfUrl,
+  contentTokens,
+  scoreSource,
+  sourceTypeMatchesRequirement,
+  sourceTypeOf,
+  tokenCoverage,
+  type ResearchSourceType,
+} from "@/lib/research/claim-analysis";
 
 /**
  * The durable research job.
@@ -81,6 +90,10 @@ export interface ResearchRunRow {
   finishedAt: Date | null;
   /** Additive field; old test stores and old rows may not expose it. */
   reportRevision?: number;
+  /** Additive lease fields; old test stores and old rows may not expose them. */
+  workerLeaseOwner?: string | null;
+  workerLeaseUntil?: Date | null;
+  lastHeartbeatAt?: Date | null;
 }
 export interface ResearchSourceRow {
   id: string;
@@ -94,6 +107,7 @@ export interface ResearchSourceRow {
   directness?: number | null;
   independence?: number | null;
   composite?: number | null;
+  sourceType?: ResearchSourceType | string | null;
   fetchedAt: Date;
 }
 
@@ -132,6 +146,13 @@ export interface ResearchStore {
     plan: ResearchPlan;
   }): Promise<ResearchRunRow>;
   loadRun(runId: string, userId: string): Promise<ResearchRunRow | null>;
+  /** Atomically acquires or renews a restart-safe worker lease. */
+  claimRun?(input: {
+    runId: string;
+    userId: string;
+    workerId: string;
+    leaseMs?: number;
+  }): Promise<ResearchRunRow | null>;
   /**
    * Conditional state write: moves the run only if it is still in one of
    * `from`. Returns the new row, or null when somebody else moved it first.
@@ -178,6 +199,7 @@ export interface ResearchStore {
     directness?: number | null;
     independence?: number | null;
     composite?: number | null;
+    sourceType?: ResearchSourceType | string | null;
   }): Promise<{ id: string; created: boolean }>;
   savePassages(input: {
     userId: string;
@@ -304,6 +326,59 @@ interface CoverageComputation {
   coverage: ResearchCoverageEntry[];
   conflicts: ResearchConflict[];
   followUps: string[];
+  policyExcluded: number;
+}
+
+const SOURCE_TYPES = new Set<ResearchSourceType>([
+  "official",
+  "primary",
+  "reputable_secondary",
+  "general",
+  "user_generated",
+  "unknown",
+]);
+
+function classifiedSourceType(source: ResearchSourceRow): ResearchSourceType {
+  return source.sourceType && SOURCE_TYPES.has(source.sourceType as ResearchSourceType)
+    ? (source.sourceType as ResearchSourceType)
+    : sourceTypeOf({ url: source.url, text: source.snapshot ?? "", authority: source.authority });
+}
+
+function freshnessMatches(rule: string | undefined, publishedAt: Date | null): boolean {
+  const normalized = rule?.trim().toLowerCase() ?? "";
+  if (!normalized) return true;
+  if (!publishedAt) return false;
+  const year = normalized.match(/\b(19|20)\d{2}\b/);
+  if (year && /\b(?:after|since|from|in|>=|latest)\b/.test(normalized)) {
+    const minimumYear = Number(year[0]);
+    return publishedAt.getUTCFullYear() >= minimumYear;
+  }
+  const relative = normalized.match(/\b(?:within|last|past)\s+(\d+)\s*(day|days|week|weeks|month|months|year|years)\b/);
+  if (relative) {
+    const amount = Number(relative[1]);
+    const unit = relative[2].replace(/s$/, "");
+    const days = unit === "day" ? amount : unit === "week" ? amount * 7 : unit === "month" ? amount * 31 : amount * 365;
+    return Date.now() - publishedAt.getTime() <= days * 86_400_000;
+  }
+  if (/\b(?:recent|current|latest)\b/.test(normalized)) {
+    return Date.now() - publishedAt.getTime() <= 365 * 86_400_000;
+  }
+  // A provider may emit a human rule we do not understand yet. Do not silently
+  // discard the source; the persisted rule remains visible for a later policy
+  // version and the known constraints above still fail closed.
+  return true;
+}
+
+function jurisdictionMatches(jurisdiction: string | undefined, source: ResearchSourceRow): boolean {
+  const wanted = jurisdiction?.trim().toLowerCase() ?? "";
+  if (!wanted) return true;
+  const host = hostOfUrl(source.url);
+  if (/\b(?:uk|united kingdom|britain)\b/.test(wanted) && host.endsWith(".gov.uk")) return true;
+  if (/\b(?:us|usa|united states)\b/.test(wanted) && /(?:^|\.)gov(?:\.|$)/.test(host)) return true;
+  if (/\b(?:eu|european union)\b/.test(wanted) && host.endsWith("europa.eu")) return true;
+  const sourceTokens = contentTokens(`${source.url} ${source.title} ${source.snapshot ?? ""}`);
+  const jurisdictionTokens = contentTokens(wanted);
+  return jurisdictionTokens.size === 0 || [...jurisdictionTokens].every((token) => sourceTokens.has(token));
 }
 
 /**
@@ -317,6 +392,7 @@ function computeCoverage(plan: ResearchPlan, sources: ResearchSourceRow[]): Cove
     ? plan.objectives
     : buildResearchObjectives("", plan.queries);
   const coverage: ResearchCoverageEntry[] = [];
+  let policyExcluded = 0;
   const updatedObjectives = objectives.map((objective) => {
     const requirements = objective.evidenceRequirements.length
       ? objective.evidenceRequirements
@@ -324,11 +400,33 @@ function computeCoverage(plan: ResearchPlan, sources: ResearchSourceRow[]): Cove
     const nextRequirements = requirements.map((requirement) => {
       const scored = sources
         .filter((source) => !!source.snapshot)
-        .map((source) => ({ source, strength: tokenCoverage(objective.question, source.snapshot ?? "") }))
+        .map((source) => {
+          const sourceType = classifiedSourceType(source);
+          const typeAllowed = sourceTypeMatchesRequirement(
+            sourceType,
+            requirement.preferredSourceTypes,
+            requirement.requiresPrimarySource
+          );
+          const freshEnough = freshnessMatches(requirement.freshnessRule, source.publishedAt);
+          const jurisdictionAllowed = jurisdictionMatches(requirement.jurisdiction, source);
+          const eligible = typeAllowed && freshEnough && jurisdictionAllowed;
+          if (!eligible) policyExcluded += 1;
+          return {
+            source,
+            strength: tokenCoverage(objective.question, source.snapshot ?? ""),
+            eligible,
+          };
+        })
+        .filter((entry) => entry.eligible)
         .sort((a, b) => b.strength - a.strength);
       const supporting = scored.filter((entry) => entry.strength >= 0.42);
       const weak = scored.filter((entry) => entry.strength >= 0.22);
-      const independentHosts = new Set(supporting.map((entry) => hostOfUrl(entry.source.url)).filter(Boolean));
+      const independentHosts = new Set(
+        supporting
+          .filter((entry) => entry.source.independence !== 0)
+          .map((entry) => hostOfUrl(entry.source.url))
+          .filter(Boolean)
+      );
       const best = scored[0]?.strength ?? 0;
       let status: ResearchCoverageEntry["status"] = "missing";
       let missingReason = "No read source directly addresses this requirement.";
@@ -338,6 +436,8 @@ function computeCoverage(plan: ResearchPlan, sources: ResearchSourceRow[]): Cove
       } else if (weak.length > 0) {
         status = "weak";
         missingReason = "The sources are related, but the evidence is not direct or independent enough yet.";
+      } else if (sources.some((source) => !!source.snapshot)) {
+        missingReason = "Read sources were excluded by the requirement's source type, freshness, or jurisdiction policy.";
       }
       const entry: ResearchCoverageEntry = {
         objectiveId: objective.id,
@@ -420,6 +520,7 @@ function computeCoverage(plan: ResearchPlan, sources: ResearchSourceRow[]): Cove
     coverage,
     conflicts: conflicts.slice(0, 24),
     followUps,
+    policyExcluded,
   };
 }
 
@@ -461,6 +562,8 @@ export interface ResearchEngine {
     runId: string;
     userId: string;
     signal?: AbortSignal;
+    /** Stable process identity used to fence concurrent/restarted workers. */
+    workerId?: string;
     /** Stop cleanly once the run enters this state, leaving it live. */
     until?: ResearchState;
   }): Promise<ResearchRunRow | null>;
@@ -719,6 +822,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           text: body ?? hit.snippet,
           publishedAt: hit.publishedAt,
         });
+        const sourceType = sourceTypeOf({ url: hit.url, text: body ?? hit.snippet, authority: score.authority });
         const stored = await store.upsertSource({
           runId: run.id,
           userId: run.userId,
@@ -727,6 +831,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           publishedAt: hit.publishedAt,
           ...(body ? { snapshot: body, contentHash: deps.hash(body) } : {}),
           ...score,
+          sourceType,
         });
         if (stored.created) {
           await append(run.id, run.userId, [
@@ -778,6 +883,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       }
       await bill(current, page.costMicroUsd, "fetch");
       const text = page.text.slice(0, SNAPSHOT_CHARS);
+      const score = scoreSource({ url, text });
       const stored = await store.upsertSource({
         runId: run.id,
         userId: run.userId,
@@ -788,6 +894,11 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         // Pinned by the user, so it outranks anything the search backend
         // surfaced; the number is recorded so a reader can see why.
         authority: 1,
+        freshness: score.freshness,
+        directness: score.directness,
+        independence: score.independence,
+        composite: score.composite,
+        sourceType: sourceTypeOf({ url, text, authority: 1 }),
       });
       await append(run.id, run.userId, [
         { kind: "source_read", payload: { url, title: page.title, pinned: true } },
@@ -821,6 +932,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         });
         return {
           source,
+          sourceType: classifiedSourceType(source),
           score: {
             authority: source.authority ?? score.authority,
             freshness: source.freshness ?? score.freshness,
@@ -840,9 +952,10 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       {
         kind: "source_ranked",
         payload: {
-          order: sources.slice(0, MAX_READ_SOURCES).map(({ source, score }) => ({
+          order: sources.slice(0, MAX_READ_SOURCES).map(({ source, sourceType, score }) => ({
             sourceId: source.id,
             host: hostOfUrl(source.url),
+            sourceType,
             ...score,
           })),
         },
@@ -879,6 +992,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           contentHash: deps.hash(text),
           snapshot: text,
           ...score,
+          sourceType: sourceTypeOf({ url: source.url, text, authority: score.authority }),
         });
         fetched += 1;
         await append(run.id, run.userId, [
@@ -969,6 +1083,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
           })),
           coverage: computed.coverage,
           conflicts: computed.conflicts,
+          policyExcluded: computed.policyExcluded,
         },
       },
     ]);
@@ -1196,10 +1311,33 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       return created;
     },
 
-    async drive({ runId, userId, signal, until }) {
+    async drive({ runId, userId, signal, until, workerId }) {
       let run = await store.loadRun(runId, userId);
       if (!run) return null;
+      let leaseAnnounced = false;
       for (let i = 0; i < MAX_STEPS; i += 1) {
+        if (store.claimRun && workerId) {
+          const claimed = await store.claimRun({
+            runId,
+            userId,
+            workerId,
+            leaseMs: RESEARCH_WORKER_LEASE_MS,
+          });
+          if (!claimed) return (await store.loadRun(runId, userId)) ?? run;
+          run = claimed;
+          if (!leaseAnnounced) {
+            await append(run.id, run.userId, [
+              {
+                kind: "worker_lease_acquired",
+                payload: {
+                  workerId,
+                  leaseUntil: run.workerLeaseUntil?.toISOString() ?? null,
+                },
+              },
+            ]);
+            leaseAnnounced = true;
+          }
+        }
         if (signal?.aborted) return run;
         if (until && run.state === until) return run;
         const outcome = await step(run, signal);

@@ -13,6 +13,7 @@ import {
   repairReportFromClaims,
   scoreSource,
   selectPassagesForClaim,
+  sourceTypeOf,
   splitPassages,
   supportLabel,
   validateClaimAgainstPassage,
@@ -564,6 +565,7 @@ async function storeCorpus(opts: {
         ? new Date(Date.UTC(eventDate.year, (eventDate.month ?? 1) - 1, eventDate.day ?? 1))
         : null,
     });
+    const sourceType = sourceTypeOf({ url: source.url, text: body, authority: authority.authority });
     const existingSource = await prisma.researchSource.findFirst({
       where: {
         userId: opts.userId,
@@ -584,6 +586,7 @@ async function storeCorpus(opts: {
             directness: authority.directness,
             independence: authority.independence,
             composite: authority.composite,
+            sourceType,
           },
           select: { id: true },
         })
@@ -602,6 +605,7 @@ async function storeCorpus(opts: {
             directness: authority.directness,
             independence: authority.independence,
             composite: authority.composite,
+            sourceType,
           },
           select: { id: true },
         });
@@ -680,6 +684,7 @@ export interface ClaimAuditSourceView {
   freshness: number;
   directness: number;
   independence: number;
+  sourceType: string | null;
   /** Set when this source is a syndicated copy of another in the same run. */
   duplicateOfIndex: number | null;
 }
@@ -747,6 +752,7 @@ export async function loadCitationAuditForMessage(
           freshness: true,
           directness: true,
           independence: true,
+          sourceType: true,
           composite: true,
           snapshot: true,
           duplicateOfId: true,
@@ -807,6 +813,7 @@ export async function loadCitationAuditForMessage(
         freshness: s.freshness ?? score.freshness,
         directness: s.directness ?? score.directness,
         independence: s.independence ?? score.independence,
+        sourceType: s.sourceType ?? sourceTypeOf({ url: s.url, text: body, authority: s.authority ?? score.authority }),
         duplicateOfIndex: s.duplicateOfId ? indexOf.get(s.duplicateOfId) ?? null : null,
       };
     })

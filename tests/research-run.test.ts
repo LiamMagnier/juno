@@ -86,6 +86,23 @@ function memoryStore() {
       return row ? { ...row } : null;
     },
 
+    async claimRun({ runId, userId, workerId, leaseMs = 120_000 }) {
+      const row = own(runId, userId);
+      const now = new Date();
+      if (
+        !row ||
+        !["accepted", ...RESEARCH_WORKING_STATES].includes(row.state as never) ||
+        (row.workerLeaseUntil && row.workerLeaseUntil > now && row.workerLeaseOwner !== workerId)
+      ) {
+        return null;
+      }
+      row.workerLeaseOwner = workerId;
+      row.workerLeaseUntil = new Date(now.getTime() + leaseMs);
+      row.lastHeartbeatAt = now;
+      row.updatedAt = now;
+      return { ...row };
+    },
+
     async moveState({ runId, userId, from, to, patch }) {
       const row = own(runId, userId);
       if (!row || !from.includes(row.state as ResearchState)) return null;
@@ -415,6 +432,23 @@ test("a resumed run does not replay the events it already emitted", async () => 
     resumedQueries.every((query) => !previouslyIssued.has(query)),
     "a resumed run may follow a new evidence gap, but it must not re-issue a query it already paid for"
   );
+});
+
+test("a worker lease fences a concurrent driver and can be reclaimed after expiry", async () => {
+  const { store, events, runs } = memoryStore();
+  const engine = createResearchEngine(deps(store));
+  const run = await started(engine);
+
+  await engine.drive({ runId: run.id, userId: run.userId, workerId: "worker-a", until: "reading_documents" });
+  assert.ok(events.some((event) => event.runId === run.id && event.kind === "worker_lease_acquired"));
+
+  const competing = await store.claimRun!({ runId: run.id, userId: run.userId, workerId: "worker-b" });
+  assert.equal(competing, null, "an unexpired lease must fence another worker");
+
+  const persisted = runs.get(run.id)!;
+  persisted.workerLeaseUntil = new Date(Date.now() - 1);
+  const reclaimed = await store.claimRun!({ runId: run.id, userId: run.userId, workerId: "worker-b" });
+  assert.equal(reclaimed?.workerLeaseOwner, "worker-b");
 });
 
 // ---------------------------------------------------------------------------
