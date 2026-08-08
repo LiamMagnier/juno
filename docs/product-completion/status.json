@@ -1,22 +1,22 @@
 {
   "$comment": "Machine-readable execution ledger for the Juno completion program. States: missing | in_progress | blocked | implemented | verified. 'verified' requires a named test. Prose and evidence live in JUNO_PRODUCT_COMPLETION.md.",
   "schemaVersion": 1,
-  "auditCommit": "8a0cf344",
+  "auditCommit": "3ab4129f",
   "auditDate": "2026-08-08",
   "branch": "feat/juno-work",
   "verification": {
-    "fullTest": "passed: 1894 passed, 2 skipped, 0 failed",
+    "fullTest": "passed: 1896 passed, 2 skipped, 0 failed",
     "lint": "passed: eslint . --no-cache",
     "typecheck": "passed: npx tsc --noEmit --pretty false",
     "schema": "passed: npx prisma validate and prisma generate",
     "contractChecks": "passed: native, capabilities, work, code preview/remote/runtime, sandbox, design",
-    "focusedResearchTests": "passed: 49 passed, 0 failed",
+    "focusedResearchTests": "passed: 50 passed, 0 failed",
     "lastVerifiedAt": "2026-08-08T15:30:00+02:00"
   },
   "nextSlice": {
-    "id": "research-worker-and-source-policy",
+    "id": "research-validator-benchmark",
     "state": "in_progress",
-    "reason": "The evidence loop is durable at the row level, but production still needs a restart-safe worker lease and explicit source-policy enforcement before the P0 research slice can be verified end to end."
+    "reason": "The evidence loop now has a restart-safe worker lease/backstop and persisted source-policy enforcement; the remaining P0 evidence gate is a named 100-claim validator benchmark."
   },
   "slices": [
     {
@@ -124,7 +124,7 @@
       "state": "partial",
       "dependsOn": ["knowledge-ingestion"],
       "acceptance": [
-        { "id": "durable", "state": "partial", "text": "Persisted state machine, cursor and audit rows survive request loss; a restart-safe production worker lease/queue is still required to guarantee pickup after process death." },
+        { "id": "durable", "state": "implemented", "text": "Persisted state machine, cursor, audit rows and a fenced worker lease/backstop survive request loss; production topology is covered by tests/research-worker.test.ts and the PM2 juno-research process." },
         { "id": "steering", "state": "verified", "text": "Editable plan, confirmation gate, pause/resume/cancel and steering are covered by tests/research-run.test.ts." },
         { "id": "claim-graph", "state": "implemented", "text": "ResearchClaim/Passage/ClaimLink rows persist supporting and contradicting passage ids, strength and status; database-backed inspector coverage remains." },
         { "id": "validator", "state": "implemented", "text": "Post-synthesis audit validates and labels unsupported/partial/contradicted/unverified claims, preserves draft/final revisions, and has a deterministic fixture; the 100-claim benchmark target is not yet run." },

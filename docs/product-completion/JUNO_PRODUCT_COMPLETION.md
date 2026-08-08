@@ -1,6 +1,6 @@
 # Juno Product Completion — execution ledger
 
-**Audit commit:** `8a0cf344` (`feat/juno-work`)
+**Audit commit:** `3ab4129f` (`feat/juno-work`)
 **Audit date:** 2026-08-08
 **Method:** 12 parallel evidence-based subsystem readers over the source, then an
 adversarial re-check of every claim of "implemented" in the P0 areas. Findings
@@ -14,11 +14,11 @@ truth.
 
 ## Current reconciliation — 2026-08-08
 
-The branch now has passing repository-wide automated checks: **1,894 tests
+The branch now has passing repository-wide automated checks: **1,896 tests
 passed, 2 database-dependent tests skipped without a test database, 0 failed**;
 full ESLint, TypeScript, Prisma validation/generation, native/capability/Work
 contract checks, code wiring checks, sandbox checks, and design-contract checks
-also pass. The focused research evidence suite is 49/49.
+also pass. The focused research evidence suite is 50/50.
 
 Since the 2026-08-07 audit, the following slices are real and wired into
 production entry points:
@@ -41,8 +41,7 @@ production entry points:
   the delivered draft and repaired report revisions.
 
 The product is not yet “production complete.” The highest remaining blockers
-are explicit in `status.json`: a restart-safe research worker lease/queue,
-source-policy enforcement and a 100-claim validator benchmark; OCR and a
+are explicit in `status.json`: the 100-claim validator benchmark; OCR and a
 document inspector; skill/plugin scanning and network egress allowlists; native
 chat approval parity; runtime model capability probes; and an end-to-end/
 restore-drill layer. These are not marked verified merely because adjacent code
