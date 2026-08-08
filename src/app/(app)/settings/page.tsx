@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { ArrowLeft, NotebookPen, Check, Download, Loader2, Monitor, Moon, Play, Square, Sun, Trash2, Plus, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardEyebrow } from "@/components/ui/card";
@@ -37,6 +38,7 @@ import { PERSONALITIES, DEFAULT_PERSONALITY, isPersonalityId } from "@/lib/perso
 import { VOICES, DEFAULT_VOICE } from "@/lib/voices";
 import { AUTO_LOCALE, UI_LOCALES, localeNativeName } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { describeCapSource, type BudgetCapSource } from "@/lib/spend-ceiling";
 import type { ClientSettings } from "@/types/app";
 
 const LANGUAGES = ["auto", "English", "Spanish", "French", "German", "Portuguese", "Italian", "Japanese", "Korean", "Chinese", "Hindi", "Arabic"];
@@ -177,6 +179,116 @@ function UsageMeter({ label, subtitle, pct }: { label: string; subtitle: string;
         </span>
       </div>
     </div>
+  );
+}
+
+/**
+ * The spend ceiling, said out loud.
+ *
+ * Juno enforces a euro ceiling on every account — including the personal one,
+ * which used to be the single account with no ceiling at all — and the usage
+ * tile showed percentages and a remaining balance without ever naming the
+ * number or who chose it. A limit the user cannot see is a limit they meet by
+ * surprise.
+ *
+ * Lowering is the operation offered, because raising is the one that cannot do
+ * anything: the effective ceiling is the MINIMUM of the plan's figure and this
+ * one, so a bigger number here buys nothing a plan has not already paid for.
+ * The exception is the account whose plan states no figure, where this IS the
+ * ceiling — which is exactly the account that most needs the control.
+ */
+function SpendCeiling({
+  ceilingEur,
+  storedCapEur,
+  capSource,
+  capDisabled,
+  onSave,
+}: {
+  ceilingEur: number | null;
+  storedCapEur: number | null;
+  capSource: BudgetCapSource;
+  capDisabled: boolean;
+  onSave: (eur: number | null) => Promise<boolean>;
+}) {
+  const [draft, setDraft] = React.useState(storedCapEur == null ? "" : String(storedCapEur));
+  const [saving, setSaving] = React.useState(false);
+  React.useEffect(() => {
+    setDraft(storedCapEur == null ? "" : String(storedCapEur));
+  }, [storedCapEur]);
+
+  const parsed = draft.trim() === "" ? null : Number(draft);
+  const valid = parsed == null || (Number.isInteger(parsed) && parsed >= 0 && parsed <= 100_000);
+  const dirty = (parsed ?? null) !== (storedCapEur ?? null);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!valid || !dirty || saving) return;
+    setSaving(true);
+    const ok = await onSave(parsed);
+    setSaving(false);
+    if (ok) toast.success("Spend ceiling updated.");
+  };
+
+  if (capDisabled) {
+    // Loud on purpose. This is the one bypass that exists, and an account
+    // running without a ceiling must never look like an account on a generous
+    // plan — the two states are opposites and used to render identically.
+    return (
+      <div
+        role="status"
+        className="rounded-[12px] border border-warning/40 bg-warning/10 p-4"
+      >
+        <p className="text-sm font-medium text-warning">Spend ceiling is switched off</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          Nothing is capping what this account can spend on models. This is a development
+          escape hatch — turn it back on before using the account normally.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="rounded-[12px] border border-border/50 p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-sm font-medium text-foreground">Monthly spend ceiling</span>
+        <span className="font-mono text-caption tabular-nums text-muted-foreground">
+          {ceilingEur == null ? "—" : formatEur(ceilingEur)}
+        </span>
+      </div>
+      <p aria-live="polite" className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        {describeCapSource(capSource)}. Juno stops generating once a billing period reaches
+        this figure.
+      </p>
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <div className="min-w-[8rem] flex-1">
+          <Label htmlFor="spend-cap" className="mb-1.5 block text-xs text-muted-foreground">
+            Your own ceiling, in euros
+          </Label>
+          <Input
+            id="spend-cap"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={100000}
+            step={1}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Use the default"
+            aria-invalid={!valid}
+            aria-describedby="spend-cap-help"
+            className="h-11"
+          />
+        </div>
+        <Button type="submit" disabled={!valid || !dirty || saving} className="h-11 px-4">
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+        </Button>
+      </div>
+      <p id="spend-cap-help" className="mt-2 text-caption text-muted-foreground">
+        {valid
+          ? "Leave it empty to fall back to the default. A ceiling above your plan's changes nothing — the lower of the two always wins."
+          : "Enter a whole number of euros between 0 and 100000."}
+      </p>
+    </form>
   );
 }
 
@@ -370,7 +482,31 @@ export default function SettingsPage() {
   const spentEur = (spend.spentMicroUsd / 1_000_000) * eurPerUsd;
   const budgetEur =
     spend.budgetMicroUsd == null ? null : (spend.budgetMicroUsd / 1_000_000) * eurPerUsd;
-  const remainingEur = budgetEur == null ? null : Math.max(0, budgetEur - spentEur);
+  // Money already held by turns that are still streaming. Netting it off the
+  // headroom is what stops the tile promising a balance the next turn will
+  // discover is gone.
+  const heldEur = (spend.reservedMicroUsd / 1_000_000) * eurPerUsd;
+  const remainingEur = budgetEur == null ? null : Math.max(0, budgetEur - spentEur - heldEur);
+
+  const saveSpendCap = React.useCallback(
+    async (monthlySpendCapEur: number | null) => {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monthlySpendCapEur }),
+      });
+      if (!res.ok) {
+        toast.error("Could not save the spend ceiling.");
+        return false;
+      }
+      // The ceiling is server-rendered into the bootstrap alongside the meters,
+      // so a refresh is what makes the number and the gauges agree again;
+      // patching local state would show a ceiling the server has not confirmed.
+      router.refresh();
+      return true;
+    },
+    [router]
+  );
 
   const renewsAtMs = spend.billing.renewsAtMs;
   const cancelAtPeriodEnd = spend.billing.cancelAtPeriodEnd;
@@ -445,8 +581,12 @@ export default function SettingsPage() {
                         />
                       ))}
                     </div>
+                    {/* Reached ONLY when the ceiling has been switched off.
+                        It used to also mean "this plan states no budget", and
+                        conflating the two is how the personal account spent a
+                        year looking generous rather than unguarded. */}
                     <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                      No usage limits on this plan.
+                      Nothing is metering this account right now.
                     </p>
                   </div>
                 ) : quota.plan === "FREE" ? (
@@ -489,6 +629,15 @@ export default function SettingsPage() {
                     )}
                   </div>
                 )}
+                <div className="mt-4">
+                  <SpendCeiling
+                    ceilingEur={budgetEur}
+                    storedCapEur={spend.userCapEur}
+                    capSource={spend.capSource}
+                    capDisabled={spend.capDisabled}
+                    onSave={saveSpendCap}
+                  />
+                </div>
               </div>
             </div>
           </Tile>
