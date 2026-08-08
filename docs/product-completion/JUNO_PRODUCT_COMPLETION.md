@@ -1,6 +1,6 @@
 # Juno Product Completion — execution ledger
 
-**Audit commit:** `49744136` (`main`, production-hardening commit)
+**Audit commit:** `ee4cc386` (`main`, production-hardening commit)
 **Audit date:** 2026-08-08
 **Method:** 12 parallel evidence-based subsystem readers over the source, then an
 adversarial re-check of every claim of "implemented" in the P0 areas. Findings
@@ -87,7 +87,7 @@ current reconciliation and `status.json` are authoritative. The production workf
 `ce36248fa1e466bccf8f52fed2e589b32b2d8951`, and the public UI smoke passed all
 public routes plus the `/chat` auth boundary. The remote production database
 reports 75 applied migrations and an up-to-date schema; all nine PM2 services
-are online. The current source at `49744136` includes quota hardening, relay
+are online. The current source at `ee4cc386` includes quota hardening, relay
 boundary hardening, the one-voice-session ceiling, import integrity/recovery,
 parked Work parity and the desktop Work-search fix beyond that live artifact.
 The remote environment currently lacks `ALLOWED_ORIGINS` and both dedicated
