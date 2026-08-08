@@ -710,11 +710,20 @@ export async function reserveSpend(input: ReserveSpendInput): Promise<SpendReser
       select: { id: true, estimateMicroUsd: true },
     });
     if (existing) {
+      const held = await tx.spendPeriod.findFirst({
+        where: { id: periodId, userId: input.userId },
+        select: { committedMicroUsd: true, reservedMicroUsd: true },
+      });
+      const spent = held ? Number(held.committedMicroUsd) + Number(held.reservedMicroUsd) : 0;
       return {
         allowed: true,
         reservationId: existing.id,
         estimateMicroUsd: Number(existing.estimateMicroUsd),
-        remainingMicroUsd: eff.budgetMicroUsd,
+        // The room actually left, not the whole ceiling. A retry that was told
+        // it had the full budget would hand that figure to the mid-stream
+        // guard, and the guard would never fire.
+        remainingMicroUsd:
+          eff.budgetMicroUsd == null ? null : Math.max(0, eff.budgetMicroUsd - spent),
         budgetMicroUsd: eff.budgetMicroUsd,
         capSource: eff.source,
         capDisabled: eff.capDisabled,
