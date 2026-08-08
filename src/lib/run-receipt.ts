@@ -1,3 +1,4 @@
+import type { ClientToolDetail } from "@/types/chat";
 import type { RunModel } from "@/components/chat/thought-process-panel";
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -86,6 +87,125 @@ export function splitCost(value?: string | null): CostParts {
   return { money, billed: billed || null };
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * WHAT A TOOL ROW SAYS — one wording, two surfaces.
+ *
+ * The panel renders these and the receipt prints them, from these constants,
+ * for the same reason `formatSpan` lives in this file: a receipt that describes
+ * an absent payload differently from the panel is two answers to one question,
+ * and the receipt is the copy that outlives the session and gets quoted.
+ *
+ * THE MAPS ARE EXHAUSTIVE BY TYPE, DELIBERATELY. `Record<NonNullable<…>, string>`
+ * means the day the server grows a fifth note value this file stops COMPILING
+ * rather than rendering a blank where a sentence belongs — which is precisely
+ * how `"unfinished"` would have shipped as an empty paragraph.
+ *
+ * The four argument reasons are kept apart on purpose. "The provider did not
+ * send them", "the connector was called with nothing", "the text was not JSON"
+ * and "this run ran out of room" are four different facts about a call, and
+ * collapsing them into one polite sentence would make the panel vaguer than the
+ * data it is holding.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+export const TOOL_ARGS_NOTE: Record<NonNullable<ClientToolDetail["argsNote"]>, string> = {
+  unavailable: "The provider did not send the arguments for this call.",
+  empty: "The connector was called with no arguments.",
+  unparsable: "The provider sent argument text that is not valid JSON, so it could not be redacted and is not shown.",
+  over_budget: "This run reached its limit for recorded call detail before this call.",
+};
+
+export const TOOL_RESULT_NOTE: Record<NonNullable<ClientToolDetail["resultNote"]>, string> = {
+  pending: "Waiting for the connector to answer.",
+  unfinished: "The run ended before this call returned.",
+  empty: "The connector returned nothing.",
+  over_budget: "This run reached its limit for recorded call detail before this call returned.",
+};
+
+/**
+ * The section caption. It states the redaction AND its limit, so a reader does
+ * not assume a result has been sanitised of their own data — it has not.
+ *
+ * NAMED `…_DESCRIPTION`, not `…_CAPTION`, and every sentence below is named
+ * `…_NOTE` for the same reason: `scripts/generate-i18n-catalog.mjs` finds UI
+ * copy either as JSX text or as a variable whose NAME ends in one of a fixed
+ * set of suffixes. These sentences reach the screen through an identifier
+ * rather than as literal JSX children, so a name outside that set makes them
+ * the only permanent copy in this panel that is never offered for translation
+ * — silently, and only discoverable by diffing the generated catalog.
+ */
+export const TOOLS_DESCRIPTION =
+  "Exactly what Juno sent each connector and exactly what came back. Credentials are removed and long results are cut; nothing else is edited.";
+
+/** Shown when at least one row carries no payload at all. Two causes, and the
+ *  client genuinely cannot tell them apart — so it names both rather than
+ *  picking one and sounding certain. */
+export const TOOLS_NO_DETAIL_NOTE =
+  "Some of these calls carry no recorded detail — they ran before Juno kept it, or with it turned off.";
+
+/**
+ * The last-resort sentences, for a payload that is absent with no reason given.
+ *
+ * The server's contract is that exactly one of `args`/`argsNote` is present, so
+ * these are unreachable through it. They exist because a row can also arrive
+ * from a LATER build whose note value this build does not know: `readToolDetail`
+ * drops the unrecognised value and keeps the event, which would otherwise land
+ * on screen as an explanation-shaped hole. "Nothing was recorded" is the one
+ * sentence that stays true in that case.
+ */
+export const TOOL_ARGS_MISSING_NOTE = "No arguments were recorded for this call.";
+export const TOOL_RESULT_MISSING_NOTE = "No result was recorded for this call.";
+
+/** The sentence for an absent payload. There is never an empty box. */
+export function toolArgsNoteText(tool: ClientToolDetail): string {
+  return tool.argsNote ? TOOL_ARGS_NOTE[tool.argsNote] : TOOL_ARGS_MISSING_NOTE;
+}
+
+export function toolResultNoteText(tool: ClientToolDetail): string {
+  return tool.resultNote ? TOOL_RESULT_NOTE[tool.resultNote] : TOOL_RESULT_MISSING_NOTE;
+}
+
+/** The code block's header. `truncated` with no length because nothing measures
+ *  the pre-cut length of the arguments — `ClientToolDetail` carries a
+ *  `resultChars` and no `argsChars`, and inventing one from the head would be a
+ *  number about a string nobody kept. */
+export function toolArgsLabel(tool: ClientToolDetail): string {
+  return tool.argsTruncated ? "arguments · json · truncated" : "arguments · json";
+}
+
+/**
+ * The result block's header, and the panel's one quantified claim about a cut.
+ *
+ * `resultChars` is measured by the server on the SAME text the head was taken
+ * from (after any pretty-printing), so "first 4000 of 26318 chars" is a true
+ * statement about one string rather than a ratio between two. When the server
+ * did not supply it the label degrades to the bare word — never to a computed
+ * total, which is how a truncation notice starts lying.
+ */
+export function toolResultLabel(tool: ClientToolDetail): string {
+  const base = tool.status === "failed" ? "error" : "result";
+  if (!tool.resultTruncated) return base;
+  const shown = tool.result?.length;
+  return shown !== undefined && tool.resultChars !== undefined
+    ? `${base} · first ${shown} of ${tool.resultChars} chars`
+    : `${base} · truncated`;
+}
+
+/**
+ * A fence long enough to survive the payload.
+ *
+ * Connector output is arbitrary text and routinely contains Markdown — a GitHub
+ * issue body, a Notion page. A three-backtick fence around a result that itself
+ * contains three backticks closes early, and the rest of the receipt renders as
+ * prose with the run's own headings inside it. So the fence is always one
+ * backtick longer than the longest run in the text it wraps.
+ */
+function fenced(text: string, lang = ""): string[] {
+  let longest = 0;
+  for (const run of text.match(/`+/g) ?? []) longest = Math.max(longest, run.length);
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  return [`${fence}${lang}`, text, fence];
+}
+
 /**
  * The whole run as Markdown.
  *
@@ -142,6 +262,58 @@ export function toRunMarkdown(
     lines.push(toSourcesMarkdown(run));
   }
 
+  /* ── TOOLS ────────────────────────────────────────────────────────────────
+   * Every call the panel shows, with the same payloads and the same sentences
+   * for the ones it has no payload for. A receipt that omitted them while the
+   * panel showed them would be the drift `formatSpan` was extracted to prevent
+   * — and this is the half people paste into bug reports, so it is the half
+   * that has to carry the caption about what was redacted.
+   *
+   * Rows keep their emission order and their names even when there is no
+   * detail behind them, so the receipt is row-for-row checkable against the
+   * panel rather than being a filtered subset of it. */
+  const toolCalls = run.calls.filter((c) => !c.warn);
+  if (toolCalls.length > 0) {
+    lines.push("");
+    lines.push("## Tools");
+    lines.push("");
+    lines.push(TOOLS_DESCRIPTION);
+    if (toolCalls.some((c) => !c.tool)) lines.push(TOOLS_NO_DETAIL_NOTE);
+
+    for (const call of toolCalls) {
+      lines.push("");
+      lines.push(`### ${call.object}`);
+      const tool = call.tool;
+      if (!tool) continue;
+
+      // "Failed" only. A successful call gets no marker, exactly as on screen:
+      // absence is this panel's idiom for the ordinary case, and a "Succeeded"
+      // line on every row would bury the one that says otherwise.
+      if (tool.status === "failed") lines.push("Failed");
+      // Absent, never zero, for a call that never reached the network — so the
+      // line is simply not written rather than written with a placeholder in it.
+      if (typeof tool.durationMs === "number") lines.push(`Duration ${formatSpan(tool.durationMs)}`);
+
+      lines.push("");
+      if (tool.args) {
+        lines.push(`${toolArgsLabel(tool)}:`);
+        lines.push(...fenced(tool.args, "json"));
+      } else {
+        lines.push(`Arguments: ${toolArgsNoteText(tool)}`);
+      }
+
+      lines.push("");
+      if (tool.result) {
+        lines.push(`${toolResultLabel(tool)}:`);
+        // No language tag: a result is JSON only sometimes, and labelling prose
+        // as json to get colour would be a claim about the payload's type.
+        lines.push(...fenced(tool.result));
+      } else {
+        lines.push(`Result: ${toolResultNoteText(tool)}`);
+      }
+    }
+  }
+
   const trace = reasoning?.trim();
   if (trace) {
     lines.push("");
@@ -154,7 +326,14 @@ export function toRunMarkdown(
 }
 
 /** `- [title](url)` per source, in emission order — the order the run collected
- *  them, which is the only order this app can honestly claim. */
+ *  them, which is the only order this app can honestly claim.
+ *
+ *  A source the run only LISTED is tagged; one it read, and one whose producer
+ *  did not say either way, are not. Marking the exception rather than the rule
+ *  is the same choice the panel makes, and it keeps a bibliography pasted
+ *  elsewhere from carrying a tag on every line. */
 export function toSourcesMarkdown(run: RunModel): string {
-  return run.sources.map((s) => `- [${s.title}](${s.url})`).join("\n");
+  return run.sources
+    .map((s) => `- [${s.title}](${s.url})${s.access === "listed" ? " (listed, not read)" : ""}`)
+    .join("\n");
 }

@@ -87,6 +87,22 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["ToolInvocation", "userId"],
   ["ActionApprovalReceipt", "userId"],
   ["ActionApprovalGrant", "userId"],
+  // Knowledge, Research and the spend ceiling. Every one of these holds content
+  // derived from a single person's files or a single person's money, so they are
+  // exactly the tables where a missing scope would be a leak rather than a bug.
+  // ResearchClaimLink is deliberately absent: it is a pure join between two rows
+  // that are themselves scoped, and it carries no userId to check.
+  ["SpendPeriod", "userId"],
+  ["SpendReservation", "userId"],
+  ["KnowledgeDocument", "userId"],
+  ["KnowledgeBlock", "userId"],
+  ["KnowledgeChunk", "userId"],
+  ["KnowledgeIndexJob", "userId"],
+  ["ResearchRun", "userId"],
+  ["ResearchSource", "userId"],
+  ["ResearchPassage", "userId"],
+  ["ResearchClaim", "userId"],
+  ["ResearchEvent", "userId"],
   // The last eight. Each had call sites that reached the database without a
   // userId — not leaks (every one was already behind an ownership check, an
   // owner-only admin gate, or a capability like a share token), but nothing

@@ -182,9 +182,16 @@ export function ActivityTimeline({
   const active = run.phases.find((p) => p.active);
   // The THINK span, not the whole run — see liveCopy.
   const live = liveCopy(active?.label, latest, run.phases.find((p) => p.key === "think")?.ms ?? null);
+  // Tool calls join the resting nouns for the same reason sources did: a run
+  // that used connectors and searched nothing had NO noun at all, so its strip
+  // read "See how this response was made" — the generic invitation — over the
+  // one kind of run whose panel now carries the most. Warnings are excluded;
+  // they already have their own slot in `run.note`.
+  const toolCalls = run.calls.filter((c) => !c.warn).length;
   const restingDetail = [
     run.searches ? `${run.searches} ${run.searches === 1 ? "search" : "searches"}` : null,
     run.sourceCount ? `${run.sourceCount} ${run.sourceCount === 1 ? "source" : "sources"}` : null,
+    toolCalls ? `${toolCalls} ${toolCalls === 1 ? "tool call" : "tool calls"}` : null,
   ]
     .filter(Boolean)
     .join(" · ");

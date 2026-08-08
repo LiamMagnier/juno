@@ -111,22 +111,87 @@ export interface ProjectContextSource {
 }
 
 /**
+ * One retrieved passage, as the prompt needs it.
+ *
+ * Structurally a subset of `ScoredPassage` from lib/knowledge/rank rather than
+ * an import of it, so this module stays free of `server-only` and Prisma. The
+ * fields that are here are the ones a citation cannot do without: which
+ * document, which blocks, and where in the document the text physically is.
+ */
+export interface RetrievedPassage {
+  documentId: string;
+  fileName: string;
+  /** "page 4", "Sheet2!B7", "slide 3". May be empty for a formatless source. */
+  locator: string;
+  blockIds: readonly string[];
+  text: string;
+}
+
+export interface ProjectKnowledge {
+  passages: readonly RetrievedPassage[];
+  /**
+   * Files the index covers. Their wholesale text is dropped from the prompt in
+   * favour of the retrieved extracts — otherwise the same document appears
+   * twice, once entire and once in extract, and retrieval has bought nothing.
+   */
+  indexedFileNames: readonly string[];
+  /**
+   * Set when the semantic half of retrieval could not run — no embedding
+   * provider the account's policy permits, or a corpus that has not been
+   * embedded. The passages below are then lexical matches only, and the model
+   * is told so rather than left to over-trust them.
+   */
+  degraded?: boolean;
+}
+
+/** Marker the model is asked to reuse, so a claim can be traced to a page. */
+function citation(passage: RetrievedPassage): string {
+  return passage.locator ? `${passage.fileName} · ${passage.locator}` : passage.fileName;
+}
+
+/**
  * The project's instructions and reference files, as one system-prompt section.
  *
  * Files with no extracted text are omitted entirely rather than contributing an
  * empty heading — a heading with nothing under it reads to the model as a file
  * that exists and is blank.
+ *
+ * `knowledge` is the retrieval-backed half, and it is deliberately additive:
+ * omit it and this function behaves exactly as it did before retrieval existed,
+ * which is what a project with nothing indexed must keep getting. When it is
+ * present, indexed files stop being dumped whole and appear as located extracts
+ * instead — the difference between a prompt that grows with the library and one
+ * that grows with the question.
  */
-export function buildProjectContext(project: ProjectContextSource | null): string {
+export function buildProjectContext(
+  project: ProjectContextSource | null,
+  knowledge?: ProjectKnowledge | null
+): string {
   if (!project) return "";
   const sections = [`# Project: ${project.name}`];
   if (project.instructions.trim()) {
     sections.push(`## Project instructions\n${project.instructions.trim()}`);
   }
-  const fileTexts = project.files.filter((file) => file.extractedText?.trim());
+
+  const indexed = new Set(knowledge?.indexedFileNames ?? []);
+  const fileTexts = project.files.filter(
+    (file) => file.extractedText?.trim() && !indexed.has(file.fileName)
+  );
   if (fileTexts.length) {
     sections.push("## Project reference files");
     for (const file of fileTexts) sections.push(`### ${file.fileName}\n${file.extractedText!}`);
+  }
+
+  const passages = knowledge?.passages ?? [];
+  if (passages.length) {
+    sections.push(
+      knowledge?.degraded
+        ? "## Retrieved from project documents\nKeyword matches only — the semantic index is unavailable, so relevant passages may be missing. Say so if the extracts do not answer the question."
+        : "## Retrieved from project documents\nExtracts selected for this question. Cite the source in parentheses when you use one, exactly as it is labelled."
+    );
+    for (const passage of passages) {
+      sections.push(`### ${citation(passage)}\n${passage.text.trim()}`);
+    }
   }
   return sections.join("\n\n");
 }
@@ -141,16 +206,21 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`) {
  * The message count is always present even at zero; the rest appear only when
  * they contributed something, so the line never claims context that is not
  * there.
+ *
+ * `documentPassages` is optional so a caller that has not been taught about
+ * retrieval produces the same line it always did.
  */
 export function contextActivityDetail(input: {
   messages: number;
   attachments: number;
   memories: number;
   hasProjectContext: boolean;
+  documentPassages?: number;
 }): string {
   const parts = [plural(input.messages, "message")];
   if (input.attachments) parts.push(plural(input.attachments, "attachment"));
   if (input.memories) parts.push(plural(input.memories, "memory", "memories"));
+  if (input.documentPassages) parts.push(plural(input.documentPassages, "document passage"));
   if (input.hasProjectContext) parts.push("project context");
   return parts.join(" · ");
 }

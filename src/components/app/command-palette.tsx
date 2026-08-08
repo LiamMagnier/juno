@@ -4,10 +4,13 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
+  BookOpen,
   Columns2,
+  FileText,
   Keyboard,
   Map as MapIcon,
   MessageSquare,
+  MessageSquareText,
   Moon,
   NotebookPen,
   Search,
@@ -19,20 +22,65 @@ import {
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useApp } from "@/components/app/app-provider";
 import { AppIcons } from "@/lib/app-icons";
+import {
+  SEARCH_TYPE_LABELS,
+  SEARCH_WINDOWS,
+  SEARCH_WINDOW_LABELS,
+  type SearchHit,
+  type SearchMark,
+  type SearchSnippet,
+  type SearchType,
+  type SearchWindow,
+  type UnifiedSearchResult,
+} from "@/lib/search/types";
 import { cn } from "@/lib/utils";
 
 /** One row in either palette. `run` fires on click / Enter; `meta` is the muted
- *  trailing text (relative time, "Project"); `hint` renders as ⌘-keys. */
+ *  trailing text (relative time, "Project"); `hint` renders as ⌘-keys. A
+ *  `snippet` turns the row into two lines — the matched line of content under
+ *  the title, with the matched terms marked. */
 type PaletteItem = {
   id: string;
   group: string;
   label: string;
   meta?: string;
   hint?: string;
+  snippet?: SearchSnippet | null;
+  /** Matched spans inside `label`, so a title-only match is highlighted too. */
+  labelMarks?: SearchMark[];
   icon: React.ComponentType<{ className?: string }>;
   keywords?: string;
   run: () => void;
 };
+
+/**
+ * Text with its matched spans marked.
+ *
+ * The server sends offsets rather than markup (see src/lib/search/types.ts), so
+ * this walks them and emits real `<mark>` elements — which is also what makes
+ * the highlight legible to a screen reader, since `mark` carries meaning that a
+ * coloured `span` does not.
+ *
+ * `bg-primary/15` deliberately, not `bg-accent`: `accent` is the sliding
+ * selection bar's own colour, so a mark painted with it would vanish on exactly
+ * the row the user is looking at.
+ */
+function Marked({ text, marks }: { text: string; marks: readonly SearchMark[] }) {
+  if (marks.length === 0) return <>{text}</>;
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  marks.forEach((mark, i) => {
+    if (mark.start > cursor) parts.push(text.slice(cursor, mark.start));
+    parts.push(
+      <mark key={i} className="rounded-[3px] bg-primary/15 px-0.5 text-primary-ink">
+        {text.slice(mark.start, mark.end)}
+      </mark>
+    );
+    cursor = mark.end;
+  });
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return <>{parts}</>;
+}
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
@@ -79,6 +127,10 @@ function PaletteShell({
   items,
   footer,
   emptyState,
+  filters,
+  notices,
+  status,
+  resetKey,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -89,6 +141,19 @@ function PaletteShell({
   items: PaletteItem[];
   footer: React.ReactNode;
   emptyState: React.ReactNode;
+  /** Optional controls between the input and the listbox (search filters). */
+  filters?: React.ReactNode;
+  /** Optional "here is what could not be searched" strip above the results. */
+  notices?: React.ReactNode;
+  /** Text announced politely whenever the result set changes. */
+  status?: string;
+  /**
+   * Moves the cursor back to the first row when it changes. The command menu
+   * leaves it undefined and keeps its old behaviour; search passes the query
+   * and its filters, because a cursor left on row 7 while the results underneath
+   * it are replaced is how Enter opens something nobody chose.
+   */
+  resetKey?: string;
 }) {
   const [active, setActive] = React.useState(0);
   const baseId = React.useId();
@@ -100,10 +165,11 @@ function PaletteShell({
   // (not while the mouse is hovering rows).
   const keyboardNav = React.useRef(false);
 
-  // Reset the cursor to the top each time the surface opens.
+  // Reset the cursor to the top each time the surface opens, and whenever the
+  // caller says the list underneath it has been replaced.
   React.useEffect(() => {
     if (open) setActive(0);
-  }, [open]);
+  }, [open, resetKey]);
 
   React.useEffect(() => {
     setActive((a) => Math.min(a, Math.max(0, items.length - 1)));
@@ -206,6 +272,17 @@ function PaletteShell({
           )}
         </div>
 
+        {filters}
+        {notices}
+
+        {/* The listbox is a visual change, not an announced one — a screen
+            reader following aria-activedescendant hears the focused row but
+            never hears that eleven others arrived, or that a whole source could
+            not be searched. This says both, once per settled result set. */}
+        <div role="status" aria-live="polite" className="sr-only">
+          {status}
+        </div>
+
         {/* Combobox popup: focus stays on the input; aria-activedescendant
             tracks the highlighted option, so rows are role=option and out of
             the tab order. Group headers are visual-only (aria-hidden). */}
@@ -255,7 +332,10 @@ function PaletteShell({
                       onClick={() => c.run()}
                       aria-selected={isActive}
                       className={cn(
-                        "menu-item group group/menu-item relative flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left text-sm transition-colors duration-fast ease-out-soft coarse:py-2.5",
+                        "menu-item group group/menu-item relative flex w-full gap-3 rounded-xl px-2.5 py-2 text-left text-sm transition-colors duration-fast ease-out-soft coarse:py-2.5",
+                        // A two-line result row hangs its icon and trailing meta
+                        // off the title, not off the centre of the pair.
+                        c.snippet ? "items-start" : "items-center",
                         isActive ? "text-foreground" : "text-foreground/75"
                       )}
                     >
@@ -274,7 +354,16 @@ function PaletteShell({
                       >
                         <Icon className="h-[15px] w-[15px]" />
                       </span>
-                      <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">
+                          <Marked text={c.label} marks={c.labelMarks ?? []} />
+                        </span>
+                        {c.snippet && (
+                          <span className="block truncate text-[12px] leading-[1.45] text-muted-foreground">
+                            <Marked text={c.snippet.text} marks={c.snippet.marks} />
+                          </span>
+                        )}
+                      </span>
                       {c.meta && (
                         <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/55">{c.meta}</span>
                       )}
@@ -299,21 +388,97 @@ function PaletteShell({
   );
 }
 
-/** Projects aren't in app context, so the search surface fetches them on open. */
+/** Projects aren't in app context, so the search surface fetches them for its filter. */
 type PaletteProject = { id: string; name: string; starred: boolean; updatedAt: string };
+
+/** One row of /api/recents — the merged Chat / Work / Code / Projects timeline. */
+type RecentRow = { id: string; kind: string; title: string; updatedAt: string; href: string };
+
+const SEARCH_TYPE_ICONS: Record<SearchType, React.ComponentType<{ className?: string }>> = {
+  conversation: MessageSquare,
+  message: MessageSquareText,
+  project: AppIcons.projects,
+  file: FileText,
+  knowledge: BookOpen,
+  artifact: AppIcons.artifacts,
+  memory: NotebookPen,
+  work: AppIcons.work,
+};
+
+const RECENT_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  chat: MessageSquare,
+  work: AppIcons.work,
+  code: AppIcons.code,
+  project: AppIcons.projects,
+};
+
+/**
+ * How long the input rests before a search is issued.
+ *
+ * 180ms rather than the usual 300: the request is cancelled on the next
+ * keystroke anyway, and this surface is judged on whether results appear to
+ * follow the typing. Long enough to skip most intermediate words, short enough
+ * that a three-word query does not feel like it is buffering.
+ */
+const SEARCH_DEBOUNCE_MS = 180;
+
+/** A filter chip. A real button with a pressed state, not a styled div. */
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "pressable shrink-0 rounded-full border px-2.5 py-1 text-[11px] transition-colors duration-fast ease-out-soft coarse:min-h-11 coarse:px-3",
+        active
+          ? "border-border bg-accent text-foreground"
+          : "border-transparent bg-muted/50 text-muted-foreground hover:text-foreground"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
 
 /**
  * SURFACE A — Search. The magnifying-glass button opens this (event
- * "juno:search"); it does NOT open on ⌘K. A clean chats + projects finder:
- * chats from app context, projects fetched on open. Empty query shows recent
- * chats and recent/starred projects.
+ * "juno:search"); it does NOT open on ⌘K.
+ *
+ * This used to filter the conversation titles the app context happened to be
+ * holding, in the browser. That was never search: it could not see message
+ * text, files, knowledge, artifacts, memories or Work, it silently excluded
+ * archived chats, and it stopped at whatever the 200-row context contained.
+ * There was a server-side title search behind `GET /api/conversations?q=` and
+ * nothing in the repository ever passed the `q`.
+ *
+ * It now calls /api/search, which searches all eight sources and reports what
+ * it could not cover (see src/lib/search/index.ts for why the message branch is
+ * bounded). The command menu below is deliberately untouched: content search
+ * and command execution share this shell, and nothing else. A palette that
+ * mixes "open the thing I wrote" with "run this action" makes Enter ambiguous
+ * at the exact moment it must not be.
  */
 function SearchPalette() {
   const router = useRouter();
-  const { conversations } = useApp();
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
+  const [type, setType] = React.useState<SearchType | "all">("all");
+  const [dateWindow, setDateWindow] = React.useState<SearchWindow>("any");
+  const [projectId, setProjectId] = React.useState("");
   const [projects, setProjects] = React.useState<PaletteProject[]>([]);
+  const [recents, setRecents] = React.useState<RecentRow[]>([]);
+  const [result, setResult] = React.useState<UnifiedSearchResult | null>(null);
+  const [searching, setSearching] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
 
   const go = React.useCallback(
     (href: string) => {
@@ -329,26 +494,48 @@ function SearchPalette() {
     return () => window.removeEventListener("juno:search", openSearch);
   }, []);
 
+  // A fresh surface every time: the previous query's results behind a cleared
+  // input would be read as results for the empty one.
   React.useEffect(() => {
-    if (open) setQuery("");
+    if (!open) return;
+    setQuery("");
+    setType("all");
+    setDateWindow("any");
+    setProjectId("");
+    setResult(null);
+    setFailed(false);
   }, [open]);
 
-  // Refresh projects each time the surface opens; keep the last list visible
-  // until the fresh one lands so the default view doesn't flash empty.
+  // Recents and the project list, refreshed each time the surface opens. The
+  // last list stays visible until the fresh one lands so the default view does
+  // not flash empty; a failure keeps whatever was there, which is why neither
+  // catch clears state.
   React.useEffect(() => {
     if (!open) return;
     let cancelled = false;
+
+    fetch("/api/recents?limit=8")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((data: { items?: unknown }) => {
+        if (cancelled || !Array.isArray(data.items)) return;
+        setRecents(
+          (data.items as Array<Record<string, unknown>>).map((row) => ({
+            id: String(row.id ?? ""),
+            kind: String(row.kind ?? "chat"),
+            title: String(row.title ?? ""),
+            updatedAt: String(row.updatedAt ?? ""),
+            href: String(row.href ?? "/"),
+          }))
+        );
+      })
+      .catch(() => {});
+
     fetch("/api/projects")
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((data) => {
-        if (cancelled) return;
-        const list: Array<{ id?: unknown; name?: unknown; starred?: unknown; updatedAt?: unknown }> = Array.isArray(
-          data.projects
-        )
-          ? data.projects
-          : [];
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((data: { projects?: unknown }) => {
+        if (cancelled || !Array.isArray(data.projects)) return;
         setProjects(
-          list.map((p) => ({
+          (data.projects as Array<Record<string, unknown>>).map((p) => ({
             id: String(p.id ?? ""),
             name: String(p.name ?? ""),
             starred: Boolean(p.starred),
@@ -356,54 +543,145 @@ function SearchPalette() {
           }))
         );
       })
-      .catch(() => {
-        /* keep whatever we had; the empty state stays honest */
-      });
+      .catch(() => {});
+
     return () => {
       cancelled = true;
     };
   }, [open]);
 
-  const q = query.trim().toLowerCase();
+  const trimmed = query.trim();
+
+  /**
+   * The search itself: debounce, then one request that the next keystroke
+   * aborts. Aborting matters more than the debounce — without it the answer to
+   * "guar" can arrive after the answer to "guard" and overwrite it, and the
+   * user watches their own results get worse as they finish the word.
+   */
+  React.useEffect(() => {
+    if (!open || !trimmed) {
+      setResult(null);
+      setSearching(false);
+      setFailed(false);
+      return;
+    }
+    setSearching(true);
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams({ q: trimmed });
+      if (type !== "all") params.set("types", type);
+      if (projectId) params.set("projectId", projectId);
+      if (dateWindow !== "any") params.set("window", dateWindow);
+      fetch(`/api/search?${params.toString()}`, { signal: controller.signal })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((data: UnifiedSearchResult) => {
+          setResult(data);
+          setFailed(false);
+          setSearching(false);
+        })
+        .catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          // A failed search must not look like an empty account.
+          setResult(null);
+          setFailed(true);
+          setSearching(false);
+        });
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open, trimmed, type, projectId, dateWindow]);
 
   const items = React.useMemo<PaletteItem[]>(() => {
-    const chats = conversations.filter((c) => c.kind !== "code");
-    const chatItems: PaletteItem[] = (
-      q
-        ? chats.filter((c) => c.title.toLowerCase().includes(q))
-        : [...chats]
-            .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime())
-            .slice(0, 8)
-    ).map((c) => ({
-      id: "chat-" + c.id,
-      group: "Chats",
-      label: c.title || "New chat",
-      meta: relativeTime(c.lastMessageAt),
-      icon: MessageSquare,
-      run: () => go("/chat/" + c.id),
-    }));
+    if (!trimmed) {
+      return recents.map((row) => ({
+        id: "recent-" + row.kind + "-" + row.id,
+        group: "Recent",
+        label: row.title || "Untitled",
+        meta: relativeTime(row.updatedAt),
+        icon: RECENT_ICONS[row.kind] ?? MessageSquare,
+        run: () => go(row.href),
+      }));
+    }
+    if (!result) return [];
+    return result.groups.flatMap((group) =>
+      group.hits.map((hit: SearchHit) => ({
+        id: hit.id,
+        group: group.label,
+        label: hit.title,
+        meta: hit.locator ?? relativeTime(hit.updatedAt),
+        snippet: hit.snippet,
+        labelMarks: hit.titleMarks,
+        icon: SEARCH_TYPE_ICONS[hit.type],
+        run: () => go(hit.href),
+      }))
+    );
+  }, [trimmed, recents, result, go]);
 
-    const projItems: PaletteItem[] = (
-      q
-        ? projects.filter((p) => p.name.toLowerCase().includes(q))
-        : [...projects]
-            .sort(
-              (a, b) =>
-                Number(b.starred) - Number(a.starred) ||
-                new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-            )
-            .slice(0, 6)
-    ).map((p) => ({
-      id: "project-" + p.id,
-      group: "Projects",
-      label: p.name || "Untitled project",
-      meta: "Project",
-      icon: AppIcons.projects,
-      run: () => go("/projects/" + p.id),
-    }));
+  // Only the sources that came back short say anything, and each says what it
+  // was: "still being indexed" and "could not be read" are different problems
+  // with different answers, and collapsing them into "partial results" leaves
+  // the user with nothing to do about either.
+  const notices = React.useMemo(() => {
+    const list = (result?.coverage ?? []).filter((c) => c.state !== "complete" && c.detail);
+    if (!trimmed || list.length === 0) return null;
+    const shown = list.slice(0, 2);
+    return (
+      <div className="border-b border-border/60 bg-muted/20 px-4 py-2">
+        {shown.map((c) => (
+          <p key={c.type} className="text-caption leading-snug text-muted-foreground">
+            <span className="text-foreground/80">{SEARCH_TYPE_LABELS[c.type]}:</span> {c.detail}
+          </p>
+        ))}
+        {list.length > shown.length && (
+          <p className="text-caption leading-snug text-muted-foreground/70">
+            {list.length - shown.length} more part of your account was searched only in part.
+          </p>
+        )}
+      </div>
+    );
+  }, [result, trimmed]);
 
-    return [...chatItems, ...projItems];
-  }, [conversations, projects, q, go]);
+  const filters = trimmed ? (
+    <div className="border-b border-border/60 px-3 py-2">
+      <div role="group" aria-label="Filter by type" className="flex gap-1 overflow-x-auto pb-0.5">
+        <FilterChip active={type === "all"} onClick={() => setType("all")}>
+          Everything
+        </FilterChip>
+        {(Object.keys(SEARCH_TYPE_LABELS) as SearchType[]).map((t) => (
+          <FilterChip key={t} active={type === t} onClick={() => setType(t)}>
+            {SEARCH_TYPE_LABELS[t]}
+          </FilterChip>
+        ))}
+      </div>
+      <div className="mt-1.5 flex items-center gap-1">
+        <div role="group" aria-label="Filter by date" className="flex gap-1 overflow-x-auto">
+          {SEARCH_WINDOWS.map((w) => (
+            <FilterChip key={w} active={dateWindow === w} onClick={() => setDateWindow(w)}>
+              {SEARCH_WINDOW_LABELS[w]}
+            </FilterChip>
+          ))}
+        </div>
+        {projects.length > 0 && (
+          <select
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            aria-label="Filter by project"
+            className="pressable ml-auto shrink-0 rounded-full border border-transparent bg-muted/50 px-2.5 py-1 text-[11px] text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:min-h-11"
+          >
+            <option value="">All projects</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name || "Untitled project"}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+    </div>
+  ) : null;
 
   const footer = (
     <>
@@ -422,26 +700,62 @@ function SearchPalette() {
     </>
   );
 
+  // Five states, each with its own words. "Searching" is not "nothing found",
+  // and a request that failed is not an empty account — telling someone their
+  // account is empty when the network dropped is the one mistake this surface
+  // must never make, because they will believe it.
   const emptyState = (
     <div className="px-3 py-10 text-center">
-      <p className="text-sm text-muted-foreground">
-        {q ? `No chats or projects match “${query}”.` : "No chats or projects yet"}
-      </p>
-      <p className="mt-1 text-caption text-muted-foreground/60">
-        {q ? "Try a different search." : "Start a chat or create a project to see it here."}
-      </p>
+      {failed ? (
+        <>
+          <p className="text-sm text-muted-foreground">Search is unavailable right now.</p>
+          <p className="mt-1 text-caption text-muted-foreground/60">
+            Check your connection and try the search again.
+          </p>
+        </>
+      ) : searching ? (
+        <p className="text-sm text-muted-foreground">Searching…</p>
+      ) : trimmed ? (
+        <>
+          <p className="text-sm text-muted-foreground">Nothing matches “{query}”.</p>
+          <p className="mt-1 text-caption text-muted-foreground/60">
+            Try fewer words, or widen the filters above.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-muted-foreground">Search everything in Juno</p>
+          <p className="mt-1 text-caption text-muted-foreground/60">
+            Chats and their messages, projects, files, artifacts, memories and Work.
+          </p>
+        </>
+      )}
     </div>
   );
+
+  const status = !trimmed
+    ? ""
+    : failed
+      ? "Search is unavailable right now."
+      : searching
+        ? "Searching"
+        : `${items.length} ${items.length === 1 ? "result" : "results"}${
+            result?.partial ? ", some sources searched only in part" : ""
+          }`;
 
   return (
     <PaletteShell
       open={open}
       onOpenChange={setOpen}
-      ariaLabel="Search chats and projects"
-      placeholder="Search chats and projects"
+      ariaLabel="Search everything"
+      placeholder="Search chats, files, artifacts, memory and Work"
       query={query}
       onQueryChange={setQuery}
       items={items}
+      filters={filters}
+      notices={notices}
+      status={status}
+      resetKey={`${trimmed}|${type}|${dateWindow}|${projectId}`}
       footer={footer}
       emptyState={emptyState}
     />
@@ -575,12 +889,13 @@ function CommandMenu() {
       run: () => go("/chat/" + c.id),
     }));
     const recents: PaletteItem[] = [...recentChats];
-    // "See all" hands off to the dedicated search surface (Surface A).
+    // "See all" hands off to the dedicated search surface (Surface A), which
+    // searches content rather than filtering the titles this menu holds.
     if (!q && chats.length > 0) {
       recents.push({
         id: "see-all-chats",
         group: "Recents",
-        label: "Search all chats and projects",
+        label: "Search everything",
         icon: Search,
         run: () => {
           setOpen(false);

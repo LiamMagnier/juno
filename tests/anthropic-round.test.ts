@@ -133,8 +133,10 @@ test("every tool_use yields a call event, labelled through the toolset", async (
     ],
     (n) => (n.startsWith("github") ? "GitHub" : "?")
   );
+  // No `args`: the call event is yielded from content_block_start, where the
+  // arguments have not begun streaming. Anthropic attaches them to the result.
   assert.deepEqual(yielded, [
-    { type: "tool", server: "GitHub", name: "github__create_issue", phase: "call" },
+    { type: "tool", server: "GitHub", name: "github__create_issue", phase: "call", callId: "a" },
   ]);
 });
 
@@ -231,4 +233,28 @@ test("a reported standard speed survives to the caller", () => {
   // streamAnthropic bills the premium rate only when servedFast AND this is not
   // "standard", so losing it here would over-bill a downgraded turn.
   assert.equal(total.speed, "standard");
+});
+
+test("the running usage total is monotonic, so preferHigher merging cannot lose a round", () => {
+  // streamAnthropic now emits the cumulative total after EVERY round so the
+  // mid-stream budget guard sees input growing while the turn is still running.
+  // That is only safe because the accumulator merges usage with preferHigher
+  // (src/lib/usage-merge.ts): a later event may repeat a figure, but it must
+  // never report a SMALLER one. Six rounds of a connector turn re-send the whole
+  // conversation, so this is the sequence the guard actually sees.
+  const total = emptyAnthropicUsage();
+  const seen: number[] = [];
+  for (const roundInput of [1000, 1400, 1900, 2500, 3200, 4000]) {
+    const round = emptyAnthropicUsage();
+    foldAnthropicUsage(round, { input_tokens: roundInput, output_tokens: 40 });
+    addAnthropicUsage(total, round);
+    seen.push(total.input);
+  }
+  assert.deepEqual(seen, [1000, 2400, 4300, 6800, 10000, 14000]);
+  for (let i = 1; i < seen.length; i++) {
+    assert.ok(seen[i] > seen[i - 1], `emission ${i} must not go backwards`);
+  }
+  // The point of the fix: the guard's final figure is 14x the first round, and
+  // it now learns that across the turn instead of after it.
+  assert.equal(total.input, 14000);
 });

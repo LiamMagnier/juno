@@ -38,6 +38,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
+import { IndexStatus, type KnowledgeIndexState } from "@/components/library/index-status";
 import { cn, formatBytes } from "@/lib/utils";
 
 interface LibItem {
@@ -49,6 +50,8 @@ interface LibItem {
   url: string;
   createdAt: string;
   conversationId: string | null;
+  /** Structured-extraction state, or null when no extractor claims the format. */
+  knowledge?: KnowledgeIndexState | null;
 }
 
 type LibraryFilter = "all" | LibItem["kind"];
@@ -350,6 +353,7 @@ function LibraryGridItem({
           <p className="mt-0.5 truncate text-[11px] tabular-nums text-muted-foreground">
             {formatBytes(item.size)} · {timeAgo(item.createdAt)}
           </p>
+          <IndexStatus status={item.knowledge ?? null} className="mt-0.5 max-w-full" />
         </div>
         {item.conversationId && (
           <Link
@@ -830,6 +834,7 @@ export default function LibraryPage() {
                             <span className="truncate">{item.mimeType}</span>
                           )}
                         </div>
+                        <IndexStatus status={item.knowledge ?? null} className="mt-0.5 max-w-full" />
                       </div>
                     </div>
 

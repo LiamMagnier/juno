@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { ensureUserDefaults } from "@/lib/auth";
 import { listConversations } from "@/lib/queries";
 import { getQuota } from "@/lib/usage";
-import { checkBudget, eurPerUsd, getUsageWindows, billingPeriodFor } from "@/lib/spend";
+import { budgetForPlan, checkBudget, eurPerUsd, getUsageWindows, billingPeriodFor } from "@/lib/spend";
+import { effectiveBudget } from "@/lib/spend-ceiling";
 import { env, isStripeConfigured, isStorageAvailable, isServerSttConfigured, isServerTtsConfigured } from "@/lib/env";
 import { isEmailEnabled } from "@/lib/email";
 import { purchasablePlans } from "@/lib/stripe";
@@ -13,6 +14,10 @@ import { isWebSearchConfigured } from "@/lib/web-search";
 import { isOwnerEmail } from "@/lib/owner";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { AUTO_LOCALE } from "@/lib/i18n";
+import {
+  normalizeBackgroundProviderPolicy,
+  type BackgroundProviderMode,
+} from "@/lib/background-provider-policy";
 import type { AppBootstrap, ClientSettings } from "@/types/app";
 import type { SessionUser } from "@/lib/session";
 
@@ -35,10 +40,19 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     where: { userId: user.id },
     select: { createdAt: true, currentPeriodEnd: true, cancelAtPeriodEnd: true },
   });
-  const period = billingPeriodFor(quota.plan, subscription);
+  const period = billingPeriodFor(subscription);
+  // The settings row is already in hand, so the effective ceiling costs nothing
+  // extra here — and passing it to both calls keeps the gate and the meters
+  // reading the same number, which is the whole point of there being one.
+  const effective = effectiveBudget({
+    planBudgetMicroUsd: budgetForPlan(quota.plan),
+    userCapEur: settings?.monthlySpendCapEur ?? null,
+    capDisabled: settings?.spendCapDisabled ?? false,
+    eurPerUsd: eurPerUsd(),
+  });
   const [budget, windows] = await Promise.all([
-    checkBudget(user.id, quota.plan, period),
-    getUsageWindows(user.id, quota.plan, period),
+    checkBudget(user.id, quota.plan, period, effective),
+    getUsageWindows(user.id, effective.budgetMicroUsd, period),
   ]);
 
   const clientSettings: ClientSettings = {
@@ -53,6 +67,12 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     responseLanguage: settings?.responseLanguage ?? "auto",
     uiLocale: settings?.uiLocale ?? AUTO_LOCALE,
     memoryEnabled: settings?.memoryEnabled ?? true,
+    // Read through the normalizer rather than cast: the column is TEXT, and a
+    // value this build does not recognise must show as the safe mode rather
+    // than as a blank control the user cannot reason about.
+    backgroundProviderMode: normalizeBackgroundProviderPolicy({
+      mode: settings?.backgroundProviderMode as BackgroundProviderMode,
+    }).mode,
     voiceId: settings?.voiceId ?? null,
     favoriteModels: settings?.favoriteModels ?? [],
     emailBudgetAlerts: settings?.emailBudgetAlerts ?? true,
@@ -67,6 +87,13 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
       spentMicroUsd: budget.spentMicroUsd,
       budgetMicroUsd: budget.budgetMicroUsd,
       eurPerUsd: eurPerUsd(),
+      reservedMicroUsd: budget.reservedMicroUsd,
+      capSource: budget.capSource,
+      capDisabled: budget.capDisabled,
+      // The account's own number, so the settings tile can prefill the field
+      // with what is stored rather than with the ceiling it resolved to.
+      userCapEur: settings?.monthlySpendCapEur ?? null,
+      planBudgetMicroUsd: budgetForPlan(quota.plan),
       windows: {
         session: { pct: windows.session.pct, resetsAtMs: windows.session.resetsAtMs },
         weekly: { pct: windows.weekly.pct, resetsAtMs: windows.weekly.resetsAtMs },

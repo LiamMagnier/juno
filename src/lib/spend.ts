@@ -1,22 +1,40 @@
 import "server-only";
+import { Prisma } from "@prisma/client";
 import type { Plan } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolveModel } from "@/lib/models";
 import { getModelMetrics } from "@/lib/model-metrics";
 import { estimateGenerationCostUsd, estimateTokensFromChars } from "@/lib/pricing";
 import { sendBudgetAlert } from "@/lib/email";
+import { getUserPlan } from "@/lib/usage";
+import {
+  DEFAULT_ESTIMATE_MICRO_USD,
+  RESERVATION_TTL_MS,
+  UNIT_CEILING_MICRO_USD,
+  effectiveBudget,
+  type BudgetCapSource,
+  type EffectiveBudget,
+  type SpendKind,
+} from "@/lib/spend-ceiling";
 
 /**
  * The single budget module: per-plan monthly API budgets, per-request cost
- * computation, the ApiSpend ledger writer, and the pre-stream budget gate.
+ * computation, the ApiSpend ledger writer, the reservation ledger, and the
+ * pre-stream budget gate.
  *
  * Money is integer micro-USD (1e-6 $) end to end. Budgets are defined in EUR
  * and treated 1:1 with the USD model prices unless API_COST_EUR_PER_USD says
  * how many EUR one USD of model spend costs (e.g. 0.92).
+ *
+ * The arithmetic that decides WHICH ceiling binds lives in `spend-ceiling.ts`,
+ * free of Prisma so it can be tested; this module is the I/O around it.
  */
 
 /**
- * Monthly API budget per plan, in EUR. null = unlimited (OWNER).
+ * Monthly API budget per plan, in EUR. null = the plan states no figure of its
+ * own (OWNER) — which is NOT the same as unlimited. `effectiveBudget` turns a
+ * null here into PERSONAL_DEFAULT_CAP_EUR, or into whatever lower number the
+ * account set for itself; only `Settings.spendCapDisabled` removes the ceiling.
  *
  * Sized against NET revenue, not the sticker price: plans are sold HT and
  * URSSAF cotisations (micro-entrepreneur, ~21%) come off the top, so a plan
@@ -39,7 +57,7 @@ export function eurPerUsd(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : 1;
 }
 
-/** Plan budget in micro-USD, or null for unlimited (OWNER). */
+/** Plan budget in micro-USD, or null when the plan states no figure (OWNER). */
 export function budgetForPlan(plan: Plan): number | null {
   const eur = BUDGET_EUR[plan];
   if (eur == null) return null;
@@ -104,7 +122,14 @@ export function mediaRequestCost(modelId: string, kind: "image" | "video"): numb
 export interface RecordSpendInput {
   userId: string;
   model: string;
-  kind: "chat" | "image" | "video" | "voice" | "code" | "task";
+  /**
+   * "work" and "research" are ledger kinds, not chat: a Work run's model spend
+   * and deep research's per-search vendor fees were previously billed to nobody
+   * at all. `ApiSpend.kind` is a free-text column, so widening the union is the
+   * whole change — but keep it a union, so a typo cannot invent a category the
+   * usage breakdown will silently drop.
+   */
+  kind: SpendKind;
   /** Which surface produced the spend — "web" (site) or "app" (native app). */
   source?: "web" | "app";
   promptTokens?: number;
@@ -130,6 +155,20 @@ export interface RecordSpendInput {
    * the ledger.
    */
   costUsd?: number;
+  /**
+   * Set only by a writer that can legitimately retry the same charge — today,
+   * the voice relay, which re-sends any delta it could not confirm. The unique
+   * index on (userId, idempotencyKey) turns that retry into a no-op instead of
+   * a second bill. Leave undefined for a caller that speaks once.
+   */
+  idempotencyKey?: string;
+  /**
+   * The `ref` this spend was reserved under, if it was. Settling here rather
+   * than at each of the caller's exits is deliberate: a chat turn has four
+   * places it can record spend and rather more places it can end, and a hold
+   * that is never settled is a budget the user watches not recover.
+   */
+  ref?: string;
 }
 
 /**
@@ -195,22 +234,121 @@ export async function recordSpend(input: RecordSpendInput): Promise<void> {
       }
     }
 
-    await prisma.apiSpend.create({
-      data: {
-        userId: input.userId,
-        model: input.model,
-        kind: input.kind,
-        source: input.source ?? "web",
-        promptTokens,
-        completionTokens,
-        costMicroUsd: Math.max(0, costMicroUsd),
-      },
-    });
+    const data = {
+      userId: input.userId,
+      model: input.model,
+      kind: input.kind,
+      source: input.source ?? "web",
+      promptTokens,
+      completionTokens,
+      costMicroUsd: Math.max(0, costMicroUsd),
+    };
+
+    let inserted = true;
+    if (input.idempotencyKey) {
+      // A retry of a charge that already landed must be a no-op, not a second
+      // bill. `create` inside a unique constraint is the only version of this
+      // that is safe against two relay ticks racing — a read-then-create would
+      // let both observe "absent" and both insert.
+      await prisma.apiSpend
+        .create({ data: { ...data, idempotencyKey: input.idempotencyKey } })
+        .catch((error: unknown) => {
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+            inserted = false;
+            return;
+          }
+          throw error;
+        });
+    } else {
+      await prisma.apiSpend.create({ data });
+    }
+
+    // The reservation ledger's settled total. Only on a real insert: a retry
+    // the unique index collapsed into a no-op has already been counted, and
+    // counting it again would eat the ceiling twice for one charge.
+    if (inserted) await commitToSpendPeriod(input.userId, data.costMicroUsd);
+
+    // The estimate held for this unit of work is now worth less than the truth.
+    // Settling after the commit, never before: the moment between the two is
+    // an over-count, which refuses work; the reverse is an under-count, which
+    // admits it.
+    if (input.ref) await settleSpend(input.userId, input.ref, data.costMicroUsd);
   } catch (err) {
     console.error("[spend] failed to record spend", {
       userId: input.userId,
       model: input.model,
       kind: input.kind,
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
+ * Bill a Work run's model spend to the shared ledger.
+ *
+ * Work never called `recordSpend` at all: a run could loop for an hour on a
+ * frontier model and the usage tile would show the same figure as an idle
+ * account. `WorkRun.costMicroUsd` tracked it perfectly and nothing else ever
+ * read that column.
+ *
+ * DELTAS, not the cumulative total. A parked run reports its usage at the pause
+ * boundary and again at the finish after resuming, and billing the cumulative
+ * figure twice would double-charge every run a user ever paused. The
+ * already-billed figure is read back from the ledger rather than from
+ * `WorkRun.costMicroUsd`, because checkpoints advance that column mid-run
+ * without billing anything — reading it would make the delta zero.
+ *
+ * The idempotency key carries the cumulative total, so a terminal write that
+ * the runner retries lands once. Fire-and-forget, like every other ledger
+ * writer: a run that finished must not be marked failed because a billing row
+ * would not insert.
+ */
+export async function recordWorkRunSpend(input: {
+  userId: string;
+  runId: string;
+  model: string | null;
+  cumulativeCostMicroUsd: number;
+  inputTokens?: number;
+  outputTokens?: number;
+}): Promise<void> {
+  try {
+    const cumulative = Math.max(0, Math.round(input.cumulativeCostMicroUsd));
+    if (cumulative <= 0) return;
+    const prefix = `work:${input.runId}:`;
+    const billed = await prisma.apiSpend.aggregate({
+      where: { userId: input.userId, idempotencyKey: { startsWith: prefix } },
+      _sum: { costMicroUsd: true, promptTokens: true, completionTokens: true },
+    });
+    const delta = cumulative - (billed._sum.costMicroUsd ?? 0);
+    if (delta <= 0) return;
+
+    // The token counts are cumulative too, and `recordSpend` re-costs from them
+    // and keeps the HIGHER of the two figures. Handing it cumulative tokens
+    // beside a delta cost would therefore bill the whole run again at the
+    // second terminal point, which is the exact bug deltas exist to avoid.
+    const promptDelta = Math.max(0, (input.inputTokens ?? 0) - (billed._sum.promptTokens ?? 0));
+    const completionDelta = Math.max(
+      0,
+      (input.outputTokens ?? 0) - (billed._sum.completionTokens ?? 0)
+    );
+
+    await recordSpend({
+      userId: input.userId,
+      // A run whose model was never resolved still spent money; naming it
+      // honestly beats attributing the cost to a model that did not run.
+      model: input.model ?? "unknown",
+      kind: "work",
+      promptTokens: promptDelta,
+      completionTokens: completionDelta,
+      // The runner's own accounting includes tool fees and every non-chat call
+      // the run made, so it is the floor rather than a hint.
+      costUsd: delta / 1_000_000,
+      idempotencyKey: `${prefix}${cumulative}`,
+    });
+  } catch (err) {
+    console.error("[spend] failed to bill a work run", {
+      userId: input.userId,
+      runId: input.runId,
       message: err instanceof Error ? err.message : String(err),
     });
   }
@@ -288,16 +426,27 @@ function currentPeriod(boundary: Date, now: Date): { start: Date; end: Date } {
  * reset on the subscriber's schedule, not the calendar 1st: boundaries follow
  * the real Stripe period end when present, else the subscription anniversary.
  * A past/stale currentPeriodEnd is rolled forward to the live cell.
- * null = OWNER / unlimited (no budget to track).
+ *
+ * No longer returns null for a plan without a budget figure. It used to, and
+ * that was the first domino: OWNER got no period, so no window, so no spend was
+ * ever counted for the one account that had no ceiling either.
+ *
+ * An account with NO subscription row — the personal account, and every FREE
+ * one — is anchored to the calendar month instead. Anchoring it to `now`, as
+ * this did, produced a period starting at this instant, against which the
+ * spend of the last thirty days is always exactly zero.
  */
 export function billingPeriodFor(
-  plan: Plan,
   sub: { createdAt: Date; currentPeriodEnd: Date | null } | null,
   now = new Date()
-): BillingPeriod | null {
-  if (budgetForPlan(plan) == null) return null; // OWNER / unlimited
-  const anchor = sub?.createdAt ?? now;
-  const boundary = sub?.currentPeriodEnd ?? anchor;
+): BillingPeriod {
+  if (!sub) {
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    return { startMs: start.getTime(), endMs: end.getTime(), anchorMs: start.getTime() };
+  }
+  const anchor = sub.createdAt;
+  const boundary = sub.currentPeriodEnd ?? anchor;
   const { start, end } = currentPeriod(boundary, now);
   return { startMs: start.getTime(), endMs: end.getTime(), anchorMs: anchor.getTime() };
 }
@@ -305,15 +454,44 @@ export function billingPeriodFor(
 /** Fetch the subscription and derive the current billing period. */
 export async function resolveBillingPeriod(
   userId: string,
-  plan: Plan,
   now = new Date()
-): Promise<BillingPeriod | null> {
-  if (budgetForPlan(plan) == null) return null;
+): Promise<BillingPeriod> {
   const sub = await prisma.subscription.findUnique({
     where: { userId },
     select: { createdAt: true, currentPeriodEnd: true },
   });
-  return billingPeriodFor(plan, sub, now);
+  return billingPeriodFor(sub, now);
+}
+
+/**
+ * The key SpendPeriod rows are filed under: the ISO date of the period start.
+ * Derived from the billing period rather than the calendar month so the
+ * reservation ledger and the ApiSpend aggregate always cover the same window —
+ * two different windows would let a hold outlive the spend it was held against.
+ */
+export function spendPeriodKey(period: BillingPeriod): string {
+  return new Date(period.startMs).toISOString().slice(0, 10);
+}
+
+/**
+ * The ceiling that binds for this account, from the plan and the account's own
+ * settings. One read of Settings; pass the result on to `checkBudget` and
+ * `reserveSpend` rather than resolving it twice per request.
+ */
+export async function resolveEffectiveBudget(
+  userId: string,
+  plan: Plan
+): Promise<EffectiveBudget> {
+  const settings = await prisma.settings.findUnique({
+    where: { userId },
+    select: { monthlySpendCapEur: true, spendCapDisabled: true },
+  });
+  return effectiveBudget({
+    planBudgetMicroUsd: budgetForPlan(plan),
+    userCapEur: settings?.monthlySpendCapEur ?? null,
+    capDisabled: settings?.spendCapDisabled ?? false,
+    eurPerUsd: eurPerUsd(),
+  });
 }
 
 export interface BudgetStatus {
@@ -323,26 +501,54 @@ export interface BudgetStatus {
   remainingMicroUsd: number | null;
   /** Epoch ms when the budget renews (billing period end); null = unlimited. */
   resetsAtMs: number | null;
+  /** Micro-USD held by generations that are still running. */
+  reservedMicroUsd: number;
+  /** Which number bound — the UI reports who set the ceiling. */
+  capSource: BudgetCapSource;
+  /** `Settings.spendCapDisabled` is on. Say so, loudly, wherever this is read. */
+  capDisabled: boolean;
 }
 
 /**
- * Pre-stream budget gate. OWNER is always allowed without touching the
- * database. FREE has a 0 budget and is always blocked. Paid plans are allowed
- * while spend within the current BILLING PERIOD is under budget. Pass a
- * pre-resolved `period` to avoid a second subscription lookup.
+ * Pre-stream budget gate.
+ *
+ * Every account now has a figure: the plan's, the account's own, or
+ * PERSONAL_DEFAULT_CAP_EUR when the plan states none. The one path that returns
+ * "allowed, no ceiling" is `spendCapDisabled`, and it reports itself so the
+ * caller cannot show it as a normal unlimited plan.
+ *
+ * `remainingMicroUsd` is what the mid-stream guard is handed, so it subtracts
+ * open reservations as well as settled spend — otherwise a turn admitted
+ * alongside two others would each be told it had the whole remainder.
+ *
+ * Pass a pre-resolved `period` / `budget` to avoid repeating their lookups.
  */
 export async function checkBudget(
   userId: string,
   plan: Plan,
-  period?: BillingPeriod | null
+  period?: BillingPeriod | null,
+  budget?: EffectiveBudget
 ): Promise<BudgetStatus> {
-  const budgetMicroUsd = budgetForPlan(plan);
-  if (budgetMicroUsd == null) {
-    return { allowed: true, spentMicroUsd: 0, budgetMicroUsd: null, remainingMicroUsd: null, resetsAtMs: null };
+  const eff = budget ?? (await resolveEffectiveBudget(userId, plan));
+  if (eff.budgetMicroUsd == null) {
+    return {
+      allowed: true,
+      spentMicroUsd: 0,
+      budgetMicroUsd: null,
+      remainingMicroUsd: null,
+      resetsAtMs: null,
+      reservedMicroUsd: 0,
+      capSource: eff.source,
+      capDisabled: true,
+    };
   }
-  const p = period ?? (await resolveBillingPeriod(userId, plan));
+  const budgetMicroUsd = eff.budgetMicroUsd;
+  const p = period ?? (await resolveBillingPeriod(userId));
   const since = p ? new Date(p.startMs) : new Date(Date.now() - MONTH_MS);
-  const spentMicroUsd = await spendSinceMicroUsd(userId, since);
+  const [spentMicroUsd, reservedMicroUsd] = await Promise.all([
+    spendSinceMicroUsd(userId, since),
+    p ? openReservedMicroUsd(userId, p) : Promise.resolve(0),
+  ]);
   // Lifecycle email: past 80% of the period budget, fire-and-forget the
   // budget-alert sender (it dedupes to ONE email per billing period and
   // honors settings.emailBudgetAlerts). The threshold test reuses numbers
@@ -350,13 +556,332 @@ export async function checkBudget(
   if (budgetMicroUsd > 0 && spentMicroUsd >= budgetMicroUsd * 0.8) {
     void sendBudgetAlert({ userId, spentMicroUsd, budgetMicroUsd, resetsAtMs: p?.endMs ?? null });
   }
+  const committedAndHeld = spentMicroUsd + reservedMicroUsd;
   return {
-    allowed: spentMicroUsd < budgetMicroUsd,
+    allowed: committedAndHeld < budgetMicroUsd,
     spentMicroUsd,
     budgetMicroUsd,
-    remainingMicroUsd: Math.max(0, budgetMicroUsd - spentMicroUsd),
+    remainingMicroUsd: Math.max(0, budgetMicroUsd - committedAndHeld),
     resetsAtMs: p?.endMs ?? null,
+    reservedMicroUsd,
+    capSource: eff.source,
+    capDisabled: false,
   };
+}
+
+/**
+ * Micro-USD held by reservations that are still open and not yet stale.
+ *
+ * The TTL is applied in the query rather than by a sweeper because a stuck hold
+ * must stop counting whether or not a sweeper ever runs: a worker that dies
+ * mid-stream would otherwise pin its estimate against the account for the rest
+ * of the month, and the only symptom the user would see is a budget that never
+ * recovers.
+ */
+async function openReservedMicroUsd(userId: string, period: BillingPeriod): Promise<number> {
+  const agg = await prisma.spendReservation.aggregate({
+    where: {
+      userId,
+      state: "open",
+      createdAt: { gte: new Date(Date.now() - RESERVATION_TTL_MS), lt: new Date(period.endMs) },
+    },
+    _sum: { estimateMicroUsd: true },
+  });
+  return Number(agg._sum.estimateMicroUsd ?? 0n);
+}
+
+// ---------------------------------------------------------------------------
+// Reservations — closing the read-then-act window
+// ---------------------------------------------------------------------------
+
+/**
+ * Materialise this period's SpendPeriod row, seeded from the ledger.
+ *
+ * The seed matters: ApiSpend has been the record of settled spend since long
+ * before SpendPeriod existed, so a row created today with `committedMicroUsd`
+ * at 0 would hand the account a fresh €15 it has already partly spent. The
+ * aggregate runs once per period, on the first reservation.
+ */
+async function ensureSpendPeriod(userId: string, period: BillingPeriod): Promise<string> {
+  const key = spendPeriodKey(period);
+  const existing = await prisma.spendPeriod.findFirst({
+    where: { userId, period: key },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+
+  const seeded = await spendSinceMicroUsd(userId, new Date(period.startMs));
+  const row = await prisma.spendPeriod.upsert({
+    where: { userId_period: { userId, period: key } },
+    create: { userId, period: key, committedMicroUsd: BigInt(Math.max(0, seeded)) },
+    // Empty on purpose: a concurrent caller that won the race has already
+    // seeded it, and re-seeding would clobber whatever has settled since.
+    update: {},
+    select: { id: true },
+  });
+  return row.id;
+}
+
+export interface ReserveSpendInput {
+  userId: string;
+  kind: SpendKind;
+  /**
+   * What this unit of work is expected to cost. Omitted → the per-kind default
+   * in spend-ceiling.ts.
+   */
+  estimateMicroUsd?: number;
+  /**
+   * Caller-supplied identity for the unit of work (generation id, run id,
+   * session id). Unique per user, so a retry reuses its reservation rather than
+   * opening a second one against the same turn.
+   */
+  ref: string;
+  plan?: Plan;
+  period?: BillingPeriod;
+  budget?: EffectiveBudget;
+}
+
+export interface SpendReservationResult {
+  allowed: boolean;
+  reservationId: string | null;
+  estimateMicroUsd: number;
+  /** Room left after this hold; null when the cap is disabled. */
+  remainingMicroUsd: number | null;
+  budgetMicroUsd: number | null;
+  capSource: BudgetCapSource;
+  capDisabled: boolean;
+  /** Set when refused, so the caller can say which ceiling stopped it. */
+  refusedBy?: "period" | "unit";
+}
+
+/**
+ * Hold money against the ceiling before the work starts.
+ *
+ * `checkBudget` on its own is read-then-act: it reads settled spend, and the
+ * ledger is only written when a turn ENDS, so the window in which two turns can
+ * both be admitted is the whole duration of every in-flight generation. This
+ * closes it the way `reserveCodeMessage` closes the message-count equivalent —
+ * ONE conditional UPDATE, with the predicate evaluated by the database, so two
+ * concurrent callers cannot both observe the same under-ceiling total.
+ *
+ * The reservation row is written before the hold so that `ref`'s unique index
+ * is what resolves a retry; a hold taken first would leak when the duplicate
+ * insert failed.
+ */
+export async function reserveSpend(input: ReserveSpendInput): Promise<SpendReservationResult> {
+  const estimate = Math.max(
+    0,
+    Math.round(input.estimateMicroUsd ?? DEFAULT_ESTIMATE_MICRO_USD[input.kind])
+  );
+  // Resolved rather than defaulted: guessing FREE here would give a budget of
+  // 0 and refuse every caller that did not happen to know the plan, which is
+  // most of them — a gate that fails closed on its own ignorance is a gate that
+  // gets deleted.
+  const eff =
+    input.budget ??
+    (await resolveEffectiveBudget(input.userId, input.plan ?? (await getUserPlan(input.userId))));
+
+  // The per-unit ceiling is a separate refusal from the monthly one: a research
+  // run that fans out into searches, or a Work run that loops, can burn a whole
+  // month's budget in an afternoon while every individual check passes.
+  const unitCeiling = UNIT_CEILING_MICRO_USD[input.kind];
+  if (!eff.capDisabled && unitCeiling != null && estimate > unitCeiling) {
+    return {
+      allowed: false,
+      reservationId: null,
+      estimateMicroUsd: estimate,
+      remainingMicroUsd: 0,
+      budgetMicroUsd: eff.budgetMicroUsd,
+      capSource: eff.source,
+      capDisabled: eff.capDisabled,
+      refusedBy: "unit",
+    };
+  }
+
+  const period = input.period ?? (await resolveBillingPeriod(input.userId));
+  const periodId = await ensureSpendPeriod(input.userId, period);
+
+  return prisma.$transaction(async (tx) => {
+    // A retry of the same unit of work must not open a second hold. State is
+    // ignored deliberately: once a turn has settled, re-reserving it would bill
+    // the ceiling twice for one generation.
+    const existing = await tx.spendReservation.findFirst({
+      where: { userId: input.userId, ref: input.ref },
+      select: { id: true, estimateMicroUsd: true },
+    });
+    if (existing) {
+      const held = await tx.spendPeriod.findFirst({
+        where: { id: periodId, userId: input.userId },
+        select: { committedMicroUsd: true, reservedMicroUsd: true },
+      });
+      const spent = held ? Number(held.committedMicroUsd) + Number(held.reservedMicroUsd) : 0;
+      return {
+        allowed: true,
+        reservationId: existing.id,
+        estimateMicroUsd: Number(existing.estimateMicroUsd),
+        // The room actually left, not the whole ceiling. A retry that was told
+        // it had the full budget would hand that figure to the mid-stream
+        // guard, and the guard would never fire.
+        remainingMicroUsd:
+          eff.budgetMicroUsd == null ? null : Math.max(0, eff.budgetMicroUsd - spent),
+        budgetMicroUsd: eff.budgetMicroUsd,
+        capSource: eff.source,
+        capDisabled: eff.capDisabled,
+      };
+    }
+
+    const held = await tx.$executeRaw(
+      eff.budgetMicroUsd == null
+        ? Prisma.sql`
+            UPDATE "SpendPeriod"
+               SET "reservedMicroUsd" = "reservedMicroUsd" + ${BigInt(estimate)},
+                   "updatedAt" = now()
+             WHERE "id" = ${periodId} AND "userId" = ${input.userId}`
+        : Prisma.sql`
+            UPDATE "SpendPeriod"
+               SET "reservedMicroUsd" = "reservedMicroUsd" + ${BigInt(estimate)},
+                   "updatedAt" = now()
+             WHERE "id" = ${periodId} AND "userId" = ${input.userId}
+               AND "committedMicroUsd" + "reservedMicroUsd" + ${BigInt(estimate)}
+                   <= ${BigInt(eff.budgetMicroUsd)}`
+    );
+
+    const row = await tx.spendPeriod.findFirst({
+      where: { id: periodId, userId: input.userId },
+      select: { committedMicroUsd: true, reservedMicroUsd: true },
+    });
+    const total = row ? Number(row.committedMicroUsd) + Number(row.reservedMicroUsd) : 0;
+    const remaining = eff.budgetMicroUsd == null ? null : Math.max(0, eff.budgetMicroUsd - total);
+
+    if (held === 0) {
+      return {
+        allowed: false,
+        reservationId: null,
+        estimateMicroUsd: estimate,
+        remainingMicroUsd: remaining,
+        budgetMicroUsd: eff.budgetMicroUsd,
+        capSource: eff.source,
+        capDisabled: eff.capDisabled,
+        refusedBy: "period" as const,
+      };
+    }
+
+    const reservation = await tx.spendReservation.create({
+      data: {
+        userId: input.userId,
+        periodId,
+        kind: input.kind,
+        estimateMicroUsd: BigInt(estimate),
+        ref: input.ref,
+      },
+      select: { id: true },
+    });
+    return {
+      allowed: true,
+      reservationId: reservation.id,
+      estimateMicroUsd: estimate,
+      remainingMicroUsd: remaining,
+      budgetMicroUsd: eff.budgetMicroUsd,
+      capSource: eff.source,
+      capDisabled: eff.capDisabled,
+    };
+  });
+}
+
+/**
+ * Replace the estimate with the truth.
+ *
+ * The hold is released in full and the real figure is stamped on the
+ * reservation; the money itself reached `committedMicroUsd` through
+ * `recordSpend`, which is the single writer of settled spend. So the caller's
+ * order is record-then-settle: settling first would briefly under-count the
+ * account, and under-counting is the direction that lets a turn through.
+ *
+ * Conditional on `state = "open"`, so a double settle — a retried webhook, a
+ * runner and a sweeper arriving together — cannot refund the hold twice.
+ * Never throws: this is called from stream teardown.
+ */
+export async function settleSpend(
+  userId: string,
+  ref: string,
+  actualMicroUsd: number
+): Promise<boolean> {
+  return closeReservation(userId, ref, "settled", Math.max(0, Math.round(actualMicroUsd)));
+}
+
+/** Abandoned work: drop the hold and commit nothing. */
+export async function releaseSpend(userId: string, ref: string): Promise<boolean> {
+  return closeReservation(userId, ref, "released", null);
+}
+
+async function closeReservation(
+  userId: string,
+  ref: string,
+  state: "settled" | "released",
+  actualMicroUsd: number | null
+): Promise<boolean> {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const reservation = await tx.spendReservation.findFirst({
+        where: { userId, ref, state: "open" },
+        select: { id: true, periodId: true, estimateMicroUsd: true },
+      });
+      if (!reservation) return false;
+
+      const closed = await tx.spendReservation.updateMany({
+        where: { id: reservation.id, userId, state: "open" },
+        data: {
+          state,
+          settledMicroUsd: actualMicroUsd == null ? null : BigInt(actualMicroUsd),
+          settledAt: new Date(),
+        },
+      });
+      if (closed.count !== 1) return false;
+
+      // GREATEST(…, 0): a hold released twice must not manufacture headroom
+      // that was never taken, and the column is unsigned only by convention.
+      await tx.$executeRaw(Prisma.sql`
+        UPDATE "SpendPeriod"
+           SET "reservedMicroUsd" = GREATEST("reservedMicroUsd" - ${reservation.estimateMicroUsd}, 0),
+               "updatedAt" = now()
+         WHERE "id" = ${reservation.periodId} AND "userId" = ${userId}`);
+      return true;
+    });
+  } catch (err) {
+    console.error("[spend] failed to close reservation", {
+      userId,
+      ref,
+      state,
+      message: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+/**
+ * Advance the period's settled total. Called from `recordSpend` only, and only
+ * when an ApiSpend row was actually inserted — an idempotent retry that
+ * collapsed into a no-op must not move the total.
+ *
+ * Its own try/catch: `recordSpend` is fire-and-forget by contract and this must
+ * never be the thing that throws into a stream.
+ */
+async function commitToSpendPeriod(userId: string, costMicroUsd: number): Promise<void> {
+  if (costMicroUsd <= 0) return;
+  try {
+    const period = await resolveBillingPeriod(userId);
+    const periodId = await ensureSpendPeriod(userId, period);
+    await prisma.$executeRaw(Prisma.sql`
+      UPDATE "SpendPeriod"
+         SET "committedMicroUsd" = "committedMicroUsd" + ${BigInt(costMicroUsd)},
+             "updatedAt" = now()
+       WHERE "id" = ${periodId} AND "userId" = ${userId}`);
+  } catch (err) {
+    console.error("[spend] failed to advance the spend period", {
+      userId,
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 export interface UsageWindow {
@@ -376,16 +901,18 @@ export interface UsageWindows {
 
 /**
  * Rolling 5-hour and weekly usage windows, anchored to the subscription so they
- * reset on the subscriber's schedule. Pass the pre-resolved billing `period`;
- * null → OWNER/unlimited (no metering).
+ * reset on the subscriber's schedule. Takes the EFFECTIVE monthly ceiling
+ * rather than the plan, so the windows tile the number actually enforced —
+ * lowering the cap in settings has to move the meters with it, or the gauge
+ * says "12% used" for an account that is out of budget.
+ * A null ceiling (the cap disabled) means no metering.
  */
 export async function getUsageWindows(
   userId: string,
-  plan: Plan,
+  monthBudget: number | null,
   period: BillingPeriod | null,
   now = new Date()
 ): Promise<UsageWindows> {
-  const monthBudget = budgetForPlan(plan);
   const nowMs = now.getTime();
   if (monthBudget == null || period == null) {
     const w: UsageWindow = { spentMicroUsd: 0, budgetMicroUsd: null, pct: 0, resetsAtMs: nowMs };

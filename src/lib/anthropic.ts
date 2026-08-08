@@ -593,6 +593,35 @@ export async function* streamAnthropic(
     addAnthropicUsage(acc, round.usage);
     if (round.usage.speed != null) servedSpeed = round.usage.speed;
 
+    /*
+     * Report the running total after every round, not just at the end.
+     *
+     * The mid-stream budget guard (src/lib/chat-budget-guard.ts) re-costs the
+     * turn on each usage event and aborts the provider stream when it would
+     * cross the ceiling. While this adapter made exactly one request that was
+     * academic — the only usage event arrived as the turn finished. A tool loop
+     * makes it matter: each round re-sends the WHOLE conversation, so a
+     * six-round connector turn bills input roughly six times, and a guard that
+     * first hears about it after the sixth round has nothing left to prevent.
+     *
+     * Safe to emit repeatedly because these are cumulative and monotonic, and
+     * the accumulator merges usage with `preferHigher` (src/lib/usage-merge.ts).
+     * `fast` is deliberately withheld until the final event: it is a billing
+     * rate, not a counter, and asserting it early would let a turn that later
+     * degrades to standard speed be priced at the premium one.
+     */
+    yield {
+      type: "usage",
+      input: acc.input || undefined,
+      output: acc.output || undefined,
+      cacheRead: acc.cacheRead || undefined,
+      cacheWrite: acc.cacheWrite || undefined,
+      cacheWrite5m: acc.cacheWrite5m || undefined,
+      cacheWrite1h: acc.cacheWrite1h || undefined,
+      reasoning: acc.reasoning || undefined,
+      webSearchRequests: acc.webSearchRequests || undefined,
+    } satisfies LlmEvent;
+
     // Claude asked for tools and the budget allows another round: run them
     // through the broker and feed the results back.
     if (hasTools && !isFinalRound && stopReason === "tool_use" && toolUses.length > 0) {
@@ -600,9 +629,23 @@ export async function* streamAnthropic(
       const results: Anthropic.Messages.ToolResultBlockParam[] = [];
       for (const call of toolUses) {
         const label = toolset!.labelFor(call.name);
-        const text = await toolset!.execute(call.name, safeToolInput(call.json), signal, call.id);
-        results.push({ type: "tool_result", tool_use_id: call.id, content: text });
-        yield { type: "tool", server: label, name: call.name, phase: "result" };
+        const exec = await toolset!.execute(call.name, safeToolInput(call.json), signal, call.id);
+        results.push({ type: "tool_result", tool_use_id: call.id, content: exec.text });
+        yield {
+          type: "tool",
+          server: label,
+          name: call.name,
+          phase: "result",
+          callId: call.id,
+          // Anthropic's ONLY chance to supply arguments: the call event was
+          // yielded from `content_block_start`, before `input_json_delta` had
+          // begun. `call.json` is the raw accumulated JSON text, unparsed —
+          // redaction and truncation belong to the route, not to an adapter.
+          args: call.json,
+          result: exec.body,
+          ok: exec.ok,
+          durationMs: exec.durationMs,
+        };
       }
       messages.push({ role: "user", content: results });
       continue;

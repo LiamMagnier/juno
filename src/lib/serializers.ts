@@ -22,6 +22,7 @@ import { coerceTitleSource } from "@/lib/title-ownership";
 import { resolveModel } from "@/lib/models";
 import { estimateCostUsd } from "@/lib/pricing";
 import { coerceChatOrigin } from "@/lib/chat-origin";
+import { readToolDetail } from "@/lib/chat/tool-detail";
 
 const ACTIVITY_KINDS = new Set<ClientActivityEvent["kind"]>([
   "context",
@@ -51,6 +52,14 @@ function serializeReasoningParts(raw: unknown): string[] | undefined {
   return parts.length ? parts : undefined;
 }
 
+/**
+ * Rebuild the activity log from the `Message.activity` JSON column.
+ *
+ * THIS IS A FIELD WHITELIST, and that is the trap it lays: an event is rebuilt
+ * from named fields, so anything added to `ClientActivityEvent` without being
+ * added here streams live and then vanishes the moment the page reloads. The
+ * failure is silent and looks exactly like the feature working.
+ */
 function serializeActivity(raw: unknown): ClientActivityEvent[] | undefined {
   if (!Array.isArray(raw)) return undefined;
 
@@ -63,6 +72,12 @@ function serializeActivity(raw: unknown): ClientActivityEvent[] | undefined {
     const createdAt = typeof record.createdAt === "string" ? record.createdAt : "";
     if (!id || !kind || !title || !createdAt) return [];
 
+    // The connector payload behind a tool row. Absent on every message written
+    // before it shipped, and on every row that is not one real call — which is
+    // exactly why replay degrades to the old name-only row rather than needing
+    // a version check.
+    const tool = readToolDetail(record.tool);
+
     return [
       {
         id,
@@ -71,6 +86,7 @@ function serializeActivity(raw: unknown): ClientActivityEvent[] | undefined {
         detail: typeof record.detail === "string" ? record.detail : undefined,
         url: typeof record.url === "string" ? record.url : undefined,
         createdAt,
+        ...(tool ? { tool } : {}),
       },
     ];
   });

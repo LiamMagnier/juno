@@ -159,6 +159,53 @@ export function resolveBackgroundCandidates<T extends UtilityCandidate>(opts: {
 }
 
 /**
+ * A sentence explaining a denial, for the surfaces that have to tell the user
+ * why nothing happened.
+ *
+ * It exists because the alternative shipped: /api/memory/edit could not
+ * distinguish "the policy refused" from "every provider failed", so it reported
+ * a policy denial as "The AI providers are rate-limited right now" — a claim
+ * that was false, unactionable, and told the user to wait for a condition that
+ * would never change. A refusal has to name the rule that refused and where to
+ * change it, or it is worse than no message at all.
+ */
+/*
+ * Whole sentences, and a name the i18n extractor recognises as copy
+ * (scripts/generate-i18n-catalog.mjs collects every literal inside a
+ * `*Message` variable). Composing these from a shared "you can change this
+ * under…" fragment read better in English and would have handed translators
+ * half-sentences with no grammar to hang them on.
+ */
+const DENIAL_MESSAGE: Record<BackgroundDenialReason, string> = {
+  no_candidate_for_conversation_provider:
+    "Juno keeps background work with the provider you chat with, and that provider has no model free for it right now. You can change this under Settings → Memory → Background processing.",
+  selected_provider_unavailable:
+    "Background work is pinned to one provider, and that provider isn’t configured or has no model available. You can change this under Settings → Memory → Background processing.",
+  no_local_model:
+    "Background work is limited to on-device models, and none is available in this deployment. You can change this under Settings → Memory → Background processing.",
+  excluded_by_allowlist:
+    "This deployment’s provider allowlist rules out every provider that could do this work. Your administrator sets that list.",
+  // Not a policy decision at all — nothing is configured to deny. Providers are
+  // a deployment concern here, so there is no setting to point at, and
+  // inventing one would be its own small lie.
+  no_candidates: "No AI provider is configured for background work in this deployment yet.",
+};
+
+const FALLBACK_DENIAL_MESSAGE =
+  "Your background-processing setting left no provider allowed to do this. You can change it under Settings → Memory → Background processing.";
+
+/**
+ * Takes only the reason, not the mode: the stored mode is a snake_case token,
+ * not something a person should be made to read, and every sentence above
+ * already implies the rule that produced it. The mode still travels in the API
+ * response beside the message, for logs and for a client that wants to
+ * preselect the control.
+ */
+export function backgroundDenialMessage(reason: BackgroundDenialReason | undefined): string {
+  return (reason && DENIAL_MESSAGE[reason]) || FALLBACK_DENIAL_MESSAGE;
+}
+
+/**
  * What a background job did, recorded so the choice is auditable.
  *
  * Carries no content and no identifiers beyond the account — the point is to
@@ -177,8 +224,22 @@ export interface BackgroundProcessingRecord {
 export type BackgroundPurpose =
   | "memory_extraction"
   | "memory_consolidation"
+  /** Drafting a memory change from the user's natural-language instruction. */
+  | "memory_edit"
   | "title"
   | "moderation"
   | "research_planning"
+  // Re-reading a cited passage to decide whether it supports the claim. It is
+  // the user's research corpus going to a model, so it is bound by the same
+  // policy as every other background job rather than riding along with the
+  // conversation's own provider.
+  | "citation_validation"
   | "follow_ups"
-  | "translation";
+  | "translation"
+  /**
+   * Embedding a user's uploaded documents. The most content-revealing
+   * background job there is — indexing a library sends every paragraph of every
+   * file to a provider, not a summary of one conversation — so it goes through
+   * the same policy rather than around it. See src/lib/knowledge/embed.ts.
+   */
+  | "knowledge_embedding";

@@ -73,6 +73,13 @@ const ALLOWED_AUDIT_KEYS: ReadonlySet<string> = new Set([
   "severity",
   "allowed",
   "refused",
+  // Whether a skill's instructions went into the system prompt inside the
+  // untrusted-content envelope. A boolean about how Juno framed the text, not
+  // about the text — see `skillSystemSuffix`. Answering "was a stranger's
+  // wording in the prompt in the clear for this run" later has to come from
+  // here, because `WorkSkill.trust` is a column the user can change afterwards
+  // and reading it back would rewrite the history of every run that used it.
+  "untrusted",
   "accessMode",
   "policy",
   "policyBefore",

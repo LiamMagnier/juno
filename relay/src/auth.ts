@@ -6,6 +6,34 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * is JSON {"uid": string, "exp": epochSeconds}. The relay never talks to the
  * database — possession of a fresh valid token IS the authorization.
  */
+/**
+ * Mint a token for the relay's own calls BACK to Juno.
+ *
+ * Same construction as the inbound token and the same shared `AUTH_SECRET`, run
+ * in the other direction: Juno proves to the relay that a user is real, and
+ * this proves to Juno that a spend report came from the relay rather than from
+ * anyone who can reach the endpoint. The relay still never touches the
+ * database — it only asserts "this is me, reporting for this user".
+ *
+ * Deliberately short-lived. It is minted per request rather than held, so a
+ * token captured off the wire is useless within a minute, and a relay process
+ * that is killed leaves nothing reusable behind.
+ */
+export function mintRelayCallbackToken(userId: string, ttlSeconds = 60): string {
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) throw new Error("AUTH_SECRET is not configured on the relay.");
+  const payload = JSON.stringify({
+    uid: userId,
+    exp: Math.floor(Date.now() / 1000) + ttlSeconds,
+    // Names the direction, so a token minted for a callback can never be
+    // replayed as a session token and vice versa.
+    aud: "juno.voice.spend",
+  });
+  const body = Buffer.from(payload).toString("base64url");
+  const mac = createHmac("sha256", secret).update(body).digest("base64url");
+  return `${body}.${mac}`;
+}
+
 export function verifyRelayToken(token: string | null): { userId: string } | null {
   if (!token) return null;
   const secret = process.env.AUTH_SECRET;

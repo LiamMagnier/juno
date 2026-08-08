@@ -1,16 +1,28 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { ChevronRight, X } from "lucide-react";
+import { AicssCodeBlock } from "@/components/aicss/code-block";
 import { ThinkingReasoning } from "@/components/aicss/thinking-reasoning";
 import { ThinkingState } from "@/components/aicss/thinking-state";
 import type { WebSearchSite } from "@/components/aicss/web-search";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { cn } from "@/lib/utils";
-import { formatSpan, splitCost, toRunMarkdown, toSourcesMarkdown } from "@/lib/run-receipt";
+import {
+  TOOLS_DESCRIPTION,
+  TOOLS_NO_DETAIL_NOTE,
+  formatSpan,
+  splitCost,
+  toRunMarkdown,
+  toSourcesMarkdown,
+  toolArgsLabel,
+  toolArgsNoteText,
+  toolResultLabel,
+  toolResultNoteText,
+} from "@/lib/run-receipt";
 import { toReasoningLines } from "@/lib/reasoning-lines";
 import { toSteps } from "@/lib/reasoning-parts";
-import type { ClientActivityEvent } from "@/types/chat";
+import type { ClientActivityEvent, ClientToolDetail } from "@/types/chat";
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * THE FORM MUST BE INCAPABLE OF LYING.
@@ -32,6 +44,13 @@ import type { ClientActivityEvent } from "@/types/chat";
  * "Selected model" took time, because there is nowhere for that implication to
  * live. It is also forward-compatible: if the producer ever grows a `duration`
  * field, rows migrate from FACTS to PHASES into a column already built.
+ *
+ * THAT DAY CAME, for exactly one row type. A connector call now carries
+ * `tool.durationMs`, measured in mcp.ts around the await on `client.callTool`,
+ * and a call that reached the network renders as a PHASE. A call that never
+ * reached it — unknown tool, unavailable connector, refused action — has no
+ * duration at all and stays a FACT. Both shapes sit in the same list, and the
+ * difference between them is a difference in what was measured, not in styling.
  *
  * THE SPLIT IS NOW CARRIED BY THE MARKUP ITSELF. Every list in this panel is one
  * `<dl>` on the same three-column `LEDGER` grid: label · detail · FIGURE. A
@@ -175,12 +194,50 @@ interface Call {
    *
    * It is real for a mid-stream `Using X` (route.ts:598) and structurally `0`
    * for every preflight one (route.ts:519) — honest for some rows in a column
-   * and degenerate for others, which reads worse than either alone. The figure
-   * column comes back the day the producer emits a real per-call DURATION; the
-   * `LEDGER` grid already has the column waiting for it.
+   * and degenerate for others, which reads worse than either alone. Superseded,
+   * not joined, by `tool.durationMs`: see the TOOLS section below.
    */
   offsetMs: number | null;
   warn: boolean;
+  /**
+   * What the model asked the connector for and what came back — server-
+   * produced, already redacted, already truncated, already budgeted.
+   *
+   * Present only on a row that stands for one real connector call. It is absent
+   * on every message persisted before this shipped and on every run made with
+   * tool detail turned off, which is exactly what makes replay degrade to the
+   * old name-only row with no version check anywhere: the row still renders,
+   * it just does not open. See TOOLS_NO_DETAIL_NOTE, which says so on screen
+   * rather than leaving a non-opening row to read as a broken control.
+   */
+  tool?: ClientToolDetail;
+}
+
+/**
+ * Whether the run READ a page or merely LISTED it — and the third state, which
+ * is the one that matters.
+ *
+ * `"unknown"` is not a placeholder. The native-search path emits `Visited
+ * source` for pages it added as citations and says nothing about depth, so for
+ * those rows this app genuinely does not know, and a panel that printed
+ * "listed" over them would be inventing the distinction it is trying to report.
+ * Only `"listed"` is ever marked on screen; `read` and `unknown` both render
+ * bare, which is the same "mark the exception, not the rule" the NOTICE section
+ * uses.
+ *
+ * `Reading source` is deep-research's title TODAY (deep-research.ts:345) and
+ * `Read source` / `Listed source` are the pair design §3.1 asks that file to
+ * emit once it stops skipping the pages it collected but did not read. Both
+ * spellings are accepted so the panel is already correct on the day it changes;
+ * until then no row is ever marked, which is the truthful rendering of a
+ * producer that cannot yet tell the two apart.
+ */
+export type SourceAccess = "read" | "listed" | "unknown";
+
+function sourceAccessOf(title: string): SourceAccess {
+  if (title === "Listed source") return "listed";
+  if (title === "Read source" || title === "Reading source") return "read";
+  return "unknown";
 }
 
 export interface RunModel {
@@ -192,7 +249,7 @@ export interface RunModel {
    *  the host when the page had none (see the `visit` sends in route.ts and
    *  deep-research.ts). Never invented: it falls back to the domain, which is
    *  what the AIcss search row would have shown anyway. */
-  sources: { url: string; domain: string; title: string }[];
+  sources: { url: string; domain: string; title: string; access: SourceAccess }[];
   searches: number;
   sourceCount: number;
   /** The last query the run actually searched for, verbatim, or null when it
@@ -270,7 +327,11 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
   // that never reported usage).
   const tEnd = at(usageEv) ?? nowServer ?? at(events[events.length - 1]);
 
-  const sources: { url: string; domain: string; title: string }[] = [];
+  // EVERY page the run reported, in emission order, with no cap and no sample.
+  // The only thing dropped is a repeat of a URL already listed, because the same
+  // page arriving twice is one page. Whether the list is COMPLETE is a property
+  // of the producer, not of this loop: see SourceAccess.
+  const sources: RunModel["sources"] = [];
   const seen = new Set<string>();
   for (const e of events) {
     if (!e.url || seen.has(e.url)) continue;
@@ -278,7 +339,7 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
     const domain = domainOf(e.url);
     // The producer already truncated `detail` to 96 and already fell back to the
     // host when the page had no title, so there is nothing left to decide here.
-    sources.push({ url: e.url, domain, title: e.detail?.trim() || domain });
+    sources.push({ url: e.url, domain, title: e.detail?.trim() || domain, access: sourceAccessOf(e.title) });
   }
 
   const warnings = events.filter((e) => e.kind === "warning");
@@ -295,6 +356,11 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
             : [e.title.slice("Using ".length), e.detail].filter(Boolean).join(" · "),
         offsetMs: ts !== null && t0 !== null && ts >= t0 ? ts - t0 : null,
         warn: e.kind === "warning",
+        // Carried through untouched — no parsing, no re-formatting, no
+        // re-measuring. The server already redacted, pretty-printed, cut and
+        // budgeted it, and a second opinion formed here could only disagree
+        // with the one the label is describing.
+        ...(e.kind === "tool" && e.tool ? { tool: e.tool } : {}),
       };
     });
 
@@ -733,6 +799,28 @@ export function ThoughtProcessPanel({
   const copyTimer = React.useRef<number | null>(null);
 
   /**
+   * WHICH TOOL ROWS ARE OPEN — per row, local, and deliberately not persisted.
+   *
+   * Unlike Summary/Full, which is a standing reading preference and lives in
+   * localStorage, "which call did I want to look inside" is a question about
+   * one run and one moment. Persisting it would reopen a stranger's payload on
+   * the next message that happened to reuse a row id.
+   *
+   * All closed by default, all of them. A run with six calls expanded is six
+   * code blocks and several thousand lines standing between the reader and the
+   * reasoning section, and the panel's default state has to be readable at a
+   * glance or the disclosure is not buying anything.
+   */
+  const [openTools, setOpenTools] = React.useState<ReadonlySet<string>>(() => new Set<string>());
+  const toggleTool = React.useCallback((rowId: string) => {
+    setOpenTools((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(rowId)) next.add(rowId);
+      return next;
+    });
+  }, []);
+
+  /**
    * STEPS — the model's own words, or nothing.
    *
    * `toSteps` returns null unless the provider actually delivered parts, so
@@ -1082,6 +1170,14 @@ export function ThoughtProcessPanel({
                       className="flex items-baseline gap-3 overflow-hidden rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
                     >
                       <span className="min-w-0 flex-1 truncate text-body text-foreground/85">{s.title}</span>
+                      {/* Only the exception is marked. A read page and a page
+                          whose producer never said carry no tag at all, which
+                          is the panel's idiom everywhere else: absence is the
+                          default state, and a badge on every row would say
+                          nothing while looking like it did. */}
+                      {s.access === "listed" && (
+                        <span className="shrink-0 font-mono text-caption text-muted-foreground/70">listed</span>
+                      )}
                       <span className="shrink-0 font-mono text-caption text-source">{s.domain}</span>
                     </a>
                   </li>
@@ -1093,17 +1189,143 @@ export function ThoughtProcessPanel({
           </section>
         )}
 
-        {/* TOOLS — STATED rows, no offset column. See Call.offsetMs. */}
+        {/* ── TOOLS ────────────────────────────────────────────────────────
+            Every connector call the run made, in order, each one openable onto
+            what was sent and what came back.
+
+            THE FIGURE COLUMN IS BACK, FOR EXACTLY ONE FIGURE. `tool.durationMs`
+            is measured in mcp.ts around `client.callTool` — a real interval on
+            a real await, on one call, not a block of sends sharing one
+            Date.now(). It is the first per-item number this panel has ever been
+            able to print honestly, and it is the only one printed. It also
+            EXCLUDES the approval wait, which happens before that clock starts:
+            attributing a person's 90-second pause to Linear's API would be a
+            new lie in a panel built to end them.
+
+            And it is ABSENT, never zero, for the four calls that never reached
+            the network — an unknown tool name, an unavailable connector, a
+            refused action, anything that failed before dispatch. Those rows
+            keep the STATED shape: the <dd> spans 2/-1 and there is NO figure
+            cell, in the DOM and in the accessibility tree alike. Both grammars
+            appear in this one list, which is precisely the migration the header
+            comment anticipated.
+
+            NOT A <details>. The disclosure is a button plus aria-expanded
+            because `<details>` is not permitted inside a <dl>, and the <dl> is
+            what carries the PHASES/FACTS split as markup. Given a choice
+            between the element with free behaviour and the grammar the whole
+            panel's honesty claim rests on, the grammar wins and the behaviour
+            is re-supplied in six lines.
+
+            A FAILED CALL STAYS ON ITS ROW. It is not promoted into NOTICE:
+            NOTICE renders `kind: "warning"`, which is run-level, and a
+            connector hiccup reported there would double-report and would make
+            a recoverable failure look like a failed run. */}
         {showTools && (
           <section aria-labelledby={`${id}-tools`} className={cn(rule("tools"), "motion-safe:animate-fade-in-up")}>
             <SectionHeading id={`${id}-tools`}>Tools</SectionHeading>
+
+            {/* PERMANENT, and body-sized, like REASONING's. It states the
+                redaction AND its limit: a result may contain anything the
+                connector returned, and a reader who assumes it was sanitised of
+                their own data would be wrong. */}
+            <p className="mt-2.5 text-body text-muted-foreground">{TOOLS_DESCRIPTION}</p>
+            {tools.some((c) => !c.tool) && (
+              <p className="mt-1 text-caption text-muted-foreground/70">{TOOLS_NO_DETAIL_NOTE}</p>
+            )}
+
             <dl className={cn(LEDGER, "mt-3")}>
-              {tools.map((c) => (
-                <React.Fragment key={c.id}>
-                  <dt className="text-body text-muted-foreground">Tool</dt>
-                  <dd className="col-span-2 min-w-0 break-words text-body text-foreground/80">{c.object}</dd>
-                </React.Fragment>
-              ))}
+              {tools.map((c) => {
+                const t = c.tool;
+                const failed = t?.status === "failed";
+                const durationMs = t && typeof t.durationMs === "number" ? t.durationMs : null;
+                const expanded = openTools.has(c.id);
+                const bodyId = `${id}-tool-${c.id}`;
+                return (
+                  <React.Fragment key={c.id}>
+                    <dt className={cn("text-body", failed ? "text-warning" : "text-muted-foreground")}>
+                      {failed ? "Failed" : "Tool"}
+                    </dt>
+                    {/* Spans into the figure column ONLY when there is no
+                        figure. This is the one place in the panel where a
+                        single list holds both grammars. */}
+                    <dd className={cn("min-w-0", durationMs === null && "col-span-2")}>
+                      {t ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleTool(c.id)}
+                          aria-expanded={expanded}
+                          /* Only while the body is in the document — an
+                             aria-controls pointing at nothing is worse than
+                             none at all. */
+                          aria-controls={expanded ? bodyId : undefined}
+                          className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-baseline gap-1.5 rounded-control px-1.5 py-0.5 text-left text-body text-foreground/80 transition-colors duration-fast ease-out-soft hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+                        >
+                          <ChevronRight
+                            aria-hidden="true"
+                            className={cn(
+                              "size-3 shrink-0 translate-y-px text-muted-foreground/50 transition-transform duration-base ease-out-soft motion-reduce:transition-none",
+                              expanded && "rotate-90",
+                            )}
+                          />
+                          <span className="min-w-0 break-words">{c.object}</span>
+                        </button>
+                      ) : (
+                        // No payload behind it, so no control over it. A button
+                        // that opens an explanation of its own emptiness is a
+                        // click that costs the reader something and returns
+                        // nothing; the section note above says it once instead.
+                        <span className="block break-words text-body text-foreground/80">{c.object}</span>
+                      )}
+                    </dd>
+                    {durationMs !== null && <Figure className={FIG}>{formatSpan(durationMs)}</Figure>}
+
+                    {t && expanded && (
+                      <dd id={bodyId} className="col-[2/-1] min-w-0 self-start pb-2">
+                        {/* `code` only, never `lines`: `lines` is for callers
+                            that already ran rehype-highlight, and tokenising
+                            untrusted connector output to colour it spends real
+                            client time for a decorative payoff. The numbered
+                            gutter and the monospace column are the whole value.
+
+                            Nothing here parses or re-formats either payload.
+                            Arguments arrive pretty-printed; a result arrives
+                            pretty-printed only if the server found the WHOLE
+                            body to be JSON — which is a judgement only the
+                            server can make, because the client holds a possibly
+                            truncated head and JSON.parse on a head fails on
+                            exactly the large results where formatting matters
+                            most. */}
+                        {t.args ? (
+                          <AicssCodeBlock
+                            label={toolArgsLabel(t)}
+                            code={t.args}
+                            maxBodyHeight={220}
+                            className="mt-1 bg-muted/25"
+                          />
+                        ) : (
+                          // NEVER an empty code block. An empty box implies the
+                          // model sent nothing; the four reasons it might be
+                          // missing are four different facts and each gets its
+                          // own sentence.
+                          <p className="mt-1 text-body text-muted-foreground">{toolArgsNoteText(t)}</p>
+                        )}
+
+                        {t.result ? (
+                          <AicssCodeBlock
+                            label={toolResultLabel(t)}
+                            code={t.result}
+                            maxBodyHeight={320}
+                            className="mt-3 bg-muted/25"
+                          />
+                        ) : (
+                          <p className="mt-3 text-body text-muted-foreground">{toolResultNoteText(t)}</p>
+                        )}
+                      </dd>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </dl>
           </section>
         )}

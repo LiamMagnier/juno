@@ -25,7 +25,71 @@ export type LlmEvent =
    */
   | { type: "reasoning"; text: string; part?: number }
   | { type: "sources"; sources: ClientSource[] }
-  | { type: "tool"; server: string; name: string; phase: "call" | "result"; detail?: string }
+  /**
+   * One connector tool call, in two acts.
+   *
+   * `call` is emitted the instant the model reaches for the tool — before the
+   * network round trip — because that is the only moment at which "Using
+   * Linear" is news. `result` is emitted when `execute()` returns and carries
+   * what came back. A single event emitted only at completion would leave the
+   * panel silent for the entire duration of the thing it exists to explain.
+   *
+   * ARGUMENTS RIDE ON WHICHEVER ACT HAS THEM, and that differs by provider,
+   * which is why `args` is optional on both. OpenAI (Responses and compat)
+   * accumulate the complete argument JSON before the loop dispatches, so their
+   * `call` carries it. ANTHROPIC CANNOT: its call event is yielded from
+   * `content_block_start` (anthropic-round.ts), where the arguments have not
+   * begun streaming — they arrive as `input_json_delta` and are only whole at
+   * `content_block_stop`. Anthropic therefore leaves `args` off `call` and
+   * attaches it to `result`. A row whose args never arrive on either act SAYS
+   * SO in the panel; it never renders an empty code block.
+   *
+   * `callId` is the provider's own id for the call (`call_id`, `tool_call.id`,
+   * `tool_use.id`). It is what pairs the two acts, and it is the same id the
+   * broker uses as half its idempotency key — so a stream that reconnects and
+   * replays pairs correctly rather than opening a second row.
+   *
+   * `args` and `result` are RAW here. Redaction, truncation and the run budget
+   * are the route's job (`src/lib/chat/tool-detail.ts`): an adapter is the
+   * wrong layer to hold a policy, and putting it here would mean four copies.
+   */
+  | {
+      type: "tool";
+      phase: "call";
+      server: string;
+      name: string;
+      callId: string;
+      detail?: string;
+      /** Raw JSON string exactly as the provider sent it, unparsed. */
+      args?: string;
+    }
+  | {
+      type: "tool";
+      phase: "result";
+      server: string;
+      name: string;
+      callId: string;
+      detail?: string;
+      /** Present only when the adapter could not attach it to `call`. */
+      args?: string;
+      /** The tool's output with the untrusted envelope ALREADY STRIPPED — the
+       *  markers are a model-context construct and mean nothing to a reader. */
+      result: string;
+      /** False for `Tool error:`, a broker refusal, an unreachable connector,
+       *  or an unknown tool name. NEVER inferred from the text: it comes from
+       *  `McpToolset.execute`'s own outcome. A GitHub issue titled "Tool error:
+       *  build fails" must not read as a failed call. */
+      ok: boolean;
+      /** Wall clock for the DISPATCH only, measured in mcp.ts around
+       *  `client.callTool`. Absent when no dispatch happened — an approval wait
+       *  sits before the clock starts and is deliberately excluded.
+       *
+       *  There is no `resultChars` companion: `result` is right here, and the
+       *  only length that can honestly appear in the panel is one measured on
+       *  the text the panel's own cut was taken from. tool-detail.ts measures
+       *  it there rather than carrying a second, subtly different number. */
+      durationMs?: number;
+    }
   /**
    * A connector action is waiting for the person to answer.
    *

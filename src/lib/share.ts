@@ -199,6 +199,14 @@ export async function getSharedChatSnapshot(share: Share): Promise<SharedChatSna
         role: { in: ["USER", "ASSISTANT"] },
       },
       orderBy: { createdAt: "asc" },
+      // `activity` IS DELIBERATELY ABSENT, and must stay absent. It carries the
+      // thought-process panel's connector payloads — the arguments Juno sent
+      // each tool and the text each tool sent back, which is the user's own
+      // Gmail / Linear / Notion content. Everything else in this projection is
+      // the answer itself, which is what the person chose to publish; the
+      // activity log is the machinery behind it and was never part of that
+      // choice. This omission is the only reason a public share link cannot
+      // leak tool payloads. Do not "complete" this select.
       select: { id: true, role: true, content: true, model: true, createdAt: true },
     }),
     prisma.artifact.findMany({

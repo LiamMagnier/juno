@@ -120,6 +120,79 @@ export interface ClientMessageVersionDetail extends ClientMessageVersion {
 
 export type ActivityKind = "context" | "model" | "reasoning" | "search" | "visit" | "write" | "usage" | "done" | "warning" | "tool";
 
+/**
+ * The bytes behind a tool row: what the model asked the connector for, and what
+ * came back.
+ *
+ * Server-produced — already redacted, already truncated, already charged
+ * against the run's budget. The client renders this verbatim and adds nothing:
+ * no re-formatting, no re-parsing, no filtering. Data that must not be shown is
+ * data that must not be SENT, so nothing that reaches this shape is conditional
+ * on the client behaving.
+ *
+ * EVERY ABSENCE IS EXPLAINED. There is no state in which the panel shows an
+ * empty code block: a missing `args` always arrives with an `argsNote` naming
+ * which reason applies, and a missing `result` with a `resultNote`. The panel
+ * prints that sentence in place of the box. Absence with no explanation is the
+ * form lying.
+ */
+export interface ClientToolDetail {
+  /** Connector label — "Linear". Duplicated from the row's title so the payload
+   *  is self-describing when copied out of the run receipt. */
+  server: string;
+  /** Namespaced function name the model actually called — "linear__create_issue". */
+  name: string;
+
+  /** Redacted, pretty-printed JSON. Absent iff `argsNote` is set. */
+  args?: string;
+  argsNote?:
+    | "unavailable" // the provider never supplied them (or the stream was cut)
+    | "empty" // the tool was dispatched with {} — that is not a mystery
+    | "unparsable" // the provider sent argument text that is not JSON
+    | "over_budget"; // this run's tool-detail budget was already spent
+  /** True when `args` is a head of a longer redacted payload. */
+  argsTruncated?: boolean;
+
+  /** Result head, untrusted envelope stripped. Absent iff `resultNote` is set. */
+  result?: string;
+  resultNote?:
+    | "pending" // the call is still running; the row is LIVE and only ever live
+    | "unfinished" // the run ended before this call returned — see below
+    | "empty" // the tool returned nothing at all
+    | "over_budget";
+  resultTruncated?: boolean;
+  /** Length of the full body `result` is a head of, measured AFTER any
+   *  server-side JSON pretty-printing — i.e. on the same text the head was cut
+   *  from, so "first `result.length` of `resultChars`" is a true statement
+   *  about one string. Present whenever `resultTruncated`. */
+  resultChars?: number;
+
+  /**
+   * How the call ended. Absent while the call has no ending to report —
+   * `resultNote` is `"pending"` or `"unfinished"`.
+   *
+   * `"unfinished"` exists because `"pending"` is only true WHILE A STREAM IS
+   * OPEN. A run stopped mid-call persists its row as it stood, and a reloaded
+   * conversation telling someone that a call from last Tuesday is "still
+   * running" would be the panel lying about the present tense. The read side
+   * therefore rewrites a stored `"pending"` to `"unfinished"`: by the time a
+   * row comes back out of the database, its run is over by definition.
+   */
+  status?: "ok" | "failed";
+  /**
+   * Server-measured DISPATCH duration, from `mcp.ts` around `client.callTool`.
+   *
+   * The only genuinely measured per-call figure this panel has, which is why it
+   * is the only one shown. Two things it deliberately excludes: time spent
+   * waiting for a person to answer an approval (that happens before the clock
+   * starts, and attributing a 90-second human pause to Linear's API would be a
+   * new lie in a panel built to end them), and any call that never reached the
+   * network — those are ABSENT here, never zero, and their row keeps the
+   * figure-less shape.
+   */
+  durationMs?: number;
+}
+
 export interface ClientActivityEvent {
   id: string;
   kind: ActivityKind;
@@ -127,6 +200,12 @@ export interface ClientActivityEvent {
   detail?: string;
   url?: string;
   createdAt: string;
+  /** Set only on `kind: "tool"` rows that stand for one real connector call —
+   *  never on the preflight "Connected tools ready" row, never on an
+   *  approval-request row. Absent on every message persisted before this
+   *  shipped, which is what makes replay degrade to the old name-only row with
+   *  no version check anywhere. */
+  tool?: ClientToolDetail;
 }
 
 /** How an artifact version came to be. Null on rows older than the column. */

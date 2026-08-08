@@ -62,6 +62,7 @@ import "server-only";
 import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget } from "@/lib/spend";
+import { unattendedRunCeiling } from "@/lib/spend-ceiling";
 import { getActiveConnectors, openMcpToolset, type McpToolset } from "@/lib/mcp";
 import { UNTRUSTED_CLOSE, UNTRUSTED_OPEN } from "@/lib/untrusted-content";
 import { appendEvents, createRun, finishRun } from "@/lib/work/store";
@@ -309,7 +310,7 @@ async function callConnectorTool(
         `${connectorId} did not offer the ${tool} tool, so Juno has no way to check this trigger.`
       );
     }
-    return unwrapUntrusted(await toolset.execute(named.function.name, args));
+    return unwrapUntrusted((await toolset.execute(named.function.name, args)).text);
   } finally {
     await toolset?.close().catch(() => {});
   }
@@ -824,7 +825,9 @@ async function offer(
     degradation: decision.degradation,
     permissionPolicy,
     budget: {
-      maxCostMicroUsd: schedule.maxCostMicroUsd,
+      // Same reason as the scheduler: a trigger-fired run has no human in the
+      // loop, and 0 on this column means unlimited. See `unattendedRunCeiling`.
+      maxCostMicroUsd: unattendedRunCeiling(schedule.maxCostMicroUsd),
       maxTokens: schedule.maxTokens,
       maxRuntimeMs: schedule.maxRuntimeMs,
     },

@@ -172,6 +172,15 @@ struct DesktopProjectsScreen: View {
             } message: { reason in
                 Text(reason)
             }
+            .desktopPreviewOverlays(
+                sheet: { showingNewProject = true },
+                alert: {
+                    guard let project = model.projects.first else { return }
+                    renameDraft = project.name
+                    renameTarget = project
+                },
+                confirm: { deleteTarget = model.projects.first }
+            )
     }
 
     @ViewBuilder

@@ -108,6 +108,10 @@ struct DesktopTasksScreen: View {
                     modelOptions: modelOptions
                 )
             }
+            .desktopPreviewOverlays(
+                sheet: newTask,
+                confirm: { surface.deleteTarget = model.tasks.first }
+            )
             .confirmationDialog(
                 surface.deleteTarget.map { "Delete “\($0.name)”?" } ?? "",
                 isPresented: Binding(
@@ -914,10 +918,27 @@ private struct DesktopTaskEditor: View {
             .padding(.bottom, JunoSpace.roomy)
         }
         .frame(width: 560, height: 620)
-        // A sheet is its own root, so the warm ground is painted here rather
-        // than inherited. The grouped form draws its raised groups over it,
-        // which is the web dialog's own arrangement.
-        .junoReadingCanvas()
+        // The sheet contract, from `JunoOverlays.swift` — not `junoReadingCanvas`,
+        // which is what stood here and is the *page's* ground.
+        //
+        // This editor was the sheet the contract was written from: it was the one
+        // that painted a ground when the other eight painted none. What it got
+        // wrong is the two things the modifier does that a bare `.background`
+        // cannot, and both were visible in dark:
+        //
+        //  · `junoReadingCanvas` is `junoCanvas`, the same colour as the page.
+        //    Measured on the running app, the sheet's ground came out `#242421`
+        //    against a dimmed page of `#201E1D` — 14 parts in 765, no edge at
+        //    all. The platter's rounded corners were invisible.
+        //  · nothing hid the `Form`'s own grouped background, so the sheet had
+        //    *two* grounds: `#242421` behind the header and `#3F3E3C` behind the
+        //    form, meeting at a hard square seam that cut across the platter.
+        //
+        // `junoSheetSurface` fixes both at once — the raised `junoPopover`
+        // ground, and the `scrollContentBackground(.hidden)` that lets it reach
+        // under the form. `.fitted` because the frame above already states the
+        // size, exactly as `DesktopSettingsSheetHost` does.
+        .junoSheetSurface(.fitted)
     }
 
     private func save() {

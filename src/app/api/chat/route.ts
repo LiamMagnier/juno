@@ -17,7 +17,14 @@ import { buildSystemPrompt, buildDynamicContext } from "@/lib/anthropic";
 import { finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
-import { getMemoryProfile, saveAutoMemories, extractConversationMemory, maybeConsolidate, utilityModelCandidates } from "@/lib/memory";
+import {
+  getMemoryProfile,
+  saveAutoMemories,
+  extractConversationMemory,
+  loadBackgroundProviderPolicy,
+  maybeConsolidate,
+} from "@/lib/memory";
+import { memoryReceiptDetail } from "@/lib/memory-lifecycle";
 import { ArtifactVersionConflictError, persistArtifacts, persistTargetedArtifactEdit } from "@/lib/artifacts-store";
 import {
   applyArtifactPatch,
@@ -39,10 +46,18 @@ import {
 } from "@/lib/preflight-clarification";
 import { serializeMessage } from "@/lib/serializers";
 import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
-import { checkBudget, recordSpend, budgetExceededMessage, modelRatesMicroUsdPerToken } from "@/lib/spend";
-import { runDeepResearch } from "@/lib/deep-research";
+import {
+  checkBudget,
+  recordSpend,
+  reserveSpend,
+  budgetExceededMessage,
+  modelRatesMicroUsdPerToken,
+} from "@/lib/spend";
+import { runDeepResearch, type ResearchCorpusPage } from "@/lib/deep-research";
+import { recordCitationAudit } from "@/lib/research/claims";
 import { isWebSearchConfigured } from "@/lib/web-search";
-import { createSseSender, encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
+import { createSseSender, encodeChunk, SSE_HEADERS, type SseSender } from "@/lib/chat-stream";
+import { closeToolDetail, createToolDetailBudget, openToolDetail } from "@/lib/chat/tool-detail";
 import { truncate, currentPeriod } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
@@ -94,7 +109,9 @@ import {
   HISTORY_LIMIT,
   promptChars,
   replaceLastUserTurn,
+  type ProjectKnowledge,
 } from "@/lib/chat/context-assembly";
+import { retrieveProjectKnowledge } from "@/lib/knowledge/retrieve";
 import {
   codeSessionRefusal,
   emptySubmissionRefusal,
@@ -117,7 +134,7 @@ import {
   resolveTerminalState,
   terminalFailureCode,
 } from "@/lib/chat/terminal-state";
-import type { ChatFinishReason, ClientActivityEvent } from "@/types/chat";
+import type { ChatFinishReason, ClientActivityEvent, ClientToolDetail } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 
 export const runtime = "nodejs";
@@ -164,6 +181,66 @@ function privateAssistantMessage(
     promptTokens: usage.totalInput || undefined,
     completionTokens: usage.output || undefined,
     costUsd: usage.cost || undefined,
+  };
+}
+
+/**
+ * One generation's connector transparency: which rows exist, what they may
+ * carry, and how much of it in total.
+ *
+ * Built once per stream and used identically by BOTH streaming paths. The
+ * private path currently passes `connectors: []` so no tool event can reach it
+ * — it gets this code anyway rather than a comment saying it cannot happen,
+ * because these two paths have drifted before and `stream-accumulator.ts`
+ * exists because of it.
+ *
+ * ONE ROW PER CALL. The adapters emit two acts; this collapses them into a
+ * single activity entry that is created when the model reaches for the tool and
+ * COMPLETED IN PLACE when the connector answers. The entry object handed back
+ * by `sendActivity` is the same object sitting in `activityLog`, which is what
+ * gets persisted onto `Message.activity`, so mutating it and re-sending keeps
+ * both the log's order and the completed payload. Pushing a second entry would
+ * look right live and show every tool twice on reload.
+ *
+ * `createdAt` is deliberately not refreshed on completion: it is the instant
+ * the call STARTED, and that is the only instant about this row that anything
+ * measures from.
+ *
+ * A `result` whose `callId` has no open row is DROPPED, not turned into an
+ * orphan row. An unpaired result is a bug in an adapter, and inventing a row
+ * for it would hide that bug behind a plausible-looking panel entry.
+ */
+function createToolActivity(
+  sender: Pick<SseSender, "send" | "sendActivity">,
+  enabled: boolean
+): {
+  open(effect: { server: string; name: string; callId: string; args?: string }): void;
+  close(effect: { server: string; name: string; callId: string; args?: string; result: string; ok: boolean; durationMs?: number }): void;
+} {
+  const budget = createToolDetailBudget();
+  const rows = new Map<string, { entry: ClientActivityEvent; opened?: ClientToolDetail }>();
+
+  return {
+    open(effect) {
+      const opened = enabled ? openToolDetail(effect, budget) : undefined;
+      const entry = sender.sendActivity({
+        kind: "tool",
+        title: `Using ${effect.server}`,
+        detail: effect.name,
+        ...(opened ? { tool: opened } : {}),
+      });
+      // Tracked even when detail is disabled, so a later `result` is still
+      // recognised as paired and silently dropped rather than half-handled.
+      rows.set(effect.callId, { entry, opened });
+    },
+    close(effect) {
+      const row = rows.get(effect.callId);
+      if (!row) return;
+      rows.delete(effect.callId);
+      if (!enabled) return;
+      row.entry.tool = closeToolDetail(row.opened, effect, budget);
+      sender.send({ type: "activity", event: row.entry });
+    },
   };
 }
 
@@ -293,6 +370,21 @@ async function handleChat(req: Request) {
   // "juno:auto" is a routing sentinel: classify the prompt and pick the cheapest
   // chat model that can handle it (vision / web-search constraints applied).
   const settings = await prisma.settings.findUnique({ where: { userId: user.id } });
+
+  /*
+   * Whether the thought-process panel receives connector ARGUMENTS and RESULTS
+   * rather than only the tool's name.
+   *
+   * Read ONCE, here, before the stream, and passed into the emitter as a
+   * boolean. It is never a client-side filter: data that must not be shown is
+   * data that must not be SENT.
+   *
+   * Lockdown is a hard override. It already means "a hard network/tool stop",
+   * and it must not be the mode in which Juno gets chattier about what its
+   * connectors returned.
+   */
+  const toolDetailEnabled = !settings?.lockdownMode;
+
   const requestedId =
     input.model && isModelId(input.model)
       ? input.model
@@ -461,6 +553,22 @@ async function handleChat(req: Request) {
     // expressions that happened to agree.
     const system = composeSystemPrompt({ base: baseSystem, webSearch: useWebSearch, canvasOn: false });
     const generationId = input.generationId ?? crypto.randomUUID();
+  /*
+     * Hold this turn's estimated cost against the ceiling for as long as it runs.
+     *
+     * `checkBudget` above is read-then-act: it reads SETTLED spend, and the
+     * ledger is only written when a turn ENDS, so the window in which two turns
+     * can both be admitted is the whole duration of every in-flight generation.
+     * The hold closes it — `checkBudget` subtracts open reservations, so the next
+     * turn sees this one coming.
+     *
+     * Deliberately NOT a second gate. This turn was already admitted, and
+     * refusing it here would mean unwinding an accepted durable receipt; a
+     * refused hold simply means no headroom was taken and nothing to settle. The
+     * hold is settled by `recordSpend` below, which is the one place every
+     * streaming path passes through.
+     */
+    await reserveSpend({ userId: user.id, kind: "chat", ref: generationId, plan });
     const generationController = new AbortController();
     const unregisterGeneration = registerGeneration(generationId, {
       userId: user.id,
@@ -472,6 +580,11 @@ async function handleChat(req: Request) {
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         const { send, sendActivity, activityLog } = createSseSender(controller);
+        // Identical to the saved path's. This branch passes `connectors: []`,
+        // so no tool event can reach it today — it gets the same code rather
+        // than a comment claiming that, because the two paths have drifted
+        // before.
+        const toolActivity = createToolActivity({ send, sendActivity }, toolDetailEnabled);
         // One accumulator for text, reasoning, sources, usage and served speed
         // — the same one the saved path folds its stream into.
         const acc = new GenerationAccumulator({ requestedFastMode: useFastMode });
@@ -609,7 +722,9 @@ async function handleChat(req: Request) {
               send({ type: "delta", text: effect.text });
               enforceStreamBudget();
             } else if (effect.kind === "tool_call") {
-              sendActivity({ kind: "tool", title: `Using ${effect.server}`, detail: effect.name });
+              toolActivity.open(effect);
+            } else if (effect.kind === "tool_result") {
+              toolActivity.close(effect);
             } else if (effect.kind === "reasoning") {
               // `part` rides the SSE so the panel can build steps AS THEY
               // ARRIVE, from the same boundaries the API gave the adapter.
@@ -658,6 +773,7 @@ async function handleChat(req: Request) {
             model: modelId,
             kind: "chat",
             source: legacyClient,
+            ref: generationId,
             promptTokens: usage.totalInput || undefined,
             completionTokens: usage.output || undefined,
             reasoningTokens: acc.tokens.reasoningTokens || undefined,
@@ -732,6 +848,7 @@ async function handleChat(req: Request) {
                 model: modelId,
                 kind: "chat",
                 source: legacyClient,
+                ref: generationId,
                 promptTokens: partialUsage.totalInput || undefined,
                 completionTokens: partialUsage.output || undefined,
                 reasoningTokens: acc.tokens.reasoningTokens || undefined,
@@ -1244,19 +1361,68 @@ async function handleChat(req: Request) {
   );
 
   const memoryEnabled = settings?.memoryEnabled ?? true;
-  // Prefer the consolidated summary (deduped, sectioned); fall back to the raw
-  // list when no summary exists yet. `recent` holds entries newer than the summary.
-  const memoryProfile = memoryEnabled ? await getMemoryProfile(user.id) : { summary: null, recent: [] };
+  // The consolidated summary carries settled account-wide memory; `recent` is
+  // the individually-selected entries on top of it — ranked against what the
+  // user just asked, scoped to this conversation's project, and cut to a token
+  // budget. `used` names them, which is what the memory receipt below reports.
+  const latestUserMessage = [...modelHistory].reverse().find((m) => m.role === "USER")?.content;
+  const memoryProfile = memoryEnabled
+    ? await getMemoryProfile(user.id, { projectId: conversation.projectId, query: latestUserMessage })
+    : { summary: null, recent: [], used: [], usedTokens: 0, droppedForBudget: 0 };
 
   // Project context: instructions + reference file contents injected into the system prompt.
-  const projectContext = conversation.projectId
-    ? buildProjectContext(
-        await prisma.project.findUnique({
-          where: { id: conversation.projectId },
-          select: { name: true, instructions: true, files: { select: { fileName: true, extractedText: true } } },
-        })
-      )
-    : "";
+  //
+  // Reference files go in wholesale, which is correct while a project holds a
+  // handful of them and stops being correct the moment it holds a library. So
+  // where a project's documents have been indexed (lib/knowledge), the relevant
+  // extracts are retrieved for THIS question and the wholesale dump of those
+  // files is dropped — the prompt then grows with the question rather than with
+  // the library, and every extract carries the page it came from.
+  //
+  // The boundary is deliberately narrow. `retrieveProjectKnowledge` returns
+  // null after one indexed lookup when the project has nothing indexed, and
+  // `buildProjectContext` called without a knowledge argument is byte-identical
+  // to what it produced before any of this existed. Retrieval failing, or the
+  // background-provider policy permitting no embedding provider, both degrade
+  // to that same prior behaviour rather than to a dead turn.
+  const projectRow = conversation.projectId
+    ? await prisma.project.findUnique({
+        where: { id: conversation.projectId },
+        select: { name: true, instructions: true, files: { select: { fileName: true, extractedText: true } } },
+      })
+    : null;
+  let projectKnowledge: ProjectKnowledge | null = null;
+  if (conversation.projectId && projectRow) {
+    const knowledgeQuery =
+      [...modelHistory].reverse().find((m) => m.role === "USER")?.content ?? input.message?.trim() ?? "";
+    if (knowledgeQuery) {
+      try {
+        const retrieved = await retrieveProjectKnowledge({
+          userId: user.id,
+          projectId: conversation.projectId,
+          query: knowledgeQuery,
+          policy: await loadBackgroundProviderPolicy(user.id),
+          // Embedding the question is background work on the user's content, so
+          // it answers to the same provider policy as everything else — and
+          // `same_provider` means the provider they picked for this turn.
+          conversationProvider: modelInfo.provider,
+        });
+        if (retrieved && retrieved.passages.length > 0) {
+          projectKnowledge = {
+            passages: retrieved.passages,
+            indexedFileNames: retrieved.indexedFileNames,
+            degraded: retrieved.mode === "lexical",
+          };
+        }
+      } catch (error) {
+        console.error("[chat] project knowledge retrieval failed", {
+          conversationId: conversation.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+  const projectContext = buildProjectContext(projectRow, projectKnowledge);
 
   // Deep research: Tavily plan → search → read before synthesis. It replaces
   // native web search for this turn — the researched corpus IS the live web
@@ -1322,6 +1488,22 @@ async function handleChat(req: Request) {
       throw new Error("Durable first-submission receipt could not enter the running state.");
     }
   }
+  /*
+   * Hold this turn's estimated cost against the ceiling for as long as it runs.
+   *
+   * `checkBudget` above is read-then-act: it reads SETTLED spend, and the
+   * ledger is only written when a turn ENDS, so the window in which two turns
+   * can both be admitted is the whole duration of every in-flight generation.
+   * The hold closes it — `checkBudget` subtracts open reservations, so the next
+   * turn sees this one coming.
+   *
+   * Deliberately NOT a second gate. This turn was already admitted, and
+   * refusing it here would mean unwinding an accepted durable receipt; a
+   * refused hold simply means no headroom was taken and nothing to settle. The
+   * hold is settled by `recordSpend` below, which is the one place every
+   * streaming path passes through.
+   */
+  await reserveSpend({ userId: user.id, kind: "chat", ref: generationId, plan });
   const generationController = new AbortController();
   const unregisterGeneration = registerGeneration(generationId, {
     userId: user.id,
@@ -1411,10 +1593,26 @@ async function handleChat(req: Request) {
     }
   };
   let assistantFull = ""; // captured for background memory extraction
-  // Background memory work runs on the same speed-ranked utility models the
-  // rest of the app uses, not on whichever FREE model happens to be listed first.
-  const cheapModel =
-    utilityModelCandidates()[0] ?? MODEL_LIST.find((m) => isProviderConfigured(m.provider)) ?? modelInfo;
+  // The chat route no longer picks the background model itself. It used to hand
+  // `utilityModelCandidates()[0]` to maybeConsolidate, which then treated that
+  // model's provider as the one to match `same_provider` against — the worker
+  // vouching for itself. Choosing the model is runUtilityPrompt's job, after
+  // the background-provider policy has narrowed the field; this route's only
+  // contribution is naming the provider the user chose for the conversation.
+  /*
+   * Set only on a deep-research turn that produced an answer. The citation audit
+   * (§8.3) runs in `after`, not inline: it re-reads every cited passage with a
+   * utility model, which is far too slow to hold the stream open for, and the
+   * report is already correct-or-not by the time it is written — checking it
+   * later changes what the reader is TOLD about it, not what it says.
+   */
+  let citationAuditInput: {
+    goal: string;
+    corpus: ResearchCorpusPage[];
+    conversationProvider: string | null;
+  } | null = null;
+  let auditedMessageId: string | null = null;
+
 
   // Generation + persistence is detached from the request lifecycle: we do not
   // pass req.signal to the model, so navigating away can drop the browser stream
@@ -1425,6 +1623,7 @@ async function handleChat(req: Request) {
       // Once the client disconnects the controller is closed; swallow the enqueue
       // error so generation and persistence keep running regardless.
       const { send, sendActivity, activityLog } = createSseSender(controller);
+      const toolActivity = createToolActivity({ send, sendActivity }, toolDetailEnabled);
       // One accumulator for text, reasoning, sources, usage and served speed —
       // the same one the private branch folds its stream into.
       const acc = new GenerationAccumulator({ requestedFastMode: useFastMode });
@@ -1572,8 +1771,23 @@ async function handleChat(req: Request) {
           attachments: modelHistory.reduce((sum, msg) => sum + msg.attachments.length, 0),
           memories: memoryEnabled ? memoryProfile.recent.length : 0,
           hasProjectContext: !!projectContext,
+          documentPassages: projectKnowledge?.passages.length ?? 0,
         }),
       });
+      // The memory receipt. A count ("3 memories") tells the user nothing they
+      // can act on; naming the facts is what lets them notice a wrong one and
+      // say so. Only sent when memory actually contributed — an empty line
+      // every turn would train people to stop reading the trail.
+      if (memoryEnabled && memoryProfile.used.length > 0) {
+        sendActivity({
+          kind: "context",
+          title: "Remembered about you",
+          detail: memoryReceiptDetail({
+            selected: memoryProfile.used,
+            droppedForBudget: memoryProfile.droppedForBudget,
+          }),
+        });
+      }
       if (artifactEditTarget) {
         sendActivity({
           kind: "tool",
@@ -1635,7 +1849,10 @@ async function handleChat(req: Request) {
         const research = await runDeepResearch({
           userId: user.id,
           prompt: researchPrompt,
-          selectedModel: modelInfo,
+          // The corpus is gathered by a durable ResearchRun attached to this
+          // conversation, so the panel can reopen it — paused, resumed or
+          // steered — long after this turn has finished streaming.
+          conversationId,
           client: legacyClient,
           signal: generationController.signal,
           sendActivity,
@@ -1649,6 +1866,15 @@ async function handleChat(req: Request) {
           // the accumulator is seeded rather than told about them later.
           acc.seedSources(research.sources);
           if (acc.sources.length) send({ type: "sources", sources: acc.sources });
+          // Held for the post-response audit. `corpus` is the text the model was
+          // actually shown, which is the only thing a citation can honestly be
+          // checked against — a re-fetch would be checking a page that may have
+          // changed since the report was written.
+          citationAuditInput = {
+            goal: researchPrompt,
+            corpus: research.corpus,
+            conversationProvider: modelInfo.provider,
+          };
         } else {
           sendActivity({
             kind: "warning",
@@ -1752,7 +1978,13 @@ async function handleChat(req: Request) {
             if (!artifactEditTarget) send({ type: "delta", text: effect.text });
             enforceStreamBudget();
           } else if (effect.kind === "tool_call") {
-            sendActivity({ kind: "tool", title: `Using ${effect.server}`, detail: effect.name });
+            toolActivity.open(effect);
+          } else if (effect.kind === "tool_result") {
+            // Deliberately NOT followed by enforceStreamBudget(): that guard
+            // projects micro-USD from token counts, and a tool payload spends
+            // no tokens. The bound that applies here is the run's character
+            // budget, already charged inside closeToolDetail.
+            toolActivity.close(effect);
           } else if (effect.kind === "reasoning") {
             send({ type: "reasoning", text: effect.text, part: effect.part });
             enforceStreamBudget();
@@ -1823,7 +2055,13 @@ async function handleChat(req: Request) {
         if (targetedArtifact) send({ type: "delta", text: acc.text });
         let memoryUpdated = false;
         if (memoryEnabled) {
-          const created = await saveAutoMemories(user.id, parseMemories(acc.text), conversationId);
+          // Provenance points at the USER's message, not the assistant's: the
+          // memory page answers "where did you learn that?", and the honest
+          // answer is the turn in which the user said it.
+          const created = await saveAutoMemories(user.id, parseMemories(acc.text), conversationId, {
+            projectId: conversation.projectId,
+            sourceMessageId: userMessageId,
+          });
           memoryUpdated = created > 0;
         }
 
@@ -1838,6 +2076,7 @@ async function handleChat(req: Request) {
         });
 
         assistantFull = acc.text;
+        auditedMessageId = assistant.id;
 
         if (usage.totalInput || usage.output) {
           sendActivity({ kind: "usage", title: "Token usage recorded", detail: usage.detail });
@@ -1882,6 +2121,7 @@ async function handleChat(req: Request) {
           model: modelId,
           kind: "chat",
           source: legacyClient,
+          ref: generationId,
           promptTokens: usage.totalInput || undefined,
           completionTokens: usage.output || undefined,
           reasoningTokens: acc.tokens.reasoningTokens || undefined,
@@ -1992,6 +2232,7 @@ async function handleChat(req: Request) {
                 model: modelId,
                 kind: "chat",
                 source: legacyClient,
+                ref: generationId,
                 promptTokens: partialUsage.totalInput || undefined,
                 completionTokens: partialUsage.output || undefined,
                 reasoningTokens: acc.tokens.reasoningTokens || undefined,
@@ -2158,6 +2399,36 @@ async function handleChat(req: Request) {
 
     await genPromise?.catch(() => {});
 
+    /*
+     * Citation audit (§8.3): extract the report's load-bearing claims, link each
+     * to the passages it cites, and re-read those passages to decide whether
+     * they genuinely support it. Anything they do not is marked unsupported —
+     * never dropped, and never left looking cited.
+     *
+     * Deliberately before the memory work: this is what the reader is waiting to
+     * see under the answer, and memory extraction is invisible to them.
+     * `.catch` because a failed audit must leave the answer intact — the footer
+     * simply shows nothing, which is what it shows for every ordinary reply.
+     */
+    if (citationAuditInput && auditedMessageId && assistantFull) {
+      const input: NonNullable<typeof citationAuditInput> = citationAuditInput;
+      await recordCitationAudit({
+        userId: user.id,
+        conversationId: conversation.id,
+        messageId: auditedMessageId,
+        goal: input.goal,
+        report: assistantFull,
+        sources: input.corpus,
+        conversationProvider: input.conversationProvider,
+      }).catch((err) => {
+        console.error("[chat] citation audit failed", {
+          conversationId: conversation.id,
+          message: err instanceof Error ? err.message : String(err),
+        });
+        return null;
+      });
+    }
+
     const postWork = postGenerationPlan({ moderate, memoryEnabled, producedAnswer: !!assistantFull });
     if (postWork.extractsMemory) {
       // Incremental extraction: distill this conversation's unprocessed user
@@ -2166,7 +2437,11 @@ async function handleChat(req: Request) {
     }
     if (postWork.consolidates) {
       // Periodically re-summarize so the memory stays tidy and deduped.
-      await maybeConsolidate(user.id, cheapModel).catch(() => {});
+      // The provider of the model the user chose for THIS turn, so
+      // `same_provider` has the conversation to match against. It used to get
+      // `cheapModel` — the background worker itself — which under that policy
+      // amounted to asking the worker whether it was allowed to do the work.
+      await maybeConsolidate(user.id, modelInfo.provider).catch(() => {});
     }
   });
 

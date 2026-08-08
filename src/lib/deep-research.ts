@@ -1,48 +1,61 @@
 import "server-only";
-import { streamChat } from "@/lib/llm";
-import { utilityModelCandidates } from "@/lib/memory";
-import { PROVIDERS } from "@/lib/providers";
-import { recordSpend } from "@/lib/spend";
-import { estimateGenerationCostUsd } from "@/lib/pricing";
 import { truncate } from "@/lib/utils";
-import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@/lib/untrusted-content";
 // Same helper the chat route uses — this was a third verbatim copy.
 import { sourceHost } from "@/lib/chat-responses";
-import type { ModelInfo } from "@/lib/models";
+import {
+  RESEARCH_STATE_MESSAGE,
+  isResearchState,
+  parsePlan,
+  type ResearchEventDTO,
+} from "@/lib/research/domain";
+import { createPrismaResearchStore, gatheringOnlyEngine } from "@/lib/research/run";
+import { buildResearchCorpus, researchSearchConfigured } from "@/lib/research/tools";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 
 /**
- * Deep research orchestration: PLAN (a cheap fast model turns the prompt into
- * focused sub-questions) → SEARCH (parallel Tavily queries) → READ (Tavily's
- * raw page content — no scraper of our own) → hand the numbered corpus back to
- * the chat route, which streams the SYNTHESIS through the user's selected
- * model exactly like a normal turn (same delta path, budget enforcement,
- * persistence). Citations [n] in the report map by position to the sources
- * array — the same convention buildSearchContext and the SourcesList UI use.
+ * Deep research, as the chat route sees it.
  *
- * Every failure degrades: plan failure → search the raw prompt; search failure
- * → `ok: false` and the route answers as plain chat with a warning activity.
- * This module never throws into the stream.
+ * This module used to BE the pipeline: plan, search, read, assemble a corpus —
+ * all in local variables inside one request. It is now a thin adapter over the
+ * durable job in `@/lib/research/run`. Everything the run finds is a row before
+ * this function returns, so closing the tab no longer throws the work away, the
+ * run can be paused, resumed and steered from the research panel, and
+ * `ResearchRun.budgetMicroUsd` is a ceiling the job stops at rather than a
+ * number discovered afterwards.
+ *
+ * The division of labour with the chat route has not changed, and that is
+ * deliberate: the job gathers and stops at `synthesizing`, and the route streams
+ * the SYNTHESIS through the user's own selected model exactly like a normal turn
+ * (same delta path, budget enforcement, persistence). A job that wrote the
+ * report itself would deliver it as one silent lump, minutes after the user sent
+ * the message. Citations [n] map by position to the sources array — the same
+ * convention `buildSearchContext` and the SourcesList UI use.
+ *
+ * Every failure still degrades: no search backend, no sources, or a run that
+ * ended before it gathered anything all return `ok: false`, and the route
+ * answers as plain chat with a warning activity. This module never throws into
+ * the stream.
  */
-
-// Pre-synthesis time box. Plan (≤20s) and the parallel searches (≤25s) keep us
-// well inside it in practice; the deadline is the hard wall for stragglers.
-const PREP_DEADLINE_MS = 90_000;
-const PLAN_TIMEOUT_MS = 20_000;
-const SEARCH_TIMEOUT_MS = 25_000;
-const MAX_QUERIES = 5;
-const RESULTS_PER_QUERY = 5;
-/** Pages whose full text enters the corpus; the rest contribute snippets. */
-const MAX_READ_PAGES = 8;
-/** Total numbered sources (read pages + snippet-only extras). */
-const MAX_SOURCES = 12;
-const PAGE_CONTENT_CHARS = 4_000;
 
 type SendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => ClientActivityEvent;
 
-interface ResearchPage extends ClientSource {
-  /** Tavily raw page content (already capped to PAGE_CONTENT_CHARS). */
-  rawContent?: string;
+/**
+ * One numbered source, with the text the model was actually shown.
+ *
+ * The client-facing `sources` array is deliberately snippet-sized — it is
+ * persisted on every message — but the citation validator has to re-read the
+ * SAME text the model saw. Checking a claim against a fresh fetch would be
+ * checking it against a page that may have changed since, which is the failure
+ * the run's stored snapshot exists to prevent. So the corpus rides back
+ * separately, for the audit, and is not persisted on the message.
+ */
+export interface ResearchCorpusPage {
+  url: string;
+  title: string;
+  body: string;
+  publishedAt: Date | null;
+  /** True when `body` is the search snippet rather than the fetched page. */
+  truncated: boolean;
 }
 
 export interface DeepResearchResult {
@@ -52,316 +65,227 @@ export interface DeepResearchResult {
   context: string;
   /** Numbered sources, in citation order — emit as the stream's sources chunk. */
   sources: ClientSource[];
-  /** Planning-model spend in USD (already written to the ApiSpend ledger). */
-  costUsd: number;
-}
-
-const EMPTY: DeepResearchResult = { ok: false, context: "", sources: [], costUsd: 0 };
-
-/** A child signal that aborts with its parent OR after `ms` — whichever first. */
-function timeboxSignal(parent: AbortSignal | undefined, ms: number): { signal: AbortSignal; release: () => void } {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), Math.max(1, ms));
-  const onAbort = () => ctrl.abort();
-  if (parent?.aborted) ctrl.abort();
-  else parent?.addEventListener("abort", onAbort, { once: true });
-  return {
-    signal: ctrl.signal,
-    release: () => {
-      clearTimeout(timer);
-      parent?.removeEventListener("abort", onAbort);
-    },
-  };
-}
-
-/**
- * The planning model: the fastest cheap tier from the SAME provider as the
- * user's selected model when one is configured (keys and quirks are known to
- * work), else the app-wide speed-ranked utility list, else the selected model.
- */
-export function pickPlannerModel(selected: ModelInfo): ModelInfo {
-  const candidates = utilityModelCandidates();
-  return candidates.find((m) => m.provider === selected.provider) ?? candidates[0] ?? selected;
-}
-
-const PLANNER_SYSTEM = `You are a research planner. Break the user's request into focused web-search sub-questions.
-Reply with ONLY the sub-questions, one per line — no numbering, no bullets, no commentary.
-Each line must be a self-contained web search query (repeat names, dates, and context from the request; a query must make sense on its own).
-Use 3 to 5 lines: complex requests deserve 5, simple ones 3.`;
-
-function parsePlan(text: string): string[] {
-  const queries: string[] = [];
-  const seen = new Set<string>();
-  for (const raw of text.split("\n")) {
-    const q = raw.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim();
-    if (q.length < 8 || q.length > 400) continue;
-    const key = q.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    queries.push(q);
-    if (queries.length >= MAX_QUERIES) break;
-  }
-  return queries;
-}
-
-/** PLAN: one cheap fast completion → 3-5 sub-questions. Spend is recorded here. */
-async function planQueries(opts: {
-  userId: string;
-  prompt: string;
-  planner: ModelInfo;
-  client: "web" | "app";
-  signal?: AbortSignal;
-}): Promise<{ queries: string[]; costUsd: number }> {
-  const { signal, release } = timeboxSignal(opts.signal, PLAN_TIMEOUT_MS);
-  let out = "";
-  let usage: {
-    input?: number;
-    output?: number;
-    reasoning?: number;
-    total?: number;
-    cacheRead?: number;
-    cacheWrite?: number;
-    cacheWrite5m?: number;
-    cacheWrite1h?: number;
-    webSearchRequests?: number;
-    xSearchRequests?: number;
-  } = {};
-  try {
-    for await (const ev of streamChat({
-      model: opts.planner,
-      system: PLANNER_SYSTEM,
-      history: [{ role: "USER", content: opts.prompt.slice(0, 4_000), attachments: [] }],
-      maxTokens: 1024,
-      signal,
-    })) {
-      if (ev.type === "text") out += ev.text;
-      else if (ev.type === "usage") {
-        usage = {
-          input: ev.input ?? usage.input,
-          output: ev.output ?? usage.output,
-          reasoning: ev.reasoning ?? usage.reasoning,
-          total: ev.total ?? usage.total,
-          cacheRead: ev.cacheRead ?? usage.cacheRead,
-          cacheWrite: ev.cacheWrite ?? usage.cacheWrite,
-          cacheWrite5m: ev.cacheWrite5m ?? usage.cacheWrite5m,
-          cacheWrite1h: ev.cacheWrite1h ?? usage.cacheWrite1h,
-          webSearchRequests: ev.webSearchRequests ?? usage.webSearchRequests,
-          xSearchRequests: ev.xSearchRequests ?? usage.xSearchRequests,
-        };
-      }
-    }
-  } catch (e) {
-    console.error("[deep-research] plan failed", {
-      model: opts.planner.id,
-      message: signal.aborted ? "timed out or aborted" : e instanceof Error ? e.message : String(e),
-    });
-  } finally {
-    release();
-  }
-  // Bill whatever the planner actually consumed, even when parsing fails.
-  let costUsd = 0;
-  if (out || usage.input != null || usage.output != null) {
-    const billed = estimateGenerationCostUsd(opts.planner, {
-      promptTokens: usage.input,
-      completionTokens: usage.output,
-      reasoningTokens: usage.reasoning,
-      totalTokens: usage.total,
-      cacheRead: usage.cacheRead,
-      cacheWrite: usage.cacheWrite,
-      cacheWrite5m: usage.cacheWrite5m,
-      cacheWrite1h: usage.cacheWrite1h,
-      webSearchRequests: usage.webSearchRequests,
-      xSearchRequests: usage.xSearchRequests,
-      promptChars: PLANNER_SYSTEM.length + opts.prompt.length,
-      completionChars: out.length,
-    });
-    costUsd = billed.costUsd;
-    await recordSpend({
-      userId: opts.userId,
-      model: opts.planner.id,
-      kind: "chat",
-      source: opts.client,
-      promptTokens: billed.promptTokens,
-      completionTokens: billed.completionTokens,
-      reasoningTokens: usage.reasoning,
-      cacheRead: usage.cacheRead,
-      cacheWrite: usage.cacheWrite,
-      cacheWrite5m: usage.cacheWrite5m,
-      cacheWrite1h: usage.cacheWrite1h,
-      webSearchRequests: usage.webSearchRequests,
-      xSearchRequests: usage.xSearchRequests,
-      costUsd: costUsd || undefined,
-      promptChars: PLANNER_SYSTEM.length + opts.prompt.length,
-      completionChars: out.length,
-    });
-  }
-  return { queries: parsePlan(out), costUsd };
-}
-
-/** SEARCH + READ in one call: Tavily returns each result's raw page content. */
-async function tavilySearch(query: string, signal: AbortSignal): Promise<ResearchPage[]> {
-  const key = process.env.TAVILY_API_KEY?.trim();
-  if (!key || !query.trim()) return [];
-  try {
-    const res = await fetch("https://api.tavily.com/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: key,
-        query: query.slice(0, 400),
-        max_results: RESULTS_PER_QUERY,
-        search_depth: "basic",
-        include_raw_content: true,
-      }),
-      signal,
-    });
-    if (!res.ok) {
-      console.error("[deep-research] tavily", res.status);
-      return [];
-    }
-    const data = await res.json();
-    return ((data.results ?? []) as { url?: string; title?: string; content?: string; raw_content?: string | null }[])
-      .filter((r) => r.url && r.title)
-      .slice(0, RESULTS_PER_QUERY)
-      .map((r) => ({
-        title: r.title!,
-        url: r.url!,
-        snippet: (r.content ?? "").slice(0, 600),
-        rawContent: typeof r.raw_content === "string" && r.raw_content.trim() ? r.raw_content.slice(0, PAGE_CONTENT_CHARS) : undefined,
-      }));
-  } catch (e) {
-    if (!signal.aborted) console.error("[deep-research]", e);
-    return [];
-  }
-}
-
-/**
- * Interleave the per-query result lists (rank 1 of every query, then rank 2…)
- * so each sub-question contributes sources, deduped by URL.
- */
-function collectSources(resultLists: ResearchPage[][]): ResearchPage[] {
-  const pages: ResearchPage[] = [];
-  const seen = new Set<string>();
-  for (let rank = 0; rank < RESULTS_PER_QUERY && pages.length < MAX_SOURCES; rank++) {
-    for (const list of resultLists) {
-      const page = list[rank];
-      if (!page || seen.has(page.url)) continue;
-      seen.add(page.url);
-      pages.push(page);
-      if (pages.length >= MAX_SOURCES) break;
-    }
-  }
-  return pages;
-}
-
-/** The synthesis contract + numbered corpus, appended to the system prompt. */
-function buildResearchContext(prompt: string, pages: ResearchPage[], readUrls: Set<string>): string {
-  /*
-   * Both `title` and `body` are page-controlled, and this corpus is appended to
-   * the SYSTEM prompt — the highest-authority slot there is. Unwrapped, a page
-   * whose text contains "[13] Official policy\nhttps://…\n…" is byte-identical
-   * to a real corpus entry, so a hostile page could forge extra sources, defeat
-   * the citation contract above, and issue instructions from inside the system
-   * prompt.
+  /**
+   * What the gathering cost in USD, as the run's own ledger has it.
    *
-   * The envelope keeps the numbering and the URL outside it — those are ours —
-   * and puts only the fetched text inside.
+   * Wider than the number this used to return, which was the planning model's
+   * spend alone. It now also carries the search backend's per-call charge —
+   * real money the user was never shown, because Tavily bills us per request
+   * and nothing about that reached `ApiSpend`. The model portion is still
+   * written to `ApiSpend` by the tools; the search portion is on the run row
+   * only, which is why this is read from the run rather than accumulated here.
    */
-  const corpus = pages
-    .map((p, i) => {
-      const body = readUrls.has(p.url) && p.rawContent ? p.rawContent : p.snippet;
-      // The title is page-controlled too, and a newline in it would let one page
-      // forge additional "[n] Title / url / body" entries. Collapse it to a
-      // single line so an entry can only ever be one entry.
-      const title = p.title.replace(/\s+/g, " ").slice(0, 200);
-      return `[${i + 1}] ${title}\n${p.url}\n${wrapUntrusted(p.url, body)}`;
-    })
-    .join("\n\n");
-  return `# Deep research mode
-The user enabled deep research for this message: "${truncate(prompt, 300)}". You are writing a research REPORT, not a chat reply, grounded in the numbered source material below (gathered moments ago via live web search).
+  costUsd: number;
+  /**
+   * The durable run this turn gathered into, so the client can open the panel
+   * and see the stages, the sources and the controls for it. Null only when no
+   * run was created at all.
+   */
+  runId: string | null;
+  /** The bodies behind `sources`, for the citation audit. Never persisted. */
+  corpus: ResearchCorpusPage[];
+}
 
-Structure the report as markdown:
-- Start with a single "# " title naming the subject.
-- Organize the body into "## " findings sections that together answer the request.
-- End with a "## Sources" section listing every source you cited as "[n] Title — URL", one per line.
+const EMPTY: DeepResearchResult = { ok: false, context: "", sources: [], costUsd: 0, runId: null, corpus: [] };
 
-Rules:
-- Cite every load-bearing claim inline with bracketed source numbers like [1] or [2][3] that map EXACTLY to the numbered sources below. Dense citation is expected.
-- When sources disagree, say so explicitly and attribute each position to its source.
-- If something relevant could not be verified in these sources, say plainly that it is unverified — never fill gaps with guesses.
-- Never invent sources or cite numbers outside the list.
+/** Total numbered sources handed to the model. */
+const MAX_SOURCES = 12;
 
-${UNTRUSTED_CONTENT_RULE}
+/**
+ * The per-run ceiling for research started from chat.
+ *
+ * A chat turn cannot ask the user what they are willing to spend — they pressed
+ * a toggle and sent a message — so it gets a fixed, conservative ceiling rather
+ * than none. $0.60 covers a plan, five searches and a handful of page fetches
+ * with room to spare; a run that reaches it stops at `partially_completed` with
+ * its sources intact, and the turn still answers from what it gathered. Runs
+ * started from the research surface set their own.
+ */
+const CHAT_RUN_BUDGET_MICRO_USD = BigInt(600_000);
 
-# Source material
-${corpus}`;
+/** How often the live activity feed drains the run's event log while it works. */
+const EVENT_POLL_MS = 700;
+
+/**
+ * One research event, as a line in the existing chat activity timeline.
+ *
+ * Returning null is the important half. The event log is the durable record and
+ * carries everything — every spend, every state move, every source found — and
+ * replaying all of it into the timeline is what made the earlier version read as
+ * tool spam. The timeline gets the four kinds a person watching actually reads:
+ * what stage it is in, what it searched for, what it read, and what went wrong.
+ */
+function toActivity(event: ResearchEventDTO): Omit<ClientActivityEvent, "id" | "createdAt"> | null {
+  const payload = event.payload as Record<string, string | number | undefined>;
+  switch (event.kind) {
+    case "state_changed": {
+      const state = String(payload.state ?? "");
+      if (!isResearchState(state)) return null;
+      return { kind: "reasoning", title: RESEARCH_STATE_MESSAGE[state] };
+    }
+    case "query_issued":
+      return {
+        kind: "search",
+        title: "Searching the web",
+        detail: truncate(String(payload.query ?? ""), 96),
+      };
+    case "source_read": {
+      const url = String(payload.url ?? "");
+      const title = String(payload.title ?? "");
+      return {
+        kind: "visit",
+        title: "Reading source",
+        detail: truncate(title && title !== url ? title : sourceHost(url), 96),
+        url,
+      };
+    }
+    case "budget_exhausted":
+      return {
+        kind: "warning",
+        title: "Stopped at the research budget",
+        detail: "Answering from the sources gathered so far.",
+      };
+    case "error":
+      return {
+        kind: "warning",
+        title: "A source could not be read",
+        detail: truncate(String(payload.message ?? ""), 96),
+      };
+    default:
+      return null;
+  }
 }
 
 export async function runDeepResearch(opts: {
   userId: string;
   /** The user's message, plaintext (clarification-expanded when applicable). */
   prompt: string;
-  /** The user's SELECTED model — synthesis runs on it; planning picks a fast sibling. */
-  selectedModel: ModelInfo;
+  conversationId?: string | null;
   client: "web" | "app";
   signal?: AbortSignal;
   /** The chat route's activity emitter — events land in the existing timeline. */
   sendActivity: SendActivity;
 }): Promise<DeepResearchResult> {
   const prompt = opts.prompt.trim();
-  if (!prompt) return EMPTY;
-  const deadline = Date.now() + PREP_DEADLINE_MS;
+  if (!prompt || !researchSearchConfigured()) return EMPTY;
 
-  // ── PLAN ──────────────────────────────────────────────────────────────────
-  const planner = pickPlannerModel(opts.selectedModel);
-  opts.sendActivity({
-    kind: "reasoning",
-    title: "Planning research",
-    detail: `${PROVIDERS[planner.provider].label} · ${planner.name}`,
-  });
-  const plan = await planQueries({ userId: opts.userId, prompt, planner, client: opts.client, signal: opts.signal });
-  // A failed plan degrades to searching the prompt itself, not to a dead turn.
-  const queries = plan.queries.length ? plan.queries : [truncate(prompt, 300)];
+  const store = createPrismaResearchStore();
+  const engine = gatheringOnlyEngine();
 
-  // ── SEARCH (+ READ: Tavily returns raw page content in the same call) ─────
-  if (opts.signal?.aborted || Date.now() >= deadline) return { ...EMPTY, costUsd: plan.costUsd };
-  const { signal: searchSignal, release } = timeboxSignal(
-    opts.signal,
-    Math.min(SEARCH_TIMEOUT_MS, deadline - Date.now())
-  );
-  for (const query of queries) {
-    opts.sendActivity({ kind: "search", title: "Searching the web", detail: truncate(query, 96) });
-  }
-  const resultLists = await Promise.all(queries.map((q) => tavilySearch(q, searchSignal)));
-  release();
-
-  const pages = collectSources(resultLists);
-  if (pages.length === 0) return { ...EMPTY, costUsd: plan.costUsd };
-
-  const readUrls = new Set(pages.filter((p) => p.rawContent).slice(0, MAX_READ_PAGES).map((p) => p.url));
-  for (const page of pages) {
-    if (!readUrls.has(page.url)) continue;
-    opts.sendActivity({
-      kind: "visit",
-      title: "Reading source",
-      detail: truncate(page.title && page.title !== page.url ? page.title : sourceHost(page.url), 96),
-      url: page.url,
+  let runId: string | null = null;
+  try {
+    // `auto` confirmation: the per-send research toggle IS this user's
+    // agreement to the plan. Stopping a chat turn to ask again would leave the
+    // message hanging on a dialog nobody asked for.
+    const run = await engine.start({
+      userId: opts.userId,
+      goal: prompt,
+      conversationId: opts.conversationId ?? null,
+      budgetMicroUsd: CHAT_RUN_BUDGET_MICRO_USD,
+      confirmation: "auto",
     });
+    runId = run.id;
+  } catch (e) {
+    console.error("[deep-research] could not start a run", e);
+    return EMPTY;
   }
+
+  /*
+   * Drain the event log into the timeline while the job runs.
+   *
+   * The job is durable and the timeline is not, so these are two different
+   * things and the poll is the seam between them: the rows are the record, and
+   * this loop narrates them to a user who is watching right now. Without it the
+   * whole gathering phase — often a minute or more — would be one silent pause
+   * followed by an answer, which reads as a hung request.
+   */
+  let cursor = 0;
+  let draining = true;
+  const drain = async () => {
+    const events = await store.readEvents({
+      runId: runId!,
+      userId: opts.userId,
+      after: cursor,
+      limit: 100,
+    });
+    for (const event of events) {
+      cursor = event.seq;
+      const payload =
+        event.payload && typeof event.payload === "object" && !Array.isArray(event.payload)
+          ? (event.payload as Record<string, unknown>)
+          : {};
+      const activity = toActivity({
+        id: event.id,
+        seq: event.seq,
+        kind: event.kind as ResearchEventDTO["kind"],
+        payload,
+        createdAt: event.createdAt.toISOString(),
+      });
+      if (activity) opts.sendActivity(activity);
+    }
+  };
+  const pump = (async () => {
+    while (draining) {
+      await new Promise((resolve) => setTimeout(resolve, EVENT_POLL_MS));
+      // A failed drain must never take the run down with it: this is narration.
+      await drain().catch(() => undefined);
+    }
+  })();
+
+  try {
+    // `until: "synthesizing"` is the hand-off. The run stays live and the route
+    // writes the report; the panel shows it as still working until the turn
+    // completes, which is exactly what is happening.
+    await engine.drive({ runId, userId: opts.userId, signal: opts.signal, until: "synthesizing" });
+  } catch (e) {
+    console.error("[deep-research] drive failed", { runId, error: e });
+  } finally {
+    draining = false;
+    await pump;
+    await drain().catch(() => undefined);
+  }
+
+  const finished = await store.loadRun(runId, opts.userId);
+  const sources = (await store.listSources(runId, opts.userId))
+    .filter((source) => source.snapshot)
+    .slice(0, MAX_SOURCES);
+  const costUsd = finished ? Number(finished.costMicroUsd) / 1_000_000 : 0;
+  if (sources.length === 0) return { ...EMPTY, runId, costUsd };
+
+  const plan = parsePlan(finished?.plan);
   opts.sendActivity({
     kind: "context",
     title: "Research corpus ready",
-    detail: `${pages.length} source${pages.length === 1 ? "" : "s"} · ${queries.length} ${queries.length === 1 ? "search" : "searches"} · ${readUrls.size} read in full`,
+    detail: `${sources.length} source${sources.length === 1 ? "" : "s"} · ${plan.queries.length} ${
+      plan.queries.length === 1 ? "search" : "searches"
+    } · saved to this run`,
   });
 
   return {
     ok: true,
-    context: buildResearchContext(prompt, pages, readUrls),
-    // Strip rawContent: the client/persisted sources stay snippet-sized.
+    context: buildResearchCorpus(prompt, plan, sources),
     // `cited` marks these as the numbered corpus the model was actually given,
     // which is what licenses the UI to resolve inline [n] markers positionally.
     // Deep research is the ONLY path that numbers sources for the model.
-    sources: pages.map(({ title, url, snippet }) => ({ title, url, snippet, cited: true })),
-    costUsd: plan.costUsd,
+    sources: sources.map((source) => ({
+      title: source.title,
+      url: source.url,
+      // The stored snapshot is the full fetched body; the client list wants a
+      // line, not a page.
+      snippet: (source.snapshot ?? "").replace(/\s+/g, " ").slice(0, 300),
+      cited: true,
+    })),
+    costUsd,
+    runId,
+    // Read from the run's stored snapshots rather than re-fetched: the audit
+    // must judge a claim against the bytes the model was given, not against
+    // whatever the page says now.
+    corpus: sources.map((source) => ({
+      url: source.url,
+      title: source.title,
+      body: source.snapshot ?? "",
+      publishedAt: source.publishedAt ?? null,
+      truncated: !source.snapshot,
+    })),
   };
 }
