@@ -9,7 +9,14 @@ import { extractPptx } from "@/lib/knowledge/extract/pptx";
 import { extractTextDocument } from "@/lib/knowledge/extract/text";
 import { extractXlsx } from "@/lib/knowledge/extract/xlsx";
 import type { ExtractedBlock } from "@/lib/knowledge/extract/types";
-import { planIngest, type KnowledgeDocumentRecord } from "@/lib/knowledge/ingest";
+import {
+  checksumOf,
+  planIngest,
+  runIngest,
+  type KnowledgeBlockInput,
+  type KnowledgeDocumentRecord,
+  type KnowledgeStore,
+} from "@/lib/knowledge/ingest";
 
 /*
  * Everything here is built in-process. There is no `tests/fixtures/*.docx`,
@@ -536,4 +543,189 @@ test("bytes never seen before are indexed as version 1", () => {
   assert.equal(plan.action, "create");
   assert.equal(plan.version, 1);
   assert.equal(plan.supersedes, null);
+});
+
+/* -------------------------------------------------------------------------- */
+/* Ingest against a fake store                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The store is injected precisely so this can exist. It records the transitions
+ * rather than the rows, because the transitions are the contract: a document
+ * that reaches `ready` without passing through `extracting` and `indexing` has
+ * no way to drive a progress UI, and one that never leaves `extracting` is the
+ * stuck row `planIngest` has to rescue later.
+ */
+function fakeStore(over: Partial<KnowledgeStore> = {}) {
+  const states: string[] = [];
+  const jobStates: string[] = [];
+  const documents = new Map<string, KnowledgeDocumentRecord>();
+  let blocks: KnowledgeBlockInput[] = [];
+  let errors: Array<string | null | undefined> = [];
+  let ownerScoped = true;
+  let seq = 0;
+
+  const store: KnowledgeStore = {
+    async latestByChecksum(userId, checksum) {
+      void checksum;
+      if (userId !== "user_1") ownerScoped = false;
+      return null;
+    },
+    async createDocument(input) {
+      seq += 1;
+      const id = `doc_${seq}`;
+      documents.set(id, { id, state: "queued", version: input.version, parser: input.parser, parserVersion: input.parserVersion });
+      states.push("queued");
+      return id;
+    },
+    async updateDocument(userId, documentId, patch) {
+      if (userId !== "user_1") ownerScoped = false;
+      if (patch.state) states.push(patch.state);
+      if ("error" in patch) errors.push(patch.error);
+      const existing = documents.get(documentId);
+      if (existing && patch.state) existing.state = patch.state;
+    },
+    async replaceBlocks(userId, _documentId, next) {
+      if (userId !== "user_1") ownerScoped = false;
+      blocks = next;
+    },
+    async createJob() {
+      jobStates.push("queued");
+      return "job_1";
+    },
+    async updateJob(userId, _jobId, patch) {
+      if (userId !== "user_1") ownerScoped = false;
+      jobStates.push(patch.state);
+    },
+    ...over,
+  };
+
+  return {
+    store,
+    states,
+    jobStates,
+    get blocks() {
+      return blocks;
+    },
+    get errors() {
+      return errors.filter((e): e is string => typeof e === "string" && e.length > 0);
+    },
+    get ownerScoped() {
+      return ownerScoped;
+    },
+    reset() {
+      errors = [];
+    },
+  };
+}
+
+const ingestInput = (fileName: string, body: Uint8Array) => ({
+  userId: "user_1",
+  attachmentId: "att_1",
+  projectId: null,
+  fileName,
+  mimeType: "application/octet-stream",
+  bytes: body,
+});
+
+test("a readable file walks queued → extracting → indexing → ready, with blocks", async () => {
+  const fake = fakeStore();
+  const outcome = await runIngest(
+    fake.store,
+    ingestInput("guide.md", utf8("# Guide\n\nOne paragraph of prose.\n"))
+  );
+
+  assert.equal(outcome.status, "indexed");
+  assert.equal(outcome.status === "indexed" && outcome.state, "ok");
+  assert.deepEqual(fake.states, ["queued", "extracting", "indexing", "ready"]);
+  assert.deepEqual(fake.jobStates, ["queued", "running", "done"]);
+  assert.ok(fake.blocks.length >= 2);
+  // Ordinals are what restore reading order after retrieval scrambles it.
+  assert.deepEqual(
+    fake.blocks.map((b) => b.ordinal),
+    fake.blocks.map((_, i) => i)
+  );
+  assert.equal(fake.blocks[0].path, "guide.md");
+  assert.ok(fake.ownerScoped, "every store call must be scoped to the owner");
+});
+
+test("a scanned pdf lands in degraded with the reason attached, and still finishes its job", async () => {
+  const fake = fakeStore();
+  const bytes = pdfOf(["q 612 0 0 792 0 0 cm /Im1 Do Q"]);
+  const outcome = await runIngest(fake.store, ingestInput("scan.pdf", bytes));
+
+  assert.equal(outcome.status === "indexed" && outcome.state, "degraded");
+  assert.deepEqual(fake.states, ["queued", "extracting", "indexing", "degraded"]);
+  assert.deepEqual(fake.jobStates, ["queued", "running", "done"]);
+  assert.match(fake.errors.join(" "), /scan|no text layer/i);
+});
+
+test("an unreadable file lands in failed without ever reaching indexing", async () => {
+  const fake = fakeStore();
+  const outcome = await runIngest(fake.store, ingestInput("broken.docx", new Uint8Array(64).fill(0x41)));
+
+  assert.equal(outcome.status === "indexed" && outcome.state, "failed");
+  assert.deepEqual(fake.states, ["queued", "extracting", "failed"]);
+  assert.deepEqual(fake.jobStates, ["queued", "running", "failed"]);
+  assert.ok(fake.errors[0].length > 10, "the failure must carry a sentence, not a code");
+});
+
+test("an image creates no document at all", async () => {
+  const fake = fakeStore();
+  const outcome = await runIngest(fake.store, ingestInput("photo.png", utf8("not really a png")));
+  assert.equal(outcome.status, "skipped");
+  assert.deepEqual(fake.states, []);
+  assert.deepEqual(fake.jobStates, []);
+});
+
+test("re-uploading identical bytes writes nothing the second time", async () => {
+  const bytes = utf8("# Guide\n\nOne paragraph of prose.\n");
+  const checksum = checksumOf(bytes);
+  const fake = fakeStore({
+    async latestByChecksum() {
+      return { id: "doc_existing", state: "ready", version: 1, parser: "text", parserVersion: "1" };
+    },
+  });
+
+  const outcome = await runIngest(fake.store, ingestInput("guide.md", bytes));
+  assert.equal(outcome.status, "reused");
+  assert.equal(outcome.status === "reused" && outcome.documentId, "doc_existing");
+  assert.deepEqual(fake.states, [], "no document row may be created for bytes already indexed");
+  // The checksum is over content, so the same bytes under a different name are
+  // still the same document.
+  assert.equal(checksum, checksumOf(utf8("# Guide\n\nOne paragraph of prose.\n")));
+});
+
+test("a superseded predecessor is marked stale rather than deleted", async () => {
+  const fake = fakeStore({
+    async latestByChecksum() {
+      return { id: "doc_old", state: "ready", version: 1, parser: "text", parserVersion: "0" };
+    },
+  });
+  await runIngest(fake.store, ingestInput("guide.md", utf8("# Guide\n\nProse.\n")));
+  // ...queued, extracting, indexing, ready, then the old version goes stale.
+  assert.equal(fake.states[fake.states.length - 1], "stale");
+});
+
+test("an unreachable database is reported, not thrown at a request that already returned", async () => {
+  const fake = fakeStore({
+    async createDocument() {
+      throw new Error("connection refused");
+    },
+  });
+  const outcome = await runIngest(fake.store, ingestInput("guide.md", utf8("# Guide\n\nProse.\n")));
+  assert.equal(outcome.status, "unavailable");
+  assert.equal(outcome.status === "unavailable" && outcome.reason, "connection refused");
+});
+
+test("a store that fails mid-write still parks the document in failed", async () => {
+  const fake = fakeStore({
+    async replaceBlocks() {
+      throw new Error("deadlock detected");
+    },
+  });
+  const outcome = await runIngest(fake.store, ingestInput("guide.md", utf8("# Guide\n\nProse.\n")));
+  assert.equal(outcome.status === "indexed" && outcome.state, "failed");
+  assert.equal(fake.states[fake.states.length - 1], "failed");
+  assert.equal(fake.jobStates[fake.jobStates.length - 1], "failed");
 });
