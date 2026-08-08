@@ -639,6 +639,36 @@ test("the per-run budget stops the run and marks it partially_completed", async 
   );
 });
 
+test("the ceiling stops a query sweep midway, not once the sweep has been paid for", async () => {
+  const { store } = memoryStore();
+  const searched: string[] = [];
+  const base = deps(store, { costs: { plan: 1_000, search: 6_000 } });
+  const engine = createResearchEngine({
+    ...base,
+    async plan() {
+      return { queries: ["q1", "q2", "q3", "q4", "q5"], costMicroUsd: 1_000 };
+    },
+    async search(input) {
+      searched.push(input.query);
+      return base.search(input);
+    },
+  });
+  // The gate is the ESTIMATE, not what the last call happened to cost — the
+  // engine has to decide before it knows. 17,000 leaves room for the plan and
+  // two searches; a third would put the projection over.
+  const run = await started(engine, { budgetMicroUsd: BigInt(17_000) });
+  await engine.drive({ runId: run.id, userId: run.userId });
+
+  assert.equal(
+    searched.length,
+    2,
+    "the check has to happen before each query — a sweep that bills all five and compares afterwards is not a ceiling"
+  );
+  const stopped = await store.loadRun(run.id, run.userId);
+  assert.ok(stopped!.costMicroUsd <= BigInt(17_000), `spent ${stopped!.costMicroUsd} of 17000`);
+  assert.equal(stopped?.state, "partially_completed");
+});
+
 test("a budget too small to gather anything fails rather than pretending to have results", async () => {
   const { store } = memoryStore();
   const engine = createResearchEngine(deps(store));
