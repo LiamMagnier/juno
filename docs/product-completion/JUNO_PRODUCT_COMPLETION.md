@@ -15,7 +15,7 @@ truth.
 ## Current reconciliation — 2026-08-08
 
 The current source tree now has passing repository-wide automated checks:
-**1,971 tests completed, 1,969 passed, 2 database-dependent tests skipped without a test
+**1,972 tests completed, 1,970 passed, 2 database-dependent tests skipped without a test
 database, 0 failed**; full ESLint, TypeScript, Prisma validation/generation,
 native/capability/Work contract checks, code wiring checks, sandbox checks, and
 design-contract checks also pass. The production Next build renders 110/110
