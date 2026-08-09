@@ -215,20 +215,69 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         XCTAssertTrue(app.exists)
     }
 
-    func testWorkPreviewHasActionableOverviewFiltersAndTaskSurfaces() {
+    /// Work lands on its home, opens a task from the column, and comes back.
+    ///
+    /// **The round trip is the point.** This used to drive a five-row filter
+    /// section that no longer exists, and it asserted the overview only as the
+    /// thing left behind when a filter emptied — which is exactly how the page
+    /// became unreachable in the shipping app without a test noticing: once a
+    /// task was open, nothing in the window ever cleared the selection again.
+    /// Opening a task and returning to the overview is the navigation somebody
+    /// actually performs, so it is the navigation this asserts.
+    func testWorkOpensOnItsHomeAndReturnsToItFromATask() {
         let app = XCUIApplication()
         app.launchArguments = [
             "-ApplePersistenceIgnoreState", "YES",
             "--juno-ui-preview",
             "--juno-preview-tab", "work",
+            "--juno-preview-work-overview",
             "--juno-preview-size", "1240x800",
         ]
         app.launch()
         openMainWindowIfNeeded(in: app)
 
+        // The home: the composer is the page's first control, and the group that
+        // exists to be noticed is on it.
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.work.composer.goal"]
+                .firstMatch.waitForExistence(timeout: 12)
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.work.overview.attention"]
+                .firstMatch.waitForExistence(timeout: 5)
+        )
+        // By label rather than by identifier. The row is a `Button` whose label
+        // is a stack of six views including a combined status chip, and macOS
+        // exposes that as a container whose identifier XCUITest will not match —
+        // asserting on the sentence the row actually reads out is both findable
+        // and closer to what the test means.
+        XCTAssertTrue(
+            app.descendants(matching: .any)
+                .matching(
+                    NSPredicate(
+                        format: "label BEGINSWITH %@", "Reconcile the Q3 vendor invoices"
+                    )
+                )
+                .firstMatch.waitForExistence(timeout: 5)
+        )
+
+        // "New task" no longer opens a sheet — it puts the caret in the composer
+        // that is already on the page.
+        let newTask = app.descendants(matching: .any)["juno.work.sidebar.new-task"].firstMatch
+        XCTAssertTrue(newTask.exists)
+        newTask.firstMatch.click()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.work.composer.goal"]
+                .firstMatch.waitForExistence(timeout: 5)
+        )
+
+        // A task, from the column.
+        let task = app.descendants(matching: .any)["juno.work.sidebar.task.wk-invoices"].firstMatch
+        XCTAssertTrue(task.waitForExistence(timeout: 5))
+        task.click()
         XCTAssertTrue(
             app.descendants(matching: .any)["juno.work.surface"]
-                .waitForExistence(timeout: 12)
+                .waitForExistence(timeout: 8)
         )
         XCTAssertTrue(
             app.descendants(matching: .any)["juno.work.run-facts"]
@@ -239,45 +288,13 @@ final class JunoDesktopLaunchUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
 
-        let newTask = app.descendants(matching: .any)["juno.work.new-task"]
-        XCTAssertTrue(newTask.exists)
-        newTask.click()
+        // And back. The overview is a destination, not the absence of one.
+        let overview = app.descendants(matching: .any)["juno.work.sidebar.overview"].firstMatch
+        XCTAssertTrue(overview.exists)
+        overview.click()
         XCTAssertTrue(
-            app.textFields["juno.work.composer.title"].waitForExistence(timeout: 5)
-        )
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.work.composer.goal"].exists
-        )
-        app.buttons["Cancel"].click()
-
-        let completed = app.descendants(matching: .any)["juno.work.filter.completed"]
-        XCTAssertTrue(completed.waitForExistence(timeout: 5))
-        completed.click()
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.work.overview.metrics"]
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertTrue(
-            app.buttons["juno.work.overview.new-task"].exists
-                || app.descendants(matching: .any)["juno.work.overview.new-task"].exists
-        )
-
-        let allTasks = app.descendants(matching: .any)["juno.work.filter.all"]
-        XCTAssertTrue(allTasks.waitForExistence(timeout: 5))
-        allTasks.click()
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.work.overview.task.wk-receipts"]
-                .waitForExistence(timeout: 5)
-        )
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.work.overview.task.wk-digest"]
-                .waitForExistence(timeout: 5)
-        )
-
-        completed.click()
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.work.overview.task.wk-receipts"]
-                .exists
+            app.descendants(matching: .any)["juno.work.composer.goal"]
+                .firstMatch.waitForExistence(timeout: 8)
         )
     }
 

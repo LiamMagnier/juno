@@ -26,31 +26,38 @@ typealias DesktopWorkVocabulary = JunoWorkVocabulary
 /// tinted fill carries the state at a glance in a way coloured text on a warm
 /// canvas does not. The fill is the tint at low opacity rather than a second
 /// palette entry, so a status added to the contract needs no new colour.
+/// A dot, a monospaced word, and a hairline — `WorkStatusPill` from
+/// `work-vocabulary.tsx`, which is the same chip the website and the phone draw.
+///
+/// **The glyph is gone and that is the change.** It used to be
+/// `DesktopWorkStatusStyle.symbol` at caption size: one of fourteen SF symbols,
+/// none of which is legible at 11pt without being identified one at a time, and
+/// several of which (a shield, a half-filled shield, a slashed circle) mean
+/// nothing outside this file. The web's chip carries a 6pt dot instead — the
+/// same tone as the border and the fill — so the state reads as a colour at a
+/// glance and as a word when you look. Mono, because that is the face this
+/// product sets labels and metadata in, and because a proportional word in a
+/// 60pt chip wanders while a monospaced one sits still.
 struct DesktopWorkStatusPill: View {
     let status: JunoWorkStatus
-    /// The compact form: no fill, for use inside a source-list row where a
-    /// capsule per row would be a column of lozenges.
-    var quiet = false
 
     var body: some View {
         let style = DesktopWorkStatusStyle.of(status)
-        return Label {
+        return HStack(spacing: JunoSpace.tight) {
+            Circle()
+                .fill(style.tint)
+                .frame(width: 6, height: 6)
             Text(style.label)
-        } icon: {
-            Image(systemName: style.symbol)
-                .imageScale(.small)
+                .junoFont(size: 10, relativeTo: .caption2, design: .monospaced)
         }
-        .font(.system(.caption, design: .default, weight: .medium))
-        .foregroundStyle(quiet ? Color.junoMutedForeground : style.tint)
-        .padding(.horizontal, quiet ? 0 : JunoSpace.snug)
-        .padding(.vertical, quiet ? 0 : 3)
-        .background {
-            if !quiet {
-                Capsule(style: .continuous)
-                    .fill(style.tint.opacity(0.12))
-            }
-        }
+        .foregroundStyle(style.tint)
+        .padding(.horizontal, JunoSpace.snug)
+        .padding(.vertical, 3)
+        .background(Capsule(style: .continuous).fill(style.tint.opacity(0.10)))
+        .overlay(Capsule(style: .continuous).strokeBorder(style.tint.opacity(0.28), lineWidth: 0.5))
+        .fixedSize()
         .accessibilityElement(children: .combine)
         .accessibilityLabel(style.label)
+        .help(style.sentence)
     }
 }
