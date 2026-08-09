@@ -122,6 +122,42 @@ test("deploy smoke passes authentication and public UI checks without an optiona
   assert.match(SMOKE_REMOTE_BLOCK, /node ~\/juno\/current\/scripts\/public-ui-smoke\.mjs/);
 });
 
+// Every assertion above this line passed while the smoke was completely broken,
+// because they ask whether the block *contains* the right text. It did. What it
+// did not do was run: a comment had been written between `JUNO_SMOKE_RUN_CHAT=1
+// \` and the `node` it was prefixing, the backslash joined the comment onto the
+// assignments, the `#` ended the command, and the variables were left as
+// non-exported shell variables that an external `node` cannot see. Production
+// smoke died on "JUNO_SMOKE_BASE_URL is required", the post-deploy check rolled
+// the release back, and three deploys in a row were reverted while the workflow
+// still read correctly to a human.
+test("no line continuation in the deploy workflow is severed by a comment", () => {
+  const lines = DEPLOY_WORKFLOW.split(/\r?\n/);
+  const severed = lines.flatMap((line, index) =>
+    /\\\s*$/.test(line) && /^\s*#/.test(lines[index + 1] ?? "")
+      ? [`line ${index + 2}: ${lines[index + 1].trim()}`]
+      : [],
+  );
+  assert.deepEqual(
+    severed,
+    [],
+    `a comment after a "\\" continuation ends the command it was meant to document:\n${severed.join("\n")}`,
+  );
+});
+
+test("the production smoke command receives its environment prefix", () => {
+  const lines = SMOKE_REMOTE_BLOCK.split(/\r?\n/);
+  for (const script of ["production-smoke.mjs", "public-ui-smoke.mjs"]) {
+    const index = lines.findIndex((line) => line.includes(script));
+    assert.notEqual(index, -1, `smoke block no longer runs ${script}`);
+    assert.match(
+      lines[index - 1] ?? "",
+      /\\\s*$/,
+      `${script} must be the continuation of the assignments above it, not a separate command`,
+    );
+  }
+});
+
 test("authenticated production smoke rejects missing credentials and missing chat mode", () => {
   assert.match(PRODUCTION_SMOKE, /const requireAuth\s*=\s*process\.env\.JUNO_SMOKE_REQUIRE_AUTH\s*===\s*["']1["']/);
   assert.match(
