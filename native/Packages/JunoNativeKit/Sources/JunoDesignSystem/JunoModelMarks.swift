@@ -159,21 +159,21 @@ public struct JunoGradeBars: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(label.uppercased())
-                    .junoFont(size: 10, relativeTo: .caption, weight: .medium, design: .monospaced)
+                Text(label)
+                    .font(.caption)
                     .junoSecondaryInk()
                 Spacer()
                 Text("\(value)/10")
-                    .junoFont(size: 10, relativeTo: .caption, design: .monospaced)
+                    .font(.caption.monospaced())
                     .junoMetaInk()
             }
             HStack(spacing: 3) {
                 ForEach(0..<10, id: \.self) { index in
                     Capsule()
-                        .fill(index < value ? Color.junoAccent : Color.junoRowSelected)
-                        .frame(height: 12)
+                        .fill(index < value ? Color.junoAccent : Color.junoForeground.opacity(0.12))
+                        .frame(height: 10)
                 }
             }
         }
@@ -227,18 +227,6 @@ public struct JunoModelCapabilityChips: View {
                     }
                 }
             }
-            // One element that reads the whole set, rather than the previous
-            // `accessibilityHidden(true)`.
-            //
-            // Hiding was defensible when every chip restated something already in
-            // the row, but it never was for the compact form — a glyph-only chip
-            // has no visible text to fall back on, so the capabilities were simply
-            // absent for a VoiceOver reader. "Screen control" makes that worse: it
-            // is derived rather than shown anywhere else, so hiding it would hide
-            // the only statement of whether a model can drive the Mac.
-            //
-            // Combined instead of per-chip so a five-capability row is one stop
-            // instead of five.
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(
                 capabilities.map(\.label).joined(separator: ", ")
@@ -258,6 +246,8 @@ public struct JunoModelSpecSheet: View {
     /// already on screen — repeating them there would just be noise.
     private let showsHeader: Bool
 
+    @State private var stopID: String? = nil
+
     public init(model: JunoModelDescriptor, showsHeader: Bool = true) {
         self.model = model
         self.showsHeader = showsHeader
@@ -266,18 +256,21 @@ public struct JunoModelSpecSheet: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             if showsHeader {
-                HStack(spacing: JunoSpace.tight) {
-                    JunoProviderMark(
-                        providerID: model.providerID,
-                        providerName: model.providerName,
-                        size: 26
-                    )
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(model.displayName).font(.headline)
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.displayName)
+                            .font(.title3.weight(.bold))
+                            .junoInk()
                         Text(subtitle)
                             .font(.caption)
                             .junoSecondaryInk()
                     }
+                    Spacer(minLength: 8)
+                    JunoProviderMark(
+                        providerID: model.providerID,
+                        providerName: model.providerName,
+                        size: 28
+                    )
                 }
 
                 if let summary = model.summary {
@@ -306,13 +299,7 @@ public struct JunoModelSpecSheet: View {
 
             if showsHeader, !model.capabilities.isEmpty {
                 JunoModelCapabilityChips(capabilities: model.capabilities)
-                    .accessibilityLabel(
-                        "Capabilities: "
-                            + model.capabilities.map(\.label).joined(separator: ", ")
-                    )
 
-                // A chip that names a Juno feature rather than a model property
-                // says what it means. Only `computerUse` carries one today.
                 ForEach(model.capabilities.filter { $0.explanation != nil }) { capability in
                     if let explanation = capability.explanation {
                         Text(explanation)
@@ -323,34 +310,60 @@ public struct JunoModelSpecSheet: View {
                 }
             }
 
-            // Bars only when real grades were published — a router has none, and
-            // its speed or intelligence is not something to invent.
-            if let intelligence = model.intelligenceGrade {
-                JunoGradeBars(label: "Intelligence", value: intelligence)
-            }
-            if let speed = model.speedGrade {
-                JunoGradeBars(label: "Speed", value: speed)
+            // Bars matching website layout (Intelligence, Speed, Context, Cost)
+            VStack(alignment: .leading, spacing: 10) {
+                if let intelligence = model.intelligenceGrade {
+                    JunoGradeBars(label: "Intelligence", value: intelligence)
+                }
+                if let speed = model.speedGrade {
+                    JunoGradeBars(label: "Speed", value: speed)
+                }
+                if let contextGrade = contextGradeValue {
+                    JunoGradeBars(label: "Context", value: contextGrade)
+                }
+                if let costGrade = costGradeValue {
+                    JunoGradeBars(label: "Cost", value: costGrade)
+                }
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                if let context = model.contextWindowTokens {
-                    detailLine(
-                        "Context",
-                        JunoModelFormatting.contextWindow(context) + " tokens"
-                    )
-                }
                 if let price = model.priceDetail {
                     detailLine("Pricing", price)
                 }
                 if let released = model.released {
                     detailLine("Released", released)
                 }
-                detailLine("Thinking", model.thinking.summary)
+                if model.thinking.isAdjustable {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Thinking")
+                                .font(.caption)
+                                .junoMetaInk()
+                                .frame(width: 76, alignment: .leading)
+                            Text(model.thinking.label(for: stopID))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Color.junoAccent)
+                        }
+                        JunoThinkingTrack(
+                            ladder: model.thinking,
+                            stopID: $stopID
+                        )
+                    }
+                    .padding(.vertical, 2)
+                    .onAppear {
+                        if stopID == nil {
+                            stopID = model.thinking.stops.last?.id
+                        }
+                    }
+                    .onChange(of: model.id) { _, _ in
+                        stopID = model.thinking.stops.last?.id
+                    }
+                } else {
+                    detailLine("Thinking", model.thinking.summary)
+                }
                 if let reason = model.unavailabilityReason {
                     detailLine("Availability", reason)
                 }
-                // Before the note, because the date is the part a person acts
-                // on: the note is prose that repeats it in a sentence.
                 if let retires = model.retiresOn.flatMap(JunoModelFormatting.retirementDate) {
                     detailLine("Available until", retires)
                 }
@@ -368,6 +381,25 @@ public struct JunoModelSpecSheet: View {
             parts.append(JunoModelFormatting.contextWindow(context) + " context")
         }
         return parts.joined(separator: " · ")
+    }
+
+    private var contextGradeValue: Int? {
+        guard let tokens = model.contextWindowTokens else { return nil }
+        if tokens >= 1_000_000 { return 10 }
+        if tokens >= 500_000 { return 8 }
+        if tokens >= 200_000 { return 7 }
+        if tokens >= 128_000 { return 5 }
+        return 3
+    }
+
+    private var costGradeValue: Int? {
+        guard let glyph = model.costGlyph else { return nil }
+        switch glyph {
+        case "$$$$", "$$$": return 10
+        case "$$": return 6
+        case "$": return 3
+        default: return 5
+        }
     }
 
     private func detailLine(_ label: String, _ value: String) -> some View {

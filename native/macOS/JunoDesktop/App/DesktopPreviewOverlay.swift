@@ -33,6 +33,7 @@ import JunoPreviewSupport
 ///     --juno-ui-preview --juno-preview-tab projects --juno-preview-overlay confirm
 ///     --juno-ui-preview --juno-preview-tab settings --juno-preview-overlay sheet
 ///     --juno-ui-preview --juno-preview-tab chat   --juno-preview-overlay popover
+///     --juno-ui-preview --juno-preview-tab chat   --juno-preview-overlay add-menu
 ///
 /// DEBUG-only in substance: in a Stable build ``View/desktopPreviewOverlays``
 /// compiles down to the view it was applied to, and the enum below does not
@@ -47,6 +48,11 @@ enum DesktopPreviewOverlay: String, CaseIterable {
     case confirm
     /// A `.popover` anchored to a composer control — the model selector.
     case popover
+    /// The composer's "+" menu, which is the other popover anchored to that same
+    /// strip and the one with rows, groups, state and two drawers in it. It was
+    /// rebuilt against the design system's own tokens without anybody being able
+    /// to photograph it, which is the exact gap this file was written to close.
+    case addMenu = "add-menu"
 
     /// The overlay `--juno-preview-overlay <name>` asks for, if any.
     ///
@@ -89,7 +95,8 @@ extension View {
         sheet: (() -> Void)? = nil,
         alert: (() -> Void)? = nil,
         confirm: (() -> Void)? = nil,
-        popover: (() -> Void)? = nil
+        popover: (() -> Void)? = nil,
+        addMenu: (() -> Void)? = nil
     ) -> some View {
         #if DEBUG
         return task {
@@ -100,6 +107,7 @@ extension View {
             case .alert: present = alert
             case .confirm: present = confirm
             case .popover: present = popover
+            case .addMenu: present = addMenu
             }
             guard let present else { return }
             try? await Task.sleep(for: .milliseconds(1200))

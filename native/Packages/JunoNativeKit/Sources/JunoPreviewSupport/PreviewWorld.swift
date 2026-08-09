@@ -174,9 +174,18 @@ public final class PreviewWorld {
         // but not the one anybody reaching for `--juno-preview-tab work` is
         // after. The view's own scene storage still wins if a previous launch
         // left a selection behind.
-        if let session = workModel.sessions.first(where: {
-            $0.sessionID == PreviewWorkFixtures.openSessionID
-        }) {
+        //
+        // `--juno-preview-work-overview` suppresses it, because the placeholder
+        // is Work's *home* — the landing page somebody sees before they pick a
+        // task — and it was the one surface in the product with no reachable
+        // launch. Opening a task is the only way in, and once a task is open
+        // nothing in the window closes it again, so the page could be redesigned
+        // but never looked at.
+        if !JunoPreviewEnvironment.opensWorkOverview,
+            let session = workModel.sessions.first(where: {
+                $0.sessionID == PreviewWorkFixtures.openSessionID
+            })
+        {
             workModel.open(session)
         }
 

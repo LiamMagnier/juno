@@ -118,7 +118,8 @@ test("deploy smoke passes authentication and public UI checks without an optiona
     /if[\s\S]*(?:TOKEN|COOKIE)[\s\S]*else[\s\S]*(?:skip|skipped|not configured)[\s\S]*fi/i,
     "authenticated production smoke must fail closed instead of skipping",
   );
-  assert.match(SMOKE_REMOTE_BLOCK, /node ~\/juno\/scripts\/public-ui-smoke\.mjs/);
+  assert.match(SMOKE_REMOTE_BLOCK, /node ~\/juno\/current\/scripts\/production-smoke\.mjs/);
+  assert.match(SMOKE_REMOTE_BLOCK, /node ~\/juno\/current\/scripts\/public-ui-smoke\.mjs/);
 });
 
 test("authenticated production smoke rejects missing credentials and missing chat mode", () => {

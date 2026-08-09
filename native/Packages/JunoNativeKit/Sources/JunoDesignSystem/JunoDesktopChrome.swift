@@ -82,7 +82,7 @@ public extension View {
     /// cream field, and it is why a floating composer over it read as a solid
     /// pill: glass laid on a freshly-painted fill has nothing to refract.
     func junoReadingCanvas() -> some View {
-        background(Color.junoCanvasWarm)
+        background(Color.junoCanvas)
     }
 
     /// A panel one step off the canvas: a code block, a table, an inspector card.
@@ -234,15 +234,31 @@ public extension View {
 
     /// The floating-chrome treatment: glass in the floating radius.
     ///
-    /// Deliberately draws no border. Real glass carries its own edge — a light
-    /// scatter at the rim that reads as thickness. Stroking a hairline over it
-    /// flattens that back into a translucent rounded rectangle, which is the
-    /// hand-rolled look the brief rules out.
-    func junoFloatingChrome(cornerRadius: CGFloat = JunoRadius.floating) -> some View {
+    /// Real Liquid Glass with edge light scatter, ambient drop shadow, and dynamic focus glow.
+    func junoFloatingChrome(
+        cornerRadius: CGFloat = JunoRadius.floating,
+        isFocused: Bool = false
+    ) -> some View {
         junoGlass(
             in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(
+                    isFocused ? Color.junoAccent.opacity(0.4) : Color.white.opacity(0.12),
+                    lineWidth: isFocused ? 1.0 : 0.5
+                )
+        )
+        .shadow(
+            color: isFocused ? Color.junoAccent.opacity(0.15) : Color.black.opacity(0.3),
+            radius: isFocused ? 24 : 18,
+            y: isFocused ? 8 : 6
+        )
     }
+}
+
+@available(macOS 26.0, *)
+public extension View {
 
     /// Marks a glass element so the container can track it across a transition.
     ///

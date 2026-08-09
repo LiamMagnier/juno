@@ -96,6 +96,8 @@ struct JunoDesktopApp: App {
         }
         .defaultSize(width: 1240, height: 800)
         .windowResizability(.contentMinSize)
+        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unifiedCompact)
         .commands {
             JunoDesktopCommands()
         }

@@ -1,6 +1,9 @@
 import JunoAuth
 import JunoCore
 import JunoDesignSystem
+#if DEBUG
+import JunoPreviewSupport
+#endif
 import JunoWorkKit
 import SwiftUI
 
@@ -49,7 +52,6 @@ struct DesktopWorkWorkspace: View {
 
     @SceneStorage("juno.desktop.work.selection") private var storedSessionID = ""
     @SceneStorage("juno.desktop.work.columns") private var storedColumnVisibility = ""
-    @SceneStorage("juno.desktop.work.filter") private var storedFilter = DesktopWorkFilter.all.rawValue
     /// Chat's destination, which this window writes and never reads.
     ///
     /// The one thing Work's column can do that its window cannot serve is open
@@ -70,7 +72,6 @@ struct DesktopWorkWorkspace: View {
     @State private var columnVisibility = NavigationSplitViewVisibility.all
     @State private var isComposing = false
     @State private var query = ""
-    @State private var filter = DesktopWorkFilter.all
     /// The reply being typed to a question the run asked. Held here rather than
     /// in the thread view so switching tasks and coming back cannot resurrect a
     /// half-typed answer against a different question.
@@ -86,20 +87,30 @@ struct DesktopWorkWorkspace: View {
     // MARK: - Selection
 
     /// Restored from scene storage rather than `@State`, so reopening a window
-    /// returns the reader to the task they were reading.
-    private var selection: Binding<String?> {
+    /// returns the reader to the task they were reading. An empty string is the
+    /// overview, which is why the two cases collapse onto one key.
+    private var selection: Binding<DesktopWorkSidebarItem?> {
         Binding(
-            get: { storedSessionID.isEmpty ? nil : storedSessionID },
-            set: { storedSessionID = $0 ?? "" }
+            get: {
+                #if DEBUG
+                // The screenshot harness gets the last word over scene storage.
+                // `--juno-preview-work-overview` is how Work's home is captured,
+                // and a selection left behind by an earlier launch would silently
+                // hand back the thread instead — which it did, for three runs.
+                if JunoPreviewEnvironment.opensWorkOverview { return .overview }
+                #endif
+                return storedSessionID.isEmpty ? .overview : .task(storedSessionID)
+            },
+            set: { storedSessionID = $0?.taskID ?? "" }
         )
     }
 
     private var selectedSession: WorkSessionSummary? {
-        guard let id = selection.wrappedValue else { return nil }
+        guard let id = selection.wrappedValue?.taskID else { return nil }
         return model.sessions.first { $0.sessionID == id }
     }
 
-    /// The task the thread is showing.
+    /// The task the thread is showing, or nil on the overview.
     ///
     /// The model's copy wins **only when it is the same task**. It is the fresher
     /// of the two — the stream writes it, while the list copy is whatever the
@@ -108,8 +119,15 @@ struct DesktopWorkWorkspace: View {
     /// to match is what stops the other failure: selecting a second task shows
     /// the first one's goal and plan for the frame between the selection landing
     /// and `followSelection` re-pointing the stream.
+    ///
+    /// **A selection of `.overview` never falls through to `model.openSession`,
+    /// and that is the fix for a page nobody could get back to.** This used to
+    /// read "whatever the model has open" whenever the column had no selection,
+    /// so the overview was reachable only in the seconds before the first task
+    /// was opened; nothing in the window cleared a selection afterwards, which
+    /// made Work's own landing page unreachable for the rest of the launch.
     private var openSession: WorkSessionSummary? {
-        guard let selected = selectedSession else { return model.openSession }
+        guard let selected = selectedSession else { return nil }
         guard let open = model.openSession, open.sessionID == selected.sessionID else {
             return selected
         }
@@ -144,8 +162,8 @@ struct DesktopWorkWorkspace: View {
                 configuration: configuration,
                 session: session,
                 sessions: visibleSessions,
+                isSearching: !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                 selection: selection,
-                filter: $filter,
                 product: $product,
                 compose: { isComposing = true },
                 openDesign: openDesign,
@@ -169,7 +187,7 @@ struct DesktopWorkWorkspace: View {
         .focusedSceneValue(\.junoWorkspaceActions, workspaceActions)
         .sheet(isPresented: $isComposing) {
             DesktopWorkComposer(model: model) { session in
-                selection.wrappedValue = session.sessionID
+                selection.wrappedValue = .task(session.sessionID)
             }
         }
         .task { await model.refresh() }
@@ -178,47 +196,43 @@ struct DesktopWorkWorkspace: View {
         // than from the row's tap handler means a selection restored from scene
         // storage is followed too, instead of showing a thread that never
         // updates.
-        .task(id: selection.wrappedValue) { followSelection() }
+        //
+        // `onChange(initial:)` rather than `task(id:)`, because the two used to
+        // race. A `.task` is started after the first render, so on the frame the
+        // window opened the stream was pointed by whichever of these two handlers
+        // happened to run first — and the other one, seeing a value it had not
+        // asked for, undid it. One handler, running on appear and on every change,
+        // cannot disagree with itself.
+        .onChange(of: selection.wrappedValue, initial: true) { _, _ in
+            followSelection()
+            // A question belongs to the task that asked it, and so does an
+            // instruction. Clearing both on every change of task is what stops
+            // words typed for one run being sent to another.
+            answerDraft = ""
+            instructionDraft = ""
+        }
         // The model opens the task it has just created, and the column has to
         // agree with it — otherwise starting a task from the composer leaves the
         // thread showing the new run and the source list highlighting the old
-        // one.
+        // one. Nil is ignored: closing a task is how somebody gets *back* to the
+        // overview, and re-selecting on the way out would make that impossible.
         .onChange(of: model.openSession?.sessionID) { _, sessionID in
             guard let sessionID else { return }
-            selection.wrappedValue = sessionID
-        }
-        // A question belongs to the task that asked it, and so does an
-        // instruction. Clearing both on every change of task is what stops
-        // words typed for one run being sent to another.
-        .onChange(of: selection.wrappedValue) { _, _ in
-            answerDraft = ""
-            instructionDraft = ""
+            selection.wrappedValue = .task(sessionID)
         }
         // Deleting or archiving the selected task leaves the window pointing at
         // nothing. Without this the title stays on a task that no longer exists,
         // which reads as a failure rather than as "that task is gone".
         .onChange(of: model.sessions.count) { _, _ in
-            guard let id = selection.wrappedValue,
+            guard let id = selection.wrappedValue?.taskID,
                 !model.sessions.contains(where: { $0.sessionID == id })
             else { return }
-            selection.wrappedValue = nil
+            selection.wrappedValue = .overview
         }
         .onAppear {
-            filter = DesktopWorkFilter(rawValue: storedFilter) ?? .all
             if storedColumnVisibility == "detailOnly" {
                 columnVisibility = .detailOnly
             }
-        }
-        .onChange(of: filter) { _, newFilter in
-            storedFilter = newFilter.rawValue
-            guard let selected = selection.wrappedValue,
-                let selectedSession = model.sessions.first(where: { $0.sessionID == selected }),
-                !newFilter.includes(selectedSession, model: model)
-            else { return }
-            // A filter is a view, not a styling hint. Clear a selection that no
-            // longer belongs to it so the reader cannot keep showing a task that
-            // has disappeared from the source list.
-            selection.wrappedValue = nil
         }
         .onChange(of: columnVisibility) { _, visibility in
             storedColumnVisibility = visibility == .detailOnly ? "detailOnly" : "all"
@@ -299,8 +313,8 @@ struct DesktopWorkWorkspace: View {
         } else {
             DesktopWorkOverview(
                 model: model,
-                sessions: visibleSessions.filter { filter.includes($0, model: model) },
-                filter: filter,
+                sessions: visibleSessions,
+                isSearching: !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                 selection: selection,
                 hostModel: hostModel,
                 compose: { isComposing = true }
@@ -480,6 +494,11 @@ struct DesktopWorkWorkspace: View {
         }
     }
 
+    /// Points the stream at whatever the column has selected.
+    ///
+    /// The overview closes it rather than leaving the previous task streaming
+    /// behind a page that is not showing it — an SSE connection nobody is reading
+    /// is the same defect ``onDisappear`` closes on the way out of the product.
     private func followSelection() {
         guard let session = selectedSession else {
             model.closeOpenSession()
@@ -504,36 +523,65 @@ struct DesktopWorkWorkspace: View {
 
 // MARK: - Sidebar
 
-/// The four questions the Work source list should answer before a task is
-/// selected. A status badge on every row is not a navigation model; these views
-/// give the reader a useful place to start and make the attention queue a real
-/// workflow instead of a coloured heading.
-enum DesktopWorkFilter: String, CaseIterable, Identifiable, Sendable {
+/// What the Work column has selected.
+///
+/// Two cases rather than an optional task id, because "no task" and "the
+/// overview" are the same state and used to be spelled differently: the column
+/// stored `nil`, the detail read `nil` as "show whatever the model has open",
+/// and the overview was therefore only ever visible in the seconds before the
+/// first task was opened. Naming the page makes it a destination the reader can
+/// select, arrow-key onto and come back to.
+enum DesktopWorkSidebarItem: Hashable {
+    case overview
+    case task(String)
+
+    /// The task this points at, or nil on the overview. The one place the two
+    /// cases are collapsed, so scene storage keeps one key.
+    var taskID: String? {
+        switch self {
+        case .overview: nil
+        case .task(let id): id
+        }
+    }
+}
+
+/// The four states a task can be in, as the column groups them.
+///
+/// **A partition, not four predicates.** These used to be independent filters,
+/// and two of them overlapped: `hostOffline` both wants the reader and is
+/// terminal, so one task appeared under "Needs your attention" *and* again under
+/// "Finished" on the same page — the same row twice, four hundred points apart.
+/// ``of(_:model:)`` assigns each task exactly one bucket, in the order somebody
+/// would triage them, and every other question here is asked through it.
+enum DesktopWorkBucket: String, CaseIterable, Identifiable, Sendable {
     case attention
     case active
     case parked
-    case all
     case completed
 
     var id: Self { self }
 
+    /// The column's heading. Short, because it sits in a 264pt rail.
     var title: String {
         switch self {
         case .attention: "Needs you"
         case .active: "In progress"
         case .parked: "Parked"
-        case .all: "All tasks"
-        case .completed: "Completed"
+        // Not "Done": this bucket is everything that has stopped, and a run that
+        // failed or was cancelled filed under "Done" is the list telling the
+        // reader something that is not true.
+        case .completed: "Finished"
         }
     }
 
-    var symbol: String {
+    /// The overview's heading. Fuller, because the page has the room and the
+    /// reader arrives there without the column's context.
+    var pageTitle: String {
         switch self {
-        case .attention: "bell.badge"
-        case .active: "bolt.horizontal.circle"
-        case .parked: "pause.circle"
-        case .all: "tray.full"
-        case .completed: "checkmark.circle"
+        case .attention: "Needs you"
+        case .active: "Running now"
+        case .parked: "Parked"
+        case .completed: "Recently finished"
         }
     }
 
@@ -542,54 +590,215 @@ enum DesktopWorkFilter: String, CaseIterable, Identifiable, Sendable {
         case .attention: "Nothing is waiting on you."
         case .active: "No tasks are running right now."
         case .parked: "No tasks are parked right now."
-        case .all: "Start a task to see it here."
-        case .completed: "Finished tasks will stay here for reference."
+        case .completed: "Finished tasks stay here for reference."
         }
+    }
+
+    /// The single bucket a task belongs to.
+    ///
+    /// Order is triage order and is what makes the result a partition: a task
+    /// that wants an answer is a task that wants an answer, whatever else is
+    /// also true of it.
+    @MainActor
+    static func of(_ session: WorkSessionSummary, model: NativeWorkModel) -> DesktopWorkBucket {
+        let status = model.displayStatus(of: session)
+        if session.needsAttention || status.needsAttention { return .attention }
+        if status == .draft || status == .paused { return .parked }
+        if status.isTerminal { return .completed }
+        return .active
     }
 
     @MainActor
     func includes(_ session: WorkSessionSummary?, model: NativeWorkModel) -> Bool {
         guard let session else { return false }
-        let status = model.displayStatus(of: session)
-        switch self {
-        case .attention:
-            return session.needsAttention || status.needsAttention
-        case .active:
-            return !status.isTerminal
-                && status != .draft
-                && status != .paused
-                && !session.needsAttention
-                && !status.needsAttention
-        case .parked:
-            return status == .draft || status == .paused
-        case .all:
-            return true
-        case .completed:
-            return status.isTerminal
-        }
+        return Self.of(session, model: model) == self
     }
 
     @MainActor
     func count(in sessions: [WorkSessionSummary], model: NativeWorkModel) -> Int {
         sessions.filter { includes($0, model: model) }.count
     }
+
+    /// The bucket's tasks, most recent first and pinned ones ahead of the rest.
+    @MainActor
+    func tasks(in sessions: [WorkSessionSummary], model: NativeWorkModel) -> [WorkSessionSummary] {
+        sessions
+            .filter { includes($0, model: model) }
+            .sorted { lhs, rhs in
+                if lhs.pinned != rhs.pinned { return lhs.pinned }
+                return lhs.lastActivityAt > rhs.lastActivityAt
+            }
+    }
 }
 
-/// The task list, and one line about this Mac underneath it.
+/// A task's state as one mark, rather than as one of fourteen glyphs.
 ///
-/// Two sections, and the split is the point: a task that has stopped to ask
-/// something is not "in progress with an asterisk", it is the only kind of task
-/// whose next move is the reader's. Everything else is one recency-ordered list,
-/// because a task's status already reads on its own row and grouping by status
-/// as well would scatter one afternoon's work across four headings.
+/// **What this replaces.** Every row drew `DesktopWorkStatusStyle.symbol`: a
+/// shield, a waveform, a speech bubble, a clock, a tick, a crossed-out laptop, a
+/// circled cross — seven different glyphs down a seven-row column, none of them
+/// legible at 13pt without being read one at a time. A source list's gutter is
+/// scanned, not read, and a mark that has to be identified is a mark that is
+/// costing more than it returns. The status *word* is on the row's second line,
+/// where somebody who wants it will look.
+///
+/// So the gutter answers one question — how alive is this — in four states, and
+/// spends colour on exactly the two that want the reader:
+///
+///   * a spinner while it is running, which is the one state worth animating and
+///     is what Code's column already draws for the same idea;
+///   * a filled caution dot when it has stopped to ask something;
+///   * a filled danger dot when the run reported that it failed;
+///   * a hollow dot in the column's own ink for everything else.
+///
+/// This is what `JunoDesktopChrome` means by a greyscale rail: colour reads as
+/// urgent here precisely because its neighbours have none.
+struct DesktopWorkStatusMark: View {
+    let status: JunoWorkStatus
+    /// Whether the task itself says it is waiting on somebody, which the session
+    /// can assert independently of its status.
+    var wantsYou = false
+
+    /// The gutter's width. Fixed, so a spinner, a dot and the two glyphs at the
+    /// top of the column leave every title beside them on one text edge — the
+    /// ragged-left defect this file has an incident about, one column over.
+    static let width: CGFloat = 16
+
+    private var isRunning: Bool { status == .running || status == .preparing }
+
+    private var tint: Color {
+        if wantsYou || status.needsAttention { return Color.junoCaution }
+        if status == .failed { return Color.junoDanger }
+        return Color.junoSidebarForeground
+    }
+
+    /// Filled means live or waiting; hollow means settled. Draft, queued, paused,
+    /// done and cancelled are all settled, and the word beside them is what tells
+    /// them apart.
+    private var isFilled: Bool {
+        wantsYou || status.needsAttention || status == .failed
+    }
+
+    var body: some View {
+        Group {
+            if isRunning {
+                ProgressView()
+                    .controlSize(.mini)
+            } else if isFilled {
+                Circle().fill(tint).frame(width: 7, height: 7)
+            } else {
+                Circle()
+                    .strokeBorder(tint.opacity(0.7), lineWidth: 1.2)
+                    .frame(width: 7, height: 7)
+            }
+        }
+        .frame(width: Self.width, height: Self.width)
+        .accessibilityHidden(true)
+    }
+}
+
+/// **The selected row's fill, drawn by Juno because the platform's cannot be.**
+///
+/// ``SwiftUI/View/junoSidebarSelectionTint()`` is the documented way to colour a
+/// `.sidebar` `List`'s selection, and on macOS 26 it does not reach the state a
+/// reader actually sees. An `NSTableView` resolves its *emphasized* (key-window,
+/// focused-list) selection against `NSColor.controlAccentColor` — the app's
+/// AccentColor asset, Juno's coral — and ignores the SwiftUI tint, which only
+/// lands on the unemphasized fill. Chat and Code hide this by accident: focus in
+/// those windows usually sits in a composer, so their lists are rarely
+/// emphasized. Work has no composer in its column, so its list is emphasized
+/// from the moment the window opens, and every selected task was a saturated
+/// coral slab carrying its own subtitle in coral-on-coral. The same build, the
+/// same row, captured with focus in the list and again with focus moved off it
+/// by one Tab, is what established that rather than the source.
+///
+/// **The band is full-bleed on purpose, and it is the one thing here not to
+/// "fix".** `listRowBackground` paints *over* the platform's fill; it does not
+/// replace it. So an inset pill — a rounded rectangle with padding, which is the
+/// obvious way to draw a macOS 26 sidebar selection — does not hide the coral,
+/// it frames it: a three-point coral ring appears around the pill on every
+/// selected row, and `focusEffectDisabled()` does not touch it because it is not
+/// a focus ring. A background that covers the whole row rect is what leaves no
+/// coral to expose, and the rounded corners fall outside the column's visible
+/// width. Both were tried and both were captured.
+///
+/// The alternative was to stop passing a selection to the `List` and drive it
+/// from buttons, which would have bought the inset pill and cost arrow-key
+/// navigation and type-select on the only list in this window. The colour was
+/// the defect; the keyboard was not.
+///
+/// Focused and unfocused are distinguished the way the platform distinguishes
+/// them — a stronger fill when the column holds focus — because that is what the
+/// accent ring was saying before it was covered up.
+private struct DesktopWorkRowFill: ViewModifier {
+    let isSelected: Bool
+    let isHovering: Bool
+    /// Whether the column itself holds keyboard focus.
+    let isFocused: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .listRowBackground(Rectangle().fill(fill))
+            // A fill crossfading in place is `Tier.tint`, which survives Reduce
+            // Motion unchanged — nothing here moves.
+            .animation(JunoMotion.fast, value: isHovering)
+    }
+
+    private var fill: Color {
+        if isSelected {
+            return isFocused ? Color.junoSidebarSelection : Color.junoRowSelected
+        }
+        if isHovering { return Color.junoRowHover }
+        return .clear
+    }
+}
+
+private extension View {
+    /// A Work source-list row's own fill. See ``DesktopWorkRowFill``.
+    func junoWorkRow(
+        isSelected: Bool,
+        isHovering: Bool,
+        isFocused: Bool = false
+    ) -> some View {
+        modifier(
+            DesktopWorkRowFill(
+                isSelected: isSelected, isHovering: isHovering, isFocused: isFocused
+            )
+        )
+    }
+}
+
+/// The task list, grouped by what each task wants from the reader.
+///
+/// **What this replaced, and why.** The column used to carry two navigation
+/// models stacked on top of each other: a five-row "Views" section that set a
+/// filter, and below it the filtered list under a header repeating the filter's
+/// own name — so "All tasks" appeared twice, seventy points apart, meaning two
+/// different things. The five view rows were `Button`s inside a
+/// `List(selection:)`, so they took no part in the list's keyboard navigation
+/// and the current one was distinguishable only by the ink of its glyph. And
+/// choosing a view *hid* the rest of the work, which is the opposite of what a
+/// source list is for — there were never more tasks on screen than the seven a
+/// column shows without scrolling.
+///
+/// One model now. The buckets became `Section`s: the platform collapses them,
+/// the counts sit on their headers, and every task is reachable at once, which
+/// is the whole of what the filter bought without the mode. The rail's first
+/// section is the two things that are not tasks — Work's own overview, which is
+/// now a destination rather than the absence of one, and the way to start
+/// something.
 private struct DesktopWorkSidebar: View {
     let model: NativeWorkModel
     let hostModel: DesktopWorkHostModel?
     let configuration: JunoDesktopConfiguration
     let session: NativeAuthenticatedSession
     let sessions: [WorkSessionSummary]
-    @Binding var selection: String?
-    @Binding var filter: DesktopWorkFilter
+    /// Whether the toolbar's search field is narrowing the list, so an empty
+    /// column can say "nothing matches" rather than "no tasks yet" — two states
+    /// with two different next steps.
+    let isSearching: Bool
+    @Binding var selection: DesktopWorkSidebarItem?
     /// Which half of the app the window is showing, so the switch at the top of
     /// this column can move it. Read by nothing else here — it exists to give
     /// the header something to write through, exactly as Chat's and Code's do.
@@ -604,50 +813,56 @@ private struct DesktopWorkSidebar: View {
     let openSettings: () -> Void
     let openUsage: () -> Void
 
-    private var rest: [WorkSessionSummary] {
-        sessions
-            .filter { filter.includes($0, model: model) }
-            .sorted { lhs, rhs in
-                if lhs.pinned != rhs.pinned { return lhs.pinned }
-                return lhs.lastActivityAt > rhs.lastActivityAt
-            }
+    @State private var hovered: DesktopWorkSidebarItem?
+    @State private var newTaskHovered = false
+    /// Whether the column holds keyboard focus, which is what the selected row's
+    /// fill steps up for now that the platform's accent ring is covered.
+    @FocusState private var columnFocused: Bool
+
+    /// The buckets that have anything in them, in triage order.
+    ///
+    /// Empty buckets are omitted rather than drawn with a placeholder line: four
+    /// headings over four apologies is most of a column, and the counts a reader
+    /// wants are the ones above tasks that exist.
+    private var populated: [DesktopWorkBucket] {
+        DesktopWorkBucket.allCases.filter { $0.count(in: sessions, model: model) > 0 }
     }
 
     var body: some View {
         List(selection: $selection) {
             Section {
-                Button(action: compose) {
-                    Label("New task", systemImage: "plus")
-                        .font(.system(.body, design: .default, weight: .medium))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("juno.work.sidebar.new-task")
+                overviewRow
+                newTaskRow
             }
 
-            Section("Views") {
-                ForEach(DesktopWorkFilter.allCases) { view in
-                    filterRow(view)
+            if populated.isEmpty {
+                Section {
+                    Text(
+                        isSearching
+                            ? "No tasks match what you typed."
+                            : "No tasks yet. Anything you hand to Juno appears here."
+                    )
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, JunoSpace.hairline)
                 }
             }
 
-            Section {
-                if rest.isEmpty {
-                    Text(filter.emptyMessage)
-                        .junoCaption()
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    ForEach(rest) { row($0) }
+            ForEach(populated) { bucket in
+                Section {
+                    ForEach(bucket.tasks(in: sessions, model: model)) { task in
+                        row(task)
+                    }
+                } header: {
+                    header(bucket)
                 }
-            } header: {
-                Text(filter.title)
             }
         }
         .listStyle(.sidebar)
-        .junoSidebarSelectionTint()
+        .focused($columnFocused)
         // The strip at the top of the column, which is the product switch and
         // not merely the space one would need. Laid out above the list rather
-        // than inset into it, so "Waiting on you" — which a `.sidebar` List pins
+        // than inset into it, so a section header — which a `.sidebar` List pins
         // to the top of its own bounds, where no inset reaches it — pins below
         // the strip instead of over the traffic lights.
         .junoSidebarProductHeader(product: $product)
@@ -661,10 +876,7 @@ private struct DesktopWorkSidebar: View {
         // the material at the bottom of the same column.
         .safeAreaBar(edge: .bottom, spacing: 0) {
             VStack(spacing: 0) {
-                footer
-                    .padding(.horizontal, JunoSpace.regular)
-                    .padding(.vertical, JunoSpace.snug)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                hostLine
                 DesktopSidebarDesignRow(open: openDesign)
                 // The account block Work never had. Chat and Code both pin this
                 // exact component, which is what stops the three columns
@@ -683,57 +895,105 @@ private struct DesktopWorkSidebar: View {
         .accessibilityIdentifier("juno.work.sidebar")
     }
 
-    private func filterRow(_ view: DesktopWorkFilter) -> some View {
-        let count = view.count(in: sessions, model: model)
-        return Button {
-            filter = view
-            if let selected = selection,
-                let session = sessions.first(where: { $0.sessionID == selected }),
-                !view.includes(session, model: model)
-            {
-                selection = nil
-            }
-        } label: {
-            HStack(spacing: JunoSpace.cozy) {
-                Image(systemName: view.symbol)
-                    .junoSidebarMarkInk(selected: filter == view)
-                    .frame(width: 18)
-                Text(view.title)
-                    .junoRowLabel()
-                Spacer(minLength: JunoSpace.snug)
-                if count > 0 {
-                    Text(count.formatted())
-                        .font(.system(.caption, design: .default, weight: .medium))
-                        .monospacedDigit()
-                        .junoMetaInk()
-                }
-            }
-            .padding(.vertical, 2)
-            .contentShape(Rectangle())
+    // MARK: Fixed rows
+
+    /// Work's landing page, as a row you can select and arrow onto.
+    ///
+    /// The glyph sits in the same fixed gutter the task marks use rather than in
+    /// a `Label`'s icon slot, and that is why: `Label` sizes its slot to the
+    /// glyph, so the two rows at the top of the column stood their titles eight
+    /// points to the right of every task title below them. One column, two left
+    /// edges.
+    private var overviewRow: some View {
+        HStack(spacing: JunoSpace.snug) {
+            Image(systemName: "square.grid.2x2")
+                .junoSidebarMarkInk(selected: selection == .overview)
+                .frame(width: DesktopWorkStatusMark.width)
+            Text("Overview")
+                .junoRowLabel()
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("juno.work.filter.\(view.rawValue)")
-        .accessibilityValue(filter == view ? "Selected" : "")
+        .junoSidebarRowInk()
+        .junoWorkRow(
+            isSelected: selection == .overview,
+            isHovering: hovered == .overview,
+            isFocused: columnFocused
+        )
+        .tag(DesktopWorkSidebarItem.overview)
+        .onHover { hovering in
+            hovered = hovering ? .overview : (hovered == .overview ? nil : hovered)
+        }
+        .accessibilityIdentifier("juno.work.sidebar.overview")
     }
+
+    /// Not a selectable row: it opens a sheet rather than changing what the
+    /// detail column shows, so it is deliberately outside the list's selection
+    /// and never draws the selected fill.
+    ///
+    /// The mark is stated in the column's ink. A glyph in a `.sidebar` list
+    /// resolves against the *system accent* unless it is told otherwise, which is
+    /// how a lone coral plus ended up at the top of a column that is greyscale
+    /// everywhere else — the exact trap
+    /// ``SwiftUI/View/junoSidebarMarkInk(selected:)`` documents, sprung by the one
+    /// row that never used it.
+    private var newTaskRow: some View {
+        Button(action: compose) {
+            HStack(spacing: JunoSpace.snug) {
+                Image(systemName: "plus")
+                    .junoSidebarMarkInk()
+                    .frame(width: DesktopWorkStatusMark.width)
+                Text("New task")
+                    .junoRowLabel()
+            }
+            .junoSidebarRowInk()
+            .junoWorkRow(isSelected: false, isHovering: newTaskHovered)
+        }
+        .buttonStyle(.junoPress)
+        .onHover { newTaskHovered = $0 }
+        .help("Describe something for Juno to go and do (⌘N)")
+        .accessibilityIdentifier("juno.work.sidebar.new-task")
+    }
+
+    /// A bucket's heading, with how many are under it.
+    ///
+    /// The count is on the header rather than on every row's trailing edge,
+    /// which is where the old view rows put it: one number per section says the
+    /// same thing as five numbers scattered down the column, and leaves the rows
+    /// to be titles.
+    private func header(_ bucket: DesktopWorkBucket) -> some View {
+        HStack(spacing: JunoSpace.snug) {
+            Text(bucket.title)
+            Spacer(minLength: JunoSpace.hairline)
+            Text(bucket.count(in: sessions, model: model).formatted())
+                .monospacedDigit()
+        }
+        .junoSidebarSection()
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("juno.work.sidebar.section.\(bucket.rawValue)")
+    }
+
+    // MARK: Task rows
 
     /// One task in the source list.
     ///
-    /// **Colour is spent on attention, and on nothing else.** Every row used to
-    /// tint its glyph with the status colour, so a column of ten tasks was a
-    /// column of coral, amber, green and red marks — a rainbow rather than a
-    /// signal, and directly against `JunoDesktopChrome`'s rule that the rail is
-    /// greyscale ("The web's rail is greyscale: the mark rests on
-    /// `--sidebar-foreground` and lifts to `--foreground` with its label"). The
-    /// mark is now the column's own ink like Chat's and Code's, and the only
-    /// rows that carry colour are the ones asking for something: the section is
-    /// already called "Waiting on you", and now it looks like it.
-    ///
-    /// The status word stays in the subtitle, where it was already, because that
-    /// is where the answer is when somebody actually wants it.
+    /// Two lines and one mark. The title carries a little more weight when the
+    /// task is waiting on the reader, and the second line is the status in the
+    /// product's own words plus when it last moved — the pair somebody scanning
+    /// a column is actually asking for.
     private func row(_ session: WorkSessionSummary) -> some View {
-        let style = DesktopWorkStatusStyle.of(model.displayStatus(of: session))
-        let wantsYou = session.needsAttention
-        return Label {
+        let status = model.displayStatus(of: session)
+        let style = DesktopWorkStatusStyle.of(status)
+        let wantsYou = session.needsAttention || status.needsAttention
+        let item = DesktopWorkSidebarItem.task(session.sessionID)
+        return HStack(alignment: .top, spacing: JunoSpace.snug) {
+            DesktopWorkStatusMark(status: status, wantsYou: session.needsAttention)
+                // Sits on the title's cap height rather than floating at the top
+                // of a two-line row.
+                .padding(.top, 1)
+            // `maxWidth: .infinity` rather than a trailing `Spacer`. A `Spacer`
+            // is as flexible as a truncatable `Text`, so an `HStack` splits the
+            // leftover width between them — which cost the titles about forty
+            // points and truncated "Reconcile the Q3 vendor invoices", a title
+            // that had fit.
             VStack(alignment: .leading, spacing: 1) {
                 Text(session.title)
                     .junoRowLabel()
@@ -746,17 +1006,27 @@ private struct DesktopWorkSidebar: View {
                 .junoCaption()
                 .lineLimit(1)
             }
-        } icon: {
-            Image(systemName: style.symbol)
-                .junoSidebarMarkInk()
-                // The one exception to the greyscale rail, and the reason the
-                // rail is greyscale: a mark that means "this has stopped and is
-                // waiting for you" can only read as urgent if its neighbours are
-                // not also coloured.
-                .foregroundStyle(wantsYou ? style.tint : Color.junoSidebarForeground)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // The one place coral is spent in this column, and the same mark
+            // Chat's column spends it on. Trailing rather than leading so it
+            // cannot push the titles beside it off one text edge.
+            if session.pinned {
+                JunoIconView(.pin, size: 11)
+                    .foregroundStyle(Color.junoAccent)
+                    .padding(.top, 3)
+                    .accessibilityLabel("Pinned")
+            }
         }
         .junoSidebarRowInk()
-        .tag(session.sessionID)
+        .junoWorkRow(
+            isSelected: selection == item,
+            isHovering: hovered == item,
+            isFocused: columnFocused
+        )
+        .tag(item)
+        .onHover { hovering in
+            hovered = hovering ? item : (hovered == item ? nil : hovered)
+        }
         .contextMenu {
             Button(session.pinned ? "Unpin" : "Pin") {
                 Task { await model.setPinned(!session.pinned, on: session) }
@@ -770,129 +1040,81 @@ private struct DesktopWorkSidebar: View {
             }
         }
         .accessibilityLabel("\(session.title). \(style.sentence)")
+        .accessibilityIdentifier("juno.work.sidebar.task.\(session.sessionID)")
     }
 
-    /// One line about this Mac, the way to answer it, and the way to start
-    /// something.
+    // MARK: This Mac
+
+    /// One line about this Mac, and the control that answers it.
     ///
-    /// The host's own sentence is printed verbatim when it has one, and the
-    /// control that clears it sits underneath. A task dispatched to a Mac that
-    /// will not serve it sits queued and looks like a slow start, and the
-    /// sentence explaining that is a setting on this machine — so the column that
-    /// lists the tasks is where it has to appear, *and* where the fix has to be
-    /// reachable. Printing the sentence alone is what left somebody reading
-    /// "Juno Work is switched off on this Mac." with nowhere to go.
+    /// A task dispatched to a Mac that will not serve it sits queued and looks
+    /// like a slow start, and the sentence explaining that is a setting on this
+    /// machine — so the column that lists the tasks is where it has to appear,
+    /// *and* where the fix has to be reachable. It draws nothing at all when
+    /// there is nothing to report; the pinned block below it is short enough that
+    /// a permanently reserved slot would be most of it.
     @ViewBuilder
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            if let hostModel {
-                DesktopWorkBlockerRow(host: hostModel)
+    private var hostLine: some View {
+        if hostModel?.blocker != nil || model.lastErrorDescription != nil {
+            VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                if let hostModel {
+                    DesktopWorkBlockerRow(host: hostModel)
+                }
+                if let error = model.lastErrorDescription {
+                    Text(error)
+                        .junoCaption()
+                        .foregroundStyle(Color.junoDanger)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
             }
-
-            if let error = model.lastErrorDescription {
-                Text(error)
-                    .junoCaption()
-                    .foregroundStyle(Color.junoDanger)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-            }
-
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.cozy)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, JunoSpace.cozy)
-        .padding(.vertical, JunoSpace.snug)
     }
 }
 
 // MARK: - Work overview
 
-/// The landing page when no task is selected.
+/// Work's home: what is waiting on you, what is running, and what came back.
 ///
-/// A source list with a blank reader is technically navigable but gives Work no
-/// centre of gravity. This page answers three things immediately: what needs a
-/// decision, what is still running, and how to start the next piece of work.
-/// The rows are the same rows as the sidebar, so the overview is a useful
-/// launchpad rather than a second, stale representation of the task list.
+/// **What this replaced.** The page rendered the same four buckets three times —
+/// a four-up metric strip, then a card per bucket, beside a column that was
+/// already listing every one of those tasks — and offered a third and fourth
+/// route to the composer under a heading called "Start something". One task
+/// could appear in two of its own sections at once, because the buckets were
+/// overlapping predicates rather than a partition (see ``DesktopWorkBucket``).
+/// The counting strip is gone: the section headings carry the same numbers, and
+/// a quarter of that strip was permanently spent on a zero.
+///
+/// What is left is the three questions somebody opening Work actually has, each
+/// answered once, in the order they are asked. Attention first, because a task
+/// that has stopped is the only thing here that is costing time; then what is
+/// still moving; then what came back, capped, because the column is the place
+/// to browse the archive and a landing page that grows with your history is a
+/// landing page that gets slower to read every week.
 private struct DesktopWorkOverview: View {
     let model: NativeWorkModel
+    /// Already narrowed by the toolbar's search field. Searching for one task
+    /// must not leave this page quietly showing unrelated work.
     let sessions: [WorkSessionSummary]
-    let filter: DesktopWorkFilter
-    @Binding var selection: String?
+    let isSearching: Bool
+    @Binding var selection: DesktopWorkSidebarItem?
     let hostModel: DesktopWorkHostModel?
     let compose: () -> Void
 
-    private var allSessions: [WorkSessionSummary] {
-        // The source list has already applied both the current view and the
-        // search query. The reader must use that same set, otherwise searching
-        // for one task leaves the overview quietly showing unrelated work.
-        sessions
-    }
+    /// How many finished tasks the page will show before it stops. The rest are
+    /// one click away in the column, which is where a list that grows without
+    /// bound belongs.
+    private static let finishedLimit = 4
 
-    private var attention: [WorkSessionSummary] {
-        allSessions
-            .filter { DesktopWorkFilter.attention.includes($0, model: model) }
-            .sorted { $0.lastActivityAt > $1.lastActivityAt }
-    }
-
-    private var active: [WorkSessionSummary] {
-        allSessions
-            .filter { DesktopWorkFilter.active.includes($0, model: model) }
-            .sorted { $0.lastActivityAt > $1.lastActivityAt }
-    }
-
-    private var parked: [WorkSessionSummary] {
-        allSessions
-            .filter { DesktopWorkFilter.parked.includes($0, model: model) }
-            .sorted { $0.lastActivityAt > $1.lastActivityAt }
-    }
-
-    private var completed: [WorkSessionSummary] {
-        allSessions
-            .filter { DesktopWorkFilter.completed.includes($0, model: model) }
-            .sorted { $0.lastActivityAt > $1.lastActivityAt }
-    }
-
-    private var primaryTasks: [WorkSessionSummary] {
-        switch filter {
-        case .attention: attention
-        case .active: active
-        case .parked: parked
-        case .completed: completed
-        case .all: []
-        }
-    }
-
-    private var headingTitle: String {
-        switch filter {
-        case .attention: "Needs your attention"
-        case .active: "In progress"
-        case .parked: "Parked work"
-        case .completed: "Completed work"
-        case .all: "Your work"
-        }
-    }
-
-    private var headingSubtitle: String {
-        switch filter {
-        case .attention: "Decisions and answers that will let Juno continue."
-        case .active: "Tasks Juno is carrying out in the background."
-        case .parked: "Tasks waiting to be started or resumed."
-        case .completed: "A record of what Juno has already finished or stopped."
-        case .all: "Tasks Juno can carry out while you focus on something else."
-        }
-    }
-
-    private var primarySubtitle: String {
-        switch filter {
-        case .attention: "These tasks need your next decision."
-        case .active: "Juno will keep working while you do something else."
-        case .parked: "Resume or start a parked task when you are ready."
-        case .completed: "Open a task to review its result and activity."
-        case .all: ""
-        }
+    private func tasks(_ bucket: DesktopWorkBucket) -> [WorkSessionSummary] {
+        bucket.tasks(in: sessions, model: model)
     }
 
     var body: some View {
-        if sessions.isEmpty, !model.sessions.isEmpty {
+        if sessions.isEmpty, isSearching {
             JunoEmptyState(
                 title: "No matching tasks",
                 message: "Try a different search, or start a new task.",
@@ -901,255 +1123,275 @@ private struct DesktopWorkOverview: View {
                 action: compose
             )
         } else {
-            JunoDetailPage(maxWidth: 920) {
+            JunoDetailPage(maxWidth: 860) {
                 VStack(alignment: .leading, spacing: JunoSpace.section) {
                     heading
-                    metrics
 
-                    if filter == .all, !attention.isEmpty {
-                        DesktopWorkOverviewSection(
-                            title: "Needs your attention",
-                            subtitle: "These tasks cannot continue without you."
-                        ) {
-                            ForEach(attention.prefix(4)) { task in
-                                taskRow(task)
-                            }
+                    attentionSection
+
+                    if !tasks(.active).isEmpty {
+                        DesktopWorkPanel(title: DesktopWorkBucket.active.pageTitle) {
+                            rows(tasks(.active), showsGoal: false)
                         }
                     }
 
-                    if filter == .all, !active.isEmpty {
-                        DesktopWorkOverviewSection(
-                            title: "In progress",
-                            subtitle: "Juno is handling these in the background."
-                        ) {
-                            ForEach(active.prefix(4)) { task in
-                                taskRow(task)
-                            }
+                    if !tasks(.parked).isEmpty {
+                        DesktopWorkPanel(title: DesktopWorkBucket.parked.pageTitle) {
+                            rows(tasks(.parked), showsGoal: false)
                         }
                     }
 
-                    if filter == .all, !parked.isEmpty {
-                        DesktopWorkOverviewSection(
-                            title: "Parked",
-                            subtitle: "These tasks are paused or still waiting to be started."
-                        ) {
-                            ForEach(parked.prefix(8)) { task in
-                                taskRow(task)
-                            }
-                        }
-                    }
+                    finishedSection
 
-                    if filter == .all, !completed.isEmpty {
-                        DesktopWorkOverviewSection(
-                            title: "Finished",
-                            subtitle: "A record of what Juno has already finished or stopped."
-                        ) {
-                            ForEach(completed.prefix(8)) { task in
-                                taskRow(task)
-                            }
-                        }
-                    }
-
-                    if filter != .all, !primaryTasks.isEmpty {
-                        DesktopWorkOverviewSection(
-                            title: filter.title,
-                            subtitle: primarySubtitle
-                        ) {
-                            ForEach(primaryTasks.prefix(8)) { task in
-                                taskRow(task)
-                            }
-                        }
-                    }
-
-                    if let hostModel {
-                        DesktopWorkOverviewSection(
-                            title: "This Mac",
-                            subtitle: "Local work uses the permissions you choose in Settings."
-                        ) {
-                            DesktopWorkBlockerRow(
-                                host: hostModel,
-                                confirmsReady: true,
-                                identifier: "juno.work.overview.host"
-                            )
-                        }
-                    }
-
-                    startSection
+                    hostLine
                 }
             }
         }
     }
 
+    // MARK: Heading
+
+    /// The page's title, in the serif every other Juno page heading uses.
+    ///
+    /// It was `.system(size: 30, weight: .semibold, design: .rounded)` — a face
+    /// that appears nowhere in ``JunoTypography``, which states the product has
+    /// exactly two: SF Pro, and Newsreader for the editorial moments. Settings,
+    /// Usage, Account and Projects all head their pages with
+    /// ``JunoSerif/pageHeading(compact:)``; Work was the one product spelling the
+    /// same role in a third typeface, and a rounded display face is the single
+    /// most visible way a page announces it belongs to a different app.
     private var heading: some View {
-        HStack(alignment: .bottom, spacing: JunoSpace.roomy) {
-            VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                Text(headingTitle)
-                    .font(.system(size: 30, weight: .semibold, design: .rounded))
-                Text(headingSubtitle)
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.roomy) {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                Text("Your work")
+                    .font(JunoSerif.pageHeading())
+                    .junoInk()
+                Text("Tasks Juno carries out while you focus on something else.")
                     .junoBody()
+                    .junoSecondaryInk()
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: JunoSpace.regular)
             Button(action: compose) {
                 Label("New task", systemImage: "plus")
             }
-            .buttonStyle(.borderedProminent)
-            .tint(Color.junoAccent)
+            .junoProminentAction()
+            .controlSize(.regular)
             .accessibilityIdentifier("juno.work.overview.new-task")
         }
     }
 
-    private var metrics: some View {
-        HStack(spacing: 0) {
-            metric(
-                value: DesktopWorkFilter.attention.count(in: allSessions, model: model),
-                label: "Need you",
-                symbol: DesktopWorkFilter.attention.symbol,
-                tint: Color.junoCaution
-            )
-            Divider().frame(height: 34)
-            metric(
-                value: DesktopWorkFilter.active.count(in: allSessions, model: model),
-                label: "In progress",
-                symbol: DesktopWorkFilter.active.symbol,
-                tint: Color.junoAccent
-            )
-            Divider().frame(height: 34)
-            metric(
-                value: DesktopWorkFilter.parked.count(in: allSessions, model: model),
-                label: "Parked",
-                symbol: DesktopWorkFilter.parked.symbol,
-                tint: Color.junoCaution
-            )
-            Divider().frame(height: 34)
-            metric(
-                value: DesktopWorkFilter.completed.count(in: allSessions, model: model),
-                label: "Completed",
-                symbol: DesktopWorkFilter.completed.symbol,
-                tint: Color.junoSuccess
-            )
+    // MARK: Sections
+
+    /// The only section drawn when it is empty, and the only one that keeps its
+    /// explanatory line.
+    ///
+    /// A page whose first block appears and disappears has no stable shape, and
+    /// "is anything waiting on me?" is the question this page exists to answer —
+    /// so the answer is always on it, and "no" is a real answer worth reading.
+    @ViewBuilder
+    private var attentionSection: some View {
+        let waiting = tasks(.attention)
+        DesktopWorkPanel(
+            title: DesktopWorkBucket.attention.pageTitle,
+            subtitle: waiting.isEmpty ? nil : "These cannot continue without you."
+        ) {
+            if waiting.isEmpty {
+                Label {
+                    Text(DesktopWorkBucket.attention.emptyMessage)
+                        .junoRowLabel()
+                        .junoSecondaryInk()
+                } icon: {
+                    Image(systemName: "checkmark.circle")
+                        .foregroundStyle(Color.junoSuccess)
+                }
+                .padding(.horizontal, JunoSpace.regular)
+                .padding(.vertical, JunoSpace.cozy)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                rows(waiting, showsGoal: true)
+            }
         }
-        .padding(.horizontal, JunoSpace.roomy)
-        .padding(.vertical, JunoSpace.regular)
-        .junoCard()
-        .accessibilityIdentifier("juno.work.overview.metrics")
+        .accessibilityIdentifier("juno.work.overview.attention")
     }
 
-    private func metric(value: Int, label: String, symbol: String, tint: Color) -> some View {
-        HStack(spacing: JunoSpace.snug) {
-            Image(systemName: symbol)
-                .foregroundStyle(tint)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(value.formatted())
-                    .font(.system(.title3, design: .default, weight: .semibold))
-                    .monospacedDigit()
-                Text(label)
-                    .junoCaption()
+    @ViewBuilder
+    private var finishedSection: some View {
+        let finished = tasks(.completed)
+        if !finished.isEmpty {
+            DesktopWorkPanel(
+                title: DesktopWorkBucket.completed.pageTitle,
+                trailing: finished.count > Self.finishedLimit
+                    ? "\(Self.finishedLimit) of \(finished.count)"
+                    : nil
+            ) {
+                rows(Array(finished.prefix(Self.finishedLimit)), showsGoal: false)
             }
+        }
+    }
+
+    /// One line about this Mac, under everything else.
+    ///
+    /// A line rather than the titled card this used to be. "Local work uses the
+    /// permissions you choose in Settings" was a subtitle explaining a heading
+    /// above a sentence that already explained itself, and three stacked
+    /// explanations is how a status line becomes a section.
+    @ViewBuilder
+    private var hostLine: some View {
+        if let hostModel {
+            DesktopWorkBlockerRow(
+                host: hostModel,
+                confirmsReady: true,
+                identifier: "juno.work.overview.host"
+            )
+            .padding(.horizontal, JunoSpace.hairline)
+        }
+    }
+
+    // MARK: Rows
+
+    /// A block's rows, with the separator suppressed on the first one.
+    ///
+    /// The rule is stated here rather than in the row because only the caller
+    /// knows what comes above it, and a hairline drawn on the first row would
+    /// land on the card's own top edge as a rule nobody asked for.
+    private func rows(_ tasks: [WorkSessionSummary], showsGoal: Bool) -> some View {
+        ForEach(Array(tasks.enumerated()), id: \.element.id) { index, task in
+            DesktopWorkOverviewRow(
+                task: task,
+                status: model.displayStatus(of: task),
+                showsGoal: showsGoal,
+                isFirst: index == 0,
+                open: { selection = .task(task.sessionID) }
+            )
+        }
+    }
+}
+
+/// A titled block of rows on the overview.
+///
+/// The rows are separated by hairlines and answer the pointer. They used to be
+/// stacked flush inside one card with no divider and no hover, so three tasks
+/// read as a single paragraph and there was nothing to tell the reader the whole
+/// row was the target — which it is.
+private struct DesktopWorkPanel<Content: View>: View {
+    let title: String
+    var subtitle: String?
+    /// A short right-aligned note on the heading: "4 of 11" where the block is
+    /// capped, so a cap is something the page states rather than something the
+    /// reader has to notice.
+    var trailing: String?
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                Text(title)
+                    .junoSidebarSection()
+                    .accessibilityAddTraits(.isHeader)
+                if let subtitle {
+                    Text(subtitle)
+                        .junoCaption()
+                }
+                Spacer(minLength: JunoSpace.snug)
+                if let trailing {
+                    Text(trailing)
+                        .junoCaption()
+                        .monospacedDigit()
+                }
+            }
+            .padding(.horizontal, JunoSpace.hairline)
+
+            VStack(spacing: 0) {
+                content
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // Clipped before the card is drawn behind it, so a row's hover fill
+            // stops at the card's corner instead of squaring it off.
+            .clipShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
+            .junoCard()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
 
-    private var startSection: some View {
-        DesktopWorkOverviewSection(
-            title: "Start something",
-            subtitle: "Describe the outcome. Juno will make the plan and ask before sensitive actions."
-        ) {
-            Button(action: compose) {
-                HStack(spacing: JunoSpace.cozy) {
-                    Image(systemName: "square.and.pencil")
-                        .foregroundStyle(Color.junoAccent)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Describe a task")
-                            .junoRowLabel()
-                        Text("Research, organise, compare, or prepare a deliverable.")
-                            .junoCaption()
-                    }
-                    Spacer(minLength: JunoSpace.snug)
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .junoMetaInk()
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("juno.work.overview.start")
-        }
+/// One task on the overview.
+///
+/// The whole row is the target and says so under the pointer. The chevron that
+/// used to sit on the trailing edge of every row is gone: eight of them down a
+/// page is eight marks all saying the same thing, and a hover fill says it
+/// better because it is the shape of the thing being clicked.
+private struct DesktopWorkOverviewRow: View {
+    let task: WorkSessionSummary
+    let status: JunoWorkStatus
+    /// Whether to print the goal. On for the tasks that are waiting, because the
+    /// reader has to decide something and the title is a generated summary; off
+    /// for the rest, where it would triple the height of a block they are
+    /// scanning.
+    let showsGoal: Bool
+    /// Whether this is the top row of its block, and therefore the one that
+    /// must not draw a separator above itself.
+    let isFirst: Bool
+    let open: () -> Void
+
+    @State private var isHovering = false
+
+    private var style: DesktopWorkStatusStyle { DesktopWorkStatusStyle.of(status) }
+
+    /// Status, where it ran, and when it last moved — in that order, because
+    /// that is the order the questions arrive in.
+    private var provenance: String {
+        [
+            style.label,
+            DesktopWorkVocabulary.target(
+                task.effectiveTarget ?? task.requestedTarget,
+                hostName: task.hostDisplayName
+            ),
+            task.lastActivityAt.formatted(.relative(presentation: .named)),
+        ].joined(separator: "  ·  ")
     }
 
-    private func taskRow(_ task: WorkSessionSummary) -> some View {
-        let status = model.displayStatus(of: task)
-        let style = DesktopWorkStatusStyle.of(status)
-        return Button {
-            selection = task.sessionID
-        } label: {
+    var body: some View {
+        Button(action: open) {
             HStack(alignment: .top, spacing: JunoSpace.cozy) {
-                Image(systemName: style.symbol)
-                    .foregroundStyle(style.tint)
-                    .frame(width: 18, alignment: .center)
+                DesktopWorkStatusMark(status: status, wantsYou: task.needsAttention)
                     .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(task.title)
                         .junoRowLabel()
                         .fontWeight(.medium)
+                        .junoInk()
                         .lineLimit(1)
-                    Text(task.goal)
+                        .truncationMode(.tail)
+                    if showsGoal {
+                        Text(task.goal)
+                            .junoCaption()
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(provenance)
                         .junoCaption()
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    Text(
-                        "\(style.label)  ·  "
-                            + DesktopWorkVocabulary.target(
-                                task.effectiveTarget ?? task.requestedTarget,
-                                hostName: task.hostDisplayName
-                            )
-                            + "  ·  "
-                            + task.lastActivityAt.formatted(.relative(presentation: .named))
-                    )
-                    .junoCaption()
                 }
-                Spacer(minLength: JunoSpace.snug)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .junoMetaInk()
-                    .padding(.top, 3)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("juno.work.overview.task.\(task.sessionID)")
-        .accessibilityLabel("\(task.title). \(style.sentence)")
-    }
-}
-
-private struct DesktopWorkOverviewSection<Content: View>: View {
-    let title: String
-    let subtitle: String
-    let content: Content
-
-    init(title: String, subtitle: String, @ViewBuilder content: () -> Content) {
-        self.title = title
-        self.subtitle = subtitle
-        self.content = content()
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .junoSidebarSection()
-                Text(subtitle)
-                    .junoCaption()
-            }
-            VStack(alignment: .leading, spacing: 0) {
-                content
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, JunoSpace.regular)
-            .padding(.vertical, JunoSpace.snug)
-            .junoCard()
+            .padding(.vertical, JunoSpace.cozy)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isHovering ? Color.junoRowHover : Color.clear)
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .buttonStyle(.junoPress)
+        .onHover { isHovering = $0 }
+        .overlay(alignment: .top) {
+            if !isFirst {
+                Divider()
+                    .padding(.leading, JunoSpace.regular)
+            }
+        }
+        .accessibilityIdentifier("juno.work.overview.task.\(task.sessionID)")
+        .accessibilityLabel("\(task.title). \(style.sentence)")
     }
 }
 

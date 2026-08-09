@@ -2163,6 +2163,7 @@ struct DesktopComposer: View {
     @State private var showingLibrary = false
     @State private var showingModelSelector = false
     @State private var showingThinking = false
+    @State private var showingAddMenu = false
     @State private var dictating = false
     @State private var importError: String?
     /// Set while a spoken turn is on the wire, so a second Return cannot send
@@ -2175,10 +2176,18 @@ struct DesktopComposer: View {
     /// is in `prompt` and sent in full either way — this only decides whether it
     /// is live in the text field. See ``NativePromptLimits``.
     @State private var draftExpanded = false
+    @State private var isHoveringAdd = false
+    @State private var isHoveringModel = false
+    @State private var isHoveringThinking = false
+    @State private var isHoveringDictate = false
     @FocusState private var focused: Bool
     /// The call this composer is inside, published by ``junoVoiceDock(_:)``.
     /// Non-nil is what routes a send over the socket instead of to `/api/chat`.
     @Environment(\.junoVoiceCall) private var voiceCall
+    /// Read here for the control strip's hover states: the fills cross under
+    /// ``JunoMotion/Tier/tint`` and survive the preference, the 2% lift is travel
+    /// and does not.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var selectedModel: NativeChatModelOption? {
         model.model(withID: selectedModelID)
@@ -2429,7 +2438,9 @@ struct DesktopComposer: View {
         // treatment stroked a hairline border over the glass, which flattened
         // the rim's light scatter — the thing that makes glass read as having
         // thickness — back into a translucent rounded rectangle.
-        .junoFloatingChrome(cornerRadius: JunoRadius.composer)
+        .junoFloatingChrome(cornerRadius: JunoRadius.composer, isFocused: focused)
+        .scaleEffect(focused ? 1.003 : 1.0)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: focused)
         .padding(.horizontal, DesktopChatMeasure.gutter)
         .padding(.bottom, JunoSpace.tight)
         .fileImporter(
@@ -2652,170 +2663,65 @@ struct DesktopComposer: View {
         .accessibilityIdentifier("juno.desktop.chat.collapsed-draft")
     }
 
-    /// What the "+" adds to a message, and the tools it arms.
+    /// Whether the closed "+" is holding anything — what lights its badge.
     ///
-    /// The marks are the website's own, not the nearest SF Symbol: `composer.tsx`
-    /// draws Files with `FileUp`, Deep research with `Telescope`, Connectors with
-    /// `Plug` — where this menu had reached for `paperclip`, `binoculars` and, for
-    /// connectors, a chain `link` that neither of the other two clients uses. The
-    /// checkmark on a chosen row stays an SF Symbol: a selection tick is the OS's
-    /// mark, not Juno's.
-    ///
-    /// **None of them are currently drawn, and that is AppKit's decision, not a
-    /// missing asset.** A SwiftUI `Menu` on this OS renders its rows title-only:
-    /// measured here with a Juno mark, with an SF Symbol, and with
-    /// `.labelStyle(.titleAndIcon)` forced on — all three produce a plain text
-    /// menu, and the inline `Picker` in Juno Code's composer behaves the same way.
-    /// So the SF Symbols this menu used to name were never visible either. They
-    /// are stated correctly anyway: this is the row's identity, it is what the
-    /// phone and the browser draw, and the day these menus carry images again is
-    /// not the day to rediscover which glyph each row meant.
+    /// All four of the states the menu can leave behind, where the badge used to
+    /// answer for two of them. A chat armed with web search or with canvas looked
+    /// from the outside exactly like a chat armed with nothing.
+    private var hasArmedTools: Bool {
+        deepResearch || webSearch || canvasEnabled || !selectedConnectors.isEmpty
+    }
+
+    /// The "+" itself. What it opens is ``JunoAddMenuContent``, which carries the
+    /// note on why this menu is drawn by hand rather than by `Menu`, and the marks
+    /// are the website's own — `composer.tsx` draws Files with `FileUp`, Deep
+    /// research with `Telescope`, Connectors with `Plug`.
     private var addMenu: some View {
-        Menu {
-            Button {
-                showingFileImporter = true
-            } label: {
-                // Named for what it can take. During a call the only thing this
-                // socket carries is JPEG, so offering "files" would be offering
-                // something the turn would then refuse.
-                JunoIconLabel(
-                    verbatim: voiceActive ? "Attach images" : "Attach files",
-                    icon: .files,
-                    size: 14
-                )
-            }
-            .disabled(
-                voiceActive
-                    ? !canAttachInVoice
-                    : !(attachmentModel?.hasCapacity ?? false)
-            )
-
-            Button {
-                showingLibrary = true
-            } label: {
-                // Visible and disabled rather than removed, because "where did the
-                // Library go" is a question worth answering in place. A library
-                // pick is a clone whose bytes only ever existed on the server, and
-                // there is no way to show one to a model over this socket.
-                JunoIconLabel(
-                    verbatim: voiceActive
-                        ? "Choose from Library — chat only"
-                        : "Choose from Library",
-                    icon: .library,
-                    size: 14
-                )
-            }
-            .disabled(
-                voiceActive
-                    || libraryModel == nil
-                    || !(attachmentModel?.hasCapacity ?? false)
-            )
-
-            // Said once, plainly, rather than left for the reader to infer from a
-            // row that will not enable. `videoInput` is the relay's own answer, so
-            // this names the providers that do have it.
-            if voiceActive, !voiceCanSeeImages {
-                Button {} label: {
-                    Label(Self.noVisionMessage, systemImage: "eye.slash")
-                }
-                .disabled(true)
-            }
-
-            if fixedProjectID == nil, let projectModel {
-                Menu {
-                    selectionMenuButton(
-                        title: "No project",
-                        selected: selectedProjectID == nil
-                    ) {
-                        selectedProjectID = nil
-                    }
-                    Divider()
-                    ForEach(projectModel.projects) { project in
-                        selectionMenuButton(
-                            title: project.name,
-                            selected: selectedProjectID == project.id
-                        ) {
-                            selectedProjectID = project.id
-                        }
-                    }
-                } label: {
-                    JunoIconLabel(
-                        verbatim: selectedProjectName ?? "Add to project",
-                        icon: .projects,
-                        size: 14
-                    )
-                }
-                .disabled(model.selectedConversationID != nil)
-            }
-
-            Divider()
-
-            Toggle(isOn: $deepResearch) {
-                JunoIconLabel(verbatim: "Deep research", icon: .research, size: 14)
-            }
-
-            Toggle(isOn: $webSearch) {
-                JunoIconLabel(verbatim: "Web search", icon: .web, size: 14)
-            }
-            .disabled(selectedModel?.supportsWebSearch != true)
-
-            Toggle(isOn: $canvasEnabled) {
-                JunoIconLabel(
-                    verbatim: "Canvas & artifacts",
-                    icon: .artifactsTool,
-                    size: 14
-                )
-            }
-
-            if connectorModel != nil {
-                Menu {
-                    if connectedConnectors.isEmpty {
-                        Text("No connected apps")
-                    } else {
-                        ForEach(connectedConnectors) { connector in
-                            selectionMenuButton(
-                                title: connector.label,
-                                selected: selectedConnectors.contains(connector.id)
-                            ) {
-                                toggleConnector(connector.id)
-                            }
-                            .disabled(
-                                !selectedConnectors.contains(connector.id)
-                                    && selectedConnectors.count >= 5
-                            )
-                        }
-                    }
-                } label: {
-                    JunoIconLabel(
-                        verbatim: selectedConnectors.isEmpty
-                            ? "Connectors"
-                            : "Connectors · \(selectedConnectors.count)",
-                        icon: .connections,
-                        size: 14
-                    )
-                }
-            }
+        Button {
+            showingAddMenu = true
         } label: {
-            Image(systemName: "plus")
-                .font(.body.weight(.semibold))
-                .junoInk()
-                .frame(width: 34, height: 34)
-                .overlay(alignment: .topTrailing) {
-                    if deepResearch || !selectedConnectors.isEmpty {
-                        Circle()
-                            .fill(Color.junoAccent)
-                            .stroke(Color.junoSurface, lineWidth: 1.5)
-                            .frame(width: 8, height: 8)
-                            .offset(x: 1, y: -1)
-                    }
-                }
-                .contentShape(.circle)
+            DesktopAddMenuMark(
+                isOpen: showingAddMenu,
+                isHovering: isHoveringAdd,
+                isArmed: hasArmedTools
+            )
+            .onHover { isHoveringAdd = $0 }
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .buttonStyle(.junoPress)
         .fixedSize()
         .help("Add files, tools, projects, or connected apps")
         .accessibilityLabel("Add")
+        .accessibilityValue(hasArmedTools ? "Tools armed" : "")
+        .accessibilityIdentifier("juno.desktop.chat.add")
+        .popover(
+            isPresented: $showingAddMenu,
+            attachmentAnchor: .rect(.bounds),
+            arrowEdge: .bottom
+        ) {
+            JunoAddMenuContent(
+                voiceActive: voiceActive,
+                voiceCanSeeImages: voiceCanSeeImages,
+                canAttachInVoice: canAttachInVoice,
+                hasCapacity: attachmentModel?.hasCapacity ?? false,
+                showFileImporter: { showingFileImporter = true },
+                showLibrary: { showingLibrary = true },
+                fixedProjectID: fixedProjectID,
+                projectModel: projectModel,
+                selectedProjectID: $selectedProjectID,
+                isConversationStarted: model.selectedConversationID != nil,
+                selectedProjectName: selectedProjectName,
+                deepResearch: $deepResearch,
+                webSearch: $webSearch,
+                supportsWebSearch: selectedModel?.supportsWebSearch == true,
+                canvasEnabled: $canvasEnabled,
+                connectorModel: connectorModel,
+                connectedConnectors: connectedConnectors,
+                selectedConnectors: $selectedConnectors,
+                toggleConnector: toggleConnector,
+                close: { showingAddMenu = false }
+            )
+        }
+        .desktopPreviewOverlays(addMenu: { showingAddMenu = true })
     }
 
     private var modelControl: some View {
@@ -2829,7 +2735,7 @@ struct DesktopComposer: View {
                     size: 14
                 )
                 Text(selectedModel?.displayName ?? "Choose model")
-                    .font(.callout.weight(.medium))
+                    .font(.subheadline.weight(.medium))
                     .junoInk()
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -2838,10 +2744,30 @@ struct DesktopComposer: View {
                     .junoSecondaryInk()
             }
             .padding(.horizontal, 10)
-            .frame(height: 34)
-            .contentShape(.rect)
+            .padding(.vertical, 5)
+            // `junoRowHover`/`junoRowSelected` rather than a `Color.white` wash.
+            // White at 5% over a warm off-white canvas is nothing, so this whole
+            // control strip had a hover state in Dark Mode only.
+            .background(
+                Capsule()
+                    .fill(isHoveringModel ? Color.junoRowSelected : Color.junoRowHover)
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        Color.junoBorder.opacity(isHoveringModel ? 1 : 0.55),
+                        lineWidth: 0.5
+                    )
+            )
+            .scaleEffect(isHoveringModel && !reduceMotion ? 1.02 : 1.0)
+            .animation(
+                JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+                value: isHoveringModel
+            )
+            .onHover { isHoveringModel = $0 }
+            .contentShape(.capsule)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.junoPress)
         .fixedSize(horizontal: true, vertical: false)
         .help("Choose model")
         .accessibilityLabel("Model")
@@ -2852,14 +2778,6 @@ struct DesktopComposer: View {
             attachmentAnchor: .rect(.bounds),
             arrowEdge: .bottom
         ) {
-            // The shared selector, not a Chat-local copy of it. `JunoModelSelector`
-            // superseded the app's own `DesktopModelSelector` when the control
-            // moved down to JunoDesignSystem so Juno Code could use it too; Chat
-            // was still calling the old one, which is how the two windows ended
-            // up with two implementations of the same picker to keep in step.
-            // `junoDescriptor` is the manifest row projected onto the
-            // presentation-neutral type the shared view takes, so nothing the
-            // server publishes is lost in the move.
             JunoModelSelector(
                 models: model.modelCatalog.map(\.junoDescriptor),
                 selectedModelID: selectedModelID,
@@ -2869,46 +2787,15 @@ struct DesktopComposer: View {
                 }
             )
         }
-        // The real popover, from the real anchor. `JunoDesktopPreviewRoot` also
-        // has a route to this selector, but it renders the *content* full-window
-        // precisely because it could not keep a popover open — so it shows the
-        // picker and says nothing about the glass platter the picker sits on,
-        // which is the half the overlay contract governs.
         .desktopPreviewOverlays(popover: { showingModelSelector = true })
     }
 
-    /// The glyph that says "this is about how hard the model thinks".
-    ///
-    /// It is the same symbol `JunoThinkingButton` uses in the shared design
-    /// system, and it now appears in **both** states of this control rather than
-    /// neither. See ``thinkingControl(_:)`` for why that matters.
     private var thinkingSymbol: some View {
         Image(systemName: "gauge.with.dots.needle.33percent")
             .imageScale(.small)
             .accessibilityHidden(true)
     }
 
-    /// How much thinking the model does — a button when it is adjustable, a
-    /// readout when the router decides for itself.
-    ///
-    /// **What was wrong.** The automatic branch drew a bare `Text("Auto")` in a
-    /// monospaced caption, with no glyph, no chevron and no affordance of any
-    /// kind, immediately to the right of `modelControl` — which, for Juno's own
-    /// routing model, *also* says "Auto". So the composer showed the same word
-    /// twice, an inch apart, in two different typefaces, and only one of the two
-    /// was a control. A reader trying to change the model had two things to aim
-    /// at and no way to tell from looking which one would open.
-    ///
-    /// **What distinguishes them now.** The model control keeps its provider
-    /// mark and its up/down chevron and is drawn in the system face. This one
-    /// carries the gauge glyph in both states, so its subject is legible without
-    /// reading the word, and it drops the monospace — a typeface change between
-    /// two adjacent controls in one row reads as an accident, and there is
-    /// nothing tabular here for a mono face to align. The automatic state still
-    /// has no chevron, and that absence is now information rather than an
-    /// oversight: there is genuinely nothing to open, because a router that picks
-    /// its own depth is reporting a fact and not declining a choice. A `.help`
-    /// says so on hover, which is the affordance a readout is allowed to have.
     @ViewBuilder
     private func thinkingControl(_ scale: NativeThinkingScale) -> some View {
         if scale.isAutomatic {
@@ -2938,13 +2825,30 @@ struct DesktopComposer: View {
                         .font(.caption2.weight(.semibold))
                         .junoSecondaryInk()
                 }
-                .font(.callout)
+                .font(.subheadline.weight(.medium))
                 .junoInk()
                 .padding(.horizontal, 9)
-                .frame(height: 34)
-                .contentShape(.rect)
+                .padding(.vertical, 5)
+                .background(
+                    Capsule()
+                        .fill(isHoveringThinking ? Color.junoRowSelected : Color.junoRowHover)
+                )
+                .overlay(
+                    Capsule()
+                        .strokeBorder(
+                            Color.junoBorder.opacity(isHoveringThinking ? 1 : 0.55),
+                            lineWidth: 0.5
+                        )
+                )
+                .scaleEffect(isHoveringThinking && !reduceMotion ? 1.02 : 1.0)
+                .animation(
+                    JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+                    value: isHoveringThinking
+                )
+                .onHover { isHoveringThinking = $0 }
+                .contentShape(.capsule)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.junoPress)
             .fixedSize()
             .help("How much thinking the model does before answering")
             .accessibilityLabel("Thinking")
@@ -2962,9 +2866,6 @@ struct DesktopComposer: View {
                     fastMode: $fastMode,
                     proMode: $proMode
                 )
-                // The height has to grow with the mode row; the panel cannot
-                // measure itself (see JunoThinkingPanel's crash note), so the
-                // caller states the sum.
                 popover.frame(
                     width: 268,
                     height: 118 + (popover.showsModeToggles ? JunoThinkingMetrics.modeRowHeight : 0)
@@ -2980,14 +2881,26 @@ struct DesktopComposer: View {
                 dictating = true
             }
         } label: {
-            Image(systemName: "mic")
-                .font(.body)
-                .foregroundStyle(Color.primary.opacity(0.76))
-                .frame(width: 34, height: 34)
-                .frame(width: 40, height: 44)
-                .contentShape(.rect)
+            Image(systemName: "mic.fill")
+                .font(.callout.weight(.medium))
+                .frame(width: 36, height: 36)
+                .foregroundStyle(dictating ? Color.junoOnAccent : Color.primary.opacity(0.85))
+                .contentShape(.circle)
         }
-        .buttonStyle(.plain)
+        .junoGlass(
+            in: Circle(),
+            tint: dictating ? Color.junoAccent : nil,
+            interactive: true
+        )
+        .shadow(
+            color: isHoveringDictate ? Color.black.opacity(0.25) : Color.black.opacity(0.12),
+            radius: isHoveringDictate ? 8 : 4,
+            y: 2
+        )
+        .scaleEffect(isHoveringDictate ? 1.06 : 1.0)
+        .animation(.easeOut(duration: 0.15), value: isHoveringDictate)
+        .onHover { isHoveringDictate = $0 }
+        .buttonStyle(.junoPress)
         .help("Dictate")
         .accessibilityLabel("Dictate")
         .accessibilityIdentifier("juno.desktop.chat-dictate")
@@ -3586,6 +3499,560 @@ private extension NativeConversationBucket {
         // archive bucket. The case stays because the bucket is shared with the
         // phone app and the switch has to be exhaustive.
         case .archived: "Archived"
+        }
+    }
+}
+
+// MARK: - The composer's "+" menu
+
+/// What the "+" adds to a message, and the tools it arms.
+///
+/// **A hand-drawn popover rather than a `Menu`, and that is AppKit's decision.**
+/// A SwiftUI `Menu` on this OS renders its rows title-only — measured with a Juno
+/// mark, with an SF Symbol, and with `.labelStyle(.titleAndIcon)` forced on, all
+/// three produce plain text. The phone can use a real `Menu` and does
+/// (`JunoMobileComposerActions`); the Mac cannot draw a marked, stateful row
+/// inside one, so it draws its own.
+///
+/// **Drawing our own is not licence to invent one.** It is a menu, so it is
+/// shaped like a menu: single-line rows, rules between groups, and no captions.
+/// Two earlier passes each drifted the other way. The first spent three `Toggle`s
+/// on the tools, and at `.controlSize(.mini)` in the dark a switch track is the
+/// highest-contrast object on the surface — the eye read three switches before
+/// any of the six labels. The second replaced them with uppercase monospaced
+/// group headings and a line of explanatory text under every tool, which is a
+/// settings pane wearing a menu's anchor: "Real-time search results" under "Web
+/// search" tells a reader nothing they did not get from the two words above it,
+/// and it cost the row twice its height to say so.
+///
+/// **The ellipsis is what separates an action from a toggle**, which is the job
+/// the headings had been hired for. It is the platform's own signal and it costs
+/// no line: `Attach files…` opens something, `Deep research` does not — it is a
+/// state, and it carries a tick when it is on, exactly as a checked `NSMenuItem`
+/// does. Nothing here has to be captioned to be understood.
+///
+/// The marks are the website's own — Files is `FileUp`, Deep research is
+/// `Telescope`, Connectors is `Plug` — so the three clients name one thing with
+/// one glyph.
+private struct JunoAddMenuContent: View {
+    let voiceActive: Bool
+    let voiceCanSeeImages: Bool
+    let canAttachInVoice: Bool
+    let hasCapacity: Bool
+    let showFileImporter: () -> Void
+    let showLibrary: () -> Void
+    let fixedProjectID: String?
+    let projectModel: NativeProjectModel<SQLiteAccountRepository>?
+    @Binding var selectedProjectID: String?
+    let isConversationStarted: Bool
+    let selectedProjectName: String?
+    @Binding var deepResearch: Bool
+    @Binding var webSearch: Bool
+    let supportsWebSearch: Bool
+    @Binding var canvasEnabled: Bool
+    let connectorModel: NativeConnectorModel?
+    let connectedConnectors: [NativeConnector]
+    @Binding var selectedConnectors: Set<String>
+    let toggleConnector: (String) -> Void
+    let close: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Which drawer is open, if either. One at a time, as before.
+    @State private var openDrawer: Drawer?
+
+    private enum Drawer { case projects, connectors }
+
+    /// The most connected apps one message may act through.
+    private static let connectorLimit = 5
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            addRows
+            rule
+            toolRows
+            if connectorModel != nil {
+                rule
+                connectorRows
+            }
+        }
+        .padding(JunoSpace.tight)
+        .frame(width: 238)
+        // The frame is fixed, so type needs a ceiling — the bargain
+        // `JunoModelSelector` strikes, for the same reason. Everything inside
+        // scales up to the clamp, which is what makes it a ceiling rather than a
+        // fiction: every label here is a `junoFont`, none a fixed `.system`.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+        // Escape closes the drawer before it closes the menu. Left to the system
+        // one press dismissed the whole popover from inside a submenu, which is
+        // not how a nested menu on this OS behaves.
+        .onExitCommand {
+            if openDrawer == nil { close() } else { setDrawer(nil) }
+        }
+        .accessibilityIdentifier("juno.desktop.chat.add-menu")
+    }
+
+    /// What separates the groups: a rule, at the weight the rest of the app draws
+    /// one. Not a heading — a menu that has to label its own sections is a menu
+    /// whose rows are not carrying their meaning.
+    private var rule: some View {
+        Rectangle()
+            .fill(Color.junoHairline)
+            .frame(height: 0.5)
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.hairline + 1)
+    }
+
+    // MARK: Sources
+
+    @ViewBuilder
+    private var addRows: some View {
+        JunoAddMenuRow(
+            icon: .attach,
+            title: voiceActive ? "Attach images…" : "Attach files…",
+            note: attachNote,
+            disabled: voiceActive ? !canAttachInVoice : !hasCapacity,
+            identifier: "juno.desktop.chat.add.files"
+        ) {
+            close()
+            showFileImporter()
+        }
+
+        JunoAddMenuRow(
+            icon: .library,
+            // The reason a row is off belongs beside it, not inside its name.
+            // This title used to *become* "Choose from Library — chat only"
+            // during a call: a sentence where a label should be, and long enough
+            // to truncate at any width this popover could reasonably take. The
+            // web spells the same thing as a note on the row — "not on this
+            // model", "paid plan", "private" — and so does this.
+            title: "Choose from Library…",
+            note: voiceActive ? "chat only" : (hasCapacity ? nil : "full"),
+            disabled: voiceActive || !hasCapacity,
+            identifier: "juno.desktop.chat.add.library"
+        ) {
+            close()
+            showLibrary()
+        }
+
+        if fixedProjectID == nil, let projectModel {
+            JunoAddMenuRow(
+                icon: .projects,
+                title: selectedProjectName ?? "Add to project",
+                note: isConversationStarted ? "already filed" : nil,
+                accessory: .drawer(openDrawer == .projects),
+                disabled: isConversationStarted,
+                identifier: "juno.desktop.chat.add.projects"
+            ) {
+                setDrawer(openDrawer == .projects ? nil : .projects)
+            }
+
+            if openDrawer == .projects {
+                drawer { projectRows(projectModel) }
+            }
+        }
+    }
+
+    /// Why the attach row is off, in the web's words rather than in its title.
+    ///
+    /// This is what `voiceCanSeeImages` is for. It has been a parameter of this
+    /// view since the view existed and was read by nothing: `canAttachInVoice` is
+    /// `voiceCanSeeImages && count < limit`, so a call that cannot see images at
+    /// all and a call that is merely full produced the same dimmed row with the
+    /// same silence about which one it was.
+    private var attachNote: String? {
+        guard voiceActive else { return hasCapacity ? nil : "full" }
+        if !voiceCanSeeImages { return "no vision" }
+        return canAttachInVoice ? nil : "full"
+    }
+
+    @ViewBuilder
+    private func projectRows(_ projectModel: NativeProjectModel<SQLiteAccountRepository>) -> some View {
+        let rows = VStack(alignment: .leading, spacing: 1) {
+            JunoAddMenuRow(
+                icon: .projects,
+                title: "No project",
+                accessory: .state(selectedProjectID == nil),
+                identifier: "juno.desktop.chat.add.project.none"
+            ) {
+                selectedProjectID = nil
+                close()
+            }
+
+            ForEach(projectModel.projects) { project in
+                JunoAddMenuRow(
+                    icon: .projects,
+                    title: project.name,
+                    accessory: .state(selectedProjectID == project.id),
+                    identifier: "juno.desktop.chat.add.project.\(project.id)"
+                ) {
+                    selectedProjectID = project.id
+                    close()
+                }
+            }
+        }
+
+        // A drawer that holds an account's whole project list is a drawer that
+        // can make this popover taller than the window it is anchored in. Past
+        // six it scrolls, so the menu's height stops being a function of how many
+        // projects somebody happens to have.
+        if projectModel.projects.count > 6 {
+            ScrollView { rows }
+                .frame(height: 156)
+                .scrollIndicators(.automatic)
+        } else {
+            rows
+        }
+    }
+
+    // MARK: Tools
+
+    @ViewBuilder
+    private var toolRows: some View {
+        JunoAddMenuRow(
+            icon: .research,
+            title: "Deep research",
+            accessory: .state(deepResearch),
+            identifier: "juno.desktop.chat.add.research"
+        ) {
+            arm($deepResearch)
+        }
+
+        JunoAddMenuRow(
+            icon: .web,
+            title: "Web search",
+            note: supportsWebSearch ? nil : "not on this model",
+            // A flag the server would refuse is not "on", whatever the sticky
+            // value behind it says. Switching to a model that cannot search used
+            // to leave a lit switch sitting in a dimmed row.
+            accessory: .state(webSearch && supportsWebSearch),
+            disabled: !supportsWebSearch,
+            identifier: "juno.desktop.chat.add.web"
+        ) {
+            arm($webSearch)
+        }
+
+        JunoAddMenuRow(
+            icon: .artifactsTool,
+            title: "Canvas & artifacts",
+            accessory: .state(canvasEnabled),
+            identifier: "juno.desktop.chat.add.canvas"
+        ) {
+            arm($canvasEnabled)
+        }
+    }
+
+    /// Arms or disarms a tool, and deliberately leaves the menu open: these are
+    /// the rows somebody switches two of at once.
+    ///
+    /// `.tint` because nothing moves — a tick fades in and the mark crosses to
+    /// the accent, both on the spot. Reduce Motion asks for less movement, not
+    /// for less feedback, so this rung survives the preference intact.
+    private func arm(_ flag: Binding<Bool>) {
+        withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint)) {
+            flag.wrappedValue.toggle()
+        }
+    }
+
+    // MARK: Apps
+
+    @ViewBuilder
+    private var connectorRows: some View {
+        JunoAddMenuRow(
+            // Always the connections mark. This row used to swap to the pull
+            // request glyph whenever *any* connected app happened to be GitHub —
+            // a group naming itself after one of its members.
+            icon: .connections,
+            title: "Connectors",
+            note: selectedConnectors.isEmpty ? nil : "\(selectedConnectors.count)",
+            accessory: .drawer(openDrawer == .connectors),
+            identifier: "juno.desktop.chat.add.connectors"
+        ) {
+            setDrawer(openDrawer == .connectors ? nil : .connectors)
+        }
+
+        if openDrawer == .connectors {
+            if connectedConnectors.isEmpty {
+                // Bare, not in a drawer. A container drawn around one line of
+                // grey text is a filled box the width of the menu holding
+                // nothing, and in the dark it lands brighter than any row above
+                // it — the eye goes to the emptiest thing on the surface.
+                Text("No connected apps")
+                    .junoFont(size: 11, relativeTo: .footnote)
+                    .junoSecondaryInk()
+                    .padding(.horizontal, JunoSpace.snug)
+                    .padding(.vertical, JunoSpace.tight)
+                    .padding(.leading, 26)
+                    .transition(.junoInline)
+            } else {
+                drawer {
+                    ForEach(connectedConnectors) { connector in
+                        connectorRow(connector)
+                    }
+                }
+            }
+        }
+    }
+
+    private func connectorRow(_ connector: NativeConnector) -> some View {
+        let on = selectedConnectors.contains(connector.id)
+        let capped = !on && selectedConnectors.count >= Self.connectorLimit
+
+        return JunoAddMenuRow(
+            icon: connector.id.lowercased().contains("github") ? .pulls : .connections,
+            title: connector.label,
+            // The cap used to be a row that dimmed for no stated reason once the
+            // fifth app went on.
+            note: capped ? "max \(Self.connectorLimit)" : nil,
+            accessory: .state(on),
+            disabled: capped,
+            identifier: "juno.desktop.chat.add.connector.\(connector.id)"
+        ) {
+            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint)) {
+                toggleConnector(connector.id)
+            }
+        }
+    }
+
+    // MARK: Drawers
+
+    /// The recess a drawer's rows sit in.
+    ///
+    /// A fill and no outline: with a hairline of its own, a chosen row inside a
+    /// drawer put an accent border a few points inside a grey one — two nested
+    /// rectangles saying the same thing, and only the inner one carries
+    /// information.
+    ///
+    /// `.junoInline` rather than the `.move(edge: .top)` this used to carry. The
+    /// popover is *already* animating its own frame taller to make room, and a
+    /// body that slides down inside a panel that is simultaneously growing is two
+    /// motions, two owners, two curves. The design system names a transition for
+    /// exactly this case — "a disclosure body… no scale — it must not push the
+    /// text around it sideways" — and letting the popover's growth be the only
+    /// movement is what makes opening a drawer read as one gesture.
+    @ViewBuilder
+    private func drawer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            content()
+        }
+        .padding(2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                .fill(Color.junoForeground.opacity(0.05))
+        )
+        .transition(.junoInline)
+    }
+
+    private func setDrawer(_ drawer: Drawer?) {
+        withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+            openDrawer = drawer
+        }
+    }
+}
+
+/// What a row shows at its trailing edge — which is also what kind of row it is.
+private enum JunoAddMenuAccessory: Equatable {
+    /// An action. Its title carries the ellipsis; nothing trails it.
+    case none
+    /// A capability or a choice, on or off.
+    case state(Bool)
+    /// A drawer, open or closed.
+    case drawer(Bool)
+}
+
+/// One row of the "+" menu: a mark, a name, optionally a short reason it is
+/// unavailable, and a trailing accessory.
+///
+/// One type for what used to be three near-identical ones
+/// (`JunoPopoverRowButton`, `JunoPopoverSubmenuHeaderRow`, `JunoPopoverToggleRow`),
+/// which between them carried three copies of the hover fill, three of the
+/// padding, and three slightly different ideas of what a disabled row looks like.
+private struct JunoAddMenuRow: View {
+    let icon: JunoIcon
+    let title: String
+    var note: String? = nil
+    var accessory: JunoAddMenuAccessory = .none
+    var disabled: Bool = false
+    let identifier: String
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovered = false
+
+    private var isArmed: Bool {
+        if case .state(true) = accessory { return true }
+        return false
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: JunoSpace.snug) {
+                JunoIconView(icon, size: 15)
+                    .foregroundStyle(isArmed ? Color.junoAccent : Color.junoMutedForeground)
+                    .frame(width: 18)
+
+                Text(title)
+                    .junoFont(size: 13, relativeTo: .subheadline)
+                    .foregroundStyle(disabled ? Color.junoMutedForeground : Color.junoForeground)
+                    .lineLimit(1)
+
+                Spacer(minLength: JunoSpace.hairline)
+
+                if let note {
+                    Text(note)
+                        .junoFont(size: 10, relativeTo: .caption2)
+                        .junoSecondaryInk()
+                        .lineLimit(1)
+                        .layoutPriority(-1)
+                }
+
+                accessoryView
+            }
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, 5)
+            .background(fill)
+            .contentShape(.rect)
+        }
+        // Not `.plain`. `.plain` on macOS gives no press feedback whatsoever, so
+        // every row in this menu was silent under the pointer between the hover
+        // fill and whatever the click did.
+        .buttonStyle(.junoPress)
+        .disabled(disabled)
+        // No blanket `.opacity(0.45)`. That dimmed the *label* along with
+        // everything else, dropping a row that still has to be read below the
+        // contrast floor — and the palette's own note is that a token already at
+        // the floor and scaled by hand is not a quieter grey, it is an illegible
+        // one. A disabled row is stated in ink and in words instead.
+        .onHover { isHovered = $0 }
+        .help(note ?? "")
+        .accessibilityLabel(Text(title))
+        .accessibilityValue(Text(accessibilityValue))
+        .accessibilityAddTraits(isArmed ? .isSelected : [])
+        .accessibilityIdentifier(identifier)
+    }
+
+    private var fill: some View {
+        RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+            .fill(fillColor)
+            .animation(
+                JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+                value: fillColor
+            )
+    }
+
+    /// An armed row keeps answering the pointer. Letting the accent fill win
+    /// outright made the rows most likely to be clicked twice the only ones with
+    /// no hover state. No border on it either: at this row height an outline is a
+    /// second rectangle inside a menu that already has one.
+    private var fillColor: Color {
+        if isArmed { return Color.junoAccent.opacity(isHovered ? 0.16 : 0.10) }
+        return isHovered && !disabled ? Color.junoRowHover : .clear
+    }
+
+    @ViewBuilder
+    private var accessoryView: some View {
+        switch accessory {
+        case .none:
+            EmptyView()
+        case .state(let on):
+            Image(systemName: "checkmark")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(Color.junoAccent)
+                .opacity(on ? 1 : 0)
+                .animation(
+                    JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+                    value: on
+                )
+                .frame(width: 10)
+        case .drawer(let open):
+            // Rotated, not swapped. `chevron.right` → `chevron.down` is a hard
+            // cut dropped into the middle of a spring that is continuous either
+            // side of it, and the two glyphs are not even the same width.
+            Image(systemName: "chevron.right")
+                .font(.system(size: 9, weight: .bold))
+                .junoSecondaryInk()
+                .rotationEffect(.degrees(open ? 90 : 0))
+                .animation(
+                    JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
+                    value: open
+                )
+                .frame(width: 10)
+        }
+    }
+
+    private var accessibilityValue: String {
+        switch accessory {
+        case .none: ""
+        case .state(let on): on ? "On" : "Off"
+        case .drawer(let open): open ? "Expanded" : "Collapsed"
+        }
+    }
+}
+
+/// The composer's "+", and what it does while its menu is open.
+///
+/// **The mark morphs rather than swaps:** `plus` rotates 45° into a `×` for as
+/// long as the popover is up. It is the one thing on screen that says this button
+/// now closes what it opened — a menu anchored under the pointer is otherwise
+/// dismissed by clicking a button that still reads "add". ``JunoMotion/fast``'s
+/// own documentation names "icon morphs (e.g. + → ×)" as the rung's intent, and
+/// nothing in the product was doing one.
+///
+/// It reads Reduce Motion itself rather than taking it as a parameter, because
+/// the composer that owns this button does not otherwise need to know.
+private struct DesktopAddMenuMark: View {
+    let isOpen: Bool
+    let isHovering: Bool
+    /// Whether the closed "+" is holding anything.
+    let isArmed: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Image(systemName: "plus")
+            .font(.system(size: 13, weight: .semibold))
+            .junoInk()
+            .rotationEffect(.degrees(isOpen ? 45 : 0))
+            .frame(width: 30, height: 30)
+            .background(
+                Circle().fill(
+                    isHovering || isOpen ? Color.junoRowSelected : Color.junoRowHover
+                )
+            )
+            .overlay(
+                Circle().strokeBorder(
+                    Color.junoBorder.opacity(isHovering || isOpen ? 1 : 0.55),
+                    lineWidth: 0.5
+                )
+            )
+            // Suppressed while the popover is up: the menu is anchored to this
+            // button's bounds, and a control that grows under an anchored
+            // presentation is a presentation that twitches.
+            .scaleEffect(isHovering && !isOpen && !reduceMotion ? 1.06 : 1)
+            .overlay(alignment: .topTrailing) { badge }
+            .contentShape(.circle)
+            .animation(
+                JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+                value: isHovering
+            )
+            .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: isOpen)
+            .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: isArmed)
+    }
+
+    /// The dot used to light for deep research and connectors only, so a chat
+    /// armed with web search or with canvas looked from the outside exactly like
+    /// a chat armed with nothing — two of the four states this menu can leave
+    /// behind were invisible once it closed.
+    @ViewBuilder
+    private var badge: some View {
+        if isArmed, !isOpen {
+            Circle()
+                .fill(Color.junoAccent)
+                .stroke(Color.junoSurface, lineWidth: 1.5)
+                .frame(width: 8, height: 8)
+                .offset(x: 1, y: -1)
+                .transition(.junoOverlay)
         }
     }
 }

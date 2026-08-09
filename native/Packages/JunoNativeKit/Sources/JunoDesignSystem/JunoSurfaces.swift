@@ -141,14 +141,14 @@ public extension View {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Color.junoRaised)
                 .shadow(
-                    color: .junoCardShadow,
+                    color: Color.junoCardShadow,
                     radius: JunoElevation.cardBlur,
                     y: JunoElevation.cardOffsetY
                 )
         )
         .overlay(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(Color.junoBorder, lineWidth: 1)
+                .strokeBorder(Color.junoBorder, lineWidth: 0.5)
         )
     }
 }

@@ -954,9 +954,12 @@ jobs:
             JUNO_SMOKE_COOKIE="$SMOKE_COOKIE" \
             JUNO_SMOKE_MODEL="$SMOKE_MODEL" \
             JUNO_SMOKE_RUN_CHAT=1 \
-            node ~/juno/scripts/production-smoke.mjs
+            # Run the smoke implementation from the exact immutable release
+            # that was just activated. ~/juno is the long-lived checkout and
+            # can still contain an older smoke contract after a deploy.
+            node ~/juno/current/scripts/production-smoke.mjs
           JUNO_PUBLIC_UI_BASE_URL="$APP_URL" \
-            node ~/juno/scripts/public-ui-smoke.mjs
+            node ~/juno/current/scripts/public-ui-smoke.mjs
           REMOTE
 
       # A failed post-deploy check must not leave a bad application active.
