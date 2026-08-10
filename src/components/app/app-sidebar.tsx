@@ -67,6 +67,24 @@ type ConfirmState = { title: string; description: string; confirmLabel: string; 
  *  that, so being the fourth segment only ever meant "route away and leave
  *  Home's sidebar standing". It is a destination, and it lives in the footer
  *  next to the account row where a destination belongs. */
+/**
+ * The sidebar has exactly two row scales, and every row is one of them.
+ *
+ *   L1  rounded-control · px-2.5 py-1.5 · text-[14px] · font-medium
+ *       Destinations and section toggles — things that own a list.
+ *   L2  rounded-md      · pl-6|pl-9 pr-2 py-1 · text-[12.5px]
+ *       Items inside one — a chat under a project, a run under a task.
+ *
+ * The indent (pl-6 vs pl-9) is the only thing that varies within L2, and it
+ * encodes real nesting depth rather than taste.
+ *
+ * Three rows had drifted off this when it was written down: the Work session
+ * row carried px-2 where every other L1 has px-2.5, the project-chat row used
+ * L1's radius at L2's size, and "View all" was the single text-[12px] in a
+ * 12.5px tier. None of the three was visible on its own, which is exactly how a
+ * panel ends up feeling unconsidered — no one row looks wrong and the column
+ * does.
+ */
 type SidebarMode = "home" | "work" | "code";
 
 /** The subset the sidebar toggle actually offers; Work moved to the composer's
@@ -1172,7 +1190,7 @@ function WorkSessionRow({
       aria-current={active ? "page" : undefined}
       title={session.title || session.goal}
       className={cn(
-        "group flex items-center gap-2.5 rounded-control py-1.5 pl-2 pr-2 text-[14px] font-medium transition-[background-color,color] duration-base ease-out-soft",
+        "group flex items-center gap-2.5 rounded-control py-1.5 pl-2.5 pr-2.5 text-[14px] font-medium transition-[background-color,color] duration-base ease-out-soft",
         active
           ? "bg-sidebar-accent font-semibold text-foreground"
           : "text-sidebar-foreground/90 hover:bg-sidebar-accent hover:text-foreground",
@@ -1802,7 +1820,7 @@ function ProjectRow({
             aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
             title={c.title}
             className={cn(
-              "group group/pc flex items-center gap-2 rounded-control py-1 pl-9 pr-2 text-[12.5px] transition-[color,background-color] duration-base ease-out-soft hover:bg-sidebar-accent",
+              "group group/pc flex items-center gap-2 rounded-md py-1 pl-9 pr-2 text-[12.5px] transition-[color,background-color] duration-base ease-out-soft hover:bg-sidebar-accent",
               activePath === `/chat/${c.id}`
                 ? "font-medium text-foreground"
                 : "text-sidebar-foreground/70 hover:text-foreground"
@@ -1816,7 +1834,7 @@ function ProjectRow({
           <button
             type="button"
             onClick={() => setShowAll((v) => !v)}
-            className="flex items-center rounded-md py-1 pl-9 pr-2 text-[12px] font-medium text-muted-foreground/70 transition-colors hover:text-foreground"
+            className="flex items-center rounded-md py-1 pl-9 pr-2 text-[12.5px] font-medium text-muted-foreground/70 transition-colors hover:text-foreground"
           >
             {showAll ? "Show less" : `View all ${chats.length}`}
           </button>
