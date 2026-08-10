@@ -707,7 +707,7 @@ export function CanvasPanel({
       role={fullscreen ? "dialog" : undefined}
       aria-modal={fullscreen || undefined}
       aria-label={fullscreen ? artifact.title : undefined}
-      className={cn("flex h-full flex-col bg-background", fullscreen && "fixed inset-0 z-50 motion-safe:animate-fade-in")}
+      className={cn("flex h-full flex-col bg-background", fullscreen && "fixed inset-0 z-modal motion-safe:animate-fade-in")}
     >
       {/* ——— Header: identity + one primary action + overflow + window controls ——— */}
       <header className="flex items-center gap-2 border-b border-border/60 bg-card/50 py-2 pl-4 pr-2 backdrop-blur-md">
@@ -1161,7 +1161,7 @@ export function CanvasPanel({
             aria-label="Selection actions"
             style={barStyle}
             onPointerDown={(e) => e.preventDefault()}
-            className="fixed z-[70] flex items-center gap-0.5 rounded-menu border border-border/60 bg-popover/90 p-1 glass-raised backdrop-blur-xl motion-safe:animate-pop-in"
+            className="fixed z-toast flex items-center gap-0.5 rounded-menu border border-border/60 bg-popover/90 p-1 glass-raised backdrop-blur-xl motion-safe:animate-pop-in"
           >
             <Button type="button" variant="ghost" size="sm" onClick={() => quoteSelection("ask")} className="h-7 gap-1.5 rounded-control px-2.5 coarse:h-10 coarse:px-3.5">
               <MessageCircleQuestion className="h-3.5 w-3.5 text-primary" aria-hidden />

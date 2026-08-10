@@ -3,6 +3,7 @@
 import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
+import { Pressable } from "@/components/ui/pressable";
 import { cn } from "@/lib/utils";
 
 const Dialog = DialogPrimitive.Root;
@@ -10,8 +11,34 @@ const DialogTrigger = DialogPrimitive.Trigger;
 const DialogPortal = DialogPrimitive.Portal;
 const DialogClose = DialogPrimitive.Close;
 
-export const dialogCloseClassName =
-  "absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground";
+/**
+ * The dismiss affordance, in one place.
+ *
+ * This file used to describe the close button twice. `DialogContent` rendered a
+ * 32px `rounded-full` glyph that fills on hover and dips on press; an exported
+ * `dialogCloseClassName` described the stock shadcn one — `rounded-sm`,
+ * `opacity-70`, and `focus:` rather than `focus-visible:`, so it drew a ring for
+ * mouse users too. Consumers that reached for the export therefore got a
+ * visibly different close button from every other dialog in the product, on the
+ * one control that appears in all of them.
+ *
+ * Now there is one, built on `<Pressable kind="icon">` like every other bare
+ * glyph affordance, and `position` is the only thing a call site can vary —
+ * because the only real reason image-edit-overlay forked was that its close sits
+ * over a dark image at a different inset, which is a position, not a style.
+ */
+export const DialogCloseButton = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Close>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Close>
+>(({ className, ...props }, ref) => (
+  <DialogPrimitive.Close ref={ref} asChild {...props}>
+    <Pressable kind="icon" size="lg" className={cn("absolute right-4 top-4 rounded-full", className)}>
+      <X className="h-4 w-4" />
+      <span className="sr-only">Close</span>
+    </Pressable>
+  </DialogPrimitive.Close>
+));
+DialogCloseButton.displayName = "DialogCloseButton";
 
 const DialogOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
@@ -24,7 +51,7 @@ const DialogOverlay = React.forwardRef<
       // the onboarding scrim can be reconciled with this one. Timing lives in the
       // overlay-in/out pair: the scrim leads on open and trails on close, because
       // a scrim that finishes first leaves a frame of undimmed app behind the panel.
-      "fixed inset-0 z-50 bg-scrim backdrop-blur-sm data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out motion-reduce:animate-none",
+      "fixed inset-0 z-modal bg-scrim backdrop-blur-sm data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out motion-reduce:animate-none",
       className
     )}
     {...props}
@@ -56,18 +83,13 @@ const DialogContent = React.forwardRef<
         // does not have. The old 360ms on ease-out-expo spent ~80% of its travel
         // in the first quarter of the time — a lunge, then a crawl; expo needs
         // 440ms or more to read as intended.
-        "fixed left-[50%] top-[50%] z-50 grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] gap-4 overflow-y-auto rounded-panel overlay-glass p-6 data-[state=open]:animate-modal-in data-[state=closed]:animate-modal-out motion-reduce:animate-none",
+        "fixed left-[50%] top-[50%] z-modal grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] gap-4 overflow-y-auto rounded-panel overlay-glass p-6 data-[state=open]:animate-modal-in data-[state=closed]:animate-modal-out motion-reduce:animate-none",
         className
       )}
       {...props}
     >
       {children}
-      {!hideClose && (
-        <DialogPrimitive.Close className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none coarse:h-10 coarse:w-10 motion-reduce:transition-none motion-reduce:active:scale-100">
-          <X className="h-4 w-4" />
-          <span className="sr-only">Close</span>
-        </DialogPrimitive.Close>
-      )}
+      {!hideClose && <DialogCloseButton />}
     </DialogPrimitive.Content>
   </DialogPortal>
 ));

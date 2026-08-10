@@ -1958,7 +1958,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             aria-valuemin={thoughtBounds.min}
             aria-valuemax={thoughtBounds.max}
             title="Drag to resize. Arrow keys adjust, Home resets."
-            className="group absolute inset-y-0 left-0 z-50 hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center lg:flex"
+            className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center lg:flex"
           >
             <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-background/90 text-muted-foreground opacity-0 shadow-soft backdrop-blur transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
               <GripVertical className="h-3.5 w-3.5" />
@@ -1995,7 +1995,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               onDoubleClick={resetCanvasWidth}
               aria-label="Resize canvas"
               title="Drag to resize canvas. Double-click to reset."
-              className="group absolute inset-y-0 left-0 z-50 hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center lg:flex"
+              className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center lg:flex"
             >
               <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-background/90 text-muted-foreground opacity-0 shadow-soft backdrop-blur transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                 <GripVertical className="h-3.5 w-3.5" />

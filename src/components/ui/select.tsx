@@ -41,7 +41,7 @@ const SelectContent = React.forwardRef<
         // the trigger gap comes from sideOffset instead. 14px shell − p-1.5, exactly
         // as DropdownMenu: the two open side by side (model picker beside the
         // download menu) and must be the same object.
-        "relative z-50 max-h-[min(24rem,var(--radix-select-content-available-height,24rem))] min-w-[8rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-menu overlay-glass data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        "relative z-popper max-h-[min(24rem,var(--radix-select-content-available-height,24rem))] min-w-[8rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-menu overlay-glass data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
         className
       )}
       position={position}

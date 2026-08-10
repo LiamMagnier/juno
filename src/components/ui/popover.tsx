@@ -23,7 +23,7 @@ const PopoverContent = React.forwardRef<
         // name so the other popover-tier surfaces can reach it. Same for the
         // material: .overlay-glass is the identical eight-class string this and
         // five siblings each open-coded.
-        "z-50 w-72 max-w-[calc(100vw-1rem)] origin-popper rounded-popover overlay-glass p-4 outline-none data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        "z-popper w-72 max-w-[calc(100vw-1rem)] origin-popper rounded-popover overlay-glass p-4 outline-none data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
         className
       )}
       {...props}

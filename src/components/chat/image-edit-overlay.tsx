@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Crop, ImageIcon, ImageOff, Info, MousePointer2, TriangleAlert, Wand2, X } from "lucide-react";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, dialogCloseClassName } from "@/components/ui/dialog";
+import { Crop, ImageIcon, ImageOff, Info, MousePointer2, TriangleAlert, Wand2 } from "lucide-react";
+import { Dialog, DialogClose, DialogCloseButton, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { GEN_MODELS, imageEditSupport, resolveModel, type ModelInfo } from "@/lib/models";
 import { cn } from "@/lib/utils";
 import type { ClientAttachment, GenerateEditPayload } from "@/types/chat";
@@ -275,10 +275,10 @@ export function ImageEditOverlay({
       >
         {/* Rendered here rather than by DialogContent: the layout is `p-0`, so
             the button has to clear the canvas header instead of the padding. */}
-        <DialogClose className={cn("group/close absolute right-3 top-3 z-50 sm:right-4 sm:top-4", dialogCloseClassName)}>
-          <X className="size-4 transition-transform duration-fast ease-out-soft group-hover/close:rotate-90 motion-reduce:transition-none motion-reduce:group-hover/close:rotate-0" aria-hidden="true" />
-          <span className="sr-only">Close image editor</span>
-        </DialogClose>
+        <DialogCloseButton
+          aria-label="Close image editor"
+          className="group/close right-3 top-3 z-popper sm:right-4 sm:top-4"
+        />
 
         <div className="grid h-full min-h-0 w-full grid-rows-[minmax(15rem,42%)_minmax(0,1fr)] md:grid-cols-[minmax(0,1.45fr)_minmax(20rem,0.85fr)] md:grid-rows-1">
           {/* Canvas workspace */}

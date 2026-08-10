@@ -21,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { GitHubMark } from "@/components/connections/connector-logos";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
+import { Pressable } from "@/components/ui/pressable";
 import { cn } from "@/lib/utils";
 
 /*
@@ -690,22 +691,16 @@ function PickerRow({
   rowRef?: (el: HTMLButtonElement | null) => void;
 }) {
   return (
-    <button
+    <Pressable
       ref={rowRef}
-      type="button"
+      kind="row"
+      selected={active}
       role="radio"
       aria-checked={active}
       tabIndex={tabIndex}
       onClick={onClick}
       onKeyDown={onKeyDown}
-      className={cn(
-        "flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left",
-        ROW_HEIGHT,
-        "transition-[background-color,box-shadow,transform] duration-fast ease-out-soft",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.97]",
-        "motion-reduce:transition-none motion-reduce:active:scale-100",
-        active ? "bg-primary/10 ring-1 ring-inset ring-primary/30" : "hover:bg-accent/60",
-      )}
+      className={ROW_HEIGHT}
     >
       <span className={cn("shrink-0", active ? "text-primary" : "text-muted-foreground")}>{icon}</span>
       <span className="min-w-0 flex-1">
@@ -720,7 +715,7 @@ function PickerRow({
       </span>
       {trailing}
       {active && <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />}
-    </button>
+    </Pressable>
   );
 }
 

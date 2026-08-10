@@ -28,7 +28,7 @@ export default function AuraPreview() {
 
   return (
     <div className="relative flex h-dvh min-h-0 flex-col overflow-y-auto overflow-x-clip bg-background">
-      <div className="fixed left-4 top-4 z-50 flex flex-wrap gap-2 font-mono text-xs">
+      <div className="fixed left-4 top-4 z-toolbar flex flex-wrap gap-2 font-mono text-xs">
         {ACCENTS.map((a) => (
           <button key={a} onClick={() => setAccent(a)} className="rounded border bg-card px-2 py-1">
             {a}

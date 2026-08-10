@@ -6,6 +6,7 @@ import { Check, Loader2, ShieldAlert, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Pressable } from "@/components/ui/pressable";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import type { ConnectorStatus } from "@/components/connections/types";
@@ -294,12 +295,13 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
               const option = POLICY_COPY[policy];
               const selected = state.actionApprovalPolicy === policy;
               return (
-                <button
+                <Pressable
                   key={policy}
+                  kind="tile"
+                  selected={selected}
                   ref={(node) => {
                     policyRefs.current[position] = node;
                   }}
-                  type="button"
                   role="radio"
                   aria-checked={selected}
                   // Roving tabindex: the group is a single stop, and the checked
@@ -307,10 +309,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
                   tabIndex={selected ? 0 : -1}
                   onClick={() => selectPolicy(policy)}
                   onKeyDown={(event) => onPolicyKeyDown(event, position)}
-                  className={cn(
-                    "flex min-h-11 flex-col items-start gap-1 rounded-xl border p-3 text-left shadow-pop transition-[transform,box-shadow,background-color,border-color] duration-fast ease-out-soft hover:bg-accent hover:shadow-float motion-safe:hover:-translate-y-0.5",
-                    selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border/70"
-                  )}
+                  className="min-h-11 shadow-pop hover:shadow-float motion-safe:hover:-translate-y-0.5"
                 >
                   <span className="flex w-full items-center justify-between gap-2 text-sm font-medium">
                     {option.label}
@@ -319,7 +318,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
                   <span className="text-xs leading-relaxed text-muted-foreground">
                     {option.description}
                   </span>
-                </button>
+                </Pressable>
               );
             })}
           </div>

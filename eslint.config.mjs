@@ -86,6 +86,7 @@ const config = [
           allow: ["0.25em"],
         },
       ],
+      "design-system/no-ad-hoc-stacking": "error",
     },
   },
 ];

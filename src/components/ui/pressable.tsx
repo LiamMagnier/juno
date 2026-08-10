@@ -71,7 +71,17 @@ const pressableVariants = cva(
     compoundVariants: [
       // Selected, per role. A row fills; a tile takes the accent border and a
       // tinted ground; a chip inverts; an icon holds the hover fill.
-      { kind: "row", selected: true, class: "bg-accent text-accent-foreground" },
+      // NOT `bg-accent`: that is the row's own hover fill, so a selected row and
+      // a merely-hovered one would be indistinguishable — and in a radio list
+      // the pointer is usually resting on a row while you read the others. The
+      // primary tint plus an inset ring is the treatment code-target-picker had
+      // already arrived at independently, which is a good sign it is the right
+      // one; the ring is inset so it does not enlarge the row's footprint.
+      {
+        kind: "row",
+        selected: true,
+        class: "bg-primary/10 text-foreground ring-1 ring-inset ring-primary/30 hover:bg-primary/10",
+      },
       {
         kind: "tile",
         selected: true,

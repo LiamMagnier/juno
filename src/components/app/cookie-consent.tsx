@@ -59,7 +59,7 @@ export function CookieConsent() {
       // entrance curve of its own.
       data-state={closing ? "closed" : "open"}
       onAnimationEnd={() => closing && setVisible(false)}
-      className="fixed bottom-4 left-4 z-50 w-[min(21rem,calc(100vw-2rem))] rounded-popover overlay-glass p-4 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out motion-reduce:animate-none"
+      className="fixed bottom-4 left-4 z-popper w-[min(21rem,calc(100vw-2rem))] rounded-popover overlay-glass p-4 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out motion-reduce:animate-none"
     >
       <p className="font-mono text-xs font-medium text-muted-foreground">Cookies</p>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">

@@ -114,9 +114,64 @@ const noArbitraryRadius = {
   },
 };
 
+/**
+ * Out-of-flow stacking has exactly four rungs (globals.css `--z-*`, mapped in
+ * tailwind.config.ts). Anything at or above the popper layer must name one.
+ *
+ * Below that threshold, `z-10`/`z-20` inside a component's own stacking context
+ * are local business and none of this rule's concern — the failure mode being
+ * prevented is the global one, where a floating toolbar picks `z-[70]` and a
+ * skip link picks `z-[100]` because neither could see what the other chose.
+ */
+const Z_TOKENS = "z-popper (menus, popovers, tooltips) · z-modal (dialogs) · z-toolbar · z-toast";
+const Z_THRESHOLD = 50;
+const Z_UTILITY = /(?:^|\s|:)(?:-)?z-(?:\[(\d+)\]|(\d+))(?=\s|$|"|'|`)/g;
+
+const noAdHocStacking = {
+  meta: {
+    type: "problem",
+    docs: { description: "Name the stacking layer instead of picking a z-index." },
+    schema: [],
+    messages: {
+      adHoc:
+        "`z-{{value}}` picks a number on the out-of-flow layer. Use a named rung: " +
+        Z_TOKENS +
+        ". (Local z-10/z-20 inside your own stacking context is fine.)",
+    },
+  },
+  create(context) {
+    function scan(node, raw, offset) {
+      for (const match of raw.matchAll(Z_UTILITY)) {
+        const value = Number(match[1] ?? match[2]);
+        if (value < Z_THRESHOLD) continue;
+        const start = node.range[0] + offset + match.index + match[0].indexOf("z-");
+        context.report({
+          node,
+          loc: {
+            start: context.sourceCode.getLocFromIndex(start),
+            end: context.sourceCode.getLocFromIndex(start + `z-${value}`.length),
+          },
+          messageId: "adHoc",
+          data: { value: String(value) },
+        });
+      }
+    }
+    return {
+      Literal(node) {
+        if (typeof node.value !== "string") return;
+        scan(node, node.raw, 0);
+      },
+      TemplateElement(node) {
+        scan(node, node.value.raw, 1);
+      },
+    };
+  },
+};
+
 const plugin = {
   rules: {
     "no-arbitrary-radius": noArbitraryRadius,
+    "no-ad-hoc-stacking": noAdHocStacking,
   },
 };
 

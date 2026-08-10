@@ -155,6 +155,19 @@ const config: Config = {
         "glow-primary": "var(--glow-primary)",
         well: "var(--well-inset)",
       },
+      // The out-of-flow stacking order. globals.css has declared these since the
+      // depth kit landed — "so a new one has somewhere to look up its answer
+      // instead of picking a number" — but they were never mapped into Tailwind,
+      // so the answer was unreachable from a className and every call site went
+      // on picking a number anyway: 15 hardcoded `z-50`s, plus `z-[60]`, `z-[70]`
+      // and a `z-[100]` that outranks everything in the product including the
+      // modal scrim. A scale you cannot type is not a scale.
+      zIndex: {
+        popper: "var(--z-popper)", // menus, popovers, selects, tooltips
+        modal: "var(--z-modal)", // the dialog scrim and its panel
+        toolbar: "var(--z-toolbar)", // floating toolbars that must clear a popper
+        toast: "var(--z-toast)", // the top of the product; nothing goes above it
+      },
       spacing: {
         // Dot/ASCII signature unit.
         dot: "var(--dot-size)",

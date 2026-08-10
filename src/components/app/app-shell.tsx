@@ -151,7 +151,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           Firefox to actually move focus there rather than only scrolling. */}
       <a
         href="#juno-main"
-        className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:left-3 focus-visible:top-3 focus-visible:z-[100] focus-visible:rounded-field focus-visible:border focus-visible:border-border focus-visible:bg-popover focus-visible:px-4 focus-visible:py-2 focus-visible:text-sm focus-visible:shadow-float"
+        className="sr-only focus-visible:not-sr-only focus-visible:fixed focus-visible:left-3 focus-visible:top-3 focus-visible:z-toast focus-visible:rounded-field focus-visible:border focus-visible:border-border focus-visible:bg-popover focus-visible:px-4 focus-visible:py-2 focus-visible:text-sm focus-visible:shadow-float"
       >
         Skip to content
       </a>

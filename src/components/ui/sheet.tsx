@@ -29,7 +29,7 @@ const SheetContent = React.forwardRef<
         // old 360ms was a third too slow — and its 220ms exit outlasted the
         // scrim's, so the panel finished sliding over an already-undimmed page.
         // ease-out-expo was also running below its ~440ms floor.
-        "fixed inset-y-0 z-50 h-full w-[280px] max-w-[85vw] border-sidebar-border bg-sidebar pb-safe pt-safe shadow-float outline-none duration-base ease-out-strong data-[state=closed]:duration-exit data-[state=closed]:ease-in data-[state=open]:animate-in data-[state=closed]:animate-out",
+        "fixed inset-y-0 z-modal h-full w-[280px] max-w-[85vw] border-sidebar-border bg-sidebar pb-safe pt-safe shadow-float outline-none duration-base ease-out-strong data-[state=closed]:duration-exit data-[state=closed]:ease-in data-[state=open]:animate-in data-[state=closed]:animate-out",
         side === "left"
           ? "left-0 border-r pl-safe data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
           : "right-0 border-l pr-safe data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right",

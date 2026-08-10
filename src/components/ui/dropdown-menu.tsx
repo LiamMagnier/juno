@@ -25,7 +25,7 @@ const DropdownMenuContent = React.forwardRef<
         // 14px shell − p-1.5 (6px) = concentric with the rounded-md (8px) items.
         // Same 14px as before: `rounded-menu` names the value rather than moving
         // it, and .overlay-glass is the same material string, deduplicated.
-        "z-50 min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-menu overlay-glass p-1.5 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        "z-popper min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-menu overlay-glass p-1.5 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
         className
       )}
       {...props}
@@ -63,7 +63,7 @@ const DropdownMenuSubContent = React.forwardRef<
       collisionPadding={collisionPadding}
       className={cn(
         // Identical shell to DropdownMenuContent — a submenu is the same object.
-        "z-50 min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-menu overlay-glass p-1.5 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        "z-popper min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-menu overlay-glass p-1.5 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
         className
       )}
       {...props}
