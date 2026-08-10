@@ -20,11 +20,22 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The SF Symbol for this mode, chosen to match the web's mark rather than
+    /// to be the most literal SF glyph.
+    ///
+    /// The website switched `home` to a single rounded speech bubble and `work`
+    /// to a bolt, for one reason worth preserving across platforms: the pair
+    /// says TALK versus ACT. A bubble is you asking; a bolt is Juno going and
+    /// doing. `bubble.left.and.bubble.right` was two bubbles — a conversation
+    /// between other people — and `checklist` was a to-do list, which describes
+    /// the artefact Work leaves behind rather than the act of it running.
+    ///
+    /// Code keeps its bracket pair, which already matches the web's `Code2`.
     var symbol: String {
         switch self {
-        case .chat: "bubble.left.and.bubble.right"
+        case .chat: "bubble.left"
         case .code: "chevron.left.forwardslash.chevron.right"
-        case .work: "checklist"
+        case .work: "bolt"
         }
     }
 }
@@ -72,7 +83,7 @@ struct DesktopProductSwitcher: View {
 
     var body: some View {
         DesktopSegmented(
-            options: DesktopProductMode.allCases.map { .init($0, $0.label) },
+            options: DesktopProductMode.allCases.map { .init($0, $0.label, symbol: $0.symbol) },
             selection: $selection,
             accessibilityLabel: "Juno product",
             optionAccessibilityIdentifier: { "juno.product-brand.\($0.rawValue)" }

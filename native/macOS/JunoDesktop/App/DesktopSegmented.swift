@@ -42,11 +42,21 @@ struct DesktopSegmented<Value: Hashable>: View {
     struct Option: Identifiable {
         let value: Value
         let title: String
+        /// An optional SF Symbol shown before the title.
+        ///
+        /// Optional because not every segmented control wants a mark — a
+        /// two-word filter reads better as two words. The product switch does
+        /// want them, and `DesktopProductMode` has carried a `symbol` for each
+        /// case all along that nothing ever passed here, so the top-level
+        /// control in the app was the one place with bare text where the web's
+        /// equivalent has icons.
+        let symbol: String?
         var id: Value { value }
 
-        init(_ value: Value, _ title: String) {
+        init(_ value: Value, _ title: String, symbol: String? = nil) {
             self.value = value
             self.title = title
+            self.symbol = symbol
         }
     }
 
@@ -73,12 +83,23 @@ struct DesktopSegmented<Value: Hashable>: View {
                     Button {
                         withAnimation(travel) { selection = option.value }
                     } label: {
-                        Text(option.title)
+                        HStack(spacing: 5) {
+                            if let symbol = option.symbol {
+                                // Sized off the label rather than fixed, so the
+                                // mark tracks the 12pt text if that ever moves,
+                                // and `.medium` so a 12pt glyph does not read
+                                // thinner than the word beside it.
+                                Image(systemName: symbol)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .accessibilityHidden(true)
+                            }
+                            Text(option.title)
+                        }
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(
                                 selected ? Color.junoForeground : Color.junoMutedForeground
                             )
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, option.symbol == nil ? 12 : 10)
                             .frame(height: 28)
                             .modifier(GlassKnob(active: selected, namespace: knob))
                             .contentShape(.capsule)
