@@ -2799,20 +2799,23 @@ struct DesktopComposer: View {
     @ViewBuilder
     private func thinkingControl(_ scale: NativeThinkingScale) -> some View {
         if scale.isAutomatic {
-            HStack(spacing: 5) {
-                thinkingSymbol
-                Text("Auto")
-                    .lineLimit(1)
-            }
-            .font(.callout)
-            .junoSecondaryInk()
-            .padding(.horizontal, 9)
-            .frame(height: 34)
-            .help("This model chooses how much to think before answering")
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Thinking")
-            .accessibilityValue("Automatic, chosen by the model")
-            .accessibilityIdentifier("juno.desktop.chat-thinking")
+            // Nothing, which is what the web does: `{!isAuto && effortOptions.length
+            // > 0 && …}` in composer.tsx, over the comment "Auto picks thinking
+            // server-side — no manual slider."
+            //
+            // The Mac used to draw an inert chip here instead — a 34pt-tall row
+            // reading "Auto", the same height as the model button, immediately
+            // beside a model button that ALSO read "Auto". Two adjacent chips,
+            // one word, two meanings (which model / how much thinking), and only
+            // one of them responded to a click. A control that looks exactly like
+            // its neighbour and does nothing is worse than an absent one: the
+            // reader does not learn it is decorative until they have already
+            // pressed it.
+            //
+            // No information is lost. The model selector's own detail panel
+            // states "Thinking — chosen automatically for each message", which is
+            // where a reader who wants that fact goes looking.
+            EmptyView()
         } else {
             Button {
                 showingThinking = true
