@@ -165,7 +165,7 @@ export default function WorkSchedulePage() {
           {[...Array(4)].map((_, index) => (
             <Skeleton
               key={index}
-              className="h-16 w-full rounded-xl"
+              className="h-16 w-full rounded-field"
               style={staggerDelay(index, "tight")}
             />
           ))}
@@ -236,12 +236,12 @@ export default function WorkSchedulePage() {
           </Button>
         </div>
         {runs === null ? (
-          <p className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+          <p className="rounded-field border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
             This schedule’s history couldn’t be read just now, which says nothing about whether it
             has run.
           </p>
         ) : runs.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+          <p className="rounded-field border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
             It has not run yet. Fires that were skipped — a Mac that was away, a budget that was
             spent — appear here too, so this staying empty means nothing has fired at all.
           </p>
@@ -251,7 +251,7 @@ export default function WorkSchedulePage() {
               <li key={run.id}>
                 <Link
                   href={`/work/${run.sessionId}`}
-                  className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border border-border/60 bg-card/50 px-3.5 py-2.5 transition-colors duration-base ease-out-soft hover:border-border hover:bg-card"
+                  className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card/50 px-3.5 py-2.5 transition-colors duration-base ease-out-soft hover:border-border hover:bg-card"
                 >
                   <WorkStatusPill status={run.status} />
                   <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">

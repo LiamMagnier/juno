@@ -125,7 +125,7 @@ export default function TasksPage() {
         />
 
         {loadError ? (
-          <div className="space-y-2.5 rounded-2xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <div className="space-y-2.5 rounded-card border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
             <div className="flex items-center gap-2">
               <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
               <p>Couldn’t load your tasks. Check your connection and try again.</p>

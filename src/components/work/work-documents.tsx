@@ -86,7 +86,7 @@ export function WorkDocuments({
         {[...Array(2)].map((_, index) => (
           <Skeleton
             key={index}
-            className="h-[58px] w-full rounded-xl"
+            className="h-[58px] w-full rounded-field"
             style={staggerDelay(index, "tight")}
           />
         ))}
@@ -121,7 +121,7 @@ export function WorkDocuments({
             {fromEvents.map((artifact) => (
               <li
                 key={artifact.id}
-                className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-card/50 px-3 py-2.5"
+                className="flex items-center gap-2.5 rounded-field border border-border/60 bg-card/50 px-3 py-2.5"
               >
                 <KindBadge extension={ARTIFACT_EXTENSION[artifact.kind]} />
                 <span className="min-w-0 flex-1">
@@ -169,7 +169,7 @@ export function WorkDocuments({
 
 function KindBadge({ extension }: { extension: string }) {
   return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-muted font-mono text-[9px] text-muted-foreground">
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-field bg-muted font-mono text-[9px] text-muted-foreground">
       {extension}
     </span>
   );
@@ -211,7 +211,7 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
   };
 
   return (
-    <li className="rounded-xl border border-border/60 bg-card/50">
+    <li className="rounded-field border border-border/60 bg-card/50">
       <div className="flex items-center gap-2.5 px-3 py-2.5">
         <KindBadge extension={ARTIFACT_EXTENSION[artifact.kind]} />
         <button

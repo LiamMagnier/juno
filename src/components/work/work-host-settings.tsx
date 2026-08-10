@@ -151,7 +151,7 @@ function ToggleRow({
   return (
     <label
       className={cn(
-        "flex items-center justify-between gap-3 rounded-xl border border-border/50 px-3.5 py-2.5",
+        "flex items-center justify-between gap-3 rounded-field border border-border/50 px-3.5 py-2.5",
         unofferedAndOff && "opacity-70",
         unofferedButOn && "border-warning/35"
       )}
@@ -326,7 +326,7 @@ export function WorkHostSettings({
         <h2 className="mb-2.5 font-mono text-label text-muted-foreground">
           When Juno stops to ask
         </h2>
-        <div className="rounded-xl border border-border/50 px-3.5 py-3">
+        <div className="rounded-field border border-border/50 px-3.5 py-3">
           <SegmentedControl
             value={host.approvalPolicy}
             onChange={(approvalPolicy) => onPatch({ approvalPolicy })}
@@ -369,7 +369,7 @@ export function WorkHostSettings({
       <section>
         <h2 className="mb-2.5 font-mono text-label text-muted-foreground">What it has offered</h2>
         {routableCapabilities.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+          <p className="rounded-field border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
             This Mac has not listed anything it can do. That is what an older build of the app looks
             like from here — it will fill in on its next check-in after an update.
           </p>
@@ -399,12 +399,12 @@ export function WorkHostSettings({
       <section>
         <h2 className="mb-2.5 font-mono text-label text-muted-foreground">Folders it can reach</h2>
         {grants === null ? (
-          <p className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+          <p className="rounded-field border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
             The folders shared with this Mac couldn’t be read just now, which says nothing about
             whether it has any.
           </p>
         ) : grants.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+          <p className="rounded-field border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
             Nothing has been shared with this Mac, so file work on it has nowhere to happen. A
             folder is chosen in Juno on the Mac, where the file picker is.
           </p>
@@ -416,7 +416,7 @@ export function WorkHostSettings({
                 return (
                   <li
                     key={grant.id}
-                    className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border border-border/60 bg-card/50 px-3.5 py-2.5"
+                    className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card/50 px-3.5 py-2.5"
                   >
                     <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                     <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
@@ -489,7 +489,7 @@ function NameList({
   empty: string;
 }) {
   return (
-    <div className="rounded-xl border border-border/50 px-3.5 py-2.5">
+    <div className="rounded-field border border-border/50 px-3.5 py-2.5">
       <p className="flex items-center gap-2 text-[13px] font-medium text-foreground">
         <span className="shrink-0 text-muted-foreground">{icon}</span>
         {title}

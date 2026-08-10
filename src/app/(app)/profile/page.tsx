@@ -174,7 +174,7 @@ function shortProviderLabel(provider: Provider) {
 
 function ProviderLogoWell({ provider }: { provider: Provider }) {
   return (
-    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-background shadow-pop">
+    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-card bg-background shadow-pop">
       <ProviderLogo provider={provider} className="h-8 w-8" />
     </div>
   );
@@ -730,7 +730,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
           </p>
         </div>
 
-        <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border/60 bg-border/60 sm:grid-cols-4">
+        <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border/60 bg-border/60 sm:grid-cols-4">
           <div className="bg-card/90 px-3 py-3">
             <dt className="font-mono text-[10px] text-muted-foreground">
               Input

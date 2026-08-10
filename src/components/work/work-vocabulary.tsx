@@ -485,7 +485,7 @@ export function WorkStateNote({
     <div
       role={tone === "error" || tone === "blocked" ? "alert" : undefined}
       className={cn(
-        "flex flex-wrap items-start gap-x-3 gap-y-2 rounded-xl border px-3.5 py-2.5 text-[13px] leading-relaxed",
+        "flex flex-wrap items-start gap-x-3 gap-y-2 rounded-field border px-3.5 py-2.5 text-[13px] leading-relaxed",
         NOTE_CLASS[tone],
         className
       )}

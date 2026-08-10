@@ -505,7 +505,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
         />
       )}
       {session.status === "queued" && (
-        <p role="status" className="mx-1 mb-2 flex items-center gap-2 rounded-xl border border-border/70 bg-muted/45 px-3 py-2 text-xs text-muted-foreground motion-safe:animate-rise-in">
+        <p role="status" className="mx-1 mb-2 flex items-center gap-2 rounded-field border border-border/70 bg-muted/45 px-3 py-2 text-xs text-muted-foreground motion-safe:animate-rise-in">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50 motion-safe:animate-pulse" aria-hidden="true" />
           {isCloud
             ? "Queued — starting a cloud machine (this can take a moment)…"
@@ -928,7 +928,7 @@ function AgentCards({ agents }: { agents: CodeAgentState[] }) {
   return (
     <section
       aria-label="Helper agents"
-      className="mx-1 mb-2 rounded-xl border border-border/70 bg-muted/40 px-3 py-2 motion-safe:animate-rise-in"
+      className="mx-1 mb-2 rounded-field border border-border/70 bg-muted/40 px-3 py-2 motion-safe:animate-rise-in"
     >
       <p className="mb-1.5 flex items-center gap-2 font-mono text-label text-muted-foreground">
         <span
@@ -1004,7 +1004,7 @@ function ApprovalCard({
     <div
       role="group"
       aria-label="Juno Code approval request"
-      className="mx-1 mb-2 space-y-2.5 rounded-xl border border-warning/40 bg-warning/5 px-3.5 py-3 text-sm motion-safe:animate-rise-in"
+      className="mx-1 mb-2 space-y-2.5 rounded-field border border-warning/40 bg-warning/5 px-3.5 py-3 text-sm motion-safe:animate-rise-in"
     >
       <span role="status" className="sr-only">
         {`Juno Code needs your approval to: ${summary}.${

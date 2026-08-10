@@ -131,7 +131,7 @@ export default function WorkHostsPage() {
           {[...Array(2)].map((_, index) => (
             <Skeleton
               key={index}
-              className="h-[86px] w-full rounded-xl"
+              className="h-[86px] w-full rounded-field"
               style={staggerDelay(index, "tight")}
             />
           ))}

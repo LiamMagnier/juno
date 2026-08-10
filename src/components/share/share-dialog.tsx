@@ -122,7 +122,7 @@ export function ShareDialog({
         </DialogHeader>
 
         {status === "loading" || status === "idle" ? (
-          <div className="skeleton h-9 rounded-xl" aria-hidden />
+          <div className="skeleton h-9 rounded-field" aria-hidden />
         ) : status === "error" ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">Couldn’t create the link. Please try again.</p>

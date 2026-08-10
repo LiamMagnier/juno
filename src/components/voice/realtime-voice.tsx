@@ -80,7 +80,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
       {voice.status === "error" && voice.error && (
         <p
           role="alert"
-          className="max-w-md rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-1.5 text-center text-xs leading-snug text-foreground shadow-soft"
+          className="max-w-md rounded-field border border-destructive/30 bg-destructive/5 px-3 py-1.5 text-center text-xs leading-snug text-foreground shadow-soft"
         >
           {voice.error}
         </p>

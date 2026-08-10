@@ -86,7 +86,7 @@ export function SharedChatTranscript({ messages, artifacts }: { messages: Shared
       {messages.map((m) =>
         m.role === "USER" ? (
           <div key={m.id} className="flex justify-end">
-            <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-border/50 bg-secondary px-4 py-2.5 text-body leading-relaxed [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-soft)]">
+            <div className="max-w-[85%] whitespace-pre-wrap rounded-card rounded-br-md border border-border/50 bg-secondary px-4 py-2.5 text-body leading-relaxed [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-soft)]">
               {m.content}
             </div>
           </div>

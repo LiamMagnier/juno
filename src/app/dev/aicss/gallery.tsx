@@ -67,7 +67,7 @@ function Section({ title, note, children }: { title: string; note?: string; chil
         <h2 className="font-serif text-heading text-foreground">{title}</h2>
         {note && <p className="mt-0.5 max-w-2xl text-body text-muted-foreground">{note}</p>}
       </div>
-      <div className="flex flex-col gap-5 rounded-2xl border border-border/55 bg-card/60 p-5">{children}</div>
+      <div className="flex flex-col gap-5 rounded-card border border-border/55 bg-card/60 p-5">{children}</div>
     </section>
   );
 }
@@ -180,7 +180,7 @@ export function AicssGallery() {
           <div>
             <Caption>Video — 16:9</Caption>
             <div className="w-[288px]">
-              <div className="relative aspect-video overflow-hidden rounded-xl">
+              <div className="relative aspect-video overflow-hidden rounded-field">
                 <ImageGenerationCanvas className="absolute inset-0" pitch={14} />
                 <div className="generation-media__play">
                   <svg viewBox="0 0 24 24" fill="currentColor" className="generation-media__play-icon">

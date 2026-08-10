@@ -78,7 +78,7 @@ export function ConversationFind({
       aria-label="Find in conversation"
       className="mx-auto flex w-full max-w-3xl items-center gap-2 px-4 py-2"
     >
-      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-input bg-background px-3 py-1.5 field-well transition-[border-color] duration-base ease-out-soft focus-within:border-foreground/70">
+      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-field border border-input bg-background px-3 py-1.5 field-well transition-[border-color] duration-base ease-out-soft focus-within:border-foreground/70">
         <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
         <input
           ref={inputRef}

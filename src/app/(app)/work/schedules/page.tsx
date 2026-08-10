@@ -91,7 +91,7 @@ export default function WorkSchedulesPage() {
           {[...Array(3)].map((_, index) => (
             <Skeleton
               key={index}
-              className="h-[86px] w-full rounded-xl"
+              className="h-[86px] w-full rounded-field"
               style={staggerDelay(index, "tight")}
             />
           ))}

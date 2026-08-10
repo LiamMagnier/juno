@@ -875,7 +875,7 @@ export default function NewCodeSessionPage() {
             {cloudStartError === "not_configured" && (
               <p
                 role="alert"
-                className="mt-2.5 flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/5 px-3.5 py-2.5 text-sm text-warning-foreground motion-safe:animate-rise-in"
+                className="mt-2.5 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/5 px-3.5 py-2.5 text-sm text-warning-foreground motion-safe:animate-rise-in"
               >
                 <Cloud className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
                 <span>
@@ -888,7 +888,7 @@ export default function NewCodeSessionPage() {
               </p>
             )}
             {cloudStartError === "dispatch_failed" && (
-              <div className="mt-2.5 flex items-center justify-between gap-3 rounded-xl border border-destructive/40 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive motion-safe:animate-rise-in">
+              <div className="mt-2.5 flex items-center justify-between gap-3 rounded-field border border-destructive/40 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive motion-safe:animate-rise-in">
                 <span>Couldn’t start the cloud run — this is usually temporary.</span>
                 <Button variant="outline" size="sm" onClick={() => void submit()} disabled={submitting} className="shrink-0 gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive">
                   Try again

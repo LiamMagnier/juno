@@ -86,7 +86,7 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
       data-stage={stage}
       className={cn("w-full", isVideo ? "max-w-[min(100%,440px)]" : "max-w-[min(100%,288px)]")}
     >
-      <div className={cn("relative overflow-hidden rounded-xl", isVideo ? "aspect-video" : "aspect-square")}>
+      <div className={cn("relative overflow-hidden rounded-field", isVideo ? "aspect-video" : "aspect-square")}>
         {/* The lattice opens up from AIcss's 11px: their canvas is 208px, and a
             pitch tuned for that reads as a texture rather than a field here. */}
         <ImageGenerationCanvas className="absolute inset-0" pitch={14} />

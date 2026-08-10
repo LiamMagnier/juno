@@ -102,7 +102,7 @@ export function WorkQuestionCard({
   };
 
   return (
-    <div className="rounded-xl border border-warning/40 bg-warning/[0.06] px-3.5 py-3">
+    <div className="rounded-field border border-warning/40 bg-warning/[0.06] px-3.5 py-3">
       <p className="font-mono text-[10px] text-warning-foreground">
         Waiting on you · asked {workTimeAgo(question.askedAt)}
       </p>
@@ -351,7 +351,7 @@ function ApprovalCard({
   return (
     <div
       className={cn(
-        "rounded-xl border",
+        "rounded-field border",
         answerable
           ? // A pending approval is the only thing on this page that stops the
             // run dead, and it competes with eight other panels for the eye. The

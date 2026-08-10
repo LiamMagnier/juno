@@ -300,7 +300,7 @@ function PaletteShell({
           <div
             ref={highlightRef}
             aria-hidden="true"
-            className="pointer-events-none absolute left-1.5 right-1.5 top-0 rounded-xl bg-accent opacity-0 transition-[transform,height,opacity] duration-base ease-spring motion-reduce:transition-none"
+            className="pointer-events-none absolute left-1.5 right-1.5 top-0 rounded-field bg-accent opacity-0 transition-[transform,height,opacity] duration-base ease-spring motion-reduce:transition-none"
           />
           {items.length === 0
             ? emptyState
@@ -334,7 +334,7 @@ function PaletteShell({
                       onClick={() => c.run()}
                       aria-selected={isActive}
                       className={cn(
-                        "menu-item group group/menu-item relative flex w-full gap-3 rounded-xl px-2.5 py-2 text-left text-sm transition-colors duration-fast ease-out-soft coarse:py-2.5",
+                        "menu-item group group/menu-item relative flex w-full gap-3 rounded-field px-2.5 py-2 text-left text-sm transition-colors duration-fast ease-out-soft coarse:py-2.5",
                         // A two-line result row hangs its icon and trailing meta
                         // off the title, not off the centre of the pair.
                         c.snippet ? "items-start" : "items-center",
@@ -343,7 +343,7 @@ function PaletteShell({
                     >
                       {/* Icon tile — gives every row a consistent optical anchor
                           and lets the active state read without moving anything.
-                          rounded-md (8px): the row is rounded-xl (12px) and the tile
+                          rounded-md (8px): the row is rounded-field (12px) and the tile
                           sits 8px/10px inside it, so ~8px is the concentric read.
                           NB rounded-lg is 24px here — on a 28px tile that is a circle. */}
                       <span

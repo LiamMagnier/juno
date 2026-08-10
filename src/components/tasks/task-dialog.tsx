@@ -257,7 +257,7 @@ export function TaskDialog({
             )}
           </div>
 
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 px-3.5 py-3">
+          <div className="flex items-center justify-between gap-3 rounded-field border border-border/60 px-3.5 py-3">
             <div>
               <Label htmlFor="task-web-search">Web search</Label>
               <p className="text-xs text-muted-foreground">Let the model search the web when it supports it.</p>

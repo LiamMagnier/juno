@@ -1466,7 +1466,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       role={voiceSaveError ? "alert" : "status"}
       aria-live="polite"
       className={cn(
-        "mx-auto mb-2 flex w-[calc(100%-1rem)] max-w-2xl items-center gap-3 rounded-xl border px-3 py-2 text-sm shadow-soft sm:w-full",
+        "mx-auto mb-2 flex w-[calc(100%-1rem)] max-w-2xl items-center gap-3 rounded-field border px-3 py-2 text-sm shadow-soft sm:w-full",
         voiceSaveError
           ? "border-destructive/30 bg-destructive/5 text-foreground"
           : "border-border/70 bg-background/85 text-muted-foreground backdrop-blur-xl"

@@ -440,7 +440,7 @@ export default function WorkHomePage() {
 function FirstRun() {
   return (
     <WorkSection title="Getting started">
-      <div className="rounded-xl border border-dashed border-border/70 px-5 py-7 text-center">
+      <div className="rounded-field border border-dashed border-border/70 px-5 py-7 text-center">
         <p className="font-serif text-heading">Give Juno an errand with a finish line</p>
         <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-muted-foreground">
           It plans the work, shows you every step as it goes, and asks first before anything it

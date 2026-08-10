@@ -32,7 +32,7 @@ export function PrivacyStrip({ paused, onPausedChange, onExport, onReset, resett
   }, [confirming]);
 
   return (
-    <div className="rounded-2xl border border-border/50 bg-muted/20 px-4 py-3">
+    <div className="rounded-card border border-border/50 bg-muted/20 px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
         <label htmlFor="pause-memory" className="flex cursor-pointer items-center gap-2.5 text-sm">
           <Switch

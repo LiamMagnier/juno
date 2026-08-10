@@ -474,7 +474,7 @@ export default function ProjectDetailPage() {
     // reflow when data lands.
     return (
       <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
-        <div className="skeleton mb-8 h-8 w-28 rounded-xl" />
+        <div className="skeleton mb-8 h-8 w-28 rounded-field" />
         <div className="skeleton mb-3 h-3 w-20 rounded-sm" />
         <div className="skeleton mb-3 h-10 w-72 rounded-md" />
         <div className="skeleton mb-8 h-3 w-56 rounded-sm" />
@@ -593,7 +593,7 @@ export default function ProjectDetailPage() {
 
         <Tabs value={tab} onValueChange={setTab}>
           {/* Radius/padding left to the primitive — its 14px track / 10px trigger pair is
-              already concentric; the old rounded-2xl + rounded-xl override broke that. */}
+              already concentric; the old rounded-card + rounded-field override broke that. */}
           <TabsList className="mb-6">
             <TabsTrigger value="overview" className="px-4">Overview</TabsTrigger>
             <TabsTrigger value="workspace" className="px-4">Workspace</TabsTrigger>
@@ -638,7 +638,7 @@ export default function ProjectDetailPage() {
                         // paints straight over this row's lift shadow.
                         <li
                           key={c.id}
-                          className="group relative flex items-center gap-2 rounded-xl border border-border/60 bg-card px-3 py-2.5 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none"
+                          className="group relative flex items-center gap-2 rounded-field border border-border/60 bg-card px-3 py-2.5 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none"
                         >
                           <Link href={`/chat/${c.id}`} className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-md">
                             <span className="truncate text-body font-medium text-foreground">{c.title}</span>

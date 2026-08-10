@@ -116,7 +116,7 @@ function appLabel(item: Pick<CatalogItem, "name" | "slug">): string {
 
 function AppLogo({ item }: { item: DirectoryItem }) {
   return (
-    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/60 bg-card shadow-soft">
+    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-field border border-border/60 bg-card shadow-soft">
       {item.source === "native" ? (
         <ConnectorMark id={item.id} className="size-5" />
       ) : item.logo ? (
@@ -530,7 +530,7 @@ export function ConnectorDirectory({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search Gmail, Slack, GitHub…"
             aria-label="Search apps"
-            className="h-10 rounded-xl bg-card pl-9"
+            className="h-10 rounded-field bg-card pl-9"
           />
         </label>
       </div>
@@ -592,7 +592,7 @@ export function ConnectorDirectory({
 
         {!loading && items.length === 0 && (
           <div className="flex flex-col items-center gap-4 rounded-card border border-border/70 bg-card/40 px-6 py-12 text-center">
-            <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+            <span className="flex size-12 items-center justify-center rounded-card bg-muted text-muted-foreground">
               <Plug className="size-6" />
             </span>
             <p className="max-w-xs text-sm text-muted-foreground">
@@ -623,7 +623,7 @@ export function ConnectorDirectory({
 /** Actionable setup steps — the old copy just said the directory "is not active". */
 function ComposioSetupCallout() {
   return (
-    <div className="mb-3 rounded-2xl border border-dashed border-primary/30 bg-primary/[0.04] p-5">
+    <div className="mb-3 rounded-card border border-dashed border-primary/30 bg-primary/[0.04] p-5">
       <div className="flex items-start gap-3">
         <Plug className="mt-0.5 size-4 shrink-0 text-primary" />
         <div className="min-w-0">

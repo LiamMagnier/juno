@@ -20,7 +20,7 @@ export function LegacyAppAuthHandoff({ token }: { token: string }) {
       <div className="max-w-md space-y-3 text-center">
         <h1 className="text-lg font-semibold">Signing you in to Juno…</h1>
         <p className="text-sm text-muted-foreground">You can return to the app.</p>
-        <a className="inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" href={deepLink}>
+        <a className="inline-flex rounded-field bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" href={deepLink}>
           Open Juno
         </a>
       </div>
@@ -53,7 +53,7 @@ export function AppAuthHandoff({
       <div className="max-w-md space-y-3 text-center">
         <h1 className="text-lg font-semibold">Signing you in to Juno…</h1>
         <p className="text-sm text-muted-foreground">You can return to the app.</p>
-        <a className="inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" href={deepLink}>
+        <a className="inline-flex rounded-field bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" href={deepLink}>
           Open Juno
         </a>
       </div>

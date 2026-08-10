@@ -240,7 +240,7 @@ export function ActivityTimeline({
         aria-controls={open ? panelDomId : undefined}
         aria-label={label}
         className={cn(
-          "group/thought relative -mx-2 flex w-[calc(100%+1rem)] items-center overflow-hidden rounded-xl px-2 py-1.5 text-left",
+          "group/thought relative -mx-2 flex w-[calc(100%+1rem)] items-center overflow-hidden rounded-field px-2 py-1.5 text-left",
           "transition-colors duration-base ease-out-soft hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none coarse:min-h-14",
           streaming ? "min-h-10 gap-3" : "min-h-12 gap-3",
           // The gap to the answer belongs to whatever is last. With live blocks

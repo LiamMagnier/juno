@@ -1632,7 +1632,7 @@ export function Composer({
 
         {showCollapsedDraft && (
           <div
-            className="mx-3 mt-3 flex flex-col gap-2 rounded-xl border border-border/70 bg-muted/40 px-3 py-3 sm:mx-3.5"
+            className="mx-3 mt-3 flex flex-col gap-2 rounded-field border border-border/70 bg-muted/40 px-3 py-3 sm:mx-3.5"
             tabIndex={0}
             role="group"
             aria-label="Large paste ready to send. Press Enter to send."

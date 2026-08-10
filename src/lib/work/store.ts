@@ -1366,13 +1366,26 @@ export async function reclaimStalledRuns(
 
   // Scoped sweeps stay guarded; the cross-account one says out loud that it is
   // global rather than tripping a guard whose whole job is to notice that.
-  const client = input.userId ? prisma : prismaUnguarded;
-  const stalled = await client.workRun.findMany({
+  //
+  // The BRANCH is on the call, not on the client, and that is load-bearing.
+  // `prisma` is `prismaUnguarded.$extends(...)`, so the two have structurally
+  // different deep generic types; assigning them to one `const` produced a
+  // union, and `.findMany` on that union made the compiler reconcile two full
+  // Prisma overload sets. It type-checked for a long time and then stopped —
+  // TS's instantiation-depth limit is program-wide, so unrelated files growing
+  // elsewhere is enough to tip it into "Excessive stack depth comparing types"
+  // in a file nobody touched. Two monomorphic calls cost a duplicated argument
+  // and cannot do that.
+  const query = {
     where,
     select: { id: true, userId: true },
     orderBy: { leaseExpiresAt: "asc" },
     take: limit,
-  });
+  } satisfies Prisma.WorkRunFindManyArgs;
+
+  const stalled = input.userId
+    ? await prisma.workRun.findMany(query)
+    : await prismaUnguarded.workRun.findMany(query);
 
   const reclaimed: string[] = [];
   for (const run of stalled) {

@@ -260,7 +260,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
       </p>
 
       {loadFailed ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-field border border-border/70 p-4">
           <p className="text-sm text-muted-foreground">
             Couldn&apos;t load your permission settings, so nothing is shown rather than a guess.
           </p>
@@ -271,13 +271,13 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
       ) : !state ? (
         <div className="space-y-2" aria-hidden>
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="skeleton h-16 rounded-xl" style={staggerDelay(i, "loose")} />
+            <div key={i} className="skeleton h-16 rounded-field" style={staggerDelay(i, "loose")} />
           ))}
         </div>
       ) : (
         <>
           {state.lockdownMode && (
-            <p className="mb-4 flex items-start gap-2 rounded-xl border border-warning/40 bg-warning/10 p-3 text-sm text-foreground">
+            <p className="mb-4 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-3 text-sm text-foreground">
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
               Lockdown is on, so every connector action is refused right now. The choice below takes
               effect again when you turn it off.

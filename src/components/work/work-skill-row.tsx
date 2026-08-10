@@ -34,7 +34,7 @@ export function WorkSkillRow({ skill, index = 0 }: { skill: ClientWorkSkill; ind
     <Link
       href={`/work/skills/${skill.id}`}
       className={cn(
-        "group flex items-start gap-3 rounded-xl border border-border/60 bg-card/60 px-3.5 py-3 transition-[background-color,border-color] duration-base ease-out-soft hover:border-border hover:bg-card motion-safe:animate-rise-in",
+        "group flex items-start gap-3 rounded-field border border-border/60 bg-card/60 px-3.5 py-3 transition-[background-color,border-color] duration-base ease-out-soft hover:border-border hover:bg-card motion-safe:animate-rise-in",
         "[animation-fill-mode:backwards]",
         !skill.enabled && "opacity-75"
       )}

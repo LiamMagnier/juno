@@ -122,7 +122,7 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
             ? `Preview unavailable. Open ${attachment.fileName} in a new tab`
             : `Open ${attachment.fileName} in a new tab`
         }
-        className="relative block aspect-square w-full overflow-hidden rounded-xl border border-border/60 bg-muted/35 shadow-soft outline-none motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-float focus-visible:ring-2 focus-visible:ring-primary/40"
+        className="relative block aspect-square w-full overflow-hidden rounded-field border border-border/60 bg-muted/35 shadow-soft outline-none motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-float focus-visible:ring-2 focus-visible:ring-primary/40"
       >
         <div
           aria-hidden="true"
@@ -189,7 +189,7 @@ function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
       : `Preparing ${attachment.fileName}`;
 
   return (
-    <div className="group/video grid w-full max-w-[480px] grid-rows-[auto_3.25rem] overflow-hidden rounded-xl border border-border/60 bg-card/75 shadow-soft motion-safe:animate-fade-in motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-float">
+    <div className="group/video grid w-full max-w-[480px] grid-rows-[auto_3.25rem] overflow-hidden rounded-field border border-border/60 bg-card/75 shadow-soft motion-safe:animate-fade-in motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-float">
       <div className="relative aspect-video min-w-0 overflow-hidden bg-muted/35">
         <div
           aria-hidden="true"
@@ -612,7 +612,7 @@ export function MessageItem({
                 className={cn(
                   // break-words: pre-wrap alone only wraps at whitespace, so a
                   // pasted URL/token longer than the bubble overflows on phones.
-                  "relative w-full whitespace-pre-wrap break-words rounded-2xl rounded-br-md border border-border/50 bg-secondary px-4 py-2.5 text-body leading-relaxed [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-soft)]",
+                  "relative w-full whitespace-pre-wrap break-words rounded-card rounded-br-md border border-border/50 bg-secondary px-4 py-2.5 text-body leading-relaxed [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-soft)]",
                   isLong && heightCapped && "overflow-hidden transition-[max-height] duration-slow ease-out-expo",
                   isLong && heightCapped && (expanded ? "max-h-[4000px]" : "max-h-60")
                 )}
@@ -621,7 +621,7 @@ export function MessageItem({
                 {isLong && (
                   <div
                     className={cn(
-                      "pointer-events-none absolute inset-x-0 bottom-0 h-16 rounded-b-2xl bg-gradient-to-t from-secondary to-transparent transition-opacity duration-base ease-out-soft",
+                      "pointer-events-none absolute inset-x-0 bottom-0 h-16 rounded-b-card bg-gradient-to-t from-secondary to-transparent transition-opacity duration-base ease-out-soft",
                       expanded ? "opacity-0" : "opacity-100"
                     )}
                   />

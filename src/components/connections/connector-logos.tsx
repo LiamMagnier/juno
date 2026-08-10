@@ -92,7 +92,7 @@ export function ConnectorLogoTile({ id, className }: { id: string; className?: s
   return (
     <span
       className={cn(
-        "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border bg-background text-foreground",
+        "flex h-11 w-11 shrink-0 items-center justify-center rounded-field border bg-background text-foreground",
         className
       )}
     >

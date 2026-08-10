@@ -161,7 +161,7 @@ export function AnnouncementPopup() {
           <span className="sr-only">Close</span>
         </DialogClose>
         <div className="grid gap-8 p-6 lg:grid-cols-[minmax(16rem,24rem)_minmax(0,1fr)]">
-          <div className="h-64 w-full shrink-0 overflow-hidden rounded-2xl border border-border/50 bg-muted sm:h-80 lg:h-[26rem]">
+          <div className="h-64 w-full shrink-0 overflow-hidden rounded-card border border-border/50 bg-muted sm:h-80 lg:h-[26rem]">
             <AnnouncementVisual announcement={announcement} />
           </div>
           <div className="flex min-h-0 flex-col justify-between gap-6 py-2 pr-2 lg:min-h-[26rem]">

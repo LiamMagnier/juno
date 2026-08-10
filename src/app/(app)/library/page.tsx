@@ -320,7 +320,7 @@ function VersionsDialog({
             <p className="py-6 text-center text-sm text-muted-foreground">No saved versions yet.</p>
           ) : (
             versions.map((version) => (
-              <div key={version.version} className="flex items-center gap-3 rounded-xl border border-border/60 px-3 py-2">
+              <div key={version.version} className="flex items-center gap-3 rounded-field border border-border/60 px-3 py-2">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">
                     v{version.version} {version.current ? "· current" : ""}

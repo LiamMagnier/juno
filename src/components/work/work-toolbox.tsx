@@ -70,7 +70,7 @@ export function WorkToolbox() {
         {[...Array(2)].map((_, index) => (
           <Skeleton
             key={index}
-            className="h-9 w-full rounded-xl"
+            className="h-9 w-full rounded-field"
             style={staggerDelay(index, "tight")}
           />
         ))}

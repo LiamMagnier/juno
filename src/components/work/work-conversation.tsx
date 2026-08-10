@@ -144,7 +144,7 @@ export function WorkConversation({
         <div>
           <p className="mb-1.5 font-mono text-label text-muted-foreground">What you asked for</p>
           <div className="flex justify-end">
-            <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-secondary px-3.5 py-2.5 text-[14px] leading-relaxed text-secondary-foreground">
+            <p className="max-w-[85%] whitespace-pre-wrap rounded-card bg-secondary px-3.5 py-2.5 text-[14px] leading-relaxed text-secondary-foreground">
               {session.goal}
             </p>
           </div>
@@ -158,7 +158,7 @@ export function WorkConversation({
                   You added this
                 </p>
               )}
-              <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-secondary px-3.5 py-2.5 text-[14px] leading-relaxed text-secondary-foreground">
+              <p className="max-w-[85%] whitespace-pre-wrap rounded-card bg-secondary px-3.5 py-2.5 text-[14px] leading-relaxed text-secondary-foreground">
                 {turn.text}
               </p>
             </div>

@@ -195,7 +195,7 @@ export function WorkSessionRow({
   return (
     <div
       className={cn(
-        "group relative flex items-start rounded-xl border border-border/60 bg-card/60 transition-[background-color,border-color,transform,opacity] duration-base ease-out-soft hover:border-border hover:bg-card",
+        "group relative flex items-start rounded-field border border-border/60 bg-card/60 transition-[background-color,border-color,transform,opacity] duration-base ease-out-soft hover:border-border hover:bg-card",
         // The lift is a single pixel. The row is the full width of the column,
         // and a card that wide moving any further stops reading as "under your
         // pointer" and starts reading as "leaving the page".
@@ -425,7 +425,7 @@ export function WorkSessionSkeletons({ count = 3 }: { count?: number }) {
       {[...Array(count)].map((_, index) => (
         <Skeleton
           key={index}
-          className="h-[86px] w-full rounded-xl"
+          className="h-[86px] w-full rounded-field"
           style={staggerDelay(index, "tight")}
         />
       ))}

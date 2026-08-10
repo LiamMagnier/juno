@@ -112,8 +112,8 @@ export default function KnowledgeDocumentPage() {
     return (
       <main className="mx-auto flex min-h-full max-w-4xl flex-col gap-4 px-5 py-8">
         <Skeleton className="h-5 w-24" />
-        <Skeleton className="h-28 w-full rounded-2xl" />
-        <Skeleton className="h-48 w-full rounded-2xl" />
+        <Skeleton className="h-28 w-full rounded-card" />
+        <Skeleton className="h-48 w-full rounded-card" />
       </main>
     );
   }
@@ -140,7 +140,7 @@ export default function KnowledgeDocumentPage() {
           </span>
         </div>
         {document.error ? (
-          <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3.5 py-3 text-sm text-muted-foreground">
+          <div className="mt-4 flex items-start gap-2 rounded-field border border-amber-500/30 bg-amber-500/5 px-3.5 py-3 text-sm text-muted-foreground">
             <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-600" />
             <span>{document.error}</span>
           </div>

@@ -273,7 +273,7 @@ export default function WorkSkillPage() {
           {[...Array(3)].map((_, index) => (
             <Skeleton
               key={index}
-              className="h-20 w-full rounded-xl"
+              className="h-20 w-full rounded-field"
               style={staggerDelay(index, "tight")}
             />
           ))}
@@ -355,7 +355,7 @@ export default function WorkSkillPage() {
 
         <section className="space-y-2.5">
           <h2 className="font-mono text-label text-muted-foreground">How Juno may use it</h2>
-          <label className="flex items-center justify-between gap-3 rounded-xl border border-border/50 px-3.5 py-2.5">
+          <label className="flex items-center justify-between gap-3 rounded-field border border-border/50 px-3.5 py-2.5">
             <span className="min-w-0">
               <span className="block text-[13px] font-medium text-foreground">Available</span>
               <span className="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
@@ -372,7 +372,7 @@ export default function WorkSkillPage() {
             />
           </label>
 
-          <label className="flex items-center justify-between gap-3 rounded-xl border border-border/50 px-3.5 py-2.5">
+          <label className="flex items-center justify-between gap-3 rounded-field border border-border/50 px-3.5 py-2.5">
             <span className="min-w-0">
               <span className="block text-[13px] font-medium text-foreground">
                 Juno may reach for it unasked
@@ -393,7 +393,7 @@ export default function WorkSkillPage() {
             />
           </label>
 
-          <div className="rounded-xl border border-border/50 px-3.5 py-2.5">
+          <div className="rounded-field border border-border/50 px-3.5 py-2.5">
             <p className="text-[13px] font-medium text-foreground">Trust</p>
             {settableTrust !== null ? (
               <>
@@ -439,7 +439,7 @@ export default function WorkSkillPage() {
             asks for more permissions waits for your approval.
           </p>
           {version?.requiresConsent ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3.5 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-field border border-amber-500/30 bg-amber-500/5 px-3.5 py-3">
               <p className="text-[12px] leading-relaxed text-foreground">
                 This version widens the permissions requested by the previous version.
               </p>
@@ -453,7 +453,7 @@ export default function WorkSkillPage() {
             </div>
           ) : null}
           {securityFindings.length > 0 ? (
-            <ul className="space-y-1 rounded-xl border border-border/60 px-3.5 py-2.5">
+            <ul className="space-y-1 rounded-field border border-border/60 px-3.5 py-2.5">
               {securityFindings.map((finding) => (
                 <li key={`${finding.code}-${finding.message}`} className="text-[11.5px] leading-relaxed text-muted-foreground">
                   <span className="mr-1 font-mono text-[10px] uppercase text-foreground">
@@ -514,7 +514,7 @@ export default function WorkSkillPage() {
         <section>
           <h2 className="mb-2.5 font-mono text-label text-muted-foreground">History</h2>
           {versions === null ? (
-            <p className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
+            <p className="rounded-field border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
               This skill’s history couldn’t be read just now. Nothing about it has changed.
             </p>
           ) : (
@@ -522,7 +522,7 @@ export default function WorkSkillPage() {
               {versions.map((entry) => (
                 <li
                   key={entry.id}
-                  className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border border-border/60 bg-card/50 px-3.5 py-2.5"
+                  className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card/50 px-3.5 py-2.5"
                 >
                   <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <span className="shrink-0 font-mono text-[10px] text-foreground">

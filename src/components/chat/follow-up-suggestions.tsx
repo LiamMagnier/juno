@@ -134,7 +134,7 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
                 // instead of unfurling inside a 20rem column. A stadium radius
                 // on a multi-line box bows the sides into an ellipse; 2xl (16px
                 // — this scale is non-monotonic) keeps the corners honest.
-                ? "w-full items-start rounded-2xl"
+                ? "w-full items-start rounded-card"
                 : "max-w-[min(20rem,100%)] shrink-0 items-center rounded-full"
             )}
           >

@@ -415,7 +415,7 @@ export default function MemoryPage() {
         />
 
         {loadError ? (
-          <div className="space-y-2.5 rounded-2xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <div className="space-y-2.5 rounded-card border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
             <div className="flex items-center gap-2">
               <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
               <p>Couldn’t load your memory. Check your connection and try again.</p>
@@ -432,8 +432,8 @@ export default function MemoryPage() {
         ) : memories === null ? (
           <div className="space-y-3">
             <Skeleton className="h-80 w-full rounded-panel" />
-            <Skeleton style={{ animationDelay: "80ms" }} className="h-12 w-full rounded-2xl" />
-            <Skeleton style={{ animationDelay: "160ms" }} className="h-16 w-full rounded-2xl" />
+            <Skeleton style={{ animationDelay: "80ms" }} className="h-12 w-full rounded-card" />
+            <Skeleton style={{ animationDelay: "160ms" }} className="h-16 w-full rounded-card" />
           </div>
         ) : (
           <MotionConfig reducedMotion="user">
@@ -451,7 +451,7 @@ export default function MemoryPage() {
                 <div
                   role="status"
                   aria-live="polite"
-                  className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-2xl border border-border/60 bg-muted/30 px-4 py-3 text-sm"
+                  className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-card border border-border/60 bg-muted/30 px-4 py-3 text-sm"
                 >
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <p className="min-w-0 flex-1 text-muted-foreground">{policyNotice}</p>

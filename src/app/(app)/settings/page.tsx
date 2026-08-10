@@ -843,7 +843,7 @@ export default function SettingsPage() {
                     <div
                       key={v.id}
                       className={cn(
-                        "relative flex items-center gap-2 rounded-xl border p-3 shadow-pop transition-[transform,box-shadow,background-color,border-color] duration-fast ease-out-soft hover:z-10 hover:bg-accent hover:shadow-float motion-safe:hover:-translate-y-0.5",
+                        "relative flex items-center gap-2 rounded-field border p-3 shadow-pop transition-[transform,box-shadow,background-color,border-color] duration-fast ease-out-soft hover:z-10 hover:bg-accent hover:shadow-float motion-safe:hover:-translate-y-0.5",
                         selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border/70"
                       )}
                     >
@@ -855,7 +855,7 @@ export default function SettingsPage() {
                         aria-checked={selected}
                         aria-label={`Read aloud in the ${v.label} voice`}
                         onClick={() => save({ voiceId: v.id })}
-                        className="absolute inset-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                        className="absolute inset-0 rounded-field focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                       />
                       <div className="pointer-events-none min-w-0 flex-1">
                         <span className="flex items-center gap-1.5 text-sm font-medium">

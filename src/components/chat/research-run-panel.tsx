@@ -228,7 +228,7 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
   return (
     <section
       aria-label="Research run"
-      className="w-full rounded-2xl border border-border/60 bg-card/70 p-3 shadow-soft backdrop-blur-md sm:p-4"
+      className="w-full rounded-card border border-border/60 bg-card/70 p-3 shadow-soft backdrop-blur-md sm:p-4"
     >
       <header className="flex min-w-0 items-start gap-3">
         <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
@@ -289,7 +289,7 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
       </ol>
 
       {run.plan.objectives && run.plan.objectives.length > 0 && !awaitingPlan && (
-        <div className="mt-3 rounded-xl border border-border/50 bg-background/35 p-3">
+        <div className="mt-3 rounded-field border border-border/50 bg-background/35 p-3">
           <div className="flex items-center justify-between gap-2">
             <p className="font-mono text-label uppercase text-muted-foreground">Evidence coverage</p>
             {run.plan.followUpRound ? (
@@ -335,7 +335,7 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
           queries that will actually be issued. Editable, because the whole point
           of stopping here is that the user can change them. */}
       {awaitingPlan && (
-        <div className="mt-3 rounded-xl border border-border/50 bg-background/40 p-3">
+        <div className="mt-3 rounded-field border border-border/50 bg-background/40 p-3">
           <p className="text-xs font-medium text-foreground">
             Juno will search for these. Edit anything before it starts.
           </p>

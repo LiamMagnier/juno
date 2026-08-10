@@ -12,7 +12,7 @@ const buttonVariants = cva(
   // a card or inside a dialog wears a page-coloured halo that belongs to no surface
   // underneath it — which is why four hand-forked offset colours had accumulated.
   // outline-offset leaves the real surface showing and is correct by construction.
-  "ui-button relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl text-sm font-medium transition-[color,background-color,border-color,box-shadow,transform,filter] duration-fast ease-out-soft active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "ui-button relative inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-field text-sm font-medium transition-[color,background-color,border-color,box-shadow,transform,filter] duration-fast ease-out-soft active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {

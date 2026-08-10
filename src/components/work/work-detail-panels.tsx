@@ -392,7 +392,7 @@ export function WorkRunSettings({
       )}
 
       {run.degradation.length > 0 && (
-        <div className="rounded-xl border border-warning/35 bg-warning/5 px-3 py-2.5">
+        <div className="rounded-field border border-warning/35 bg-warning/5 px-3 py-2.5">
           <DegradationNotes degradation={run.degradation} />
         </div>
       )}

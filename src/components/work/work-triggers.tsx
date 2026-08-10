@@ -322,7 +322,7 @@ export function TriggerListEditor({
       {triggers.map((trigger, index) => (
         <div
           key={`${trigger.kind}-${index}`}
-          className="rounded-xl border border-border/60 bg-card/50 px-3.5 py-3"
+          className="rounded-field border border-border/60 bg-card/50 px-3.5 py-3"
         >
           <div className="flex flex-wrap items-center gap-2">
             {isTimeTriggerKind(trigger.kind) ? (
@@ -586,7 +586,7 @@ function ChoiceField({
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="field-well h-9 w-full rounded-xl border border-input bg-background px-3 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        className="field-well h-9 w-full rounded-field border border-input bg-background px-3 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -610,7 +610,7 @@ function SwitchField({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 rounded-xl border border-border/50 px-3 py-2">
+    <label className="flex items-center justify-between gap-3 rounded-field border border-border/50 px-3 py-2">
       <span className="min-w-0 text-[13px] leading-relaxed text-foreground">{label}</span>
       <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} />
     </label>
@@ -645,7 +645,7 @@ function UnservableOption({
   onClear: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-border/50 bg-muted/20 px-3 py-2.5">
+    <div className="rounded-field border border-border/50 bg-muted/20 px-3 py-2.5">
       <p className="font-mono text-xs font-medium text-muted-foreground">{label}</p>
       <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">{message}</p>
       {asked && (
@@ -701,7 +701,7 @@ function TriggerConfigFields({
   const limit = kindLimit(trigger.kind);
   if (limit) {
     return (
-      <div className="rounded-xl border border-warning/40 bg-warning/10 px-3 py-2.5">
+      <div className="rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5">
         <p className="text-[12.5px] leading-relaxed text-warning-foreground">{limit}</p>
         <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
           The schedule cannot be saved while this trigger is on it. Remove it, and everything else
@@ -1120,7 +1120,7 @@ function TriggerConfigFields({
                 value={stringAt(config, "grantId")}
                 disabled={disabled}
                 onChange={(event) => set({ grantId: event.target.value })}
-                className="field-well h-9 w-full rounded-xl border border-input bg-background px-3 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                className="field-well h-9 w-full rounded-field border border-input bg-background px-3 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <option value="">Choose a folder…</option>
                 {grants.map((grant) => (

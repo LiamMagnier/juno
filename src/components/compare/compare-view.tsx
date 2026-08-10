@@ -358,7 +358,7 @@ export function CompareView() {
                     runAll(sample);
                   }}
                   style={{ animationDelay: `${120 + i * 45}ms` }}
-                  className="rounded-xl border border-border/70 bg-card/70 px-3.5 py-2.5 text-left font-sans text-sm leading-5 text-foreground/80 shadow-soft backdrop-blur transition-all duration-base ease-out-soft [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent hover:text-foreground hover:shadow-float active:translate-y-0 active:scale-[0.99] motion-safe:animate-rise-in"
+                  className="rounded-field border border-border/70 bg-card/70 px-3.5 py-2.5 text-left font-sans text-sm leading-5 text-foreground/80 shadow-soft backdrop-blur transition-all duration-base ease-out-soft [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent hover:text-foreground hover:shadow-float active:translate-y-0 active:scale-[0.99] motion-safe:animate-rise-in"
                 >
                   {sample}
                 </button>

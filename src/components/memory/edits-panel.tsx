@@ -35,7 +35,7 @@ function DiffLine({ sign, text }: { sign: "+" | "-"; text: string }) {
 function OperationDiff({ operations }: { operations: Operation[] }) {
   if (operations.length === 0) return null;
   return (
-    <div className="mt-3 divide-y divide-border/40 overflow-hidden rounded-xl border border-border/50 font-mono text-[11px] leading-relaxed">
+    <div className="mt-3 divide-y divide-border/40 overflow-hidden rounded-field border border-border/50 font-mono text-[11px] leading-relaxed">
       {operations.map((op, i) => (
         <div key={i}>
           {(op.op === "update" || op.op === "remove") && <DiffLine sign="-" text={op.before} />}
@@ -82,7 +82,7 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
         onClick={() => onOpenChange(!open)}
         aria-expanded={open}
         aria-controls="memory-edits-panel"
-        className="group flex w-full items-center justify-between gap-3 rounded-2xl border border-border/60 bg-card px-4 py-3 text-left surface-raised transition-[border-color,box-shadow] duration-fast ease-out-soft hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="group flex w-full items-center justify-between gap-3 rounded-card border border-border/60 bg-card px-4 py-3 text-left surface-raised transition-[border-color,box-shadow] duration-fast ease-out-soft hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         <span className="flex items-center gap-2.5 text-sm font-medium">
           <PenLine className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
@@ -140,7 +140,7 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.98 }}
                         transition={{ duration: 0.22, ease: [0.33, 1, 0.68, 1] }}
-                        className="rounded-2xl border border-border/60 bg-card p-4 shadow-soft"
+                        className="rounded-card border border-border/60 bg-card p-4 shadow-soft"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <p className="font-serif text-sm italic text-foreground/90">“{edit.instruction}”</p>

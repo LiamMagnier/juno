@@ -117,7 +117,7 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
     <Link
       href={`/work/hosts/${host.id}`}
       className={cn(
-        "group flex items-start gap-3 rounded-xl border border-border/60 bg-card/60 px-3.5 py-3 transition-[background-color,border-color] duration-base ease-out-soft hover:border-border hover:bg-card motion-safe:animate-rise-in",
+        "group flex items-start gap-3 rounded-field border border-border/60 bg-card/60 px-3.5 py-3 transition-[background-color,border-color] duration-base ease-out-soft hover:border-border hover:bg-card motion-safe:animate-rise-in",
         "[animation-fill-mode:backwards]",
         // Dimmed for the same reason a paused schedule and a switched-off skill
         // are: it is still yours, it is still listed, and it is not going to do

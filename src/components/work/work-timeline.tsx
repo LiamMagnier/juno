@@ -362,7 +362,7 @@ function humanizeOrNull(identifier: string | null): string | null {
 export function WorkCurrentAction({ action }: { action: CurrentAction | null }) {
   if (action === null) return null;
   return (
-    <div className="flex items-start gap-2.5 rounded-xl border border-primary/25 bg-primary/[0.07] px-3.5 py-2.5">
+    <div className="flex items-start gap-2.5 rounded-field border border-primary/25 bg-primary/[0.07] px-3.5 py-2.5">
       <Loader2
         className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary motion-safe:animate-spin"
         aria-hidden="true"

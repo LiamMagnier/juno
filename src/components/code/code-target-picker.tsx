@@ -232,7 +232,7 @@ export function CodeTargetPicker({
           — mono, 12px stepping to 13px at 480px, a `size-3.5` leading glyph and
           an `h-3 w-3` chevron at half opacity. It is a plain <button> rather
           than <Button variant="ghost">, for the same reason the model selector
-          is: every ghost Button still carries the shared `rounded-xl`, the ring
+          is: every ghost Button still carries the shared `rounded-field`, the ring
           offset and the `[&_svg]` sizing, and unpicking those costs more
           overrides than the element saves.
 

@@ -121,7 +121,13 @@ const config: Config = {
         micro: "2px",     // heatmap cells, crop handles — anything under ~12px square
         xs: "6px",        // chips, dots, tiny badges
         control: "10px",  // sm buttons, menu items, list rows
-        field: "12px",    // inputs, wells, segmented thumbs
+        // 12px. Named for inputs because that is where it started, but it is the
+        // general small-container rung: wells, segmented thumbs, icon tiles,
+        // inline notes, the dashed box a short empty state sits in. 99 sites were
+        // reaching Tailwind's undefined `rounded-xl` for exactly this, so the
+        // scope is being written down to match the use rather than the use bent
+        // to match a narrower name.
+        field: "12px",
         menu: "14px",     // dropdown / select / tabs shells
         card: "16px",     // cards, toasts, tiles
         popover: "18px",  // popovers, transcripts

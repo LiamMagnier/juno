@@ -272,7 +272,7 @@ export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoic
       <VoiceAura status={voiceAuraStatus(voice)} levelRef={voice.levelRef} />
       <section
         aria-label="Voice conversation about this task"
-        className="mb-2 flex w-full flex-col gap-3 rounded-2xl border border-border/70 bg-card/80 p-3 motion-safe:animate-rise-in"
+        className="mb-2 flex w-full flex-col gap-3 rounded-card border border-border/70 bg-card/80 p-3 motion-safe:animate-rise-in"
       >
         {/* The arrangement, stated plainly and kept on screen. Not a tooltip and
             not a one-time notice: the sentence has to be readable at the moment
@@ -286,7 +286,7 @@ export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoic
         </p>
 
         {staleBy && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/60 bg-muted/40 px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-field border border-border/60 bg-muted/40 px-3 py-2">
             <p className="font-mono text-label text-muted-foreground">
               The task has moved on since Juno was briefed
             </p>
@@ -302,7 +302,7 @@ export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoic
             {lines.map((line) =>
               line.role === "user" ? (
                 <div key={line.id} className="flex justify-end">
-                  <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-secondary px-3 py-2 text-[13px] leading-relaxed text-secondary-foreground">
+                  <p className="max-w-[85%] whitespace-pre-wrap rounded-card bg-secondary px-3 py-2 text-[13px] leading-relaxed text-secondary-foreground">
                     {line.text}
                   </p>
                 </div>
@@ -316,7 +316,7 @@ export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoic
         )}
 
         {send && sendable && (
-          <div className="flex flex-col gap-2 rounded-xl border border-border/60 bg-background/60 p-2.5">
+          <div className="flex flex-col gap-2 rounded-field border border-border/60 bg-background/60 p-2.5">
             {/* What the press does, before the press — the composer's own line,
                 for the composer's own reason: a steer and a restart are not the
                 same event and finding out afterwards is too late. */}

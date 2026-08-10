@@ -327,7 +327,7 @@ function RailButton({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all duration-fast ease-out-soft hover:scale-105 active:scale-95",
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-field transition-all duration-fast ease-out-soft hover:scale-105 active:scale-95",
         active ? "bg-primary/10 ring-1 ring-primary/40" : "hover:bg-accent",
         dimmed && "opacity-30 hover:scale-100 active:scale-100"
       )}

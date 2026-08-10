@@ -1348,7 +1348,7 @@ export function WorkComposer({
         !loadingHosts &&
         selection.target !== null &&
         selection.degradation.length > 0 && (
-          <div className="mt-2.5 rounded-xl border border-warning/35 bg-warning/5 px-3.5 py-2.5 motion-safe:animate-rise-in">
+          <div className="mt-2.5 rounded-field border border-warning/35 bg-warning/5 px-3.5 py-2.5 motion-safe:animate-rise-in">
             <DegradationNotes degradation={selection.degradation} />
           </div>
         )}

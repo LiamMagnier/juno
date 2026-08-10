@@ -139,7 +139,7 @@ export function ImportHistoryCard() {
           if (file) start(file);
         }}
         className={cn(
-          "rounded-2xl border border-dashed border-border/60 bg-muted/10 px-5 py-8 text-center transition-colors duration-fast ease-out-soft",
+          "rounded-card border border-dashed border-border/60 bg-muted/10 px-5 py-8 text-center transition-colors duration-fast ease-out-soft",
           dragging && "border-primary/60 bg-primary/5"
         )}
       >

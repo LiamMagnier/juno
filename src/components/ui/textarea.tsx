@@ -12,7 +12,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttribu
           // coarse: matches Button, Input and SelectTrigger — without it a Select
           // grew to 44px on touch while the field beside it stayed at its fine-
           // pointer height and the row de-aligned.
-          "flex min-h-[60px] w-full rounded-xl border border-input bg-background px-3.5 py-2.5 text-sm field-well transition-[color,border-color,box-shadow] duration-base ease-out-soft placeholder:text-muted-foreground coarse:min-h-[72px] hover:border-input/80 focus-visible:outline-none focus-visible:border-foreground/70 disabled:cursor-not-allowed disabled:opacity-50",
+          "flex min-h-[60px] w-full rounded-field border border-input bg-background px-3.5 py-2.5 text-sm field-well transition-[color,border-color,box-shadow] duration-base ease-out-soft placeholder:text-muted-foreground coarse:min-h-[72px] hover:border-input/80 focus-visible:outline-none focus-visible:border-foreground/70 disabled:cursor-not-allowed disabled:opacity-50",
           className
         )}
         ref={ref}

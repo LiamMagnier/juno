@@ -78,7 +78,7 @@ function ModelField({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex w-full items-center justify-between rounded-2xl border px-3.5 py-2.5 text-left transition-colors duration-fast hover:bg-accent"
+          className="flex w-full items-center justify-between rounded-card border px-3.5 py-2.5 text-left transition-colors duration-fast hover:bg-accent"
         >
           <span className="flex min-w-0 items-center gap-2">
             {current && <ProviderLogo provider={current.provider} className="h-4 w-4 rounded-sm" />}
@@ -124,7 +124,7 @@ function ModelField({
                       onPick(m.id);
                       setOpen(false);
                     }}
-                    className="pressable flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
+                    className="pressable flex w-full items-center gap-2 rounded-field px-2.5 py-2 text-left hover:bg-accent"
                   >
                     <ProviderLogo provider={m.provider} className="h-4 w-4 rounded-sm" />
                     <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{m.name}</span>
@@ -371,10 +371,10 @@ export function Onboarding() {
               {capabilities.map((c, i) => (
                 <div
                   key={c.label}
-                  className="flex items-start gap-3 rounded-2xl p-2.5 transition-colors duration-fast hover:bg-secondary/60 motion-safe:animate-fade-in-up"
+                  className="flex items-start gap-3 rounded-card p-2.5 transition-colors duration-fast hover:bg-secondary/60 motion-safe:animate-fade-in-up"
                   style={{ animationDelay: `${80 + i * 60}ms`, animationFillMode: "backwards" }}
                 >
-                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-secondary text-foreground">
+                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-field bg-secondary text-foreground">
                     <c.icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
                   </div>
                   <div className="pt-0.5">
@@ -439,7 +439,7 @@ export function Onboarding() {
                       onClick={() => setTheme(t.id)}
                       aria-pressed={activeTheme === t.id}
                       className={cn(
-                        "pressable flex flex-col items-center gap-1.5 rounded-2xl border px-2 py-3",
+                        "pressable flex flex-col items-center gap-1.5 rounded-card border px-2 py-3",
                         activeTheme === t.id
                           ? "border-primary/50 bg-primary/10 text-primary"
                           : "text-muted-foreground hover:bg-accent"
@@ -507,7 +507,7 @@ export function Onboarding() {
                   <div
                     key={plan.id}
                     className={cn(
-                      "flex items-center gap-3 rounded-2xl border p-3.5 transition-colors",
+                      "flex items-center gap-3 rounded-card border p-3.5 transition-colors",
                       popular ? "border-primary/50 bg-primary/[0.04]" : "border-border"
                     )}
                   >
@@ -601,7 +601,7 @@ export function Onboarding() {
                   </span>
                   Copy this into your other AI
                 </p>
-                <div className="relative rounded-2xl border bg-secondary/40 p-3">
+                <div className="relative rounded-card border bg-secondary/40 p-3">
                   <p className="pr-8 text-caption leading-relaxed text-muted-foreground">{IMPORT_PROMPT}</p>
                   <button
                     type="button"
@@ -630,7 +630,7 @@ export function Onboarding() {
                   }}
                   rows={4}
                   placeholder={"- Prefers concise answers\n- Building a chatbot called Juno\n- Based in France"}
-                  className="w-full resize-none rounded-2xl border bg-transparent p-3 text-[13px] leading-relaxed outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/50"
+                  className="w-full resize-none rounded-card border bg-transparent p-3 text-[13px] leading-relaxed outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/50"
                 />
                 <div className="mt-2 flex items-center justify-between">
                   <span className="text-caption text-muted-foreground">

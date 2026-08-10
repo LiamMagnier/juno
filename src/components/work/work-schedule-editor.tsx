@@ -417,7 +417,7 @@ export function WorkScheduleEditor({
               value={draft.hostId ?? ""}
               disabled={saving || hosts === null}
               onChange={(event) => set("hostId", event.target.value === "" ? null : event.target.value)}
-              className="field-well mt-1 h-9 w-full max-w-xs rounded-xl border border-input bg-background px-3 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+              className="field-well mt-1 h-9 w-full max-w-xs rounded-field border border-input bg-background px-3 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="">
                 {draft.target === "local" ? "Choose a Mac…" : "Any of my Macs"}
@@ -529,7 +529,7 @@ function PolicyGroup<T extends string>({
         {options.map((option) => (
           <label
             key={option.value}
-            className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-border/50 px-3 py-2 transition-colors duration-fast ease-out-soft hover:border-border has-[:checked]:border-foreground/25 has-[:checked]:bg-accent/40"
+            className="flex cursor-pointer items-start gap-2.5 rounded-field border border-border/50 px-3 py-2 transition-colors duration-fast ease-out-soft hover:border-border has-[:checked]:border-foreground/25 has-[:checked]:bg-accent/40"
           >
             <input
               type="radio"

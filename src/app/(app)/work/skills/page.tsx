@@ -76,7 +76,7 @@ export default function WorkSkillsPage() {
           {[...Array(3)].map((_, index) => (
             <Skeleton
               key={index}
-              className="h-[76px] w-full rounded-xl"
+              className="h-[76px] w-full rounded-field"
               style={staggerDelay(index, "tight")}
             />
           ))}

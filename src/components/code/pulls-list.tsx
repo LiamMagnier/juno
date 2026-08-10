@@ -91,7 +91,7 @@ export function PullsList({ account }: { account: string | null }) {
 
   if (state.phase === "unauthorized") {
     return (
-      <div className="space-y-2.5 rounded-2xl border border-warning/40 bg-warning/5 px-4 py-3 text-sm">
+      <div className="space-y-2.5 rounded-card border border-warning/40 bg-warning/5 px-4 py-3 text-sm">
         <div className="flex items-center gap-2 text-foreground">
           <AlertCircle className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
           <p>Your GitHub connection expired or was revoked. Reconnect it to see your pull requests.</p>
@@ -126,7 +126,7 @@ export function PullsList({ account }: { account: string | null }) {
 
   if (state.phase === "error") {
     return (
-      <div className="space-y-2.5 rounded-2xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+      <div className="space-y-2.5 rounded-card border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
         <div className="flex items-center gap-2">
           <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
           <p>Couldn’t reach GitHub — it may be rate-limiting or briefly down. Try again.</p>
@@ -215,7 +215,7 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                     href={pr.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="group flex w-full items-center gap-3 rounded-2xl border border-border/60 bg-card/60 px-4 py-3 text-left shadow-soft transition-all duration-fast ease-out-soft hover:border-border hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.995]"
+                    className="group flex w-full items-center gap-3 rounded-card border border-border/60 bg-card/60 px-4 py-3 text-left shadow-soft transition-all duration-fast ease-out-soft hover:border-border hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.995]"
                   >
                     <span
                       className={cn(

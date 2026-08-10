@@ -150,7 +150,7 @@ export function WorkScheduleRow({
   return (
     <div
       className={cn(
-        "group flex items-start rounded-xl border border-border/60 bg-card/60 transition-[background-color,border-color] duration-base ease-out-soft hover:border-border hover:bg-card motion-safe:animate-rise-in",
+        "group flex items-start rounded-field border border-border/60 bg-card/60 transition-[background-color,border-color] duration-base ease-out-soft hover:border-border hover:bg-card motion-safe:animate-rise-in",
         "[animation-fill-mode:backwards]",
         !schedule.enabled && "opacity-75"
       )}
