@@ -28,17 +28,21 @@ public extension JunoColorToken {
     static let rowSelectedLight = JunoColorToken(unchecked: 0, 0, 0, 0.075)
     static let rowSelectedDark = JunoColorToken(unchecked: 1, 1, 1, 0.10)
 
-    // The navigation column's selected row, from the web's `--sidebar-accent`:
-    // `48 28% 91%` / `48 8% 14%`. Opaque, not an alpha wash, because it is fed to
-    // the platform as a *tint* and the system composites it itself.
-    static let sidebarSelectionLight = JunoColorToken(unchecked: 0.9352, 0.9251, 0.8848)
-    static let sidebarSelectionDark = JunoColorToken(unchecked: 0.1512, 0.1467, 0.1288)
+    // The navigation column's selected row — the web's `--sidebar-accent`.
+    // Opaque, not an alpha wash, because it is fed to the platform as a *tint*
+    // and the system composites it itself.
+    //
+    // Projected rather than transcribed. These four were verified identical to
+    // globals.css before the switch, so nothing moves; the point is that they
+    // are no longer a second copy that a web-side change would leave behind.
+    static let sidebarSelectionLight = JunoGeneratedColors.sidebarAccent.light
+    static let sidebarSelectionDark = JunoGeneratedColors.sidebarAccent.dark
 
-    // The navigation column's resting ink, from the web's `--sidebar-foreground`:
-    // `48 4% 30%` / `48 7% 70%`. Barely off neutral — the same warm cast the rest
-    // of the palette carries, so a grey column does not read as a cold one.
-    static let sidebarForegroundLight = JunoColorToken(unchecked: 0.312, 0.3072, 0.288)
-    static let sidebarForegroundDark = JunoColorToken(unchecked: 0.721, 0.7126, 0.679)
+    // The navigation column's resting ink — the web's `--sidebar-foreground`.
+    // Barely off neutral: the same warm cast the rest of the palette carries, so
+    // a grey column does not read as a cold one.
+    static let sidebarForegroundLight = JunoGeneratedColors.sidebarForeground.light
+    static let sidebarForegroundDark = JunoGeneratedColors.sidebarForeground.dark
 
     // The ambient throw under a raised card, from the web's `--shadow-soft`
     // (`hsl(30 10% 20% / 0.05…0.08)`). Warm rather than neutral black: a grey
