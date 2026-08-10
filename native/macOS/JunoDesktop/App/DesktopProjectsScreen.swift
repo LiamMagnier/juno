@@ -307,7 +307,7 @@ struct DesktopProjectsScreen: View {
             // sunk into the page, but on the same hue family as the paper it
             // sits on. It is also adaptive, which `controlBackgroundColor` was
             // only accidentally.
-            RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
                 .fill(Color.junoSurface)
         )
     }
@@ -475,7 +475,7 @@ struct DesktopProjectsScreen: View {
                 .buttonStyle(.borderless)
                 .padding(.horizontal, JunoSpace.regular)
                 .padding(.vertical, JunoSpace.snug)
-                .junoFloatingChrome(cornerRadius: JunoRadius.panel)
+                .junoFloatingChrome(cornerRadius: JunoRadius.well)
             }
             .padding(JunoSpace.roomy)
             .accessibilityIdentifier("Projects status")
@@ -1332,7 +1332,7 @@ private struct DesktopProjectDetail: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(JunoSpace.cozy)
-                    .junoPanel(cornerRadius: JunoRadius.control)
+                    .junoPanel(cornerRadius: JunoRadius.chip)
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
@@ -1456,7 +1456,7 @@ private struct DesktopProjectDetail: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(JunoSpace.cozy)
-                    .junoPanel(cornerRadius: JunoRadius.control)
+                    .junoPanel(cornerRadius: JunoRadius.chip)
                 Text("\(instructionsFacts) · Updated \(project.updatedAt.formatted(.relative(presentation: .named)))")
                     .junoCodeSmall()
                     .junoSecondaryInk()
@@ -1467,7 +1467,7 @@ private struct DesktopProjectDetail: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(JunoSpace.cozy)
-                .junoPanel(cornerRadius: JunoRadius.control)
+                .junoPanel(cornerRadius: JunoRadius.chip)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(JunoSpace.regular)
@@ -1520,7 +1520,7 @@ private struct DesktopProjectDetail: View {
             // ring-2 ring-primary/20` (`projects/[id]/page.tsx:929`). Coral here
             // is not decoration on a resting state — it appears only while a drag
             // is over the page, and it is what says the release will land.
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .strokeBorder(
                     isDropTargeted ? Color.junoAccent : .clear,
                     lineWidth: 2
@@ -1578,7 +1578,7 @@ private struct DesktopProjectDetail: View {
         }
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, JunoSpace.snug)
-        .junoPanel(cornerRadius: JunoRadius.control)
+        .junoPanel(cornerRadius: JunoRadius.chip)
     }
 
     private func eyebrow(_ text: String) -> some View {
@@ -1643,7 +1643,7 @@ private struct DesktopProjectPlaceholder: View {
         .frame(maxWidth: .infinity)
         .padding(JunoSpace.roomy)
         .background(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .strokeBorder(
                     Color.junoBorder,
                     style: StrokeStyle(lineWidth: 1, dash: [4, 4])

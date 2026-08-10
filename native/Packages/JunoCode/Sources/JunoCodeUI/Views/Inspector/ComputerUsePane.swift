@@ -284,13 +284,13 @@ struct ComputerUseSections: View {
                 .scaledToFit()
                 .frame(maxWidth: .infinity, maxHeight: Self.captureHeight)
                 .clipShape(
-                    RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                    RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
                 )
                 // A screenshot is content, so it sits on a real edge rather than
                 // bleeding into the pane — a white window in light mode and a
                 // dark desktop in dark mode both need one.
                 .overlay(
-                    RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                    RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
                         .strokeBorder(Color.junoBorder, lineWidth: 1)
                 )
                 .accessibilityLabel("Most recent screen capture")

@@ -132,17 +132,17 @@ public struct JunoChoiceCard<Trailing: View>: View {
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.snug + 2)
             .background(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .fill(isSelected ? Color.junoAccent.opacity(0.06) : Color.clear)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .strokeBorder(
                         isSelected ? Color.junoAccent : Color.junoBorder,
                         lineWidth: isSelected ? 1.5 : 1
                     )
             )
-            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         }
         .buttonStyle(.junoPress)
         .disabled(!isEnabled)

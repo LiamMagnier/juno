@@ -48,7 +48,7 @@ struct SlashCommandMenu: View {
                     withAnimation(JunoMotion.fast) { proxy.scrollTo(index, anchor: .center) }
                 }
             }
-            .junoFloatingChrome(cornerRadius: JunoRadius.panel)
+            .junoFloatingChrome(cornerRadius: JunoRadius.well)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Slash commands")

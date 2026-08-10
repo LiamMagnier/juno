@@ -1297,7 +1297,7 @@ public struct CodePreviewWindowView: View {
             }
             .buttonStyle(.borderless)
             .background(
-                RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
                     .fill(isLogVisible ? Color.junoRowSelected : .clear)
             )
             .help(isLogVisible ? "Hide the server log" : "Show the server log")
@@ -1470,9 +1470,9 @@ public struct CodePreviewWindowView: View {
             }
             .frame(maxWidth: 620, maxHeight: 220)
             .background(Color.junoTerminal)
-            .clipShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .strokeBorder(Color.junoBorder, lineWidth: 1)
             )
 
@@ -1857,7 +1857,7 @@ public struct CodePreviewDock: View {
                 }
                 .buttonStyle(.borderless)
                 .background(
-                    RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                    RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
                         .fill(isLogVisible ? Color.junoRowSelected : .clear)
                 )
                 .help(isLogVisible ? "Hide server log" : "Show server log")

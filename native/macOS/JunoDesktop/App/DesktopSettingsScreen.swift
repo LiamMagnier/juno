@@ -853,14 +853,14 @@ private struct DesktopSettingsAction: View {
             .padding(.vertical, JunoSpace.snug + 2)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .fill(isHovering ? Color.junoRowHover : Color.clear)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .strokeBorder(Color.junoBorder, lineWidth: 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
@@ -1159,10 +1159,10 @@ private struct DesktopSettingsModelTile: View {
             .padding(.vertical, JunoSpace.snug + 2)
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .strokeBorder(Color.junoBorder, lineWidth: 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -1253,7 +1253,7 @@ private struct DesktopSettingsFavoritesTile: View {
                 .padding(.horizontal, JunoSpace.cozy)
                 .padding(.vertical, JunoSpace.hairline)
                 .overlay(
-                    RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                         .strokeBorder(Color.junoBorder, lineWidth: 1)
                 )
                 .accessibilityIdentifier("juno.desktop.settings.favorite-models")
@@ -1392,9 +1392,9 @@ private struct DesktopSettingsInstructionsTile: View {
                     // Room for the counter, which sits inside the field as it
                     // does on the web rather than becoming another row of chrome.
                     .padding(.bottom, JunoSpace.regular)
-                    .junoPanel(cornerRadius: JunoRadius.panel)
+                    .junoPanel(cornerRadius: JunoRadius.well)
                     .overlay(
-                        RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                        RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                             .strokeBorder(Color.junoBorder, lineWidth: 1)
                     )
                     .accessibilityLabel("Custom instructions")

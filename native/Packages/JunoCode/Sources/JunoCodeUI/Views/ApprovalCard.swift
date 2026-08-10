@@ -111,7 +111,7 @@ public struct ApprovalCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .junoPanel()
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .strokeBorder(tint.opacity(0.55), lineWidth: 1)
         )
         .accessibilityElement(children: .contain)

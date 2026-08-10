@@ -136,7 +136,7 @@ public extension View {
     /// warm throw are the web's `border-border/70` + `--shadow-soft`, so a card
     /// still reads as raised on a display where the two fills are barely a step
     /// apart.
-    func junoCard(cornerRadius: CGFloat = JunoRadius.panel) -> some View {
+    func junoCard(cornerRadius: CGFloat = JunoRadius.well) -> some View {
         background(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Color.junoRaised)
@@ -198,19 +198,56 @@ public enum JunoSpace {
 /// The three rungs below `panel` come from that collapse: `card`, `message` and
 /// `composer` name roles this scale had no word for, which is the honest reason
 /// a second enum got written in the first place.
+/// ——— Reconciled against the web ladder ————————————————————————————————————
+///
+/// Every rung below is now an alias onto `JunoGeneratedRadius`, which is
+/// projected from `tailwind.config.ts` by `npm run design:tokens`. The values
+/// are unchanged except where noted, but they are no longer independent
+/// numbers: retune the web ladder and these follow, and `design:tokens:check`
+/// fails CI if the projection and the config disagree.
+///
+/// It also resolves three NAME COLLISIONS, which were the more dangerous half.
+/// Three tokens here shared a name with a web token of a different size:
+///
+///     name        here   web `rounded-<name>`
+///     control     6      10
+///     panel       12     28
+///     composer    24     22
+///
+/// A name that means one size in Swift and another in TSX is worse than two
+/// unrelated names, because it invites exactly the mistake it looks like it
+/// prevents — someone porting a control across platforms reads the same word
+/// and gets a different shape. `control` and `panel` are renamed to the web
+/// rung they actually equal; `composer` keeps its name and takes the web's
+/// value, because parity was the stated intent and it simply pointed at the
+/// wrong token (see below).
 public enum JunoRadius {
     /// 6 — a compact control: a chip, a small button, a segment.
-    public static let control: CGFloat = 6
-    /// 8 — a list row's selection shape.
-    public static let row: CGFloat = 8
-    /// 12 — a panel: a code block, a table, an inspector card.
-    public static let panel: CGFloat = 12
+    ///
+    /// Renamed from `control`, which collided with the web's `rounded-control`
+    /// at 10px. 6px is the web's `xs`, whose documented role — "chips, dots,
+    /// tiny badges" — is the same one this rung already described.
+    public static let chip: CGFloat = JunoGeneratedRadius.xs
+    /// 8 — a list row's selection shape. The web's `md`.
+    public static let row: CGFloat = JunoGeneratedRadius.md
+    /// 12 — a code block, a table, an inspector card.
+    ///
+    /// Renamed from `panel`, which collided with the web's `rounded-panel` at
+    /// 28px — a difference of more than double. 12px is the web's `field`, the
+    /// general small-container rung.
+    public static let well: CGFloat = JunoGeneratedRadius.field
     /// 16 — a content card: a project tile, an artifact thumbnail.
-    public static let card: CGFloat = 16
-    /// 18 — a chat message bubble.
-    public static let message: CGFloat = 18
+    public static let card: CGFloat = JunoGeneratedRadius.card
+    /// 18 — a chat message bubble. The web's `popover`.
+    public static let message: CGFloat = JunoGeneratedRadius.popover
     /// 18 — a floating surface: a floating toolbar, a transient control group.
-    public static let floating: CGFloat = 18
-    /// 24 — the composer's outer container, matching the web's `--radius: 24px`.
-    public static let composer: CGFloat = 24
+    public static let floating: CGFloat = JunoGeneratedRadius.popover
+    /// 22 — the composer's outer container.
+    ///
+    /// VALUE CHANGED, 24 → 22. This was the one rung that claimed parity in a
+    /// comment: "matching the web's `--radius: 24px`". `--radius` is 24px, but
+    /// the web composer shell has never used it — it uses `rounded-composer`,
+    /// which is 22px. The intent was to match the composer and it matched a
+    /// different token that happened to be nearby. Now it matches the composer.
+    public static let composer: CGFloat = JunoGeneratedRadius.composer
 }

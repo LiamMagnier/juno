@@ -129,12 +129,12 @@ public struct JunoModelSelector: View {
             }
             .frame(width: 40, height: 40)
             .background {
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .fill(active ? Color.junoAccent.opacity(0.12) : Color.clear)
             }
             .overlay {
                 if active {
-                    RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                         .strokeBorder(Color.junoAccent.opacity(0.36), lineWidth: 1)
                 }
             }

@@ -160,7 +160,7 @@ public struct NativeImageEditView: View {
         Image(decorative: source.cgImage, scale: 1)
             .resizable()
             .aspectRatio(source.aspectRatio, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
             .overlay {
                 GeometryReader { proxy in
                     ZStack {
@@ -312,7 +312,7 @@ public struct NativeImageEditView: View {
             }
             .padding(3)
             .background(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .fill(Color.junoMuted.opacity(0.6))
             )
             Text(
@@ -365,11 +365,11 @@ public struct NativeImageEditView: View {
             .disabled(support == .none)
             .padding(JunoSpace.snug)
             .background(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .fill(Color.junoSurface)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .strokeBorder(Color.junoHairline)
             )
         }

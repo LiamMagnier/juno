@@ -645,7 +645,7 @@ private struct DesktopDesignPresetTile: View {
             }
             .padding(JunoSpace.cozy)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .junoCard(cornerRadius: JunoRadius.panel)
+            .junoCard(cornerRadius: JunoRadius.well)
             // The whole tile is the target, not just its text. A card a reader
             // has to hit the label of is a card that feels broken.
             .contentShape(.rect)
@@ -730,9 +730,9 @@ private struct DesktopDesignRow: View {
         .padding(.horizontal, JunoSpace.regular)
         .padding(.vertical, JunoSpace.cozy)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .junoCard(cornerRadius: JunoRadius.panel)
+        .junoCard(cornerRadius: JunoRadius.well)
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .strokeBorder(
                     isHovering ? Color.junoAccent.opacity(0.4) : .clear,
                     lineWidth: 1
@@ -776,7 +776,7 @@ private struct DesktopDesignNotice: View {
         .padding(JunoSpace.cozy)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .fill(Color.junoCaution.opacity(0.1))
         )
         .transition(.opacity)

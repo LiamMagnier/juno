@@ -95,7 +95,7 @@ public extension View {
     /// a *card* on the canvas — it adds the web's hairline and soft throw. This
     /// stays for fills nested inside an already-raised surface, where a second
     /// border and a second shadow would just be noise.
-    func junoPanel(cornerRadius: CGFloat = JunoRadius.panel) -> some View {
+    func junoPanel(cornerRadius: CGFloat = JunoRadius.well) -> some View {
         background(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Color.junoRaised)

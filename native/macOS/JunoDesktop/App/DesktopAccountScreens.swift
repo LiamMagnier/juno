@@ -371,7 +371,7 @@ struct DesktopMemoryScreen: View {
             // view says otherwise, and the web's selected row is a warm grey.
             .junoSidebarSelectionTint()
             .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .strokeBorder(Color.junoBorder, lineWidth: 1)
             )
             .contextMenu(forSelectionType: String.self) { ids in
@@ -427,9 +427,9 @@ struct DesktopMemoryScreen: View {
                 .frame(minHeight: DesktopSettingsMetrics.editorMinHeight)
                 .scrollContentBackground(.hidden)
                 .padding(JunoSpace.snug)
-                .junoPanel(cornerRadius: JunoRadius.panel)
+                .junoPanel(cornerRadius: JunoRadius.well)
                 .overlay(
-                    RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                         .strokeBorder(Color.junoBorder, lineWidth: 1)
                 )
                 .accessibilityLabel("Memory")

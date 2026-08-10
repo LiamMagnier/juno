@@ -599,7 +599,7 @@ struct DesktopVoiceDock: View {
         tint: Color,
         @ViewBuilder content: () -> some View
     ) -> some View {
-        let shape = RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
         return VStack(spacing: JunoSpace.hairline, content: content)
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.tight)

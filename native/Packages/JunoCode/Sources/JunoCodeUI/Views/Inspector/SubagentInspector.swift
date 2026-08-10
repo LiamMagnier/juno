@@ -222,10 +222,10 @@ private struct SubagentOverview: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             Color.junoRaised.opacity(0.78),
-            in: RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            in: RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .strokeBorder(Color.junoBorder, lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
@@ -610,10 +610,10 @@ private struct SubagentDetailPane: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 Color.junoRaised.opacity(0.80),
-                in: RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                in: RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .strokeBorder(Color.junoBorder, lineWidth: 1)
             )
             liveActionBar

@@ -222,11 +222,11 @@ struct AgentCanvasView: View {
                 }
             }
             .background(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .fill(Color.junoRaised)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .strokeBorder(Color.junoBorder)
             )
         }
@@ -545,11 +545,11 @@ struct ApprovalCard: View {
         .padding(JunoSpace.cozy)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .fill(Color.junoRaised)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .strokeBorder(tint.opacity(0.55), lineWidth: 1)
         )
         .accessibilityElement(children: .contain)

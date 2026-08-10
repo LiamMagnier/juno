@@ -518,11 +518,11 @@ struct JunoMobileSettingsView: View {
                     .junoRowLabel()
                     .padding(JunoSpace.cozy)
                     .background(
-                        RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                        RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                             .fill(Color.junoSurface)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                        RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                             .strokeBorder(Color.junoBorder, lineWidth: 1)
                     )
                     .accessibilityIdentifier("juno.mobile.settings-delete-confirm")
@@ -914,7 +914,7 @@ private struct JunoMobileSettingsPreferences: View {
     }
 
     private var instructionsEditor: some View {
-        let shape = RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
         return TextEditor(text: $instructionsDraft)
             .junoBody()
             .frame(minHeight: 120)
@@ -1194,14 +1194,14 @@ private struct JunoMobileSettingsSelect<Value: Hashable>: View {
             .padding(.vertical, JunoSpace.cozy)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .fill(Color.junoCanvas)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .strokeBorder(Color.junoBorder, lineWidth: 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         }
         // Ink, not coral. A `Menu` tints its whole label, so the *value* inside a
         // field-shaped trigger came out accent-coloured and read as a link rather

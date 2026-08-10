@@ -234,11 +234,11 @@ struct DesktopConnectionsScreen: View {
         // would be wrong for the same reason — it throws a shadow, and an input
         // is not a card floating over the page.
         .background(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .fill(Color.junoRaised)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .strokeBorder(Color.junoBorder, lineWidth: 1)
         )
         .frame(maxWidth: DesktopConnectorGrid.searchFieldWidth, alignment: .leading)
@@ -836,9 +836,9 @@ private struct DesktopConnectorMark: View {
         ZStack {
             // The canvas colour inside a white card, so the mark reads as an inset
             // well rather than as a second card floating on the first.
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .fill(Color.junoCanvasWarm)
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .strokeBorder(Color.junoBorder)
             content
         }

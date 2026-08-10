@@ -352,7 +352,7 @@ struct StarterPromptList: View {
         }
         .junoPanel()
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .strokeBorder(Color.junoBorder)
         )
     }

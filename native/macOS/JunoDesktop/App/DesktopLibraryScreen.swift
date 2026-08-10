@@ -316,7 +316,7 @@ struct DesktopLibraryScreen: View {
         NativeFilePreviewTile(
             file: NativeFilePreviewRequest(item),
             state: previews.state(for: item.id),
-            cornerRadius: JunoRadius.panel
+            cornerRadius: JunoRadius.well
         )
             .task(id: item.id) {
                 await previews.load(NativeFilePreviewRequest(item)) {
@@ -332,7 +332,7 @@ struct DesktopLibraryScreen: View {
                 // `--primary` anywhere on the page. Coral was a native
                 // invention, and one that put the accent on a selection state —
                 // the exact thing the shell spent this pass removing.
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.4), lineWidth: 2)
                     .opacity(isSelected ? 1 : 0)
             }
@@ -447,7 +447,7 @@ struct DesktopLibraryScreen: View {
         // hiding the scroll background the table would paint the window's own
         // fill over the card and the border would float around nothing.
         .scrollContentBackground(.hidden)
-        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         .junoCard()
         .padding(.horizontal, JunoSpace.region)
         .padding(.vertical, JunoSpace.section)

@@ -167,8 +167,8 @@ public enum JunoCornerRadius {
     @available(*, deprecated, renamed: "JunoRadius.row")
     public static let control: CGFloat = JunoRadius.row
     /// A selectable row in a sidebar or list.
-    @available(*, deprecated, renamed: "JunoRadius.panel")
-    public static let row: CGFloat = JunoRadius.panel
+    @available(*, deprecated, renamed: "JunoRadius.well")
+    public static let row: CGFloat = JunoRadius.well
     /// A chat message bubble.
     @available(*, deprecated, renamed: "JunoRadius.message")
     public static let message: CGFloat = JunoRadius.message

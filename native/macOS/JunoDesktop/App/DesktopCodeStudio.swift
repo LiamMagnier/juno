@@ -1676,9 +1676,9 @@ struct DesktopCodeDraftDetail: View {
             }
         }
         .frame(maxWidth: 680, alignment: .leading)
-        .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
+        .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .stroke(Color.junoSeparator.opacity(0.65), lineWidth: 1)
         }
     }
@@ -1844,7 +1844,7 @@ struct DesktopCodeDraftDetail: View {
                     .padding(.horizontal, JunoSpace.cozy)
                     .padding(.vertical, JunoSpace.snug)
                     .frame(maxWidth: 560)
-                    .junoFloatingChrome(cornerRadius: JunoRadius.panel)
+                    .junoFloatingChrome(cornerRadius: JunoRadius.well)
                     .zIndex(1)
 
                 VStack(spacing: 0) {

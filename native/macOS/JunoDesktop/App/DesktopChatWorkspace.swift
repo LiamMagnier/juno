@@ -1525,7 +1525,7 @@ private struct DesktopMessageRow: View {
     private static let bubbleShape = UnevenRoundedRectangle(
         topLeadingRadius: JunoRadius.message,
         bottomLeadingRadius: JunoRadius.message,
-        bottomTrailingRadius: JunoRadius.control,
+        bottomTrailingRadius: JunoRadius.chip,
         topTrailingRadius: JunoRadius.message,
         style: .continuous
     )
@@ -3300,13 +3300,13 @@ private struct DesktopLibraryPicker: View {
             NativeFilePreviewTile(
                 file: file,
                 state: previews.state(for: item.id),
-                cornerRadius: JunoRadius.panel
+                cornerRadius: JunoRadius.well
             )
             .overlay {
                 // A stroke over the picture, never a wash across it: a coral
                 // tint over a photograph changes the photograph, which is the
                 // one thing this grid exists to show.
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .strokeBorder(Color.junoAccent, lineWidth: 2)
                     .opacity(selected ? 1 : 0)
             }
@@ -3933,7 +3933,7 @@ private struct JunoAddMenuRow: View {
     }
 
     private var fill: some View {
-        RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+        RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
             .fill(fillColor)
             .animation(
                 JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),

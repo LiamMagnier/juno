@@ -36,7 +36,7 @@ private struct JunoFloatingGlass: ViewModifier {
 public struct JunoGlassBackground: View {
     private let cornerRadius: CGFloat
 
-    public init(cornerRadius: CGFloat = JunoRadius.control) {
+    public init(cornerRadius: CGFloat = JunoRadius.chip) {
         self.cornerRadius = cornerRadius
     }
 

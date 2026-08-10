@@ -3,6 +3,51 @@ import XCTest
 @testable import JunoDesignSystem
 
 final class JunoDesignTokensTests: XCTestCase {
+    /// Every `JunoRadius` rung is the web rung it claims to be.
+    ///
+    /// `JunoGeneratedRadius` is projected from tailwind.config.ts and guarded by
+    /// `npm run design:tokens:check`, so pinning to it here closes the loop:
+    /// the config cannot drift from the projection, and the app cannot drift
+    /// from the projection either. Re-hardcoding any of these as a literal
+    /// fails right here.
+    ///
+    /// Written as explicit numbers as well as token references on purpose. The
+    /// numbers catch a web-side retune that nobody intended to reach the Mac;
+    /// the token references catch a Swift-side literal. Either alone would miss
+    /// half the drift this is for.
+    func testRadiusScaleMatchesTheWebLadder() {
+        XCTAssertEqual(JunoRadius.chip, JunoGeneratedRadius.xs)
+        XCTAssertEqual(JunoRadius.chip, 6)
+
+        XCTAssertEqual(JunoRadius.row, JunoGeneratedRadius.md)
+        XCTAssertEqual(JunoRadius.row, 8)
+
+        XCTAssertEqual(JunoRadius.well, JunoGeneratedRadius.field)
+        XCTAssertEqual(JunoRadius.well, 12)
+
+        XCTAssertEqual(JunoRadius.card, JunoGeneratedRadius.card)
+        XCTAssertEqual(JunoRadius.card, 16)
+
+        XCTAssertEqual(JunoRadius.message, JunoGeneratedRadius.popover)
+        XCTAssertEqual(JunoRadius.floating, JunoGeneratedRadius.popover)
+        XCTAssertEqual(JunoRadius.message, 18)
+
+        // 22, not 24. The old value claimed to match the web composer and
+        // matched `--radius` instead — see the note on JunoRadius.composer.
+        XCTAssertEqual(JunoRadius.composer, JunoGeneratedRadius.composer)
+        XCTAssertEqual(JunoRadius.composer, 22)
+    }
+
+    /// The three names that used to mean different sizes on the two platforms.
+    ///
+    /// `control` and `panel` were renamed precisely because the web owns those
+    /// words at 10px and 28px. If either is ever reintroduced here at the old
+    /// value, this says why it must not be.
+    func testRenamedRungsDoNotReclaimTheWebsMeaning() {
+        XCTAssertNotEqual(JunoRadius.chip, JunoGeneratedRadius.control, "web `control` is 10, this rung is 6")
+        XCTAssertNotEqual(JunoRadius.well, JunoGeneratedRadius.panel, "web `panel` is 28, this rung is 12")
+    }
+
     func testColorTokensRejectOutOfRangeComponents() {
         XCTAssertThrowsError(try JunoColorToken(red: 1.1, green: 0, blue: 0)) {
             XCTAssertEqual($0 as? JunoColorTokenError, .componentOutOfRange)
@@ -107,7 +152,7 @@ final class JunoDesignTokensTests: XCTestCase {
         XCTAssertEqual(spacing, spacing.sorted())
 
         let radii = [
-            JunoRadius.control, JunoRadius.row, JunoRadius.panel, JunoRadius.card,
+            JunoRadius.chip, JunoRadius.row, JunoRadius.well, JunoRadius.card,
             JunoRadius.message, JunoRadius.floating, JunoRadius.composer,
         ]
         XCTAssertEqual(radii, radii.sorted())
@@ -137,7 +182,7 @@ final class JunoDesignTokensTests: XCTestCase {
 
         XCTAssertEqual(JunoCornerRadius.compactControl, JunoRadius.row)
         XCTAssertEqual(JunoCornerRadius.control, JunoRadius.row)
-        XCTAssertEqual(JunoCornerRadius.row, JunoRadius.panel)
+        XCTAssertEqual(JunoCornerRadius.row, JunoRadius.well)
         XCTAssertEqual(JunoCornerRadius.panel, JunoRadius.card)
         XCTAssertEqual(JunoCornerRadius.card, JunoRadius.card)
         XCTAssertEqual(JunoCornerRadius.message, JunoRadius.message)

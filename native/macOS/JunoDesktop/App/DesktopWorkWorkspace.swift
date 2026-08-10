@@ -1622,18 +1622,18 @@ private struct DesktopWorkHomeRow: View {
             // elevation of their own, which is a different surface, not a
             // cautioned one.
             .background(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .fill(Color.junoSurface)
             )
             .background(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .fill(Color.junoCaution.opacity(wantsYou ? 0.045 : 0))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .strokeBorder(border, lineWidth: 1)
             )
-            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         }
         .buttonStyle(.junoPress)
         .onHover { isHovering = $0 }
@@ -1798,7 +1798,7 @@ struct DesktopWorkStartPath: View {
                 .padding(JunoSpace.roomy)
                 .frame(maxWidth: Self.measure, alignment: .leading)
                 .junoGlass(
-                    in: RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                    in: RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 )
             }
 
@@ -2815,7 +2815,7 @@ private struct DesktopWorkApprovalCard: View {
             .padding(JunoSpace.roomy)
         }
         .background(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .fill(Color.junoRaised)
                 .shadow(
                     color: .junoCardShadow,
@@ -2824,10 +2824,10 @@ private struct DesktopWorkApprovalCard: View {
                 )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .strokeBorder(tint.opacity(0.45), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         .accessibilityIdentifier("juno.work.approval")
     }
 

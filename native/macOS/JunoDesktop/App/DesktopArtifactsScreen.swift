@@ -391,7 +391,7 @@ struct DesktopArtifactsScreen: View {
                     // field was. Both fields are the same control doing the same
                     // job, so both now stand on the card token rather than on a
                     // white the rest of the palette does not contain.
-                    RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                    RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
                         .fill(Color.junoSurface)
                 )
                 .frame(maxWidth: 420)
@@ -569,7 +569,7 @@ struct DesktopArtifactsScreen: View {
                 }
             }
             .clipShape(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
             )
             .junoCard()
     }
@@ -628,7 +628,7 @@ struct DesktopArtifactsScreen: View {
                 }
                 .padding(.horizontal, JunoSpace.cozy)
                 .padding(.vertical, JunoSpace.snug)
-                .junoFloatingChrome(cornerRadius: JunoRadius.panel)
+                .junoFloatingChrome(cornerRadius: JunoRadius.well)
             }
             .padding(.horizontal, JunoSpace.roomy)
             .padding(.bottom, JunoSpace.roomy)
@@ -1457,7 +1457,7 @@ private struct DesktopArtifactDiffCanvas: View {
                 .padding(.vertical, JunoSpace.snug)
             }
             .clipShape(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
             )
             .junoCard()
             .padding(JunoSpace.region)

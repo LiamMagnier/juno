@@ -309,7 +309,7 @@ struct DesktopTasksScreen: View {
         table
             .scrollContentBackground(.hidden)
             .clipShape(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
             )
             .junoCard()
     }

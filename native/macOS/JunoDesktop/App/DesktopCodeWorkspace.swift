@@ -917,7 +917,7 @@ struct DesktopCodeWorkspace: View {
             }
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.snug)
-            .junoFloatingChrome(cornerRadius: JunoRadius.panel)
+            .junoFloatingChrome(cornerRadius: JunoRadius.well)
             .accessibilityElement(children: .contain)
         }
     }
@@ -970,7 +970,7 @@ struct DesktopCodeWorkspace: View {
             }
             .padding(.horizontal, JunoSpace.cozy)
             .padding(.vertical, JunoSpace.snug)
-            .junoFloatingChrome(cornerRadius: JunoRadius.panel)
+            .junoFloatingChrome(cornerRadius: JunoRadius.well)
             .accessibilityElement(children: .contain)
         }
     }
@@ -2057,7 +2057,7 @@ private struct DesktopCodeRelayApproval: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .junoPanel()
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .strokeBorder(isCritical ? Color.junoDanger : Color.junoCaution)
         )
         .accessibilityElement(children: .contain)

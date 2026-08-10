@@ -163,11 +163,11 @@ struct TranscriptRow: View {
                 .padding(.horizontal, JunoSpace.cozy)
                 .padding(.vertical, JunoSpace.snug + 1)
                 .background(
-                    RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                         .fill(Color.junoRaised)
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                    RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                         .strokeBorder(Color.junoBorder)
                 )
         }
@@ -306,11 +306,11 @@ struct TranscriptRow: View {
         .padding(.vertical, JunoSpace.snug + 2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .fill(Color.junoRaised)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                 .strokeBorder(Color.junoBorder)
         )
         .accessibilityElement(children: .combine)
@@ -964,11 +964,11 @@ struct OutputWell: View {
         }
         .frame(maxHeight: maxHeight)
         .background(
-            RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
                 .fill(Color.junoTerminal)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+            RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
                 .strokeBorder(Color.junoSeparator)
         )
     }

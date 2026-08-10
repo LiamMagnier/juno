@@ -405,9 +405,9 @@ public struct CodeRemoteTaskDetailView: View {
                     }
                 }
                 .padding(JunoSpace.cozy)
-                .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.panel))
+                .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.well))
                 .overlay {
-                    RoundedRectangle(cornerRadius: JunoRadius.panel)
+                    RoundedRectangle(cornerRadius: JunoRadius.well)
                         .strokeBorder(Color.junoCaution.opacity(0.45))
                 }
             }
@@ -442,9 +442,9 @@ public struct CodeRemoteTaskDetailView: View {
                     }
                 }
                 .padding(JunoSpace.cozy)
-                .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.panel))
+                .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.well))
                 .overlay {
-                    RoundedRectangle(cornerRadius: JunoRadius.panel)
+                    RoundedRectangle(cornerRadius: JunoRadius.well)
                         .strokeBorder(Color.junoSeparator)
                 }
             }

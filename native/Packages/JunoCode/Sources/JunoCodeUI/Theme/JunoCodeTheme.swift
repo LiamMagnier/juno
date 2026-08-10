@@ -83,9 +83,9 @@ public enum JunoCodeTheme {
 
     /// Bridges onto `JunoRadius`.
     public enum Radius {
-        public static let control = JunoRadius.control
+        public static let control = JunoRadius.chip
         public static let card = JunoRadius.row
-        public static let panel = JunoRadius.panel
+        public static let panel = JunoRadius.well
     }
 }
 

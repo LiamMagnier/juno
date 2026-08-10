@@ -338,11 +338,11 @@ private struct JunoTokenizationVisual: View {
                             .padding(.horizontal, 7)
                             .padding(.vertical, 4)
                             .background(
-                                RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                                RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
                                     .fill(selected == index ? Color.junoAccent.opacity(0.12) : Color.junoMuted)
                             )
                             .overlay(
-                                RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                                RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
                                     .strokeBorder(
                                         selected == index ? Color.junoAccent.opacity(0.5) : Color.junoHairline
                                     )

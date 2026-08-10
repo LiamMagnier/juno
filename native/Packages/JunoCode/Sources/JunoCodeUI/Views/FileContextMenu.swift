@@ -64,7 +64,7 @@ struct FileContextMenu: View {
                     }
                 }
             }
-            .junoFloatingChrome(cornerRadius: JunoRadius.panel)
+            .junoFloatingChrome(cornerRadius: JunoRadius.well)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Workspace file suggestions")

@@ -64,11 +64,11 @@ public struct NativeFollowUpStrip: View {
                         }
                         .buttonStyle(.plain)
                         .background(
-                            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                                 .fill(Color.junoSurface)
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                                 .strokeBorder(Color.junoHairline)
                         )
                     }
