@@ -52,7 +52,12 @@ const pressableVariants = cva(
         row: "flex w-full min-w-0 items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm text-foreground/90 hover:bg-accent hover:text-accent-foreground",
         tile: "flex flex-col items-start gap-1 rounded-card border border-border/60 bg-card/40 p-3 text-left text-sm hover:border-border hover:bg-card",
         chip: "inline-flex items-center gap-1.5 rounded-full border border-border/60 px-2.5 py-1 text-xs font-medium text-muted-foreground hover:border-border hover:text-foreground",
-        icon: "inline-flex items-center justify-center rounded-control text-muted-foreground hover:bg-accent hover:text-foreground",
+        // `rounded-full`, and that is measured rather than chosen. Of the 34
+        // bare square icon buttons in the product, 20 were already circular and
+        // the other 14 were spread across seven radii — lg, xs, md, sm, xl,
+        // composer-action, and one with none at all. The house idiom for "a
+        // glyph you can press" is a circle; those 14 were drift, not dissent.
+        icon: "inline-flex items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground",
       },
       /**
        * `selected` is a variant rather than a caller-supplied className because

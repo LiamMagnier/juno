@@ -33,6 +33,7 @@ import { cleanForSpeech } from "@/lib/message-content";
 import { cn } from "@/lib/utils";
 import type { ComposerQuote } from "@/lib/quote-context";
 import type { ClientArtifact, ClientMessage, ClientConversation, ReasoningEffort, TitleSource } from "@/types/chat";
+import { Pressable } from "@/components/ui/pressable";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -1490,14 +1491,16 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             <RefreshCw className="size-3.5" />
             Retry
           </button>
-          <button
-            type="button"
+          <Pressable
+            kind="icon"
+            size="lg"
             onClick={discardFailedVoiceSave}
             aria-label="Discard unsaved voice transcript"
-            className="pressable danger-hover inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground"
+            // danger-hover overrides the default accent fill: this one deletes.
+            className="danger-hover hover:bg-transparent"
           >
             <Trash2 className="size-3.5" />
-          </button>
+          </Pressable>
         </div>
       )}
     </div>

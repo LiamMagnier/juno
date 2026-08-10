@@ -34,6 +34,7 @@ import {
   type UnifiedSearchResult,
 } from "@/lib/search/types";
 import { cn } from "@/lib/utils";
+import { Pressable } from "@/components/ui/pressable";
 
 /** One row in either palette. `run` fires on click / Enter; `meta` is the muted
  *  trailing text (relative time, "Project"); `hint` renders as ⌘-keys. A
@@ -261,14 +262,15 @@ function PaletteShell({
             aria-activedescendant={items[active] ? optionId(items[active].id) : undefined}
           />
           {query && (
-            <button
-              type="button"
+            <Pressable
+              kind="icon"
+              size="sm"
               onClick={() => onQueryChange("")}
               aria-label="Clear search"
-              className="pressable -mr-1 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors duration-fast hover:bg-accent hover:text-foreground"
+              className="-mr-1 size-6 shrink-0 text-muted-foreground/70 coarse:size-6"
             >
               <X className="h-3.5 w-3.5" />
-            </button>
+            </Pressable>
           )}
         </div>
 

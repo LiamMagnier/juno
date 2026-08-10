@@ -9,6 +9,7 @@ import type { WorkProducedArtifact, WorkReference } from "@/components/work/work
 import { WorkActionsPerformed } from "@/components/work/work-detail-panels";
 import { WorkDocuments } from "@/components/work/work-documents";
 import { cn } from "@/lib/utils";
+import { Pressable } from "@/components/ui/pressable";
 
 /*
  * What the run made.
@@ -222,12 +223,12 @@ function CopyAffordance({ value, label }: { value: string; label: string }) {
   };
 
   return (
-    <button
-      type="button"
+    <Pressable
+      kind="icon"
       onClick={copy}
       aria-label={label}
       className={cn(
-        "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-[opacity,background-color,color] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "size-7 shrink-0 transition-[opacity,background-color,color] duration-fast ease-out-soft",
         "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
         "[@media(hover:none)]:opacity-100"
       )}
@@ -240,6 +241,6 @@ function CopyAffordance({ value, label }: { value: string; label: string }) {
       <span className="sr-only" aria-live="polite">
         {copied ? "Copied" : ""}
       </span>
-    </button>
+    </Pressable>
   );
 }

@@ -43,6 +43,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
+import { Pressable } from "@/components/ui/pressable";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useApp } from "@/components/app/app-provider";
 import { CODE_SYNC_EVENT } from "@/hooks/use-code-session";
@@ -603,14 +604,16 @@ export function AppSidebar({
   if (collapsed) {
     return (
       <div key="rail" className="flex h-full w-[64px] flex-col items-center bg-sidebar py-3 text-sidebar-foreground motion-safe:animate-fade-in">
-        <button
+        <Pressable
+          kind="icon"
+          size="lg"
           onClick={onToggleCollapse}
           title="Expand sidebar"
           aria-label="Expand sidebar"
-          className="group flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-fast active:scale-95 hover:bg-sidebar-accent"
+          className="group text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
         >
           <SidebarMotionIcon kind="panel-open" className="text-sidebar-foreground" />
-        </button>
+        </Pressable>
         <div className="mt-3">
           <ModeToggle mode={mode} onChange={switchMode} compact />
         </div>
@@ -1611,15 +1614,18 @@ function ConversationRow({
       </Link>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            // Concentric with the row: outer rounded-control − pr-1 (4px) = 6px.
-            // rounded-md (8px) left the button's corner poking past the row's.
-            className="pressable group/kebab inline-flex size-7 shrink-0 items-center justify-center rounded-xs text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-background data-[state=open]:opacity-100 coarse:size-11"
+          <Pressable
+            kind="icon"
+            // A circle rather than the old rounded-xs. That value existed to stop the
+            // button's corner poking past the row's own rounded-control at 4px of
+            // padding — a circle has no corner, so it satisfies the same constraint
+            // strictly, and it puts the kebab in the one shape every other bare glyph
+            // in the product uses.
+            className="group/kebab size-7 shrink-0 opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-background data-[state=open]:opacity-100 coarse:size-11"
             aria-label={variant === "code" ? "Session options" : "Conversation options"}
           >
             <SidebarMotionIcon kind="more" className="size-4" />
-          </button>
+          </Pressable>
         </DropdownMenuTrigger>
         {/* Width only. The origin and the pop-in/out pair are already on the
             primitive; re-declaring them here (with `!` to win a specificity fight
@@ -1752,14 +1758,18 @@ function ProjectRow({
       )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            // Concentric with the row: outer rounded-control − pr-1 (4px) = 6px.
-            className="pressable group/kebab inline-flex size-7 shrink-0 items-center justify-center rounded-xs text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-background data-[state=open]:opacity-100 coarse:size-11"
+          <Pressable
+            kind="icon"
+            // A circle rather than the old rounded-xs. That value existed to stop the
+            // button's corner poking past the row's own rounded-control at 4px of
+            // padding — a circle has no corner, so it satisfies the same constraint
+            // strictly, and it puts the kebab in the one shape every other bare glyph
+            // in the product uses.
+            className="group/kebab size-7 shrink-0 opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-background data-[state=open]:opacity-100 coarse:size-11"
             aria-label="Project options"
           >
             <SidebarMotionIcon kind="more" className="size-4" />
-          </button>
+          </Pressable>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem onSelect={onNewChat}>

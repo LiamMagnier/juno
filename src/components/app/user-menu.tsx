@@ -17,6 +17,7 @@ import { useApp } from "@/components/app/app-provider";
 import { PLANS, planRank } from "@/lib/plans";
 import { DotIdenticon, DotFillBar } from "@/components/signature/dot-matrix";
 import { cn } from "@/lib/utils";
+import { Pressable } from "@/components/ui/pressable";
 
 /*
  * Account menu — one shared row anatomy so every item lines up:
@@ -90,15 +91,17 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         {compact ? (
-          <button
-            className="pressable group flex h-9 w-9 items-center justify-center rounded-md hover:bg-sidebar-accent coarse:h-11 coarse:w-11"
+          <Pressable
+            kind="icon"
+            size="lg"
+            className="group hover:bg-sidebar-accent"
             aria-label="Account menu"
             title={user.name ?? user.email ?? "Account"}
           >
             <span className="transition-transform duration-fast ease-out-soft group-hover:scale-105">{avatar("h-8 w-8")}</span>
-          </button>
+          </Pressable>
         ) : (
-          <button className="pressable group flex w-full items-center gap-2.5 rounded-md p-2 text-left hover:bg-sidebar-accent">
+          <Pressable kind="row" className="group gap-2.5 p-2 hover:bg-sidebar-accent">
             <span className="shrink-0 transition-transform duration-fast ease-out-soft group-hover:scale-105">
               {avatar("h-8 w-8")}
             </span>
@@ -106,7 +109,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
               <span className="block truncate text-sm font-medium">{user.name ?? user.email}</span>
               <span className="block truncate text-xs text-muted-foreground">{plan.name} plan</span>
             </span>
-          </button>
+          </Pressable>
         )}
       </DropdownMenuTrigger>
 
