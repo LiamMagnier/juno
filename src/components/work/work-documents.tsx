@@ -15,6 +15,7 @@ import {
 } from "@/components/work/work-transport";
 import { WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn, formatBytes } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 /*
  * The documents a task produced, and the bytes behind them.
@@ -86,7 +87,7 @@ export function WorkDocuments({
           <Skeleton
             key={index}
             className="h-[58px] w-full rounded-xl"
-            style={{ animationDelay: `${index * 70}ms` }}
+            style={staggerDelay(index, "tight")}
           />
         ))}
       </div>

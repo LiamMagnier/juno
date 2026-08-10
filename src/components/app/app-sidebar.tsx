@@ -55,6 +55,7 @@ import { WorkStatusDot } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
 import type { ClientWorkSession } from "@/lib/work/serializers";
 import type { ClientConversation } from "@/types/chat";
+import { staggerDelay } from "@/lib/motion";
 
 type ConfirmState = { title: string; description: string; confirmLabel: string; onConfirm: () => void } | null;
 
@@ -751,7 +752,7 @@ export function AppSidebar({
         {!mounted ? (
           <div className="space-y-1 px-1 pt-1">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="skeleton h-8 rounded-lg" style={{ animationDelay: `${i * 60}ms` }} />
+              <div key={i} className="skeleton h-8 rounded-lg" style={staggerDelay(i, "tight")} />
             ))}
           </div>
         ) : mode === "work" ? (
@@ -760,7 +761,7 @@ export function AppSidebar({
             {!workLoaded && !workError ? (
               <div className="space-y-1 px-1 pt-1">
                 {[...Array(4)].map((_, i) => (
-                  <div key={i} className="skeleton h-8 rounded-lg" style={{ animationDelay: `${i * 60}ms` }} />
+                  <div key={i} className="skeleton h-8 rounded-lg" style={staggerDelay(i, "tight")} />
                 ))}
               </div>
             ) : (
@@ -819,7 +820,7 @@ export function AppSidebar({
               ) : !codeLoaded ? (
                 <div className="space-y-1 px-1 pt-1">
                   {[...Array(3)].map((_, i) => (
-                    <div key={i} className="skeleton h-8 rounded-lg" style={{ animationDelay: `${i * 60}ms` }} />
+                    <div key={i} className="skeleton h-8 rounded-lg" style={staggerDelay(i, "tight")} />
                   ))}
                 </div>
               ) : codeProjects.length === 0 ? (

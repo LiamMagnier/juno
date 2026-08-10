@@ -42,6 +42,7 @@ import {
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { IndexStatus, type KnowledgeIndexState } from "@/components/library/index-status";
 import { cn, formatBytes } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 interface LibItem {
   id: string;
@@ -516,7 +517,7 @@ function LoadingBrowser({ view }: { view: LibraryView }) {
           <div key={index}>
             <div
               className="skeleton aspect-square rounded-menu"
-              style={{ animationDelay: `${index * 45}ms` }}
+              style={staggerDelay(index, "tight")}
             />
             <div className="px-1 pt-2.5">
               <span className="skeleton block h-3 w-3/4 rounded" />
@@ -539,9 +540,9 @@ function LoadingBrowser({ view }: { view: LibraryView }) {
           key={index}
           className={cn(browserGrid, "min-h-[72px] border-b border-border/40 px-3 last:border-0 sm:px-4")}
         >
-          <span className="skeleton size-5 rounded-xs" style={{ animationDelay: `${index * 45}ms` }} />
+          <span className="skeleton size-5 rounded-xs" style={staggerDelay(index, "tight")} />
           <span className="flex items-center gap-3">
-            <span className="skeleton size-11 shrink-0 rounded-control" style={{ animationDelay: `${index * 45}ms` }} />
+            <span className="skeleton size-11 shrink-0 rounded-control" style={staggerDelay(index, "tight")} />
             <span className="min-w-0 flex-1 space-y-2">
               <span className="skeleton block h-3 w-32 max-w-full rounded" />
               <span className="skeleton block h-2.5 w-20 rounded" />

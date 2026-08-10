@@ -11,6 +11,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 /**
  * ONE directory for every tool Juno can connect to.
@@ -585,7 +586,7 @@ export function ConnectorDirectory({
           ))}
           {loading &&
             Array.from({ length: 6 }, (_, i) => (
-              <div key={`sk-${i}`} className="skeleton h-[132px] rounded-card" style={{ animationDelay: `${i * 30}ms` }} />
+              <div key={`sk-${i}`} className="skeleton h-[132px] rounded-card" style={staggerDelay(i)} />
             ))}
         </div>
 

@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { cn } from "@/lib/utils";
 import type { ClientAttachment } from "@/types/chat";
+import { staggerDelay } from "@/lib/motion";
 
 interface LibItem {
   id: string;
@@ -149,7 +150,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
           ) : loading ? (
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
               {[...Array(8)].map((_, i) => (
-                <div key={i} className="skeleton aspect-square rounded-lg" style={{ animationDelay: `${i * 50}ms` }} />
+                <div key={i} className="skeleton aspect-square rounded-lg" style={staggerDelay(i)} />
               ))}
             </div>
           ) : empty ? (

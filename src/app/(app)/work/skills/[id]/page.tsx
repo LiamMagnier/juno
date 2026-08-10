@@ -36,6 +36,7 @@ import {
   type PatchWorkSkillInput,
 } from "@/components/work/work-transport";
 import { WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
+import { staggerDelay } from "@/lib/motion";
 
 interface SkillSecurityFindingView {
   code: string;
@@ -273,7 +274,7 @@ export default function WorkSkillPage() {
             <Skeleton
               key={index}
               className="h-20 w-full rounded-xl"
-              style={{ animationDelay: `${index * 70}ms` }}
+              style={staggerDelay(index, "tight")}
             />
           ))}
         </div>

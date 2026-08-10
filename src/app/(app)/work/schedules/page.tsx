@@ -10,6 +10,7 @@ import { WorkPageFrame } from "@/components/work/work-nav";
 import { WorkScheduleRow } from "@/components/work/work-schedule-row";
 import { fetchWorkSchedules } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
+import { staggerDelay } from "@/lib/motion";
 
 /**
  * Everything that starts without being asked.
@@ -90,7 +91,7 @@ export default function WorkSchedulesPage() {
             <Skeleton
               key={index}
               className="h-[86px] w-full rounded-xl"
-              style={{ animationDelay: `${index * 70}ms` }}
+              style={staggerDelay(index, "tight")}
             />
           ))}
         </div>

@@ -9,6 +9,7 @@ import type { ConnectorStatus } from "@/components/connections/types";
 import { trustPermitsAutoSelection, type ClientWorkSkill } from "@/lib/work/skills";
 import { fetchWorkSkills } from "@/components/work/work-transport";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 /*
  * What this task can reach for: the skills Juno may apply, and the apps the
@@ -70,7 +71,7 @@ export function WorkToolbox() {
           <Skeleton
             key={index}
             className="h-9 w-full rounded-xl"
-            style={{ animationDelay: `${index * 70}ms` }}
+            style={staggerDelay(index, "tight")}
           />
         ))}
       </div>

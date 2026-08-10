@@ -15,6 +15,7 @@ import { AppIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import { readStarredProjects, removeStarredProject, toggleStarredProject } from "@/lib/starred-projects";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
+import { staggerDelay } from "@/lib/motion";
 
 interface ProjectItem {
   id: string;
@@ -232,10 +233,10 @@ export default function ProjectsPage() {
               <div
                 key={i}
                 className="surface-raised flex h-40 flex-col justify-between rounded-panel border border-border/70 p-5"
-                style={{ animationDelay: `${i * 50}ms` }}
+                style={staggerDelay(i)}
               >
                 <div className="space-y-2.5">
-                  <div className="skeleton h-4 w-1/2 rounded-full" style={{ animationDelay: `${i * 50}ms` }} />
+                  <div className="skeleton h-4 w-1/2 rounded-full" style={staggerDelay(i)} />
                   <div className="skeleton h-3 w-4/5 rounded-full" style={{ animationDelay: `${i * 50 + 40}ms` }} />
                   <div className="skeleton h-3 w-3/5 rounded-full" style={{ animationDelay: `${i * 50 + 80}ms` }} />
                 </div>
@@ -268,7 +269,7 @@ export default function ProjectsPage() {
               <Card
                 key={p.id}
                 variant="default"
-                style={{ animationDelay: `${Math.min(i, 12) * 40}ms` }}
+                style={staggerDelay(i)}
                 className={cn(
                   "overflow-hidden p-0 motion-safe:animate-rise-in [animation-fill-mode:backwards] flex flex-col justify-between rounded-panel hover:-translate-y-1 hover:border-border hover:shadow-float transition-all duration-base cursor-pointer",
                   p.coverUrl ? "h-[260px]" : "h-[160px]"

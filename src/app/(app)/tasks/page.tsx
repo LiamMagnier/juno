@@ -18,6 +18,7 @@ import {
 import { TaskCard } from "@/components/tasks/task-card";
 import { TaskDialog } from "@/components/tasks/task-dialog";
 import type { TaskItem } from "@/components/tasks/task-model";
+import { staggerDelay } from "@/lib/motion";
 
 export default function TasksPage() {
   const router = useRouter();
@@ -148,7 +149,7 @@ export default function TasksPage() {
         ) : loading ? (
           <div className="space-y-3">
             {[...Array(3)].map((_, i) => (
-              <Skeleton key={i} className="h-[124px] w-full rounded-lg" style={{ animationDelay: `${i * 80}ms` }} />
+              <Skeleton key={i} className="h-[124px] w-full rounded-lg" style={staggerDelay(i)} />
             ))}
           </div>
         ) : locked ? (

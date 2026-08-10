@@ -36,6 +36,7 @@ import { WorkContextSection } from "@/components/work/detail/work-context";
 import { WorkOutcomeDigest } from "@/components/work/detail/work-outcome";
 import { WorkOutputsSection } from "@/components/work/detail/work-outputs";
 import { WorkProgressChecklist, planTally } from "@/components/work/detail/work-progress";
+import { staggerDelay } from "@/lib/motion";
 import {
   WorkConversation,
   deriveTurns,
@@ -550,7 +551,7 @@ export default function WorkThreadPage() {
             <Skeleton
               key={index}
               className="h-16 w-full rounded-xl"
-              style={{ animationDelay: `${index * 70}ms` }}
+              style={staggerDelay(index, "tight")}
             />
           ))}
         </div>

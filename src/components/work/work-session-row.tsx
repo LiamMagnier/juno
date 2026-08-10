@@ -31,6 +31,7 @@ import {
   workTimeAgo,
 } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 /*
  * One task in a list, and the list itself.
@@ -425,7 +426,7 @@ export function WorkSessionSkeletons({ count = 3 }: { count?: number }) {
         <Skeleton
           key={index}
           className="h-[86px] w-full rounded-xl"
-          style={{ animationDelay: `${index * 70}ms` }}
+          style={staggerDelay(index, "tight")}
         />
       ))}
     </div>

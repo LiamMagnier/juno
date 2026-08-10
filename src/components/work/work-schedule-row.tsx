@@ -14,6 +14,7 @@ import {
 import { describeTrigger } from "@/components/work/work-triggers";
 import { workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 /*
  * One schedule in a list, with the two controls somebody actually reaches for.
@@ -153,7 +154,7 @@ export function WorkScheduleRow({
         "[animation-fill-mode:backwards]",
         !schedule.enabled && "opacity-75"
       )}
-      style={{ animationDelay: `${index * 30}ms` }}
+      style={staggerDelay(index, "tight")}
     >
       <Link
         href={`/work/schedules/${schedule.id}`}

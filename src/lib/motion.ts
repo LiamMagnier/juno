@@ -30,6 +30,8 @@
  * — same duration, same bounce — so the Mac app and the web settle identically.
  */
 
+import type { CSSProperties } from "react";
+
 import type { Transition, Variants } from "framer-motion";
 
 import { DURATION, EASING } from "@/lib/design/tokens.generated";
@@ -181,6 +183,70 @@ export const stagger = (step = 0.03, delay = 0): Variants => ({
   // an unwind that takes as long as the build reads as the UI stalling.
   exit: { transition: { staggerChildren: step / 2, staggerDirection: -1 } },
 });
+
+// ---------------------------------------------------------------------------
+// Stagger, for CSS entrances
+// ---------------------------------------------------------------------------
+
+/**
+ * The stagger scale.
+ *
+ * The CSS keyframes stay CSS (see the note at the top of this file), so most
+ * lists in the product sequence themselves with an inline
+ * `style={{ animationDelay: ... }}`. There were 58 of those across 40 files and
+ * they used EIGHT different steps — 30, 40, 45, 50, 55, 60, 65 and 80ms — with
+ * caps of 10, 12, or none at all.
+ *
+ * That is the motion equivalent of the 26 radius values, and it is most of the
+ * answer to why the interface does not feel authored: every list deals its rows
+ * out at a different tempo, so no two screens share a rhythm. A viewer cannot
+ * name the difference between 45ms and 50ms, but they can feel that the product
+ * has no single hand behind it.
+ *
+ * Three rungs, chosen by how much each item weighs, not by how many there are.
+ */
+export const STAGGER = {
+  /** Dense rows — a file list, a sidebar, a table. */
+  tight: 30,
+  /** The default. Cards and tiles in a grid. */
+  base: 45,
+  /** Large, few, and consequential — pricing tiers, onboarding steps. */
+  loose: 60,
+} as const;
+
+export type StaggerRung = keyof typeof STAGGER;
+
+/**
+ * How many items still stagger before the delay stops growing.
+ *
+ * A cap is not an optimisation, it is the difference between choreography and a
+ * queue: uncapped at 45ms, the 30th row arrives 1.35s after the first, so a long
+ * list visibly loads rather than appearing. Ten is where the sequence has
+ * already been read as a sequence — the existing sites that capped at all had
+ * independently landed on 10 and 12.
+ */
+const STAGGER_CAP = 10;
+
+/**
+ * Inline style for the nth item of a staggered CSS entrance.
+ *
+ * Pair with `motion-safe:animate-rise-in` (or any entrance keyframe) and
+ * `[animation-fill-mode:backwards]`, so an item waiting for its turn holds the
+ * keyframe's `from` state instead of flashing at full opacity first.
+ *
+ * @example
+ *   <li style={staggerDelay(i)} className="motion-safe:animate-rise-in [animation-fill-mode:backwards]" />
+ *   <li style={staggerDelay(i, "tight", 120)} />   // after a header has landed
+ */
+export function staggerDelay(
+  index: number,
+  rung: StaggerRung = "base",
+  offsetMs = 0
+): CSSProperties {
+  const step = STAGGER[rung];
+  const n = Math.max(0, Math.min(index, STAGGER_CAP));
+  return { animationDelay: `${offsetMs + n * step}ms` };
+}
 
 // ---------------------------------------------------------------------------
 // Reduced motion

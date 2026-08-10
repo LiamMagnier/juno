@@ -13,6 +13,7 @@ import {
   fetchWorkHosts,
 } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
+import { staggerDelay } from "@/lib/motion";
 
 /**
  * Every Mac that has registered itself with Juno Work.
@@ -130,7 +131,7 @@ export default function WorkHostsPage() {
             <Skeleton
               key={index}
               className="h-[86px] w-full rounded-xl"
-              style={{ animationDelay: `${index * 70}ms` }}
+              style={staggerDelay(index, "tight")}
             />
           ))}
         </div>

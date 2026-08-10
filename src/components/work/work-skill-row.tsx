@@ -5,6 +5,7 @@ import { ChevronRight, Sparkles } from "lucide-react";
 import { trustPermitsAutoSelection, type ClientWorkSkill } from "@/lib/work/skills";
 import { workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 /*
  * One skill in a list.
@@ -37,7 +38,7 @@ export function WorkSkillRow({ skill, index = 0 }: { skill: ClientWorkSkill; ind
         "[animation-fill-mode:backwards]",
         !skill.enabled && "opacity-75"
       )}
-      style={{ animationDelay: `${index * 30}ms` }}
+      style={staggerDelay(index, "tight")}
     >
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">

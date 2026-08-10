@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 /* The connected half of /code/pulls: real PRs from GET /api/code/github/pulls,
  * grouped by repository, with open-on-GitHub links and a refresh. The server
@@ -82,7 +83,7 @@ export function PullsList({ account }: { account: string | null }) {
     return (
       <div className="space-y-3">
         {[...Array(4)].map((_, i) => (
-          <Skeleton key={i} className="h-[60px] w-full rounded-lg" style={{ animationDelay: `${i * 80}ms` }} />
+          <Skeleton key={i} className="h-[60px] w-full rounded-lg" style={staggerDelay(i)} />
         ))}
       </div>
     );

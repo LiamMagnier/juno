@@ -10,6 +10,7 @@ import { WorkPageFrame } from "@/components/work/work-nav";
 import { WorkSkillRow } from "@/components/work/work-skill-row";
 import { fetchWorkSkills } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
+import { staggerDelay } from "@/lib/motion";
 
 /**
  * The instructions Juno can be handed, rather than told again every time.
@@ -75,7 +76,7 @@ export default function WorkSkillsPage() {
             <Skeleton
               key={index}
               className="h-[76px] w-full rounded-xl"
-              style={{ animationDelay: `${index * 70}ms` }}
+              style={staggerDelay(index, "tight")}
             />
           ))}
         </div>

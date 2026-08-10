@@ -16,6 +16,7 @@ import type { ConnectorStatus } from "@/components/connections/types";
 // below is a Record keyed by it, so adding a policy to the union and forgetting
 // it here is a type error rather than a silently missing option.
 import type { ActionPermissionPolicy } from "@/lib/action-approval";
+import { staggerDelay } from "@/lib/motion";
 
 interface PermissionState {
   actionApprovalPolicy: ActionPermissionPolicy;
@@ -215,7 +216,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
 
   return (
     <Card
-      style={{ animationDelay: `${index * 55}ms` }}
+      style={staggerDelay(index, "loose")}
       className="flex h-full flex-col rounded-surface p-5 motion-safe:animate-rise-in [animation-fill-mode:backwards] sm:col-span-2"
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -270,7 +271,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
       ) : !state ? (
         <div className="space-y-2" aria-hidden>
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="skeleton h-16 rounded-xl" style={{ animationDelay: `${i * 50}ms` }} />
+            <div key={i} className="skeleton h-16 rounded-xl" style={staggerDelay(i, "loose")} />
           ))}
         </div>
       ) : (

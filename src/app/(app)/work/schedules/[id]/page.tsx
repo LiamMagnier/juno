@@ -28,6 +28,7 @@ import {
   WORK_SYNC_EVENT,
 } from "@/components/work/work-transport";
 import { WorkStateNote, WorkStatusPill, workTimeAgo } from "@/components/work/work-vocabulary";
+import { staggerDelay } from "@/lib/motion";
 
 /**
  * One schedule: what it does, and what it has actually done.
@@ -165,7 +166,7 @@ export default function WorkSchedulePage() {
             <Skeleton
               key={index}
               className="h-16 w-full rounded-xl"
-              style={{ animationDelay: `${index * 70}ms` }}
+              style={staggerDelay(index, "tight")}
             />
           ))}
         </div>

@@ -41,6 +41,7 @@ import { AUTO_LOCALE, UI_LOCALES, localeNativeName } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { describeCapSource, type BudgetCapSource } from "@/lib/spend-ceiling";
 import type { ClientSettings } from "@/types/app";
+import { staggerDelay } from "@/lib/motion";
 
 const LANGUAGES = ["auto", "English", "Spanish", "French", "German", "Portuguese", "Italian", "Japanese", "Korean", "Chinese", "Hindi", "Arabic"];
 
@@ -67,7 +68,7 @@ function Tile({
     // flex-col + h-full so side-by-side tiles stretch to equal height and
     // internals can pin footers with mt-auto.
     <Card
-      style={{ animationDelay: `${i * 55}ms` }}
+      style={staggerDelay(i, "loose")}
       className={cn("flex h-full flex-col rounded-surface p-5 motion-safe:animate-rise-in [animation-fill-mode:backwards]", span && "sm:col-span-2", className)}
     >
       <CardEyebrow className="mb-3">{eyebrow}</CardEyebrow>

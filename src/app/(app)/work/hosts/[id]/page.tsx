@@ -30,6 +30,7 @@ import {
   type WorkHostToggleKey,
 } from "@/components/work/work-transport";
 import { WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
+import { staggerDelay } from "@/lib/motion";
 
 /**
  * One Mac: whether it is there, what it may do, and how to take that away.
@@ -224,7 +225,7 @@ export default function WorkHostPage() {
             <Skeleton
               key={index}
               className="h-16 w-full rounded-xl"
-              style={{ animationDelay: `${index * 70}ms` }}
+              style={staggerDelay(index, "tight")}
             />
           ))}
         </div>

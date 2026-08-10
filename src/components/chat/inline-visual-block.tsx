@@ -21,6 +21,7 @@ import {
 import { StepLabBlock } from "@/components/chat/step-lab-block";
 import { stepLabFromLegacySteps } from "@/lib/step-lab";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 type VisualKind = "cards" | "steps" | "flow" | "flowchart" | "diagram" | "comparison" | "table" | "quiz" | "callout" | "timeline";
 
@@ -469,7 +470,7 @@ function TimelineBlock({ block }: { block: VisualBlock }) {
         <div
           key={index}
           className="grid grid-cols-[5rem_1fr] gap-3 border-l border-border pb-4 pl-3 last:pb-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
-          style={{ animationDelay: `${index * 40}ms` }}
+          style={staggerDelay(index)}
         >
           <span className="-ml-[1.35rem] flex h-6 w-16 items-center justify-center rounded-full border bg-card font-mono text-[10px] text-muted-foreground shadow-soft">
             {item.label ?? index + 1}

@@ -12,6 +12,7 @@ import {
   workTimeAgo,
 } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 /*
  * The attempts before this one.
@@ -99,7 +100,7 @@ export function WorkAttempts({
           <Skeleton
             key={index}
             className="h-10 w-full rounded-lg"
-            style={{ animationDelay: `${index * 70}ms` }}
+            style={staggerDelay(index, "tight")}
           />
         ))}
       </div>

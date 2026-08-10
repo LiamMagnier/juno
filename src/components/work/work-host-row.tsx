@@ -7,6 +7,7 @@ import type { WorkHostState } from "@/lib/work/domain";
 import { HOST_STATE_LABEL, hostUnavailableReason } from "@/components/work/work-transport";
 import { workTimeAgo } from "@/components/work/work-vocabulary";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 /*
  * One Mac in a list, and the mark that says whether it is there.
@@ -124,7 +125,7 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
         (revoked || !host.enabled) && "opacity-75",
         revoked && "border-destructive/25"
       )}
-      style={{ animationDelay: `${index * 30}ms` }}
+      style={staggerDelay(index, "tight")}
     >
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">

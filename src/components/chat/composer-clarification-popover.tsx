@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 import type {
   PendingPreflightClarification,
   PreflightClarificationAnswer,
@@ -297,7 +298,7 @@ export function ComposerClarificationPopover({
                 <li
                   key={option}
                   className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:fill-mode-both motion-reduce:animate-none"
-                  style={{ animationDelay: `${Math.min(optionIndex, 8) * 35}ms` }}
+                  style={staggerDelay(optionIndex, "tight")}
                 >
                   <button
                     type="button"

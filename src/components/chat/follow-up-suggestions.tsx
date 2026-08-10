@@ -3,6 +3,7 @@
 import * as React from "react";
 import { ChevronDown, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 interface FollowUpSuggestionsProps {
   conversationId: string;
@@ -125,7 +126,7 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
            */
           <div
             key={suggestion}
-            style={{ animationDelay: `${i * 55}ms` }}
+            style={staggerDelay(i)}
             className={cn(
               "group/pill relative flex min-w-0 gap-1 border border-border/60 py-1.5 pl-2.5 pr-1.5 text-left font-sans text-sm font-normal leading-5 text-muted-foreground transition-[transform,background-color,border-color,box-shadow,color] duration-base ease-spring [animation-fill-mode:backwards] hover:z-10 hover:-translate-y-0.5 hover:border-border hover:bg-accent hover:text-foreground hover:shadow-soft coarse:py-2 motion-safe:animate-rise-in motion-reduce:transition-none",
               isOpen

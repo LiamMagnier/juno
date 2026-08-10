@@ -28,6 +28,7 @@ import {
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { providerAccent } from "@/lib/provider-colors";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 type Filter = "all" | Provider;
 
@@ -448,7 +449,7 @@ export function ModelSelector({
     return (
       <div
         key={m.id}
-        style={{ animationDelay: `${Math.min(i, 12) * 16}ms` }}
+        style={staggerDelay(i, "tight")}
         onMouseEnter={() => setHoveredId(m.id)}
         onFocus={() => setHoveredId(m.id)}
         className={cn(

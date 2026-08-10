@@ -51,6 +51,7 @@ import { IndexStatus, type KnowledgeIndexState } from "@/components/library/inde
 import { useApp } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
 import type { ReasoningEffort } from "@/types/chat";
+import { staggerDelay } from "@/lib/motion";
 
 // Soft UI only — no save rejection. Warn when the draft is very large.
 const INSTRUCTIONS_SOFT_WARN = 50_000;
@@ -1218,7 +1219,7 @@ function WorkspaceFileRow({
   return (
     <li
       className="group relative flex items-center gap-3 rounded-md border border-border/60 bg-background/40 px-3 py-2.5 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-safe:animate-rise-in motion-reduce:transition-none [animation-fill-mode:backwards]"
-      style={{ animationDelay: `${Math.min(index, 10) * 40}ms` }}
+      style={staggerDelay(index)}
     >
       <Icon className={cn("h-4 w-4 shrink-0", isImage ? "text-source" : "text-muted-foreground")} />
 

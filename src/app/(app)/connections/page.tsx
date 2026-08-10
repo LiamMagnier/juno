@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { type ConnectorStatus } from "@/components/connections/types";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
 import { ConnectorDirectory, type DirectoryItem } from "@/components/connections/connector-directory";
+import { staggerDelay } from "@/lib/motion";
 
 const ERRORS: Record<string, string> = {
   not_configured: "That connector isn’t set up on this server yet.",
@@ -210,7 +211,7 @@ export default function ConnectionsPage() {
         ) : loading ? (
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="skeleton h-[132px] rounded-card" style={{ animationDelay: `${i * 50}ms` }} />
+              <div key={i} className="skeleton h-[132px] rounded-card" style={staggerDelay(i)} />
             ))}
           </div>
         ) : (
