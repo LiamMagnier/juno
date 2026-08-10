@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { readStarredProjects, removeStarredProject, toggleStarredProject } from "@/lib/starred-projects";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
+import { EmptyState } from "@/components/ui/empty-state";
 
 interface ProjectItem {
   id: string;
@@ -248,21 +249,26 @@ export default function ProjectsPage() {
             ))}
           </div>
         ) : empty ? (
-          <div className="mt-10 flex flex-col items-center gap-4 text-center">
-            <AppIcons.projects className="size-7 text-muted-foreground/70" strokeWidth={1.5} />
-            <div>
-              <p className="font-serif text-heading">No projects yet.</p>
-              <p className="mt-1 text-sm text-muted-foreground">Create one to keep a topic’s chats, instructions, and files together.</p>
-            </div>
-            <Button onClick={() => { setName(""); setOpen(true); }} className="gap-1.5">
-              <Plus className="h-4 w-4" /> New project
-            </Button>
-          </div>
+          <EmptyState
+            className="mt-10"
+            icon={AppIcons.projects}
+            title="No projects yet"
+            description="Create one to keep a topic’s chats, instructions, and files together."
+            action={
+              <Button onClick={() => { setName(""); setOpen(true); }} className="gap-1.5">
+                <Plus className="h-4 w-4" /> New project
+              </Button>
+            }
+          />
         ) : filteredItems.length === 0 ? (
-          <div className="mt-12 flex flex-col items-center gap-3 text-center">
-            <p className="text-sm text-muted-foreground">No projects match your search.</p>
-            <Button variant="outline" size="sm" onClick={() => setQuery("")}>Clear search</Button>
-          </div>
+          <EmptyState
+            className="mt-10"
+            size="panel"
+            title="No projects match your search"
+            action={
+              <Button variant="outline" size="sm" onClick={() => setQuery("")}>Clear search</Button>
+            }
+          />
         ) : (
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             {filteredItems.map((p, i) => (

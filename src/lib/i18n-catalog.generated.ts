@@ -1994,6 +1994,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "not_configured"
   },
   {
+    "id": "2302a8311ddffbfa",
+    "source": "No projects match your search"
+  },
+  {
     "id": "2325daff051a2a28",
     "source": "(session de connexion, sécurité). Aucun cookie publicitaire ni de mesure d'audience n'est déposé à ce jour ; tout ajout futur sera soumis à votre consentement via le bandeau dédié."
   },
@@ -12346,10 +12350,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Could not start the task."
   },
   {
-    "id": "d87821ba1a366b1b",
-    "source": "No projects match your search."
-  },
-  {
     "id": "d8832e17d00199c7",
     "source": "The same exchange — about"
   },
@@ -13000,10 +13000,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e294391b87fd2a20",
     "source": "Use these answers"
-  },
-  {
-    "id": "e2cb995c13fcddcb",
-    "source": "No projects yet."
   },
   {
     "id": "e2d0a54968ead24e",
@@ -14280,6 +14276,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f83a6ca776ccb71c",
     "source": "System instructions"
+  },
+  {
+    "id": "f83c806522865605",
+    "source": "No projects yet"
   },
   {
     "id": "f8634a1158ce45ba",

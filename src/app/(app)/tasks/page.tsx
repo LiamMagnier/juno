@@ -19,6 +19,7 @@ import { TaskDialog } from "@/components/tasks/task-dialog";
 import type { TaskItem } from "@/components/tasks/task-model";
 import { staggerDelay } from "@/lib/motion";
 import { AppPageHeader } from "@/components/app/app-page-header";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default function TasksPage() {
   const [tasks, setTasks] = React.useState<TaskItem[] | null>(null);
@@ -145,29 +146,27 @@ export default function TasksPage() {
             ))}
           </div>
         ) : locked ? (
-          <div className="mt-10 flex flex-col items-center gap-4 text-center">
-            <div className="max-w-sm">
-              <p className="font-serif text-heading">Tasks are part of Pro</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Juno can run a prompt for you every morning — a news brief, a metrics check, a language lesson.
-              </p>
-            </div>
-            <Button asChild className="gap-1.5">
-              <Link href="/upgrade">Upgrade to Pro</Link>
-            </Button>
-          </div>
+          <EmptyState
+            className="mt-10"
+            title="Tasks are part of Pro"
+            description="Juno can run a prompt for you every morning — a news brief, a metrics check, a language lesson."
+            action={
+              <Button asChild className="gap-1.5">
+                <Link href="/upgrade">Upgrade to Pro</Link>
+              </Button>
+            }
+          />
         ) : empty ? (
-          <div className="mt-10 flex flex-col items-center gap-4 text-center">
-            <div className="max-w-sm">
-              <p className="font-serif text-heading">Nothing scheduled</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Juno can run a prompt for you every morning — a news brief, a metrics check, a language lesson.
-              </p>
-            </div>
-            <Button onClick={openCreate} className="gap-1.5">
-              <Plus className="h-4 w-4" /> New task
-            </Button>
-          </div>
+          <EmptyState
+            className="mt-10"
+            title="Nothing scheduled"
+            description="Juno can run a prompt for you every morning — a news brief, a metrics check, a language lesson."
+            action={
+              <Button onClick={openCreate} className="gap-1.5">
+                <Plus className="h-4 w-4" /> New task
+              </Button>
+            }
+          />
         ) : (
           <div className="space-y-3">
             {tasks.map((task) => (
