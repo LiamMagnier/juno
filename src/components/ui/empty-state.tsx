@@ -53,12 +53,21 @@ export function EmptyState({
   const isError = tone === "error";
   return (
     <div
-      // `rounded-card` and a dashed rule, once. The border is on the container
-      // rather than the page so a state can be dropped anywhere without the
-      // caller re-deciding how it is fenced.
+      // The border is on the container rather than the page, so a state can be
+      // dropped anywhere without the caller re-deciding how it is fenced.
+      //
+      // The DASH is the whole tonal signal and it has to be conditional. This
+      // shipped with `border-dashed` unconditional and only the colour swapped,
+      // which meant the two tones differed by a tint alone — so the component
+      // that exists to make "nothing here yet" and "that failed" distinguishable
+      // did not distinguish them, while its own doc comment two dozen lines up
+      // claimed error was solid "because a failure is not a placeholder and must
+      // not look like one". The comment was right; the class list was not.
       className={cn(
-        "flex flex-col items-center justify-center rounded-card border border-dashed text-center",
-        isError ? "border-destructive/40 bg-destructive/[0.04]" : "border-border/70",
+        "flex flex-col items-center justify-center rounded-card border text-center",
+        isError
+          ? "border-solid border-destructive/45 bg-destructive/[0.04]"
+          : "border-dashed border-border/70",
         size === "page" ? "min-h-64 px-6 py-14" : "px-4 py-8",
         className
       )}

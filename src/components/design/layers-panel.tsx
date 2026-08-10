@@ -401,7 +401,7 @@ export function LayersPanel({
                     Send to back
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem className="text-destructive focus:text-destructive" disabled={node.locked} onSelect={() => deleteLayer(id)}>
+                  <DropdownMenuItem variant="destructive" disabled={node.locked} onSelect={() => deleteLayer(id)}>
                     <X className="size-4" aria-hidden />
                     Delete layer
                   </DropdownMenuItem>

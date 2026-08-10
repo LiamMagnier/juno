@@ -25,7 +25,19 @@ const DropdownMenuContent = React.forwardRef<
         // 14px shell − p-1.5 (6px) = concentric with the rounded-md (8px) items.
         // Same 14px as before: `rounded-menu` names the value rather than moving
         // it, and .overlay-glass is the same material string, deduplicated.
-        "z-popper min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-menu overlay-glass p-1.5 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        "z-popper min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper rounded-menu overlay-glass p-1.5 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        // A menu taller than the space under its trigger has to scroll, or its
+        // last items are simply unreachable.
+        //
+        // This was `overflow-hidden` with no height cap. Radix flips and shifts
+        // a menu to fit, but it never SHRINKS one, so a menu longer than the
+        // viewport was clipped at the edge with nothing to scroll — three menus
+        // in the product already carry six or more items, and any of them on a
+        // short window or a phone lost its tail silently.
+        //
+        // `select.tsx` had already solved this with the same Radix variable; the
+        // dropdown just never got the fix. 24rem before scrolling, matching it.
+        "max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height,24rem))] overflow-y-auto overscroll-contain",
         className
       )}
       {...props}
@@ -74,12 +86,28 @@ DropdownMenuSubContent.displayName = DropdownMenuPrimitive.SubContent.displayNam
 
 const DropdownMenuItem = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item> & { inset?: boolean }
->(({ className, inset, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item> & {
+    inset?: boolean;
+    /**
+     * `destructive` for a row that deletes, disconnects or revokes.
+     *
+     * A variant because five call sites had independently written the same
+     * `className="text-destructive focus:text-destructive"` — and that string is
+     * also incomplete: it reddens the label but leaves the focus fill the neutral
+     * accent, so the one row in a menu that cannot be undone highlights exactly
+     * like Rename. Keyboard users hit it hardest, since focus is the only signal
+     * they get. Here the fill tints too.
+     */
+    variant?: "default" | "destructive";
+  }
+>(({ className, inset, variant = "default", ...props }, ref) => (
   <DropdownMenuPrimitive.Item
     ref={ref}
     className={cn(
-      "menu-item group/menu-item relative flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition-colors duration-fast ease-out-soft focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+      "menu-item group/menu-item relative flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none transition-colors duration-fast ease-out-soft data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+      variant === "destructive"
+        ? "text-destructive focus:bg-destructive/10 focus:text-destructive"
+        : "focus:bg-accent focus:text-accent-foreground",
       inset && "pl-8",
       className
     )}

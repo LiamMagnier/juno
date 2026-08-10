@@ -185,7 +185,7 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem className="text-destructive focus:text-destructive" onSelect={() => setDeleteOpen(true)}>
+            <DropdownMenuItem variant="destructive" onSelect={() => setDeleteOpen(true)}>
               <Trash2 className="size-4" aria-hidden />
               Delete design
             </DropdownMenuItem>
