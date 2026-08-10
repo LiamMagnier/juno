@@ -43,7 +43,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
-import { Pressable } from "@/components/ui/pressable";
+import { Pressable, pressableVariants } from "@/components/ui/pressable";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useApp } from "@/components/app/app-provider";
 import { CODE_SYNC_EVENT } from "@/hooks/use-code-session";
@@ -1243,9 +1243,16 @@ function RailIcon({
   active?: boolean;
   children: React.ReactNode;
 }) {
+  // Built from the shared icon recipe rather than restated, so the rail's nav
+  // marks are the same object as the expand toggle sitting directly above them.
+  // They were not: the toggle became circular with the rest of the product's
+  // bare glyphs while these stayed rounded-field, which put two 36px squares of
+  // different shape in one 64px column — the most visible place in the app to
+  // get that wrong.
   const cls = cn(
-    "group flex h-9 w-9 items-center justify-center rounded-field transition-[color,background-color,box-shadow,transform] duration-base ease-out-soft active:scale-[0.96]",
-    active ? "bg-sidebar-accent text-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
+    pressableVariants({ kind: "icon", size: "lg" }),
+    "group text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground",
+    active && "bg-sidebar-accent text-foreground"
   );
   if (href) {
     return (
@@ -1340,16 +1347,21 @@ function Section({
     <div className="mb-5 mt-1">
       <div className="flex items-center">
         {collapsible ? (
-          <button
-            type="button"
+          <Pressable
+            kind="row"
             onClick={onToggleCollapse}
             aria-expanded={!isCollapsed}
-            className="pressable flex min-w-0 flex-1 select-none items-center gap-1.5 rounded-md px-2 py-1 text-left hover:bg-sidebar-accent/50"
+            // px-2.5 to sit on the same left edge as the L1 rows beneath it.
+            // Every section label in this panel was at px-2 against rows at
+            // px-2.5, so each heading hung 2px left of its own list — a ragged
+            // margin running the height of the sidebar that no single element
+            // looks wrong for.
+            className="min-w-0 flex-1 select-none gap-1.5 rounded-md px-2.5 py-1 hover:bg-sidebar-accent/50"
           >
             {headerInner}
-          </button>
+          </Pressable>
         ) : (
-          <div className="flex min-w-0 flex-1 select-none items-center gap-2.5 px-2 py-1.5">{headerInner}</div>
+          <div className="flex min-w-0 flex-1 select-none items-center gap-1.5 px-2.5 py-1">{headerInner}</div>
         )}
         {action != null && <span className="flex shrink-0 items-center pr-1">{action}</span>}
       </div>
