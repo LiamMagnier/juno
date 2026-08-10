@@ -13,6 +13,7 @@ import {
   FileUp,
   Library,
   Loader2,
+  Mic,
   Plus,
   RefreshCw,
   X,
@@ -32,10 +33,12 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { LibraryPicker } from "@/components/chat/library-picker";
+import { ComposerDictation } from "@/components/chat/composer-dictation";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { AppIcons } from "@/lib/app-icons";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import {
@@ -351,6 +354,9 @@ export function WorkComposer({
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [removingIds, setRemovingIds] = React.useState<string[]>([]);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const [dictating, setDictating] = React.useState(false);
+  /** Set when dictation ends with "send"; consumed once the new goal is in state. */
+  const pendingSendRef = React.useRef(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const attemptRef = React.useRef<StartAttempt | null>(null);
 
@@ -780,6 +786,54 @@ export function WorkComposer({
     router,
   ]);
 
+  const { supported: speechSupported } = useSpeechRecognition();
+
+  /**
+   * Leave dictation, with the words.
+   *
+   * Appends rather than replaces: the reader may well have typed half the task,
+   * hit the mic for the rest, and losing the typed half is not a tradeoff
+   * anyone accepted. Same rule as the Code composer's `closeDictation`.
+   *
+   * `sendNow` still goes through `canStart`, not straight to `submit()`. Work
+   * refuses to start without an executor, and a spoken task that vanished
+   * because no host was reachable would be the worst possible place to discover
+   * that — so it parks the transcript in the field instead, where the reader can
+   * finish setting up and press Start with their words still in front of them.
+   */
+  const closeDictation = React.useCallback(
+    (transcript: string, sendNow: boolean) => {
+      setDictating(false);
+      const merged = [goal.trim(), transcript.trim()].filter(Boolean).join(" ");
+      setGoal(merged);
+      if (!sendNow || !merged) {
+        requestAnimationFrame(() => textareaRef.current?.focus());
+        return;
+      }
+      if (!canStart) {
+        toast.message("Saved to the task", {
+          description: selection.target === null ? selection.explanation : "Finish setting up, then press Start.",
+        });
+        requestAnimationFrame(() => textareaRef.current?.focus());
+        return;
+      }
+      // Deferred to an effect, NOT to a rAF. `submit` closes over `goal` from
+      // the render it was built in, so calling it from here — or from a frame
+      // callback scheduled here — starts the task with the PRE-merge text and
+      // silently drops everything that was just dictated. The effect below runs
+      // after the new goal has landed, with the submit that can see it.
+      pendingSendRef.current = true;
+    },
+    [goal, canStart, selection.target, selection.explanation],
+  );
+
+  /** Fires the send that `closeDictation` deferred, once `goal` has updated. */
+  React.useEffect(() => {
+    if (!pendingSendRef.current) return;
+    pendingSendRef.current = false;
+    if (canStart) void submit();
+  }, [goal, canStart, submit]);
+
   const confirmExpensiveAndSubmit = React.useCallback(() => {
     if (attemptRef.current === null) return;
     attemptRef.current.confirmExpensive = true;
@@ -893,6 +947,21 @@ export function WorkComposer({
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Dictation takes over the field rather than sitting beside it: the
+            transcript is what the reader is watching, and a live waveform
+            competing with a half-typed task is two things asking to be read.
+            Mounted only while active — ComposerDictation holds a microphone
+            stream and a recognition session for its whole life. */}
+        {dictating && (
+          <div className="px-2 pb-1 pt-2 sm:px-2.5">
+            <ComposerDictation
+              onCancel={() => setDictating(false)}
+              onStop={(t) => closeDictation(t, false)}
+              onSend={(t) => closeDictation(t, true)}
+            />
           </div>
         )}
 
@@ -1078,6 +1147,29 @@ export function WorkComposer({
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            {/* Dictate. Sits immediately left of the primary action, the same
+                place it occupies in the chat and Code composers — a control
+                that means the same thing in three surfaces should not be in
+                three positions. Hidden rather than disabled where the browser
+                has no recognition: a permanently dead mic explains nothing. */}
+            {speechSupported && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => setDictating(true)}
+                    disabled={submitting || dictating}
+                    aria-label="Dictate the task"
+                    className="shrink-0 rounded-composer-control coarse:h-11 coarse:w-11"
+                  >
+                    <Mic className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Dictate</TooltipContent>
+              </Tooltip>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="shrink-0">
