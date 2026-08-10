@@ -48,7 +48,7 @@ export function DesignAdjustments({ adjustments, editor, onDismiss }: Props) {
   if (adjustments.length === 0) return null;
 
   return (
-    <div className="pointer-events-auto mx-auto w-full max-w-2xl rounded-[16px] border border-border/70 bg-popover/95 p-3 shadow-soft backdrop-blur-xl motion-safe:animate-rise-in">
+    <div className="pointer-events-auto mx-auto w-full max-w-2xl rounded-card border border-border/70 bg-popover/95 p-3 shadow-soft backdrop-blur-xl motion-safe:animate-rise-in">
       <div className="flex items-center justify-between pb-2">
         <h2 className="font-mono text-[10px] text-muted-foreground">Tune Juno’s change</h2>
         <Button variant="ghost" size="icon-sm" onClick={onDismiss} aria-label="Hide these controls" className="text-muted-foreground hover:text-foreground">
@@ -115,7 +115,7 @@ function ColorRow({ adjustment, onCommit }: { adjustment: ColorAdjustment; onCom
         onChange={(event) => setValue(event.target.value)}
         onBlur={() => onCommit(value)}
         onPointerUp={() => onCommit(value)}
-        className="size-7 shrink-0 cursor-pointer rounded-[6px] border border-border/60 bg-transparent p-0.5"
+        className="size-7 shrink-0 cursor-pointer rounded-xs border border-border/60 bg-transparent p-0.5"
         aria-label={adjustment.label}
       />
     </label>
@@ -138,7 +138,7 @@ function SegmentedRow({ adjustment, onCommit }: { adjustment: SegmentedAdjustmen
               onCommit(option.value);
             }}
             className={cn(
-              "pressable rounded-[10px] px-2 py-1 text-xs transition-colors duration-fast coarse:min-h-9",
+              "pressable rounded-control px-2 py-1 text-xs transition-colors duration-fast coarse:min-h-9",
               value === option.value ? "bg-primary/10 text-primary" : "bg-muted/60 text-muted-foreground hover:text-foreground"
             )}
           >

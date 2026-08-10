@@ -338,7 +338,7 @@ function PlanCard({
     <div
       style={{ animationDelay: `${delay}ms` }}
       className={cn(
-        "relative flex flex-col rounded-[24px] border bg-card p-6 shadow-soft transition-all duration-base ease-out-soft motion-safe:animate-rise-in [animation-fill-mode:backwards]",
+        "relative flex flex-col rounded-lg border bg-card p-6 shadow-soft transition-all duration-base ease-out-soft motion-safe:animate-rise-in [animation-fill-mode:backwards]",
         popular
           ? "border-primary/50 bg-primary/[0.04] shadow-float"
           : "hover:-translate-y-0.5 hover:shadow-float"

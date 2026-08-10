@@ -150,7 +150,7 @@ export function WorkNav({ className }: { className?: string }) {
         // all rather than a stray rectangle in the corner. The active
         // destination is still legible in that window: `text-foreground` and
         // `aria-current` are both plain attributes and both render server-side.
-        className="pointer-events-none absolute left-0 top-0 z-0 h-0 w-0 rounded-[10px] bg-accent opacity-0 transition-[transform,width,height] duration-base ease-spring motion-reduce:transition-none"
+        className="pointer-events-none absolute left-0 top-0 z-0 h-0 w-0 rounded-control bg-accent opacity-0 transition-[transform,width,height] duration-base ease-spring motion-reduce:transition-none"
       />
       {DESTINATIONS.map((destination) => {
         const active = destination.href === activeHref;
@@ -167,7 +167,7 @@ export function WorkNav({ className }: { className?: string }) {
               // The colour change is `duration-fast` against the thumb's
               // `duration-base` on purpose: the destination should read as
               // selected the instant it is pressed, and the fill catches up.
-              "relative z-10 rounded-[10px] px-2.5 py-1 font-mono text-[12px] transition-[background-color,color] duration-fast ease-out-soft",
+              "relative z-10 rounded-control px-2.5 py-1 font-mono text-[12px] transition-[background-color,color] duration-fast ease-out-soft",
               active
                 ? "text-foreground"
                 : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"

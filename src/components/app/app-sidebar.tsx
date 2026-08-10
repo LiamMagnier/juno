@@ -595,7 +595,7 @@ export function AppSidebar({
           {mode === "work" ? (
             <>
               <RailIcon onClick={newWorkTask} label="New task">
-                <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                <span className="flex h-7 w-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
                   <SidebarMotionIcon kind="new" className="h-4 w-4" />
                 </span>
               </RailIcon>
@@ -606,7 +606,7 @@ export function AppSidebar({
           ) : mode === "code" ? (
             <>
               <RailIcon onClick={newCodeSession} label="New session">
-                <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                <span className="flex h-7 w-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
                   <SidebarMotionIcon kind="new" className="h-4 w-4" />
                 </span>
               </RailIcon>
@@ -617,7 +617,7 @@ export function AppSidebar({
           ) : (
             <>
               <RailIcon onClick={newChat} label="New chat">
-                <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                <span className="flex h-7 w-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
                   <SidebarMotionIcon kind="new" className="h-4 w-4" />
                 </span>
               </RailIcon>
@@ -700,7 +700,7 @@ export function AppSidebar({
             <NavRow
               onClick={newWorkTask}
               icon={
-                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-[8px] bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-md bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
                   <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
                 </span>
               }
@@ -715,7 +715,7 @@ export function AppSidebar({
             <NavRow
               onClick={newCodeSession}
               icon={
-                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-[8px] bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-md bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
                   <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
                 </span>
               }
@@ -730,7 +730,7 @@ export function AppSidebar({
             <NavRow
               onClick={newChat}
               icon={
-                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-[8px] bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-md bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
                   <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
                 </span>
               }
@@ -1133,7 +1133,7 @@ function WorkSessionRow({
       aria-current={active ? "page" : undefined}
       title={session.title || session.goal}
       className={cn(
-        "group flex items-center gap-2.5 rounded-[10px] py-1.5 pl-2 pr-2 text-[14px] font-medium transition-[background-color,color] duration-base ease-out-soft",
+        "group flex items-center gap-2.5 rounded-control py-1.5 pl-2 pr-2 text-[14px] font-medium transition-[background-color,color] duration-base ease-out-soft",
         active
           ? "bg-sidebar-accent font-semibold text-foreground"
           : "text-sidebar-foreground/90 hover:bg-sidebar-accent hover:text-foreground",
@@ -1187,7 +1187,7 @@ function RailIcon({
   children: React.ReactNode;
 }) {
   const cls = cn(
-    "group flex h-9 w-9 items-center justify-center rounded-[12px] transition-[color,background-color,box-shadow,transform] duration-base ease-out-soft active:scale-[0.96]",
+    "group flex h-9 w-9 items-center justify-center rounded-field transition-[color,background-color,box-shadow,transform] duration-base ease-out-soft active:scale-[0.96]",
     active ? "bg-sidebar-accent text-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
   );
   if (href) {
@@ -1218,7 +1218,7 @@ function NavRow({
   active?: boolean;
 }) {
   const cls = cn(
-    "group relative flex items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-[14px] font-medium transition-[color,background-color,box-shadow] duration-base ease-out-soft",
+    "group relative flex items-center gap-2.5 rounded-control px-2.5 py-1.5 text-[14px] font-medium transition-[color,background-color,box-shadow] duration-base ease-out-soft",
     active
       ? "bg-sidebar-accent font-semibold text-foreground"
       : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
@@ -1359,7 +1359,7 @@ function CodeWorkspaceGroup({
         onClick={onToggle}
         aria-expanded={expanded}
         aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
-        className="group flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left text-[14px] font-medium text-sidebar-foreground/90 transition-[color,background-color] duration-base ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
+        className="group flex w-full items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left text-[14px] font-medium text-sidebar-foreground/90 transition-[color,background-color] duration-base ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
       >
         <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-base group-hover:text-foreground">
           <SidebarMotionIcon kind="folder" className="h-[16px] w-[16px]" />
@@ -1541,7 +1541,7 @@ function ConversationRow({
   return (
     <div
       className={cn(
-        "group relative flex items-center rounded-[10px] pl-2 pr-1 transition-[background-color,color] duration-base ease-out-soft",
+        "group relative flex items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-base ease-out-soft",
         nested && "pl-6",
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
       )}
@@ -1577,9 +1577,9 @@ function ConversationRow({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            // Concentric with the row: outer rounded-[10px] − pr-1 (4px) = 6px.
+            // Concentric with the row: outer rounded-control − pr-1 (4px) = 6px.
             // rounded-md (8px) left the button's corner poking past the row's.
-            className="pressable group/kebab inline-flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-background data-[state=open]:opacity-100 coarse:size-11"
+            className="pressable group/kebab inline-flex size-7 shrink-0 items-center justify-center rounded-xs text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-background data-[state=open]:opacity-100 coarse:size-11"
             aria-label={variant === "code" ? "Session options" : "Conversation options"}
           >
             <SidebarMotionIcon kind="more" className="size-4" />
@@ -1674,7 +1674,7 @@ function ProjectRow({
     <div>
     <div
       className={cn(
-        "group relative flex items-center rounded-[10px] pl-2 pr-1 transition-[background-color,color] duration-base ease-out-soft",
+        "group relative flex items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-base ease-out-soft",
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
       )}
     >
@@ -1718,8 +1718,8 @@ function ProjectRow({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            // Concentric with the row: outer rounded-[10px] − pr-1 (4px) = 6px.
-            className="pressable group/kebab inline-flex size-7 shrink-0 items-center justify-center rounded-[6px] text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-background data-[state=open]:opacity-100 coarse:size-11"
+            // Concentric with the row: outer rounded-control − pr-1 (4px) = 6px.
+            className="pressable group/kebab inline-flex size-7 shrink-0 items-center justify-center rounded-xs text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-background data-[state=open]:opacity-100 coarse:size-11"
             aria-label="Project options"
           >
             <SidebarMotionIcon kind="more" className="size-4" />
@@ -1756,7 +1756,7 @@ function ProjectRow({
             aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
             title={c.title}
             className={cn(
-              "group group/pc flex items-center gap-2 rounded-[9px] py-1 pl-9 pr-2 text-[12.5px] transition-[color,background-color] duration-base ease-out-soft hover:bg-sidebar-accent",
+              "group group/pc flex items-center gap-2 rounded-control py-1 pl-9 pr-2 text-[12.5px] transition-[color,background-color] duration-base ease-out-soft hover:bg-sidebar-accent",
               activePath === `/chat/${c.id}`
                 ? "font-medium text-foreground"
                 : "text-sidebar-foreground/70 hover:text-foreground"

@@ -29,7 +29,7 @@ function Column({
       <div className="composer-aura-host relative isolate w-full px-4 pb-4">
         <VoiceAura status={status} levelRef={levelRef} />
         {/* Stands in for the composer: the aura must read as being behind this. */}
-        <div className="composer-surface flex h-[68px] w-full items-center rounded-[22px] border border-border/65 bg-card/95 px-4 text-sm text-muted-foreground/70 backdrop-blur">
+        <div className="composer-surface flex h-[68px] w-full items-center rounded-composer border border-border/65 bg-card/95 px-4 text-sm text-muted-foreground/70 backdrop-blur">
           Ask anything
         </div>
       </div>

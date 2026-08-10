@@ -131,7 +131,7 @@ function AnnouncementMedia({ draft, className }: { draft: Pick<Draft, "imageUrl"
   if (provider) {
     return (
       <div className={cn("flex h-full w-full items-center justify-center bg-muted", className)}>
-        <ProviderLogo provider={provider} className="h-16 w-16 rounded-[24%]" />
+        <ProviderLogo provider={provider} className="h-16 w-16" />
       </div>
     );
   }
@@ -599,7 +599,7 @@ export function AnnouncementsAdmin() {
                         {draft.description || "Write a short release description for users here."}
                       </p>
                     </div>
-                    {draft.provider !== "none" && <ProviderLogo provider={draft.provider} className="h-9 w-9 rounded-[24%]" />}
+                    {draft.provider !== "none" && <ProviderLogo provider={draft.provider} className="h-9 w-9" />}
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     {draft.newsHref ? (

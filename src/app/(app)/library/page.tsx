@@ -108,7 +108,7 @@ function ViewSelector({ view, onChange }: { view: LibraryView; onChange: (view: 
     <div
       role="group"
       aria-label="File view"
-      className="flex h-9 shrink-0 items-center rounded-[10px] border border-border/60 bg-background/70 p-0.5"
+      className="flex h-9 shrink-0 items-center rounded-control border border-border/60 bg-background/70 p-0.5"
     >
       {options.map((option) => {
         const active = view === option.value;
@@ -122,7 +122,7 @@ function ViewSelector({ view, onChange }: { view: LibraryView; onChange: (view: 
             aria-label={`${option.label} view`}
             title={`${option.label} view`}
             className={cn(
-              "group/view flex h-7 min-w-7 items-center justify-center gap-1.5 rounded-[7px] px-1.5 text-[11px] font-medium transition-[color,background-color,transform] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95 motion-reduce:transition-none motion-reduce:active:scale-100 lg:px-2.5",
+              "group/view flex h-7 min-w-7 items-center justify-center gap-1.5 rounded-md px-1.5 text-[11px] font-medium transition-[color,background-color,transform] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95 motion-reduce:transition-none motion-reduce:active:scale-100 lg:px-2.5",
               active
                 ? "bg-foreground text-background"
                 : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
@@ -159,7 +159,7 @@ function SelectCheck({
       aria-pressed={checked}
       aria-label={label}
       className={cn(
-        "flex size-5 shrink-0 items-center justify-center rounded-[6px] border transition-[border-color,background-color,color,transform] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-90 coarse:size-7",
+        "flex size-5 shrink-0 items-center justify-center rounded-xs border transition-[border-color,background-color,color,transform] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-90 coarse:size-7",
         checked
           ? "border-foreground bg-foreground text-background"
           : "border-border/80 bg-background text-transparent hover:border-foreground/50",
@@ -175,7 +175,7 @@ function ItemPreview({ item }: { item: LibItem }) {
   const preview = (
     <FilePreview item={item} className="absolute inset-0" sizes="44px" excerpt={false} />
   );
-  const className = "group/preview relative size-11 shrink-0 overflow-hidden rounded-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+  const className = "group/preview relative size-11 shrink-0 overflow-hidden rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
   return item.deletedAt ? (
     <div className={className} aria-label={`${item.fileName} is deleted`}>{preview}</div>
   ) : (
@@ -438,7 +438,7 @@ function LibraryGridItem({
     <article role="listitem" aria-label={item.fileName} className="group/card min-w-0">
       <div
         className={cn(
-          "relative aspect-square overflow-hidden rounded-[14px] border border-border/60 bg-background transition-[border-color,transform,box-shadow] duration-base ease-out-soft group-hover/card:-translate-y-0.5 group-hover/card:border-foreground/20 motion-reduce:transition-none motion-reduce:group-hover/card:translate-y-0",
+          "relative aspect-square overflow-hidden rounded-menu border border-border/60 bg-background transition-[border-color,transform,box-shadow] duration-base ease-out-soft group-hover/card:-translate-y-0.5 group-hover/card:border-foreground/20 motion-reduce:transition-none motion-reduce:group-hover/card:translate-y-0",
           selected && "border-foreground/40 ring-1 ring-foreground/35 ring-offset-2 ring-offset-background"
         )}
       >
@@ -495,7 +495,7 @@ function LibraryGridItem({
             href={`/chat/${item.conversationId}`}
             aria-label={`Open source chat for ${item.fileName}`}
             title="Open source chat"
-            className="group/source flex size-8 shrink-0 items-center justify-center rounded-[9px] text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:size-10"
+            className="group/source flex size-8 shrink-0 items-center justify-center rounded-control text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:size-10"
           >
             <MessageCircle className="size-3.5 transition-transform duration-fast ease-out-soft group-hover/source:-translate-y-0.5 motion-reduce:transition-none" />
           </Link>
@@ -515,7 +515,7 @@ function LoadingBrowser({ view }: { view: LibraryView }) {
         {[...Array(8)].map((_, index) => (
           <div key={index}>
             <div
-              className="skeleton aspect-square rounded-[14px]"
+              className="skeleton aspect-square rounded-menu"
               style={{ animationDelay: `${index * 45}ms` }}
             />
             <div className="px-1 pt-2.5">
@@ -529,9 +529,9 @@ function LoadingBrowser({ view }: { view: LibraryView }) {
   }
 
   return (
-    <div className="mt-5 overflow-hidden rounded-[18px] border border-border/60" aria-label="Loading files">
+    <div className="mt-5 overflow-hidden rounded-popover border border-border/60" aria-label="Loading files">
       <div className={cn(browserGrid, "h-10 border-b border-border/50 bg-muted/20 px-3 sm:px-4")}>
-        <span className="skeleton size-4 rounded-[5px]" />
+        <span className="skeleton size-4 rounded-xs" />
         <span className="skeleton h-2.5 w-16 rounded" />
       </div>
       {[...Array(6)].map((_, index) => (
@@ -539,9 +539,9 @@ function LoadingBrowser({ view }: { view: LibraryView }) {
           key={index}
           className={cn(browserGrid, "min-h-[72px] border-b border-border/40 px-3 last:border-0 sm:px-4")}
         >
-          <span className="skeleton size-5 rounded-[6px]" style={{ animationDelay: `${index * 45}ms` }} />
+          <span className="skeleton size-5 rounded-xs" style={{ animationDelay: `${index * 45}ms` }} />
           <span className="flex items-center gap-3">
-            <span className="skeleton size-11 shrink-0 rounded-[10px]" style={{ animationDelay: `${index * 45}ms` }} />
+            <span className="skeleton size-11 shrink-0 rounded-control" style={{ animationDelay: `${index * 45}ms` }} />
             <span className="min-w-0 flex-1 space-y-2">
               <span className="skeleton block h-3 w-32 max-w-full rounded" />
               <span className="skeleton block h-2.5 w-20 rounded" />
@@ -825,7 +825,7 @@ export default function LibraryPage() {
               </div>
 
               <div className="flex min-w-0 flex-1 items-center gap-2 sm:justify-end">
-                <div className="group/search flex h-9 min-w-0 flex-1 items-center gap-2 rounded-[10px] border border-border/60 bg-background/70 px-3 transition-[border-color,box-shadow] duration-fast focus-within:border-foreground/25 focus-within:shadow-[0_0_0_3px_hsl(var(--foreground)/0.035)] sm:max-w-[16rem]">
+                <div className="group/search flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control border border-border/60 bg-background/70 px-3 transition-[border-color,box-shadow] duration-fast focus-within:border-foreground/25 focus-within:shadow-[0_0_0_3px_hsl(var(--foreground)/0.035)] sm:max-w-[16rem]">
                   <Search className="size-3.5 shrink-0 text-muted-foreground transition-colors group-focus-within/search:text-foreground" />
                   <label htmlFor="library-search" className="sr-only">Search files</label>
                   <input
@@ -951,7 +951,7 @@ export default function LibraryPage() {
             </div>
           </section>
         ) : (
-          <section className="mt-5 overflow-hidden rounded-[18px] border border-border/60 bg-background/45" aria-label="Files">
+          <section className="mt-5 overflow-hidden rounded-popover border border-border/60 bg-background/45" aria-label="Files">
             <div
               className={cn(
                 browserGrid,

@@ -128,7 +128,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         </div>
 
         {/* Usage — a calm read of the same quota data, in the dot signature. */}
-        <div className="mx-1 rounded-[10px] bg-muted/40 px-2.5 py-2">
+        <div className="mx-1 rounded-control bg-muted/40 px-2.5 py-2">
           <div className="flex items-baseline justify-between gap-2">
             <span className="font-mono text-[10px] text-muted-foreground">Messages</span>
             <span className="truncate font-mono text-[11px] tracking-wide text-foreground">

@@ -54,6 +54,8 @@
     "radar:models": "tsx scripts/model-radar.ts",
     "design:contract": "tsx scripts/generate-design-contract.ts",
     "design:contract:check": "tsx scripts/generate-design-contract.ts --check",
+    "design:tokens": "tsx scripts/generate-design-tokens.ts",
+    "design:tokens:check": "tsx scripts/generate-design-tokens.ts --check",
     "design:editor": "node scripts/build-design-editor.mjs",
     "design:editor:check": "node scripts/build-design-editor.mjs --check",
     "design:fixture": "tsx scripts/emit-design-fixture.ts"

@@ -550,7 +550,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
           if (canAttach && !composerDisabled && !dictating && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
         }}
         className={cn(
-          "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-[22px] border bg-card/95 backdrop-blur sm:rounded-[24px]",
+          "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-composer border bg-card/95 backdrop-blur sm:rounded-lg",
           "transition-[opacity,transform,border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
           dictating ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0" : "translate-y-0 scale-100 opacity-100",
           "border-border/65 focus-within:border-foreground/15",
@@ -558,7 +558,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
         )}
       >
         {dragging && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-[inherit] border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
             <FileUp className="h-6 w-6 text-primary" />
             <span className="font-mono text-label text-primary">Drop to attach</span>
           </div>
@@ -647,7 +647,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                     aria-label="Add"
                     disabled={composerDisabled || session.isBusy}
                     className={cn(
-                      "composer-add-button group shrink-0 rounded-[11px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
+                      "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
                       plusOpen && "bg-accent",
                     )}
                   >
@@ -709,7 +709,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                       disabled={composerDisabled || session.isBusy || dictating}
                       aria-label="Dictate"
                       aria-pressed={dictating}
-                      className="composer-mic-button rounded-[11px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
+                      className="composer-mic-button rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
                     >
                       <Mic className="composer-mic-icon h-4 w-4" />
                     </Button>
@@ -738,10 +738,10 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                         : "Send to your Mac"
                   }
                   className={cn(
-                    "composer-primary-action h-9 w-9 rounded-[13px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
+                    "composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
                     session.isBusy && session.status !== "submitting"
-                      ? "w-11 rounded-[11px] ring-2 ring-primary/15"
-                      : "rounded-[13px]",
+                      ? "w-11 rounded-composer-control ring-2 ring-primary/15"
+                      : "rounded-composer-action",
                   )}
                 >
                   {session.status === "submitting" ? (

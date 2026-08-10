@@ -306,8 +306,8 @@ export function ComposerClarificationPopover({
                     disabled={disabled}
                     onClick={() => selectOption(option)}
                     className={cn(
-                      "group/opt flex min-h-11 w-full items-start gap-3 rounded-[14px] border px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow,transform,color] duration-base ease-out-soft",
-                      "sm:min-h-12 sm:items-center sm:rounded-[15px] sm:px-3.5 sm:py-3",
+                      "group/opt flex min-h-11 w-full items-start gap-3 rounded-menu border px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow,transform,color] duration-base ease-out-soft",
+                      "sm:min-h-12 sm:items-center sm:rounded-menu sm:px-3.5 sm:py-3",
                       "active:scale-[0.99] motion-reduce:active:scale-100",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                       "disabled:pointer-events-none disabled:opacity-55",
@@ -349,7 +349,7 @@ export function ComposerClarificationPopover({
         {active.allowElse ? (
           <label
             className={cn(
-              "flex flex-col gap-2 rounded-[14px] border px-3 py-2.5 transition-[border-color,background-color] duration-base ease-out-soft sm:rounded-[15px] sm:px-3.5 sm:py-3",
+              "flex flex-col gap-2 rounded-menu border px-3 py-2.5 transition-[border-color,background-color] duration-base ease-out-soft sm:rounded-menu sm:px-3.5 sm:py-3",
               currentAnswer?.source === "else"
                 ? "border-foreground/20 bg-foreground/[0.03]"
                 : "border-dashed border-border/70 bg-transparent focus-within:border-border focus-within:bg-muted/20"

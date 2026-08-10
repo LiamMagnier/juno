@@ -67,7 +67,7 @@ function Tile({
     // internals can pin footers with mt-auto.
     <Card
       style={{ animationDelay: `${i * 55}ms` }}
-      className={cn("flex h-full flex-col rounded-[20px] p-5 motion-safe:animate-rise-in [animation-fill-mode:backwards]", span && "sm:col-span-2", className)}
+      className={cn("flex h-full flex-col rounded-surface p-5 motion-safe:animate-rise-in [animation-fill-mode:backwards]", span && "sm:col-span-2", className)}
     >
       <CardEyebrow className="mb-3">{eyebrow}</CardEyebrow>
       {children}
@@ -236,7 +236,7 @@ function SpendCeiling({
     return (
       <div
         role="status"
-        className="rounded-[12px] border border-warning/40 bg-warning/10 p-4"
+        className="rounded-field border border-warning/40 bg-warning/10 p-4"
       >
         <p className="text-sm font-medium text-warning">Spend ceiling is switched off</p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -248,7 +248,7 @@ function SpendCeiling({
   }
 
   return (
-    <form onSubmit={submit} className="rounded-[12px] border border-border/50 p-4">
+    <form onSubmit={submit} className="rounded-field border border-border/50 p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="text-sm font-medium text-foreground">Monthly spend ceiling</span>
         <span className="font-mono text-caption tabular-nums text-muted-foreground">
@@ -529,7 +529,7 @@ export default function SettingsPage() {
           <Tile eyebrow="Usage" i={0} span>
             <div className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-5">
               {/* Plan info (Left) */}
-              <div className="field-well md:col-span-2 flex flex-col justify-between rounded-[12px] bg-accent/40 border border-border/50 p-4">
+              <div className="field-well md:col-span-2 flex flex-col justify-between rounded-field bg-accent/40 border border-border/50 p-4">
                 <div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-serif text-heading font-semibold tracking-tight">
@@ -569,7 +569,7 @@ export default function SettingsPage() {
 
               {/* Usage windows (Right) — euros remaining this period, then the
                   rolling session + weekly percentages */}
-              <div className="field-well md:col-span-3 flex flex-col justify-center rounded-[12px] border border-border/50 p-4 bg-card">
+              <div className="field-well md:col-span-3 flex flex-col justify-center rounded-field border border-border/50 p-4 bg-card">
                 {unlimited ? (
                   <div>
                     <div className="flex items-center gap-[3.5px] py-1.5" aria-hidden>

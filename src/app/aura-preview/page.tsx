@@ -63,16 +63,16 @@ export default function AuraPreview() {
           >
             <div aria-hidden className={cn("composer-aura", docked && "composer-aura--docked")} />
             <div className="mx-auto w-full px-0 pb-4 sm:max-w-[48rem] sm:px-4">
-              <div className="composer-surface relative flex w-full flex-col rounded-[22px] border border-border/65 bg-card/95 p-3 backdrop-blur sm:rounded-[24px]">
+              <div className="composer-surface relative flex w-full flex-col rounded-composer border border-border/65 bg-card/95 p-3 backdrop-blur sm:rounded-lg">
                 <textarea
                   placeholder="Message Juno…"
                   className="min-h-[56px] w-full resize-none bg-transparent px-1 text-base outline-none placeholder:text-muted-foreground/70"
                 />
                 <div className="flex items-center justify-between pt-1">
-                  <div className="h-9 w-9 rounded-[11px] border border-border/60" />
+                  <div className="h-9 w-9 rounded-composer-control border border-border/60" />
                   <button
                     onClick={() => setSending(true)}
-                    className="h-9 w-9 rounded-[13px] bg-primary"
+                    className="h-9 w-9 rounded-composer-action bg-primary"
                     aria-label="send"
                   />
                 </div>

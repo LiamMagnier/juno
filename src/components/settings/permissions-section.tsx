@@ -215,7 +215,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
   return (
     <Card
       style={{ animationDelay: `${index * 55}ms` }}
-      className="flex h-full flex-col rounded-[20px] p-5 motion-safe:animate-rise-in [animation-fill-mode:backwards] sm:col-span-2"
+      className="flex h-full flex-col rounded-surface p-5 motion-safe:animate-rise-in [animation-fill-mode:backwards] sm:col-span-2"
     >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <CardEyebrow>Connector permissions</CardEyebrow>

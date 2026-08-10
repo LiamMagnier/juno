@@ -171,7 +171,7 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
 
         <div className="flex-1" />
 
-        <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 rounded-[10px] px-2 text-xs text-muted-foreground hover:text-foreground">
+        <Button asChild variant="ghost" size="sm" className="h-7 gap-1.5 rounded-control px-2 text-xs text-muted-foreground hover:text-foreground">
           <Link href={`/chat/${conversationId}`}>
             <MessagesSquare className="size-3.5" aria-hidden />
             Chat
@@ -269,7 +269,7 @@ function ZoomControls({
   hasSelection: boolean;
 }) {
   const button =
-    "pressable rounded-[8px] px-2 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-9 coarse:px-2.5";
+    "pressable rounded-md px-2 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-9 coarse:px-2.5";
   return (
     <div className="flex items-center gap-0.5" role="group" aria-label="Zoom">
       <button type="button" className={button} onClick={() => viewport.current?.zoomBy(1 / 1.25)} aria-label="Zoom out">
@@ -321,7 +321,7 @@ function NameField({ value, onCommit }: { value: string; onCommit: (next: string
         // switch tools or delete the selection.
         event.stopPropagation();
       }}
-      className="min-w-0 max-w-xs flex-initial truncate rounded-[8px] border border-transparent bg-transparent px-1.5 py-0.5 font-serif text-heading outline-none transition-colors hover:border-border/60 focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20"
+      className="min-w-0 max-w-xs flex-initial truncate rounded-md border border-transparent bg-transparent px-1.5 py-0.5 font-serif text-heading outline-none transition-colors hover:border-border/60 focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20"
     />
   );
 }

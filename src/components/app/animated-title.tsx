@@ -53,7 +53,7 @@ export function AnimatedTitle({
   return (
     <span
       className={cn(
-        "animated-title relative block min-w-0 overflow-hidden rounded-[6px]",
+        "animated-title relative block min-w-0 overflow-hidden rounded-xs",
         resolving && "animated-title--resolving",
         className,
       )}

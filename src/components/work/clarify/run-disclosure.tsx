@@ -76,7 +76,7 @@ export function WorkRunDisclosure({ target, hostName, connectorLabels }: RunDisc
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
-        className="group flex w-full items-center gap-1.5 rounded-[10px] py-0.5 text-left text-caption leading-relaxed text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="group flex w-full items-center gap-1.5 rounded-control py-0.5 text-left text-caption leading-relaxed text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
         <span className="min-w-0 flex-1 truncate">
           Runs on {where}, reaches {reaches}, stops at ${RUN_CEILINGS.costUsd} or{" "}

@@ -269,7 +269,7 @@ function EmbeddingVisual({ step, compact }: { step: StepLabStep; compact?: boole
 
       {/* The chart well — stems and dots persist and MORPH on token switch. */}
       {active && (
-        <div className="rounded-[10px] bg-muted/30 p-3">
+        <div className="rounded-control bg-muted/30 p-3">
           <div className={cn("relative", compact ? "h-28" : "h-32")}>
             <span aria-hidden className="absolute left-0 right-0 top-1/2 border-t border-dashed border-border/70" />
             <span aria-hidden className="absolute right-0 top-0 font-mono text-[10px] text-muted-foreground">+1</span>
@@ -286,7 +286,7 @@ function EmbeddingVisual({ step, compact }: { step: StepLabStep; compact?: boole
                   type="button"
                   onClick={() => setDim(index)}
                   aria-label={`Dimension ${index}: ${value.toFixed(3)}`}
-                  className="absolute inset-y-0 w-8 -translate-x-1/2 outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-[8px]"
+                  className="absolute inset-y-0 w-8 -translate-x-1/2 outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-md"
                   style={{ left: center }}
                 >
                   <span
@@ -441,7 +441,7 @@ function AttentionVisual({ step, compact }: { step: StepLabStep; compact?: boole
       {/* The full matrix, demoted to curiosity. */}
       <TextToggle open={matrixOpen} onToggle={() => setMatrixOpen((value) => !value)} label="Matrix" controls={matrixId} />
       <Reveal open={matrixOpen} id={matrixId}>
-        <div className="rounded-[10px] bg-muted/30 p-3">
+        <div className="rounded-control bg-muted/30 p-3">
           <div className="grid gap-0.5" style={{ gridTemplateColumns: `minmax(2.5rem,auto) repeat(${tokens.length}, minmax(1.25rem, 1fr))` }}>
             <span />
             {tokens.map((token, colIndex) => (
@@ -538,7 +538,7 @@ function TransformerVisual({ step }: { step: StepLabStep }) {
               aria-pressed={stage === index}
               onClick={() => setStage(index)}
               className={cn(
-                "flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 rounded-[10px] border border-l-2 px-3.5 py-2.5 text-left outline-none",
+                "flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 rounded-control border border-l-2 px-3.5 py-2.5 text-left outline-none",
                 "transition-colors duration-base ease-out-soft focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11",
                 stage === index
                   ? "border-primary/30 border-l-primary bg-primary/[0.08]"
@@ -672,7 +672,7 @@ function ProbabilityVisual({ step }: { step: StepLabStep }) {
         <button
           type="button"
           onClick={sample}
-          className="shrink-0 rounded-[8px] py-1 font-mono text-[11px] font-semibold text-primary outline-none transition-colors duration-fast hover:text-primary focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
+          className="shrink-0 rounded-md py-1 font-mono text-[11px] font-semibold text-primary outline-none transition-colors duration-fast hover:text-primary focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
         >
           Sample
         </button>
@@ -736,7 +736,7 @@ function NextTokenSelectionVisual({ step }: { step: StepLabStep }) {
       <button
         type="button"
         onClick={() => setRun((value) => value + 1)}
-        className="self-start rounded-[8px] py-1 font-mono text-[11px] font-semibold text-muted-foreground outline-none transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
+        className="self-start rounded-md py-1 font-mono text-[11px] font-semibold text-muted-foreground outline-none transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
       >
         Replay
       </button>
@@ -986,7 +986,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
             aria-disabled={active === 0}
             onClick={() => go(active - 1)}
             className={cn(
-              "rounded-[8px] py-1 pr-2 font-mono text-[11px] font-semibold text-muted-foreground outline-none",
+              "rounded-md py-1 pr-2 font-mono text-[11px] font-semibold text-muted-foreground outline-none",
               "transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11",
               active === 0 && "pointer-events-none opacity-40"
             )}
@@ -1002,7 +1002,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
             aria-disabled={onLast}
             onClick={() => go(active + 1)}
             className={cn(
-              "rounded-[8px] py-1 pl-2 font-mono text-[11px] font-semibold outline-none",
+              "rounded-md py-1 pl-2 font-mono text-[11px] font-semibold outline-none",
               "transition-colors duration-fast focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11",
               onLast ? "pointer-events-none text-muted-foreground opacity-40" : "text-primary hover:text-primary",
             )}

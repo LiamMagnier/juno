@@ -233,7 +233,7 @@ export function LayersPanel({
             <div
               key={p.id}
               className={cn(
-                "group/page flex items-center gap-1 rounded-[8px] pr-1 transition-colors",
+                "group/page flex items-center gap-1 rounded-md pr-1 transition-colors",
                 p.id === page.id ? "bg-primary/10" : "hover:bg-accent"
               )}
             >
@@ -251,7 +251,7 @@ export function LayersPanel({
                       (e.target as HTMLInputElement).blur();
                     }
                   }}
-                  className="min-w-0 flex-1 rounded-[6px] border border-border/60 bg-background px-1.5 py-0.5 text-xs outline-none focus-visible:border-primary/60"
+                  className="min-w-0 flex-1 rounded-xs border border-border/60 bg-background px-1.5 py-0.5 text-xs outline-none focus-visible:border-primary/60"
                 />
               ) : (
                 <button
@@ -313,7 +313,7 @@ export function LayersPanel({
                 drop(id, e.altKey || isContainer(node) ? "inside" : "above");
               }}
               className={cn(
-                "group flex items-center gap-1 rounded-[8px] pr-1 transition-colors duration-fast",
+                "group flex items-center gap-1 rounded-md pr-1 transition-colors duration-fast",
                 selected ? "bg-primary/10" : "hover:bg-muted/60",
                 dragId === id && "opacity-50",
                 dropTargetId === id && "ring-1 ring-inset ring-primary/60"

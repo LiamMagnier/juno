@@ -316,7 +316,7 @@ export function ComposerDictation({
           <div
             ref={previewRef}
             aria-live="polite"
-            className="absolute bottom-full left-1/2 mb-3 max-h-36 w-[92%] -translate-x-1/2 overflow-y-auto rounded-[18px] border border-border/60 bg-popover/80 px-4 py-3 text-sm leading-relaxed text-popover-foreground glass-raised backdrop-blur-xl"
+            className="absolute bottom-full left-1/2 mb-3 max-h-36 w-[92%] -translate-x-1/2 overflow-y-auto rounded-popover border border-border/60 bg-popover/80 px-4 py-3 text-sm leading-relaxed text-popover-foreground glass-raised backdrop-blur-xl"
           >
             {transcript ? (
               <>
@@ -338,7 +338,7 @@ export function ComposerDictation({
 
         {showFallback ? (
           /* Graceful fallback: no Web Speech support, or mic denied. */
-          <div className="flex h-16 items-center justify-between gap-3 rounded-[32px] border border-border bg-card/90 px-3 pl-5 shadow-float backdrop-blur-md">
+          <div className="flex h-16 items-center justify-between gap-3 rounded-full border border-border bg-card/90 px-3 pl-5 shadow-float backdrop-blur-md">
             <span className="flex min-w-0 items-center gap-2.5 text-sm text-muted-foreground">
               <MicOff className="h-4 w-4 shrink-0 text-muted-foreground/60" />
               <span className="truncate">
@@ -358,7 +358,7 @@ export function ComposerDictation({
           </div>
         ) : (
           /* Capsule: 32px shell − 12px padding = 20px-radius inner circles (concentric). */
-          <div className="flex h-16 items-center gap-3 rounded-[32px] border border-border bg-card/90 px-3 shadow-float backdrop-blur-md">
+          <div className="flex h-16 items-center gap-3 rounded-full border border-border bg-card/90 px-3 shadow-float backdrop-blur-md">
             <button
               type="button"
               onClick={cancel}

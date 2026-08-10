@@ -79,7 +79,11 @@ export function ProviderLogo({
   return (
     <span
       className={cn(
-        "inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-[32%] border border-border/55 bg-card shadow-sm",
+        // `rounded-logo` (24%) is a PERCENTAGE so one value is one shape at every
+        // size, and it is owned here rather than passed in: call sites had drifted
+        // to 24%, 28% and 32%, so the same provider mark rendered three different
+        // corner treatments depending on which screen you were looking at.
+        "inline-flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-logo border border-border/55 bg-card shadow-sm",
         className
       )}
     >

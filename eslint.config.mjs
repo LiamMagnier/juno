@@ -2,6 +2,8 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FlatCompat } from "@eslint/eslintrc";
 
+import designSystem from "./eslint-rules/design-system.mjs";
+
 const compat = new FlatCompat({
   baseDirectory: dirname(fileURLToPath(import.meta.url)),
 });
@@ -66,6 +68,24 @@ const config = [
       // User avatars/attachments come from arbitrary hosts at runtime, where
       // next/image optimization doesn't apply.
       "@next/next/no-img-element": "off",
+    },
+  },
+  {
+    // The design system, made enforceable. An error rather than a warning: the
+    // whole point is that it fails CI, because the previous state of this rule
+    // was a comment in tailwind.config.ts asking nicely.
+    files: ["src/**/*.{ts,tsx}"],
+    plugins: { "design-system": designSystem },
+    rules: {
+      "design-system/no-arbitrary-radius": [
+        "error",
+        {
+          // Em-relative so it tracks the surrounding font size — the inline
+          // source chip in a run of prose. The scale is in px and cannot
+          // express this one.
+          allow: ["0.25em"],
+        },
+      ],
     },
   },
 ];

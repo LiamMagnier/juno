@@ -190,7 +190,7 @@ export default function ConnectionsPage() {
         </div>
 
         {error ? (
-          <div className="mt-6 flex flex-wrap items-start gap-3 rounded-[16px] border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <div className="mt-6 flex flex-wrap items-start gap-3 rounded-card border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
             <AlertCircle className="mt-0.5 size-4 shrink-0" />
             <div className="min-w-0 flex-1">
               <p className="font-medium">Couldn’t load your connections.</p>
@@ -210,7 +210,7 @@ export default function ConnectionsPage() {
         ) : loading ? (
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="skeleton h-[132px] rounded-[16px]" style={{ animationDelay: `${i * 50}ms` }} />
+              <div key={i} className="skeleton h-[132px] rounded-card" style={{ animationDelay: `${i * 50}ms` }} />
             ))}
           </div>
         ) : (

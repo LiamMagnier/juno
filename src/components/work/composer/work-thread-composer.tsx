@@ -268,7 +268,7 @@ export function WorkThreadComposer({
 
       <div
         className={cn(
-          "composer-surface col-start-1 row-start-1 flex w-full flex-col gap-1 rounded-[20px] border border-border/65 bg-card/95 p-1.5 backdrop-blur",
+          "composer-surface col-start-1 row-start-1 flex w-full flex-col gap-1 rounded-surface border border-border/65 bg-card/95 p-1.5 backdrop-blur",
           "transition-[border-color,opacity,transform] duration-base ease-spring focus-within:border-foreground/15 motion-reduce:transition-none",
           dictating && "pointer-events-none translate-y-1 scale-[0.98] opacity-0"
         )}
@@ -323,7 +323,7 @@ export function WorkThreadComposer({
                 size="icon-sm"
                 aria-label="Add a file, an app or a skill to this task"
                 className={cn(
-                  "composer-add-button group shrink-0 rounded-[11px] text-muted-foreground hover:text-foreground",
+                  "composer-add-button group shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground",
                   addOpen && "bg-accent"
                 )}
               >
@@ -361,7 +361,7 @@ export function WorkThreadComposer({
                   disabled={dictating || voiceActive}
                   aria-label="Dictate this message"
                   aria-pressed={dictating}
-                  className="composer-mic-button shrink-0 rounded-[11px] text-muted-foreground hover:text-foreground"
+                  className="composer-mic-button shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground"
                 >
                   <Mic className="composer-mic-icon h-4 w-4" aria-hidden="true" />
                 </Button>
@@ -384,7 +384,7 @@ export function WorkThreadComposer({
                     // `border-radius` are in it even though this composer holds
                     // both fixed: dropping them here is how the lists drift and
                     // a later shape change animates on one surface only.
-                    "composer-primary-action h-8 w-8 shrink-0 rounded-[11px]",
+                    "composer-primary-action h-8 w-8 shrink-0 rounded-composer-control",
                     "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring"
                   )}
                 >

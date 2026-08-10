@@ -112,13 +112,37 @@ const config: Config = {
         // rounded-[Npx] values 1:1, so the compiled CSS is identical — the point is
         // that there is now somewhere to look up the right answer. Eleven different
         // overlay radii existed before this.
+        //
+        // The ladder is a 2px step from `micro` to `surface`, then 22/24/28. It is
+        // continuous ON PURPOSE: every gap in it was previously being filled by a
+        // hand-written `rounded-[Npx]`, and a scale you cannot land on is a scale
+        // people step off. 26 distinct arbitrary radii existed across 256 call
+        // sites before this; `eslint-local/no-arbitrary-radius` now keeps it shut.
+        micro: "2px",     // heatmap cells, crop handles — anything under ~12px square
         xs: "6px",        // chips, dots, tiny badges
         control: "10px",  // sm buttons, menu items, list rows
         field: "12px",    // inputs, wells, segmented thumbs
         menu: "14px",     // dropdown / select / tabs shells
         card: "16px",     // cards, toasts, tiles
         popover: "18px",  // popovers, transcripts
+        surface: "20px",  // in-flow panels and section wells
         composer: "22px", // the composer shell
+        // The two composer-seated control radii. The primary action sits at
+        // `composer-action` (13px) at its 36px rest size and morphs to
+        // `composer-control` (11px) as it widens to 44px while busy — the corner
+        // curvature has to fall as the box grows or the button visibly inflates.
+        // Both are nested inside the 22px shell and neither is on the main ladder,
+        // which is exactly why they need names: they are derived, not chosen.
+        "composer-control": "11px",
+        "composer-action": "13px",
+        // Provider/product marks. A PERCENTAGE, not px, so one value is one shape
+        // at every size — 24% is the iOS app-icon superellipse ratio these marks
+        // are imitating. Owned by <ProviderLogo>; call sites must not override it.
+        // Three different values (24/28/32%) were in use on the same component.
+        logo: "24%",
+        // For overlays that must trace whatever they are laid over (drag scrims,
+        // focus rings on an unknown parent). A keyword, not a magic number.
+        inherit: "inherit",
       },
       boxShadow: {
         // Theme-aware elevation (values live in globals.css so light/dark differ).

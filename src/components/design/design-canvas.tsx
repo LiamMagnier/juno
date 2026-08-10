@@ -1490,7 +1490,7 @@ function LayerRenameField({
           onCancel();
         }
       }}
-      className="absolute z-10 rounded-[8px] border border-primary/60 bg-popover px-1.5 py-0.5 text-xs shadow-soft outline-none ring-2 ring-primary/20"
+      className="absolute z-10 rounded-md border border-primary/60 bg-popover px-1.5 py-0.5 text-xs shadow-soft outline-none ring-2 ring-primary/20"
       style={{ left, top, width }}
     />
   );
@@ -1516,9 +1516,9 @@ function CanvasZoomControls({
   hasSelection: boolean;
 }) {
   const button =
-    "pressable rounded-[8px] px-2 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-9 coarse:px-2.5";
+    "pressable rounded-md px-2 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-9 coarse:px-2.5";
   return (
-    <div className="absolute bottom-3 left-3 flex items-center gap-0.5 rounded-[12px] border border-border/60 bg-popover/90 p-1 backdrop-blur-md">
+    <div className="absolute bottom-3 left-3 flex items-center gap-0.5 rounded-field border border-border/60 bg-popover/90 p-1 backdrop-blur-md">
       <button type="button" className={button} onClick={() => onZoomBy(1 / 1.25)} aria-label="Zoom out">
         −
       </button>

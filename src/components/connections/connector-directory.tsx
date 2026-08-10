@@ -261,7 +261,7 @@ function ConnectorTile({
       className={cn(
         // Canonical card: 16px radius, hairline border, card fill, soft shadow,
         // with the shared lift-on-hover treatment used across the app.
-        "group flex flex-col justify-between gap-3 rounded-[16px] border bg-card p-4 shadow-soft transition-all duration-base ease-out-soft",
+        "group flex flex-col justify-between gap-3 rounded-card border bg-card p-4 shadow-soft transition-all duration-base ease-out-soft",
         item.connected
           ? "border-success/30"
           : unavailable
@@ -566,7 +566,7 @@ export function ConnectorDirectory({
         {!composioConfigured && <ComposioSetupCallout />}
 
         {error && (
-          <div className="mb-4 rounded-[16px] border border-dashed border-destructive/40 bg-destructive/5 p-4 text-center text-sm text-destructive">
+          <div className="mb-4 rounded-card border border-dashed border-destructive/40 bg-destructive/5 p-4 text-center text-sm text-destructive">
             The app directory couldn’t be loaded. Check <code className="font-mono text-xs">COMPOSIO_API_KEY</code> on the server.
           </div>
         )}
@@ -585,12 +585,12 @@ export function ConnectorDirectory({
           ))}
           {loading &&
             Array.from({ length: 6 }, (_, i) => (
-              <div key={`sk-${i}`} className="skeleton h-[132px] rounded-[16px]" style={{ animationDelay: `${i * 30}ms` }} />
+              <div key={`sk-${i}`} className="skeleton h-[132px] rounded-card" style={{ animationDelay: `${i * 30}ms` }} />
             ))}
         </div>
 
         {!loading && items.length === 0 && (
-          <div className="flex flex-col items-center gap-4 rounded-[16px] border border-border/70 bg-card/40 px-6 py-12 text-center">
+          <div className="flex flex-col items-center gap-4 rounded-card border border-border/70 bg-card/40 px-6 py-12 text-center">
             <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
               <Plug className="size-6" />
             </span>

@@ -344,7 +344,7 @@ export function MotionPanel({
             if (!playing && timeMs >= span) setTimeMs(0);
             setPlaying((value) => !value);
           }}
-          className="pressable rounded-[8px] p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+          className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
         >
           {playing ? <Pause className="size-3.5" aria-hidden /> : <Play className="size-3.5" aria-hidden />}
         </button>
@@ -356,7 +356,7 @@ export function MotionPanel({
             setPlaying(false);
             setTimeMs(0);
           }}
-          className="pressable rounded-[8px] p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+          className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
         >
           <SkipBack className="size-3.5" aria-hidden />
         </button>
@@ -401,7 +401,7 @@ export function MotionPanel({
               aria-label="Loop"
               onClick={() => write({ ...animation, loop: !animation.loop }, animation.loop ? "Stop looping" : "Loop animation")}
               className={cn(
-                "pressable rounded-[8px] p-1 transition-colors disabled:opacity-40",
+                "pressable rounded-md p-1 transition-colors disabled:opacity-40",
                 animation.loop ? "text-primary" : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -414,7 +414,7 @@ export function MotionPanel({
           type="button"
           disabled={readOnly}
           onClick={addAnimation}
-          className="pressable flex items-center gap-1 rounded-[8px] px-1.5 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+          className="pressable flex items-center gap-1 rounded-md px-1.5 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
         >
           <Plus className="size-3" aria-hidden /> New
         </button>
@@ -429,7 +429,7 @@ export function MotionPanel({
               setEngaged(false);
               setPlaying(false);
             }}
-            className="pressable rounded-[8px] p-1 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
+            className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
           >
             <Trash2 className="size-3.5" aria-hidden />
           </button>
@@ -444,7 +444,7 @@ export function MotionPanel({
               setPlaying(false);
               setEngaged(false);
             }}
-            className="pressable rounded-[8px] border border-primary/40 bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-primary transition-colors hover:bg-primary/15"
+            className="pressable rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-primary transition-colors hover:bg-primary/15"
           >
             Previewing · back to the design
           </button>
@@ -453,7 +453,7 @@ export function MotionPanel({
           type="button"
           onClick={onClose}
           aria-label="Close the timeline"
-          className="pressable rounded-[8px] p-1 text-muted-foreground transition-colors hover:text-foreground"
+          className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
         >
           <X className="size-3.5" aria-hidden />
         </button>
@@ -466,7 +466,7 @@ export function MotionPanel({
             type="button"
             disabled={readOnly}
             onClick={addAnimation}
-            className="pressable rounded-[10px] border border-border/60 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-10"
+            className="pressable rounded-control border border-border/60 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-10"
           >
             New animation
           </button>
@@ -645,7 +645,7 @@ export function MotionPanel({
                           aria-label={`Keyframe at ${Math.round(at)} ms`}
                           aria-pressed={isSelected}
                           className={cn(
-                            "absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[2px] border transition-colors",
+                            "absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-micro border transition-colors",
                             isSelected ? "border-primary bg-primary" : "border-primary/70 bg-background hover:bg-primary/40",
                             readOnly ? "cursor-default" : "cursor-grab"
                           )}
@@ -729,7 +729,7 @@ export function MotionPanel({
                   const color = hexToRgba(event.target.value);
                   if (color) editKeyframe(selected.track, selected.index, { value: color }, "Set keyframe colour");
                 }}
-                className="size-6 cursor-pointer rounded-[6px] border border-border/60 bg-transparent p-0.5 disabled:opacity-50"
+                className="size-6 cursor-pointer rounded-xs border border-border/60 bg-transparent p-0.5 disabled:opacity-50"
               />
             </label>
           )}
@@ -744,7 +744,7 @@ export function MotionPanel({
             type="button"
             disabled={readOnly}
             onClick={() => deleteKeyframe(selected.track, selected.index)}
-            className="pressable rounded-[8px] px-1.5 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
+            className="pressable rounded-md px-1.5 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
           >
             Delete keyframe
           </button>
@@ -808,7 +808,7 @@ function rulerTicks(span: number): number[] {
  *  transition's easing are one `EasingCurve` — and two copies of it would drift
  *  the moment the model gained a curve. */
 export const fieldClass =
-  "w-full rounded-[8px] border border-border/60 bg-background px-2 py-1 text-xs tabular-nums outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-50 coarse:min-h-9";
+  "w-full rounded-md border border-border/60 bg-background px-2 py-1 text-xs tabular-nums outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-50 coarse:min-h-9";
 
 export function InlineNumber({
   label,

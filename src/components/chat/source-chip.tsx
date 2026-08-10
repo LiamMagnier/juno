@@ -80,7 +80,7 @@ const VARIANTS = {
   // Pill cluster avatar — circular, per the stacked-avatar convention.
   cluster: { box: "size-5 rounded-full", glyph: "text-[9px]", icon: "size-2.5" },
   // Expanded list row. 6px = the row's 14px radius minus its 8px padding.
-  list: { box: "size-[22px] rounded-[6px]", glyph: "text-[10px]", icon: "size-3" },
+  list: { box: "size-[22px] rounded-xs", glyph: "text-[10px]", icon: "size-3" },
 } as const;
 
 export function SourceFavicon({

@@ -23,8 +23,8 @@ export function Toaster(props: ToasterProps) {
           error: "group-[.toaster]:text-destructive-ink",
           warning: "group-[.toaster]:text-warning-foreground",
           description: "group-[.toast]:text-muted-foreground",
-          actionButton: "group-[.toast]:rounded-[10px] group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
-          cancelButton: "group-[.toast]:rounded-[10px] group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
+          actionButton: "group-[.toast]:rounded-control group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
+          cancelButton: "group-[.toast]:rounded-control group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
         },
       }}
       {...props}

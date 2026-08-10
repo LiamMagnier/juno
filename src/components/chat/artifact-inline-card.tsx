@@ -115,7 +115,7 @@ function SegmentButton({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-2.5 text-xs font-medium",
+        "inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-control px-2.5 text-xs font-medium",
         "transition-all duration-base ease-out-soft active:scale-[0.97]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         active
@@ -209,7 +209,7 @@ export function ArtifactInlineCard({
     <>
       <span
         className={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-[10px] border border-border/60 bg-muted/50",
+          "flex size-8 shrink-0 items-center justify-center rounded-control border border-border/60 bg-muted/50",
           "transition-colors duration-base ease-out-soft",
           streaming ? "text-primary" : "text-muted-foreground",
           onOpen && "group-hover/art:border-primary/25 group-hover/art:text-primary"
@@ -254,7 +254,7 @@ export function ArtifactInlineCard({
     <article
       aria-busy={streaming || undefined}
       className={cn(
-        "group/art my-5 w-full overflow-hidden rounded-[16px] border border-border/60 bg-card/40",
+        "group/art my-5 w-full overflow-hidden rounded-card border border-border/60 bg-card/40",
         "transition-colors duration-base ease-out-soft hover:border-border",
         "motion-safe:animate-rise-in [animation-fill-mode:backwards]"
       )}
@@ -265,7 +265,7 @@ export function ArtifactInlineCard({
             type="button"
             onClick={onOpen}
             aria-label={`Open ${title || "artifact"} in canvas`}
-            className="-m-1.5 flex min-w-0 flex-1 items-center gap-2.5 rounded-[12px] p-1.5 text-left outline-none transition-colors duration-fast ease-out-soft hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/40"
+            className="-m-1.5 flex min-w-0 flex-1 items-center gap-2.5 rounded-field p-1.5 text-left outline-none transition-colors duration-fast ease-out-soft hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/40"
           >
             {identity}
           </button>
@@ -276,7 +276,7 @@ export function ArtifactInlineCard({
         <div className="flex shrink-0 items-center gap-1 self-end sm:self-auto">
           {/* View switcher — hidden while streaming (the write-in IS the view). */}
           {!streaming && hasContent && (inlinePreview || hasConsole) && (
-            <div role="group" aria-label="Artifact view" className="field-well flex h-8 items-center gap-0.5 rounded-[14px] bg-muted/70 p-0.5">
+            <div role="group" aria-label="Artifact view" className="field-well flex h-8 items-center gap-0.5 rounded-menu bg-muted/70 p-0.5">
               {inlinePreview && (
                 <SegmentButton active={view === "preview"} onClick={() => setView("preview")}>
                   {rt.mode === "console" ? "Output" : "Preview"}
@@ -304,7 +304,7 @@ export function ArtifactInlineCard({
                 onClick={onOpen}
                 aria-label="Open in canvas"
                 className={cn(
-                  "pressable inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-[10px] text-muted-foreground",
+                  "pressable inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-control text-muted-foreground",
                   "h-8 gap-1.5 px-2.5 text-xs font-medium coarse:h-10 coarse:px-3",
                   "hover:bg-accent hover:text-primary",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"

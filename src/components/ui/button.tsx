@@ -32,10 +32,10 @@ const buttonVariants = cva(
       // Small/icon sizes grow to ~44px hit areas on touch devices (coarse:).
       size: {
         default: "h-9 px-4 py-2",
-        sm: "h-8 rounded-[10px] px-3 text-xs coarse:h-10",
+        sm: "h-8 rounded-control px-3 text-xs coarse:h-10",
         lg: "h-11 px-6 text-[0.9375rem]",
         icon: "h-9 w-9 coarse:h-11 coarse:w-11",
-        "icon-sm": "h-8 w-8 rounded-[10px] coarse:h-10 coarse:w-10",
+        "icon-sm": "h-8 w-8 rounded-control coarse:h-10 coarse:w-10",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

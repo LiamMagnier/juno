@@ -552,7 +552,7 @@ export default function NewCodeSessionPage() {
                     }
                   }}
                   className={cn(
-                    "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-[22px] border bg-card/95 backdrop-blur sm:rounded-[24px]",
+                    "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-composer border bg-card/95 backdrop-blur sm:rounded-lg",
                     "transition-[opacity,transform,border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
                     dictating
                       ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0"
@@ -562,7 +562,7 @@ export default function NewCodeSessionPage() {
                   )}
                 >
                   {dragging && (
-                    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-[inherit] border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
+                    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
                       <FileUp className="h-6 w-6 text-primary" />
                       <span className="font-mono text-label text-primary">Drop to attach</span>
                     </div>
@@ -675,7 +675,7 @@ export default function NewCodeSessionPage() {
                               aria-label="Add"
                               disabled={submitting}
                               className={cn(
-                                "composer-add-button group shrink-0 rounded-[11px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
+                                "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
                                 plusOpen && "bg-accent",
                               )}
                             >
@@ -754,7 +754,7 @@ export default function NewCodeSessionPage() {
                                         // 6.5rem here against 7.25rem there for no
                                         // reason, so "Extra high" clipped on one
                                         // page and not the other.
-                                        "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-[10px] px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
+                                        "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-control px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
                                         atTopTier ? "text-ultra" : "text-foreground/80",
                                       )}
                                     >
@@ -799,7 +799,7 @@ export default function NewCodeSessionPage() {
                                 disabled={submitting || dictating}
                                 aria-label="Dictate"
                                 aria-pressed={dictating}
-                                className="composer-mic-button rounded-[11px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
+                                className="composer-mic-button rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
                               >
                                 <Mic className="composer-mic-icon h-4 w-4" />
                               </Button>
@@ -823,7 +823,7 @@ export default function NewCodeSessionPage() {
                                   ? "Start a cloud run"
                                   : "Start the session"
                             }
-                            className="composer-primary-action h-9 w-9 rounded-[13px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
+                            className="composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
                           >
                             {submitting ? (
                               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

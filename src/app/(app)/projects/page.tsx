@@ -231,7 +231,7 @@ export default function ProjectsPage() {
             {[...Array(6)].map((_, i) => (
               <div
                 key={i}
-                className="surface-raised flex h-40 flex-col justify-between rounded-[28px] border border-border/70 p-5"
+                className="surface-raised flex h-40 flex-col justify-between rounded-panel border border-border/70 p-5"
                 style={{ animationDelay: `${i * 50}ms` }}
               >
                 <div className="space-y-2.5">
@@ -270,7 +270,7 @@ export default function ProjectsPage() {
                 variant="default"
                 style={{ animationDelay: `${Math.min(i, 12) * 40}ms` }}
                 className={cn(
-                  "overflow-hidden p-0 motion-safe:animate-rise-in [animation-fill-mode:backwards] flex flex-col justify-between rounded-[28px] hover:-translate-y-1 hover:border-border hover:shadow-float transition-all duration-base cursor-pointer",
+                  "overflow-hidden p-0 motion-safe:animate-rise-in [animation-fill-mode:backwards] flex flex-col justify-between rounded-panel hover:-translate-y-1 hover:border-border hover:shadow-float transition-all duration-base cursor-pointer",
                   p.coverUrl ? "h-[260px]" : "h-[160px]"
                 )}
                 onClick={(e) => {

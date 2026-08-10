@@ -140,7 +140,7 @@ export function ComposerAddMenu({
               : "Add to this task"
           }
           className={cn(
-            "composer-add-button group relative shrink-0 rounded-[11px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
+            "composer-add-button group relative shrink-0 rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
             open && "bg-accent"
           )}
         >

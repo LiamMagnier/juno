@@ -152,7 +152,7 @@ export default function DesignPage() {
               disabled={creating !== null}
               onClick={() => void startDesign(preset.key)}
               className={cn(
-                "pressable group flex flex-col items-start gap-0.5 rounded-[14px] border border-border/60 bg-card/40 px-3 py-2.5 text-left transition-colors duration-fast",
+                "pressable group flex flex-col items-start gap-0.5 rounded-menu border border-border/60 bg-card/40 px-3 py-2.5 text-left transition-colors duration-fast",
                 "hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
                 creating !== null && "opacity-60"
               )}
@@ -175,11 +175,11 @@ export default function DesignPage() {
         {loading ? (
           <div className="space-y-2">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-14 animate-pulse rounded-[14px] bg-muted/50" />
+              <div key={i} className="h-14 animate-pulse rounded-menu bg-muted/50" />
             ))}
           </div>
         ) : error ? (
-          <div className="rounded-[14px] border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <div className="rounded-menu border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
             {error}
           </div>
         ) : empty ? (
@@ -195,11 +195,11 @@ export default function DesignPage() {
             <ul className="space-y-1.5">
               {items.map((item) => (
                 <li key={item.id}>
-                  <div className="group flex items-center gap-1 rounded-[14px] border border-border/60 bg-card/40 p-1 transition-colors duration-fast hover:border-primary/40 hover:bg-accent">
+                  <div className="group flex items-center gap-1 rounded-menu border border-border/60 bg-card/40 p-1 transition-colors duration-fast hover:border-primary/40 hover:bg-accent">
                     <button
                       type="button"
                       onClick={() => router.push(`/design/${item.id}`)}
-                      className="pressable flex min-w-0 flex-1 items-center gap-3 rounded-[11px] px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      className="pressable flex min-w-0 flex-1 items-center gap-3 rounded-composer-control px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                     >
                       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                         <AppIcons.design className="size-4" aria-hidden />

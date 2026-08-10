@@ -241,7 +241,7 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
           // No `download` attribute: the route sets Content-Disposition itself,
           // and a filename asserted here would be this bundle's guess rather
           // than the one the file was written under.
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] text-muted-foreground transition-[background-color,color] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-composer-control text-muted-foreground transition-[background-color,color] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={`Download ${artifact.title}`}
         >
           <Download className="h-3.5 w-3.5" aria-hidden="true" />

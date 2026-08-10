@@ -187,7 +187,7 @@ function ModelDetailPanel({
           <div>
             <div className="flex items-start justify-between gap-2">
               <h3 className="text-lg font-semibold leading-tight tracking-tight">{model.name}</h3>
-              <ProviderLogo provider={model.provider} className="mt-0.5 h-6 w-6 shrink-0 rounded-[28%]" />
+              <ProviderLogo provider={model.provider} className="mt-0.5 h-6 w-6 shrink-0" />
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
               <span>{PROVIDERS[model.provider].label.split(" · ")[0]}</span>
@@ -452,7 +452,7 @@ export function ModelSelector({
         onMouseEnter={() => setHoveredId(m.id)}
         onFocus={() => setHoveredId(m.id)}
         className={cn(
-          "group relative flex flex-col justify-between rounded-[10px] border p-3 transition-all duration-base ease-out-soft animate-rise-in [animation-fill-mode:backwards]",
+          "group relative flex flex-col justify-between rounded-control border p-3 transition-all duration-base ease-out-soft animate-rise-in [animation-fill-mode:backwards]",
           soon
             ? "border-border/60 bg-card/40 opacity-60"
             : "active:scale-[0.99] " + (active
@@ -467,7 +467,7 @@ export function ModelSelector({
         >
           {/* Logo & Name Row */}
           <div className="flex items-center gap-2.5 w-full pr-6">
-            <ProviderLogo provider={m.provider} className="h-6 w-6 rounded-[32%]" />
+            <ProviderLogo provider={m.provider} className="h-6 w-6" />
             <div className="min-w-0 flex-1">
               <span className="block truncate text-sm font-semibold tracking-tight">{m.name}</span>
               <span className="mt-0.5 block truncate text-xs text-muted-foreground">{PROVIDERS[m.provider].label.split(" · ")[0]}</span>
@@ -525,7 +525,7 @@ export function ModelSelector({
         <button
           type="button"
           aria-label={`Model: ${current?.name ?? "Select model"}`}
-          className="group inline-flex h-8 w-full min-w-0 max-w-[12rem] items-center gap-1 rounded-[10px] px-1.5 text-[12px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground max-[359px]:w-auto max-[359px]:px-2 sm:w-auto sm:max-w-[16rem] sm:gap-1.5 sm:px-2 sm:text-[13px] coarse:h-11"
+          className="group inline-flex h-8 w-full min-w-0 max-w-[12rem] items-center gap-1 rounded-control px-1.5 text-[12px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground max-[359px]:w-auto max-[359px]:px-2 sm:w-auto sm:max-w-[16rem] sm:gap-1.5 sm:px-2 sm:text-[13px] coarse:h-11"
         >
           {autoSelected ? (
             <JunoMark className="size-3.5 shrink-0 rounded transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
@@ -590,7 +590,7 @@ export function ModelSelector({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search models…"
-                className="h-8 rounded-[10px] pl-8 focus-visible:ring-1 focus-visible:ring-ring/30"
+                className="h-8 rounded-control pl-8 focus-visible:ring-1 focus-visible:ring-ring/30"
                 autoFocus
               />
             </div>
@@ -626,7 +626,7 @@ export function ModelSelector({
                             onMouseEnter={() => setHoveredId(AUTO_MODEL_ID)}
                             onFocus={() => setHoveredId(AUTO_MODEL_ID)}
                             className={cn(
-                              "group relative flex flex-col justify-between rounded-[10px] border p-3 transition-all duration-base ease-out-soft",
+                              "group relative flex flex-col justify-between rounded-control border p-3 transition-all duration-base ease-out-soft",
                               "active:scale-[0.99] " +
                                 (autoSelected
                                   ? "border-primary bg-primary/5 shadow-sm"
@@ -663,7 +663,7 @@ export function ModelSelector({
                       {legacyItems.length > 0 && (
                         <div className="mt-2.5">
                           {/* Auto-expand while searching so past matches are visible. */}
-                          <details key={q ? "open" : "closed"} open={!!q} className="group/legacy rounded-[10px] border border-border/40 bg-muted/10 overflow-hidden">
+                          <details key={q ? "open" : "closed"} open={!!q} className="group/legacy rounded-control border border-border/40 bg-muted/10 overflow-hidden">
                             <summary className="cursor-pointer flex items-center justify-between px-3 py-2 text-[10px] font-bold text-muted-foreground hover:bg-accent/30 transition-colors duration-fast ease-out-soft">
                               <span>Past models ({legacyItems.length})</span>
                               <ChevronDown className="h-3.5 w-3.5 transition-transform duration-base group-open/legacy:rotate-180" />

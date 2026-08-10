@@ -27,7 +27,7 @@ const TYPE_ICON: Record<ArtifactType, typeof Code2> = {
 function ArtifactChip({ title, type }: { title: string; type: ArtifactType }) {
   const Icon = TYPE_ICON[type] ?? FileCode2;
   return (
-    <div className="my-3 flex items-center gap-3 rounded-[18px] border border-border/70 bg-card/80 px-4 py-3 shadow-soft">
+    <div className="my-3 flex items-center gap-3 rounded-popover border border-border/70 bg-card/80 px-4 py-3 shadow-soft">
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
         <Icon className="h-4 w-4" />
       </span>

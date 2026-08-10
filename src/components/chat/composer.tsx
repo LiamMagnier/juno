@@ -275,7 +275,7 @@ function PaletteEyebrow({ label, counter }: { label: string; counter?: string })
  *  keeps lucide glyphs, provider logos and connector marks on one baseline. */
 function PaletteIcon({ children }: { children: React.ReactNode }) {
   return (
-    <span className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-[6px] border border-border/50 bg-background/60">
+    <span className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-xs border border-border/50 bg-background/60">
       {children}
     </span>
   );
@@ -1499,7 +1499,7 @@ export function Composer({
             if (features.storage && !privateMode && e.dataTransfer.files.length) addComposerFiles(e.dataTransfer.files);
           }}
           className={cn(
-            "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-[22px] border bg-card/95 backdrop-blur sm:rounded-[24px]",
+            "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-composer border bg-card/95 backdrop-blur sm:rounded-lg",
             "transition-[opacity,transform,border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
             dictating ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0" : "translate-y-0 scale-100 opacity-100",
             clarificationOpen ? "gap-3 p-3 sm:gap-3.5 sm:p-3.5" : "",
@@ -1510,7 +1510,7 @@ export function Composer({
           )}
         >
         {dragging && !privateMode && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-[inherit] border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
             <FileUp className="h-6 w-6 text-primary" />
             <span className="font-mono text-label text-primary">Drop to attach</span>
           </div>
@@ -1537,7 +1537,7 @@ export function Composer({
             "relative flex w-full flex-col transition-[opacity,transform] duration-base ease-out-soft",
             // Keep the free-text path calm under a clarification — no second heavy card.
             clarificationOpen
-              ? "rounded-[16px] border border-border/45 bg-background/35 px-3 py-2.5 sm:rounded-[18px] sm:px-3.5 sm:py-3"
+              ? "rounded-card border border-border/45 bg-background/35 px-3 py-2.5 sm:rounded-popover sm:px-3.5 sm:py-3"
               : ""
           )}
         >
@@ -1595,7 +1595,7 @@ export function Composer({
           >
             <span
               aria-hidden
-              className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-[8px] border border-primary/25 bg-primary/10 text-primary"
+              className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-primary/25 bg-primary/10 text-primary"
             >
               {quote.kind === "element" ? (
                 <SquareDashedMousePointer className="h-3.5 w-3.5" />
@@ -1721,7 +1721,7 @@ export function Composer({
           // layer — so adding shadow-float silently replaced the glass entirely
           // and left this popover looking unlike the + menu beside it.
           // DropdownMenuContent uses glass-raised alone; match it.
-          <div className="absolute bottom-full left-2 right-2 z-30 mb-2 origin-bottom overflow-hidden rounded-[14px] border border-border/60 bg-popover/90 p-1.5 text-popover-foreground glass-raised backdrop-blur-xl motion-safe:animate-pop-in">
+          <div className="absolute bottom-full left-2 right-2 z-30 mb-2 origin-bottom overflow-hidden rounded-menu border border-border/60 bg-popover/90 p-1.5 text-popover-foreground glass-raised backdrop-blur-xl motion-safe:animate-pop-in">
             {/* Options, not tab stops: the caret never leaves the textarea, so this
                 is a combobox popup. A button row also could not legally hold the
                 Switch, which is itself a button. */}
@@ -1865,7 +1865,7 @@ export function Composer({
                   aria-label={researchArmed ? "Add — deep research is on for this message" : "Add"}
                   disabled={controlsLocked}
                   className={cn(
-                    "composer-add-button group shrink-0 rounded-[11px] coarse:h-11 coarse:w-11",
+                    "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11",
                     plusOpen && "bg-accent"
                   )}
                 >
@@ -2109,7 +2109,7 @@ export function Composer({
                                     onKeyDown={(event) => event.stopPropagation()}
                                     placeholder="Search connected apps…"
                                     aria-label="Search connected apps"
-                                    className="h-9 w-full rounded-[9px] border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-foreground/70"
+                                    className="h-9 w-full rounded-control border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-foreground/70"
                                   />
                                 </label>
                               </div>
@@ -2181,7 +2181,7 @@ export function Composer({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span
-                      className="inline-flex h-8 shrink-0 items-center gap-1 rounded-[10px] px-2 font-mono text-[12px] text-muted-foreground min-[480px]:text-[13px]"
+                      className="inline-flex h-8 shrink-0 items-center gap-1 rounded-control px-2 font-mono text-[12px] text-muted-foreground min-[480px]:text-[13px]"
                       aria-label="Thinking effort: Auto — chosen per prompt"
                     >
                       <span className="truncate">Auto</span>
@@ -2224,7 +2224,7 @@ export function Composer({
                             disabled={controlsLocked}
                             aria-label={`Thinking effort: ${currentEffort.label}${canFastMode ? `; Flash mode ${fastMode ? "on" : "off"}` : ""}${canProMode ? `; Pro mode ${proMode ? "on" : "off"}` : ""}`}
                             className={cn(
-                              "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-[10px] px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
+                              "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-control px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
                               atTopTier ? "text-ultra" : "text-foreground/80"
                             )}
                           >
@@ -2272,7 +2272,7 @@ export function Composer({
                     disabled={controlsLocked || dictating || voiceActive}
                     aria-label="Dictate"
                     aria-pressed={dictating}
-                    className="composer-mic-button rounded-[11px] coarse:h-11 coarse:w-11"
+                    className="composer-mic-button rounded-composer-control coarse:h-11 coarse:w-11"
                   >
                     <Mic className="composer-mic-icon h-4 w-4" />
                   </Button>
@@ -2309,8 +2309,8 @@ export function Composer({
                         : "Send message"
                   }
                   className={cn(
-                    "composer-primary-action h-9 w-9 rounded-[13px] coarse:h-11 coarse:w-11 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
-                    isBusy && status !== "checking" ? "w-11 rounded-[11px] ring-2 ring-primary/15" : "rounded-[13px]"
+                    "composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
+                    isBusy && status !== "checking" ? "w-11 rounded-composer-control ring-2 ring-primary/15" : "rounded-composer-action"
                   )}
                 >
                   {status === "checking" ? (

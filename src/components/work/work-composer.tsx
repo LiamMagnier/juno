@@ -824,7 +824,7 @@ export function WorkComposer({
 
   return (
     <div className="w-full">
-      <div className="composer-surface relative flex w-full flex-col rounded-[22px] border border-border/65 bg-card/95 backdrop-blur transition-[border-color,box-shadow] duration-base ease-spring focus-within:border-foreground/15 sm:rounded-[24px]">
+      <div className="composer-surface relative flex w-full flex-col rounded-composer border border-border/65 bg-card/95 backdrop-blur transition-[border-color,box-shadow] duration-base ease-spring focus-within:border-foreground/15 sm:rounded-lg">
         <div className="flex flex-wrap items-center gap-1.5 px-3 pb-0 pt-3 sm:px-3.5 sm:pt-3.5">
           <ProjectChip value={projectId} onChange={setProjectId} disabled={submitting} />
           <AppsChip
@@ -927,7 +927,7 @@ export function WorkComposer({
                       aria-label="Attach a document"
                       disabled={submitting}
                       className={cn(
-                        "composer-add-button group shrink-0 rounded-[11px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
+                        "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
                         plusOpen && "bg-accent"
                       )}
                     >
@@ -999,7 +999,7 @@ export function WorkComposer({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span
-                      className="inline-flex h-8 shrink-0 items-center gap-1 rounded-[10px] px-2 font-mono text-[12px] text-muted-foreground min-[480px]:text-[13px]"
+                      className="inline-flex h-8 shrink-0 items-center gap-1 rounded-control px-2 font-mono text-[12px] text-muted-foreground min-[480px]:text-[13px]"
                       aria-label="Thinking effort: Auto — chosen with the model"
                     >
                       <span className="truncate">Auto</span>
@@ -1040,7 +1040,7 @@ export function WorkComposer({
                               disabled={submitting}
                               aria-label={`Thinking effort: ${current.label}`}
                               className={cn(
-                                "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-[10px] px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
+                                "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-control px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
                                 atTopTier ? "text-ultra" : "text-foreground/80"
                               )}
                             >
@@ -1087,7 +1087,7 @@ export function WorkComposer({
                     onClick={() => void submit()}
                     disabled={!canStart}
                     aria-label={selection.target === null ? selection.explanation : "Start this task"}
-                    className="composer-primary-action h-9 w-9 rounded-[13px] coarse:h-11 coarse:w-11"
+                    className="composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11"
                   >
                     {submitting ? (
                       <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -1388,7 +1388,7 @@ interface ComposerProject {
  * lands is a control that moves out from under the pointer heading for it.
  */
 const CHIP_CLASS =
-  "group inline-flex h-8 min-w-0 max-w-[13rem] items-center gap-1.5 rounded-[10px] px-2 font-mono text-[12px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[480px]:text-[13px] coarse:h-11";
+  "group inline-flex h-8 min-w-0 max-w-[13rem] items-center gap-1.5 rounded-control px-2 font-mono text-[12px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[480px]:text-[13px] coarse:h-11";
 
 /**
  * Files this task into a Project, so the project's instructions and files apply.

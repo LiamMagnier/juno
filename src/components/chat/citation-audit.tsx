@@ -246,7 +246,7 @@ function SourceInspector({ link, source }: { link: CitationAuditLink; source?: C
   const published = source?.publishedAt ? new Date(source.publishedAt) : null;
 
   return (
-    <div className="mt-2 rounded-[14px] border border-border/70 bg-muted/35 p-3">
+    <div className="mt-2 rounded-menu border border-border/70 bg-muted/35 p-3">
       <div className="flex items-start gap-2">
         {source && <SourceFavicon url={source.url} variant="list" />}
         <div className="min-w-0 flex-1">
@@ -328,7 +328,7 @@ function ClaimRow({ claim, sources }: { claim: CitationAuditClaim; sources: Cita
         aria-expanded={open}
         aria-controls={panelId}
         className={cn(
-          "flex w-full items-start gap-2.5 rounded-[12px] px-2 py-2.5 text-left",
+          "flex w-full items-start gap-2.5 rounded-field px-2 py-2.5 text-left",
           "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
           "hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           // 44px minimum target on touch, without stretching the row on a desktop list.
@@ -383,7 +383,7 @@ function ClaimRow({ claim, sources }: { claim: CitationAuditClaim; sources: Cita
                 <SourceInspector key={`${link.sourceIndex}-${i}`} link={link} source={sourceOf(link.sourceIndex)} />
               ))
             ) : (
-              <p className="mt-2 rounded-[14px] border border-border/70 bg-muted/35 p-3 text-body text-muted-foreground">
+              <p className="mt-2 rounded-menu border border-border/70 bg-muted/35 p-3 text-body text-muted-foreground">
                 The report states this without citing anything. Juno could not check it against a source, so treat it as
                 unverified.
               </p>

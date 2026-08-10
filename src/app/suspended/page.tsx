@@ -26,7 +26,7 @@ export default async function SuspendedPage() {
           .
         </p>
         {ban.reason && (
-          <div className="mt-4 rounded-[14px] border border-border/60 bg-muted/40 px-4 py-3 text-left text-sm">
+          <div className="mt-4 rounded-menu border border-border/60 bg-muted/40 px-4 py-3 text-left text-sm">
             <span className="font-mono text-caption text-muted-foreground">Reason</span>
             <p className="mt-1 text-foreground">{ban.reason}</p>
           </div>

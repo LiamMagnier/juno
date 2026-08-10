@@ -233,7 +233,7 @@ function InteractionCard({
   ];
 
   return (
-    <section className="space-y-2 rounded-[12px] border border-border/60 p-2">
+    <section className="space-y-2 rounded-field border border-border/60 p-2">
       <div className="flex items-start gap-1.5">
         <div className="min-w-0 flex-1 space-y-2">
           <SmallSelect
@@ -598,7 +598,7 @@ function VariableValueField({
               const color = hexToRgba(event.target.value);
               if (color) onChange({ kind: "color", value: color });
             }}
-            className="size-6 cursor-pointer rounded-[6px] border border-border/60 bg-transparent p-0.5 disabled:opacity-50"
+            className="size-6 cursor-pointer rounded-xs border border-border/60 bg-transparent p-0.5 disabled:opacity-50"
           />
         </label>
       );

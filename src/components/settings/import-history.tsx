@@ -123,7 +123,7 @@ export function ImportHistoryCard() {
   const pick = () => fileRef.current?.click();
 
   return (
-    <Card className="p-5 rounded-[28px]">
+    <Card className="p-5 rounded-panel">
       <CardEyebrow className="mb-4">Import</CardEyebrow>
 
       <div

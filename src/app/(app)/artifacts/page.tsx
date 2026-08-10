@@ -336,10 +336,10 @@ export default function ArtifactsPage() {
             </Button>
           </div>
         ) : loading ? (
-          <div className="mt-6 divide-y divide-border/50 rounded-[16px] border border-border/60">
+          <div className="mt-6 divide-y divide-border/50 rounded-card border border-border/60">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="flex items-center gap-3 px-4 py-3">
-                <div className="skeleton size-8 rounded-[10px]" style={{ animationDelay: `${i * 60}ms` }} />
+                <div className="skeleton size-8 rounded-control" style={{ animationDelay: `${i * 60}ms` }} />
                 <div className="min-w-0 flex-1 space-y-1.5">
                   <div className="skeleton h-3.5 w-44 max-w-full rounded-full" style={{ animationDelay: `${i * 60}ms` }} />
                   <div className="skeleton h-2.5 w-64 max-w-full rounded-full" style={{ animationDelay: `${i * 60 + 40}ms` }} />
@@ -382,7 +382,7 @@ export default function ArtifactsPage() {
             </Button>
           </div>
         ) : (
-          <ul className="mt-6 divide-y divide-border/50 overflow-hidden rounded-[16px] border border-border/60 bg-card/40">
+          <ul className="mt-6 divide-y divide-border/50 overflow-hidden rounded-card border border-border/60 bg-card/40">
             {filtered.map((item, i) => {
               const Icon = ICONS[item.type] ?? FileCode2;
               const rt = runtimeFor(item.type, item.language);
@@ -392,12 +392,12 @@ export default function ArtifactsPage() {
                   style={{ animationDelay: `${Math.min(i, 10) * 30}ms` }}
                   className="group relative flex items-center gap-3 px-3 py-2.5 transition-colors duration-fast ease-out-soft hover:bg-accent/40 motion-safe:animate-rise-in [animation-fill-mode:backwards] sm:px-4"
                 >
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] border border-border/60 bg-muted/50 text-muted-foreground transition-colors duration-base ease-out-soft group-hover:border-primary/25 group-hover:text-primary">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-control border border-border/60 bg-muted/50 text-muted-foreground transition-colors duration-base ease-out-soft group-hover:border-primary/25 group-hover:text-primary">
                     <Icon className="size-4" aria-hidden />
                   </span>
                   <Link
                     href={`/chat/${item.conversationId}?artifact=${encodeURIComponent(item.identifier)}`}
-                    className="min-w-0 flex-1 outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-[16px] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-primary/40"
+                    className="min-w-0 flex-1 outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-card focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-primary/40"
                   >
                     <span className="block truncate text-sm font-medium leading-5">{item.title || "Untitled artifact"}</span>
                     <span className="mt-0.5 flex min-w-0 items-center gap-1.5 font-mono text-[10px] text-muted-foreground">

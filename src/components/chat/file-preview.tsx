@@ -147,7 +147,7 @@ export function FilePreview({
       {/* The extension stays legible over an excerpt: it is how you tell a .ts
           from a .py at a glance, and both look like grey lines from a metre. */}
       {text && (
-        <span className="absolute bottom-1.5 right-1.5 rounded-[4px] bg-background/85 px-1.5 py-0.5 font-mono text-[8px] font-medium tracking-[0.06em] text-muted-foreground backdrop-blur-sm">
+        <span className="absolute bottom-1.5 right-1.5 rounded-sm bg-background/85 px-1.5 py-0.5 font-mono text-[8px] font-medium tracking-[0.06em] text-muted-foreground backdrop-blur-sm">
           {extensionOf(item)}
         </span>
       )}

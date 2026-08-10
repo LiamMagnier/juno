@@ -32,7 +32,7 @@ export function SharedArtifactViewer({
   const hasPreview = isMarkdown || rt.mode === "web";
   const [tab, setTab] = React.useState<"preview" | "code">(hasPreview ? "preview" : "code");
 
-  const panel = "min-h-0 flex-1 overflow-hidden rounded-[20px] border border-border/60 bg-card/40 shadow-soft";
+  const panel = "min-h-0 flex-1 overflow-hidden rounded-surface border border-border/60 bg-card/40 shadow-soft";
 
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as "preview" | "code")} className="flex min-h-0 flex-1 flex-col">

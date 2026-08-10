@@ -72,7 +72,7 @@ function Marked({ text, marks }: { text: string; marks: readonly SearchMark[] })
   marks.forEach((mark, i) => {
     if (mark.start > cursor) parts.push(text.slice(cursor, mark.start));
     parts.push(
-      <mark key={i} className="rounded-[3px] bg-primary/15 px-0.5 text-primary-ink">
+      <mark key={i} className="rounded-sm bg-primary/15 px-0.5 text-primary-ink">
         {text.slice(mark.start, mark.end)}
       </mark>
     );
@@ -84,7 +84,7 @@ function Marked({ text, marks }: { text: string; marks: readonly SearchMark[] })
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[5px] border border-border/70 bg-muted/80 px-1 font-mono text-[10px] leading-none text-muted-foreground shadow-[0_1px_0_hsl(var(--border)/0.7)]">
+    <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-xs border border-border/70 bg-muted/80 px-1 font-mono text-[10px] leading-none text-muted-foreground shadow-[0_1px_0_hsl(var(--border)/0.7)]">
       {children}
     </kbd>
   );

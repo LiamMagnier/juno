@@ -65,7 +65,7 @@ export function SharedLinksCard() {
   };
 
   return (
-    <Card className="p-5 rounded-[28px]">
+    <Card className="p-5 rounded-panel">
       <div className="mb-4 flex items-end justify-between gap-3">
         <CardEyebrow>Shared links</CardEyebrow>
         {shares && shares.length > 0 && (
@@ -83,7 +83,7 @@ export function SharedLinksCard() {
           <div className="skeleton h-12 rounded-lg" />
         </div>
       ) : shares.length === 0 ? (
-        <div className="rounded-[16px] border border-dashed border-border/50 bg-muted/10 px-6 py-8 text-center">
+        <div className="rounded-card border border-dashed border-border/50 bg-muted/10 px-6 py-8 text-center">
           <p className="font-serif text-heading">Nothing shared yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
             Links you create from a chat or artifact appear here, with view counts.

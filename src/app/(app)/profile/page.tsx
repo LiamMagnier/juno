@@ -140,7 +140,7 @@ function TokenHeatmap({ daily }: { daily: Stats["daily"] }) {
                 <span
                   key={di}
                   title={`${cell.date} · ${cell.tokens.toLocaleString()} tokens`}
-                  className={cn("h-[11px] w-[11px] rounded-[2px]", LEVEL_BG[cell.level])}
+                  className={cn("h-[11px] w-[11px] rounded-micro", LEVEL_BG[cell.level])}
                 />
               );
             })}
@@ -235,7 +235,7 @@ function ProviderRow({
 }) {
   if (!configured) {
     return (
-      <div className="flex items-center gap-4 rounded-[24px] border border-border/50 p-4 opacity-45">
+      <div className="flex items-center gap-4 rounded-lg border border-border/50 p-4 opacity-45">
         <ProviderLogoWell provider={provider} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-base font-semibold">{shortProviderLabel(provider)}</p>
@@ -246,7 +246,7 @@ function ProviderRow({
   }
   const models = MODELS_BY_PROVIDER.get(provider) ?? [];
   return (
-    <div className="surface-raised overflow-hidden rounded-[24px] border border-border/70">
+    <div className="surface-raised overflow-hidden rounded-lg border border-border/70">
       <button
         type="button"
         onClick={onToggle}
@@ -313,7 +313,7 @@ function AccountCard({ email }: { email: string }) {
   };
 
   return (
-    <Card className="p-5 rounded-[28px]">
+    <Card className="p-5 rounded-panel">
       <CardEyebrow className="mb-4">Account</CardEyebrow>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -552,7 +552,7 @@ export default function ProfilePage() {
         ) : (
           <div className="mt-8 space-y-4">
             {/* Activity heatmap — last ~53 weeks */}
-            <Card className="rounded-[28px] p-5">
+            <Card className="rounded-panel p-5">
               <div className="mb-4 flex items-end justify-between gap-3">
                 <div>
                   <CardEyebrow>Activity</CardEyebrow>
@@ -573,13 +573,13 @@ export default function ProfilePage() {
               <div className="mt-3 flex items-center justify-end gap-1.5 font-mono text-[10px] text-muted-foreground">
                 Less
                 {LEVEL_BG.map((bg, i) => (
-                  <span key={i} className={cn("h-[11px] w-[11px] rounded-[2px]", bg)} />
+                  <span key={i} className={cn("h-[11px] w-[11px] rounded-micro", bg)} />
                 ))}
                 More
               </div>
             </Card>
 
-            <Card className="p-5 rounded-[28px]">
+            <Card className="p-5 rounded-panel">
               <div className="mb-4 flex items-end justify-between gap-3">
                 <div>
                   <CardEyebrow>Provider availability</CardEyebrow>
@@ -612,7 +612,7 @@ export default function ProfilePage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               {/* Most-used models — year window mix */}
-              <Card className="rounded-[28px] p-5">
+              <Card className="rounded-panel p-5">
                 <div className="mb-3">
                   <CardEyebrow>Most-used models</CardEyebrow>
                   <p className="mt-1 text-sm text-muted-foreground">Your mix over the last year.</p>
@@ -687,7 +687,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
   const kindsWithSpend = byKind.filter((k) => k.costMicroUsd > 0 || k.count > 0);
 
   return (
-    <Card className="relative overflow-hidden rounded-[28px] p-5">
+    <Card className="relative overflow-hidden rounded-panel p-5">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(520px_220px_at_100%_-10%,hsl(var(--primary)/0.08),transparent_60%)]"

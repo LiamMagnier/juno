@@ -699,7 +699,7 @@ export function CanvasPanel({
   const canOfferLastGood = previewFailed && lastGood != null && lastGood !== selectedVersion;
 
   const contextButton =
-    "h-7 gap-1.5 rounded-[10px] px-2 text-xs font-medium text-muted-foreground hover:text-foreground coarse:h-9 coarse:px-2.5";
+    "h-7 gap-1.5 rounded-control px-2 text-xs font-medium text-muted-foreground hover:text-foreground coarse:h-9 coarse:px-2.5";
 
   return (
     <div
@@ -724,7 +724,7 @@ export function CanvasPanel({
                   aria-pressed={historyOpen}
                   aria-label="Version history"
                   className={cn(
-                    "pressable -mx-1 inline-flex items-center gap-1 rounded-[6px] px-1 py-px coarse:min-h-9 coarse:px-2",
+                    "pressable -mx-1 inline-flex items-center gap-1 rounded-xs px-1 py-px coarse:min-h-9 coarse:px-2",
                     historyOpen ? "text-primary" : "hover:bg-accent hover:text-foreground"
                   )}
                 >
@@ -832,11 +832,11 @@ export function CanvasPanel({
                   <div
                     key={v.version}
                     className={cn(
-                      "group flex items-center rounded-[10px] pr-1.5 transition-colors duration-fast ease-out-soft",
+                      "group flex items-center rounded-control pr-1.5 transition-colors duration-fast ease-out-soft",
                       isTarget ? "bg-primary/10" : "hover:bg-muted/60"
                     )}
                   >
-                    <button type="button" onClick={() => selectTarget(v.version)} className="min-w-0 flex-1 px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-[8px]">
+                    <button type="button" onClick={() => selectTarget(v.version)} className="min-w-0 flex-1 px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-md">
                       <span className="flex items-baseline gap-1.5">
                         <span className={cn("font-mono text-xs font-medium", isTarget ? "text-primary" : "text-foreground")}>v{v.version}</span>
                         {isCurrent && <span className="font-mono text-[9px] text-muted-foreground">current</span>}
@@ -1161,14 +1161,14 @@ export function CanvasPanel({
             aria-label="Selection actions"
             style={barStyle}
             onPointerDown={(e) => e.preventDefault()}
-            className="fixed z-[70] flex items-center gap-0.5 rounded-[14px] border border-border/60 bg-popover/90 p-1 glass-raised backdrop-blur-xl motion-safe:animate-pop-in"
+            className="fixed z-[70] flex items-center gap-0.5 rounded-menu border border-border/60 bg-popover/90 p-1 glass-raised backdrop-blur-xl motion-safe:animate-pop-in"
           >
-            <Button type="button" variant="ghost" size="sm" onClick={() => quoteSelection("ask")} className="h-7 gap-1.5 rounded-[10px] px-2.5 coarse:h-10 coarse:px-3.5">
+            <Button type="button" variant="ghost" size="sm" onClick={() => quoteSelection("ask")} className="h-7 gap-1.5 rounded-control px-2.5 coarse:h-10 coarse:px-3.5">
               <MessageCircleQuestion className="h-3.5 w-3.5 text-primary" aria-hidden />
               Ask
             </Button>
             <span aria-hidden className="h-4 w-px bg-border/70" />
-            <Button type="button" variant="ghost" size="sm" onClick={() => quoteSelection("modify")} className="h-7 gap-1.5 rounded-[10px] px-2.5 coarse:h-10 coarse:px-3.5">
+            <Button type="button" variant="ghost" size="sm" onClick={() => quoteSelection("modify")} className="h-7 gap-1.5 rounded-control px-2.5 coarse:h-10 coarse:px-3.5">
               <Pencil className="h-3.5 w-3.5 text-primary" aria-hidden />
               Modify
             </Button>

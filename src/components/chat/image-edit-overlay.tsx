@@ -284,7 +284,7 @@ export function ImageEditOverlay({
           {/* Canvas workspace */}
           <section className="relative flex min-h-0 flex-col overflow-hidden border-b border-border/60 bg-muted/20 md:border-b-0 md:border-r" aria-label="Image canvas">
             <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/50 px-4 pr-14 sm:px-5 sm:pr-16">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] border border-border/60 bg-background text-muted-foreground shadow-soft">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-control border border-border/60 bg-background text-muted-foreground shadow-soft">
                 <ImageIcon className="size-4" aria-hidden="true" />
               </span>
               <div className="min-w-0">
@@ -306,7 +306,7 @@ export function ImageEditOverlay({
                 aria-keyshortcuts="Enter Space Escape ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
                 tabIndex={support === "none" || imgFailed || !imgReady ? -1 : 0}
                 onKeyDown={handleCanvasKeyDown}
-                className="relative shrink-0 select-none overflow-hidden rounded-[14px] bg-background shadow-[0_18px_50px_hsl(var(--foreground)/0.12)] ring-1 ring-inset ring-border/70 outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-4 focus-visible:ring-offset-muted/20"
+                className="relative shrink-0 select-none overflow-hidden rounded-menu bg-background shadow-[0_18px_50px_hsl(var(--foreground)/0.12)] ring-1 ring-inset ring-border/70 outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-4 focus-visible:ring-offset-muted/20"
                 style={frameSize ? { width: frameSize.width, height: frameSize.height } : { width: "min(16rem, 100%)", height: "min(11rem, 100%)" }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -324,7 +324,7 @@ export function ImageEditOverlay({
                     setImgFailed(true);
                   }}
                   className={cn(
-                    "block size-full rounded-[13px] object-contain transition-opacity duration-fast motion-reduce:transition-none",
+                    "block size-full rounded-composer-action object-contain transition-opacity duration-fast motion-reduce:transition-none",
                     imgReady && !imgFailed ? "opacity-100" : "opacity-0"
                   )}
                 />
@@ -364,14 +364,14 @@ export function ImageEditOverlay({
                 )}
 
                 {region == null && imgReady && !imgFailed && support !== "none" && (
-                  <div aria-hidden="true" className="pointer-events-none absolute inset-1.5 z-20 rounded-[10px] border border-dashed border-white/60 mix-blend-difference" />
+                  <div aria-hidden="true" className="pointer-events-none absolute inset-1.5 z-20 rounded-control border border-dashed border-white/60 mix-blend-difference" />
                 )}
 
                 {region && (
                   <div
                     aria-hidden="true"
                     className={cn(
-                      "pointer-events-none absolute z-20 rounded-[3px] border border-white/90",
+                      "pointer-events-none absolute z-20 rounded-sm border border-white/90",
                       "shadow-[0_0_0_9999px_hsl(0_0%_0%/0.58),0_0_0_1px_hsl(0_0%_0%/0.34)]",
                       dragging ? "transition-none" : "transition-[left,top,width,height] duration-fast ease-out-soft motion-reduce:transition-none"
                     )}
@@ -394,7 +394,7 @@ export function ImageEditOverlay({
                     ))}
                     <span
                       className={cn(
-                        "absolute left-0 whitespace-nowrap rounded-[6px] border border-white/20 bg-black/75 px-2 py-1 font-mono text-[10px] tabular-nums text-white shadow-soft backdrop-blur-sm",
+                        "absolute left-0 whitespace-nowrap rounded-xs border border-white/20 bg-black/75 px-2 py-1 font-mono text-[10px] tabular-nums text-white shadow-soft backdrop-blur-sm",
                         captionBelow ? "-bottom-2 translate-y-full" : "-top-2 -translate-y-full"
                       )}
                     >
@@ -417,7 +417,7 @@ export function ImageEditOverlay({
                     setRegion(null);
                     setSelectionAnnouncement("Selection cleared. Changes apply to the whole image.");
                   }}
-                  className="shrink-0 rounded-[7px] px-2 py-1 font-medium text-foreground outline-none transition-colors duration-fast hover:bg-background focus-visible:ring-2 focus-visible:ring-foreground/15 motion-reduce:transition-none"
+                  className="shrink-0 rounded-md px-2 py-1 font-medium text-foreground outline-none transition-colors duration-fast hover:bg-background focus-visible:ring-2 focus-visible:ring-foreground/15 motion-reduce:transition-none"
                 >
                   Clear selection
                 </button>
@@ -438,7 +438,7 @@ export function ImageEditOverlay({
 
               <fieldset className="mt-6">
                 <legend className="mb-2 font-mono text-[10px] font-semibold text-muted-foreground">Edit area</legend>
-                <div className="grid grid-cols-2 gap-1 rounded-[12px] border border-border/60 bg-muted/40 p-1" role="group" aria-label="Edit area">
+                <div className="grid grid-cols-2 gap-1 rounded-field border border-border/60 bg-muted/40 p-1" role="group" aria-label="Edit area">
                   <button
                     type="button"
                     aria-pressed={region == null}
@@ -447,7 +447,7 @@ export function ImageEditOverlay({
                       setSelectionAnnouncement("Selection cleared. Changes apply to the whole image.");
                     }}
                     className={cn(
-                      "flex h-9 items-center justify-center gap-2 rounded-[8px] px-3 text-[12px] font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-foreground/15 motion-reduce:transition-none motion-reduce:active:scale-100",
+                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12px] font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-foreground/15 motion-reduce:transition-none motion-reduce:active:scale-100",
                       region == null ? "bg-background text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -459,7 +459,7 @@ export function ImageEditOverlay({
                     aria-pressed={region != null}
                     onClick={() => frameRef.current?.focus({ preventScroll: true })}
                     className={cn(
-                      "flex h-9 items-center justify-center gap-2 rounded-[8px] px-3 text-[12px] font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-foreground/15 motion-reduce:transition-none motion-reduce:active:scale-100",
+                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12px] font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-foreground/15 motion-reduce:transition-none motion-reduce:active:scale-100",
                       region != null ? "bg-background text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -478,7 +478,7 @@ export function ImageEditOverlay({
               </fieldset>
 
               {support === "none" && (
-                <div role="status" className="mt-4 flex items-start gap-2.5 rounded-[12px] border border-destructive/25 bg-destructive/[0.045] px-3.5 py-3 text-[12px] leading-relaxed text-destructive">
+                <div role="status" className="mt-4 flex items-start gap-2.5 rounded-field border border-destructive/25 bg-destructive/[0.045] px-3.5 py-3 text-[12px] leading-relaxed text-destructive">
                   <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
                   <span>
                     {editModel
@@ -489,7 +489,7 @@ export function ImageEditOverlay({
               )}
 
               {support === "prompt" && editModel && (
-                <div className="mt-4 flex items-start gap-2.5 rounded-[12px] border border-border/60 bg-muted/25 px-3.5 py-3 text-[11px] leading-relaxed text-muted-foreground">
+                <div className="mt-4 flex items-start gap-2.5 rounded-field border border-border/60 bg-muted/25 px-3.5 py-3 text-[11px] leading-relaxed text-muted-foreground">
                   <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
                   <span>{editModel.name} uses the selected area as guidance, so nearby details may also adjust.</span>
                 </div>
@@ -499,7 +499,7 @@ export function ImageEditOverlay({
                 <label htmlFor={`${selectionHelpId}-prompt`} className="font-mono text-[10px] font-semibold text-muted-foreground">
                   Instructions
                 </label>
-                <div className="mt-2 overflow-hidden rounded-[14px] border border-border/70 bg-background shadow-[inset_0_1px_2px_hsl(var(--foreground)/0.035)] transition-[border-color,box-shadow] duration-fast focus-within:border-foreground/25 focus-within:shadow-[0_0_0_3px_hsl(var(--foreground)/0.06)]">
+                <div className="mt-2 overflow-hidden rounded-menu border border-border/70 bg-background shadow-[inset_0_1px_2px_hsl(var(--foreground)/0.035)] transition-[border-color,box-shadow] duration-fast focus-within:border-foreground/25 focus-within:shadow-[0_0_0_3px_hsl(var(--foreground)/0.06)]">
                   <textarea
                     id={`${selectionHelpId}-prompt`}
                     value={prompt}

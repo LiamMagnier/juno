@@ -72,7 +72,7 @@ export function CompareModelPicker({
         <button
           type="button"
           disabled={disabled}
-          className="group inline-flex h-8 min-w-0 items-center gap-1.5 rounded-[10px] px-2 text-[13px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] disabled:pointer-events-none disabled:opacity-60 data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:h-10"
+          className="group inline-flex h-8 min-w-0 items-center gap-1.5 rounded-control px-2 text-[13px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] disabled:pointer-events-none disabled:opacity-60 data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:h-10"
         >
           {current && (
             <ProviderLogo
@@ -112,7 +112,7 @@ export function CompareModelPicker({
                     active && "bg-accent/60"
                   )}
                 >
-                  <ProviderLogo provider={m.provider} className="h-5 w-5 shrink-0 rounded-[28%]" />
+                  <ProviderLogo provider={m.provider} className="h-5 w-5 shrink-0" />
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">{m.name}</span>
                   <span className="shrink-0 text-caption text-muted-foreground">
                     {PROVIDERS[m.provider].label.split(" · ")[0]}

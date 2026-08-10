@@ -45,7 +45,7 @@ function SourceAudit({ audit, index }: { audit: CitationAudit; index: number }) 
         aria-expanded={open}
         aria-controls={panelId}
         className={cn(
-          "inline-flex min-h-11 items-center gap-1.5 rounded-[10px] px-1.5 font-mono text-caption text-muted-foreground",
+          "inline-flex min-h-11 items-center gap-1.5 rounded-control px-1.5 font-mono text-caption text-muted-foreground",
           "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
           "hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           source.duplicateOfIndex != null && "text-warning-foreground"
@@ -67,7 +67,7 @@ function SourceAudit({ audit, index }: { audit: CitationAudit; index: number }) 
         )}
       >
         <div className="min-h-0 overflow-hidden" inert={!open}>
-          <div className="mb-2 rounded-[14px] border border-border/70 bg-muted/35 p-3">
+          <div className="mb-2 rounded-menu border border-border/70 bg-muted/35 p-3">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
               <ScoreMeter label="Authority" value={source.authority ?? 0} />
               <ScoreMeter label="Freshness" value={source.freshness} />
@@ -126,7 +126,7 @@ function SourceRow({ source, index, audit }: { source: ClientSource; index: numb
           ? { title: "Juno did not link this: it is not a web address." }
           : {})}
         className={cn(
-          "group/row relative z-0 flex items-center gap-2.5 rounded-[14px] border border-transparent p-2",
+          "group/row relative z-0 flex items-center gap-2.5 rounded-menu border border-transparent p-2",
           "transition-[transform,box-shadow,border-color,background-color] duration-base ease-out-soft motion-reduce:transition-none",
           // Hover is a LIFT: the row resolves into a card and rises. `relative` +
           // `hover:z-10` so the next row's fill can't paint over this one's shadow.

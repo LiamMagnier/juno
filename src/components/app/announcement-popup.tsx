@@ -51,7 +51,7 @@ function AnnouncementVisual({ announcement }: { announcement: ClientAnnouncement
   if (announcement.provider) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-muted">
-        <ProviderLogo provider={announcement.provider} className="h-20 w-20 rounded-[24%]" />
+        <ProviderLogo provider={announcement.provider} className="h-20 w-20" />
       </div>
     );
   }
@@ -176,7 +176,7 @@ export function AnnouncementPopup() {
                   </DialogTitle>
                 </div>
                 {announcement.provider && (
-                  <ProviderLogo provider={announcement.provider} className="h-10 w-10 shrink-0 rounded-[24%] border-0 shadow-none" />
+                  <ProviderLogo provider={announcement.provider} className="h-10 w-10 shrink-0 border-0 shadow-none" />
                 )}
               </div>
               <DialogDescription className="max-w-xl pt-4 text-base leading-relaxed text-muted-foreground lg:max-w-md lg:pt-6">

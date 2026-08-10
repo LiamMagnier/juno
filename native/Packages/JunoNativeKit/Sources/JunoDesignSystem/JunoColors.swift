@@ -24,43 +24,55 @@ public extension JunoColorToken {
     static let canvasLight = JunoColorToken.warmWhite
     static let canvasDark = JunoColorToken.warmBlack
 
+    // ── Projected, not transcribed ───────────────────────────────────────────
+    //
+    // Everything below now READS the generated projection of globals.css
+    // (`Generated/JunoGeneratedTokens.swift`) instead of holding its own copy
+    // of the converted sRGB triple. The values are unchanged — they were
+    // verified identical to the CSS before the switch — but they are no longer
+    // a second thing to remember to update. `npm run design:tokens:check`
+    // fails CI if the projection and globals.css disagree.
+    //
+    // The doc comments keep naming the CSS variable, because that is still the
+    // most useful thing to know when reading a call site.
+
     /// `--card`: `54 44% 99%` / `48 7% 12.5%`. One step above the canvas.
     ///
     /// Light was a literal pure white floating on warm paper — the one pairing
     /// that reads as somebody else's brand rather than Juno's. `54 44% 99%` is
     /// a 1% step, indistinguishable as a surface, but it puts the float on the
     /// same hue family as the paper it sits on.
-    static let surfaceLight = JunoColorToken(unchecked: 0.9944, 0.9935, 0.9856)
-    static let surfaceDark = JunoColorToken(unchecked: 0.1337, 0.1303, 0.1162)
+    static let surfaceLight = JunoGeneratedColors.card.light
+    static let surfaceDark = JunoGeneratedColors.card.dark
 
     /// `--popover`: `54 44% 99%` / `48 6% 18%`. Transient surfaces sit higher
     /// still, so a menu stays legible over a card.
-    static let popoverLight = JunoColorToken(unchecked: 0.9944, 0.9935, 0.9856)
-    static let popoverDark = JunoColorToken(unchecked: 0.1908, 0.1865, 0.1692)
+    static let popoverLight = JunoGeneratedColors.popover.light
+    static let popoverDark = JunoGeneratedColors.popover.dark
 
     /// `--muted`: `50 23% 95%` / `48 7% 15%`. Selected rows and quiet fills.
-    static let mutedLight = JunoColorToken(unchecked: 0.9615, 0.9577, 0.9385)
-    static let mutedDark = JunoColorToken(unchecked: 0.1605, 0.1563, 0.1395)
+    static let mutedLight = JunoGeneratedColors.muted.light
+    static let mutedDark = JunoGeneratedColors.muted.dark
 
     /// `--muted-foreground`: `48 4% 40%` / `48 7% 63%`.
-    static let mutedForegroundLight = JunoColorToken(unchecked: 0.416, 0.4096, 0.384)
-    static let mutedForegroundDark = JunoColorToken(unchecked: 0.6559, 0.6455, 0.6041)
+    static let mutedForegroundLight = JunoGeneratedColors.mutedForeground.light
+    static let mutedForegroundDark = JunoGeneratedColors.mutedForeground.dark
 
     /// `--foreground`: `48 3% 12%` / `48 24% 93%`. The most-read ink in the
     /// product, and until now it had no native counterpart at all — which is
     /// why 400-odd `.foregroundStyle(.secondary)` sites fall through to the
     /// platform's pure-neutral label colour on a warm canvas. Use
     /// ``Color/junoForeground`` where that neutrality shows.
-    static let foregroundLight = JunoColorToken(unchecked: 0.1236, 0.1222, 0.1164)
-    static let foregroundDark = JunoColorToken(unchecked: 0.9468, 0.9401, 0.9132)
+    static let foregroundLight = JunoGeneratedColors.foreground.light
+    static let foregroundDark = JunoGeneratedColors.foreground.dark
 
     /// `--sidebar`: `50 23% 95%` / `48 10% 7.5%`.
     ///
     /// This is intentionally distinct from `--muted` in dark appearance: the
     /// web shell's sidebar is a shade deeper than the reading canvas, so the
     /// content opens up instead of being boxed by a lighter grey slab.
-    static let sidebarLight = JunoColorToken(unchecked: 0.9615, 0.9577, 0.9385)
-    static let sidebarDark = JunoColorToken(unchecked: 0.0825, 0.0795, 0.0675)
+    static let sidebarLight = JunoGeneratedColors.sidebar.light
+    static let sidebarDark = JunoGeneratedColors.sidebar.dark
 
     // Border, success, danger and caution are deliberately *not* redefined here.
     // `JunoSurfaces.swift` already owns `borderLight`/`borderDark` and
@@ -68,8 +80,20 @@ public extension JunoColorToken {
     // `junoCaution`), both tuned for contrast against `junoCanvasWarm`. Adding a
     // second set converted from the web would give the app two competing reds.
 
-    static let hairlineLight = JunoColorToken(unchecked: 0, 0, 0, 0.10)
-    static let hairlineDark = JunoColorToken(unchecked: 1, 1, 1, 0.12)
+    /// `--hairline`: `48 12% 18% / 0.06` / `48 24% 93% / 0.08`.
+    ///
+    /// FIXED DRIFT. These were `(0, 0, 0, 0.10)` and `(1, 1, 1, 0.12)` — pure
+    /// black and pure white, at nearly twice the intended alpha. They were the
+    /// only two tokens in this file with no comment and no CSS variable named
+    /// beside them, which is what a value nobody projected looks like.
+    ///
+    /// It mattered more than two numbers suggest. A hairline is the most
+    /// repeated mark in the interface — every divider, every card edge, every
+    /// table rule — and a *neutral* one on a warm canvas is precisely the tell
+    /// the note at the top of this file warns about. The Mac was drawing every
+    /// rule in the product in somebody else's grey, 67% too strong.
+    static let hairlineLight = JunoGeneratedColors.hairline.light
+    static let hairlineDark = JunoGeneratedColors.hairline.dark
 
     /// `--source`: `187 62% 34%` / `187 58% 49%`. The web's citation teal.
     ///
@@ -83,8 +107,17 @@ public extension JunoColorToken {
     /// label, a tip's heading — not painted as a fill. Hue and saturation are
     /// untouched. Now 4.60:1. The dark value already cleared the floor and is
     /// unchanged, so the two appearances still carry the same teal.
+    ///
+    /// DECLARED DIVERGENCE — the one place this file deliberately does not
+    /// match `JunoGeneratedColors.source.light`, and the only literal left in
+    /// it. Written as an explicit offset from the projection rather than as a
+    /// bare triple so the relationship survives: if the web ever moves
+    /// `--source`, this stays one lightness step darker than wherever it moved
+    /// to, instead of silently becoming an unrelated colour that happens to
+    /// still compile. Everything else here is projected; if you are adding a
+    /// second entry to this list, the bar is a measured contrast failure.
     static let sourceLight = JunoColorToken(unchecked: 0.1254, 0.4869, 0.5346)
-    static let sourceDark = JunoColorToken(unchecked: 0.2058, 0.7079, 0.7742)
+    static let sourceDark = JunoGeneratedColors.source.dark
 }
 
 public extension Color {

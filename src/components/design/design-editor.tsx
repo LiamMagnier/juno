@@ -560,7 +560,7 @@ export function DesignEditor({
               aria-pressed={motionOpen}
               onClick={() => setMotionOpen((open) => !open)}
               className={cn(
-                "h-7 gap-1.5 rounded-[10px] px-2 text-xs text-muted-foreground hover:text-foreground",
+                "h-7 gap-1.5 rounded-control px-2 text-xs text-muted-foreground hover:text-foreground",
                 motionOpen && "bg-primary/10 text-primary hover:text-primary"
               )}
             >
@@ -577,7 +577,7 @@ export function DesignEditor({
               variant="ghost"
               size="sm"
               aria-label="Export"
-              className="h-7 gap-1.5 rounded-[10px] px-2 text-xs text-muted-foreground hover:text-foreground"
+              className="h-7 gap-1.5 rounded-control px-2 text-xs text-muted-foreground hover:text-foreground"
             >
               <Share2 className="size-3.5" aria-hidden />
               Export
@@ -605,7 +605,7 @@ export function DesignEditor({
               if (context) onAskJuno(context);
               else toast.error("Select a layer first.");
             }}
-            className="h-7 gap-1.5 rounded-[10px] px-2 text-xs text-muted-foreground hover:text-foreground"
+            className="h-7 gap-1.5 rounded-control px-2 text-xs text-muted-foreground hover:text-foreground"
           >
             Ask Juno
           </Button>
@@ -743,7 +743,7 @@ function ProposalReview({ state, onResolved }: { state: DesignEditorState; onRes
   const pending = state.pending;
   if (!pending) return null;
   return (
-    <div className="pointer-events-auto rounded-[16px] border border-border/70 bg-popover/95 p-3 shadow-soft backdrop-blur-xl motion-safe:animate-rise-in">
+    <div className="pointer-events-auto rounded-card border border-border/70 bg-popover/95 p-3 shadow-soft backdrop-blur-xl motion-safe:animate-rise-in">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{pending.transaction.summary}</p>
@@ -797,7 +797,7 @@ function HistoryList({ state, onSelect }: { state: DesignEditorState; onSelect: 
           key={entry.id}
           type="button"
           onClick={() => onSelect(entry.touched)}
-          className="block w-full rounded-[8px] px-2 py-1.5 text-left transition-colors hover:bg-muted/60"
+          className="block w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted/60"
         >
           <span className="flex items-baseline gap-1.5">
             <span className={cn("truncate text-xs", entry.author === "juno" ? "text-primary" : "text-foreground")}>{entry.summary}</span>

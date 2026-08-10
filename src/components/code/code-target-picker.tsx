@@ -253,7 +253,7 @@ export function CodeTargetPicker({
                 : "Runs in the cloud. No repository picked yet — pick one"
           }
           className={cn(
-            "group inline-flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-[10px] px-2 font-mono text-[12px] font-medium tracking-tight text-foreground/80",
+            "group inline-flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-control px-2 font-mono text-[12px] font-medium tracking-tight text-foreground/80",
             "transition-[background-color,color,transform] duration-fast ease-out-soft",
             "hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground",
             // Focus fills, exactly as the thinking button beside it does, and
@@ -643,7 +643,7 @@ function CloudList({
               }
             }}
             placeholder={`${selected.defaultBranch} (default)`}
-            className="h-8 rounded-[10px] font-mono text-[13px] coarse:h-11"
+            className="h-8 rounded-control font-mono text-[13px] coarse:h-11"
           />
         </div>
       )}
@@ -699,7 +699,7 @@ function PickerRow({
       onClick={onClick}
       onKeyDown={onKeyDown}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left",
+        "flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left",
         ROW_HEIGHT,
         "transition-[background-color,box-shadow,transform] duration-fast ease-out-soft",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.97]",
@@ -769,7 +769,7 @@ function PickerSearch({
         placeholder={placeholder}
         aria-label={placeholder}
         disabled={disabled}
-        className="h-8 rounded-[10px] pl-8 text-[13px] coarse:h-11"
+        className="h-8 rounded-control pl-8 text-[13px] coarse:h-11"
       />
     </div>
   );
@@ -787,7 +787,7 @@ function RowSkeletons() {
       {Array.from({ length: SKELETON_ROWS }, (_, i) => (
         <Skeleton
           key={i}
-          className={cn("w-full rounded-[10px]", ROW_SKELETON_HEIGHT)}
+          className={cn("w-full rounded-control", ROW_SKELETON_HEIGHT)}
           style={{ animationDelay: `${i * SKELETON_STAGGER_MS}ms` }}
         />
       ))}

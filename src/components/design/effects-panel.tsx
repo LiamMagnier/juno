@@ -305,7 +305,7 @@ function PaintListSection({
         const hidden = paint.visible === false;
         const gradient = paint.type === "linear-gradient" || paint.type === "radial-gradient" ? paint : null;
         return (
-          <div key={index} className={cn("space-y-1.5 rounded-[10px] border border-border/60 p-1.5", hidden && "opacity-50")}>
+          <div key={index} className={cn("space-y-1.5 rounded-control border border-border/60 p-1.5", hidden && "opacity-50")}>
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
@@ -313,7 +313,7 @@ function PaintListSection({
                 aria-expanded={expanded === index}
                 disabled={readOnly}
                 onClick={() => setExpanded(expanded === index ? null : index)}
-                className="pressable size-6 shrink-0 rounded-[6px] border border-border/60"
+                className="pressable size-6 shrink-0 rounded-xs border border-border/60"
                 style={{ background: paintPreviewCss(paint) }}
               />
               {paint.type === "solid" ? (
@@ -527,7 +527,7 @@ function GradientRail({
     <div className="space-y-1">
       <div
         ref={railRef}
-        className="relative h-6 rounded-[6px] border border-border/60"
+        className="relative h-6 rounded-xs border border-border/60"
         style={{
           // The chequerboard is what makes a fade to transparent legible; it is
           // drawn from the border token rather than a literal grey.
@@ -677,7 +677,7 @@ function AxisPad({
   return (
     <label className="block">
       <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">Direction</span>
-      <div ref={padRef} className="relative h-24 w-full rounded-[8px] border border-border/60 bg-muted/40">
+      <div ref={padRef} className="relative h-24 w-full rounded-md border border-border/60 bg-muted/40">
         <svg className="pointer-events-none absolute inset-0 size-full" viewBox="0 0 1 1" preserveAspectRatio="none">
           <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="hsl(var(--primary))" strokeWidth="0.012" vectorEffect="non-scaling-stroke" />
         </svg>
@@ -705,7 +705,7 @@ function RadialPad({
   return (
     <label className="block">
       <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">Centre &amp; radius</span>
-      <div ref={padRef} className="relative h-24 w-full rounded-[8px] border border-border/60 bg-muted/40">
+      <div ref={padRef} className="relative h-24 w-full rounded-md border border-border/60 bg-muted/40">
         <svg className="pointer-events-none absolute inset-0 size-full" viewBox="0 0 1 1" preserveAspectRatio="none">
           <circle cx={center.x} cy={center.y} r={radius} fill="none" stroke="hsl(var(--primary))" strokeWidth="0.012" vectorEffect="non-scaling-stroke" />
         </svg>
@@ -927,7 +927,7 @@ function AddEffectMenu({ disabled, onAdd }: { disabled?: boolean; onAdd: (type: 
         <div
           role="menu"
           aria-label="Add effect"
-          className="absolute right-0 top-full z-30 mt-1 w-56 space-y-0.5 rounded-[10px] border border-border/60 bg-popover p-1 shadow-soft"
+          className="absolute right-0 top-full z-30 mt-1 w-56 space-y-0.5 rounded-control border border-border/60 bg-popover p-1 shadow-soft"
         >
           {EFFECT_MENU.map((item) => (
             <button
@@ -938,7 +938,7 @@ function AddEffectMenu({ disabled, onAdd }: { disabled?: boolean; onAdd: (type: 
                 onAdd(item.type);
                 setOpen(false);
               }}
-              className="pressable block w-full rounded-[6px] px-2 py-1 text-left transition-colors hover:bg-accent"
+              className="pressable block w-full rounded-xs px-2 py-1 text-left transition-colors hover:bg-accent"
             >
               <span className="block text-xs text-foreground">{item.label}</span>
               <span className="block text-[10px] leading-snug text-muted-foreground">{item.hint}</span>
@@ -972,7 +972,7 @@ function EffectRow({
   const title = label.charAt(0).toUpperCase() + label.slice(1);
 
   return (
-    <div className={cn("space-y-1.5 rounded-[10px] border border-border/60 p-2", hidden && "opacity-50")}>
+    <div className={cn("space-y-1.5 rounded-control border border-border/60 p-2", hidden && "opacity-50")}>
       <div className="flex items-center gap-1.5">
         <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">{title}</span>
         <div className="flex shrink-0 items-center gap-0.5">
@@ -1289,7 +1289,7 @@ const clampSeed = (value: number) => Math.max(0, Math.min(65_535, Math.round(val
 /** What a list section shows when it is empty. Not nothing: an empty section
  *  with no row at all reads as a section that failed to load. */
 function EmptyRow({ children }: { children: React.ReactNode }) {
-  return <p className="rounded-[8px] border border-dashed border-border/60 px-2 py-1 text-[11px] text-muted-foreground">{children}</p>;
+  return <p className="rounded-md border border-dashed border-border/60 px-2 py-1 text-[11px] text-muted-foreground">{children}</p>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1309,12 +1309,12 @@ export function Section({ title, action, children }: { title: string; action?: R
 }
 
 export const fieldClass =
-  "w-full rounded-[8px] border border-border/60 bg-background px-2 py-1 text-xs tabular-nums outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-50 coarse:min-h-9";
+  "w-full rounded-md border border-border/60 bg-background px-2 py-1 text-xs tabular-nums outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 disabled:opacity-50 coarse:min-h-9";
 
 /** "Mixed" as a badge rather than a value, because the section below it shows
  *  the first layer's state and a badge is the only honest way to say so. */
 function MixedBadge() {
-  return <span className="shrink-0 rounded-[4px] bg-muted px-1 font-mono text-[9px] text-muted-foreground">Mixed</span>;
+  return <span className="shrink-0 rounded-sm bg-muted px-1 font-mono text-[9px] text-muted-foreground">Mixed</span>;
 }
 
 function MiniButton({ children, disabled, onClick }: { children: React.ReactNode; disabled?: boolean; onClick: () => void }) {
@@ -1323,7 +1323,7 @@ function MiniButton({ children, disabled, onClick }: { children: React.ReactNode
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="pressable flex-1 rounded-[8px] border border-border/60 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-9"
+      className="pressable flex-1 rounded-md border border-border/60 px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-9"
     >
       {children}
     </button>
@@ -1351,7 +1351,7 @@ function IconButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "pressable rounded-[6px] px-1 font-mono text-[11px] text-muted-foreground transition-colors disabled:opacity-30 coarse:min-h-8 coarse:min-w-8",
+        "pressable rounded-xs px-1 font-mono text-[11px] text-muted-foreground transition-colors disabled:opacity-30 coarse:min-h-8 coarse:min-w-8",
         destructive ? "hover:text-destructive" : "hover:text-foreground"
       )}
     >
@@ -1374,7 +1374,7 @@ function Segmented({
   onChange: (value: string) => void;
 }) {
   return (
-    <div role="group" aria-label={label} className="flex gap-0.5 rounded-[8px] border border-border/60 p-0.5">
+    <div role="group" aria-label={label} className="flex gap-0.5 rounded-md border border-border/60 p-0.5">
       {options.map((option) => (
         <button
           key={option.value}
@@ -1383,7 +1383,7 @@ function Segmented({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            "pressable flex-1 rounded-[6px] px-1 py-1 text-[11px] transition-colors disabled:opacity-50 coarse:min-h-8",
+            "pressable flex-1 rounded-xs px-1 py-1 text-[11px] transition-colors disabled:opacity-50 coarse:min-h-8",
             value === option.value ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
           )}
         >
@@ -1689,7 +1689,7 @@ export function ColorField({
           // of a transaction per frame.
           onChange={(e) => schedule(e.target.value, onCommit)}
           onBlur={flush}
-          className="size-7 shrink-0 cursor-pointer rounded-[6px] border border-border/60 bg-transparent p-0.5 disabled:opacity-50"
+          className="size-7 shrink-0 cursor-pointer rounded-xs border border-border/60 bg-transparent p-0.5 disabled:opacity-50"
           aria-label={`${label} colour`}
         />
         <input

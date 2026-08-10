@@ -1734,7 +1734,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           className={cn(
             "flex min-h-0 flex-1 flex-col overflow-hidden transition-[margin,border-radius,border-color,background-color,box-shadow] duration-slow ease-out-soft",
             privateMode
-              ? "m-2 rounded-[18px] border border-border/70 bg-card/50 shadow-soft sm:m-3 sm:rounded-[22px]"
+              ? "m-2 rounded-popover border border-border/70 bg-card/50 shadow-soft sm:m-3 sm:rounded-composer"
               : "m-0 rounded-none border border-transparent bg-transparent shadow-none"
           )}
         >

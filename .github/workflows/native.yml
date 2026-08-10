@@ -63,6 +63,14 @@ jobs:
       - name: Contract has not drifted
         run: npm run native:contract:check
 
+      # The Swift design tokens are a projection of globals.css, not a second
+      # copy of it. Before this, the projection was done by hand and nothing
+      # re-checked it — so a colour changed on the web stayed unchanged on the
+      # Mac until somebody noticed by eye, which is how the two clients came to
+      # look like different products.
+      - name: Design tokens have not drifted
+        run: npm run design:tokens:check
+
   # ---------------------------------------------------------------------------
   # The shared packages, under the same strict-concurrency, warnings-as-errors
   # settings the release gates use. `--scratch-path` is deliberately outside the

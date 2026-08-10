@@ -141,7 +141,7 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
             aria-pressed={scopeToSelection}
             title={scopeToSelection ? "Only this selection will change" : "Juno may change anything in the document"}
             className={cn(
-              "pressable flex max-w-[10rem] shrink-0 items-center gap-1 rounded-[10px] px-2 py-1 font-mono text-[10px] transition-colors duration-fast",
+              "pressable flex max-w-[10rem] shrink-0 items-center gap-1 rounded-control px-2 py-1 font-mono text-[10px] transition-colors duration-fast",
               scopeToSelection
                 ? "bg-primary/10 text-primary"
                 : "bg-muted/60 text-muted-foreground hover:text-foreground"
@@ -178,7 +178,7 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
           size="icon-sm"
           disabled={!draft.trim() || busy || blocked}
           aria-label={busy ? "Juno is working" : "Ask Juno"}
-          className="shrink-0 rounded-[12px]"
+          className="shrink-0 rounded-field"
         >
           {busy ? <Loader2 className="size-4 motion-safe:animate-spin" aria-hidden /> : <ArrowUp className="size-4" aria-hidden />}
         </Button>

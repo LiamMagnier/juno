@@ -41,7 +41,7 @@ export function ComposerPreview({ model }: { model: ModelInfo }) {
           </span>
           {/* Send — the composer's primary action at its real size and radius,
               wearing the same lighting classes as Button's default variant. */}
-          <span className="btn-glossy halo-primary ml-auto grid size-9 place-items-center rounded-[13px] bg-primary text-primary-foreground">
+          <span className="btn-glossy halo-primary ml-auto grid size-9 place-items-center rounded-composer-action bg-primary text-primary-foreground">
             <ArrowUp className="size-4" aria-hidden />
           </span>
         </div>

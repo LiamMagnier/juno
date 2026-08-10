@@ -395,7 +395,7 @@ function AutoLayoutSection({
               "Enable auto layout"
             )
           }
-          className="pressable w-full rounded-[10px] border border-border/60 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-10"
+          className="pressable w-full rounded-control border border-border/60 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-10"
         >
           Add auto layout
         </button>
@@ -545,7 +545,7 @@ function ImageSection({
         type="button"
         disabled={readOnly}
         onClick={() => inputRef.current?.click()}
-        className="pressable w-full rounded-[10px] border border-border/60 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-10"
+        className="pressable w-full rounded-control border border-border/60 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:min-h-10"
       >
         {asset ? "Replace picture…" : "Choose a picture…"}
       </button>
