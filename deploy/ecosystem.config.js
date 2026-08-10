@@ -65,12 +65,34 @@ for (const [key, value] of Object.entries(rootEnv)) {
 // does not declare them.  Declare the reviewed release SHA in the ecosystem so
 // a reload cannot leave /api/health (or worker diagnostics) reporting the
 // previous release after the current symlink has switched.
+/**
+ * The release this config was shipped inside.
+ *
+ * Every app declares it, and that is not belt-and-braces — it is the same bug
+ * the note above describes, one field over. `deploy.sh` calls
+ * `pm2 startOrReload <release>/deploy/ecosystem.config.js --cwd <release>`, and
+ * `--cwd` only applies to an app PM2 is STARTING. For one already online it
+ * reloads in place and keeps the cwd it was first started with, exactly as it
+ * keeps undeclared env keys.
+ *
+ * The consequence is silent and total: the deploy uploads a release, flips the
+ * `current` symlink, reports success — and every process goes on serving the
+ * `.next` in whatever directory it was launched from years ago. On this
+ * deployment that was `~/juno`, so the site served a build from 2026-08-08
+ * while release after release landed beside it, green, and unread.
+ *
+ * Declared here rather than passed on the command line so it travels with the
+ * release and cannot be forgotten by a caller.
+ */
+const releaseRoot = path.resolve(__dirname, "..");
+
 const releaseEnv = process.env.GIT_SHA ? { GIT_SHA: process.env.GIT_SHA } : {};
 
 module.exports = {
   apps: [
     {
       name: "juno-backend",
+      cwd: releaseRoot,
       script: "npm",
       args: "run start",
       watch: false,
@@ -93,6 +115,7 @@ module.exports = {
       // Scheduled-task worker: claims due ScheduledTasks every 60s and runs
       // them (scripts/scheduled-task-runner.ts). Loads the repo .env itself.
       name: "juno-scheduler",
+      cwd: releaseRoot,
       script: "npm",
       args: "run tasks:runner",
       watch: false,
@@ -120,6 +143,7 @@ module.exports = {
       // transcript, a plan, up to three connectors' MCP sessions and the bytes
       // of any deliverable it is packing, and MAX_CONCURRENT_RUNS is 3.
       name: "juno-work",
+      cwd: releaseRoot,
       script: "npm",
       args: "run work:runner",
       watch: false,
@@ -144,6 +168,7 @@ module.exports = {
       // anybody having to remember that.
       //
       name: "juno-work-scheduler",
+      cwd: releaseRoot,
       script: "npm",
       args: "run work:scheduler",
       watch: false,
@@ -164,6 +189,7 @@ module.exports = {
       // The API still nudges fresh runs for low latency; this process is the
       // durable backstop after deploys, crashes and machine restarts.
       name: "juno-research",
+      cwd: releaseRoot,
       script: "npm",
       args: "run research:worker",
       watch: false,
@@ -197,6 +223,7 @@ module.exports = {
       // configured the sweep finds nothing and costs one indexed query every
       // two minutes.
       name: "juno-work-triggers",
+      cwd: releaseRoot,
       script: "npm",
       args: "run work:trigger-poller",
       watch: false,
@@ -216,6 +243,7 @@ module.exports = {
       // relational import transaction can mark them attached. The ledger keeps
       // this safe across restarts and multiple cleanup attempts.
       name: "juno-import-recovery",
+      cwd: releaseRoot,
       script: "npm",
       args: "run import:recovery",
       watch: false,
@@ -235,6 +263,7 @@ module.exports = {
       // single-instance loop rather than a best-effort manual command: a task
       // that stays `running` forever is a broken product surface.
       name: "juno-code-sweeper",
+      cwd: releaseRoot,
       script: "npm",
       args: "run tasks:sweep -- --daemon",
       watch: false,
@@ -250,7 +279,9 @@ module.exports = {
     },
     {
       name: "juno-voice-relay",
-      cwd: path.join(__dirname, "..", "relay"),
+      // The relay is its own package inside the release, so it is the one app
+      // whose cwd is a subdirectory rather than the release root.
+      cwd: path.join(releaseRoot, "relay"),
       script: "npm",
       args: "run start",
       watch: false,
