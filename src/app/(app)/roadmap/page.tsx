@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, PartyPopper, Plus, Search } from "lucide-react";
+import { PartyPopper, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DottedDivider } from "@/components/signature/dotted-divider";
@@ -20,6 +20,7 @@ import {
   type SortKey,
 } from "@/lib/roadmap";
 import { cn } from "@/lib/utils";
+import { AppPageHeader } from "@/components/app/app-page-header";
 
 const SORTS: { key: SortKey; label: string }[] = [
   { key: "top", label: "Top" },
@@ -122,26 +123,16 @@ export default function RoadmapPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
-        {/* Header */}
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <div className="mb-1 flex items-center gap-2">
-              <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <span className="font-mono text-label text-muted-foreground">Roadmap</span>
-            </div>
-            <h1 className="font-serif text-display font-medium tracking-tight">
-              What we’re <span className="italic text-primary">building</span>
-            </h1>
-            <p className="mt-1 max-w-prose text-sm text-muted-foreground">
-              Vote on what matters to you, or request something new. We read every one.
-            </p>
-          </div>
-          <Button onClick={() => setSubmitOpen(true)} className="gap-1.5">
-            <Plus className="h-4 w-4" /> Request a feature
-          </Button>
-        </div>
+        <AppPageHeader
+          eyebrow="Roadmap"
+          heading={<>What we’re <span className="italic text-primary">building</span></>}
+          lede="Vote on what matters to you, or request something new. We read every one."
+          actions={
+            <Button onClick={() => setSubmitOpen(true)} className="gap-1.5">
+              <Plus className="h-4 w-4" /> Request a feature
+            </Button>
+          }
+        />
 
         {/* Recently shipped strip */}
         {shipped.length > 0 && (

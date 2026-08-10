@@ -1,10 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { AlertCircle, ArrowLeft, Plus, RefreshCw } from "lucide-react";
+import { AlertCircle, Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -19,9 +18,9 @@ import { TaskCard } from "@/components/tasks/task-card";
 import { TaskDialog } from "@/components/tasks/task-dialog";
 import type { TaskItem } from "@/components/tasks/task-model";
 import { staggerDelay } from "@/lib/motion";
+import { AppPageHeader } from "@/components/app/app-page-header";
 
 export default function TasksPage() {
-  const router = useRouter();
   const [tasks, setTasks] = React.useState<TaskItem[] | null>(null);
   const [limit, setLimit] = React.useState<number>(0);
   const [loadError, setLoadError] = React.useState(false);
@@ -106,30 +105,23 @@ export default function TasksPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-2xl px-4 py-8">
-        <div className="mb-1 flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <span className="font-mono text-label text-muted-foreground">Tasks</span>
-        </div>
-        {/* flex-wrap: at ~360px the count + button drop under the title instead
-            of squeezing the display h1 into a forced two-line wrap. */}
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <h1 className="font-serif text-display font-medium tracking-tight">Scheduled tasks</h1>
-          {!loading && !locked && !empty && (
-            <div className="flex items-center gap-2.5 pb-1.5">
-              <span className="font-mono text-[10px] text-muted-foreground/60">
-                {tasks.length} / {limit}
-              </span>
-              <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={openCreate} disabled={atLimit}>
-                <Plus className="h-3.5 w-3.5" /> New task
-              </Button>
-            </div>
-          )}
-        </div>
-        <p className="mb-6 mt-1 text-sm text-muted-foreground">
-          Prompts Juno runs for you on a schedule — each run lands in the task’s chat thread.
-        </p>
+        <AppPageHeader
+          eyebrow="Tasks"
+          heading="Scheduled tasks"
+          lede="Prompts Juno runs for you on a schedule — each run lands in the task’s chat thread."
+          actions={
+            !loading && !locked && !empty ? (
+              <>
+                <span className="font-mono text-caption tabular-nums text-muted-foreground/60">
+                  {tasks.length} / {limit}
+                </span>
+                <Button size="sm" className="gap-1.5" onClick={openCreate} disabled={atLimit}>
+                  <Plus className="h-3.5 w-3.5" /> New task
+                </Button>
+              </>
+            ) : null
+          }
+        />
 
         {loadError ? (
           <div className="space-y-2.5 rounded-2xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">

@@ -4,26 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import {
-  ArrowLeft,
-  Code2,
-  Download,
-  FileCode2,
-  FileText,
-  GitBranch,
-  PenTool,
-  Globe,
-  Image as ImageIcon,
-  Loader2,
-  MessagesSquare,
-  MoreHorizontal,
-  PanelRightOpen,
-  Pencil,
-  Search,
-  Share2,
-  Trash2,
-  WifiOff,
-} from "lucide-react";
+import { Code2, Download, FileCode2, FileText, GitBranch, PenTool, Globe, Image as ImageIcon, Loader2, MessagesSquare, MoreHorizontal, PanelRightOpen, Pencil, Search, Share2, Trash2, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AppIcons } from "@/lib/app-icons";
@@ -48,6 +29,7 @@ import { extensionForLanguage, runtimeFor } from "@/lib/artifact-runtime";
 import { cn } from "@/lib/utils";
 import type { ArtifactType } from "@/lib/message-content";
 import { staggerDelay } from "@/lib/motion";
+import { AppPageHeader } from "@/components/app/app-page-header";
 
 const ICONS: Record<ArtifactType, typeof Code2> = {
   HTML: Globe,
@@ -258,30 +240,25 @@ export default function ArtifactsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
-        <div className="mb-1 flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-          </Button>
-          <span className="font-mono text-label text-muted-foreground">Canvas</span>
-        </div>
-        <div className="flex items-baseline justify-between gap-4">
-          <h1 className="flex items-center gap-2.5 font-serif text-display font-medium tracking-tight">
-            <AppIcons.artifacts className="size-[0.85em] shrink-0 text-muted-foreground/80" strokeWidth={1.6} aria-hidden />
-            Artifacts
-          </h1>
-          <div className="flex shrink-0 items-center gap-3">
-            {!loading && !empty && !error && (
-              <span className="font-mono text-caption text-muted-foreground tabular-nums">
-                {items.length} {items.length === 1 ? "artifact" : "artifacts"}
-              </span>
-            )}
-            <Button size="sm" variant="outline" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
-              <PenTool className="size-3.5" aria-hidden />
-              {startingDesign ? "Creating…" : "New design"}
-            </Button>
-          </div>
-        </div>
-        <p className="mt-1 text-sm text-muted-foreground">Everything Juno built with you, newest first.</p>
+        <AppPageHeader
+          eyebrow="Canvas"
+          heading="Artifacts"
+          icon={AppIcons.artifacts}
+          lede="Everything Juno built with you, newest first."
+          actions={
+            <>
+              {!loading && !empty && !error && (
+                <span className="font-mono text-caption tabular-nums text-muted-foreground">
+                  {items.length} {items.length === 1 ? "artifact" : "artifacts"}
+                </span>
+              )}
+              <Button size="sm" variant="outline" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
+                <PenTool className="size-3.5" aria-hidden />
+                {startingDesign ? "Creating…" : "New design"}
+              </Button>
+            </>
+          }
+        />
 
         {/* Search + type filters — only once there is something to filter. */}
         {!loading && !empty && !error && (

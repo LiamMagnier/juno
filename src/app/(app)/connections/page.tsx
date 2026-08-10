@@ -3,13 +3,14 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertCircle, ArrowLeft, Link2Off, Loader2 } from "lucide-react";
+import { AlertCircle, Link2Off, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { type ConnectorStatus } from "@/components/connections/types";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
 import { ConnectorDirectory, type DirectoryItem } from "@/components/connections/connector-directory";
 import { staggerDelay } from "@/lib/motion";
+import { AppPageHeader } from "@/components/app/app-page-header";
 
 const ERRORS: Record<string, string> = {
   not_configured: "That connector isn’t set up on this server yet.",
@@ -170,25 +171,18 @@ export default function ConnectionsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
-        <div className="mb-1 flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <span className="font-mono text-label text-muted-foreground">Connections</span>
-        </div>
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <h1 className="font-serif text-display font-medium tracking-tight">Connect your tools</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Link an app so Juno can work with your repositories, designs, docs, and workspace tools.
-            </p>
-          </div>
-          {!loading && !error && connectedCount > 0 && (
-            <span className="hidden shrink-0 rounded-full border border-border/60 bg-card/60 px-3 py-1 font-mono text-caption text-muted-foreground shadow-soft sm:inline-block">
-              {connectedCount} connected
-            </span>
-          )}
-        </div>
+        <AppPageHeader
+          eyebrow="Connections"
+          heading="Connect your tools"
+          lede="Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
+          actions={
+            !loading && !error && connectedCount > 0 ? (
+              <span className="hidden rounded-full border border-border/60 bg-card/60 px-3 py-1 font-mono text-caption text-muted-foreground shadow-soft sm:inline-block">
+                {connectedCount} connected
+              </span>
+            ) : null
+          }
+        />
 
         {error ? (
           <div className="mt-6 flex flex-wrap items-start gap-3 rounded-card border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">

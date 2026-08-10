@@ -1,14 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Check, Info } from "lucide-react";
+import { Check, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/components/app/app-provider";
 import { PLANS, planRank } from "@/lib/plans";
 import { cn } from "@/lib/utils";
 import type { Plan } from "@prisma/client";
+import { AppPageHeader } from "@/components/app/app-page-header";
 
 type MaxTier = "MAX" | "MAX20";
 type BillingInterval = "month" | "year";
@@ -38,7 +38,6 @@ function planLabel(plan: Plan): string {
 }
 
 export default function UpgradePage() {
-  const router = useRouter();
   const { quota, features } = useApp();
   const currentPlan = quota.plan;
   const [loading, setLoading] = React.useState<Plan | null>(null);
@@ -136,15 +135,11 @@ export default function UpgradePage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6">
-        <div className="mb-2 flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <span className="font-mono text-label text-muted-foreground">Plans</span>
-        </div>
-        <h1 className="font-serif text-display font-medium tracking-tight">
-          Pick the plan that <span className="italic text-primary">fits you</span>.
-        </h1>
+        <AppPageHeader
+          eyebrow="Plans"
+          heading={<>Pick the plan that <span className="italic text-primary">fits you</span>.</>}
+          className="mb-0"
+        />
         <p className="mt-2 max-w-prose text-sm text-muted-foreground">
           You’re on the{" "}
           <span className="font-medium text-foreground">

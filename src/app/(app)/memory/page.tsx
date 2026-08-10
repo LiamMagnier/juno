@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { MotionConfig } from "framer-motion";
 import { toast } from "sonner";
-import { AlertCircle, ArrowLeft, RefreshCw } from "lucide-react";
+import { AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
@@ -13,6 +13,7 @@ import { SummaryCard } from "@/components/memory/summary-card";
 import { EditsPanel } from "@/components/memory/edits-panel";
 import { EntryList } from "@/components/memory/entry-list";
 import { PrivacyStrip } from "@/components/memory/privacy-strip";
+import { AppPageHeader } from "@/components/app/app-page-header";
 import {
   loadEdits,
   newEditId,
@@ -407,17 +408,11 @@ export default function MemoryPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-2xl px-4 py-8">
-        <div className="mb-1 flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <span className="font-mono text-label text-muted-foreground">Memory</span>
-        </div>
-        <h1 className="font-serif text-display font-medium tracking-tight">What Juno remembers</h1>
-        <p className="mb-6 mt-1 text-sm text-muted-foreground">
-          Distilled from your chats, projects, and connections — and used as context whenever you talk to Juno. Always
-          yours to edit, in plain language.
-        </p>
+        <AppPageHeader
+          eyebrow="Memory"
+          heading="What Juno remembers"
+          lede="Distilled from your chats, projects, and connections — and used as context whenever you talk to Juno. Always yours to edit, in plain language."
+        />
 
         {loadError ? (
           <div className="space-y-2.5 rounded-2xl border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">

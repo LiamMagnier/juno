@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { ArrowLeft, GitPullRequest, Plug } from "lucide-react";
+import { GitPullRequest, Plug } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { PullsList } from "@/components/code/pulls-list";
+import { AppPageHeader } from "@/components/app/app-page-header";
 
 export const dynamic = "force-dynamic";
 
@@ -17,18 +18,11 @@ export default async function CodePullsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-2xl px-4 py-8">
-        <div className="mb-1 flex items-center gap-2">
-          <Button asChild variant="ghost" size="icon-sm" aria-label="Back to chat">
-            <Link href="/chat">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
-          <span className="font-mono text-label text-muted-foreground">Code</span>
-        </div>
-        <h1 className="font-serif text-display font-medium tracking-tight">Pull requests</h1>
-        <p className="mb-6 mt-1 text-sm text-muted-foreground">
-          Review the pull requests Juno Code opens from your sessions.
-        </p>
+        <AppPageHeader
+          eyebrow="Code"
+          heading="Pull requests"
+          lede="Review the pull requests Juno Code opens from your sessions."
+        />
 
         {github ? (
           <PullsList account={github.accountLabel} />
