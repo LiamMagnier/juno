@@ -413,7 +413,7 @@ function AutoLayoutSection({
           type="button"
           disabled={readOnly}
           onClick={() => set(null, "Remove auto layout")}
-          className="pressable rounded px-1 font-mono text-[10px] text-muted-foreground hover:text-destructive"
+          className="pressable rounded-sm px-1 font-mono text-[10px] text-muted-foreground hover:text-destructive"
         >
           Remove
         </button>

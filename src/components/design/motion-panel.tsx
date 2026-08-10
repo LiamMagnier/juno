@@ -495,7 +495,7 @@ export function MotionPanel({
                 onClick={addTracks}
                 title={selection.length === 0 ? "Select a layer first" : undefined}
                 aria-label="Add a track for the selected layers"
-                className="pressable shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
               >
                 <Plus className="size-3" aria-hidden />
               </button>
@@ -541,7 +541,7 @@ export function MotionPanel({
                       disabled={readOnly}
                       onClick={() => addKeyframe(track)}
                       aria-label={`Add a keyframe to ${node?.name ?? track.nodeId} ${info.label}`}
-                      className="pressable shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
+                      className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
                     >
                       <Plus className="size-3" aria-hidden />
                     </button>
@@ -550,7 +550,7 @@ export function MotionPanel({
                       disabled={readOnly}
                       onClick={() => removeTrack(track)}
                       aria-label={`Remove the ${info.label} track`}
-                      className="pressable shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
+                      className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
                     >
                       <X className="size-3" aria-hidden />
                     </button>

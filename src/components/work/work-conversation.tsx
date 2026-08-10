@@ -171,7 +171,7 @@ export function WorkConversation({
 
       {/* Pinned, in every state and at every width. `bg-background` on the
           wrapper rather than on the composer alone, because the composer is a
-          rounded card and the transcript would otherwise scroll visibly through
+          rounded-sm card and the transcript would otherwise scroll visibly through
           the corners and through the gap below it. The fade above is one line
           tall: enough to read as depth without borrowing a shadow, which this
           surface does not use. */}

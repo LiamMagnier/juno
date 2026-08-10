@@ -647,8 +647,8 @@ function ComposioSetupCallout() {
               and copy its API key (free, no card).
             </li>
             <li>
-              2. Add <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">COMPOSIO_API_KEY=…</code> to the
-              server’s <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">.env</code>.
+              2. Add <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-[10px]">COMPOSIO_API_KEY=…</code> to the
+              server’s <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-[10px]">.env</code>.
             </li>
             <li>3. Restart Juno, then reload this page.</li>
           </ol>

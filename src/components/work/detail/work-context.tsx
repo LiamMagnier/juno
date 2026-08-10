@@ -94,7 +94,7 @@ function SourceCard({ reference }: { reference: WorkReference }) {
             href={reference.url}
             target="_blank"
             rel="noreferrer noopener"
-            className="inline-flex min-w-0 max-w-full items-center gap-1 rounded text-[13px] leading-snug text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm text-[13px] leading-snug text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span className="min-w-0 truncate">{reference.label}</span>
             <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />

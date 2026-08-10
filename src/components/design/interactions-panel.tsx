@@ -143,7 +143,7 @@ export function InteractionsPanel({
           disabled={readOnly}
           onClick={add}
           aria-label="Add an interaction"
-          className="pressable rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+          className="pressable rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
         >
           <Plus className="size-3" aria-hidden />
         </button>
@@ -271,7 +271,7 @@ function InteractionCard({
           disabled={readOnly}
           onClick={onRemove}
           aria-label="Remove this interaction"
-          className="pressable mt-3 shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
+          className="pressable mt-3 shrink-0 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
         >
           <X className="size-3" aria-hidden />
         </button>

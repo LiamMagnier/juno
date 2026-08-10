@@ -1058,7 +1058,7 @@ function JumpLink({ href, children }: { href: string; children: React.ReactNode 
   return (
     <a
       href={href}
-      className="inline-flex rounded font-mono text-[10px] text-muted-foreground underline underline-offset-4 transition-colors duration-base ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="inline-flex rounded-sm font-mono text-[10px] text-muted-foreground underline underline-offset-4 transition-colors duration-base ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {children}
     </a>

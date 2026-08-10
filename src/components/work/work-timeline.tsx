@@ -977,7 +977,7 @@ function ActivityBatch({
         // pressing it does as well as what it is about — a control announced
         // only as "Ran 63 commands" is one nobody knows is a control.
         aria-label={`${open ? "Hide" : "Show"} these ${entries.length} steps: ${summary.line}`}
-        className="group flex w-full items-baseline gap-2 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="group flex w-full items-baseline gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ChevronRight
           className={cn(
@@ -1092,7 +1092,7 @@ function ActivityRow({ entry, phase }: { entry: ActivityEntry; phase: ActivityPh
             onClick={() => setOpen((current) => !current)}
             aria-expanded={open}
             aria-label={open ? `Hide detail: ${entry.title}` : `Show detail: ${entry.title}`}
-            className="mt-1 inline-flex items-center gap-1 rounded font-mono text-[10px] text-muted-foreground/70 transition-colors duration-base hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="mt-1 inline-flex items-center gap-1 rounded-sm font-mono text-[10px] text-muted-foreground/70 transition-colors duration-base hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronRight
               className={cn(

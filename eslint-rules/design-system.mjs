@@ -38,6 +38,15 @@ const SCALE_HELP =
 const ARBITRARY_RADIUS = /rounded(?:-[a-z]{1,2})?-\[([^\]]+)\]/g;
 
 /**
+ * `rounded` with no suffix. Tailwind's default is 0.25rem, which is exactly the
+ * 4px this scale already names `sm` — so it is a second spelling of an existing
+ * rung, and unlike `rounded-[4px]` it looks like it belongs. 46 sites had it.
+ * Bounded by whitespace or a quote so `rounded-full`, `rounded-md` and the rest
+ * are untouched.
+ */
+const BARE_ROUNDED = /(?:^|[\s"'`])rounded(?=[\s"'`]|$)/g;
+
+/**
  * Only values that are genuinely not on the scale because they are relative to
  * something the scale cannot know about.
  */
@@ -66,6 +75,9 @@ const noArbitraryRadius = {
         "`rounded-[{{value}}]` is not on the radius scale. Pick the nearest rung or add a named " +
         "token to tailwind.config.ts with a comment saying what it wraps. Scale: " +
         SCALE_HELP,
+      bare:
+        "Bare `rounded` is Tailwind's default 0.25rem — the same 4px this scale already names " +
+        "`rounded-sm`. Two spellings of one value. Use `rounded-sm`.",
     },
   },
 
@@ -74,6 +86,21 @@ const noArbitraryRadius = {
 
     /** @param {import('estree').Node} node @param {string} raw @param {number} offset */
     function scan(node, raw, offset) {
+      // Bare `rounded`, which is off the ladder while looking like it is on it.
+      for (const match of raw.matchAll(BARE_ROUNDED)) {
+        const at = node.range[0] + offset + match.index + match[0].indexOf("rounded");
+        const range = [at, at + "rounded".length];
+        context.report({
+          node,
+          loc: {
+            start: context.sourceCode.getLocFromIndex(range[0]),
+            end: context.sourceCode.getLocFromIndex(range[1]),
+          },
+          messageId: "bare",
+          fix: (fixer) => fixer.replaceTextRange(range, "rounded-sm"),
+        });
+      }
+
       for (const match of raw.matchAll(ARBITRARY_RADIUS)) {
         const value = match[1];
         if (allow.has(value)) continue;

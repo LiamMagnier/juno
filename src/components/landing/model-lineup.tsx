@@ -63,7 +63,7 @@ export function FlagshipStrip() {
             key={provider}
             className="inline-flex h-8 items-center gap-1.5 rounded-control border border-border/60 bg-card/70 px-2 text-[13px] font-medium text-foreground/80"
           >
-            <ProviderLogo provider={provider} label={label} className="size-4 shrink-0 rounded" />
+            <ProviderLogo provider={provider} label={label} className="size-4 shrink-0 rounded-sm" />
             <span className="whitespace-nowrap font-mono">{flagships[0]}</span>
           </li>
         ))}

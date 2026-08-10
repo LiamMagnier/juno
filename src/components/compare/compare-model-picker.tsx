@@ -77,7 +77,7 @@ export function CompareModelPicker({
           {current && (
             <ProviderLogo
               provider={current.provider}
-              className="h-4 w-4 shrink-0 rounded transition-transform duration-base ease-out-soft group-hover:scale-110"
+              className="h-4 w-4 shrink-0 rounded-sm transition-transform duration-base ease-out-soft group-hover:scale-110"
             />
           )}
           <span className="truncate font-mono">{current?.name ?? "Select model"}</span>

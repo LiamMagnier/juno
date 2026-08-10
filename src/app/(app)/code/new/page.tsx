@@ -616,7 +616,7 @@ export default function NewCodeSessionPage() {
                                   alt={u.fileName}
                                   width={32}
                                   height={32}
-                                  className="h-8 w-8 rounded object-cover"
+                                  className="h-8 w-8 rounded-sm object-cover"
                                 />
                               ) : (
                                 <FileText className="h-5 w-5 text-muted-foreground" />

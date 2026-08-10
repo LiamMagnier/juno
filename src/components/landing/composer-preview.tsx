@@ -35,7 +35,7 @@ export function ComposerPreview({ model }: { model: ModelInfo }) {
           {/* Model trigger — same geometry and voice as model-selector.tsx: 10px
               radius, size-4 logo, the model name in mono. */}
           <span className="inline-flex h-8 items-center gap-1.5 rounded-control px-2 text-[13px] font-medium text-foreground/80">
-            <ProviderLogo provider={model.provider} className="size-4 shrink-0 rounded" />
+            <ProviderLogo provider={model.provider} className="size-4 shrink-0 rounded-sm" />
             <span className="font-mono">{model.name}</span>
             <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden />
           </span>

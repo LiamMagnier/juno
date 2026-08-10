@@ -193,7 +193,7 @@ function FilesSection({ context }: { context: WorkThreadContextState }) {
                     type="button"
                     onClick={() => remove(upload.localId)}
                     aria-label={`Remove ${upload.fileName}`}
-                    className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="shrink-0 rounded-sm p-0.5 text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <X className="size-3.5" aria-hidden="true" />
                   </button>

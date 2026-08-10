@@ -81,7 +81,7 @@ function ModelField({
           className="flex w-full items-center justify-between rounded-2xl border px-3.5 py-2.5 text-left transition-colors duration-fast hover:bg-accent"
         >
           <span className="flex min-w-0 items-center gap-2">
-            {current && <ProviderLogo provider={current.provider} className="h-4 w-4 rounded" />}
+            {current && <ProviderLogo provider={current.provider} className="h-4 w-4 rounded-sm" />}
             <span className="truncate font-mono text-[13px]">{current?.name ?? "Select a model"}</span>
           </span>
           <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft", open && "rotate-180")} />
@@ -126,7 +126,7 @@ function ModelField({
                     }}
                     className="pressable flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
                   >
-                    <ProviderLogo provider={m.provider} className="h-4 w-4 rounded" />
+                    <ProviderLogo provider={m.provider} className="h-4 w-4 rounded-sm" />
                     <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{m.name}</span>
                     {m.id === valueId && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
                   </button>

@@ -529,9 +529,9 @@ export function ModelSelector({
           className="group inline-flex h-8 w-full min-w-0 max-w-[12rem] items-center gap-1 rounded-control px-1.5 text-[12px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground max-[359px]:w-auto max-[359px]:px-2 sm:w-auto sm:max-w-[16rem] sm:gap-1.5 sm:px-2 sm:text-[13px] coarse:h-11"
         >
           {autoSelected ? (
-            <JunoMark className="size-3.5 shrink-0 rounded transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
+            <JunoMark className="size-3.5 shrink-0 rounded-sm transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
           ) : current ? (
-            <ProviderLogo provider={current.provider} className="size-3.5 shrink-0 rounded transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
+            <ProviderLogo provider={current.provider} className="size-3.5 shrink-0 rounded-sm transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
           ) : null}
           <span
             key={current?.id ?? "no-model"}

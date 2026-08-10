@@ -1718,7 +1718,7 @@ export function ColorField({
             disabled={disabled}
             onClick={onClear}
             aria-label={`Remove ${label.toLowerCase()}`}
-            className="pressable shrink-0 rounded px-1 font-mono text-[10px] text-muted-foreground hover:text-destructive"
+            className="pressable shrink-0 rounded-sm px-1 font-mono text-[10px] text-muted-foreground hover:text-destructive"
           >
             ×
           </button>

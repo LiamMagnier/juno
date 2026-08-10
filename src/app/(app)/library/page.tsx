@@ -521,8 +521,8 @@ function LoadingBrowser({ view }: { view: LibraryView }) {
               style={staggerDelay(index, "tight")}
             />
             <div className="px-1 pt-2.5">
-              <span className="skeleton block h-3 w-3/4 rounded" />
-              <span className="skeleton mt-2 block h-2.5 w-1/2 rounded" />
+              <span className="skeleton block h-3 w-3/4 rounded-sm" />
+              <span className="skeleton mt-2 block h-2.5 w-1/2 rounded-sm" />
             </div>
           </div>
         ))}
@@ -534,7 +534,7 @@ function LoadingBrowser({ view }: { view: LibraryView }) {
     <div className="mt-5 overflow-hidden rounded-popover border border-border/60" aria-label="Loading files">
       <div className={cn(browserGrid, "h-10 border-b border-border/50 bg-muted/20 px-3 sm:px-4")}>
         <span className="skeleton size-4 rounded-xs" />
-        <span className="skeleton h-2.5 w-16 rounded" />
+        <span className="skeleton h-2.5 w-16 rounded-sm" />
       </div>
       {[...Array(6)].map((_, index) => (
         <div
@@ -545,8 +545,8 @@ function LoadingBrowser({ view }: { view: LibraryView }) {
           <span className="flex items-center gap-3">
             <span className="skeleton size-11 shrink-0 rounded-control" style={staggerDelay(index, "tight")} />
             <span className="min-w-0 flex-1 space-y-2">
-              <span className="skeleton block h-3 w-32 max-w-full rounded" />
-              <span className="skeleton block h-2.5 w-20 rounded" />
+              <span className="skeleton block h-3 w-32 max-w-full rounded-sm" />
+              <span className="skeleton block h-2.5 w-20 rounded-sm" />
             </span>
           </span>
         </div>
@@ -842,7 +842,7 @@ export default function LibraryPage() {
                       type="button"
                       onClick={() => setQuery("")}
                       aria-label="Clear search"
-                      className="rounded text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <X className="size-3.5" />
                     </button>

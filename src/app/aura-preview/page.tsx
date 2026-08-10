@@ -30,19 +30,19 @@ export default function AuraPreview() {
     <div className="relative flex h-dvh min-h-0 flex-col overflow-y-auto overflow-x-clip bg-background">
       <div className="fixed left-4 top-4 z-toolbar flex flex-wrap gap-2 font-mono text-xs">
         {ACCENTS.map((a) => (
-          <button key={a} onClick={() => setAccent(a)} className="rounded border bg-card px-2 py-1">
+          <button key={a} onClick={() => setAccent(a)} className="rounded-sm border bg-card px-2 py-1">
             {a}
           </button>
         ))}
         {LABS.map((p) => (
-          <button key={p} onClick={() => setLab(p)} className="rounded border bg-card px-2 py-1">
+          <button key={p} onClick={() => setLab(p)} className="rounded-sm border bg-card px-2 py-1">
             {p}
           </button>
         ))}
-        <button onClick={() => setSending(true)} className="rounded border bg-primary px-2 py-1 text-primary-foreground">
+        <button onClick={() => setSending(true)} className="rounded-sm border bg-primary px-2 py-1 text-primary-foreground">
           send
         </button>
-        <button onClick={() => setDocked((d) => !d)} className="rounded border bg-card px-2 py-1">
+        <button onClick={() => setDocked((d) => !d)} className="rounded-sm border bg-card px-2 py-1">
           {docked ? "docked" : "empty"}
         </button>
         <span className="px-2 py-1">{lab}</span>

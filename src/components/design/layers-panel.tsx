@@ -223,7 +223,7 @@ export function LayersPanel({
             disabled={readOnly}
             onClick={addPage}
             aria-label="Add page"
-            className="pressable rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+            className="pressable rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
           >
             <Plus className="size-3" aria-hidden />
           </button>
@@ -273,7 +273,7 @@ export function LayersPanel({
                   disabled={readOnly}
                   onClick={() => deletePage(p.id)}
                   aria-label={`Delete ${p.name}`}
-                  className="pressable shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/page:opacity-100 coarse:opacity-100"
+                  className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/page:opacity-100 coarse:opacity-100"
                 >
                   <X className="size-3" aria-hidden />
                 </button>
@@ -325,7 +325,7 @@ export function LayersPanel({
                   type="button"
                   onClick={() => toggleCollapse(id)}
                   aria-label={collapsed.has(id) ? `Expand ${node.name}` : `Collapse ${node.name}`}
-                  className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                  className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
                 >
                   {collapsed.has(id) ? <ChevronRight className="size-3" aria-hidden /> : <ChevronDown className="size-3" aria-hidden />}
                 </button>
@@ -356,7 +356,7 @@ export function LayersPanel({
                   type="button"
                   onClick={() => onShowMotion?.(id)}
                   aria-label={`${node.name} is animated — open the timeline`}
-                  className="pressable shrink-0 rounded p-0.5 text-primary/70 transition-colors hover:text-primary"
+                  className="pressable shrink-0 rounded-sm p-0.5 text-primary/70 transition-colors hover:text-primary"
                 >
                   <Activity className="size-3" aria-hidden />
                 </button>
@@ -366,7 +366,7 @@ export function LayersPanel({
                   type="button"
                   onClick={() => onShowInteractions?.(id)}
                   aria-label={`${node.name} has an interaction — open the prototype panel`}
-                  className="pressable shrink-0 rounded p-0.5 text-primary/70 transition-colors hover:text-primary"
+                  className="pressable shrink-0 rounded-sm p-0.5 text-primary/70 transition-colors hover:text-primary"
                 >
                   <Zap className="size-3" aria-hidden />
                 </button>
@@ -378,7 +378,7 @@ export function LayersPanel({
                     type="button"
                     disabled={readOnly}
                     aria-label={`Layer actions for ${node.name}`}
-                    className="pressable shrink-0 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100 disabled:pointer-events-none disabled:opacity-30"
+                    className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100 disabled:pointer-events-none disabled:opacity-30"
                   >
                     <MoreHorizontal className="size-3.5" aria-hidden />
                   </button>
@@ -425,7 +425,7 @@ export function LayersPanel({
                 aria-pressed={!node.visible}
                 title={node.visible ? "Hide" : "Show"}
                 className={cn(
-                  "shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100",
+                  "shrink-0 rounded-sm p-0.5 text-muted-foreground transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100",
                   node.visible ? "opacity-0" : "opacity-100"
                 )}
               >
@@ -439,7 +439,7 @@ export function LayersPanel({
                 aria-pressed={node.locked}
                 title={node.locked ? "Unlock" : "Lock"}
                 className={cn(
-                  "shrink-0 rounded p-0.5 text-muted-foreground transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100",
+                  "shrink-0 rounded-sm p-0.5 text-muted-foreground transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100",
                   node.locked ? "opacity-100" : "opacity-0"
                 )}
               >
