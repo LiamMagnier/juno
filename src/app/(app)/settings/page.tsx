@@ -8,6 +8,7 @@ import { signOutToSignIn } from "@/lib/sign-out";
 import { toast } from "sonner";
 import { ArrowLeft, NotebookPen, Check, Download, Loader2, Monitor, Moon, Play, Square, Sun, Trash2, Plus, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Pressable } from "@/components/ui/pressable";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -651,19 +652,18 @@ export default function SettingsPage() {
                   {themeOptions.map((t) => {
                     const selected = settings.theme === t.value;
                     return (
-                      <button
+                      <Pressable
                         key={t.value}
+                        kind="tile"
                         role="radio"
+                        selected={selected}
                         aria-checked={selected}
                         onClick={() => setThemePref(t.value)}
-                        className={cn(
-                          "flex flex-col items-center gap-1.5 rounded-xl border p-3 text-sm shadow-pop transition-all duration-fast ease-out-soft hover:-translate-y-0.5 hover:bg-accent hover:shadow-float",
-                          selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border/70"
-                        )}
+                        className="items-center gap-1.5 shadow-pop hover:shadow-float motion-safe:hover:-translate-y-0.5"
                       >
                         <t.icon className="h-4 w-4" />
                         {t.label}
-                      </button>
+                      </Pressable>
                     );
                   })}
                 </div>
@@ -793,22 +793,21 @@ export default function SettingsPage() {
               {PERSONALITIES.map((p) => {
                 const selected = activePersonality === p.id;
                 return (
-                  <button
+                  <Pressable
                     key={p.id}
+                    kind="tile"
                     role="radio"
+                    selected={selected}
                     aria-checked={selected}
                     onClick={() => save({ personality: p.id })}
-                    className={cn(
-                      "flex flex-col items-start gap-1 rounded-xl border p-3 text-left shadow-pop transition-[transform,box-shadow,background-color,border-color] duration-fast ease-out-soft hover:bg-accent hover:shadow-float motion-safe:hover:-translate-y-0.5",
-                      selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border/70"
-                    )}
+                    className="shadow-pop hover:shadow-float motion-safe:hover:-translate-y-0.5"
                   >
                     <span className="flex w-full items-center justify-between gap-2 text-sm font-medium">
                       {p.label}
                       {selected && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
                     </span>
                     <span className="text-xs leading-relaxed text-muted-foreground">{p.description}</span>
-                  </button>
+                  </Pressable>
                 );
               })}
             </div>
