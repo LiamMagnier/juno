@@ -1,3 +1,4 @@
+import { staggerDelay } from "@/lib/motion";
 import { Section } from "@/components/landing/section";
 
 /**
@@ -41,14 +42,22 @@ export function Switching() {
       {/* Dotted rules — the product's rule motif (DottedDivider), which the landing
           already uses for the flagship divider and the receipt leader. */}
       <dl className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-3">
-        {STEPS.map((step) => (
-          <div key={step.term} className="border-t border-dotted border-border pt-5">
+        {STEPS.map((step, i) => (
+          <div
+            key={step.term}
+            style={staggerDelay(i)}
+            className="border-t border-dotted border-border pt-5 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+          >
             <dt className="font-serif text-heading font-medium">{step.term}</dt>
             <dd className="mt-2 text-body text-muted-foreground">{step.body}</dd>
           </div>
         ))}
       </dl>
-      <p className="mt-8 text-body text-muted-foreground">
+      {/* mt-6 max-w-2xl, matching model-lineup's closing line and PageHeader's own
+          lede measure. Unconstrained this ran the full 1152px column — ~150
+          characters a line, so the section opened on one measure and closed on
+          roughly double it. */}
+      <p className="mt-6 max-w-2xl text-body text-muted-foreground">
         Exports up to 100 MB. Nothing is sent to a third party — the archive is read on Juno&apos;s own server and
         discarded once its conversations are stored.
       </p>

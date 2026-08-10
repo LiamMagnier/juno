@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowUp,
-  ChevronDown,
   Cloud,
   FileText,
   FileUp,
@@ -21,7 +20,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,8 +31,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ModelSelector } from "@/components/chat/model-selector";
-import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { ComposerDictation } from "@/components/chat/composer-dictation";
 import { JunoMark } from "@/components/brand/logo";
@@ -47,19 +43,11 @@ import {
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
-import { resolveModel, DEFAULT_MODEL, type ModelId } from "@/lib/models";
-import {
-  reasoningOptions,
-  defaultReasoning,
-  clampReasoningEffort,
-  reasoningGlow,
-} from "@/lib/model-metrics";
-import { providerGlow } from "@/lib/provider-colors";
-import { supportsFastMode } from "@/lib/pricing";
+import { resolveModel, DEFAULT_MODEL } from "@/lib/models";
 import { setPendingCodePrompt } from "@/lib/code-session-handoff";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 import { cn, formatBytes } from "@/lib/utils";
-import type { ClientAttachment, ClientConversation, ReasoningEffort } from "@/types/chat";
+import type { ClientAttachment, ClientConversation } from "@/types/chat";
 
 const TARGET_KEY = "juno:code:new:target";
 
@@ -100,7 +88,13 @@ function CodeGreeting() {
             onClick={() => setPopping(true)}
             onAnimationEnd={() => setPopping(false)}
             className={cn(
-              "shrink-0 outline-none [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in",
+              // The glyph is 1.32rem (21px) — the weight the greeting wants,
+              // and under the 24x24 WCAG 2.2 (2.5.8) target minimum. grid +
+              // place-items grows the hit area around it without moving it,
+              // exactly as the chat greeting's mark does. `outline-none` is
+              // gone with it: it removed the global :focus-visible outline and
+              // put nothing back, so this control had no keyboard focus at all.
+              "grid size-6 shrink-0 place-items-center [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in sm:size-8",
               popping && "juno-mark-popping",
             )}
           >
@@ -138,7 +132,7 @@ function CodeGreeting() {
 
 export default function NewCodeSessionPage() {
   const router = useRouter();
-  const { settings, upsertConversation, composerPrefs, setComposerPrefs, features } = useApp();
+  const { settings, upsertConversation, removeConversation, features } = useApp();
 
   // —— Target (Device ⇄ Cloud), restored after mount (SSR renders "device") ——
   const [target, setTarget] = React.useState<Target>("device");
@@ -148,42 +142,77 @@ export default function NewCodeSessionPage() {
       if (saved === "cloud" || saved === "device") setTarget(saved);
     } catch {}
   }, []);
-  const switchTarget = React.useCallback((next: Target) => {
-    setTarget(next);
-    setCloudStartError(null);
-    try {
-      localStorage.setItem(TARGET_KEY, next);
-    } catch {}
-  }, []);
+  // Reuse one cloud conversation across retries so a transient dispatch failure
+  // doesn't leak an empty session on every attempt.
+  const cloudConversationId = React.useRef<string | null>(null);
+
+  /*
+   * Retries reused that conversation, and nothing ever cleaned it up — so a
+   * failed cloud start still left exactly one empty untitled session in the
+   * sidebar with no run behind it, and switching to Device or walking away
+   * stranded it there for good.
+   *
+   * Called on every path that ends the retry: a non-retryable failure, leaving
+   * Cloud, and picking a DIFFERENT repository — that last one is not tidiness.
+   * The orphan carries the first repo's name and path, and `startCloud` only
+   * creates a conversation when the ref is empty, so without this the retry
+   * would stream a run against repo B into a session labelled repo A.
+   */
+  const discardOrphanCloudSession = React.useCallback(() => {
+    const id = cloudConversationId.current;
+    if (!id) return;
+    cloudConversationId.current = null;
+    removeConversation(id);
+    // Fire-and-forget: the user is not waiting on this, and a failed delete
+    // leaves exactly what failing to try would have.
+    void fetch(`/api/conversations/${id}`, { method: "DELETE" }).catch(() => {});
+  }, [removeConversation]);
+
+  const switchTarget = React.useCallback(
+    (next: Target) => {
+      setTarget(next);
+      setCloudStartError(null);
+      if (next !== "cloud") discardOrphanCloudSession();
+      try {
+        localStorage.setItem(TARGET_KEY, next);
+      } catch {}
+    },
+    [discardOrphanCloudSession],
+  );
 
   // —— Selection state (kept per target so toggling never loses a pick) ——
   const [selectedWorkspace, setSelectedWorkspace] = React.useState<Workspace | null>(null);
   const [selectedRepo, setSelectedRepo] = React.useState<CloudRepo | null>(null);
   const [baseRef, setBaseRef] = React.useState("");
 
-  // —— Prompt + model + thinking (visible BEFORE the first send) ——
+  // —— Prompt (the only thing this screen actually decides, besides target) ——
   const [prompt, setPrompt] = React.useState("");
   const [dragging, setDragging] = React.useState(false);
   const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [removingIds, setRemovingIds] = React.useState<string[]>([]);
   const [dictating, setDictating] = React.useState(false);
-  const [model, setModel] = React.useState<ModelId>(
+  /*
+   * THE MODEL PICKER AND THE THINKING SLIDER ARE GONE, and this is what they
+   * were: two controls that changed nothing about the run.
+   *
+   * POST /api/code/tasks carries no `model` and no `reasoningEffort` field, and
+   * dispatchCloudRunner never reads one — the picked model was only ever
+   * written onto the local conversation record (still is, below). The effort
+   * control was worse than inert: it wrote through `setComposerPrefs`, which
+   * persists to the shared `juno:composer-prefs` key, so dragging it here
+   * silently and permanently changed the effort the CHAT composer would use
+   * next, while doing nothing to the code task being started. The session
+   * composer in code-session-view already ships without both, which is the
+   * honest shape; these come back when the task API can carry them.
+   *
+   * The model still rides onto the conversation so the sidebar's record matches
+   * the account default — a value, not a choice, so no control claims otherwise.
+   */
+  const model = React.useMemo(
     () => resolveModel(settings.defaultModel)?.id ?? DEFAULT_MODEL,
+    [settings.defaultModel],
   );
-  const reasoningEffort = composerPrefs.reasoningEffort;
-  const fastMode = composerPrefs.fastMode;
-  const setReasoningEffort = React.useCallback(
-    (e: ReasoningEffort | null) => setComposerPrefs({ reasoningEffort: e }),
-    [setComposerPrefs],
-  );
-  const setFastMode = React.useCallback(
-    (enabled: boolean) => setComposerPrefs({ fastMode: enabled }),
-    [setComposerPrefs],
-  );
-  const resolved = resolveModel(model);
-  const effortOptions = React.useMemo(() => (resolved ? reasoningOptions(resolved) : []), [resolved]);
-  const canFastMode = !!resolved && supportsFastMode(resolved);
   const canAttach = features.storage;
 
   /*
@@ -193,44 +222,18 @@ export default function NewCodeSessionPage() {
    * yet. The bloom's stated job is that a brand-new session is the warmest
    * thing on the page, and a brand-new Code session is exactly that.
    *
-   * Two values ride down as custom properties on the host, both read by CSS
-   * that already exists — nothing here is new styling, only the wiring:
+   * It rides on the CSS defaults rather than on custom properties from here,
+   * because the two properties it can take — `--aura-provider` (the lab colour
+   * behind the picked model) and `--aura-think` (how hard it is set to think) —
+   * are answers to questions this screen no longer asks. Both are registered
+   * with real initial values (`hsl(var(--primary))` and 0.5), so the bloom is
+   * the brand tint at mid effort: the light says "a new session", which is the
+   * only thing left that is true here.
    *
-   *   --aura-provider  the lab colour behind the selected model. Inert until
-   *                    `:focus-within` on `.composer-surface` swaps the tint to
-   *                    it, so the light says which lab the composer is about to
-   *                    talk to only while you are actually typing to it.
-   *   --aura-think     how hard the model is set to think, 0…1, which drives
-   *                    both how bright and how big the bloom is.
-   *
-   * The effort is clamped to what the model will actually accept first — a
-   * sticky "max" carried over from another model would otherwise light the page
-   * at full burn for a model that quietly runs it at high.
-   *
-   * The gate on `think` is "is a control on screen", which is why it tests
-   * `effortOptions` — the very array the thinking button below renders from —
-   * rather than `resolved.reasoning`. A model that reasons but exposes no tiers
-   * shows no slider, so there is no question being asked, and a question that
-   * is never asked is not the same as an answer of zero: those sit at the
-   * middle of the ramp. (chat-view.tsx makes the same argument at greater
-   * length, and additionally excludes Auto because its composer hides the
-   * slider for Auto. This page's does not, so this gate must not either — the
-   * aura mirrors the controls this page actually shows, not another page's.)
-   *
-   * The remaining two inputs need no wiring at all and are live for free: focus
-   * is `:focus-within` on the `.composer-surface` class this composer already
-   * carries, and reduced motion is handled inside the same CSS. Nothing is
-   * left inert.
+   * The remaining two inputs need no wiring and are live for free: focus is
+   * `:focus-within` on the `.composer-surface` class this composer already
+   * carries, and reduced motion is handled inside the same CSS.
    */
-  const auraStyle = React.useMemo(() => {
-    if (!resolved) return undefined;
-    const think =
-      effortOptions.length > 0 ? reasoningGlow(clampReasoningEffort(resolved, reasoningEffort ?? null)) : 0.5;
-    return {
-      "--aura-provider": providerGlow(resolved.provider),
-      "--aura-think": think,
-    } as React.CSSProperties;
-  }, [resolved, effortOptions, reasoningEffort]);
 
   // Send swells the bloom once. Cleared on a timer rather than `animationend`:
   // under prefers-reduced-motion the keyframes are switched off, so that event
@@ -244,26 +247,9 @@ export default function NewCodeSessionPage() {
   const { supported: speechSupported } = useSpeechRecognition();
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(null);
 
-  // Switching models drops a thinking tier the new model can't do — same guard
-  // the chat composer uses, so we never show (or persist) an unsupported effort.
-  const changeModel = React.useCallback(
-    (m: ModelId) => {
-      setModel(m);
-      const next = resolveModel(m);
-      if (next) {
-        const opts = reasoningOptions(next);
-        if (!opts.some((o) => o.value === reasoningEffort)) setReasoningEffort(defaultReasoning(next));
-      }
-    },
-    [reasoningEffort, setReasoningEffort],
-  );
-
   // —— Submission ——
   const [submitting, setSubmitting] = React.useState(false);
   const [cloudStartError, setCloudStartError] = React.useState<CloudStartError>(null);
-  // Reuse one cloud conversation across retries so a transient dispatch failure
-  // doesn't leak an empty session on every attempt.
-  const cloudConversationId = React.useRef<string | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
@@ -377,19 +363,27 @@ export default function NewCodeSessionPage() {
       }
 
       const err = ((await tRes.json().catch(() => ({}))) as { error?: string }).error;
+      // Only `dispatch_failed` is worth holding the session open for — its
+      // banner is the one with a Try again. Every other failure here needs a
+      // different server, a different connection or a different file, so the
+      // empty session it would leave behind is pure litter.
       if (tRes.status === 503 && err === "cloud_runner_not_configured") {
         setCloudStartError("not_configured");
+        discardOrphanCloudSession();
       } else if (tRes.status === 502 && err === "cloud_dispatch_failed") {
         setCloudStartError("dispatch_failed");
       } else if (tRes.status === 400 && err === "github_not_connected") {
         toast.error("Connect GitHub in Connections before starting a cloud run.");
+        discardOrphanCloudSession();
       } else if (tRes.status === 409 && err === "attachment_claim_failed") {
         toast.error("One of the attached files is no longer available. Remove it and try again.");
+        discardOrphanCloudSession();
       } else {
         toast.error("Could not start the cloud run. Check your connection and try again.");
+        discardOrphanCloudSession();
       }
     },
-    [clear, model, router, upsertConversation],
+    [clear, discardOrphanCloudSession, model, router, upsertConversation],
   );
 
   const submit = React.useCallback(
@@ -509,10 +503,7 @@ export default function NewCodeSessionPage() {
                 It wraps the grid and nothing else, so the bloom centres on the
                 capsule — the error banners and the footer line below are not
                 part of what is being lit. */}
-            <div
-              className={cn("composer-aura-host relative w-full", auraSending && "is-sending")}
-              style={auraStyle}
-            >
+            <div className={cn("composer-aura-host relative w-full", auraSending && "is-sending")}>
               <div aria-hidden className="composer-aura" />
               <div
                 className={cn(
@@ -583,6 +574,9 @@ export default function NewCodeSessionPage() {
                         setSelectedRepo(r);
                         setBaseRef("");
                         setCloudStartError(null);
+                        // A held-over session from a failed start belongs to the
+                        // repo it was named for, not this one.
+                        if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
                       }}
                       baseRef={baseRef}
                       onBaseRefChange={setBaseRef}
@@ -661,8 +655,8 @@ export default function NewCodeSessionPage() {
                     className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]"
                   />
 
-                  {/* Toolbar — + attach, model + thinking, send. Matches home
-                      composer radius / padding / primary action language. */}
+                  {/* Toolbar — + attach, dictate, send. Matches home composer
+                      radius / padding / primary action language. */}
                   <div className="flex flex-nowrap items-center gap-1.5 px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5">
                     <div className="flex min-w-0 flex-1 items-center gap-1">
                       {canAttach && (
@@ -712,78 +706,6 @@ export default function NewCodeSessionPage() {
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}
-
-                      <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block" aria-hidden="true" />
-
-                      <div
-                        className={cn(
-                          "min-w-0 flex-1 sm:flex-none",
-                          submitting && "pointer-events-none opacity-60",
-                        )}
-                      >
-                        <ModelSelector
-                          value={model}
-                          onChange={changeModel}
-                          reasoningEffort={reasoningEffort}
-                          onReasoningChange={setReasoningEffort}
-                        />
-                      </div>
-
-                      {effortOptions.length > 0 && (() => {
-                        const currentEffort = effortOptions.find((e) => e.value === reasoningEffort) ?? effortOptions[0];
-                        const compactEffortLabel = currentEffort.label === "Extra high" ? "X-high" : currentEffort.label;
-                        const atTopTier =
-                          effortOptions.length > 1 && currentEffort.value === effortOptions[effortOptions.length - 1].value;
-                        return (
-                          <>
-                            <span className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block" aria-hidden="true" />
-                            <Tooltip>
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      disabled={submitting}
-                                      aria-label={`Thinking effort: ${currentEffort.label}${canFastMode ? `; Flash mode ${fastMode ? "on" : "off"}` : ""}`}
-                                      className={cn(
-                                        // Identical to the chat composer's effort
-                                        // button (composer.tsx:2202) — it is the
-                                        // same control, and the wide width was
-                                        // 6.5rem here against 7.25rem there for no
-                                        // reason, so "Extra high" clipped on one
-                                        // page and not the other.
-                                        "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-control px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
-                                        atTopTier ? "text-ultra" : "text-foreground/80",
-                                      )}
-                                    >
-                                      <span className="min-w-0 flex-1 truncate text-center min-[480px]:hidden">
-                                        {compactEffortLabel}
-                                      </span>
-                                      <span className="hidden min-w-0 flex-1 truncate text-center min-[480px]:inline">
-                                        {currentEffort.label}
-                                      </span>
-                                      <ChevronDown className="h-3 w-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                </PopoverTrigger>
-                                <PopoverContent align="start" sideOffset={10} className="w-[264px] origin-popper p-3">
-                                  <ReasoningSlider
-                                    options={effortOptions}
-                                    value={reasoningEffort}
-                                    onChange={setReasoningEffort}
-                                    disabled={submitting}
-                                    fastMode={fastMode}
-                                    onFastModeChange={canFastMode ? setFastMode : undefined}
-                                  />
-                                </PopoverContent>
-                              </Popover>
-                              <TooltipContent>Thinking effort</TooltipContent>
-                            </Tooltip>
-                          </>
-                        );
-                      })()}
                     </div>
 
                     <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -888,7 +810,13 @@ export default function NewCodeSessionPage() {
               </p>
             )}
             {cloudStartError === "dispatch_failed" && (
-              <div className="mt-2.5 flex items-center justify-between gap-3 rounded-field border border-destructive/40 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive motion-safe:animate-rise-in">
+              // role="alert" for the same reason its sibling above has one:
+              // both appear in this slot for the same gesture, and this is the
+              // recoverable one carrying the retry — it was the silent one.
+              <div
+                role="alert"
+                className="mt-2.5 flex items-center justify-between gap-3 rounded-field border border-destructive/40 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive motion-safe:animate-rise-in"
+              >
                 <span>Couldn’t start the cloud run — this is usually temporary.</span>
                 <Button variant="outline" size="sm" onClick={() => void submit()} disabled={submitting} className="shrink-0 gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive">
                   Try again

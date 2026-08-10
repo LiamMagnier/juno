@@ -3,8 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { AppPageHeader } from "@/components/app/app-page-header";
 import { cn } from "@/lib/utils";
 
 /*
@@ -187,6 +186,15 @@ export function WorkNav({ className }: { className?: string }) {
  * One column, the same width as the Work home, with the back arrow and the
  * navigation in the same place on every one of them — a heading that moves
  * between two sibling pages is a heading the eye has to find again.
+ *
+ * COMPOSED from `AppPageHeader` rather than forked from it. This used to
+ * re-implement that header at its own metrics — `mb-3` on the nav row against
+ * its `mb-1`, `items-start` + a `pt-1` shim on the actions cluster against its
+ * `items-end`, `max-w-xl` on the lede against its `max-w-prose` — which is
+ * exactly the drift `AppPageHeader`'s own comment enumerates as the bug it was
+ * written to end, and Work was the one surface not using it. The only thing
+ * Work still supplies is what goes in the eyebrow slot: the four-destination
+ * nav, in place of the one-word kicker every other page puts there.
  */
 export function WorkPageFrame({
   title,
@@ -206,26 +214,15 @@ export function WorkPageFrame({
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-10">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Button variant="ghost" size="icon-sm" asChild aria-label={destination.label}>
-            <Link href={destination.href}>
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
-          <WorkNav />
-        </div>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="font-serif text-display font-medium tracking-tight">{title}</h1>
-            {description !== undefined && (
-              <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
-                {description}
-              </p>
-            )}
-          </div>
-          {action != null && <div className="shrink-0 pt-1">{action}</div>}
-        </div>
-        <div className="mt-7">{children}</div>
+        <AppPageHeader
+          eyebrow={<WorkNav />}
+          heading={title}
+          lede={description}
+          actions={action}
+          backHref={destination.href}
+          backLabel={destination.label}
+        />
+        {children}
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Check, RefreshCw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Pressable } from "@/components/ui/pressable";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { trustPermitsAutoSelection, type ClientWorkSkill } from "@/lib/work/skills";
@@ -205,14 +206,16 @@ function ToolboxRow({
 }) {
   return (
     <li>
-      <Link
-        href={href}
-        className="flex items-center gap-2 rounded-lg px-1.5 py-1 transition-colors duration-fast ease-out-soft hover:bg-accent/60"
-      >
-        <span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
-        <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">{label}</span>
-        <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{note}</span>
-      </Link>
+      {/* `Pressable kind="row"` is the primitive this shape was hand-written
+          against four separate times in Work, each with its own radius, padding
+          and hover fill. Nothing left here but the contents. */}
+      <Pressable kind="row" size="sm" asChild>
+        <Link href={href}>
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
+          <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">{label}</span>
+          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{note}</span>
+        </Link>
+      </Pressable>
     </li>
   );
 }

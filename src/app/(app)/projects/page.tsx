@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, FileText, MessageSquare, Plus, Search, MoreVertical, Trash2, Pencil, SlidersHorizontal, Pin, PinOff } from "lucide-react";
+import { FileText, MessageSquare, Plus, Search, MoreVertical, Trash2, Pencil, SlidersHorizontal, Pin, PinOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,11 +12,11 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { AppIcons } from "@/lib/app-icons";
-import { cn } from "@/lib/utils";
 import { readStarredProjects, removeStarredProject, toggleStarredProject } from "@/lib/starred-projects";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { staggerDelay } from "@/lib/motion";
 import { EmptyState } from "@/components/ui/empty-state";
+import { AppPageHeader } from "@/components/app/app-page-header";
 
 interface ProjectItem {
   id: string;
@@ -167,73 +167,73 @@ export default function ProjectsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
-        {/* Header Block — flex-wrap: the sort + new-project cluster (~270px) plus
-            the title can't share one 360px row; below ~560px the actions drop to
-            their own line instead of overflowing the container. */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat" className="hover:bg-accent/40 rounded-md">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <h1 className="flex items-center gap-2.5 font-serif text-3xl font-medium tracking-tight">
-              <AppIcons.projects className="size-[0.9em] shrink-0 text-muted-foreground/80" strokeWidth={1.6} aria-hidden />
-              Projects
-            </h1>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs text-muted-foreground">
-                  <SlidersHorizontal className="h-3.5 w-3.5" />
-                  Sort by: <span className="font-semibold text-foreground">{sortBy === "updated" ? "Last updated" : sortBy === "name" ? "Name" : "Conversations"}</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onSelect={() => setSortBy("updated")}>
-                  Last updated
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setSortBy("name")}>
-                  Name
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setSortBy("conversations")}>
-                  Conversations
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+        <AppPageHeader
+          eyebrow="Projects"
+          heading="Your projects"
+          icon={AppIcons.projects}
+          lede="A topic’s chats, instructions, and files, kept together."
+          actions={
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1.5 text-muted-foreground">
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    Sort by: <span className="font-semibold text-foreground">{sortBy === "updated" ? "Last updated" : sortBy === "name" ? "Name" : "Conversations"}</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onSelect={() => setSortBy("updated")}>
+                    Last updated
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setSortBy("name")}>
+                    Name
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setSortBy("conversations")}>
+                    Conversations
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-            <Button
-              onClick={() => { setName(""); setOpen(true); }}
-              size="sm"
-              className="h-9 gap-1.5 text-xs"
-            >
-              <Plus className="h-4 w-4" /> New project
-            </Button>
-          </div>
-        </div>
+              <Button onClick={() => { setName(""); setOpen(true); }} size="sm" className="gap-1.5">
+                <Plus className="h-4 w-4" /> New project
+              </Button>
+            </>
+          }
+        />
 
-        {/* Search Bar */}
-        <div className="relative mb-6">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search projects…"
-            className="h-10 w-full pl-9"
-          />
-        </div>
+        {/* Search — only once there is something to filter. Rendered
+            unconditionally it sat a live "Search projects…" box directly on top of
+            "No projects yet" on a brand-new account, and on top of the error
+            message after a failed load. */}
+        {!loading && !empty && !error && (
+          <div className="relative mt-6">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search projects…"
+              aria-label="Search projects"
+              className="h-10 w-full pl-9"
+            />
+          </div>
+        )}
 
         {error ? (
-          <div className="mt-12 flex flex-col items-center gap-3 text-center">
-            <p className="text-sm text-muted-foreground">Couldn’t load your projects.</p>
-            <Button variant="outline" size="sm" onClick={load}>Try again</Button>
-          </div>
+          <EmptyState
+            tone="error"
+            className="mt-10"
+            title="Couldn’t load your projects"
+            description="Check your connection and try once more."
+            action={
+              <Button variant="outline" size="sm" onClick={load}>Try again</Button>
+            }
+          />
         ) : loading ? (
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             {[...Array(6)].map((_, i) => (
               <div
                 key={i}
-                className="surface-raised flex h-40 flex-col justify-between rounded-panel border border-border/70 p-5"
+                className="surface-raised flex h-40 flex-col justify-between rounded-card border border-border/70 p-5"
                 style={staggerDelay(i)}
               >
                 <div className="space-y-2.5">
@@ -261,32 +261,34 @@ export default function ProjectsPage() {
             }
           />
         ) : filteredItems.length === 0 ? (
+          // One no-results shape across projects / artifacts / library: panel size,
+          // Search mark, "No matching …", ghost Clear filters.
           <EmptyState
-            className="mt-10"
+            className="mt-6"
             size="panel"
-            title="No projects match your search"
+            icon={Search}
+            title="No matching projects"
+            description="Try another search term."
             action={
-              <Button variant="outline" size="sm" onClick={() => setQuery("")}>Clear search</Button>
+              <Button variant="ghost" size="sm" onClick={() => setQuery("")} className="text-muted-foreground">
+                Clear filters
+              </Button>
             }
           />
         ) : (
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             {filteredItems.map((p, i) => (
+              // No fixed height: an explicit one beats the grid's stretch, so a row
+              // pairing a cover card (260px) with a plain one (160px) left ~100px of
+              // dead space under the short card. Only the cover strip is sized now.
+              // `interactive` rather than a hand-rolled hover — the local version wore
+              // shadow-float (the out-of-flow rung, outranking every dropdown) and
+              // transition-all, both of which card.tsx calls out by name.
               <Card
                 key={p.id}
-                variant="default"
+                variant="interactive"
                 style={staggerDelay(i)}
-                className={cn(
-                  "overflow-hidden p-0 motion-safe:animate-rise-in [animation-fill-mode:backwards] flex flex-col justify-between rounded-panel hover:-translate-y-1 hover:border-border hover:shadow-float transition-all duration-base cursor-pointer",
-                  p.coverUrl ? "h-[260px]" : "h-[160px]"
-                )}
-                onClick={(e) => {
-                  const target = e.target as HTMLElement;
-                  if (target.closest("button") || target.closest("[role='menuitem']")) {
-                    return;
-                  }
-                  router.push(`/projects/${p.id}`);
-                }}
+                className="relative flex h-full min-h-40 flex-col justify-between overflow-hidden rounded-card p-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
               >
                 <div className="flex-1 flex flex-col min-h-0">
                   {/* Render Cover Image only if explicitly set */}
@@ -300,18 +302,26 @@ export default function ProjectsPage() {
                   <div className="p-5 pb-0 flex-1 flex flex-col justify-between min-h-0">
                     <div>
                       <div className="flex items-start justify-between gap-2">
-                        <Link href={`/projects/${p.id}`} className="font-serif text-lg font-semibold truncate hover:text-primary transition-colors flex-1 outline-none">
+                        {/* Stretched link: the whole card used to be a div with an
+                            onClick, so a keyboard user could only reach this title —
+                            the cover, the preview and the footer were all inert. The
+                            `after` overlay makes the card one real link and removes
+                            the `closest("button")` hit-test the onClick needed. */}
+                        <Link
+                          href={`/projects/${p.id}`}
+                          className="flex-1 truncate font-serif text-lg font-semibold outline-none transition-colors hover:text-primary after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-card focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-primary/40"
+                        >
                           {p.name}
                         </Link>
-                        
-                        {/* Card actions menu */}
+
+                        {/* Card actions menu — above the stretched link. */}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
                               variant="ghost"
                               size="icon-sm"
-                              aria-label="Project actions"
-                              className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground shrink-0"
+                              aria-label={`Actions for ${p.name}`}
+                              className="relative z-10 h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
                             >
                               <MoreVertical className="h-3.5 w-3.5" />
                             </Button>
@@ -335,7 +345,9 @@ export default function ProjectsPage() {
                               <span>Rename</span>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem onSelect={() => setDeletingProject(p)} className="text-destructive focus:bg-destructive focus:text-destructive-foreground">
+                            {/* Tint, not an inverted fill — the family's one destructive
+                                focus treatment until DropdownMenuItem gains a variant. */}
+                            <DropdownMenuItem onSelect={() => setDeletingProject(p)} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
                               <Trash2 className="h-4 w-4 mr-2" />
                               <span>Delete</span>
                             </DropdownMenuItem>

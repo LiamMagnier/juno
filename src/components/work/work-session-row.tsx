@@ -109,16 +109,17 @@ export function WorkSessionRow({
    */
   outputCount,
   /**
-   * How long this row should wait before it arrives, or `null` for a row that
-   * was already on screen and must not animate at all.
+   * Where this row comes in the cascade of rows that JUST ARRIVED, or `null`
+   * for a row that was already on screen and must not animate at all.
    *
-   * A delay, not an index. The row's position in the list is the wrong number:
-   * one new task landing at position seven is one thing arriving on an otherwise
-   * still page, and making it wait 210ms for six rows that are not moving reads
-   * as a dropped frame. Its position among the rows that just arrived is the
-   * right number, and only the list can know that — see `useWorkArrivals`.
+   * A rank among the new rows, not an index into the list: one new task landing
+   * at position seven is one thing arriving on an otherwise still page, and
+   * making it wait for six rows that are not moving reads as a dropped frame.
+   * Only the list can know that — see `useWorkArrivals`. The milliseconds are
+   * `staggerDelay`'s to decide, so that this list deals its rows at the same
+   * tempo as every other list in Work.
    */
-  enterDelayMs = 0,
+  enterRank = 0,
   /**
    * The row after a change, so the list it lives in can re-render without
    * waiting for its own poll. Optional: a caller with no list to update — the
@@ -129,7 +130,7 @@ export function WorkSessionRow({
   session: ClientWorkSession;
   explain?: boolean;
   outputCount?: number;
-  enterDelayMs?: number | null;
+  enterRank?: number | null;
   onChanged?: (session: ClientWorkSession) => void;
 }) {
   const [renaming, setRenaming] = React.useState(false);
@@ -138,7 +139,7 @@ export function WorkSessionRow({
   /*
    * The entrance is decided once, at mount, and never revisited.
    *
-   * `enterDelayMs` goes to `null` on the first poll after this row arrived,
+   * `enterRank` goes to `null` on the first poll after this row arrived,
    * which is correct as an answer to "is this row new" and wrong as a class to
    * put on the element: removing the animation from a row still playing it
    * snaps it to its final frame mid-flight. Polls are thirty seconds apart so
@@ -147,7 +148,7 @@ export function WorkSessionRow({
    * is the sort of bug nobody reports and everybody feels. Arriving is a fact
    * about mounting; freezing it in a ref is what makes it one.
    */
-  const entrance = React.useRef(enterDelayMs);
+  const entrance = React.useRef(enterRank);
 
   /*
    * A status pill only animates for a status that changed WHILE THE ROW WAS
@@ -219,7 +220,7 @@ export function WorkSessionRow({
         // row ever needs elevation, the breath has to move into the shadow.
         EXECUTING.has(session.status) && "work-breathing"
       )}
-      style={entrance.current === null ? undefined : { animationDelay: `${entrance.current}ms` }}
+      style={entrance.current === null ? undefined : staggerDelay(entrance.current, "tight")}
     >
       <Link href={`/work/${session.id}`} className="flex min-w-0 flex-1 items-start gap-3 px-3.5 py-3">
         <span className="min-w-0 flex-1">

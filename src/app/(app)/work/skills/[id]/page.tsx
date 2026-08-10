@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -66,10 +67,20 @@ function securityLabel(status: string): string {
   return "Pending review";
 }
 
+/**
+ * The three states drawn from the three token ramps, not from two palettes.
+ *
+ * `clear` and the pending/warning branch were raw emerald and amber while
+ * `blocked` beside them was already `destructive` — so one pill's three states
+ * came from two unrelated colour systems, and the greens and ambers here were a
+ * second set of them on a page that renders the tokens elsewhere.
+ * `success-ink` / `warning-foreground` rather than the fills, because these are
+ * small text and the fills do not clear AA at this size.
+ */
 function securityClassName(status: string): string {
-  if (status === "clear") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  if (status === "clear") return "border-success/30 bg-success/10 text-success-ink";
   if (status === "blocked") return "border-destructive/30 bg-destructive/10 text-destructive";
-  return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  return "border-warning/35 bg-warning/10 text-warning-foreground";
 }
 
 /**
@@ -439,7 +450,7 @@ export default function WorkSkillPage() {
             asks for more permissions waits for your approval.
           </p>
           {version?.requiresConsent ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-field border border-amber-500/30 bg-amber-500/5 px-3.5 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-field border border-warning/40 bg-warning/10 px-3.5 py-3">
               <p className="text-[12px] leading-relaxed text-foreground">
                 This version widens the permissions requested by the previous version.
               </p>
@@ -514,9 +525,15 @@ export default function WorkSkillPage() {
         <section>
           <h2 className="mb-2.5 font-mono text-label text-muted-foreground">History</h2>
           {versions === null ? (
-            <p className="rounded-field border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
-              This skill’s history couldn’t be read just now. Nothing about it has changed.
-            </p>
+            // A failed read wears the error tone rather than the dashed
+            // placeholder it was drawn as: "no history" and "the request
+            // failed" are different facts and looked identical here.
+            <EmptyState
+              size="panel"
+              tone="error"
+              title="Couldn’t read the history"
+              description="This skill’s history couldn’t be read just now. Nothing about it has changed."
+            />
           ) : (
             <ul className="space-y-1.5">
               {versions.map((entry) => (

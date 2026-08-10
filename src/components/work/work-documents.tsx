@@ -3,6 +3,7 @@
 import * as React from "react";
 import { AlertTriangle, ChevronRight, Download, Link2, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Pressable } from "@/components/ui/pressable";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ARTIFACT_EXTENSION } from "@/lib/work/domain";
 import type { ClientWorkArtifact } from "@/lib/work/serializers";
@@ -237,16 +238,20 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
             {artifact.validatedAt === null && " · not re-opened"}
           </span>
         </button>
-        <a
-          href={workArtifactDownloadUrl(artifact.id)}
-          // No `download` attribute: the route sets Content-Disposition itself,
-          // and a filename asserted here would be this bundle's guess rather
-          // than the one the file was written under.
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-composer-control text-muted-foreground transition-[background-color,color] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label={`Download ${artifact.title}`}
-        >
-          <Download className="h-3.5 w-3.5" aria-hidden="true" />
-        </a>
+        {/* The copy affordance a few rows up in Outputs is `Pressable kind="icon"`
+            and therefore circular; this was a square box at the composer's own
+            11px radius, borrowed into the rail. One glyph affordance, one shape. */}
+        <Pressable kind="icon" size="md" asChild className="shrink-0">
+          <a
+            href={workArtifactDownloadUrl(artifact.id)}
+            // No `download` attribute: the route sets Content-Disposition itself,
+            // and a filename asserted here would be this bundle's guess rather
+            // than the one the file was written under.
+            aria-label={`Download ${artifact.title}`}
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+          </a>
+        </Pressable>
       </div>
 
       {open && (

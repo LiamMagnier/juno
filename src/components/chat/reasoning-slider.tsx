@@ -269,8 +269,14 @@ export function ReasoningSlider({
                 aria-label={fastMode ? "Flash mode on; turn off" : "Flash mode off; turn on"}
                 onClick={() => onFastModeChange(!fastMode)}
                 className={cn(
-                  "reasoning-fast-toggle group relative inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-90 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none",
+                  // No focus override. This carried `outline-none` plus a
+                  // `ring-foreground/15` replacement — ~1.1:1 on the popover
+                  // ground, i.e. a focus indicator you cannot see, on a control
+                  // that only exists inside a popover reached by keyboard. The
+                  // global :focus-visible rule is authoritative and draws a real
+                  // 2px ring.
+                  "reasoning-fast-toggle group relative inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-spring coarse:size-11",
+                  "active:scale-90 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none",
                   fastMode
                     ? "border-foreground bg-foreground text-background shadow-pop"
                     : "border-border/70 bg-background/70 text-muted-foreground shadow-soft hover:border-foreground/20 hover:bg-accent hover:text-foreground"
@@ -301,8 +307,9 @@ export function ReasoningSlider({
                 aria-label={proMode ? "Pro mode on; turn off" : "Pro mode off; turn on"}
                 onClick={() => onProModeChange(!proMode)}
                 className={cn(
-                  "reasoning-pro-toggle group relative inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-90 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none",
+                  // Same as the Flash toggle above: the global :focus-visible rule owns focus.
+                  "reasoning-pro-toggle group relative inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-spring coarse:size-11",
+                  "active:scale-90 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none",
                   proMode
                     ? "border-foreground bg-foreground text-background shadow-pop"
                     : "border-border/70 bg-background/70 text-muted-foreground shadow-soft hover:border-foreground/20 hover:bg-accent hover:text-foreground"
@@ -332,7 +339,13 @@ export function ReasoningSlider({
 
       <div
         className={cn(
-          "reasoning-slider-track relative h-9 w-full rounded-full bg-muted/70 transition-[opacity,box-shadow] duration-base ease-out-soft focus-within:ring-2 focus-within:ring-foreground/15 focus-within:ring-offset-2 focus-within:ring-offset-background",
+          // focus-within, and it stays: the real control is a fully transparent
+          // <input type="range"> laid over this track, so the global
+          // :focus-visible outline would be drawn on an opacity-0 element and
+          // never seen. What it must NOT be is `ring-foreground/15` (~1.1:1
+          // here) — the ring token is the one the rest of the product focuses
+          // with, and 2px/offset-2 mirrors the global rule's geometry.
+          "reasoning-slider-track relative h-9 w-full rounded-full bg-muted/70 transition-[opacity,box-shadow] duration-base ease-out-soft focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background",
           disabled && "pointer-events-none opacity-50"
         )}
       >

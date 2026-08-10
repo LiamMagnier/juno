@@ -27,7 +27,13 @@ export const HERO_MODEL: ModelInfo = getModel(DEFAULT_MODEL) ?? MODEL_LIST[0];
 
 export function ComposerPreview({ model }: { model: ModelInfo }) {
   return (
-    <div aria-hidden className="composer-aura-host is-preview pointer-events-none mx-auto w-full max-w-2xl">
+    // No mx-auto: the hero flushes every sibling left (eyebrow, h1, lede, CTA
+    // row, flagship strip), so a centred composer floated ~176px inboard of all
+    // of them on a wide screen — the largest object in the hero, and the only
+    // one off the column. max-w-2xl is the lede's measure, so it shares an edge
+    // and a width with it. Centring, if wanted, is the hero's call, not this
+    // component's.
+    <div aria-hidden className="composer-aura-host is-preview pointer-events-none w-full max-w-2xl">
       <div className="composer-aura" />
       <div className="composer-surface relative flex w-full flex-col rounded-composer border border-border/65 bg-card/95 p-3 backdrop-blur sm:p-3.5">
         <p className="px-1 pb-6 pt-1 text-body text-muted-foreground">Ask anything…</p>

@@ -138,7 +138,10 @@ export function WorkOutputsSection({
  */
 function OutputRow({ label, detail }: { label: string; detail: string | null }) {
   return (
-    <li className="group flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent/50">
+    // Not a `Pressable kind="row"`: the row itself is not pressable — the copy
+    // control inside it is — so it only borrows the row rung's radius and fill
+    // rather than nesting a button in a button.
+    <li className="group flex items-center gap-2.5 rounded-control px-1.5 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent">
       <FileMark name={label} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] leading-snug text-foreground">{label}</span>
@@ -165,7 +168,11 @@ function FileMark({ name }: { name: string }) {
   const extension = fileExtension(name);
   return (
     <span
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/50 font-mono text-[9px] uppercase text-muted-foreground"
+      // 32px at the 12px rung, exactly `KindBadge` in work-documents.tsx: the two
+      // file marks stack in the same rail and were 28px/24px-radius here against
+      // 32px/12px there — a badge so nearly circular it read as a different kind
+      // of thing. `rounded-lg` is 24px in this config, not a small rung.
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-muted/50 font-mono text-[9px] uppercase text-muted-foreground"
       aria-hidden="true"
     >
       {extension ?? <FileText className="h-3.5 w-3.5" />}

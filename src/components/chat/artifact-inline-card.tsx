@@ -1,12 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, PenTool, Terminal } from "lucide-react";
+import { Code2, FileCode2, FileText, FileWarning, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, PenTool, Terminal } from "lucide-react";
 import { Markdown } from "@/components/chat/markdown";
 import { CodeSurface } from "@/components/canvas/code-surface";
 import { SandboxFrame, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { runtimeFor } from "@/lib/artifact-runtime";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
 import type { ArtifactType } from "@/lib/message-content";
 
@@ -96,39 +98,6 @@ function RuntimePreview({
 }
 
 /**
- * Honest segmented control — not Radix Tabs. The switched content lives outside
- * any tabs tree, so real tab semantics would announce panels that don't exist;
- * toggle buttons with aria-pressed describe exactly what this is.
- */
-function SegmentButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-7 items-center justify-center gap-1.5 whitespace-nowrap rounded-control px-2.5 text-xs font-medium",
-        "transition-all duration-base ease-out-soft active:scale-[0.97]",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        active
-          ? "bg-card text-foreground [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)]"
-          : "text-muted-foreground hover:text-foreground"
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-/**
  * An artifact living inline in the transcript: live preview first (a website
  * runs, a document reads, a program's output streams), with Code and Console a
  * view-switch away, and one labeled action that hands off to the Canvas.
@@ -186,6 +155,27 @@ export function ArtifactInlineCard({
   const showPreview = inlinePreview && view === "preview";
   const showConsole = hasConsole && view === "console";
   const sourceLanguage = rt.lang || language || type.toLowerCase();
+
+  const viewOptions: SegmentedOption<ArtifactView>[] = [
+    ...(inlinePreview
+      ? [{ value: "preview" as const, label: rt.mode === "console" ? "Output" : "Preview" }]
+      : []),
+    { value: "code" as const, label: "Code" },
+    // Console earns its place once it has something to say.
+    ...(hasConsole && (consoleEntries.length > 0 || view === "console")
+      ? [
+          {
+            value: "console" as const,
+            label: "Console",
+            icon: (
+              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 font-mono text-[9px] tabular-nums text-muted-foreground">
+                {consoleEntries.length}
+              </span>
+            ),
+          },
+        ]
+      : []),
+  ];
 
   // One quiet status word, cross-faded on change (the span re-mounts via key).
   // "Writing" while the model streams; then whatever the sandbox reports.
@@ -265,7 +255,10 @@ export function ArtifactInlineCard({
             type="button"
             onClick={onOpen}
             aria-label={`Open ${title || "artifact"} in canvas`}
-            className="-m-1.5 flex min-w-0 flex-1 items-center gap-2.5 rounded-field p-1.5 text-left outline-none transition-colors duration-fast ease-out-soft hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/40"
+            // No local focus ring: globals.css `:focus-visible` is authoritative,
+            // and this header alone used to fork it two ways (ring-ring on the
+            // segments, ring-primary/40 here and on Open).
+            className="-m-1.5 flex min-w-0 flex-1 items-center gap-2.5 rounded-field p-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent/40"
           >
             {identity}
           </button>
@@ -275,26 +268,17 @@ export function ArtifactInlineCard({
 
         <div className="flex shrink-0 items-center gap-1 self-end sm:self-auto">
           {/* View switcher — hidden while streaming (the write-in IS the view). */}
-          {!streaming && hasContent && (inlinePreview || hasConsole) && (
-            <div role="group" aria-label="Artifact view" className="field-well flex h-8 items-center gap-0.5 rounded-menu bg-muted/70 p-0.5">
-              {inlinePreview && (
-                <SegmentButton active={view === "preview"} onClick={() => setView("preview")}>
-                  {rt.mode === "console" ? "Output" : "Preview"}
-                </SegmentButton>
-              )}
-              <SegmentButton active={view === "code"} onClick={() => setView("code")}>
-                Code
-              </SegmentButton>
-              {/* Console earns its place once it has something to say. */}
-              {hasConsole && (consoleEntries.length > 0 || view === "console") && (
-                <SegmentButton active={view === "console"} onClick={() => setView("console")}>
-                  Console
-                  <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 font-mono text-[9px] tabular-nums text-muted-foreground">
-                    {consoleEntries.length}
-                  </span>
-                </SegmentButton>
-              )}
-            </div>
+          {!streaming && hasContent && viewOptions.length > 1 && (
+            <SegmentedControl
+              value={view}
+              onChange={setView}
+              options={viewOptions}
+              ariaLabel="Artifact view"
+              className="shrink-0"
+              // Keeps the card header's 32px control height; everything else —
+              // material, radii, the gliding thumb — is the primitive's.
+              optionClassName="h-6 gap-1 px-2.5 text-xs"
+            />
           )}
           {onOpen && (
             <>
@@ -306,8 +290,7 @@ export function ArtifactInlineCard({
                 className={cn(
                   "pressable inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-control text-muted-foreground",
                   "h-8 gap-1.5 px-2.5 text-xs font-medium coarse:h-10 coarse:px-3",
-                  "hover:bg-accent hover:text-primary",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                  "hover:bg-accent hover:text-primary"
                 )}
               >
                 <PanelRightOpen aria-hidden className="size-3.5" />
@@ -366,14 +349,21 @@ export function ArtifactInlineCard({
           </div>
         </div>
       ) : (
-        <div className="grid min-h-[140px] place-items-center bg-background/40 p-5 text-center">
-          <div className="max-w-sm">
-            <p className="text-sm font-medium">Source unavailable</p>
-            <p className="pt-1 text-sm leading-6 text-muted-foreground">
-              This artifact was referenced in the message but its content isn&apos;t available here yet.
-            </p>
-          </div>
-        </div>
+        /* A failure, not a placeholder. This was the same centred block on the
+           same background as the streaming state directly above it, so "the
+           source is missing" and "the source is still arriving" were visually
+           identical. tone="error" is what makes them different — and it carries
+           role="status", which the hand-rolled block never had. */
+        <EmptyState
+          tone="error"
+          size="panel"
+          icon={FileWarning}
+          title="Source unavailable"
+          description="This artifact was referenced in the message but its content isn’t available here yet."
+          // Inset rather than full-bleed: the solid destructive border IS the
+          // tonal signal, and a full-bleed block would clip it against the card.
+          className="m-3 min-h-[140px]"
+        />
       )}
     </article>
   );

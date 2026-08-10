@@ -5,8 +5,9 @@ import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, FileText, GitBranch, GitFork, ImageOff, Image as ImageIcon, Pencil, RefreshCw, Square, SquareDashed, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, FileText, GitBranch, GitFork, ImageOff, Image as ImageIcon, Loader2, Pencil, RefreshCw, Square, SquareDashed, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Pressable } from "@/components/ui/pressable";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Markdown } from "@/components/chat/markdown";
@@ -122,7 +123,7 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
             ? `Preview unavailable. Open ${attachment.fileName} in a new tab`
             : `Open ${attachment.fileName} in a new tab`
         }
-        className="relative block aspect-square w-full overflow-hidden rounded-field border border-border/60 bg-muted/35 shadow-soft outline-none motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-float focus-visible:ring-2 focus-visible:ring-primary/40"
+        className="relative block aspect-square w-full overflow-hidden rounded-field border border-border/60 bg-muted/35 shadow-soft motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-float"
       >
         <div
           aria-hidden="true"
@@ -167,7 +168,7 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
           type="button"
           onClick={onEdit}
           aria-label={`Edit ${attachment.fileName}`}
-          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-label text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-all duration-base ease-out-soft hover:text-foreground active:scale-95 group-hover/media:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-label text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-all duration-base ease-out-soft hover:text-foreground active:scale-95 group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           <SquareDashed className="h-3.5 w-3.5" aria-hidden="true" /> Edit
         </button>
@@ -247,7 +248,7 @@ function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`Open ${attachment.fileName} in a new tab`}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-background/65 px-2.5 font-mono text-caption text-foreground/80 outline-none transition-[background-color,border-color,color,transform] duration-base ease-out-soft hover:border-border hover:bg-background hover:text-foreground active:scale-95 focus-visible:ring-2 focus-visible:ring-primary/40 coarse:h-10 motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-background/65 px-2.5 font-mono text-caption text-foreground/80 transition-[background-color,border-color,color,transform] duration-base ease-out-soft hover:border-border hover:bg-background hover:text-foreground active:scale-95 coarse:h-10 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           Open
           <ExternalLink className="size-3" aria-hidden="true" />
@@ -295,7 +296,7 @@ function AttachmentList({ attachments }: { attachments: ClientAttachment[] }) {
               alt={a.fileName}
               width={160}
               height={160}
-              className="max-h-40 w-auto rounded-lg border object-cover"
+              className="max-h-40 w-auto rounded-md border object-cover"
             />
           </a>
         ) : (
@@ -304,7 +305,10 @@ function AttachmentList({ attachments }: { attachments: ClientAttachment[] }) {
             href={a.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-xs transition-colors duration-fast hover:bg-accent"
+            // rounded-md, matching the composer's upload chip (composer.tsx). The
+            // same ~34px chip was rounded-lg (24) here and rounded-md (8) there,
+            // so a file visibly turned into a stadium the instant it was sent.
+            className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-xs transition-colors duration-fast hover:bg-accent"
           >
             <FileText className="h-4 w-4 text-muted-foreground" />
             <span className="max-w-[180px] truncate font-medium">{a.fileName}</span>
@@ -334,37 +338,64 @@ function VersionPager({
   loading?: boolean;
   onStep: (dir: -1 | 1) => void;
 }) {
-  const navClass =
-    "flex h-6 w-6 items-center justify-center rounded-md transition-colors duration-fast hover:text-foreground disabled:pointer-events-none disabled:opacity-35 coarse:h-9 coarse:w-9";
+  // The arrows sit immediately beside the IconAction cluster in the same
+  // toolbar. They used to be 24px, 8px-radius, hover-by-ink-only controls next
+  // to 32px, 10px-radius controls that light up — two idioms, one row. Both are
+  // bare glyph affordances, so both are `kind="icon"`; `sm` keeps the pager
+  // visually subordinate to the actions without inventing a rung.
   return (
     <div className="mr-1 flex items-center font-mono text-caption text-muted-foreground/70">
-      <button type="button" onClick={() => onStep(-1)} disabled={loading || index === 0} aria-label="Previous version" className={navClass}>
+      <Pressable kind="icon" size="sm" onClick={() => onStep(-1)} disabled={loading || index === 0} aria-label="Previous version">
         <ChevronLeft className="h-3.5 w-3.5" />
-      </button>
+      </Pressable>
       <span className="min-w-[3ch] text-center tabular-nums" aria-live="polite">
         {index + 1}/{total}
       </span>
-      <button type="button" onClick={() => onStep(1)} disabled={loading || index === total - 1} aria-label="Next version" className={navClass}>
+      <Pressable kind="icon" size="sm" onClick={() => onStep(1)} disabled={loading || index === total - 1} aria-label="Next version">
         <ChevronRight className="h-3.5 w-3.5" />
-      </button>
+      </Pressable>
     </div>
   );
 }
 
-function IconAction({ label, onClick, children, active }: { label: string; onClick: () => void; children: React.ReactNode; active?: boolean }) {
+/**
+ * The message toolbar's glyph — seven of these per assistant turn, the most
+ * repeated affordance in the product. It was `<Button variant="ghost"
+ * size="icon-sm">`, i.e. a 10px-radius square, where pressable.tsx records the
+ * house idiom for a bare glyph as a circle. `selected` also gives the toggled
+ * state a ground: a thumbs-up that was ON used to differ from one that was OFF
+ * by ink alone.
+ */
+function IconAction({
+  label,
+  onClick,
+  children,
+  active,
+  busy,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+  active?: boolean;
+  /** In flight. Shows a spinner and blocks a second press. */
+  busy?: boolean;
+}) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
+        <Pressable
+          kind="icon"
+          size="md"
+          selected={active}
           onClick={onClick}
+          disabled={busy}
           aria-label={label}
           aria-pressed={active}
-          className={cn("coarse:h-10 coarse:w-10", active && "text-primary")}
+          aria-busy={busy || undefined}
+          className={cn(active && "text-primary")}
         >
-          {children}
-        </Button>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : children}
+        </Pressable>
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
@@ -875,7 +906,11 @@ export function MessageItem({
                 </IconAction>
               )}
               {message.conversationId && !busy && !privateMode && (
-                <IconAction label="Branch from here" onClick={branch}>
+                // `branching` was set and cleared but never rendered: the fork
+                // POST plus a router.push ran with no spinner, no disabled state
+                // and no dimming, so a slow fork looked like a click that never
+                // landed and only an invisible guard stopped a second one.
+                <IconAction label="Branch from here" onClick={branch} busy={branching}>
                   <GitBranch className="h-4 w-4" />
                 </IconAction>
               )}

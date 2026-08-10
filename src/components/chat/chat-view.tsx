@@ -1580,14 +1580,19 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         {!privateMode && currentConversationId && hasMessages && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <button
-                type="button"
+              {/* The only icon button on this page without `.pressable`, so the
+                  only one with no active-scale press feedback — it hand-rolled
+                  `active:scale-95` and a hover lift instead. `size="lg"` is the
+                  same 36/44 it already was. */}
+              <Pressable
+                kind="icon"
+                size="lg"
                 aria-label="Share chat"
                 onClick={() => setShareOpen(true)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-foreground/75 transition-all duration-base ease-out-soft hover:-translate-y-0.5 hover:text-foreground active:translate-y-0 active:scale-95 coarse:h-11 coarse:w-11"
+                className="text-foreground/75"
               >
                 <Share className="h-[18px] w-[18px]" />
-              </button>
+              </Pressable>
             </TooltipTrigger>
             <TooltipContent>Share chat</TooltipContent>
           </Tooltip>
@@ -1660,15 +1665,19 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               )}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button
-                    type="button"
+                  {/* Was 24px / 28px on touch — below every icon rung, and a
+                      28px touch target on a page that commits to 44 everywhere
+                      else. `sm` is the smallest rung that exists (28/36). */}
+                  <Pressable
+                    kind="icon"
+                    size="sm"
                     onClick={() => handlePickProject(null)}
                     disabled={chat.isBusy}
                     aria-label="Remove from project"
-                    className="pressable inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:h-7 coarse:w-7"
+                    className="shrink-0"
                   >
                     <X className="h-3.5 w-3.5" />
-                  </button>
+                  </Pressable>
                 </TooltipTrigger>
                 <TooltipContent>Remove from project</TooltipContent>
               </Tooltip>
@@ -1719,15 +1728,15 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   Incognito chat
                 </div>
               )}
-              <button
-                type="button"
+              <Pressable
+                kind="icon"
+                size="md"
                 onClick={togglePrivateMode}
                 disabled={chat.isBusy || voiceOpen || voiceSaving || !!voiceSaveError || voiceTurnSending}
                 aria-label={forkedFrom ? "Discard branch" : "Leave private chat"}
-                className="pressable inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:h-10 coarse:w-10"
               >
                 <X className="h-4 w-4" />
-              </button>
+              </Pressable>
             </div>
           </div>
         </div>

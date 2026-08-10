@@ -22,6 +22,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { GitHubMark } from "@/components/connections/connector-logos";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { Pressable } from "@/components/ui/pressable";
+import { ownerDevice, type DeviceRow } from "@/components/code/device-presence";
+import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /*
@@ -129,7 +131,6 @@ const ROW_HEIGHT = "min-h-[46px]";
 /** The same 46px, hard: a skeleton has no content to grow around. */
 const ROW_SKELETON_HEIGHT = "h-[46px]";
 const SKELETON_ROWS = 4;
-const SKELETON_STAGGER_MS = 60;
 
 export function CodeTargetPicker({
   target,
@@ -172,6 +173,38 @@ export function CodeTargetPicker({
   React.useEffect(() => {
     void fetchWorkspaces();
   }, [fetchWorkspaces]);
+
+  /*
+   * —— Which of those projects has a Mac awake behind it ——
+   *
+   * GET /api/code/workspaces answers "has this folder ever synced", not "can it
+   * run something now", so the row's only trailing signal was a recency stamp
+   * that reads as liveness: "4m ago" beside a project whose Mac is asleep. The
+   * user picked it and learned the truth one screen later, from a disabled
+   * composer. /api/code/devices already carries `online` plus each device's
+   * workspaces, so the answer exists at pick time and is asked for here.
+   *
+   * Failure is silence, not an error state: an unreachable presence check
+   * leaves the rows exactly as they were — timestamp, no dot — because "we
+   * don't know" must not be drawn as "offline".
+   */
+  const [devices, setDevices] = React.useState<DeviceRow[] | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/code/devices");
+        if (!res.ok) return;
+        const data = (await res.json()) as { devices?: DeviceRow[] };
+        if (!cancelled) setDevices(Array.isArray(data.devices) ? data.devices : []);
+      } catch {
+        // Presence unknown — see above.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // —— Cloud repos (fetched lazily the first time Cloud is selected) ——
   const [repoLoad, setRepoLoad] = React.useState<RepoLoad>({ state: "idle" });
@@ -306,6 +339,7 @@ export function CodeTargetPicker({
             onQuery={setWsQuery}
             filtered={filteredWorkspaces}
             selected={selectedWorkspace}
+            devices={devices}
             onRetry={() => void fetchWorkspaces()}
             onPick={(w) => {
               onSelectWorkspace(w);
@@ -359,7 +393,10 @@ const TARGETS: { value: Target; label: string; hint: string; icon: React.ReactNo
  * costs at most one lazy repo fetch and loses no pick, since each target keeps
  * its own, whereas arrowing down a repo list would reset the base-branch
  * override on every step. So the lists keep per-row tab stops and this group
- * does not.
+ * does not — and, since a `radiogroup` with n tab stops and no arrow keys is a
+ * contract asserted and not honoured, the lists say `listbox`/`option`, which
+ * is the role per-item tab stops are legal under. This group keeps `radio`
+ * because this group is the one that earns it.
  */
 function TargetRows({ value, onChange }: { value: Target; onChange: (t: Target) => void }) {
   const refs = React.useRef<Partial<Record<Target, HTMLButtonElement | null>>>({});
@@ -410,6 +447,7 @@ function DeviceList({
   onQuery,
   filtered,
   selected,
+  devices,
   onRetry,
   onPick,
 }: {
@@ -418,10 +456,13 @@ function DeviceList({
   onQuery: (v: string) => void;
   filtered: Workspace[];
   selected: Workspace | null;
+  /** null while presence is unknown — rows then show no dot at all. */
+  devices: DeviceRow[] | null;
   onRetry: () => void;
   onPick: (w: Workspace) => void;
 }) {
   const all = load.state === "ready" ? load.workspaces : [];
+  const showRows = load.state === "ready" && filtered.length > 0;
   return (
     <>
       <PickerSearch
@@ -432,12 +473,19 @@ function DeviceList({
         disabled={load.state !== "ready"}
       />
       <ScrollFade className="min-h-0 flex-1" viewportClassName="p-2">
-        <div role="radiogroup" aria-label="Project to run the session in" className="space-y-0.5">
+        {/* The role is on the list only while there IS a list: a listbox whose
+            children are a skeleton block or a short-state note owns nothing an
+            option role can describe. */}
+        <div
+          {...(showRows ? { role: "listbox" as const, "aria-label": "Project to run the session in" } : {})}
+          className="space-y-0.5"
+        >
           {load.state === "loading" ? (
             <RowSkeletons />
           ) : load.state === "error" ? (
             <PickerNote
-              icon={<AlertCircle className="size-5 text-destructive" aria-hidden="true" />}
+              tone="error"
+              icon={<AlertCircle className="size-5" aria-hidden="true" />}
               title="Couldn’t load your projects"
               body="Juno couldn’t reach the server, so this list is empty rather than wrong. Nothing was unsynced — try again."
               action={
@@ -463,17 +511,36 @@ function DeviceList({
               // The mirror's key is the stable identity when it has one, so a
               // project that moved on disk still matches its own selection.
               const active = selected?.key ? selected.key === w.key : selected?.path === w.path;
+              const owner = devices ? ownerDevice(devices, w) : null;
+              const online = !!owner?.online;
               return (
                 <PickerRow
                   key={w.key ?? w.path}
+                  itemRole="option"
                   active={active}
                   onClick={() => onPick(w)}
                   icon={<Folder className="size-4" aria-hidden="true" />}
                   title={w.name}
-                  meta={<span className="truncate font-mono">{w.path}</span>}
+                  meta={
+                    <>
+                      <span className="truncate font-mono">{w.path}</span>
+                      {/* The one fact the timestamp cannot carry, in words as
+                          well as in the dot — the dot is decoration to a
+                          screen reader. */}
+                      {devices && !online && <span className="shrink-0">· Mac offline</span>}
+                    </>
+                  }
                   trailing={
-                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground/70">
-                      {timeAgo(w.lastOpenedAt)}
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      {devices && (
+                        <span
+                          className={cn("h-1.5 w-1.5 rounded-full", online ? "bg-success" : "bg-muted-foreground/50")}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span className="font-mono text-[10px] text-muted-foreground/70">
+                        {timeAgo(w.lastOpenedAt)}
+                      </span>
                     </span>
                   }
                 />
@@ -539,6 +606,7 @@ function CloudList({
 
   const loading = load.state === "loading" || load.state === "idle";
   const all = load.state === "ready" ? load.repos : [];
+  const showRows = load.state === "ready" && filtered.length > 0;
 
   return (
     <>
@@ -550,12 +618,16 @@ function CloudList({
         disabled={loading}
       />
       <ScrollFade className="min-h-0 flex-1" viewportClassName="p-2">
-        <div role="radiogroup" aria-label="Repository to run in the cloud" className="space-y-0.5">
+        <div
+          {...(showRows ? { role: "listbox" as const, "aria-label": "Repository to run in the cloud" } : {})}
+          className="space-y-0.5"
+        >
           {loading ? (
             <RowSkeletons />
           ) : load.state === "error" ? (
             <PickerNote
-              icon={<AlertCircle className="size-5 text-destructive" aria-hidden="true" />}
+              tone="error"
+              icon={<AlertCircle className="size-5" aria-hidden="true" />}
               title="Couldn’t reach GitHub"
               body="Your repositories couldn’t be listed, so this list is empty rather than wrong. Nothing was disconnected — try again."
               action={
@@ -580,6 +652,7 @@ function CloudList({
             filtered.map((repo) => (
               <PickerRow
                 key={repo.fullName}
+                itemRole="option"
                 active={selected?.fullName === repo.fullName}
                 onClick={() => onPick(repo)}
                 icon={<GitHubMark className="size-4" />}
@@ -678,6 +751,7 @@ function PickerRow({
   tabIndex,
   onKeyDown,
   rowRef,
+  itemRole = "radio",
 }: {
   active: boolean;
   onClick: () => void;
@@ -689,14 +763,24 @@ function PickerRow({
   tabIndex?: number;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   rowRef?: (el: HTMLButtonElement | null) => void;
+  /**
+   * `radio` for the two machines, which implement the radio contract above
+   * (one tab stop, arrows, selection follows focus); `option` for the project
+   * and repository lists, which deliberately do not — see the comment on
+   * TargetRows. Asserting `radio` on a list of n tab stops with no arrow keys
+   * was promising a keyboard contract the widget never honoured; `option` is
+   * the role that permits per-item tab stops, so the markup now describes what
+   * the widget actually does.
+   */
+  itemRole?: "radio" | "option";
 }) {
   return (
     <Pressable
       ref={rowRef}
       kind="row"
       selected={active}
-      role="radio"
-      aria-checked={active}
+      role={itemRole}
+      {...(itemRole === "radio" ? { "aria-checked": active } : { "aria-selected": active })}
       tabIndex={tabIndex}
       onClick={onClick}
       onKeyDown={onKeyDown}
@@ -782,8 +866,17 @@ function RowSkeletons() {
       {Array.from({ length: SKELETON_ROWS }, (_, i) => (
         <Skeleton
           key={i}
-          className={cn("w-full rounded-control", ROW_SKELETON_HEIGHT)}
-          style={{ animationDelay: `${i * SKELETON_STAGGER_MS}ms` }}
+          // The old bespoke 60ms delay was doing nothing at all: `.skeleton`'s
+          // shimmer lives on its ::after, and animation-delay does not reach a
+          // pseudo-element. The entrance below is a real animation on the
+          // element, so the delay now stages something — at the shared "tight"
+          // step, these being 46px dense rows, rather than a private number
+          // that dealt this list out at a different tempo from the PR list.
+          className={cn(
+            "w-full rounded-control [animation-fill-mode:backwards] motion-safe:animate-rise-in",
+            ROW_SKELETON_HEIGHT,
+          )}
+          style={staggerDelay(i, "tight")}
         />
       ))}
     </div>
@@ -801,22 +894,39 @@ function RowSkeletons() {
  * dead-ends had a third, with a glossy coral primary in it. One shape now
  * carries all six: empty, no matches, unreachable, not connected, expired, and
  * whichever of those the other list is in.
+ *
+ * `tone` is the one distinction the shape must NOT collapse, and it did: a
+ * failed fetch and an untouched account rendered in an identical frame, one
+ * small red glyph apart. A failure is not a placeholder, so it gets the solid
+ * destructive frame and a destructive title — the same two-tone rule
+ * `EmptyState` applies at page scale, drawn here at the size a popover band can
+ * afford (EmptyState's own frame is `rounded-card` + `min-h-64`, which is
+ * taller than this whole list).
  */
 function PickerNote({
   icon,
   title,
   body,
   action,
+  tone = "empty",
 }: {
   icon: React.ReactNode;
   title: string;
   body: string;
   action?: React.ReactNode;
+  tone?: "empty" | "error";
 }) {
+  const isError = tone === "error";
   return (
-    <div className="flex flex-col items-center gap-2 px-5 py-8 text-center">
-      <span className="text-muted-foreground/70">{icon}</span>
-      <p className="text-sm font-medium text-foreground">{title}</p>
+    <div
+      role={isError ? "status" : undefined}
+      className={cn(
+        "flex flex-col items-center gap-2 px-5 py-8 text-center",
+        isError && "rounded-control border border-destructive/40 bg-destructive/[0.04]",
+      )}
+    >
+      <span className={isError ? "text-destructive/70" : "text-muted-foreground/70"}>{icon}</span>
+      <p className={cn("text-sm font-medium", isError ? "text-destructive" : "text-foreground")}>{title}</p>
       <p className="max-w-[22rem] text-[13px] leading-relaxed text-muted-foreground">{body}</p>
       {action && <div className="pt-1">{action}</div>}
     </div>

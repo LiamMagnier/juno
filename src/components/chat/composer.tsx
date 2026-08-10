@@ -1325,12 +1325,28 @@ export function Composer({
   // Counts rows that are ON, not rows that exist: while collapsed this is the only
   // thing in the menu saying that e.g. deep research is armed for this message.
   // Each term repeats its row's own gate so a row that isn't rendered can't count.
-  const activeToolCount =
-    (researchArmed ? 1 : 0) +
-    (canWebSearch && webSearchEnabled ? 1 : 0) +
-    (!privateMode && canvasEnabled ? 1 : 0) +
-    (settings.memoryEnabled ? 1 : 0) +
-    (showConnectors && activeConnectorCount > 0 ? 1 : 0);
+  //
+  // Named rather than only counted: the + trigger's aria-label used to say "deep
+  // research is on for this message" whatever was actually armed, so a screen
+  // reader user with web search and four connectors on was told about the one
+  // axis that wasn't. Order matches the menu, so hearing the label and opening
+  // the menu agree.
+  const armedToolsInGroup = [
+    researchArmed ? "deep research" : null,
+    canWebSearch && webSearchEnabled ? "web search" : null,
+    !privateMode && canvasEnabled ? "canvas" : null,
+    settings.memoryEnabled ? "memory" : null,
+  ].filter((label): label is string => label !== null);
+  // Connectors sit in the ADD group, not TOOLS, so they must not inflate the
+  // disclosure's count — but they are still armed state the + trigger owes the user.
+  const armedConnectors =
+    showConnectors && activeConnectorCount > 0
+      ? `${activeConnectorCount} connector${activeConnectorCount === 1 ? "" : "s"}`
+      : null;
+  const toolsGroupCount = armedToolsInGroup.length;
+  const armedTools = armedConnectors ? [...armedToolsInGroup, armedConnectors] : armedToolsInGroup;
+  const activeToolCount = armedTools.length;
+  const armedSummary = activeToolCount > 0 ? `${armedTools.join(", ")} on` : "";
 
   // Deep research — per-send, so it reads as a toggle that announces its own
   // expiry. Gating matches the toolbar chip this replaced exactly: hidden
@@ -1375,7 +1391,7 @@ export function Composer({
   const toolsDisclosure = (
     <DropdownMenuItem
       aria-expanded={!toolsCollapsed}
-      aria-label={activeToolCount > 0 ? `Tools, ${activeToolCount} on` : "Tools"}
+      aria-label={toolsGroupCount > 0 ? `Tools, ${toolsGroupCount} on` : "Tools"}
       onSelect={(event) => {
         event.preventDefault();
         toggleToolsCollapsed();
@@ -1399,10 +1415,10 @@ export function Composer({
         aria-hidden
         className={cn(
           "shrink-0 font-mono text-caption tabular-nums transition-colors duration-base ease-out-soft motion-reduce:transition-none",
-          activeToolCount > 0 ? "text-primary" : "text-muted-foreground/50"
+          toolsGroupCount > 0 ? "text-primary" : "text-muted-foreground/50"
         )}
       >
-        {activeToolCount}
+        {toolsGroupCount}
       </span>
     </DropdownMenuItem>
   );
@@ -1862,7 +1878,7 @@ export function Composer({
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  aria-label={researchArmed ? "Add — deep research is on for this message" : "Add"}
+                  aria-label={armedSummary ? `Add — ${armedSummary}` : "Add"}
                   disabled={controlsLocked}
                   className={cn(
                     "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11",
@@ -1874,11 +1890,24 @@ export function Composer({
                     strokeWidth={1.75}
                     className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
                   />
-                  {researchArmed && (
+                  {/* The armed badge used to be gated on `researchArmed` alone, so
+                      turning on web search, canvas, memory or three connectors left
+                      the whole composer with no at-rest signal that anything was
+                      armed — the count existed but only INSIDE the menu you had to
+                      open to see it. Same count, now on the outside. Past one, the
+                      dot cannot say how many, so it becomes the number. */}
+                  {activeToolCount > 0 && (
                     <span
                       aria-hidden
-                      className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-card motion-safe:animate-fade-in"
-                    />
+                      className={cn(
+                        "absolute -right-0.5 -top-0.5 flex items-center justify-center rounded-full bg-primary ring-2 ring-card motion-safe:animate-fade-in",
+                        activeToolCount > 1
+                          ? "h-3.5 min-w-3.5 px-[3px] font-mono text-[10px] font-medium leading-none tabular-nums text-primary-foreground"
+                          : "h-2 w-2"
+                      )}
+                    >
+                      {activeToolCount > 1 ? activeToolCount : null}
+                    </span>
                   )}
                 </Button>
               </DropdownMenuTrigger>
@@ -2018,6 +2047,90 @@ export function Composer({
                       </DropdownMenuSub>
                     )}
 
+                    {/* Connectors are per-chat SCOPE, like the project above them,
+                        not a sticky preference like memory or web search — so they
+                        belong in this group and not behind the TOOLS disclosure,
+                        which defaults to collapsed AND persists that to
+                        localStorage. Reaching an app used to cost three gestures
+                        (open menu → expand TOOLS → open submenu) for anyone who had
+                        ever collapsed the section, which is everyone by default.
+                        showConnectors already proves onToggleConnector exists, and
+                        the rows below go through pickConnector rather than calling
+                        the prop directly. */}
+                    {showConnectors && (
+                      <DropdownMenuSub onOpenChange={(open) => !open && setConnectorQuery("")}>
+                        <DropdownMenuSubTrigger>
+                          <Plug className="text-muted-foreground" />
+                          <span className="flex-1">Connectors</span>
+                          {activeConnectorCount > 0 && (
+                            <span className="mr-1 font-mono text-caption text-primary">{activeConnectorCount}</span>
+                          )}
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="w-72 p-0">
+                          <div className="border-b border-border/60 p-2">
+                            <div className="mb-1.5 flex items-center justify-between px-1 text-caption text-muted-foreground">
+                              <span>Choose apps for this chat</span>
+                              <span className="font-mono tabular-nums">{activeConnectorCount}/{MAX_CHAT_CONNECTORS}</span>
+                            </div>
+                            <label className="relative block">
+                              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                              <input
+                                value={connectorQuery}
+                                onChange={(event) => setConnectorQuery(event.target.value)}
+                                onKeyDown={(event) => event.stopPropagation()}
+                                placeholder="Search connected apps…"
+                                aria-label="Search connected apps"
+                                className="h-9 w-full rounded-control border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-foreground/70"
+                              />
+                            </label>
+                          </div>
+                          <div className="max-h-64 overflow-y-auto p-1.5 overscroll-contain">
+                            {connectorsLoading && connectors.length === 0 ? (
+                              <div role="status" className="px-2 py-5 text-center text-xs text-muted-foreground">
+                                Loading connected apps…
+                              </div>
+                            ) : connectors.length === 0 ? (
+                              <DropdownMenuItem onSelect={() => router.push("/connections")}>
+                                <Plug className="text-muted-foreground" />
+                                <span className="flex-1">Connect an app</span>
+                                <span className="text-caption text-muted-foreground/60">set up</span>
+                              </DropdownMenuItem>
+                            ) : visibleConnectors.length === 0 ? (
+                              <div className="px-2 py-5 text-center text-xs text-muted-foreground">
+                                No connected apps match “{connectorQuery.trim()}”.
+                              </div>
+                            ) : (
+                              visibleConnectors.map((connector) => {
+                                const selected = connectorsEnabled.includes(connector.id);
+                                return (
+                                  <DropdownMenuItem
+                                    key={connector.id}
+                                    onSelect={(event) => {
+                                      event.preventDefault();
+                                      pickConnector(connector.id);
+                                    }}
+                                    className="min-h-10"
+                                  >
+                                    <ConnectorMark id={connector.id} className="size-4 text-muted-foreground" />
+                                    <span className="min-w-0 flex-1 truncate">{connector.label}</span>
+                                    <Switch checked={selected} className="pointer-events-none" />
+                                  </DropdownMenuItem>
+                                );
+                              })
+                            )}
+                          </div>
+                          {connectors.length > 0 && (
+                            <div className="border-t border-border/60 p-1.5">
+                              <DropdownMenuItem onSelect={() => router.push("/connections")} className="text-muted-foreground">
+                                <Plug />
+                                Manage connections
+                              </DropdownMenuItem>
+                            </div>
+                          )}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
+
                     <DropdownMenuSeparator />
                     {toolsDisclosure}
 
@@ -2082,83 +2195,6 @@ export function Composer({
                           <span className="flex-1">Memory</span>
                           <Switch checked={settings.memoryEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
                         </DropdownMenuItem>
-
-                        {/* showConnectors already proves onToggleConnector exists, and
-                            the rows below go through pickConnector rather than calling
-                            the prop directly. */}
-                        {showConnectors && (
-                          <DropdownMenuSub onOpenChange={(open) => !open && setConnectorQuery("")}>
-                            <DropdownMenuSubTrigger>
-                              <Plug className="text-muted-foreground" />
-                              <span className="flex-1">Connectors</span>
-                              {activeConnectorCount > 0 && (
-                                <span className="mr-1 font-mono text-caption text-primary">{activeConnectorCount}</span>
-                              )}
-                            </DropdownMenuSubTrigger>
-                            <DropdownMenuSubContent className="w-72 p-0">
-                              <div className="border-b border-border/60 p-2">
-                                <div className="mb-1.5 flex items-center justify-between px-1 text-caption text-muted-foreground">
-                                  <span>Choose apps for this chat</span>
-                                  <span className="font-mono tabular-nums">{activeConnectorCount}/{MAX_CHAT_CONNECTORS}</span>
-                                </div>
-                                <label className="relative block">
-                                  <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                                  <input
-                                    value={connectorQuery}
-                                    onChange={(event) => setConnectorQuery(event.target.value)}
-                                    onKeyDown={(event) => event.stopPropagation()}
-                                    placeholder="Search connected apps…"
-                                    aria-label="Search connected apps"
-                                    className="h-9 w-full rounded-control border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-foreground/70"
-                                  />
-                                </label>
-                              </div>
-                              <div className="max-h-64 overflow-y-auto p-1.5 overscroll-contain">
-                                {connectorsLoading && connectors.length === 0 ? (
-                                  <div role="status" className="px-2 py-5 text-center text-xs text-muted-foreground">
-                                    Loading connected apps…
-                                  </div>
-                                ) : connectors.length === 0 ? (
-                                  <DropdownMenuItem onSelect={() => router.push("/connections")}>
-                                    <Plug className="text-muted-foreground" />
-                                    <span className="flex-1">Connect an app</span>
-                                    <span className="text-caption text-muted-foreground/60">set up</span>
-                                  </DropdownMenuItem>
-                                ) : visibleConnectors.length === 0 ? (
-                                  <div className="px-2 py-5 text-center text-xs text-muted-foreground">
-                                    No connected apps match “{connectorQuery.trim()}”.
-                                  </div>
-                                ) : (
-                                  visibleConnectors.map((connector) => {
-                                    const selected = connectorsEnabled.includes(connector.id);
-                                    return (
-                                      <DropdownMenuItem
-                                        key={connector.id}
-                                        onSelect={(event) => {
-                                          event.preventDefault();
-                                          pickConnector(connector.id);
-                                        }}
-                                        className="min-h-10"
-                                      >
-                                        <ConnectorMark id={connector.id} className="size-4 text-muted-foreground" />
-                                        <span className="min-w-0 flex-1 truncate">{connector.label}</span>
-                                        <Switch checked={selected} className="pointer-events-none" />
-                                      </DropdownMenuItem>
-                                    );
-                                  })
-                                )}
-                              </div>
-                              {connectors.length > 0 && (
-                                <div className="border-t border-border/60 p-1.5">
-                                  <DropdownMenuItem onSelect={() => router.push("/connections")} className="text-muted-foreground">
-                                    <Plug />
-                                    Manage connections
-                                  </DropdownMenuItem>
-                                </div>
-                              )}
-                            </DropdownMenuSubContent>
-                          </DropdownMenuSub>
-                        )}
                       </div>
                     </div>
                   </>
@@ -2166,7 +2202,12 @@ export function Composer({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block" aria-hidden="true" />
+            {/* One divider height, one breakpoint. The row shipped two of each —
+                h-5/min-[420px] here and at the mic, h-4/min-[380px] around the
+                effort control — so between 380px and 420px the short rules were
+                visible and the tall ones were not, and the toolbar showed two
+                different separators depending on how wide the window was. */}
+            <span className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block" aria-hidden="true" />
 
             <div
               className={cn("min-w-0 flex-1 sm:flex-none", controlsLocked && "pointer-events-none opacity-60")}
@@ -2178,14 +2219,27 @@ export function Composer({
             {isAuto && (
               <>
                 <span className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block" aria-hidden="true" />
+                {/* Auto occupies the same slot, footprint and typeface as the real
+                    effort control below, so as an inert <span> it read as a button
+                    that did nothing — and, being a slotted span, Radix could not
+                    give it a tabIndex, so the tooltip explaining what Auto means
+                    was mouse-only and the aria-label sat on a role-less element.
+                    A real button carries both. `aria-disabled` rather than
+                    `disabled`: `disabled` would take it back out of the tab order
+                    and `disabled:pointer-events-none` would kill the hover too,
+                    which is the defect again with extra steps. */}
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span
-                      className="inline-flex h-8 shrink-0 items-center gap-1 rounded-control px-2 font-mono text-[12px] text-muted-foreground min-[480px]:text-[13px]"
-                      aria-label="Thinking effort: Auto — chosen per prompt"
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      aria-disabled
+                      aria-label="Thinking effort: Auto — chosen automatically with the model"
+                      className="h-8 w-[4.75rem] shrink-0 cursor-default justify-center gap-1 rounded-composer-control px-2 font-mono text-[12px] tracking-tight text-muted-foreground opacity-70 hover:bg-transparent hover:text-muted-foreground active:scale-100 coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]"
                     >
-                      <span className="truncate">Auto</span>
-                    </span>
+                      <span className="min-w-0 truncate">Auto</span>
+                    </Button>
                   </TooltipTrigger>
                   <TooltipContent>Thinking depth is chosen automatically with the model</TooltipContent>
                 </Tooltip>
@@ -2224,7 +2278,12 @@ export function Composer({
                             disabled={controlsLocked}
                             aria-label={`Thinking effort: ${currentEffort.label}${canFastMode ? `; Flash mode ${fastMode ? "on" : "off"}` : ""}${canProMode ? `; Pro mode ${proMode ? "on" : "off"}` : ""}`}
                             className={cn(
-                              "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-control px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
+                              // rounded-composer-control + coarse:h-11, matching the
+                              // + and mic buttons either side of it: `size="sm"`
+                              // stops at coarse:h-10, so this was the one 40px
+                              // control in a 44px touch row, and `rounded-control`
+                              // made it the one 10px corner between two 11s.
+                              "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-composer-control px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
                               atTopTier ? "text-ultra" : "text-foreground/80"
                             )}
                           >
@@ -2282,7 +2341,7 @@ export function Composer({
             )}
 
             {speechSupported && (
-              <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block" aria-hidden="true" />
+              <span className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block" aria-hidden="true" />
             )}
 
             {/* Primary action morphs in place: Voice (empty) → Send (has text) → Stop (busy). */}

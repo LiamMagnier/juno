@@ -27,6 +27,7 @@ import {
   fetchWorkSessions,
 } from "@/components/work/work-transport";
 import { WorkStateNote, workTimeAgo } from "@/components/work/work-vocabulary";
+import { staggerDelay } from "@/lib/motion";
 import type { ClientWorkHost, ClientWorkSession } from "@/lib/work/serializers";
 import { cn } from "@/lib/utils";
 
@@ -381,7 +382,7 @@ export default function WorkHomePage() {
                             session={session}
                             explain={section.explain}
                             outputCount={outputs?.get(session.id)}
-                            enterDelayMs={arrivals[section.key].delayFor(session.id)}
+                            enterRank={arrivals[section.key].rankFor(session.id)}
                             onChanged={replaceSession}
                           />
                         ))}
@@ -458,7 +459,10 @@ function FirstRun() {
               className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
               // The same cascade the rows use, on the same step, so the one
               // screen with no rows on it still moves the way the list does.
-              style={{ animationDelay: `${60 + index * 26}ms` }}
+              // Through `staggerDelay` rather than a hand-copied 26: the step
+              // was written out here by hand and had already drifted from the
+              // rung every other Work list runs on.
+              style={staggerDelay(index, "tight", 60)}
             >
               “{example}”
             </li>

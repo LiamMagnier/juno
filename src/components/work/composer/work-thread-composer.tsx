@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ComposerDictation } from "@/components/chat/composer-dictation";
+import { LibraryPicker } from "@/components/chat/library-picker";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { WorkThreadAddPanel } from "@/components/work/composer/work-thread-add-panel";
 import {
   WorkThreadControls,
@@ -163,6 +165,11 @@ export function WorkThreadComposer({
   const [dictating, setDictating] = React.useState(false);
   const [addOpen, setAddOpen] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  // Every other composer in the product hides the mic where the browser has no
+  // SpeechRecognition — work-composer.tsx, chat/composer.tsx, code-session-view
+  // all gate on this. This one did not, so a Firefox reader got the one mic in
+  // Juno that opens a dictation panel which can never hear anything.
+  const { supported: speechSupported } = useSpeechRecognition();
 
   /*
    * A run is under way in exactly the two modes that describe one: `steer` is a
@@ -172,6 +179,33 @@ export function WorkThreadComposer({
    */
   const live = mode.kind === "steer" || mode.kind === "answer";
   const context = useWorkThreadContext({ session, live });
+
+  /*
+   * The library dialog, mounted here rather than in the [+] panel.
+   *
+   * A modal dialog opened from inside a Radix popover is dismissed along with
+   * the popover the moment it takes focus, so the picker has to be a sibling of
+   * the composer — the arrangement the chat and Code composers already use.
+   * Picking is its own deliberate confirm inside the dialog, so this is the
+   * same one-press / one-request hand-off `FilesSection` argues for, and it
+   * sends the WHOLE list for the reason stated there: a partial one is only
+   * safe if the route is certain to read it as an addition.
+   */
+  const [libraryOpen, setLibraryOpen] = React.useState(false);
+  const openLibrary = React.useCallback(() => {
+    setAddOpen(false);
+    setLibraryOpen(true);
+  }, []);
+  const attachFromLibrary = React.useCallback(
+    (attachments: readonly { id: string }[]) => {
+      const added = attachments
+        .map((attachment) => attachment.id)
+        .filter((id) => !context.attachmentIds.includes(id));
+      if (added.length === 0) return;
+      context.change({ attachmentIds: [...context.attachmentIds, ...added] });
+    },
+    [context]
+  );
 
   const autoresize = React.useCallback(() => {
     const element = textareaRef.current;
@@ -338,36 +372,45 @@ export function WorkThreadComposer({
                 does on open — so a reader who never opens the [+] never makes
                 any of them. */}
             <PopoverContent align="start" side="top" sideOffset={10} className="w-80 p-0">
-              <WorkThreadAddPanel context={context} />
+              <WorkThreadAddPanel context={context} onOpenLibrary={openLibrary} />
             </PopoverContent>
           </Popover>
+
+          <LibraryPicker
+            open={libraryOpen}
+            onOpenChange={setLibraryOpen}
+            onAttach={attachFromLibrary}
+            existingCount={context.attachmentIds.length}
+          />
 
           <WorkThreadControls context={context} />
 
           {/* Right: dictation mic + primary action (voice ⇄ send). */}
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => setDictating(true)}
-                  // Dictation and the voice conversation want the same
-                  // microphone, and the browser gives it to whoever asked last —
-                  // so opening one while the other is live steals the input
-                  // stream from a session still holding it. Chat locks the same
-                  // pair the same way.
-                  disabled={dictating || voiceActive}
-                  aria-label="Dictate this message"
-                  aria-pressed={dictating}
-                  className="composer-mic-button shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground"
-                >
-                  <Mic className="composer-mic-icon h-4 w-4" aria-hidden="true" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Dictate</TooltipContent>
-            </Tooltip>
+            {speechSupported && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => setDictating(true)}
+                    // Dictation and the voice conversation want the same
+                    // microphone, and the browser gives it to whoever asked last —
+                    // so opening one while the other is live steals the input
+                    // stream from a session still holding it. Chat locks the same
+                    // pair the same way.
+                    disabled={dictating || voiceActive}
+                    aria-label="Dictate this message"
+                    aria-pressed={dictating}
+                    className="composer-mic-button shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground"
+                  >
+                    <Mic className="composer-mic-icon h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Dictate</TooltipContent>
+              </Tooltip>
+            )}
 
             {/* Primary action morphs in place: Voice (empty) → Send (has text). */}
             <Tooltip>

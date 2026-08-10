@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { staggerDelay } from "@/lib/motion";
 import { JunoMark } from "@/components/brand/logo";
 import { AsciiWordmark, DotMatrixMark } from "@/components/signature/dot-matrix";
 import { DottedDivider } from "@/components/signature/dotted-divider";
@@ -24,15 +25,24 @@ const LEGAL_LINKS = [
   { href: "/legal/mentions-legales", label: "Mentions légales" },
 ];
 
-const PRODUCT_LINKS = [
+const PRODUCT_LINKS: { href: string; label: string; file?: boolean }[] = [
   { href: "/sign-in", label: "Sign in" },
   { href: "/sign-up", label: "Create account" },
   // /roadmap lives under the (app) route group, whose layout calls requireUser():
   // a signed-out visitor clicking it is silently bounced to a login form with no
   // explanation. `?next=` keeps the nav item and makes the redirect intentional.
   { href: "/sign-in?next=/roadmap", label: "Roadmap" },
-  { href: "/downloads/Juno.dmg", label: "Download for macOS" },
+  // `file` because this is not a route: a <Link> with no explicit prefetch
+  // prefetches on viewport entry in production, and Juno.dmg is 21.9 MB — so
+  // every visitor who merely scrolled to the footer was pulling down a disk
+  // image they never asked for. features.tsx links the same href with a plain
+  // <a>, which is the correct treatment; this makes the two agree.
+  { href: "/downloads/Juno.dmg", label: "Download for macOS", file: true },
 ];
+
+/** One hover/colour treatment for every footer link, whatever element renders it. */
+const FOOTER_LINK =
+  "block w-fit rounded-sm text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground";
 
 export function LandingPage() {
   return (
@@ -77,18 +87,31 @@ export function LandingPage() {
               <DotMatrixMark className="h-4 w-4" />
               Multi-model AI chat
             </p>
-            <h1 className="mt-4 max-w-3xl text-balance font-serif text-hero font-medium tracking-tight motion-safe:animate-rise-in [animation-fill-mode:backwards]">
+            {/* The hero is one staggered set, indices 0-4 on the "loose" rung.
+                It used to hand-write [animation-delay:60/120/200/260ms] — steps
+                of 60, 60, 80, 60, so the hero did not even hold its own tempo,
+                let alone the product's three-rung scale. */}
+            <h1
+              style={staggerDelay(0, "loose")}
+              className="mt-4 max-w-3xl text-balance font-serif text-hero font-medium tracking-tight motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+            >
               {/* Italic accent on the key phrase — the most consistent typographic
                   gesture Juno has (empty states, /work, /upgrade, /roadmap, code/new,
                   onboarding) and until now absent from the one page where a visitor
                   learns the voice. */}
               Every frontier model. <span className="italic text-primary">One honest subscription.</span>
             </h1>
-            <p className="mt-5 max-w-2xl text-pretty text-body-lg text-muted-foreground motion-safe:animate-rise-in [animation-delay:60ms] [animation-fill-mode:backwards]">
+            <p
+              style={staggerDelay(1, "loose")}
+              className="mt-5 max-w-2xl text-pretty text-body-lg text-muted-foreground motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+            >
               Juno puts Claude, GPT, Gemini and a dozen more labs in one calm workspace — voice, artifacts, projects
               and a coding agent included — with the real cost of every answer on the receipt.
             </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3 motion-safe:animate-rise-in [animation-delay:120ms] [animation-fill-mode:backwards]">
+            <div
+              style={staggerDelay(2, "loose")}
+              className="mt-8 flex flex-wrap items-center gap-3 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+            >
               <Button asChild size="lg">
                 <Link href="/sign-up">
                   Create account
@@ -99,10 +122,16 @@ export function LandingPage() {
                 <Link href="/sign-in">Sign in</Link>
               </Button>
             </div>
-            <div className="mt-12 motion-safe:animate-rise-in [animation-delay:200ms] [animation-fill-mode:backwards]">
+            <div
+              style={staggerDelay(3, "loose")}
+              className="mt-12 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+            >
               <ComposerPreview model={HERO_MODEL} />
             </div>
-            <div className="mt-14 motion-safe:animate-fade-in [animation-delay:260ms] [animation-fill-mode:backwards]">
+            <div
+              style={staggerDelay(4, "loose")}
+              className="mt-14 motion-safe:animate-fade-in [animation-fill-mode:backwards]"
+            >
               <DottedDivider label="In the picker today" className="mb-5" />
               <FlagshipStrip />
             </div>
@@ -129,33 +158,37 @@ export function LandingPage() {
               </p>
             </div>
             <nav aria-label="Footer" className="grid grid-cols-2 gap-x-16 gap-y-1.5 text-body">
+              {/* text-label, not text-caption/80: the visitor has just scrolled past
+                  five PageHeader eyebrows in exactly this role, and these were a
+                  third rendering of it — 11px at 80% alpha, which also measures
+                  ≈3.6:1 on --background and fails AA at that size. */}
               <div className="space-y-1.5">
-                <p className="font-mono text-caption text-muted-foreground/80">Product</p>
-                {PRODUCT_LINKS.map(({ href, label }) => (
-                  <Link
-                    key={href}
-                    href={href}
-                    className="block w-fit rounded-sm text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
-                  >
-                    {label}
-                  </Link>
-                ))}
+                <p className="font-mono text-label text-muted-foreground">Product</p>
+                {PRODUCT_LINKS.map(({ href, label, file }) =>
+                  file ? (
+                    <a key={href} href={href} download className={FOOTER_LINK}>
+                      {label}
+                    </a>
+                  ) : (
+                    <Link key={href} href={href} className={FOOTER_LINK}>
+                      {label}
+                    </Link>
+                  )
+                )}
               </div>
               <div className="space-y-1.5">
-                <p className="font-mono text-caption text-muted-foreground/80">Legal</p>
+                <p className="font-mono text-label text-muted-foreground">Legal</p>
                 {LEGAL_LINKS.map(({ href, label }) => (
-                  <Link
-                    key={href}
-                    href={href}
-                    className="block w-fit rounded-sm text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
-                  >
+                  <Link key={href} href={href} className={FOOTER_LINK}>
                     {label}
                   </Link>
                 ))}
               </div>
             </nav>
           </div>
-          <p className="mt-8 border-t border-border/60 pt-6 text-caption text-muted-foreground/80">
+          {/* No /80: at 11px the composite lands ≈3.6:1 on --background, under the
+              4.5:1 AA floor, and 11px is far below the large-text exemption. */}
+          <p className="mt-8 border-t border-border/60 pt-6 text-caption text-muted-foreground">
             Juno — chat.liams.dev · © {new Date().getFullYear()}
           </p>
         </div>

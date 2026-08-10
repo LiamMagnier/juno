@@ -7,6 +7,8 @@ import { ThinkingReasoning } from "@/components/aicss/thinking-reasoning";
 import { ThinkingState } from "@/components/aicss/thinking-state";
 import type { WebSearchSite } from "@/components/aicss/web-search";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { Pressable } from "@/components/ui/pressable";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
 import {
   TOOLS_DESCRIPTION,
@@ -643,89 +645,19 @@ function useReasoningView(): [ReasoningView, (next: ReasoningView) => void] {
   return [view, choose];
 }
 
-const VIEW_OPTIONS: { key: ReasoningView; label: string; hint: string }[] = [
-  { key: "summary", label: "Summary", hint: "The model’s own summary steps." },
-  { key: "full", label: "Full", hint: "The complete reasoning trace." },
-];
-
 /**
- * The switch itself: two segments, in the panel's own vocabulary.
- *
- * A `radiogroup` rather than two buttons or a checkbox, because that is what it
- * is — one of two mutually exclusive views — and it is what gives a screen
- * reader "1 of 2" for free.
- *
- * ROVING TABINDEX, because a radiogroup is ONE tab stop and the arrow keys move
- * within it. The previous version left both segments in the tab order and bound
- * no keys at all, so it announced itself as a radiogroup and then behaved like
- * two buttons. The hint moved off `title=` for the same class of reason: a
- * tooltip attribute is unreachable by keyboard and by touch, so the explanation
- * existed only for a mouse hovering in place. It is now visible text, wired with
- * `aria-describedby`.
+ * Summary ⇄ Full. This used to be a locally-built radiogroup — well track,
+ * roving tabindex, arrow-key handler, raised selected segment — i.e. a second
+ * copy of <SegmentedControl>, which already ships all of it plus the gliding
+ * thumb, the press dip and the travel stretch. The copy also chose `rounded-full`
+ * for both track and segments where the primitive is menu 14 / control 10, so
+ * the two segmented controls a reader meets in one session (this one and the
+ * artifact card's Preview/Code) looked like two different widgets.
  */
-function ReasoningViewToggle({
-  value,
-  onChange,
-  describedBy,
-}: {
-  value: ReasoningView;
-  onChange: (next: ReasoningView) => void;
-  describedBy: string;
-}) {
-  const refs = React.useRef<(HTMLButtonElement | null)[]>([]);
-  const index = Math.max(0, VIEW_OPTIONS.findIndex((o) => o.key === value));
-
-  // Selection FOLLOWS focus, which is the ARIA-authoring-practices behaviour for
-  // a radio group and the only one that does not require a second keypress to
-  // commit a choice the user has already visibly made.
-  const move = (next: number) => {
-    const i = (next + VIEW_OPTIONS.length) % VIEW_OPTIONS.length;
-    onChange(VIEW_OPTIONS[i].key);
-    refs.current[i]?.focus();
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowRight" || e.key === "ArrowDown") move(index + 1);
-    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") move(index - 1);
-    else if (e.key === "Home") move(0);
-    else if (e.key === "End") move(VIEW_OPTIONS.length - 1);
-    else return;
-    e.preventDefault();
-  };
-
-  return (
-    <div
-      role="radiogroup"
-      aria-label="Reasoning detail"
-      aria-describedby={describedBy}
-      onKeyDown={onKeyDown}
-      className="flex shrink-0 items-center gap-0.5 rounded-full bg-muted/70 p-0.5"
-    >
-      {VIEW_OPTIONS.map((option, i) => {
-        const selected = value === option.key;
-        return (
-          <button
-            key={option.key}
-            ref={(node) => {
-              refs.current[i] = node;
-            }}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            tabIndex={selected ? 0 : -1}
-            onClick={() => onChange(option.key)}
-            className={cn(
-              "rounded-full px-2.5 py-1 font-sans text-caption transition-[background-color,color,box-shadow] duration-base ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card motion-reduce:transition-none",
-              selected ? "bg-background text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+const VIEW_OPTIONS: (SegmentedOption<ReasoningView> & { hint: string })[] = [
+  { value: "summary", label: "Summary", hint: "The model’s own summary steps." },
+  { value: "full", label: "Full", hint: "The complete reasoning trace." },
+];
 
 /** A figure that was MEASURED. The sr-only prefix is what tells a screen reader
  *  that the bare number in column three is a duration — the visual column header
@@ -1045,14 +977,14 @@ export function ThoughtProcessPanel({
           </h2>
         </div>
 
-        <button
-          type="button"
-          onClick={onClose}
-          className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors duration-base ease-out-soft hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-reduce:transition-none coarse:size-11"
-        >
+        {/* A hand-rolled copy of `kind="icon" size="lg"`, down to the 36/44
+            ladder. Also the largest of the eight controls in this file that each
+            set `outline-none` and drew their own focus ring — all of them now
+            defer to the global `:focus-visible` rule, which is the authority. */}
+        <Pressable kind="icon" size="lg" onClick={onClose} className="shrink-0">
           <X className="size-4" aria-hidden="true" />
           <span className="sr-only">Close thought process</span>
-        </button>
+        </Pressable>
       </header>
 
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
@@ -1182,7 +1114,7 @@ export function ThoughtProcessPanel({
                   <h4 className="font-mono text-label uppercase text-muted-foreground">Memory used</h4>
                   <a
                     href="/memory"
-                    className="text-caption text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="text-caption text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                   >
                     Manage all
                   </a>
@@ -1200,7 +1132,7 @@ export function ThoughtProcessPanel({
                           {sourceHref && (
                             <a
                               href={sourceHref}
-                              className="underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              className="underline-offset-4 hover:text-foreground hover:underline"
                             >
                               Open source chat
                             </a>
@@ -1209,7 +1141,7 @@ export function ThoughtProcessPanel({
                             type="button"
                             disabled={forgettingMemory === memory.id}
                             onClick={() => void forgetMemory(memory.id)}
-                            className="underline-offset-4 hover:text-destructive hover:underline disabled:cursor-wait disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="underline-offset-4 hover:text-destructive hover:underline disabled:cursor-wait disabled:opacity-60"
                           >
                             {forgettingMemory === memory.id ? "Forgetting…" : "Forget this"}
                           </button>
@@ -1245,7 +1177,7 @@ export function ThoughtProcessPanel({
                       href={s.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-baseline gap-3 overflow-hidden rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+                      className="flex items-baseline gap-3 overflow-hidden rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-muted/50 motion-reduce:transition-none"
                     >
                       <span className="min-w-0 flex-1 truncate text-body text-foreground/85">{s.title}</span>
                       {/* Only the exception is marked. A read page and a page
@@ -1337,7 +1269,7 @@ export function ThoughtProcessPanel({
                              aria-controls pointing at nothing is worse than
                              none at all. */
                           aria-controls={expanded ? bodyId : undefined}
-                          className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-baseline gap-1.5 rounded-control px-1.5 py-0.5 text-left text-body text-foreground/80 transition-colors duration-fast ease-out-soft hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
+                          className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-baseline gap-1.5 rounded-control px-1.5 py-0.5 text-left text-body text-foreground/80 transition-colors duration-fast ease-out-soft hover:bg-muted/50 hover:text-foreground motion-reduce:transition-none"
                         >
                           <ChevronRight
                             aria-hidden="true"
@@ -1421,7 +1353,17 @@ export function ThoughtProcessPanel({
           >
             <div className="flex items-center justify-between gap-3">
               <SectionHeading id={`${id}-reasoning`}>Reasoning</SectionHeading>
-              {showToggle && <ReasoningViewToggle value={view} onChange={setView} describedBy={hintId} />}
+              {showToggle && (
+                <SegmentedControl
+                  value={view}
+                  onChange={setView}
+                  options={VIEW_OPTIONS}
+                  ariaLabel="Reasoning detail"
+                  className="shrink-0"
+                  // The panel's own type scale; everything else is the primitive's.
+                  optionClassName="px-2.5 text-caption"
+                />
+              )}
             </div>
 
             {/* PERMANENT, and body-sized rather than fine print. A reasoning
@@ -1430,9 +1372,13 @@ export function ThoughtProcessPanel({
             <p className="mt-2.5 text-body text-muted-foreground">
               The model’s own account of its reasoning. Not a log of what it computed.
             </p>
+            {/* Still visible text in reading order, but no longer wired to the
+                switch with aria-describedby: <SegmentedControl> exposes no
+                description passthrough. Worth a `describedBy` prop on the
+                primitive; not worth keeping a second segmented control to have. */}
             {showToggle && (
               <p id={hintId} className="mt-1 text-caption text-muted-foreground/70">
-                {VIEW_OPTIONS.find((o) => o.key === view)?.hint}
+                {VIEW_OPTIONS.find((o) => o.value === view)?.hint}
               </p>
             )}
 
@@ -1498,7 +1444,7 @@ export function ThoughtProcessPanel({
           <button
             type="button"
             onClick={() => void copy("run", toRunMarkdown(run, reasoning, finishNote))}
-            className="rounded-control px-2.5 py-1.5 font-mono text-caption uppercase tracking-[0.08em] text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] active:duration-press motion-reduce:transition-none"
+            className="rounded-control px-2.5 py-1.5 font-mono text-caption uppercase tracking-[0.08em] text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-[0.98] active:duration-press motion-reduce:transition-none"
           >
             {copied === "run" ? "Copied" : "Copy run"}
           </button>
@@ -1506,7 +1452,7 @@ export function ThoughtProcessPanel({
             <button
               type="button"
               onClick={() => void copy("sources", toSourcesMarkdown(run))}
-              className="rounded-control px-2.5 py-1.5 font-mono text-caption uppercase tracking-[0.08em] text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] active:duration-press motion-reduce:transition-none"
+              className="rounded-control px-2.5 py-1.5 font-mono text-caption uppercase tracking-[0.08em] text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-[0.98] active:duration-press motion-reduce:transition-none"
             >
               {copied === "sources" ? "Copied" : "Copy sources"}
             </button>

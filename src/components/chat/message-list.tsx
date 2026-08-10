@@ -246,10 +246,20 @@ export function MessageList(props: MessageListProps) {
         </div>
       </div>
 
+      {/* `pointer-events-none` hides this from the mouse and from nobody else:
+          the button stayed in the tab order at opacity 0, so a keyboard user
+          walking the transcript landed on an invisible control that scrolled the
+          view when activated. Hidden means hidden — out of the a11y tree and out
+          of the tab order. (message-item's action cluster solves the same problem
+          the other way, with focus-within:opacity-100; that is right for controls
+          that should be REACHABLE while invisible. This one is redundant when the
+          reader is already at the bottom.) */}
       <button
         type="button"
         onClick={jumpToLatest}
         aria-label="Scroll to latest"
+        aria-hidden={atBottom || undefined}
+        tabIndex={atBottom ? -1 : undefined}
         className={cn(
           "absolute bottom-4 left-1/2 z-10 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border bg-card/80 text-muted-foreground shadow-float backdrop-blur transition-all duration-base ease-out-soft hover:text-foreground active:scale-95 coarse:h-11 coarse:w-11",
           atBottom

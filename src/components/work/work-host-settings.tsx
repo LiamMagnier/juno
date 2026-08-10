@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { FileText, Folder, Link2, Plug } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import type { ClientWorkGrant, ClientWorkHost } from "@/lib/work/serializers";
@@ -369,10 +370,11 @@ export function WorkHostSettings({
       <section>
         <h2 className="mb-2.5 font-mono text-label text-muted-foreground">What it has offered</h2>
         {routableCapabilities.length === 0 ? (
-          <p className="rounded-field border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
-            This Mac has not listed anything it can do. That is what an older build of the app looks
-            like from here — it will fill in on its next check-in after an update.
-          </p>
+          <EmptyState
+            size="panel"
+            title="Nothing listed yet"
+            description="This Mac has not listed anything it can do. That is what an older build of the app looks like from here — it will fill in on its next check-in after an update."
+          />
         ) : (
           <>
             <div className="flex flex-wrap gap-1.5">
@@ -399,15 +401,21 @@ export function WorkHostSettings({
       <section>
         <h2 className="mb-2.5 font-mono text-label text-muted-foreground">Folders it can reach</h2>
         {grants === null ? (
-          <p className="rounded-field border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
-            The folders shared with this Mac couldn’t be read just now, which says nothing about
-            whether it has any.
-          </p>
+          // `error`, not `empty`: a read that failed and a Mac with no folders
+          // were the same dashed paragraph here, which is the exact confusion
+          // the two tones exist to end.
+          <EmptyState
+            size="panel"
+            tone="error"
+            title="Couldn’t read the folders"
+            description="The folders shared with this Mac couldn’t be read just now, which says nothing about whether it has any."
+          />
         ) : grants.length === 0 ? (
-          <p className="rounded-field border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
-            Nothing has been shared with this Mac, so file work on it has nowhere to happen. A
-            folder is chosen in Juno on the Mac, where the file picker is.
-          </p>
+          <EmptyState
+            size="panel"
+            title="No folders shared"
+            description="Nothing has been shared with this Mac, so file work on it has nowhere to happen. A folder is chosen in Juno on the Mac, where the file picker is."
+          />
         ) : (
           <>
             <ul className="space-y-1.5">

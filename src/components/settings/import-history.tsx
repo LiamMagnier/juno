@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { CheckCircle2, FileUp, Loader2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useApp } from "@/components/app/app-provider";
 import { cn } from "@/lib/utils";
 
@@ -123,79 +124,90 @@ export function ImportHistoryCard() {
   const pick = () => fileRef.current?.click();
 
   return (
-    <Card className="p-5 rounded-panel">
+    <Card className="rounded-surface p-5">
       <CardEyebrow className="mb-4">Import</CardEyebrow>
 
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          if (!busy) setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragging(false);
-          const file = e.dataTransfer.files?.[0];
-          if (file) start(file);
-        }}
-        className={cn(
-          "rounded-card border border-dashed border-border/60 bg-muted/10 px-5 py-8 text-center transition-colors duration-fast ease-out-soft",
-          dragging && "border-primary/60 bg-primary/5"
-        )}
-      >
-        {phase.name === "uploading" ? (
-          <div className="mx-auto max-w-xs">
-            <p className="font-serif text-heading">Uploading your export</p>
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
-              <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${Math.round(phase.progress * 100)}%` }} />
-            </div>
-            <p className="mt-2 font-mono text-caption text-muted-foreground">{Math.round(phase.progress * 100)}%</p>
-          </div>
-        ) : phase.name === "importing" ? (
-          <div className="mx-auto max-w-sm">
-            <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-muted-foreground/60" />
-            <p className="font-serif text-heading">Importing conversations</p>
-            <p className="pt-1 text-sm text-muted-foreground">Rebuilding your chats with their original titles and dates.</p>
-          </div>
-        ) : phase.name === "done" ? (
-          <div className="mx-auto max-w-sm">
-            <CheckCircle2 className="mx-auto mb-2 h-6 w-6 text-primary" />
-            <p className="font-serif text-heading">
-              {phase.imported > 0
-                ? `Imported ${phase.imported.toLocaleString()} conversation${phase.imported === 1 ? "" : "s"}`
-                : "Nothing new to import"}
-            </p>
-            <p className="pt-1 text-sm text-muted-foreground">
-              {phase.imported > 0 || phase.projectsImported > 0 || phase.memoriesImported > 0 || phase.attachmentsImported > 0
-                ? `${phase.imported.toLocaleString()} conversation${phase.imported === 1 ? "" : "s"}, ${phase.projectsImported.toLocaleString()} project${phase.projectsImported === 1 ? "" : "s"}, ${phase.memoriesImported.toLocaleString()} memor${phase.memoriesImported === 1 ? "y" : "ies"}, and ${phase.attachmentsImported.toLocaleString()} file${phase.attachmentsImported === 1 ? "" : "s"} restored.${phase.skipped > 0 || phase.attachmentsSkipped > 0 ? ` ${phase.skipped + phase.attachmentsSkipped} already present or unavailable.` : ""}`
-                : "Everything in that export is already here."}
-            </p>
-            <Button variant="outline" size="sm" className="mt-4" onClick={pick}>
-              Import another
-            </Button>
-          </div>
-        ) : phase.name === "error" ? (
-          <div className="mx-auto max-w-sm">
-            <TriangleAlert className="mx-auto mb-2 h-6 w-6 text-destructive" />
-            <p className="font-serif text-heading">Couldn&apos;t import that file</p>
-            <p className="pt-1 text-sm text-muted-foreground">{phase.message}</p>
-            <Button variant="outline" size="sm" className="mt-4" onClick={pick}>
+      {phase.name === "error" ? (
+        // A failure must not wear the drop zone's chrome. Rendering it inside the
+        // dashed, bg-muted/10 placeholder fenced "couldn't import that file" in
+        // the border that means "nothing here yet" — the two states differed only
+        // by an icon colour, which is exactly the collapse EmptyState's tones
+        // exist to prevent.
+        <EmptyState
+          tone="error"
+          size="panel"
+          icon={TriangleAlert}
+          title="Couldn't import that file"
+          description={phase.message}
+          action={
+            <Button variant="outline" size="sm" onClick={pick}>
               Try again
             </Button>
-          </div>
-        ) : (
-          <div className="mx-auto max-w-sm">
-            <FileUp className="mx-auto mb-2 h-6 w-6 text-muted-foreground/60" />
-            <p className="font-serif text-heading">Import your history</p>
-            <p className="pt-1 text-sm text-muted-foreground">
-              ChatGPT, Claude, Gemini, or Juno export (.zip or .json) — drop it here, up to 100 MB.
-            </p>
-            <Button size="sm" className="mt-4" onClick={pick}>
-              Choose file
-            </Button>
-          </div>
-        )}
-      </div>
+          }
+        />
+      ) : (
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!busy) setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            const file = e.dataTransfer.files?.[0];
+            if (file) start(file);
+          }}
+          className={cn(
+            "rounded-card border border-dashed border-border/60 bg-muted/10 px-5 py-8 text-center transition-colors duration-fast ease-out-soft",
+            dragging && "border-primary/60 bg-primary/5"
+          )}
+        >
+          {phase.name === "uploading" ? (
+            <div className="mx-auto max-w-xs">
+              <p className="font-serif text-heading">Uploading your export</p>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
+                <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${Math.round(phase.progress * 100)}%` }} />
+              </div>
+              <p className="mt-2 font-mono text-caption text-muted-foreground">{Math.round(phase.progress * 100)}%</p>
+            </div>
+          ) : phase.name === "importing" ? (
+            <div className="mx-auto max-w-sm">
+              <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-muted-foreground/60" />
+              <p className="font-serif text-heading">Importing conversations</p>
+              <p className="pt-1 text-sm text-muted-foreground">Rebuilding your chats with their original titles and dates.</p>
+            </div>
+          ) : phase.name === "done" ? (
+            <div className="mx-auto max-w-sm">
+              <CheckCircle2 className="mx-auto mb-2 h-6 w-6 text-primary" />
+              <p className="font-serif text-heading">
+                {phase.imported > 0
+                  ? `Imported ${phase.imported.toLocaleString()} conversation${phase.imported === 1 ? "" : "s"}`
+                  : "Nothing new to import"}
+              </p>
+              <p className="pt-1 text-sm text-muted-foreground">
+                {phase.imported > 0 || phase.projectsImported > 0 || phase.memoriesImported > 0 || phase.attachmentsImported > 0
+                  ? `${phase.imported.toLocaleString()} conversation${phase.imported === 1 ? "" : "s"}, ${phase.projectsImported.toLocaleString()} project${phase.projectsImported === 1 ? "" : "s"}, ${phase.memoriesImported.toLocaleString()} memor${phase.memoriesImported === 1 ? "y" : "ies"}, and ${phase.attachmentsImported.toLocaleString()} file${phase.attachmentsImported === 1 ? "" : "s"} restored.${phase.skipped > 0 || phase.attachmentsSkipped > 0 ? ` ${phase.skipped + phase.attachmentsSkipped} already present or unavailable.` : ""}`
+                  : "Everything in that export is already here."}
+              </p>
+              <Button variant="outline" size="sm" className="mt-4" onClick={pick}>
+                Import another
+              </Button>
+            </div>
+          ) : (
+            <div className="mx-auto max-w-sm">
+              <FileUp className="mx-auto mb-2 h-6 w-6 text-muted-foreground/60" />
+              <p className="font-serif text-heading">Import your history</p>
+              <p className="pt-1 text-sm text-muted-foreground">
+                ChatGPT, Claude, Gemini, or Juno export (.zip or .json) — drop it here, up to 100 MB.
+              </p>
+              <Button size="sm" className="mt-4" onClick={pick}>
+                Choose file
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
       <p className="mt-3 text-xs text-muted-foreground">
         Get the ZIP from ChatGPT under Settings → Data controls → Export data, Claude under Settings → Privacy → Export

@@ -6,6 +6,7 @@ import { requiresViewerCredentials } from "@/lib/image-source";
 import {
   ArrowUp,
   ArrowUpRight,
+  ChevronRight,
   Cloud,
   FileText,
   FileUp,
@@ -22,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -37,6 +39,8 @@ import {
 import { MessageList } from "@/components/chat/message-list";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { ComposerDictation } from "@/components/chat/composer-dictation";
+import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
+import { deviceOffersWorkspace, type DeviceRow } from "@/components/code/device-presence";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
@@ -62,34 +66,21 @@ interface CodeSessionViewProps {
 type PresenceState = "checking" | "online" | "offline" | "none" | "error";
 type Presence = { state: PresenceState; device: { id: string; name: string } | null };
 
-type DeviceRow = {
-  id: string;
-  name: string;
-  online?: boolean;
-  lastSeenAt: string;
-  workspaces: unknown;
-};
-
 const PRESENCE_POLL_MS = 30_000;
 
-function deviceOffersWorkspace(device: DeviceRow, key: string | null, _path: string | null, name: string | null): boolean {
-  if (!Array.isArray(device.workspaces)) return false;
-  return (device.workspaces as { name?: unknown; key?: unknown }[]).some((w) => {
-    // Stable identity first — a host that re-registered the folder from a new
-    // location still owns this session's workspace.
-    if (key != null && w?.key === key) return true;
-    // Name is the fallback, not path. The device list no longer returns paths
-    // at all: they disclose the account name and directory layout, and nothing
-    // outside the host needs one. A key-less host with two identically named
-    // workspaces is the only case this reads less precisely than before, and
-    // that is worth the disclosure it removes.
-    return name != null && w?.name === name;
-  });
-}
-
 /** The Mac that owns this session's workspace, and whether it's reachable.
- *  Gentle poll while the tab is visible; refreshes immediately on refocus. */
-function useDevicePresence(workspaceKey: string | null, workspacePath: string | null, workspaceName: string | null) {
+ *  Gentle poll while the tab is visible; refreshes immediately on refocus.
+ *
+ *  `enabled` is false for a cloud session, which has no Mac in the loop at all:
+ *  it used to poll /api/code/devices every 30 seconds forever, and — because a
+ *  workspace matches on NAME when it has no key — a user with a synced local
+ *  folder named like the repo was told "Mac connected" on a run that never
+ *  touches their Mac. */
+function useDevicePresence(
+  workspaceKey: string | null,
+  workspaceName: string | null,
+  enabled: boolean,
+) {
   const [presence, setPresence] = React.useState<Presence>({ state: "checking", device: null });
 
   const refresh = React.useCallback(async () => {
@@ -98,7 +89,7 @@ function useDevicePresence(workspaceKey: string | null, workspacePath: string | 
       if (!res.ok) throw new Error();
       const data = (await res.json()) as { devices?: DeviceRow[] };
       const candidates = (Array.isArray(data.devices) ? data.devices : [])
-        .filter((d) => deviceOffersWorkspace(d, workspaceKey, workspacePath, workspaceName))
+        .filter((d) => deviceOffersWorkspace(d, workspaceKey, workspaceName))
         .sort((a, b) => {
           if (!!a.online !== !!b.online) return a.online ? -1 : 1;
           return new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime();
@@ -113,9 +104,10 @@ function useDevicePresence(workspaceKey: string | null, workspacePath: string | 
       // Keep the last honest reading if we had one; otherwise say we don't know.
       setPresence((prev) => (prev.state === "checking" ? { state: "error", device: null } : prev));
     }
-  }, [workspaceKey, workspacePath, workspaceName]);
+  }, [workspaceKey, workspaceName]);
 
   React.useEffect(() => {
+    if (!enabled) return;
     void refresh();
     const tick = () => {
       if (!document.hidden) void refresh();
@@ -126,7 +118,7 @@ function useDevicePresence(workspaceKey: string | null, workspacePath: string | 
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", tick);
     };
-  }, [refresh]);
+  }, [enabled, refresh]);
 
   return { presence, refresh };
 }
@@ -165,7 +157,8 @@ function useCodeTaskMeta(conversationId: string): CodeTaskMeta & { refresh: () =
   const refresh = React.useCallback(async () => {
     try {
       const res = await fetch(`/api/code/tasks?conversationId=${encodeURIComponent(conversationId)}&limit=20`);
-      if (!res.ok) return;
+      // Throw rather than return: the catch below is what releases `loaded`.
+      if (!res.ok) throw new Error();
       const data = (await res.json()) as { tasks?: TaskMetaRow[] };
       const tasks = Array.isArray(data.tasks) ? data.tasks : [];
       const latest = tasks[0];
@@ -180,7 +173,11 @@ function useCodeTaskMeta(conversationId: string): CodeTaskMeta & { refresh: () =
         prUrl,
       });
     } catch {
-      // Keep the last reading; a device session simply stays non-cloud.
+      // Keep the last reading; a device session simply stays non-cloud. But
+      // mark it read: now that `loaded` gates the banner and the composer, a
+      // failed lookup that left it false would park the session in "getting
+      // ready" forever, with the composer disabled and no way out.
+      setMeta((prev) => (prev.loaded ? prev : { ...prev, loaded: true }));
     }
   }, [conversationId]);
 
@@ -216,9 +213,26 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
   const workspaceName = conversation.codeWorkspaceName?.trim() || "Code session";
   const workspacePath = conversation.codeWorkspacePath ?? null;
   const workspaceKey = conversation.codeWorkspaceKey ?? null;
-  const { presence } = useDevicePresence(workspaceKey, workspacePath, conversation.codeWorkspaceName?.trim() || null);
   const meta = useCodeTaskMeta(conversation.id);
   const isCloud = meta.isCloud;
+  /*
+   * WHICH KIND OF SESSION THIS IS, IS NOT KNOWN YET.
+   *
+   * `meta.loaded` was declared, set and never read, so `isCloud` starting false
+   * meant every cloud session opened wearing the device UI for one fetch
+   * round-trip: a Folder glyph, the repo's "owner/name" printed in the mono slot
+   * as if it were a path on disk, a "Checking your Mac…" pill, a composer
+   * disabled with "Looking for the Mac that has this project…", and a footer
+   * promising it runs on your Mac. Then it all flipped. Guessing device and
+   * correcting is worse than saying we are still looking, so everything that
+   * differs between the two waits here.
+   */
+  const resolving = !meta.loaded;
+  const { presence } = useDevicePresence(
+    workspaceKey,
+    conversation.codeWorkspaceName?.trim() || null,
+    !(meta.loaded && meta.isCloud),
+  );
   const cloudRepoFull = meta.repoOwner && meta.repoName ? `${meta.repoOwner}/${meta.repoName}` : null;
 
   const session = useCodeSession({
@@ -297,9 +311,12 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
 
   // Cloud sessions ignore device presence entirely — they run on a dispatched
   // machine, so the only gate is knowing the repo. Device sessions keep their
-  // presence-based gating unchanged.
-  const canTarget = isCloud ? !!cloudRepoFull : presence.device != null;
-  const sendBlockedReason = isCloud
+  // presence-based gating unchanged. Neither gate can be evaluated before the
+  // session's own kind is known, so until then the answer is "not yet".
+  const canTarget = resolving ? false : isCloud ? !!cloudRepoFull : presence.device != null;
+  const sendBlockedReason = resolving
+    ? "Getting this session ready…"
+    : isCloud
     ? !cloudRepoFull
       ? "Preparing this cloud session…"
       : null
@@ -454,7 +471,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
     ],
   );
 
-  const composerDisabled = isCloud ? !cloudRepoFull : !canTarget || !workspacePath;
+  const composerDisabled = resolving || (isCloud ? !cloudRepoFull : !canTarget || !workspacePath);
   const hasPayload = !!draft.trim() || readyAttachments.length > 0;
   const canSend =
     hasPayload &&
@@ -491,9 +508,139 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
   const hasMessages = session.messages.length > 0;
   const presenceMeta = PRESENCE_META[presence.state];
   const taskChip = TASK_CHIP[session.status];
+  // Neither promise is safe to make before the session's kind is known — see
+  // `resolving`. What both halves say is the half that is always true.
+  const footerNote = resolving
+    ? "Review the changes before you ship them."
+    : isCloud
+      ? "Runs in the cloud and opens a pull request — review the changes before you merge them."
+      : "Runs with Juno Code on your Mac — review the changes before you ship them.";
+
+  /*
+   * THE RUN TRACE HAD NO WAY TO OPEN.
+   *
+   * MessageItem → ActivityTimeline renders a full pressable row — hover fill,
+   * sliding chevron, aria-expanded, "Open run details" — whose click calls
+   * `panel.setOpenId`, where `panel` is `useThoughtPanel()`. Only chat-view
+   * mounted the provider, so on this surface `panel` was null and the most
+   * clicked control in a coding transcript was a guaranteed no-op. Everything
+   * Juno Code actually did — every tool call, every file change, every approval
+   * — is folded into that trace and was unreachable.
+   *
+   * The dock is a column, so its DOM must be a sibling of the transcript
+   * column; ActivityTimeline portals the panel into `container`. Same contract
+   * as chat-view, minus the drag-to-resize: the width that matters here is the
+   * one chat-view uses undragged.
+   */
+  const [thoughtOpenId, setThoughtOpenId] = React.useState<string | null>(null);
+  const [thoughtContainer, setThoughtContainer] = React.useState<HTMLDivElement | null>(null);
+  const thoughtPanel = React.useMemo(
+    () => ({ openId: thoughtOpenId, setOpenId: setThoughtOpenId, container: thoughtContainer }),
+    [thoughtOpenId, thoughtContainer],
+  );
+  // Self-heal, for the reason chat-view reconciles too: the dock is raw state
+  // naming a message, and this surface swaps ids under it routinely — the live
+  // streaming bubble is REPLACED by its persisted row when a run settles, which
+  // unmounts the ActivityTimeline holding the panel and its only close button.
+  // What would be left is an empty card column covering the whole screen below lg.
+  React.useEffect(() => {
+    if (!thoughtOpenId) return;
+    if (!session.messages.some((m) => m.id === thoughtOpenId)) setThoughtOpenId(null);
+  }, [session.messages, thoughtOpenId]);
+  // Esc closes it — a docked, non-modal panel gets none of a dialog's dismissal
+  // for free. Only if a nearer layer hasn't already claimed the key.
+  React.useEffect(() => {
+    if (!thoughtOpenId) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !e.defaultPrevented) setThoughtOpenId(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [thoughtOpenId]);
+
+  /*
+   * WHAT THE RUN CHANGED, which the footer promises you can review and the
+   * surface offered nowhere to do.
+   *
+   * Read back out of the transcript's activity rather than from the task
+   * stream, because `useCodeSession` folds `file_change` events straight into
+   * display strings ("edit src/foo.ts", "+3 −1") and keeps no structured list.
+   * That is why the path is recovered with a split: the producer composes
+   * `${changeKind} ${path}`, and a path cannot contain the first space. Latest
+   * write per path wins, so a file touched four times is one row with its
+   * final churn — this is a summary of the result, not a log.
+   */
+  const fileChanges = React.useMemo(() => {
+    const byPath = new Map<string, { path: string; changeKind: string; churn: string | null }>();
+    for (const message of session.messages) {
+      for (const event of message.activity ?? []) {
+        if (event.kind !== "write") continue;
+        const space = event.title.indexOf(" ");
+        const changeKind = space === -1 ? "edit" : event.title.slice(0, space);
+        const path = space === -1 ? event.title : event.title.slice(space + 1);
+        byPath.set(path, { path, changeKind, churn: event.detail ?? null });
+      }
+    }
+    return [...byPath.values()];
+  }, [session.messages]);
+
+  /*
+   * A FAILED RUN WAS A DEAD END. MessageItem offers its "Try again" only when
+   * `onRegenerate` is supplied, and this surface supplied neither that nor
+   * `onEdit` — so the only way back from a failure was retyping the prompt,
+   * which the composer cleared on send. One screen earlier, /code/new's own
+   * dispatch failure has exactly this button.
+   *
+   * Re-dispatch when the session can run, and otherwise put the words back in
+   * the composer — a Mac that went offline mid-run is the common case, and the
+   * prompt waiting in the field is the honest outcome there.
+   */
+  const retryLastPrompt = React.useCallback(() => {
+    const lastUser = [...session.messages].reverse().find((m) => m.role === "USER");
+    const text = lastUser?.content.trim();
+    if (!text) return;
+    const canFire = canTarget && (isCloud || !!workspacePath) && !session.isBusy && !isUploading;
+    if (canFire) {
+      void submit(text);
+      return;
+    }
+    setDraft(text);
+    requestAnimationFrame(() => {
+      autoresize();
+      textareaRef.current?.focus();
+    });
+  }, [autoresize, canTarget, isCloud, isUploading, session.isBusy, session.messages, submit, workspacePath]);
+
+  // Queue copy, and the same sentence the live region reads out below.
+  const queuedNote =
+    session.status !== "queued"
+      ? null
+      : isCloud
+        ? "Queued — starting a cloud machine (this can take a moment)…"
+        : presence.state === "offline"
+          ? "Queued — runs when your Mac reconnects."
+          : "Queued — waiting for your Mac to pick this up.";
 
   const composer = (
     <div className="mx-auto w-full max-w-[calc(100vw-1.5rem)] px-0 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:max-w-[48rem] sm:px-4">
+      {/* ALWAYS MOUNTED. A live region inserted at the same moment its text
+          appears is frequently never announced at all (chat/approval-card makes
+          the same argument), and the approval card's own sr-only span did
+          exactly that — so the one moment Juno Code blocks and needs an answer
+          was likely to pass in silence. This region outlives every state it
+          reports on, including the queue banner, which had the same shape. */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {session.pendingApproval
+          ? `Juno Code needs your approval to: ${session.pendingApproval.summary}.${
+              session.pendingApproval.risk === "destructive"
+                ? " This is a destructive action."
+                : session.pendingApproval.risk === "outside"
+                  ? " This affects files outside the workspace."
+                  : ""
+            } Deny or Allow below.`
+          : (queuedNote ?? "")}
+      </p>
+      {fileChanges.length > 0 && <ChangedFiles files={fileChanges} />}
       {session.agents.length > 0 && <AgentCards agents={session.agents} />}
       {session.pendingApproval && (
         <ApprovalCard
@@ -504,14 +651,10 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
           onRespond={(approve) => void session.respond(session.pendingApproval!.requestId, approve)}
         />
       )}
-      {session.status === "queued" && (
-        <p role="status" className="mx-1 mb-2 flex items-center gap-2 rounded-field border border-border/70 bg-muted/45 px-3 py-2 text-xs text-muted-foreground motion-safe:animate-rise-in">
+      {queuedNote && (
+        <p className="mx-1 mb-2 flex items-center gap-2 rounded-field border border-border/70 bg-muted/45 px-3 py-2 text-xs text-muted-foreground motion-safe:animate-rise-in">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50 motion-safe:animate-pulse" aria-hidden="true" />
-          {isCloud
-            ? "Queued — starting a cloud machine (this can take a moment)…"
-            : presence.state === "offline"
-              ? "Queued — runs when your Mac reconnects."
-              : "Queued — waiting for your Mac to pick this up."}
+          {queuedNote}
         </p>
       )}
       {/* Composer ⇄ Dictation share one grid cell and cross-fade — same pattern
@@ -794,13 +937,17 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
   );
 
   return (
+    <ThoughtPanelProvider value={thoughtPanel}>
     <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
       {/* Session banner. Device: which project, on which Mac, reachable or not.
           Cloud: the repo + a calm "runs in the cloud, opens a PR" note (no
-          device-offline/queue copy), plus the PR link once the run opens one. */}
+          device-offline/queue copy), plus the PR link once the run opens one.
+          While `resolving`, it says only what is true of both. */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 bg-background/95 px-3 py-2 md:px-4">
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
-          {isCloud ? (
+          {resolving ? (
+            <Loader2 className="h-3 w-3 animate-spin text-primary/70" aria-hidden="true" />
+          ) : isCloud ? (
             <Cloud className="h-3 w-3 text-primary" aria-hidden="true" />
           ) : (
             <Folder className="h-3 w-3 text-primary" aria-hidden="true" />
@@ -809,7 +956,12 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
         <span className="min-w-0 truncate text-sm font-medium text-foreground">
           {isCloud ? cloudRepoFull ?? workspaceName : workspaceName}
         </span>
-        {isCloud
+        {/* The mono slot is a LOCAL PATH on the device side. A cloud session's
+            codeWorkspacePath is "owner/name", so printing it before the kind is
+            known dressed a repo up as a folder on your disk. */}
+        {resolving
+          ? null
+          : isCloud
           ? meta.baseRef && (
               <span className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
                 on {meta.baseRef}
@@ -833,7 +985,18 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
             {taskChip}
           </span>
         )}
-        {isCloud ? (
+        {resolving ? (
+          <span
+            role="status"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-2.5 py-1 text-xs text-muted-foreground"
+          >
+            <span
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/40 motion-safe:animate-pulse"
+              aria-hidden="true"
+            />
+            <span className="min-w-0 truncate">Getting this session ready…</span>
+          </span>
+        ) : isCloud ? (
           meta.prUrl ? (
             <a
               href={meta.prUrl}
@@ -866,48 +1029,140 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
         )}
       </div>
 
-      {hasMessages ? (
-        <div className="relative flex h-full min-h-0 flex-1 flex-col">
-          <MessageList
-            messages={session.messages}
-            busy={session.isBusy}
-            status={listStatus}
-            artifacts={[]}
-            onOpenArtifact={() => {}}
-            onFeedback={session.setFeedback}
-            // Live bubbles are client-side until the run's row comes back.
-            canFeedback={(m) => !isLiveId(m.id)}
-          />
-          <div className="w-full px-0 pb-1">{composer}</div>
-          <p className="shrink-0 select-none pb-2 text-center text-caption text-muted-foreground">
-            {isCloud
-              ? "Runs in the cloud and opens a pull request — review the changes before you merge them."
-              : "Runs with Juno Code on your Mac — review the changes before you ship them."}
-          </p>
-        </div>
-      ) : (
-        <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-3 py-6 sm:px-5 md:py-10">
-            <div className="mb-5 flex w-full flex-col items-center text-center sm:mb-6">
-              <h1 className="font-serif text-3xl font-normal tracking-tight text-foreground sm:text-display">
-                {isCloud ? cloudRepoFull ?? workspaceName : workspaceName}
-              </h1>
-              <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
-                {isCloud
-                  ? "Describe what to build or fix — the run happens in the cloud and opens a pull request you can review."
-                  : "Describe what to build or fix — Juno Code runs it on your Mac and streams the work here."}
+      {/* Transcript column ⇄ thought dock. Below lg the dock replaces the
+          transcript entirely, the precedent chat-view sets for both of its
+          docked columns: a split there leaves the transcript narrower than a
+          phone. */}
+      <div className="flex min-h-0 flex-1">
+        <div
+          className={cn(
+            "relative flex h-full min-h-0 min-w-0 flex-1 flex-col",
+            thoughtOpenId && "hidden lg:flex",
+          )}
+        >
+          {hasMessages ? (
+            <>
+              <MessageList
+                messages={session.messages}
+                busy={session.isBusy}
+                status={listStatus}
+                artifacts={[]}
+                onOpenArtifact={() => {}}
+                onFeedback={session.setFeedback}
+                // Live bubbles are client-side until the run's row comes back.
+                canFeedback={(m) => !isLiveId(m.id)}
+                // The transcript's only <h1>. Omitted, it fell back to the
+                // literal "Conversation" — on a surface where the workspace or
+                // repo IS what a reader is orienting by, and where the prop
+                // exists precisely to stop that.
+                conversationTitle={isCloud ? cloudRepoFull ?? workspaceName : workspaceName}
+                onRegenerate={retryLastPrompt}
+              />
+              <div className="w-full px-0 pb-1">{composer}</div>
+              <p className="shrink-0 select-none pb-2 text-center text-caption text-muted-foreground">
+                {footerNote}
+              </p>
+            </>
+          ) : (
+            <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
+              <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-3 py-6 sm:px-5 md:py-10">
+                <div className="mb-5 flex w-full flex-col items-center text-center sm:mb-6">
+                  {/* text-display alone: `text-3xl` is a raw Tailwind default
+                      that is not on the product type scale, and pinning it
+                      below sm defeated the token, whose clamp already does the
+                      responsive work — the breakpoint made small viewports
+                      smaller than the scale intends. */}
+                  <h1 className="font-serif text-display font-normal tracking-tight text-foreground">
+                    {isCloud ? cloudRepoFull ?? workspaceName : workspaceName}
+                  </h1>
+                  <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
+                    {resolving
+                      ? "Describe what to build or fix — Juno Code streams the work here."
+                      : isCloud
+                        ? "Describe what to build or fix — the run happens in the cloud and opens a pull request you can review."
+                        : "Describe what to build or fix — Juno Code runs it on your Mac and streams the work here."}
+                  </p>
+                </div>
+                <div className="z-10 w-full max-w-[44rem]">{composer}</div>
+              </div>
+              <p className="shrink-0 select-none pb-2 text-center text-caption text-muted-foreground">
+                {footerNote}
               </p>
             </div>
-            <div className="z-10 w-full max-w-[44rem]">{composer}</div>
-          </div>
-          <p className="shrink-0 select-none pb-2 text-center text-caption text-muted-foreground">
-            {isCloud
-              ? "Runs in the cloud and opens a pull request — review the changes before you merge them."
-              : "Runs with Juno Code on your Mac — review the changes before you ship them."}
-          </p>
+          )}
         </div>
-      )}
+
+        {/* The dock itself — a real column, not an overlay: the transcript
+            narrows beside it and stays readable and typeable. ActivityTimeline
+            portals the panel in here (see thought-panel-context). */}
+        {thoughtOpenId && (
+          <div
+            ref={setThoughtContainer}
+            className="relative z-40 h-full w-full shrink-0 border-border/70 bg-card duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 lg:w-[30rem] lg:min-w-0 lg:border-l"
+          />
+        )}
+      </div>
     </div>
+    </ThoughtPanelProvider>
+  );
+}
+
+/**
+ * WHAT THE RUN CHANGED.
+ *
+ * Both footers on this surface promise you can "review the changes", and until
+ * now the surface offered nowhere to do it: file changes arrive as real events
+ * with a path, a change kind and +added/−removed, and their only destination
+ * was a run trace with no way to open (see the dock above). A path-and-churn
+ * list is not a diff, but it is the run's actual output, and it makes the
+ * promise in the footer true.
+ *
+ * Collapsed by default: it sits directly above the composer, and a fifty-file
+ * run must not push the prompt off screen.
+ */
+function ChangedFiles({ files }: { files: { path: string; changeKind: string; churn: string | null }[] }) {
+  const [open, setOpen] = React.useState(false);
+  const listId = React.useId();
+  return (
+    <section
+      aria-label="Files this session changed"
+      // p-0.5 is what makes the row's own rounded-control (10px) concentric
+      // inside this rounded-field (12px) shell: outer = inner + padding.
+      className="mx-1 mb-2 rounded-field border border-border/70 bg-muted/40 p-0.5 motion-safe:animate-rise-in"
+    >
+      <Pressable
+        kind="row"
+        size="sm"
+        aria-expanded={open}
+        // Only while it exists — never point at an id that is not in the document.
+        aria-controls={open ? listId : undefined}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <ChevronRight
+          className={cn(
+            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
+            open && "rotate-90",
+          )}
+          aria-hidden="true"
+        />
+        <span className="font-mono text-label text-muted-foreground">
+          {files.length === 1 ? "1 file changed" : `${files.length} files changed`}
+        </span>
+      </Pressable>
+      {open && (
+        <ul id={listId} className="space-y-1 px-2.5 pb-2 pt-1">
+          {files.map((file) => (
+            <li key={file.path} className="flex items-baseline gap-2 text-[11px]">
+              <span className="shrink-0 font-mono text-muted-foreground/70">{file.changeKind}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-foreground/80" title={file.path}>
+                {file.path}
+              </span>
+              {file.churn && <span className="shrink-0 font-mono tabular-nums text-muted-foreground">{file.churn}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -1006,15 +1261,8 @@ function ApprovalCard({
       aria-label="Juno Code approval request"
       className="mx-1 mb-2 space-y-2.5 rounded-field border border-warning/40 bg-warning/5 px-3.5 py-3 text-sm motion-safe:animate-rise-in"
     >
-      <span role="status" className="sr-only">
-        {`Juno Code needs your approval to: ${summary}.${
-          risk === "destructive"
-            ? " This is a destructive action."
-            : risk === "outside"
-              ? " This affects files outside the workspace."
-              : ""
-        } Allow or Deny below.`}
-      </span>
+      {/* The announcement lives in the composer wrapper, permanently mounted —
+          a live region that appears with its text is frequently not announced. */}
       <div className="flex items-start gap-2.5">
         <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
         <div className="min-w-0 flex-1">
@@ -1023,7 +1271,10 @@ function ApprovalCard({
             <span className="font-medium">{summary}</span>
           </p>
           {detail && (
-            <pre className="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border/60 bg-background/60 px-2.5 py-2 font-mono text-[11px] leading-5 text-muted-foreground">
+            // rounded-xs, not rounded-lg: `lg` is the legacy alias for 24px, so
+            // this block's corner was twice the 12px card holding it, inside
+            // ~6px of inset. Concentric wants inner = outer − padding.
+            <pre className="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-xs border border-border/60 bg-background/60 px-2.5 py-2 font-mono text-[11px] leading-5 text-muted-foreground">
               {detail}
             </pre>
           )}
@@ -1041,20 +1292,27 @@ function ApprovalCard({
           </span>
         )}
       </div>
+      {/* REFUSE FIRST, AT EQUAL WEIGHT — the rule the shared approval card
+          states and this one inverted. Leading with a primary Allow answers for
+          a reader who is here precisely to stop and think, and colouring that
+          Allow `destructive` on the highest-risk prompt on the surface made red
+          mean "go ahead" here and "refuse" one screen over. The risk badge
+          above already carries the danger; the buttons carry the choice. Both
+          at h-11, matching chat/approval-card — `size="sm"` gave a 40px target
+          to the one control in Juno Code that must not be mis-tapped. */}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
-          size="sm"
-          variant={risk === "destructive" ? "destructive" : "default"}
+          variant="destructive-outline"
           disabled={responding}
-          onClick={() => onRespond(true)}
-          className="gap-1.5"
+          onClick={() => onRespond(false)}
+          className="h-11 px-4"
         >
+          Deny
+        </Button>
+        <Button type="button" disabled={responding} onClick={() => onRespond(true)} className="h-11 gap-1.5 px-4">
           {responding && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
           Allow
-        </Button>
-        <Button type="button" size="sm" variant="outline" disabled={responding} onClick={() => onRespond(false)}>
-          Deny
         </Button>
         <span className="text-caption text-muted-foreground">Your Mac denies automatically after 5 minutes.</span>
       </div>

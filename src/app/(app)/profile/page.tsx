@@ -6,9 +6,11 @@ import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
 import { toast } from "sonner";
-import { ArrowLeft, Camera, ChevronDown, Download, Loader2, Lock } from "lucide-react";
+import { Camera, ChevronDown, Download, Loader2, Lock, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Pressable } from "@/components/ui/pressable";
 import {
   Dialog,
   DialogContent,
@@ -19,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AppPageHeader } from "@/components/app/app-page-header";
 import { DotIdenticon } from "@/components/signature/dot-matrix";
 import { ImportHistoryCard } from "@/components/settings/import-history";
 import { ProviderLogo } from "@/components/brand/provider-logo";
@@ -101,6 +104,20 @@ function compactNumber(n: number): string {
   return `${n}`;
 }
 
+/**
+ * `YYYY-MM-DD` for the day this Date falls on WHERE THE USER IS.
+ *
+ * The grid walks local days (it starts from local midnight) but used to key them
+ * with `toISOString()`, which is UTC. East of UTC local midnight is still the
+ * previous UTC day, so every cell was looked up — and its tooltip labelled — one
+ * day early: the whole year shifted a square left and today's generations landed
+ * in a cell that no longer existed on the grid.
+ */
+function toLocalISODate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function buildWeeks(daily: Stats["daily"]) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -110,7 +127,7 @@ function buildWeeks(daily: Stats["daily"]) {
 
   const days: { date: string; tokens: number; count: number }[] = [];
   for (const d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
-    const ds = d.toISOString().slice(0, 10);
+    const ds = toLocalISODate(d);
     days.push({ date: ds, tokens: daily[ds]?.tokens ?? 0, count: daily[ds]?.count ?? 0 });
   }
   const max = Math.max(1, ...days.map((d) => d.tokens));
@@ -125,7 +142,7 @@ function TokenHeatmap({ daily }: { daily: Stats["daily"] }) {
   const weeks = React.useMemo(() => buildWeeks(daily), [daily]);
   return (
     <div className="flex gap-2">
-      <div className="flex flex-col gap-[3px] pt-[2px] font-mono text-[9px] text-muted-foreground">
+      <div className="flex flex-col gap-[3px] pt-[2px] font-mono text-caption text-muted-foreground">
         {DOW.map((d, i) => (
           <span key={i} className="flex h-[11px] items-center">{d}</span>
         ))}
@@ -191,17 +208,17 @@ function ModelRow({ info, planLevel, count }: { info: ModelInfo; planLevel: numb
       <span className="min-w-0 truncate text-sm">{info.name}</span>
       <span className="shrink-0 font-mono text-caption text-muted-foreground">{info.released ?? "—"}</span>
       {info.status === "deprecated" && (
-        <span className="shrink-0 rounded-full border border-destructive/30 bg-destructive/10 px-1.5 py-px font-mono text-[10px] text-destructive">
+        <span className="shrink-0 rounded-full border border-destructive/30 bg-destructive/10 px-1.5 py-px font-mono text-caption text-destructive">
           Retiring
         </span>
       )}
       {info.status === "legacy" && (
-        <span className="shrink-0 rounded-full border border-border/60 px-1.5 py-px font-mono text-[10px] text-muted-foreground">
+        <span className="shrink-0 rounded-full border border-border/60 px-1.5 py-px font-mono text-caption text-muted-foreground">
           Legacy
         </span>
       )}
       {locked && (
-        <span className="flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-muted/50 px-1.5 py-px font-mono text-[10px] text-muted-foreground">
+        <span className="flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-muted/50 px-1.5 py-px font-mono text-caption text-muted-foreground">
           <Lock className="h-2.5 w-2.5" /> {PLANS[lockPlan].name}
         </span>
       )}
@@ -234,24 +251,40 @@ function ProviderRow({
   onToggle: () => void;
 }) {
   if (!configured) {
+    // Blanket container opacity is not a disabled treatment: at 45% the muted
+    // "Not configured" line measured near 2:1 against the card, well under AA.
+    // The recession is carried by the logo and the muted ink instead, and the
+    // status becomes the same bordered mono pill ModelRow uses for Legacy.
     return (
-      <div className="flex items-center gap-4 rounded-lg border border-border/50 p-4 opacity-45">
-        <ProviderLogoWell provider={provider} />
+      <div className="flex items-center gap-4 rounded-card border border-border/50 p-4">
+        <span className="opacity-50">
+          <ProviderLogoWell provider={provider} />
+        </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-base font-semibold">{shortProviderLabel(provider)}</p>
-          <p className="truncate text-sm text-muted-foreground">Not configured</p>
+          <p className="truncate text-base font-semibold text-muted-foreground">
+            {shortProviderLabel(provider)}
+          </p>
         </div>
+        <span className="shrink-0 rounded-full border border-border/60 px-1.5 py-px font-mono text-caption text-muted-foreground">
+          Not configured
+        </span>
       </div>
     );
   }
   const models = MODELS_BY_PROVIDER.get(provider) ?? [];
   return (
-    <div className="surface-raised overflow-hidden rounded-lg border border-border/70">
-      <button
-        type="button"
-        onClick={onToggle}
+    <div className="surface-raised overflow-hidden rounded-card border border-border/70">
+      {/* `<Pressable kind="row">` is the primitive for a full-width thing you
+          open. This was a raw button with `hover:bg-primary/5` — a hover fill
+          that appears nowhere else in the product — no press feedback, and no
+          open-state visual beyond the chevron. */}
+      <Pressable
+        kind="row"
+        size="lg"
+        selected={open}
         aria-expanded={open}
-        className="flex w-full items-center gap-4 p-4 text-left transition-colors duration-fast ease-out-soft hover:bg-primary/5"
+        onClick={onToggle}
+        className="gap-4 rounded-none p-4"
       >
         <ProviderLogoWell provider={provider} />
         <div className="min-w-0 flex-1">
@@ -267,7 +300,7 @@ function ProviderRow({
             open && "rotate-180"
           )}
         />
-      </button>
+      </Pressable>
       <div
         aria-hidden={!open}
         className={cn(
@@ -313,7 +346,9 @@ function AccountCard({ email }: { email: string }) {
   };
 
   return (
-    <Card className="p-5 rounded-panel">
+    // id="account": Settings' Account tile and its Danger zone both link here,
+    // because this is the only copy of export and of account deletion.
+    <Card id="account" className="scroll-mt-6 rounded-surface p-5">
       <CardEyebrow className="mb-4">Account</CardEyebrow>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -323,7 +358,9 @@ function AccountCard({ email }: { email: string }) {
             Profile, settings, conversations, memories, projects, and file metadata. The Juno package also carries Library bytes and revisions when they fit the archive cap.
           </p>
         </div>
-        <div className="flex shrink-0 gap-2">
+        {/* flex-wrap: the parent stacks to a column below sm, so at 320–375px
+            three shrink-0 buttons with icons overflowed the card's width. */}
+        <div className="flex shrink-0 flex-wrap gap-2">
           <Button variant="outline" size="sm" asChild>
             <a href="/api/account/export" download>
               <Download className="h-3.5 w-3.5" /> JSON
@@ -349,7 +386,10 @@ function AccountCard({ email }: { email: string }) {
             Chats, memories, files, and your subscription — everything, immediately.
           </p>
         </div>
-        <Button variant="outline" size="sm" className="shrink-0" onClick={() => setOpen(true)}>
+        {/* destructive-outline, not outline: this is now the product's only
+            account-deletion trigger, and it was the neutral-looking one while
+            the unguarded duplicate in Settings wore the dangerous styling. */}
+        <Button variant="destructive-outline" size="sm" className="shrink-0" onClick={() => setOpen(true)}>
           Delete account…
         </Button>
       </div>
@@ -424,17 +464,22 @@ export default function ProfilePage() {
   const [openProvider, setOpenProvider] = React.useState<Provider | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
-  React.useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch("/api/profile/stats");
-        if (!r.ok) throw new Error();
-        setStats(await r.json());
-      } catch {
-        setError(true);
-      }
-    })();
+  // A callback, not an inline effect body: the fetch had no retry at all, so one
+  // transient blip left the page permanently stubbed until a manual reload.
+  const loadStats = React.useCallback(async () => {
+    setError(false);
+    try {
+      const r = await fetch("/api/profile/stats");
+      if (!r.ok) throw new Error();
+      setStats(await r.json());
+    } catch {
+      setError(true);
+    }
   }, []);
+
+  React.useEffect(() => {
+    void loadStats();
+  }, [loadStats]);
 
   const uploadAvatar = async (file: File) => {
     setUploading(true);
@@ -492,12 +537,7 @@ export default function ProfilePage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6">
-        <div className="mb-6 flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <span className="font-mono text-label text-muted-foreground">Profile</span>
-        </div>
+        <AppPageHeader eyebrow="Profile" heading={user.name ?? "You"} />
 
         {/* Identity */}
         <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
@@ -505,7 +545,11 @@ export default function ProfilePage() {
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="relative block h-20 w-20 overflow-hidden rounded-full border bg-card shadow-soft"
+              // While this was never disabled, a second file could be picked with
+              // the first POST still in flight — whichever response landed last
+              // won, so the avatar could end up as the picture you did not choose.
+              disabled={uploading}
+              className="relative block h-20 w-20 overflow-hidden rounded-full border bg-card shadow-soft disabled:cursor-default"
               aria-label="Change profile picture"
             >
               {avatar ? (
@@ -513,7 +557,15 @@ export default function ProfilePage() {
               ) : (
                 <DotIdenticon seed={user.id} className="h-full w-full p-2" />
               )}
-              <span className="absolute inset-0 flex items-center justify-center bg-foreground/40 text-background opacity-0 transition-opacity group-hover:opacity-100">
+              {/* Forced visible while uploading. The spinner lived behind
+                  group-hover, so on touch it never showed at all and on desktop
+                  moving the pointer away mid-upload hid every trace of it. */}
+              <span
+                className={cn(
+                  "absolute inset-0 flex items-center justify-center bg-foreground/40 text-background opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100",
+                  uploading && "opacity-100"
+                )}
+              >
                 {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
               </span>
             </button>
@@ -529,8 +581,9 @@ export default function ProfilePage() {
               }}
             />
           </div>
+          {/* The name is the page's h1 now, in AppPageHeader above — this used
+              to be a second, smaller heading saying the same thing. */}
           <div className="min-w-0">
-            <h1 className="font-serif text-title font-medium">{user.name ?? "You"}</h1>
             <p className="text-sm text-muted-foreground">{user.email}</p>
             <p className="mt-1 font-mono text-caption text-muted-foreground">
               {plan.name} plan
@@ -540,19 +593,34 @@ export default function ProfilePage() {
         </div>
 
         {error ? (
-          <p className="mt-10 text-center text-sm text-muted-foreground">Couldn’t load your stats.</p>
+          // A failed load rendered as one grey sentence — the same treatment as
+          // "No chats yet" further down, so failure and emptiness looked
+          // identical, and there was no way back from it short of a reload.
+          <EmptyState
+            tone="error"
+            size="panel"
+            className="mt-8"
+            icon={TriangleAlert}
+            title="Couldn't load your stats"
+            description="Your activity, model mix and lifetime ledger all come from one request, and it didn't come back."
+            action={
+              <Button variant="outline" size="sm" onClick={() => void loadStats()}>
+                Try again
+              </Button>
+            }
+          />
         ) : !stats ? (
           <div className="mt-8 space-y-4">
-            <div className="skeleton h-32 rounded-lg" />
+            <div className="skeleton h-32 rounded-surface" />
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="skeleton h-40 rounded-lg" />
-              <div className="skeleton h-40 rounded-lg" />
+              <div className="skeleton h-40 rounded-surface" />
+              <div className="skeleton h-40 rounded-surface" />
             </div>
           </div>
         ) : (
           <div className="mt-8 space-y-4">
             {/* Activity heatmap — last ~53 weeks */}
-            <Card className="rounded-panel p-5">
+            <Card className="rounded-surface p-5">
               <div className="mb-4 flex items-end justify-between gap-3">
                 <div>
                   <CardEyebrow>Activity</CardEyebrow>
@@ -570,7 +638,7 @@ export default function ProfilePage() {
                 </p>
               </div>
               <TokenHeatmap daily={stats.daily} />
-              <div className="mt-3 flex items-center justify-end gap-1.5 font-mono text-[10px] text-muted-foreground">
+              <div className="mt-3 flex items-center justify-end gap-1.5 font-mono text-caption text-muted-foreground">
                 Less
                 {LEVEL_BG.map((bg, i) => (
                   <span key={i} className={cn("h-[11px] w-[11px] rounded-micro", bg)} />
@@ -579,7 +647,7 @@ export default function ProfilePage() {
               </div>
             </Card>
 
-            <Card className="p-5 rounded-panel">
+            <Card className="rounded-surface p-5">
               <div className="mb-4 flex items-end justify-between gap-3">
                 <div>
                   <CardEyebrow>Provider availability</CardEyebrow>
@@ -612,7 +680,7 @@ export default function ProfilePage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               {/* Most-used models — year window mix */}
-              <Card className="rounded-panel p-5">
+              <Card className="rounded-surface p-5">
                 <div className="mb-3">
                   <CardEyebrow>Most-used models</CardEyebrow>
                   <p className="mt-1 text-sm text-muted-foreground">Your mix over the last year.</p>
@@ -687,7 +755,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
   const kindsWithSpend = byKind.filter((k) => k.costMicroUsd > 0 || k.count > 0);
 
   return (
-    <Card className="relative overflow-hidden rounded-panel p-5">
+    <Card className="relative overflow-hidden rounded-surface p-5">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(520px_220px_at_100%_-10%,hsl(var(--primary)/0.08),transparent_60%)]"
@@ -701,7 +769,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
               call, including thinking. Not reset by deleting chats.
             </p>
           </div>
-          <span className="shrink-0 rounded-full border border-border/60 bg-card/80 px-2.5 py-1 font-mono text-[10px] text-muted-foreground shadow-soft">
+          <span className="shrink-0 rounded-full border border-border/60 bg-card/80 px-2.5 py-1 font-mono text-caption text-muted-foreground shadow-soft">
             {planName}
           </span>
         </div>
@@ -732,7 +800,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
 
         <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border/60 bg-border/60 sm:grid-cols-4">
           <div className="bg-card/90 px-3 py-3">
-            <dt className="font-mono text-[10px] text-muted-foreground">
+            <dt className="font-mono text-caption text-muted-foreground">
               Input
             </dt>
             <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
@@ -740,7 +808,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
             </dd>
           </div>
           <div className="bg-card/90 px-3 py-3">
-            <dt className="font-mono text-[10px] text-muted-foreground">
+            <dt className="font-mono text-caption text-muted-foreground">
               Output
             </dt>
             <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
@@ -748,7 +816,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
             </dd>
           </div>
           <div className="bg-card/90 px-3 py-3">
-            <dt className="font-mono text-[10px] text-muted-foreground">
+            <dt className="font-mono text-caption text-muted-foreground">
               Replies
             </dt>
             <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
@@ -756,7 +824,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
             </dd>
           </div>
           <div className="bg-card/90 px-3 py-3">
-            <dt className="font-mono text-[10px] text-muted-foreground">
+            <dt className="font-mono text-caption text-muted-foreground">
               Models
             </dt>
             <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
@@ -788,7 +856,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
                           <span className="text-muted-foreground/70"> · {row.count.toLocaleString()}</span>
                         </span>
                       </div>
-                      <p className="mt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground/80">
+                      <p className="mt-0.5 font-mono text-caption tabular-nums text-muted-foreground/80">
                         {compactNumber(row.tokensIn)} in · {compactNumber(row.tokensOut)} out
                       </p>
                       <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
@@ -846,7 +914,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
         ) : null}
 
         {stats.memberSince ? (
-          <p className="mt-5 border-t border-border/50 pt-3 font-mono text-[10px] text-muted-foreground">
+          <p className="mt-5 border-t border-border/50 pt-3 font-mono text-caption text-muted-foreground">
             Member since{" "}
             {new Date(stats.memberSince).toLocaleDateString(undefined, {
               month: "short",

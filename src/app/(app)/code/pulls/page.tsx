@@ -1,8 +1,5 @@
-import Link from "next/link";
-import { GitPullRequest, Plug } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
-import { Button } from "@/components/ui/button";
 import { PullsList } from "@/components/code/pulls-list";
 import { AppPageHeader } from "@/components/app/app-page-header";
 
@@ -24,24 +21,10 @@ export default async function CodePullsPage() {
           lede="Review the pull requests Juno Code opens from your sessions."
         />
 
-        {github ? (
-          <PullsList account={github.accountLabel} />
-        ) : (
-          <div className="mt-10 flex flex-col items-center gap-4 text-center">
-            <GitPullRequest className="h-8 w-8 text-muted-foreground/50" aria-hidden="true" />
-            <div className="max-w-sm">
-              <p className="font-serif text-heading">Connect GitHub</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Link your GitHub account so Juno can list and track the pull requests your code sessions open.
-              </p>
-            </div>
-            <Button asChild className="gap-1.5">
-              <Link href="/connections">
-                <Plug className="h-4 w-4" /> Connect GitHub
-              </Link>
-            </Button>
-          </div>
-        )}
+        {/* The disconnected state is PullsList's own `disconnected` phase — it
+            was written out a second time here, byte-for-byte, and a sentence
+            with two homes drifts. This hands the fact down instead. */}
+        <PullsList account={github?.accountLabel ?? null} connected={!!github} />
       </div>
     </div>
   );

@@ -192,6 +192,11 @@ function TokenizationVisual({ step }: { step: StepLabStep }) {
   };
 
   return (
+    // No `outline-none` + `focus-visible:ring-1` anywhere in this file any more.
+    // Twelve controls here each opted out of the global 2px `:focus-visible`
+    // outline (globals.css) and drew a 1px ring instead — a thinner, weaker
+    // indicator than the one the rest of the product uses, forked twelve ways in
+    // one component. The global rule draws it.
     <div className="flex flex-col gap-2.5">
       <p className="font-serif text-[15px] leading-6 text-muted-foreground">&ldquo;{input}&rdquo;</p>
       <div className="flex flex-wrap items-center gap-y-1 font-mono text-[13px] leading-8" role="group" aria-label="Tokens" onKeyDown={onKeyDown}>
@@ -206,7 +211,7 @@ function TokenizationVisual({ step }: { step: StepLabStep }) {
             aria-pressed={index === selected}
             onClick={() => setSelected(index)}
             className={cn(
-              "rounded-sm px-1 py-0.5 outline-none transition-colors duration-base ease-out-soft focus-visible:ring-1 focus-visible:ring-ring",
+              "rounded-sm px-1 py-0.5 transition-colors duration-base ease-out-soft",
               index === selected
                 ? "bg-primary/[0.12] text-primary"
                 : index % 2 === 0
@@ -250,8 +255,8 @@ function EmbeddingVisual({ step, compact }: { step: StepLabStep; compact?: boole
               setDim(null);
             }}
             className={cn(
-              "group/tok relative py-1 font-mono text-[13px] outline-none transition-colors duration-base ease-out-soft",
-              "focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11",
+              "group/tok relative py-1 font-mono text-[13px] transition-colors duration-base ease-out-soft",
+              "coarse:min-h-11",
               selected === index ? "text-primary" : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -286,7 +291,7 @@ function EmbeddingVisual({ step, compact }: { step: StepLabStep; compact?: boole
                   type="button"
                   onClick={() => setDim(index)}
                   aria-label={`Dimension ${index}: ${value.toFixed(3)}`}
-                  className="absolute inset-y-0 w-8 -translate-x-1/2 outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-md"
+                  className="absolute inset-y-0 w-8 -translate-x-1/2 rounded-md"
                   style={{ left: center }}
                 >
                   <span
@@ -385,8 +390,8 @@ function AttentionVisual({ step, compact }: { step: StepLabStep; compact?: boole
               setCell(null);
             }}
             className={cn(
-              "group/q relative min-w-0 flex-1 truncate px-0.5 py-1 text-center font-mono text-[12px] outline-none",
-              "transition-colors duration-base ease-out-soft focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11",
+              "group/q relative min-w-0 flex-1 truncate px-0.5 py-1 text-center font-mono text-[12px]",
+              "transition-colors duration-base ease-out-soft coarse:min-h-11",
               index === query ? "text-primary" : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -467,7 +472,7 @@ function AttentionVisual({ step, compact }: { step: StepLabStep; compact?: boole
                       }}
                       aria-label={`${rowToken} attends to ${tokens[colIndex]}: ${Math.round(value * 100)} percent`}
                       className={cn(
-                        "h-6 rounded-sm outline-none transition-shadow duration-fast focus-visible:ring-1 focus-visible:ring-ring",
+                        "h-6 rounded-sm transition-shadow duration-fast",
                         isSelected && "ring-1 ring-primary"
                       )}
                       style={{ backgroundColor: `hsl(var(--primary) / ${Math.max(0.07, Math.min(0.8, value))})` }}
@@ -538,8 +543,8 @@ function TransformerVisual({ step }: { step: StepLabStep }) {
               aria-pressed={stage === index}
               onClick={() => setStage(index)}
               className={cn(
-                "flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 rounded-control border border-l-2 px-3.5 py-2.5 text-left outline-none",
-                "transition-colors duration-base ease-out-soft focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11",
+                "flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 rounded-control border border-l-2 px-3.5 py-2.5 text-left",
+                "transition-colors duration-base ease-out-soft coarse:min-h-11",
                 stage === index
                   ? "border-primary/30 border-l-primary bg-primary/[0.08]"
                   : "border-border/40 border-l-transparent hover:bg-accent/30"
@@ -624,8 +629,8 @@ function ProbabilityVisual({ step }: { step: StepLabStep }) {
               onClick={() => setFocused(index)}
               onFocus={() => setFocused(index)}
               className={cn(
-                "grid grid-cols-[1.5rem_minmax(0,1fr)_3.25rem] items-center gap-3 border-b border-l-2 border-border/25 py-2 text-left outline-none last:border-b-0",
-                "transition-colors duration-base ease-out-soft focus-visible:ring-1 focus-visible:ring-ring",
+                "grid grid-cols-[1.5rem_minmax(0,1fr)_3.25rem] items-center gap-3 border-b border-l-2 border-border/25 py-2 text-left last:border-b-0",
+                "transition-colors duration-base ease-out-soft",
                 sweep === index ? "bg-accent/50" : isDrawn ? "border-l-primary/70 bg-primary/[0.04]" : "border-l-transparent"
               )}
             >
@@ -672,7 +677,11 @@ function ProbabilityVisual({ step }: { step: StepLabStep }) {
         <button
           type="button"
           onClick={sample}
-          className="shrink-0 rounded-md py-1 font-mono text-[11px] font-semibold text-primary outline-none transition-colors duration-fast hover:text-primary focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
+          // `hover:text-primary` on a control that is ALREADY text-primary is not
+          // a hover state — this button did not respond to the pointer at all,
+          // while its sibling "Replay" did. The colour slot is spent, so the
+          // hover has to be a ground. duration-base matches the rest of the file.
+          className="shrink-0 rounded-md px-2 py-1 font-mono text-[11px] font-semibold text-primary transition-colors duration-base hover:bg-primary/10 coarse:min-h-11"
         >
           Sample
         </button>
@@ -736,7 +745,7 @@ function NextTokenSelectionVisual({ step }: { step: StepLabStep }) {
       <button
         type="button"
         onClick={() => setRun((value) => value + 1)}
-        className="self-start rounded-md py-1 font-mono text-[11px] font-semibold text-muted-foreground outline-none transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
+        className="self-start rounded-md px-2 py-1 font-mono text-[11px] font-semibold text-muted-foreground transition-colors duration-base hover:text-foreground coarse:min-h-11"
       >
         Replay
       </button>
@@ -878,8 +887,8 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
                     aria-current={isActive ? "step" : undefined}
                     aria-label={`Step ${index + 1}: ${step.title}`}
                     className={cn(
-                      "group/rail relative px-1.5 py-1 font-mono text-[12px] tabular-nums outline-none",
-                      "transition-colors duration-base ease-out-soft focus-visible:ring-1 focus-visible:ring-ring",
+                      "group/rail relative px-1.5 py-1 font-mono text-[12px] tabular-nums",
+                      "transition-colors duration-base ease-out-soft",
                       "after:absolute after:-inset-1 after:content-[''] coarse:after:-inset-2",
                       completed
                         ? "text-primary"
@@ -986,8 +995,8 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
             aria-disabled={active === 0}
             onClick={() => go(active - 1)}
             className={cn(
-              "rounded-md py-1 pr-2 font-mono text-[11px] font-semibold text-muted-foreground outline-none",
-              "transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11",
+              "rounded-md px-2 py-1 font-mono text-[11px] font-semibold text-muted-foreground",
+              "transition-colors duration-base hover:text-foreground coarse:min-h-11",
               active === 0 && "pointer-events-none opacity-40"
             )}
           >
@@ -1002,9 +1011,11 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
             aria-disabled={onLast}
             onClick={() => go(active + 1)}
             className={cn(
-              "rounded-md py-1 pl-2 font-mono text-[11px] font-semibold outline-none",
-              "transition-colors duration-fast focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11",
-              onLast ? "pointer-events-none text-muted-foreground opacity-40" : "text-primary hover:text-primary",
+              "rounded-md px-2 py-1 font-mono text-[11px] font-semibold",
+              "transition-colors duration-base coarse:min-h-11",
+              // As with "Sample": hover:text-primary over text-primary is a
+              // no-op, so Next sat inert while "‹ Previous" beside it lit up.
+              onLast ? "pointer-events-none text-muted-foreground opacity-40" : "text-primary hover:bg-primary/10",
             )}
           >
             Next ›

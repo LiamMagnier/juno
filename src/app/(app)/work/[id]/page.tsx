@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { ArrowLeft, Pause, Play, RefreshCw, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -131,7 +132,6 @@ import {
  */
 export default function WorkThreadPage() {
   const { id } = useParams<{ id: string }>();
-  const router = useRouter();
 
   const [session, setSession] = React.useState<ClientWorkSession | null>(null);
   const [run, setRun] = React.useState<ClientWorkRun | null>(null);
@@ -517,7 +517,7 @@ export default function WorkThreadPage() {
 
   if (loadFailure !== null) {
     return (
-      <ThreadFrame onBack={() => router.push("/work")}>
+      <ThreadFrame>
         <WorkStateNote
           tone="error"
           action={
@@ -545,7 +545,7 @@ export default function WorkThreadPage() {
 
   if (session === null) {
     return (
-      <ThreadFrame onBack={() => router.push("/work")}>
+      <ThreadFrame>
         <div className="space-y-3">
           {[...Array(4)].map((_, index) => (
             <Skeleton
@@ -778,13 +778,15 @@ export default function WorkThreadPage() {
       <header className="shrink-0 border-b border-border/60 px-4 py-4 sm:px-6">
         <div className="mx-auto w-full max-w-[80rem]">
           <div className="mb-1 flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => router.push("/work")}
-              aria-label="Back to Work"
-            >
-              <ArrowLeft className="h-4 w-4" />
+            {/* A real link, not a router.push behind a button: this is a URL
+                somebody cmd-clicks, middle-clicks and hovers to preview, and a
+                button also reports itself to assistive tech as the wrong thing.
+                `WorkPageFrame` and `AppPageHeader` both already do it this way,
+                so back behaved differently here than on every sibling page. */}
+            <Button asChild variant="ghost" size="icon-sm" aria-label="Back to Work">
+              <Link href="/work">
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              </Link>
             </Button>
             <span className="font-mono text-label text-muted-foreground">Work</span>
           </div>
@@ -1077,14 +1079,22 @@ function uncapitalize(text: string): string {
   return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
-/** The header + centred column used by the pre-content states. */
-function ThreadFrame({ children, onBack }: { children: React.ReactNode; onBack: () => void }) {
+/**
+ * The header + centred column used by the pre-content states.
+ *
+ * `mb-1` on the nav row, not `mb-4`: this row is the same row as the loaded
+ * header's above and as `AppPageHeader`'s, and it was sitting at a third gap —
+ * so the eyebrow visibly jumped down the page the moment the task resolved.
+ */
+function ThreadFrame({ children }: { children: React.ReactNode }) {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-2xl px-4 py-8">
-        <div className="mb-4 flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" onClick={onBack} aria-label="Back to Work">
-            <ArrowLeft className="h-4 w-4" />
+        <div className="mb-1 flex items-center gap-2">
+          <Button asChild variant="ghost" size="icon-sm" aria-label="Back to Work">
+            <Link href="/work">
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            </Link>
           </Button>
           <span className="font-mono text-label text-muted-foreground">Work</span>
         </div>

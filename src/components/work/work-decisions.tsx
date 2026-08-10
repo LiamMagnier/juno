@@ -4,6 +4,7 @@ import * as React from "react";
 import { Clock, Send, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Pressable } from "@/components/ui/pressable";
 import {
   WORK_APPROVAL_DECISIONS,
   WORK_RISK_LEVELS,
@@ -112,17 +113,20 @@ export function WorkQuestionCard({
       )}
       {question.options.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {/* Picks from a set, not discrete actions — so `Pressable kind="chip"`
+              rather than an outline Button whose `h-7` override was fighting
+              `size="sm"`'s h-8 and landing these 4px under every other pill on
+              the surface. */}
           {question.options.map((option) => (
-            <Button
+            <Pressable
               key={option}
-              variant="outline"
-              size="sm"
+              kind="chip"
+              size="lg"
               disabled={busy}
               onClick={() => answer(option)}
-              className="h-7 px-2.5 text-[12px]"
             >
               {option}
-            </Button>
+            </Pressable>
           ))}
         </div>
       )}
@@ -400,7 +404,9 @@ function ApprovalCard({
       {detailRows.length > 0 && (
         <dl
           className={cn(
-            "mt-2.5 space-y-1 rounded-lg px-2.5 py-2",
+            // `rounded-field` — the small-container/well rung. `rounded-lg` is
+            // 24px in this config and was rounding a two-row well like a card.
+            "mt-2.5 space-y-1 rounded-field px-2.5 py-2",
             answerable ? "bg-background/60" : "bg-muted/40"
           )}
         >
@@ -453,14 +459,22 @@ function ApprovalCard({
               It is also the one control here that outlives this decision, so it
               sits apart from the two that do not. */}
           {approval.risk !== "irreversible" && approval.risk !== "sensitive" && (
-            <button
-              type="button"
+            // A real `<Button variant="link">` rather than a bare underlined
+            // span. The subordination the note above argues for is kept — link
+            // is the quietest variant — but this is the only control on the
+            // card that grants a STANDING permission, and it was the one drawn
+            // with no press feedback and no shared disabled behaviour.
+            <Button
+              variant="link"
+              size="sm"
               disabled={busy}
               onClick={() => onDecide(approval, "allowed_always")}
-              className="mt-2 text-[12px] leading-relaxed text-muted-foreground underline underline-offset-2 transition-colors duration-fast hover:text-foreground disabled:opacity-50"
+              // Underlined at rest, not only on hover: this is the one control
+              // here that has to look pressable before the pointer reaches it.
+              className="mt-2 h-auto p-0 text-[12px] font-normal text-muted-foreground underline hover:text-foreground"
             >
               Allow this and stop asking
-            </button>
+            </Button>
           )}
           {approval.expiresAt !== null && (
             <p className="mt-2 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">

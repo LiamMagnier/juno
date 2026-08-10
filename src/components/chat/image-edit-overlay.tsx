@@ -306,7 +306,13 @@ export function ImageEditOverlay({
                 aria-keyshortcuts="Enter Space Escape ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
                 tabIndex={support === "none" || imgFailed || !imgReady ? -1 : 0}
                 onKeyDown={handleCanvasKeyDown}
-                className="relative shrink-0 select-none overflow-hidden rounded-menu bg-background shadow-[0_18px_50px_hsl(var(--foreground)/0.12)] ring-1 ring-inset ring-border/70 outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-4 focus-visible:ring-offset-muted/20"
+                // No focus ring of its own. This is a keyboard-driven canvas and
+                // it drew focus as `ring-foreground/15` — ~1.1:1 against the
+                // sheet, i.e. invisible — behind an `outline-none` that killed
+                // the global 2px `:focus-visible` outline. Five controls in this
+                // overlay had the same fork; all of them now defer to the global
+                // rule. (The rest ring at 1px is the frame, not focus.)
+                className="relative shrink-0 select-none overflow-hidden rounded-menu bg-background shadow-[0_18px_50px_hsl(var(--foreground)/0.12)] ring-1 ring-inset ring-border/70"
                 style={frameSize ? { width: frameSize.width, height: frameSize.height } : { width: "min(16rem, 100%)", height: "min(11rem, 100%)" }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -417,7 +423,7 @@ export function ImageEditOverlay({
                     setRegion(null);
                     setSelectionAnnouncement("Selection cleared. Changes apply to the whole image.");
                   }}
-                  className="shrink-0 rounded-md px-2 py-1 font-medium text-foreground outline-none transition-colors duration-fast hover:bg-background focus-visible:ring-2 focus-visible:ring-foreground/15 motion-reduce:transition-none"
+                  className="shrink-0 rounded-md px-2 py-1 font-medium text-foreground transition-colors duration-fast hover:bg-background motion-reduce:transition-none"
                 >
                   Clear selection
                 </button>
@@ -447,7 +453,7 @@ export function ImageEditOverlay({
                       setSelectionAnnouncement("Selection cleared. Changes apply to the whole image.");
                     }}
                     className={cn(
-                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12px] font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-foreground/15 motion-reduce:transition-none motion-reduce:active:scale-100",
+                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12px] font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
                       region == null ? "bg-background text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -459,7 +465,7 @@ export function ImageEditOverlay({
                     aria-pressed={region != null}
                     onClick={() => frameRef.current?.focus({ preventScroll: true })}
                     className={cn(
-                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12px] font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-foreground/15 motion-reduce:transition-none motion-reduce:active:scale-100",
+                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12px] font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
                       region != null ? "bg-background text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -520,7 +526,7 @@ export function ImageEditOverlay({
                 <DialogClose asChild>
                   <button
                     type="button"
-                    className="h-10 rounded-full px-4 text-[13px] font-medium text-muted-foreground outline-none transition-[color,background-color,transform] duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-reduce:transition-none motion-reduce:active:scale-100"
+                    className="h-10 rounded-full px-4 text-[13px] font-medium text-muted-foreground transition-[color,background-color,transform] duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100"
                   >
                     Cancel
                   </button>
@@ -528,7 +534,7 @@ export function ImageEditOverlay({
                 <button
                   type="submit"
                   disabled={!canSubmit}
-                  className="group/apply inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-full bg-foreground px-5 text-[13px] font-semibold text-background outline-none transition-[opacity,transform] duration-fast ease-out-soft hover:opacity-90 active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-35 motion-reduce:transition-none motion-reduce:active:scale-100"
+                  className="group/apply inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-full bg-foreground px-5 text-[13px] font-semibold text-background transition-[opacity,transform] duration-fast ease-out-soft hover:opacity-90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-35 motion-reduce:transition-none motion-reduce:active:scale-100"
                 >
                   <Wand2 className="size-3.5 transition-transform duration-base ease-out-soft group-hover/apply:-translate-y-0.5 group-hover/apply:rotate-[-8deg] motion-reduce:transition-none motion-reduce:group-hover/apply:translate-y-0 motion-reduce:group-hover/apply:rotate-0" aria-hidden="true" />
                   <span>Generate edit</span>

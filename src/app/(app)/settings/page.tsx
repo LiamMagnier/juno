@@ -4,16 +4,14 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { signOutToSignIn } from "@/lib/sign-out";
 import { toast } from "sonner";
-import { ArrowLeft, NotebookPen, Check, Download, Loader2, Monitor, Moon, Play, Square, Sun, Trash2, Plus, CalendarClock } from "lucide-react";
+import { NotebookPen, Check, Download, Loader2, Monitor, Moon, Play, Square, Sun, Trash2, Plus, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardEyebrow } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -29,8 +27,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { AppPageHeader } from "@/components/app/app-page-header";
 import { useApp } from "@/components/app/app-provider";
 import { PermissionsSection } from "@/components/settings/permissions-section";
+import { Tile } from "@/components/settings/tile";
+import { useRadioGroup } from "@/components/settings/use-radio-group";
 import { resolveModel } from "@/lib/models";
 import { PROVIDERS, type Provider } from "@/lib/providers";
 import { PLANS, canUseModel } from "@/lib/plans";
@@ -45,47 +46,116 @@ import { staggerDelay } from "@/lib/motion";
 
 const LANGUAGES = ["auto", "English", "Spanish", "French", "German", "Portuguese", "Italian", "Japanese", "Korean", "Chinese", "Hindi", "Arabic"];
 
+/** The custom-colour swatch is the last option of the accent radiogroup, not a control beside it. */
+const CUSTOM_ACCENT = "__custom__";
+const ACCENT_OPTIONS: string[] = [...ACCENTS.map((a) => a.id), CUSTOM_ACCENT];
+
 // Short on purpose: a preview is billed per character and the user may audition
 // a dozen voices in a row. Long enough to hear timbre, not a paragraph.
 const VOICE_PREVIEW_TEXT = "Hi, I'm Juno. This is how I sound when I read an answer aloud.";
 
-function Tile({
-  eyebrow,
-  i,
-  span,
-  className,
-  children,
-}: {
-  eyebrow: string;
-  i: number;
-  span?: boolean;
-  className?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    // One container system for every section: same radius, same border (the
-    // Card default border-border/70), same padding, same eyebrow margin.
-    // flex-col + h-full so side-by-side tiles stretch to equal height and
-    // internals can pin footers with mt-auto.
-    <Card
-      style={staggerDelay(i, "loose")}
-      className={cn("flex h-full flex-col rounded-surface p-5 motion-safe:animate-rise-in [animation-fill-mode:backwards]", span && "sm:col-span-2", className)}
-    >
-      <CardEyebrow className="mb-3">{eyebrow}</CardEyebrow>
-      {children}
-    </Card>
-  );
+/**
+ * Ink that stays legible on an arbitrary swatch.
+ *
+ * The confirming glyph was `text-white` on every swatch. That is not a colour
+ * decision, it is an assumption that every accent is dark — and it is wrong for
+ * the amber preset (white measures 2.3:1 on it) and wrong for any pale colour a
+ * user picks out of the custom wheel, where the only signal that their choice
+ * registered disappears into the swatch.
+ *
+ * A design token cannot express this: the swatch is a runtime colour, not a
+ * themed surface, so the ink has to be computed from it and set inline
+ * alongside it. White is kept unless white actually fails AA, so the presets
+ * that were already fine are untouched.
+ */
+function swatchInk(color: string): string {
+  const y = relativeLuminance(color);
+  return y != null && 1.05 / (y + 0.05) < 4.5 ? "hsl(0 0% 6%)" : "hsl(0 0% 100%)";
 }
 
-function CustomPickerButton({
-  selected,
-  customColor,
-  onChange,
-}: {
-  selected: boolean;
-  customColor: string;
-  onChange: (color: string) => void;
-}) {
+/** WCAG relative luminance of an `hsl(h s% l%)` or `#rgb`/`#rrggbb` colour. */
+function relativeLuminance(color: string): number | null {
+  const rgb = parseColor(color);
+  if (!rgb) return null;
+  const lin = rgb.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+}
+
+/** The two notations the accent list actually uses: presets are hsl(), custom is hex. */
+function parseColor(color: string): [number, number, number] | null {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
+  if (hex) {
+    const v = hex[1].length === 3 ? hex[1].replace(/./g, (c) => c + c) : hex[1];
+    return [0, 2, 4].map((i) => parseInt(v.slice(i, i + 2), 16) / 255) as [number, number, number];
+  }
+  const hsl = /^hsla?\(\s*([\d.]+)\s*[, ]\s*([\d.]+)%\s*[, ]\s*([\d.]+)%/i.exec(color.trim());
+  if (!hsl) return null;
+  const [h, s, l] = [Number(hsl[1]) / 360, Number(hsl[2]) / 100, Number(hsl[3]) / 100];
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
+  const m = l - c / 2;
+  const seg = Math.floor(h * 6) % 6;
+  const table: [number, number, number][] = [
+    [c, x, 0],
+    [x, c, 0],
+    [0, c, x],
+    [0, x, c],
+    [x, 0, c],
+    [c, 0, x],
+  ];
+  return table[seg].map((v) => v + m) as [number, number, number];
+}
+
+/**
+ * One accent swatch — the picker and the custom-colour button are the same
+ * control and were two hand-rolled ones, sitting in the same Appearance tile as
+ * a theme picker built on `<Pressable>`. Two pickers, one tile, two affordance
+ * vocabularies. `kind="icon"` is the primitive for a bare glyph you press, and
+ * it is already circular; `hover:bg-transparent` neutralises its accent fill,
+ * which would otherwise paint over the inline swatch colour on hover.
+ */
+const AccentSwatch = React.forwardRef<
+  HTMLButtonElement,
+  {
+    selected: boolean;
+    /** The fill. `background` rather than `backgroundColor` so a gradient works. */
+    background: string;
+    /** Colour the glyph is measured against — the gradient has no single one. */
+    inkAgainst?: string;
+    label: string;
+    onClick: () => void;
+    children?: React.ReactNode;
+  } & Pick<React.ComponentPropsWithoutRef<"button">, "tabIndex" | "onKeyDown">
+>(function AccentSwatch({ selected, background, inkAgainst, label, onClick, children, ...rest }, ref) {
+  return (
+    <Pressable
+      ref={ref}
+      kind="icon"
+      size="lg"
+      role="radio"
+      aria-checked={selected}
+      aria-label={label}
+      onClick={onClick}
+      className={cn(
+        "overflow-hidden ring-offset-2 ring-offset-card hover:bg-transparent motion-safe:hover:scale-110",
+        selected && "ring-2 ring-foreground"
+      )}
+      style={{ background, color: swatchInk(inkAgainst ?? background) }}
+      {...rest}
+    >
+      {children}
+    </Pressable>
+  );
+});
+
+const CustomPickerButton = React.forwardRef<
+  HTMLButtonElement,
+  {
+    selected: boolean;
+    customColor: string;
+    onChange: (color: string) => void;
+  } & Pick<React.ComponentPropsWithoutRef<"button">, "tabIndex" | "onKeyDown">
+>(function CustomPickerButton({ selected, customColor, onChange, ...rest }, ref) {
   const pickerRef = React.useRef<HTMLInputElement>(null);
   return (
     <div className="relative">
@@ -100,31 +170,28 @@ function CustomPickerButton({
         tabIndex={-1}
         aria-hidden="true"
       />
-      <button
-        type="button"
-        role="radio"
-        aria-checked={selected}
+      <AccentSwatch
+        ref={ref}
+        selected={selected}
+        background={
+          selected ? customColor : "linear-gradient(135deg, #ff007f, #7f00ff, #00ffff, #00ff7f, #ffea00)"
+        }
+        // Unselected the swatch is a full-spectrum gradient, so no single ink
+        // clears it — the drop shadow below is what keeps the glyph readable.
+        inkAgainst={selected ? customColor : undefined}
+        label="Custom accent color"
         onClick={() => pickerRef.current?.click()}
-        aria-label="Custom accent color"
-        className={cn(
-          "flex h-9 w-9 items-center justify-center rounded-full ring-offset-2 ring-offset-card transition-transform duration-fast hover:scale-110 coarse:h-11 coarse:w-11 relative overflow-hidden",
-          selected && "ring-2 ring-foreground"
-        )}
-        style={{
-          background: selected
-            ? customColor
-            : "linear-gradient(135deg, #ff007f, #7f00ff, #00ffff, #00ff7f, #ffea00)",
-        }}
+        {...rest}
       >
         {selected ? (
-          <Check className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]" />
+          <Check className="h-4 w-4" />
         ) : (
-          <Plus className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]" />
+          <Plus className="h-4 w-4 drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]" />
         )}
-      </button>
+      </AccentSwatch>
     </div>
   );
-}
+});
 
 /** "4 hr 47 min" / "12 min" / "2 days" — time until a rolling window frees up. */
 function formatCountdown(ms: number): string {
@@ -278,10 +345,12 @@ function SpendCeiling({
             placeholder="Use the default"
             aria-invalid={!valid}
             aria-describedby="spend-cap-help"
-            className="h-11"
           />
         </div>
-        <Button type="submit" disabled={!valid || !dirty || saving} className="h-11 px-4">
+        {/* No height override on either control: forcing h-11 here made this the
+            one 44px field on a page whose four other fields are the primitives'
+            36px, and paired it with a button that was lg-tall and default-wide. */}
+        <Button type="submit" disabled={!valid || !dirty || saving}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
         </Button>
       </div>
@@ -299,9 +368,7 @@ export default function SettingsPage() {
   const { user, settings, setSettings, quota, spend, features, models } = useApp();
   const { setTheme } = useTheme();
   const [instructions, setInstructions] = React.useState(settings.customInstructions);
-  const [deleteOpen, setDeleteOpen] = React.useState(false);
   const [deleteChatsOpen, setDeleteChatsOpen] = React.useState(false);
-  const [deleting, setDeleting] = React.useState(false);
   const [deletingChats, setDeletingChats] = React.useState(false);
   const [portalLoading, setPortalLoading] = React.useState(false);
 
@@ -367,26 +434,41 @@ export default function SettingsPage() {
 
   const save = React.useCallback(
     async (patch: Partial<ClientSettings>) => {
+      // Roll the optimistic write back when the server refuses it. Without this
+      // every control on the page — the switches, the selects, the radio tiles —
+      // kept showing the value the server rejected, so a toast said the save
+      // failed while the UI went on claiming it had succeeded. PermissionsSection
+      // has always done this; the rest of the page had not.
+      const previous = Object.fromEntries(
+        (Object.keys(patch) as (keyof ClientSettings)[]).map((key) => [key, settings[key]])
+      ) as Partial<ClientSettings>;
       setSettings(patch);
       const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),
       });
-      if (!res.ok) toast.error("Could not save settings.");
+      if (!res.ok) {
+        setSettings(previous);
+        toast.error("Could not save settings.");
+      }
       return res.ok;
     },
-    [setSettings]
+    [setSettings, settings]
   );
 
-  const setAccent = (accent: string) => {
+  // Both of these write somewhere `settings` does not reach — the <html> dataset
+  // and next-themes — so the rollback above cannot undo them on its own.
+  const setAccent = async (accent: string) => {
+    const previous = settings.accent;
     document.documentElement.dataset.accent = accent;
-    save({ accent });
+    if (!(await save({ accent }))) document.documentElement.dataset.accent = previous;
   };
 
-  const setThemePref = (theme: ClientSettings["theme"]) => {
+  const setThemePref = async (theme: ClientSettings["theme"]) => {
+    const previous = settings.theme;
     setTheme(theme);
-    save({ theme });
+    if (!(await save({ theme }))) setTheme(previous);
   };
 
   // A full reload, not router.refresh(): the locale decides `<html lang>`/`dir`
@@ -398,22 +480,6 @@ export default function SettingsPage() {
 
   const saveInstructions = () => {
     if (instructions !== settings.customInstructions) save({ customInstructions: instructions });
-  };
-
-  const exportData = () => {
-    window.location.href = "/api/account/export";
-  };
-
-  const deleteAccount = async () => {
-    setDeleting(true);
-    const res = await fetch("/api/account", { method: "DELETE" });
-    if (res.ok) {
-      toast.success("Account deleted.");
-      void signOutToSignIn();
-    } else {
-      setDeleting(false);
-      toast.error("Could not delete account.");
-    }
   };
 
   const deleteAllChats = async () => {
@@ -447,10 +513,43 @@ export default function SettingsPage() {
 
   // Falls back rather than leaving the group unselected if the stored preset was retired.
   const activePersonality = isPersonalityId(settings.personality) ? settings.personality : DEFAULT_PERSONALITY;
+  const activeVoice = settings.voiceId ?? DEFAULT_VOICE;
+  const accentIsPreset = ACCENTS.some((a) => a.id === settings.accent);
+  const customAccent = !accentIsPreset && settings.accent.startsWith("#");
+
+  // Every `role="radiogroup"` on this page, wired to the keyboard behaviour the
+  // role advertises. See use-radio-group.ts for what four of them were missing.
+  const themeOption = useRadioGroup(
+    themeOptions,
+    themeOptions.findIndex((t) => t.value === settings.theme),
+    (t) => void setThemePref(t.value)
+  );
+  const accentOption = useRadioGroup(
+    ACCENT_OPTIONS,
+    customAccent ? ACCENTS.length : ACCENTS.findIndex((a) => a.id === settings.accent),
+    // Arrowing onto the custom swatch cannot commit a colour that does not exist
+    // yet: it takes focus, and the click is what opens the wheel.
+    (id) => {
+      if (id !== CUSTOM_ACCENT) void setAccent(id);
+    }
+  );
+  const styleOption = useRadioGroup(
+    PERSONALITIES,
+    PERSONALITIES.findIndex((p) => p.id === activePersonality),
+    (p) => void save({ personality: p.id })
+  );
+  const voiceOption = useRadioGroup(
+    VOICES,
+    VOICES.findIndex((v) => v.id === activeVoice),
+    (v) => void save({ voiceId: v.id })
+  );
 
   const plan = PLANS[quota.plan];
   const windows = spend.windows;
   const unlimited = spend.budgetMicroUsd == null;
+  // Free is browse-only, and an account with its ceiling switched off is a
+  // warning state, not a healthy one. Neither earns a green "live" pip.
+  const generating = quota.plan !== "FREE" && !spend.capDisabled;
 
   // Live clock so the rolling-window countdowns tick without a reload. Kept null
   // until mount so SSR and the first client render agree (no now/timezone drift).
@@ -516,15 +615,7 @@ export default function SettingsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6">
-        <div className="mb-6 flex items-center gap-2">
-          <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <h1 className="font-serif text-title font-medium">Settings</h1>
-            <p className="text-caption text-muted-foreground">{user.email}</p>
-          </div>
-        </div>
+        <AppPageHeader eyebrow="Settings" heading="Settings" lede={user.email} />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {/* Usage dashboard */}
@@ -537,10 +628,19 @@ export default function SettingsPage() {
                     <span className="font-serif text-heading font-semibold tracking-tight">
                       {plan.name} Plan
                     </span>
-                    <span className="flex h-2 w-2 relative">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
-                    </span>
+                    {/* A green liveness pip only where the account can actually
+                        generate. It used to render on every plan — including
+                        FREE, 57 lines above a tile that says Free cannot use
+                        models at all — and on an account whose ceiling has been
+                        switched off, where the tile beside it is a warning.
+                        motion-safe: the reduced-motion block in globals.css
+                        enumerates the loops it stops and never included this. */}
+                    {generating && (
+                      <span className="relative flex h-2 w-2" aria-hidden>
+                        <span className="absolute inline-flex h-full w-full rounded-full bg-success opacity-75 motion-safe:animate-ping" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
+                      </span>
+                    )}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
                     {plan.tagline}
@@ -575,11 +675,14 @@ export default function SettingsPage() {
                 {unlimited ? (
                   <div>
                     <div className="flex items-center gap-[3.5px] py-1.5" aria-hidden>
+                      {/* motion-safe + the shared stagger rung: this loop ran
+                          forever under prefers-reduced-motion, and its offset was
+                          a hand-written 65ms step with a literal 1.6s duration. */}
                       {Array.from({ length: 32 }).map((_, i) => (
                         <span
                           key={i}
-                          className="h-[5px] w-[5px] rounded-full bg-primary/75 animate-pulse"
-                          style={{ animationDelay: `${i * 65}ms`, animationDuration: "1.6s" }}
+                          className="h-[5px] w-[5px] rounded-full bg-primary/75 motion-safe:animate-pulse"
+                          style={staggerDelay(i, "tight")}
                         />
                       ))}
                     </div>
@@ -619,7 +722,7 @@ export default function SettingsPage() {
                     )}
                     <UsageMeter label="Current session" subtitle={sessionSubtitle} pct={windows.session.pct} />
                     <div className="border-t border-border/40" />
-                    <span className="block font-mono text-[10px] text-muted-foreground/80">
+                    <span className="block font-mono text-caption text-muted-foreground/80">
                       Weekly limits
                     </span>
                     <UsageMeter label="All models" subtitle={weeklySubtitle} pct={windows.weekly.pct} />
@@ -650,7 +753,7 @@ export default function SettingsPage() {
               <div>
                 <Label className="mb-2 block text-xs text-muted-foreground">Theme</Label>
                 <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Theme">
-                  {themeOptions.map((t) => {
+                  {themeOptions.map((t, i) => {
                     const selected = settings.theme === t.value;
                     return (
                       <Pressable
@@ -659,8 +762,9 @@ export default function SettingsPage() {
                         role="radio"
                         selected={selected}
                         aria-checked={selected}
-                        onClick={() => setThemePref(t.value)}
+                        onClick={() => void setThemePref(t.value)}
                         className="items-center gap-1.5 shadow-pop hover:shadow-float motion-safe:hover:-translate-y-0.5"
+                        {...themeOption(i)}
                       >
                         <t.icon className="h-4 w-4" />
                         {t.label}
@@ -672,38 +776,27 @@ export default function SettingsPage() {
               <div>
                 <Label className="mb-2 block text-xs text-muted-foreground">Accent color</Label>
                 <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Accent color">
-                  {ACCENTS.map((a) => {
+                  {ACCENTS.map((a, i) => {
                     const selected = settings.accent === a.id;
                     return (
-                      <button
+                      <AccentSwatch
                         key={a.id}
-                        role="radio"
-                        aria-checked={selected}
-                        onClick={() => setAccent(a.id)}
-                        aria-label={a.id}
-                        className={cn(
-                          "flex h-9 w-9 items-center justify-center rounded-full ring-offset-2 ring-offset-card transition-transform duration-fast hover:scale-110 coarse:h-11 coarse:w-11",
-                          selected && "ring-2 ring-foreground"
-                        )}
-                        style={{ backgroundColor: a.color }}
+                        selected={selected}
+                        background={a.color}
+                        label={a.id}
+                        onClick={() => void setAccent(a.id)}
+                        {...accentOption(i)}
                       >
-                        {selected && <Check className="h-4 w-4 text-white" />}
-                      </button>
+                        {selected && <Check className="h-4 w-4" />}
+                      </AccentSwatch>
                     );
                   })}
-                  {/* Custom color picker */}
-                  {(() => {
-                    const isPreset = ACCENTS.some((a) => a.id === settings.accent);
-                    const selected = !isPreset && settings.accent.startsWith("#");
-                    const customColor = selected ? settings.accent : "#ea580c";
-                    return (
-                      <CustomPickerButton
-                        selected={selected}
-                        customColor={customColor}
-                        onChange={setAccent}
-                      />
-                    );
-                  })()}
+                  <CustomPickerButton
+                    selected={customAccent}
+                    customColor={customAccent ? settings.accent : "#ea580c"}
+                    onChange={(color) => void setAccent(color)}
+                    {...accentOption(ACCENTS.length)}
+                  />
                 </div>
               </div>
             </div>
@@ -791,7 +884,7 @@ export default function SettingsPage() {
               How Juno writes. Your custom instructions below still take priority.
             </p>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3" role="radiogroup" aria-label="Response style">
-              {PERSONALITIES.map((p) => {
+              {PERSONALITIES.map((p, i) => {
                 const selected = activePersonality === p.id;
                 return (
                   <Pressable
@@ -800,8 +893,9 @@ export default function SettingsPage() {
                     role="radio"
                     selected={selected}
                     aria-checked={selected}
-                    onClick={() => save({ personality: p.id })}
+                    onClick={() => void save({ personality: p.id })}
                     className="shadow-pop hover:shadow-float motion-safe:hover:-translate-y-0.5"
+                    {...styleOption(i)}
                   >
                     <span className="flex w-full items-center justify-between gap-2 text-sm font-medium">
                       {p.label}
@@ -833,45 +927,51 @@ export default function SettingsPage() {
                 role="radiogroup"
                 aria-label="Read-aloud voice"
               >
-                {VOICES.map((v) => {
-                  const selected = (settings.voiceId ?? DEFAULT_VOICE) === v.id;
+                {VOICES.map((v, i) => {
+                  const selected = activeVoice === v.id;
                   const active = preview?.id === v.id;
                   const loading = active && preview.loading;
                   return (
-                    // relative + hover:z-10 so the lifted tile's shadow lands on top
-                    // of its neighbours instead of being painted over by them.
+                    // The tile is the same `<Pressable kind="tile">` the Response
+                    // style grid 30 lines up uses. It used to be a hand-copied
+                    // radio card that had drifted on every axis — 12px radius vs
+                    // 16, a different border, a different hover, a different
+                    // selected treatment — with a full-bleed invisible overlay
+                    // button whose focus ring was drawn on a different element
+                    // than the card the user sees.
+                    // The lift lives on the wrapper, not the tile: the play button
+                    // is a sibling, so lifting only the tile would leave the two
+                    // halves of one card moving apart. hover:z-10 so the lifted
+                    // shadow lands on its neighbours rather than under them.
                     <div
                       key={v.id}
-                      className={cn(
-                        "relative flex items-center gap-2 rounded-field border p-3 shadow-pop transition-[transform,box-shadow,background-color,border-color] duration-fast ease-out-soft hover:z-10 hover:bg-accent hover:shadow-float motion-safe:hover:-translate-y-0.5",
-                        selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border/70"
-                      )}
+                      className="group relative transition-transform duration-fast ease-out-soft hover:z-10 motion-safe:hover:-translate-y-0.5"
                     >
-                      {/* Overlay button = the whole tile selects, while the play
-                          button below stays a real sibling (nesting it inside would
-                          be invalid HTML and unreachable by keyboard). */}
-                      <button
+                      <Pressable
+                        kind="tile"
                         role="radio"
+                        selected={selected}
                         aria-checked={selected}
                         aria-label={`Read aloud in the ${v.label} voice`}
-                        onClick={() => save({ voiceId: v.id })}
-                        className="absolute inset-0 rounded-field focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-                      />
-                      <div className="pointer-events-none min-w-0 flex-1">
+                        onClick={() => void save({ voiceId: v.id })}
+                        className="w-full pr-12 shadow-pop group-hover:shadow-float"
+                        {...voiceOption(i)}
+                      >
                         <span className="flex items-center gap-1.5 text-sm font-medium">
                           {v.label}
                           {selected && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
                         </span>
-                        <span className="block text-xs leading-relaxed text-muted-foreground">{v.description}</span>
-                      </div>
-                      {/* secondary, not ghost: a ghost button's hover:bg-accent is the
-                          same wash the tile itself gets on hover, which would leave
-                          the play control with no hover feedback of its own. */}
+                        <span className="text-xs leading-relaxed text-muted-foreground">{v.description}</span>
+                      </Pressable>
+                      {/* A real sibling, not a child: nesting a button inside the
+                          radio would be invalid HTML and unreachable by keyboard.
+                          secondary, not ghost — a ghost button's hover:bg-accent
+                          is the wash the tile itself takes on hover, leaving the
+                          play control with no feedback of its own. */}
                       <Button
                         variant="secondary"
                         size="icon-sm"
-                        // z-10: sits above the full-tile overlay button that precedes it.
-                        className="relative z-10 shrink-0"
+                        className="absolute right-3 top-1/2 z-10 -translate-y-1/2"
                         onClick={() => void playPreview(v.id)}
                         aria-label={active ? `Stop the ${v.label} preview` : `Preview the ${v.label} voice`}
                       >
@@ -904,7 +1004,9 @@ export default function SettingsPage() {
                 placeholder="E.g. I'm a product manager. Keep answers concise and use bullet points."
                 className="min-h-[110px] pb-8"
               />
-              <span className="absolute bottom-2.5 right-3 font-mono text-[10px] text-muted-foreground/50 select-none">
+              {/* On the type scale and at full muted ink: this is the only
+                  feedback the textarea gives, and it was 10px at half the ramp. */}
+              <span className="absolute bottom-2.5 right-3 select-none font-mono text-caption text-muted-foreground">
                 {instructions.length.toLocaleString()} chars
               </span>
             </div>
@@ -930,9 +1032,12 @@ export default function SettingsPage() {
                 all — so an account on the default mode watched "Regenerate
                 summary" and every memory edit fail with nothing to change. */}
             <div className="mt-4">
-              <label htmlFor="background-processing" className="text-sm font-medium">
+              {/* The <Label> primitive at the same size and ink as every other
+                  field label on this surface. A raw <label> at text-sm font-medium
+                  was a third label voice inside one settings grid. */}
+              <Label htmlFor="background-processing" className="block text-xs text-muted-foreground">
                 Background processing
-              </label>
+              </Label>
               <p id="background-processing-note" className="mb-2 mt-0.5 text-xs text-muted-foreground">
                 Which providers may read your chats to build memory, titles and summaries — work you never see.
               </p>
@@ -988,8 +1093,15 @@ export default function SettingsPage() {
                   <Link href="/upgrade">Upgrade plan</Link>
                 </Button>
               )}
-              <Button variant="outline" size="sm" onClick={exportData} className="w-full gap-2">
-                <Download className="h-4 w-4" /> Export my data
+              {/* A real link to the page that owns the feature. This was a
+                  `window.location.href` assignment dressed as a button — not
+                  middle-clickable, not openable in a new tab — and it offered
+                  only the JSON export, so a user who never visited Profile never
+                  learned the Juno-package and CSV formats existed. */}
+              <Button asChild variant="outline" size="sm" className="w-full gap-2">
+                <Link href="/profile#account">
+                  <Download className="h-4 w-4" /> Export my data
+                </Link>
               </Button>
             </div>
           </Tile>
@@ -1061,33 +1173,23 @@ export default function SettingsPage() {
                     Permanently delete your account, conversations, and memories.
                   </p>
                 </div>
-                <Button variant="destructive-outline" size="sm" onClick={() => setDeleteOpen(true)} className="gap-2 shrink-0">
-                  <Trash2 className="h-4 w-4" /> Delete account
+                {/* One entry point, one endpoint. This used to be a second,
+                    weaker copy of the flow: a two-button dialog straight into
+                    `DELETE /api/account`, which takes no confirmation at all, so
+                    the account was gone in two clicks — while the Profile copy
+                    made you type your email and posted to the guarded, rate-
+                    limited `/api/account/delete`. The unguarded one was the one
+                    styled as dangerous. It is now a link to the guarded one. */}
+                <Button asChild variant="destructive-outline" size="sm" className="gap-2 shrink-0">
+                  <Link href="/profile#account">
+                    <Trash2 className="h-4 w-4" /> Delete account…
+                  </Link>
                 </Button>
               </div>
             </div>
           </Tile>
         </div>
       </div>
-
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="font-serif">Delete your account?</DialogTitle>
-            <DialogDescription>
-              This permanently deletes your account, conversations, and memories. This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={deleteAccount} disabled={deleting}>
-              {deleting ? "Deleting…" : "Delete account"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={deleteChatsOpen} onOpenChange={setDeleteChatsOpen}>
         <DialogContent>

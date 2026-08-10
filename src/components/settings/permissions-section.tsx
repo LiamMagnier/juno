@@ -4,10 +4,12 @@ import * as React from "react";
 import Link from "next/link";
 import { Check, Loader2, ShieldAlert, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardEyebrow } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Label } from "@/components/ui/label";
 import { Pressable } from "@/components/ui/pressable";
 import { Switch } from "@/components/ui/switch";
+import { Tile } from "@/components/settings/tile";
+import { useRadioGroup } from "@/components/settings/use-radio-group";
 import { cn } from "@/lib/utils";
 import type { ConnectorStatus } from "@/components/connections/types";
 // Type-only on purpose. `@/lib/action-approval` pulls in node:crypto for the
@@ -157,30 +159,19 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
     [state]
   );
 
-  const policyRefs = React.useRef<(HTMLButtonElement | null)[]>([]);
-
   const selectPolicy = (policy: ActionPermissionPolicy) => {
     if (!state || state.actionApprovalPolicy === policy) return;
     void patch({ ...state, actionApprovalPolicy: policy });
   };
 
-  // A radiogroup is one tab stop with arrow keys inside it, not five tab stops.
-  // Arrow keys move focus and select in the same gesture, per the ARIA radio
-  // pattern, so a keyboard user reaches every option the way a screen reader
-  // announces it.
-  const onPolicyKeyDown = (event: React.KeyboardEvent, position: number) => {
-    const step =
-      event.key === "ArrowDown" || event.key === "ArrowRight"
-        ? 1
-        : event.key === "ArrowUp" || event.key === "ArrowLeft"
-          ? -1
-          : 0;
-    if (step === 0) return;
-    event.preventDefault();
-    const next = (position + step + POLICY_ORDER.length) % POLICY_ORDER.length;
-    policyRefs.current[next]?.focus();
-    selectPolicy(POLICY_ORDER[next]);
-  };
+  // The roving-tabindex + arrow-key behaviour this group has always had, now
+  // from the shared helper so the four radiogroups on settings/page.tsx that
+  // were missing it get the same one rather than a second implementation.
+  const policyOption = useRadioGroup(
+    POLICY_ORDER,
+    POLICY_ORDER.indexOf(state?.actionApprovalPolicy as ActionPermissionPolicy),
+    selectPolicy
+  );
 
   const setLockdown = (lockdownMode: boolean) => {
     if (!state) return;
@@ -215,15 +206,14 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
   }, [connectors, state?.blockedConnectors]);
 
   return (
-    <Card
-      style={staggerDelay(index, "loose")}
-      className="flex h-full flex-col rounded-surface p-5 motion-safe:animate-rise-in [animation-fill-mode:backwards] sm:col-span-2"
-    >
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <CardEyebrow>Connector permissions</CardEyebrow>
-        {/* One status line for the whole card. It exists in every state so the
-            live region is present before the first save, which is what makes
-            the announcement reliable. */}
+    <Tile
+      eyebrow="Connector permissions"
+      i={index}
+      span
+      // One status line for the whole card. It exists in every state so the
+      // live region is present before the first save, which is what makes the
+      // announcement reliable.
+      aside={
         <span
           role="status"
           aria-live="polite"
@@ -251,8 +241,8 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
             </>
           )}
         </span>
-      </div>
-
+      }
+    >
       <p className="mb-4 text-sm text-muted-foreground">
         What Juno may do with your connected apps on its own, and what it has to stop and ask you
         about first. Juno checks this before every connector call, so a change here applies to chats
@@ -260,14 +250,21 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
       </p>
 
       {loadFailed ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-field border border-border/70 p-4">
-          <p className="text-sm text-muted-foreground">
-            Couldn&apos;t load your permission settings, so nothing is shown rather than a guess.
-          </p>
-          <Button variant="outline" size="sm" onClick={() => void load()}>
-            Try again
-          </Button>
-        </div>
+        // A failed read of the permission policy is a failure, not a well of
+        // information. It was a neutral border-border/70 box, indistinguishable
+        // from the ordinary field wells around it.
+        <EmptyState
+          tone="error"
+          size="panel"
+          icon={TriangleAlert}
+          title="Couldn't load your permissions"
+          description="Nothing is shown rather than a guess."
+          action={
+            <Button variant="outline" size="sm" onClick={() => void load()}>
+              Try again
+            </Button>
+          }
+        />
       ) : !state ? (
         <div className="space-y-2" aria-hidden>
           {[...Array(5)].map((_, i) => (
@@ -284,7 +281,9 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
             </p>
           )}
 
-          <Label id="action-policy-label" className="mb-2 block text-xs">
+          {/* text-muted-foreground to match every other field label on this
+              surface — this was the third of three label treatments in one grid. */}
+          <Label id="action-policy-label" className="mb-2 block text-xs text-muted-foreground">
             When Juno wants to use a connected app
           </Label>
           <div
@@ -300,17 +299,11 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
                   key={policy}
                   kind="tile"
                   selected={selected}
-                  ref={(node) => {
-                    policyRefs.current[position] = node;
-                  }}
                   role="radio"
                   aria-checked={selected}
-                  // Roving tabindex: the group is a single stop, and the checked
-                  // option is the one it lands on.
-                  tabIndex={selected ? 0 : -1}
                   onClick={() => selectPolicy(policy)}
-                  onKeyDown={(event) => onPolicyKeyDown(event, position)}
                   className="min-h-11 shadow-pop hover:shadow-float motion-safe:hover:-translate-y-0.5"
+                  {...policyOption(position)}
                 >
                   <span className="flex w-full items-center justify-between gap-2 text-sm font-medium">
                     {option.label}
@@ -393,6 +386,6 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
           </div>
         </>
       )}
-    </Card>
+    </Tile>
   );
 }

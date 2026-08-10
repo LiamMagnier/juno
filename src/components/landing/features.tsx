@@ -1,5 +1,6 @@
 import { ArrowUpRight, ShieldCheck } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { staggerDelay } from "@/lib/motion";
 import { Section } from "@/components/landing/section";
 
 /**
@@ -54,7 +55,11 @@ export function Features() {
           flagship divider and the receipt's leader. */}
       <ol className="mt-10 grid gap-x-10 sm:grid-cols-2 lg:grid-cols-3">
         {FEATURES.map(({ title, body, link }, i) => (
-          <li key={title} className="border-t border-dotted border-border pb-8 pt-5">
+          <li
+            key={title}
+            style={staggerDelay(i)}
+            className="border-t border-dotted border-border pb-8 pt-5 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+          >
             <span className="font-mono text-caption text-muted-foreground">
               {String(i + 1).padStart(2, "0")}
             </span>
@@ -77,8 +82,16 @@ export function Features() {
           Card, not a hand-rolled panel: rounded-lg is the same 24px this used to
           hardcode, so nothing moves, but it picks up .surface-raised — the sheen
           and inner hairline every card in the app is lit by. Without it the
-          landing's panels read visibly flatter than anything past the sign-in. */}
-      <Card className="mt-2 flex flex-col gap-4 bg-secondary/50 px-6 py-6 sm:flex-row sm:items-center sm:gap-5">
+          landing's panels read visibly flatter than anything past the sign-in.
+          No bg override: this carried bg-secondary/50 while the page's only other
+          Card (the receipt in metering.tsx) sat on plain bg-card, so the two read
+          as different materials — and surface-raised is lit against bg-card, so
+          the override was muting the very sheen this switch was made to pick up.
+          Setting the row apart is variant="elevated"'s job, not a second ground. */}
+      <Card
+        variant="elevated"
+        className="mt-2 flex flex-col gap-4 px-6 py-6 sm:flex-row sm:items-center sm:gap-5"
+      >
         <ShieldCheck className="h-6 w-6 shrink-0 text-muted-foreground" aria-hidden />
         <div>
           <h3 className="font-serif text-heading font-medium">Hosted in France, private by design</h3>

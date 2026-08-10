@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ClientWorkSchedule } from "@/lib/work/schedule";
 import type { ClientWorkHost, ClientWorkRun } from "@/lib/work/serializers";
@@ -236,15 +237,21 @@ export default function WorkSchedulePage() {
           </Button>
         </div>
         {runs === null ? (
-          <p className="rounded-field border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
-            This schedule’s history couldn’t be read just now, which says nothing about whether it
-            has run.
-          </p>
+          // Error tone, because this is a request that failed rather than a
+          // schedule that has not fired — the two were the same dashed
+          // paragraph, which is the distinction EmptyState exists to keep.
+          <EmptyState
+            size="panel"
+            tone="error"
+            title="Couldn’t read the history"
+            description="This schedule’s history couldn’t be read just now, which says nothing about whether it has run."
+          />
         ) : runs.length === 0 ? (
-          <p className="rounded-field border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
-            It has not run yet. Fires that were skipped — a Mac that was away, a budget that was
-            spent — appear here too, so this staying empty means nothing has fired at all.
-          </p>
+          <EmptyState
+            size="panel"
+            title="No runs yet"
+            description="It has not run yet. Fires that were skipped — a Mac that was away, a budget that was spent — appear here too, so this staying empty means nothing has fired at all."
+          />
         ) : (
           <ul className="space-y-2">
             {runs.map((run) => (

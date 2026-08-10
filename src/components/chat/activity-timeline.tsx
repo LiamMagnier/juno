@@ -16,6 +16,7 @@ import {
 } from "@/components/chat/thought-process-panel";
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { Pressable } from "@/components/ui/pressable";
 import { toReasoningLines } from "@/lib/reasoning-lines";
 import { cn, truncate } from "@/lib/utils";
 import type { ClientActivityEvent } from "@/types/chat";
@@ -229,9 +230,18 @@ export function ActivityTimeline({
 
   return (
     <>
-      <button
+      {/* A selectable row, so it uses the row primitive. Open used to differ from
+          hovered by 10% of one alpha (bg-muted/55 vs bg-muted/45), and since the
+          pointer is by definition resting on the row you just clicked, opening
+          the panel produced no perceptible change in its own trigger. Pressable's
+          selected treatment — primary tint plus an inset ring — exists precisely
+          because a selected row and a hovered row must not be the same fill.
+          Focus is left to the global :focus-visible rule, which this had
+          overridden with a local ring. */}
+      <Pressable
         ref={triggerRef}
-        type="button"
+        kind="row"
+        selected={open}
         onClick={() => panel?.setOpenId(open ? null : messageId)}
         aria-expanded={open}
         /* No aria-haspopup: this is no longer a dialog, it is a disclosure that
@@ -240,14 +250,13 @@ export function ActivityTimeline({
         aria-controls={open ? panelDomId : undefined}
         aria-label={label}
         className={cn(
-          "group/thought relative -mx-2 flex w-[calc(100%+1rem)] items-center overflow-hidden rounded-field px-2 py-1.5 text-left",
-          "transition-colors duration-base ease-out-soft hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none coarse:min-h-14",
+          "group/thought relative -mx-2 w-[calc(100%+1rem)] overflow-hidden rounded-field px-2 py-1.5",
+          "transition-colors duration-base ease-out-soft motion-reduce:transition-none coarse:min-h-14",
           streaming ? "min-h-10 gap-3" : "min-h-12 gap-3",
           // The gap to the answer belongs to whatever is last. With live blocks
           // below, this row's own margin would open a hole between the label and
           // the trace it labels.
-          hasLiveBlocks ? "mb-0.5" : "mb-3",
-          open && "bg-muted/55"
+          hasLiveBlocks ? "mb-0.5" : "mb-3"
         )}
       >
         {/* aria-hidden: see `label`. The button is named by aria-label, so this
@@ -300,7 +309,7 @@ export function ActivityTimeline({
             <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/35 transition-[color,transform] duration-base ease-out-soft group-hover/thought:translate-x-0.5 group-hover/thought:text-foreground/70 motion-reduce:transition-none" aria-hidden="true" />
           </>
         )}
-      </button>
+      </Pressable>
 
       {/* THE LIVE TRACE, which this component used to refuse to show.
           The refusal was right about the CONTAINER and got read as being about

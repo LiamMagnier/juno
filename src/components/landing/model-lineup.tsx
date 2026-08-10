@@ -1,6 +1,7 @@
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { MODELS, MODELS_BY_PROVIDER, type ModelInfo } from "@/lib/models";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
+import { staggerDelay } from "@/lib/motion";
 import { Section } from "@/components/landing/section";
 
 /**
@@ -48,21 +49,34 @@ const TOTAL_LABS = new Set(Object.values(MODELS).map((m) => m.provider)).size;
 /** "127" reads like a bug; "120+" reads like a catalog. */
 const MODELS_FLOOR = Math.floor(TOTAL_MODELS / 10) * 10;
 
-/** Compact model-picker-style strip for the hero: one flagship per lab. */
+/**
+ * How many labs the hero strip names before the count line takes over.
+ *
+ * It is a *taste* of the picker, not the picker. Uncapped this was ~13 entries
+ * of roughly 147px each: on a 375px phone that is two per row, ~7 rows and
+ * ~270px wedged between the CTA and the fold. The full enumeration is what the
+ * ModelLineup section below is for, and the count line already states the total.
+ */
+const STRIP_LABS = 6;
+
+/** Compact strip for the hero: one flagship each, from the first few labs. */
 export function FlagshipStrip() {
   return (
     <div>
-      <ul className="flex flex-wrap items-center gap-2">
-        {/* The strip is labelled "In the picker today", so it has to look like
-            the picker: same geometry and voice as the composer's trigger
-            (model-selector.tsx) — 10px radius, size-4 logo, model name in mono.
-            The product treats model ids as machine metadata; the landing must
-            too, or the claim is decoration. */}
-        {LABS.map(({ provider, label, flagships }) => (
-          <li
-            key={provider}
-            className="inline-flex h-8 items-center gap-1.5 rounded-control border border-border/60 bg-card/70 px-2 text-[13px] font-medium text-foreground/80"
-          >
+      {/* DottedDivider's labelled branch is aria-hidden, so "In the picker today"
+          never reaches assistive tech and this list was announced as an
+          anonymous run of model names in the middle of the hero. */}
+      <ul aria-label="Models in the picker today" className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
+        {/* Names, not chips. These were a pixel-copy of the composer's model
+            trigger — border, raised ground, 10px radius — while being inert
+            <li>s with no href, hover or role: the most clickable-looking thing
+            in the hero was the one thing that did nothing. ComposerPreview is
+            the same kind of depiction and can say so with aria-hidden; this one
+            cannot, because the model names are real content. So the costume
+            goes and the content stays — logo plus the registry's own mono name,
+            under a label that already says where they come from. */}
+        {LABS.slice(0, STRIP_LABS).map(({ provider, label, flagships }) => (
+          <li key={provider} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground/80">
             <ProviderLogo provider={provider} label={label} className="size-4 shrink-0 rounded-sm" />
             <span className="whitespace-nowrap font-mono">{flagships[0]}</span>
           </li>
@@ -87,8 +101,12 @@ export function ModelLineup() {
           dialog) and the landing already uses it for the flagship divider and the
           receipt's leader. */}
       <ul className="mt-10 grid gap-x-10 sm:grid-cols-2">
-        {LABS.map(({ provider, label, flagships, count }) => (
-          <li key={provider} className="flex items-center gap-3 border-t border-dotted border-border py-3.5">
+        {LABS.map(({ provider, label, flagships, count }, i) => (
+          <li
+            key={provider}
+            style={staggerDelay(i)}
+            className="flex items-center gap-3 border-t border-dotted border-border py-3.5 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+          >
             <ProviderLogo provider={provider} label={label} className="h-6 w-6" />
             <div className="min-w-0 flex-1">
               <span className="block text-body font-medium">{label}</span>

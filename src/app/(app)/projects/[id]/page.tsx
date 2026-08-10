@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   FileCode,
   FileText,
+  MessagesSquare,
   Image as ImageIcon,
   Info,
   Loader2,
@@ -16,7 +17,6 @@ import {
   Plus,
   Table,
   Trash2,
-  TriangleAlert,
   Pin,
   MoreVertical,
   FolderClosed,
@@ -52,6 +52,7 @@ import { useApp } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
 import type { ReasoningEffort } from "@/types/chat";
 import { staggerDelay } from "@/lib/motion";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // Soft UI only — no save rejection. Warn when the draft is very large.
 const INSTRUCTIONS_SOFT_WARN = 50_000;
@@ -463,11 +464,47 @@ export default function ProjectDetailPage() {
     }
   };
 
+  // Two terminal states, two tones. A missing project is not a failure the user
+  // can retry away — it is an empty destination — while a failed load is, and only
+  // the error tone gets the solid destructive fence and role="status".
   if (error === "notfound") {
-    return <Centered title="Project not found" body="It may have been deleted." onBack={() => router.push("/projects")} />;
+    return (
+      <div className="mx-auto flex h-full w-full max-w-xl items-center px-4">
+        <EmptyState
+          className="w-full motion-safe:animate-rise-in"
+          icon={FolderClosed}
+          title="Project not found"
+          description="It may have been deleted."
+          action={
+            <Button size="sm" asChild>
+              <Link href="/projects">Back to projects</Link>
+            </Button>
+          }
+        />
+      </div>
+    );
   }
   if (error === "error") {
-    return <Centered title="Couldn’t load this project" body="Something went wrong." retry={load} onBack={() => router.push("/projects")} />;
+    return (
+      <div className="mx-auto flex h-full w-full max-w-xl items-center px-4">
+        <EmptyState
+          tone="error"
+          className="w-full motion-safe:animate-rise-in"
+          title="Couldn’t load this project"
+          description="Check your connection and try once more."
+          action={
+            <>
+              <Button variant="outline" size="sm" onClick={load}>
+                Try again
+              </Button>
+              <Button size="sm" asChild>
+                <Link href="/projects">Back to projects</Link>
+              </Button>
+            </>
+          }
+        />
+      </div>
+    );
   }
   if (!data) {
     // Mirrors the real header rhythm (eyebrow · title · meta) so the page doesn't
@@ -498,13 +535,18 @@ export default function ProjectDetailPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+        {/* A real link, not router.push on a button: this one is not cmd- or
+            middle-clickable and announces itself as a button. Same defect
+            AppPageHeader's docblock item 2 exists to kill. */}
         <Button
+          asChild
           variant="ghost"
           size="sm"
-          onClick={() => router.push("/projects")}
           className="-ml-3 mb-6 gap-1.5 text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="h-4 w-4" /> All projects
+          <Link href="/projects">
+            <ArrowLeft className="h-4 w-4" /> All projects
+          </Link>
         </Button>
 
         {/* Header — eyebrow · serif hero · mono meta. The old single 22px title had no
@@ -582,7 +624,10 @@ export default function ProjectDetailPage() {
                   <span>Edit instructions</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => setDeleteOpen(true)} className="text-destructive focus:bg-destructive focus:text-destructive-foreground">
+                {/* Tint, not an inverted fill: DropdownMenuItem has no destructive
+                    variant yet, and the tint is the one of the three treatments in
+                    use that keeps the destructive text legible on focus. */}
+                <DropdownMenuItem onSelect={() => setDeleteOpen(true)} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
                   <Trash2 className="mr-2 h-4 w-4" />
                   <span>Delete project</span>
                 </DropdownMenuItem>
@@ -625,12 +670,13 @@ export default function ProjectDetailPage() {
                 <section>
                   <CardEyebrow className="mb-3 block">Chats in this project</CardEyebrow>
                   {data.conversations.length === 0 ? (
-                    <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 px-6 py-12 text-center motion-safe:animate-rise-in">
-                      <p className="font-serif text-heading">No chats yet</p>
-                      <p className="mx-auto mt-1.5 max-w-sm text-body text-muted-foreground">
-                        Ask a question in the composer above to start a conversation.
-                      </p>
-                    </div>
+                    <EmptyState
+                      size="panel"
+                      className="motion-safe:animate-rise-in"
+                      icon={MessagesSquare}
+                      title="No chats yet"
+                      description="Ask a question in the composer above to start a conversation."
+                    />
                   ) : (
                     <ul className="space-y-2">
                       {data.conversations.map((c) => (
@@ -708,7 +754,9 @@ export default function ProjectDetailPage() {
               </div>
 
               {/* Unified Project Sidebar (Right Column).
-                  Card radius 24 − p-4 (16) = 8 → every inner surface is rounded-md. */}
+                  Card radius 24 − p-4 (16) = 8 → every persistent inner surface is
+                  rounded-md. The transient <EmptyState>s keep the primitive's own
+                  radius rather than re-deciding it per call site. */}
               <div>
                 <Card className="overflow-hidden">
                   {coverUrl ? (
@@ -813,15 +861,20 @@ export default function ProjectDetailPage() {
                           </p>
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => setInstructionsOpen(true)}
-                          className="w-full rounded-md border border-dashed border-border/60 bg-muted/10 p-4 text-center transition-[border-color,background-color] duration-fast ease-out-soft hover:border-border hover:bg-muted/20 motion-reduce:transition-none"
-                        >
-                          <p className="text-caption leading-relaxed text-muted-foreground">
-                            No instructions yet — add a prompt Juno follows in every chat here.
-                          </p>
-                        </button>
+                        // The action lives INSIDE the state rather than the whole
+                        // block being one giant button — that shape gave the three
+                        // empty panels on this page three different paddings and no
+                        // named control to tab to.
+                        <EmptyState
+                          size="panel"
+                          title="No instructions yet"
+                          description="Add a prompt Juno follows in every chat in this project."
+                          action={
+                            <Button variant="outline" size="sm" onClick={() => setInstructionsOpen(true)}>
+                              Add instructions
+                            </Button>
+                          }
+                        />
                       )}
                     </section>
 
@@ -839,16 +892,22 @@ export default function ProjectDetailPage() {
                         </button>
                       </div>
                       {workspaceFiles.length === 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => fileRef.current?.click()}
-                          className="w-full rounded-md border border-dashed border-border/60 bg-muted/10 p-5 text-center transition-[border-color,background-color] duration-fast ease-out-soft hover:border-border hover:bg-muted/20 motion-reduce:transition-none"
-                        >
-                          <FileUp className="mx-auto mb-2 h-5 w-5 text-muted-foreground/60" />
-                          <p className="text-caption leading-relaxed text-muted-foreground">
-                            Add PDFs, documents, or other text to reference in this project.
-                          </p>
-                        </button>
+                        <EmptyState
+                          size="panel"
+                          icon={FileUp}
+                          title="No files yet"
+                          description="Add PDFs, documents, or other text to reference in this project."
+                          action={
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => fileRef.current?.click()}
+                              disabled={uploading}
+                            >
+                              Add file
+                            </Button>
+                          }
+                        />
                       ) : (
                         // -m-1 p-1: the scroll box clips at its padding box, so the inset
                         // gives each row's lift shadow room instead of shearing it flat.
@@ -984,17 +1043,23 @@ export default function ProjectDetailPage() {
                 </div>
 
                 {workspaceFiles.length === 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => fileRef.current?.click()}
-                    className="w-full rounded-md border border-dashed border-border/60 bg-muted/10 p-10 text-center transition-[border-color,background-color] duration-fast ease-out-soft hover:border-border hover:bg-muted/20 motion-safe:animate-rise-in motion-reduce:transition-none"
-                  >
-                    <FileUp className="mx-auto h-6 w-6 text-muted-foreground/50" />
-                    <p className="mt-3 font-serif text-heading">No files yet</p>
-                    <p className="mx-auto mt-1.5 max-w-xs text-body text-muted-foreground">
-                      Drop files here or click to browse — Juno references them in every chat.
-                    </p>
-                  </button>
+                  <EmptyState
+                    size="panel"
+                    className="motion-safe:animate-rise-in"
+                    icon={FileUp}
+                    title="No files yet"
+                    description="Drop files anywhere on this card, or browse — Juno references them in every chat."
+                    action={
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileRef.current?.click()}
+                        disabled={uploading}
+                      >
+                        Add file
+                      </Button>
+                    }
+                  />
                 ) : (
                   <ul className="space-y-2">
                     {workspaceFiles.map((f, i) => (
@@ -1232,31 +1297,19 @@ function WorkspaceFileRow({
         >
           {file.fileName}
         </a>
-        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-mono text-caption">
-          <span className="text-muted-foreground">{formatBytes(file.size)}</span>
-          {file.knowledge ? (
-            <IndexStatus status={file.knowledge} className="max-w-full" />
-          ) : extractable ? (
-            <span className="inline-flex items-center rounded-full border bg-background/60 px-2 py-0.5 font-medium text-muted-foreground">
-              Waiting for indexing…
-            </span>
-          ) : isImage ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-source/30 bg-background/60 px-2 py-0.5 font-medium text-source">
-                <ImageIcon className="h-3 w-3" /> Visual
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-background/60 px-2 py-0.5 font-medium text-warning">
-                <TriangleAlert className="h-3 w-3" /> No text extracted
-              </span>
-            )}
-        </div>
+        <p className="mt-0.5 font-mono text-caption text-muted-foreground">{formatBytes(file.size)}</p>
       </div>
 
+      {/* ONE status column. The same four branches were also rendered inline under
+          the filename, so an image read "Visual · Visual" side by side and an
+          extractable file read "Waiting for indexing…" next to "Queued". */}
       {file.knowledge ? (
         <IndexStatus status={file.knowledge} className="max-w-[14rem] shrink-0" />
       ) : extractable ? (
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-success/30 px-2 py-0.5 font-mono text-caption font-medium text-success">
-          <span className="size-1.5 rounded-full bg-muted-foreground/60" /> Queued
+        // Neutral, not success: queued means the extractor has not run, let alone
+        // succeeded — green chrome here promised a result that did not exist.
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5 font-mono text-caption font-medium text-muted-foreground">
+          <span className="size-1.5 rounded-full bg-border" /> Queued
         </span>
       ) : isImage ? (
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-source/30 px-2 py-0.5 font-mono text-caption font-medium text-source">
@@ -1278,18 +1331,5 @@ function WorkspaceFileRow({
         <Trash2 className="h-3.5 w-3.5" />
       </Button>
     </li>
-  );
-}
-
-function Centered({ title, body, onBack, retry }: { title: string; body: string; onBack: () => void; retry?: () => void }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center motion-safe:animate-rise-in">
-      <p className="font-serif text-heading">{title}</p>
-      <p className="text-body text-muted-foreground">{body}</p>
-      <div className="mt-1 flex gap-2">
-        {retry && <Button variant="outline" size="sm" onClick={retry}>Try again</Button>}
-        <Button size="sm" onClick={onBack}>Back to projects</Button>
-      </div>
-    </div>
   );
 }

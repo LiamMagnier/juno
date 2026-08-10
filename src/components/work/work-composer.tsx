@@ -10,8 +10,6 @@ import {
   Check,
   ChevronDown,
   FileText,
-  FileUp,
-  Library,
   Loader2,
   Mic,
   Plus,
@@ -23,13 +21,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Pressable } from "@/components/ui/pressable";
 import { ScrollFade } from "@/components/ui/scroll-fade";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { LibraryPicker } from "@/components/chat/library-picker";
@@ -51,9 +47,7 @@ import { resolveModel, type ModelId } from "@/lib/models";
 import { DOC_MIME } from "@/lib/uploads";
 import {
   DEFAULT_WORK_PERMISSION_POLICY,
-  WORK_APPROVAL_MODE_LABEL,
   WORK_APPROVAL_MODE_SUMMARY,
-  WORK_PERMISSION_POLICIES,
   describeCapability,
   type HostCapabilityView,
   type WorkPermissionPolicy,
@@ -77,6 +71,14 @@ import {
   type WorkTransportFailure,
 } from "@/components/work/work-transport";
 import { DegradationNotes, WorkStateNote } from "@/components/work/work-vocabulary";
+import { ComposerAddMenu } from "@/components/work/composer-home/composer-add-menu";
+import { COMPOSER_CHIP_CLASS } from "@/components/work/composer-home/composer-chip";
+import { WorkPermissionChip } from "@/components/work/composer-home/permission-chip";
+import {
+  applySkillInvocation,
+  invokedSkill,
+} from "@/components/work/composer-home/skill-invocation";
+import { useWorkSkills } from "@/components/work/composer-home/use-work-skills";
 import {
   appendClarifications,
   derivePreflightQuestions,
@@ -97,22 +99,28 @@ import { cn, formatBytes } from "@/lib/utils";
  * browser now always asks for `automatic` and sends no capability list at all;
  * the server reads the goal and decides.
  *
- * The Apps chip that replaced them is not the same kind of question, which is
- * the only reason it is allowed to be here. It asks which of the reader's own
+ * The apps question that replaced them is not the same kind of question, which
+ * is the only reason it is allowed to be here. It asks which of the reader's own
  * connected apps this errand is about — a question about their work rather than
  * about Juno's internals, answerable by anyone who linked the app — and every
  * switch starts off, so a task reaches what it was handed and nothing else. It
  * is also a control that does something: the selection is stored on the session
  * and `scripts/work-runner.ts` narrows the run's connector set by it, which is
- * the bar a permission control has to clear before it is worth drawing.
+ * the bar a permission control has to clear before it is worth drawing. It is
+ * asked inside the [+] alongside files and the skill, because those three are
+ * one question — what this task is handed — and they were a chip, a menu and
+ * nothing at all.
  *
- * The approval mode below the surface — Manual, Auto, Skip — is here on the
- * same terms and is the second control to clear that bar. `approvalRuling` in
- * src/lib/work/domain.ts is what the three modes differ in, the session stores
- * the choice, dispatch narrows it against any Mac's advertised floor, and both
- * executors gate on the result. It is drawn now for exactly that reason and
- * would not have been drawn a week ago, when the three modes were the same
- * mode wearing three names.
+ * The approval mode — Manual, Auto, Skip — is here on the same terms and is the
+ * second control to clear that bar. `approvalRuling` in src/lib/work/domain.ts
+ * is what the three modes differ in, the session stores the choice, dispatch
+ * narrows it against any Mac's advertised floor, and both executors gate on the
+ * result. It is drawn now for exactly that reason and would not have been drawn
+ * a week ago, when the three modes were the same mode wearing three names. It is
+ * `WorkPermissionChip`, the same control in the same shape the thread composer
+ * carries, rather than the three-segment control this file used to draw for it —
+ * one surface asking one question two ways is how a reader concludes they are
+ * two questions.
  *
  * What survived the deletion is the honesty architecture that surrounded them,
  * because it is the point of this surface. `selectForInferred`
@@ -345,12 +353,22 @@ export function WorkComposer({
    * disagree the first time somebody disconnected it in another tab.
    */
   const apps = useConnectedApps();
+  /**
+   * The skills this task could name.
+   *
+   * The home composer had no skill picker at all: the only way to run a task
+   * under a skill from here was to type `/slug` from memory, while the thread
+   * composer one click away offered the account's own list. Same hook, same
+   * endpoint, same `enabled=true` filter as the thread panel — a second fetch
+   * written for this surface would be a second answer to "which skills do I
+   * have".
+   */
+  const skills = useWorkSkills();
   const [model, setModel] = React.useState<ModelId>(defaultWorkModelId);
   const [submitting, setSubmitting] = React.useState(false);
   const [blocked, setBlocked] = React.useState<WorkBlocked | null>(null);
   const [draft, setDraft] = React.useState<ClientWorkSession | null>(null);
   const [failure, setFailure] = React.useState<StartFailure | null>(null);
-  const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [removingIds, setRemovingIds] = React.useState<string[]>([]);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -495,6 +513,34 @@ export function WorkComposer({
     },
     [remove]
   );
+
+  /**
+   * The skill the goal currently names, matched against the account's library.
+   *
+   * Matched rather than merely parsed — see `invokedSkill`. A goal opening
+   * `/tmp is full of junk` is not an invocation of a skill called `tmp`, and
+   * treating it as one would have the menu replace the reader's first three
+   * characters when they picked a real one.
+   */
+  const invoked = invokedSkill(goal, skills.skills);
+  const invokeSkill = React.useCallback(
+    (slug: string | null) => {
+      setGoal((current) => applySkillInvocation(current, slug, invokedSkill(current, skills.skills)));
+      // Back to the field: the reader is about to watch text appear in their own
+      // textarea, and leaving focus on a menu that has closed puts the one thing
+      // that changed off-screen on a phone.
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    },
+    [skills.skills]
+  );
+
+  const toggleConnector = React.useCallback((connectorId: string) => {
+    setConnectorIds((prev) =>
+      prev.includes(connectorId)
+        ? prev.filter((id) => id !== connectorId)
+        : [...prev, connectorId]
+    );
+  }, []);
 
   /** What the goal looks like it will need, re-read on every keystroke. */
   const inference = React.useMemo(() => inferCapabilities(goal), [goal]);
@@ -879,15 +925,16 @@ export function WorkComposer({
   return (
     <div className="w-full">
       <div className="composer-surface relative flex w-full flex-col rounded-composer border border-border/65 bg-card/95 backdrop-blur transition-[border-color,box-shadow] duration-base ease-spring focus-within:border-foreground/15 sm:rounded-lg">
+        {/* Apps moved off this row and into the [+] beside the other two things
+            you hand a task; what is left is where it is filed and how often it
+            stops to ask — the same pair, wearing the same chip, that the thread
+            composer's toolbar carries. */}
         <div className="flex flex-wrap items-center gap-1.5 px-3 pb-0 pt-3 sm:px-3.5 sm:pt-3.5">
           <ProjectChip value={projectId} onChange={setProjectId} disabled={submitting} />
-          <AppsChip
-            value={connectorIds}
-            onChange={setConnectorIds}
+          <WorkPermissionChip
+            value={approvalMode}
+            onChange={setApprovalMode}
             disabled={submitting}
-            connectors={apps.connectors}
-            failed={apps.failed}
-            onRetry={apps.reload}
           />
         </div>
 
@@ -904,7 +951,10 @@ export function WorkComposer({
                   <div
                     key={upload.localId}
                     className={cn(
-                      "group relative flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-xs shadow-soft",
+                      // `rounded-control`, the same rung the thread composer's
+                      // attachment rows sit on — these were 8px there and 24px
+                      // here for the same object in the same product.
+                      "flex items-center gap-2 rounded-control border bg-background px-2.5 py-2 text-xs shadow-soft",
                       removingIds.includes(upload.localId)
                         ? "pointer-events-none motion-safe:animate-pop-out"
                         : "motion-safe:animate-rise-in"
@@ -935,14 +985,21 @@ export function WorkComposer({
                     {upload.status === "uploading" && (
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                     )}
-                    <button
-                      type="button"
+                    {/* Taking a file back off is one affordance in both Work
+                        composers now: a circular `Pressable kind="icon"` at one
+                        hit size, inline. This was an inverted badge floated
+                        outside the chip and hidden until hover, against an
+                        ~18px square glyph in the thread — two shapes and two
+                        target sizes for the same act. */}
+                    <Pressable
+                      kind="icon"
+                      size="sm"
                       onClick={() => removeUpload(upload.localId)}
-                      className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
-                      aria-label="Remove attachment"
+                      className="-mr-1 shrink-0"
+                      aria-label={`Remove ${upload.fileName}`}
                     >
-                      <X className="h-3 w-3 coarse:h-4 coarse:w-4" />
-                    </button>
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    </Pressable>
                   </div>
                 ))}
               </div>
@@ -981,57 +1038,46 @@ export function WorkComposer({
             order, at the same sizes as the chat and Code composers. */}
         <div className="flex flex-nowrap items-center gap-1.5 px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-1">
-            {canAttach && (
-              <>
-                {/* One menu, two destinations, no submenu. The chat composer
-                    nests these under "Attach" because its + also holds canvas,
-                    projects and tools; here that parent would contain a single
-                    child, which is a click that buys nothing. */}
-                <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Attach a document"
-                      disabled={submitting}
-                      className={cn(
-                        "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
-                        plusOpen && "bg-accent"
-                      )}
-                    >
-                      <Plus
-                        aria-hidden="true"
-                        strokeWidth={1.75}
-                        className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
-                      />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
-                    {/* "Attach a document", not "Attach": the heading is the only
-                        place left that says what this menu is for now that
-                        Photos is gone, and "Attach" over a list with no images
-                        in it reads as a list that failed to load. */}
-                    <DropdownMenuLabel className="font-mono text-label">
-                      Attach a document
-                    </DropdownMenuLabel>
-                    <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
-                      <FileUp className="text-muted-foreground" />
-                      <span className="flex-1">Files</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
-                      <Library className="text-muted-foreground" />
-                      <span className="flex-1">From your library</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+            {/* `ComposerAddMenu` rather than a third hand-rolled [+]. It was
+                written for this composer — prop-driven, no fetching of its own —
+                and had no importers, so the home surface was running a two-item
+                fork of it with no skills section at all: naming a skill from
+                here meant typing `/slug` from memory while the thread composer
+                offered the list. */}
+            <ComposerAddMenu
+              disabled={submitting}
+              attach={
+                canAttach
+                  ? {
+                      onFiles: () => fileInputRef.current?.click(),
+                      onLibrary: () => setLibraryOpen(true),
+                    }
+                  : undefined
+              }
+              skills={{
+                skills: skills.skills,
+                failed: skills.failed,
+                onRetry: skills.reload,
+                invokedSlug: invoked?.slug ?? null,
+                onInvoke: invokeSkill,
+              }}
+              apps={{
+                connectors: apps.connectors,
+                failed: apps.failed,
+                onRetry: apps.reload,
+                selected: connectorIds,
+                onToggle: toggleConnector,
+              }}
+            />
 
-                <span
-                  className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block"
-                  aria-hidden="true"
-                />
-              </>
+            {/* Still gated on `canAttach`: the menu can render for skills or
+                apps alone, but a hairline with nothing on its left is worse
+                than no hairline. */}
+            {canAttach && (
+              <span
+                className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block"
+                aria-hidden="true"
+              />
             )}
 
             <div
@@ -1241,44 +1287,29 @@ export function WorkComposer({
       )}
 
       {/*
-       * How often this task stops to ask.
+       * What the chosen approval mode means, for the reader who never opens
+       * the chip.
        *
-       * Below the surface rather than in the toolbar, and with its sentence
-       * under it, because it is the one control here whose options are not
-       * self-explanatory from their names. "Skip" alone reads as a promise
+       * The CONTROL is `WorkPermissionChip` on the strip above, which is the
+       * arrangement the chip was extracted for: one shape and one position for
+       * "how often this task asks", instead of a three-segment control here and
+       * a dropdown chip in the thread toolbar for the same three
+       * `WORK_PERMISSION_POLICIES`. Only the sentence stays behind, because the
+       * argument that put it here is unchanged — "Skip" alone reads as a promise
        * never to be interrupted, which is false in four cases and would be
-       * discovered as a prompt somebody was told would not come; the sentence
-       * is what makes the three legible before the task starts rather than
-       * after it has done something.
-       *
-       * Only the mode is offered, never a per-action list. The four things
-       * that ask under every mode are the floor — `ALWAYS_CONFIRM_ACTIONS` —
-       * and a control that appeared to negotiate them would be a control
-       * promising something `approvalRuling` refuses to deliver.
+       * discovered as a prompt somebody was told would not come. The chip's menu
+       * carries the same line per row from the same record, so there is one
+       * sentence per mode in the product rather than two that can drift.
        */}
-      <div className="mt-3 px-1.5">
-        <SegmentedControl
-          value={approvalMode}
-          onChange={setApprovalMode}
-          options={WORK_PERMISSION_POLICIES.map((policy) => ({
-            value: policy,
-            label: WORK_APPROVAL_MODE_LABEL[policy],
-          }))}
-          ariaLabel="How often this task asks before it acts"
-          className="w-full max-w-[19rem]"
-          optionClassName="h-8 coarse:h-10"
-        />
-        <p
-          // Announced when it changes: the segments are the control and this is
-          // the only place their difference is stated, so a reader moving
-          // between them with a screen reader would otherwise hear three words
-          // and no meaning.
-          aria-live="polite"
-          className="mt-2 text-caption leading-relaxed text-muted-foreground"
-        >
-          {WORK_APPROVAL_MODE_SUMMARY[approvalMode]}
-        </p>
-      </div>
+      <p
+        // Announced when it changes: the chip above says only the mode's name,
+        // and a reader moving between the three with a screen reader would
+        // otherwise hear three words and no meaning.
+        aria-live="polite"
+        className="mt-3 px-1.5 text-caption leading-relaxed text-muted-foreground"
+      >
+        {WORK_APPROVAL_MODE_SUMMARY[approvalMode]}
+      </p>
 
       {/* What the run commits to, from the values that will be sent rather than
           from a second computation of them: `selection` is the same object the
@@ -1471,16 +1502,15 @@ interface ComposerProject {
   conversationCount: number;
 }
 
-/**
- * The shared shape of every state this chip can be in.
+/*
+ * The chip shape lives in `composer-home/composer-chip.tsx`.
  *
- * The trigger and the "New project" button are the same 32px box wearing the
- * same nothing-at-rest treatment, so the row does not resize as the project
- * list resolves under it — a control that changes width the moment a fetch
- * lands is a control that moves out from under the pointer heading for it.
+ * There was a local `CHIP_CLASS` here — h-8 / px-2 / 12px / foreground-80 —
+ * beside a `COMPOSER_CHIP_CLASS` that was extracted from this very file and is
+ * h-7 / px-1.5 / 11.5px / muted. Both dressed the Project chip: this one on the
+ * home composer, the shared one on the thread's. The extraction happened; the
+ * fork stayed. There is now one height.
  */
-const CHIP_CLASS =
-  "group inline-flex h-8 min-w-0 max-w-[13rem] items-center gap-1.5 rounded-control px-2 font-mono text-[12px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[480px]:text-[13px] coarse:h-11";
 
 /**
  * Files this task into a Project, so the project's instructions and files apply.
@@ -1555,7 +1585,7 @@ function ProjectChip({
 
   if (projects === null && !failed) {
     return (
-      <button type="button" disabled className={CHIP_CLASS} aria-hidden="true" tabIndex={-1}>
+      <button type="button" disabled className={COMPOSER_CHIP_CLASS} aria-hidden="true" tabIndex={-1}>
         <AppIcons.projects className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
         <span className="truncate text-muted-foreground">Project</span>
       </button>
@@ -1568,7 +1598,7 @@ function ProjectChip({
         type="button"
         onClick={() => void createAndPick()}
         disabled={disabled || creating}
-        className={CHIP_CLASS}
+        className={COMPOSER_CHIP_CLASS}
       >
         {creating ? (
           <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" />
@@ -1587,7 +1617,7 @@ function ProjectChip({
           type="button"
           disabled={disabled}
           aria-label={selected ? `Project: ${selected.name}. Change it` : "File this task in a project"}
-          className={CHIP_CLASS}
+          className={COMPOSER_CHIP_CLASS}
         >
           <AppIcons.projects
             className={cn("size-3.5 shrink-0", selected ? "text-primary" : "text-muted-foreground")}
@@ -1666,168 +1696,3 @@ function ProjectChip({
   );
 }
 
-/**
- * Which of the reader's connected apps this task may reach.
- *
- * Off by default, all of them, and that is the whole design rather than a
- * cautious default someone can relax later. A linked app is an account-wide
- * fact — the mailbox stays connected whether or not this errand needs it — and
- * a task that inherited every one of them would be handed a mailbox, a
- * repository and a calendar to do something that needed none of the three. The
- * reader switches on what the errand is about; everything else is simply not
- * there, and `evaluateConnector` in src/lib/work/connectors.ts refuses it with
- * `not_selected_for_task` rather than the run discovering it can reach further
- * than anyone intended.
- *
- * This is not a connection setting and does not pretend to be one. Nothing here
- * links, unlinks or re-authorises anything: it narrows one task inside what the
- * account already permits, which is why the empty state sends the reader to
- * /connections rather than offering to connect an app from a composer.
- *
- * The list is loaded on mount from the same `/api/connectors` the toolbox and
- * the connections page read. A second endpoint written for Work would be a
- * second answer to "is Gmail linked", and the two would disagree the first time
- * somebody disconnected it from the other page.
- *
- * The load itself is `useConnectedApps` above rather than state in here, for the
- * same argument one rung down: the pre-flight card and the run disclosure both
- * need this list, and three copies of it would be three answers to the same
- * question. The chip still owns everything else about the control — what it
- * says, when it is drawn at all, and what an empty account sees.
- */
-function AppsChip({
-  value,
-  onChange,
-  disabled,
-  connectors,
-  failed,
-  onRetry,
-}: {
-  value: string[];
-  onChange: (connectorIds: string[]) => void;
-  disabled: boolean;
-  /** Null while the list is still in flight. */
-  connectors: ConnectorStatus[] | null;
-  failed: boolean;
-  onRetry: () => void;
-}) {
-  const [open, setOpen] = React.useState(false);
-
-  const toggle = React.useCallback(
-    (connectorId: string) => {
-      onChange(
-        value.includes(connectorId)
-          ? value.filter((id) => id !== connectorId)
-          : [...value, connectorId]
-      );
-    },
-    [onChange, value]
-  );
-
-  /*
-   * Nothing is rendered for an account with no linked apps, and nothing needs to
-   * be. A chip reading "Apps" that opens onto "you have none" is a control
-   * offering a choice that does not exist; the toolbox on the task page is where
-   * the account's connections are explained, and it links to the page that can
-   * do something about it. The empty selection still goes to the server either
-   * way, so the task is recorded as reaching nothing.
-   *
-   * The chip is also absent while the list is still in flight. It appears rather
-   * than changes width, so the row settles once instead of reflowing under a
-   * pointer already on its way to the Project chip beside it.
-   */
-  if (connectors === null && !failed) return null;
-  if (connectors !== null && connectors.length === 0) return null;
-
-  const chosen = (connectors ?? []).filter((connector) => value.includes(connector.id));
-  const label =
-    chosen.length === 0
-      ? "Apps"
-      : chosen.length === 1
-        ? chosen[0].label
-        : `${chosen.length} apps`;
-
-  return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label={
-            chosen.length === 0
-              ? "Choose which connected apps this task may use. None yet"
-              : `This task may use ${chosen.map((connector) => connector.label).join(", ")}. Change it`
-          }
-          className={CHIP_CLASS}
-        >
-          <AppIcons.connections
-            className={cn("size-3.5 shrink-0", chosen.length > 0 ? "text-primary" : "text-muted-foreground")}
-            aria-hidden="true"
-          />
-          <span className={cn("truncate", chosen.length === 0 && "text-muted-foreground")}>{label}</span>
-          <ChevronDown
-            className="h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180"
-            aria-hidden="true"
-          />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        side="bottom"
-        sideOffset={8}
-        className="flex max-h-[min(22rem,60vh)] w-64 flex-col p-0"
-      >
-        <DropdownMenuLabel className="px-3 pt-2.5 font-mono text-label">
-          Apps this task may use
-        </DropdownMenuLabel>
-        <ScrollFade className="min-h-0 flex-1" viewportClassName="p-1.5">
-          {failed ? (
-            <div className="space-y-2 px-2 py-4 text-center">
-              <p className="text-caption leading-relaxed text-muted-foreground">
-                Couldn’t read your connected apps. This task will reach none of them until it can.
-              </p>
-              <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5">
-                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
-              </Button>
-            </div>
-          ) : (
-            (connectors ?? []).map((connector) => {
-              const active = value.includes(connector.id);
-              return (
-                <DropdownMenuItem
-                  key={connector.id}
-                  // Held open on select: turning two apps on is one decision, and
-                  // a menu that closed after the first would make the reader
-                  // reopen it to finish the sentence they were in the middle of.
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    toggle(connector.id);
-                  }}
-                >
-                  <AppIcons.connections
-                    className={cn(active ? "text-primary" : "text-muted-foreground")}
-                  />
-                  <span className="flex-1 truncate">{connector.label}</span>
-                  {active && <Check className="!size-3.5 text-primary" />}
-                </DropdownMenuItem>
-              );
-            })
-          )}
-        </ScrollFade>
-        {/* The rule, said once, where the decision is made. Neither sentence is
-            decoration: the first is why an app being linked is not enough on its
-            own, and the second is what stops a reader reading this as a switch
-            that disconnects things. */}
-        <div className="shrink-0 border-t border-border/60 px-3 py-2">
-          <p className="text-[12px] leading-relaxed text-muted-foreground">
-            Off means this task cannot reach it. Your connections are unchanged —{" "}
-            <Link href="/connections" className="underline underline-offset-2 hover:text-foreground">
-              manage them
-            </Link>
-            .
-          </p>
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}

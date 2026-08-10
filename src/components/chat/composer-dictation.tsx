@@ -4,6 +4,8 @@ import * as React from "react";
 import { ArrowUp, Loader2, MicOff, Square, X } from "lucide-react";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useApp } from "@/components/app/app-provider";
+import { Button } from "@/components/ui/button";
+import { Pressable } from "@/components/ui/pressable";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,6 +30,14 @@ const DOT_COUNT = 36;
 const VOICE_BAND_HZ: [number, number] = [85, 4000];
 const NOISE_FLOOR = 9; // 0-255 — ignore ambient hiss so silence is truly still
 const EXIT_MS = 150;
+
+/**
+ * The capsule's inner circles are concentric with its shell, not on the icon
+ * ladder: 64px shell / radius 32 − 12px padding = a 20px inner radius, i.e. a
+ * 40px circle. `size="lg"` (36px) is the nearest rung and would break that, so
+ * the base size is overridden while the coarse-pointer rung is left alone.
+ */
+const CAPSULE_CIRCLE = "size-10 shrink-0 coarse:size-11";
 
 type Phase = "active" | "stopping" | "cancelling" | "sending";
 
@@ -88,6 +98,11 @@ export function ComposerDictation({
   const serverStt = features.serverStt;
 
   const phaseRef = React.useRef<Phase>("active");
+  /** Set the moment a cancel is accepted, including one that interrupts an
+   *  in-flight transcription — the awaiting continuation reads this to know it
+   *  was superseded. Separate from `phaseRef` so the check survives across the
+   *  awaits rather than being narrowed away at the assignment above it. */
+  const cancelledRef = React.useRef(false);
   const restartAtRef = React.useRef(0);
   const dotRefs = React.useRef<(HTMLSpanElement | null)[]>([]);
   const levelsRef = React.useRef<Float32Array>(new Float32Array(DOT_COUNT));
@@ -228,6 +243,18 @@ export function ComposerDictation({
     if (el) el.scrollTop = el.scrollHeight;
   }, [transcript]);
 
+  // Web Speech rewrites the interim span on every partial result, so wrapping
+  // the accumulated transcript in aria-live="polite" made a screen reader
+  // re-read the whole thing from the top on every word. message-list.tsx
+  // documents and solves this exact failure for streaming replies: the growing
+  // region goes silent and one dedicated node speaks each unit once, on settle.
+  // Here the unit is a completed utterance — a Web Speech `final`.
+  const [announcement, setAnnouncement] = React.useState("");
+  React.useEffect(() => {
+    const latest = finals[finals.length - 1]?.trim();
+    if (latest) setAnnouncement(latest);
+  }, [finals]);
+
   /** Stop the recorder and resolve the captured audio (null if nothing usable). */
   const stopRecorder = React.useCallback((): Promise<Blob | null> => {
     const recorder = recorderRef.current;
@@ -248,8 +275,15 @@ export function ComposerDictation({
 
   const finish = React.useCallback(
     (phase: Phase, done: (text: string) => void) => {
-      if (phaseRef.current !== "active") return;
+      // Cancel has to work at ANY point, including mid-transcription. Stop and
+      // Send both set the phase BEFORE awaiting the STT round-trip, so this
+      // guard used to swallow every cancel for the whole duration of that
+      // network call — Cancel sat at full opacity with its hover intact and did
+      // nothing, and Escape, which routes here, silently failed with it.
+      const abortingInFlight = phase === "cancelling" && phaseRef.current !== "active";
+      if (phaseRef.current !== "active" && !abortingInFlight) return;
       phaseRef.current = phase;
+      if (phase === "cancelling") cancelledRef.current = true;
       // Freeze the Web Speech text before recognition teardown clears the interim.
       const previewText = transcriptRef.current;
       speech.stop();
@@ -260,6 +294,7 @@ export function ComposerDictation({
       };
 
       if (phase === "cancelling") {
+        setTranscribing(false);
         void stopRecorder();
         close("");
         return;
@@ -267,10 +302,14 @@ export function ComposerDictation({
 
       void (async () => {
         const blob = await stopRecorder();
+        // A cancel that landed while we were awaiting owns the outcome now —
+        // finishing the send afterwards would submit text the user just discarded.
+        if (cancelledRef.current) return;
         // No server STT, nothing captured, or nothing said — keep the preview text.
         if (!serverStt || !blob || blob.size < 1200) return close(previewText);
         setTranscribing(true);
         const accurate = await transcribeBlob(blob);
+        if (cancelledRef.current) return;
         close(accurate ?? previewText);
       })();
     },
@@ -311,11 +350,15 @@ export function ComposerDictation({
       )}
     >
       <div className="relative w-full max-w-xl">
+        {/* The one speaking element — see the announcement effect above. */}
+        <span className="sr-only" role="status" aria-live="polite" data-no-auto-translate>
+          {announcement}
+        </span>
         {/* Live transcription preview — floats above the capsule. */}
         {!showFallback && (
           <div
             ref={previewRef}
-            aria-live="polite"
+            aria-live="off"
             className="absolute bottom-full left-1/2 mb-3 max-h-36 w-[92%] -translate-x-1/2 overflow-y-auto rounded-popover border border-border/60 bg-popover/80 px-4 py-3 text-sm leading-relaxed text-popover-foreground glass-raised backdrop-blur-xl"
           >
             {transcript ? (
@@ -347,26 +390,16 @@ export function ComposerDictation({
                   : "Dictation isn't available here — try Chrome, or enable server transcription."}
               </span>
             </span>
-            <button
-              type="button"
-              onClick={cancel}
-              aria-label="Close dictation"
-              className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground coarse:h-11 coarse:w-11"
-            >
+            <Pressable kind="icon" size="lg" onClick={cancel} aria-label="Close dictation" className={CAPSULE_CIRCLE}>
               <X className="h-4 w-4" />
-            </button>
+            </Pressable>
           </div>
         ) : (
           /* Capsule: 32px shell − 12px padding = 20px-radius inner circles (concentric). */
           <div className="flex h-16 items-center gap-3 rounded-full border border-border bg-card/90 px-3 shadow-float backdrop-blur-md">
-            <button
-              type="button"
-              onClick={cancel}
-              aria-label="Cancel dictation"
-              className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground coarse:h-11 coarse:w-11"
-            >
+            <Pressable kind="icon" size="lg" onClick={cancel} aria-label="Cancel dictation" className={cn(CAPSULE_CIRCLE, "border border-border")}>
               <X className="h-4 w-4" />
-            </button>
+            </Pressable>
 
             {/* Live frequency dots — driven by the analyser rAF loop above. */}
             <div className="flex min-w-0 flex-1 items-center justify-center gap-[3px]" aria-hidden>
@@ -381,28 +414,35 @@ export function ComposerDictation({
               ))}
             </div>
 
-            <button
-              type="button"
+            <Pressable
+              kind="icon"
+              size="lg"
               onClick={stop}
               autoFocus
               disabled={transcribing}
               aria-label="Stop and edit"
-              className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground transition-colors hover:bg-muted/80 disabled:pointer-events-none disabled:opacity-40 coarse:h-11 coarse:w-11"
+              className={cn(CAPSULE_CIRCLE, "bg-muted text-foreground")}
             >
               <Square className="h-3.5 w-3.5 fill-current" />
-            </button>
+            </Pressable>
 
-            <button
-              type="button"
+            {/* The same action as the composer's Send, one 220ms cross-fade away,
+                so it must be the same object: this was a hand-rolled
+                `rounded-full bg-primary` circle, which meant the product's
+                signature primary treatment (sheen sweep, gloss, coloured halo)
+                vanished the moment you started dictating and came back when you
+                stopped. */}
+            <Button
+              size="icon"
               onClick={send}
               // While transcribing there may be no preview text yet (Web Speech
               // unsupported), so gate on the recorder rather than the preview.
               disabled={transcribing || (!transcript && !serverStt)}
               aria-label="Send dictation"
-              className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-40 coarse:h-11 coarse:w-11"
+              className={cn(CAPSULE_CIRCLE, "rounded-full")}
             >
               {transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-[18px] w-[18px]" />}
-            </button>
+            </Button>
           </div>
         )}
       </div>

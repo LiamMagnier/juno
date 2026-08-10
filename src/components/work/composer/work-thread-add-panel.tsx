@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Check, FileText, FileUp, Loader2, RefreshCw, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Pressable } from "@/components/ui/pressable";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { Switch } from "@/components/ui/switch";
 import { useApp } from "@/components/app/app-provider";
@@ -69,7 +70,23 @@ const WORK_ACCEPT_ATTRIBUTE = [
   ".py",
 ].join(",");
 
-export function WorkThreadAddPanel({ context }: { context: WorkThreadContextState }) {
+export function WorkThreadAddPanel({
+  context,
+  onOpenLibrary,
+}: {
+  context: WorkThreadContextState;
+  /**
+   * Opens the account's library.
+   *
+   * Owned by the composer rather than by this panel, and that is not tidiness:
+   * `LibraryPicker` is a modal dialog and this panel lives inside a popover
+   * Radix unmounts the moment focus leaves it, so a dialog opened from in here
+   * would take its own trigger down with it. The composer closes the popover
+   * and opens the dialog as one gesture, exactly as the Code composer's menu
+   * does with the same picker.
+   */
+  onOpenLibrary: () => void;
+}) {
   const { features } = useApp();
   const { load } = context;
 
@@ -87,7 +104,7 @@ export function WorkThreadAddPanel({ context }: { context: WorkThreadContextStat
     <div className="flex max-h-[min(30rem,70vh)] flex-col">
       <ScrollFade className="min-h-0 flex-1" viewportClassName="space-y-4 p-3">
         {context.reachUnreadable && (
-          <div className="space-y-2 rounded-lg border border-border/70 px-2.5 py-2">
+          <div className="space-y-2 rounded-field border border-border/70 px-2.5 py-2">
             <p className="text-[12.5px] leading-relaxed text-muted-foreground">
               Juno couldn’t read what this task is already working with, so it can’t safely add to
               it. Nothing has changed.
@@ -105,7 +122,9 @@ export function WorkThreadAddPanel({ context }: { context: WorkThreadContextStat
           </p>
         )}
 
-        {features.storage && context.reachKnown && <FilesSection context={context} />}
+        {features.storage && context.reachKnown && (
+          <FilesSection context={context} onOpenLibrary={onOpenLibrary} />
+        )}
 
         {context.reachKnown && <AppsSection context={context} />}
 
@@ -134,7 +153,13 @@ export function WorkThreadAddPanel({ context }: { context: WorkThreadContextStat
  * certain to treat it as an addition. Sending what the task should end up with
  * is correct under either reading.
  */
-function FilesSection({ context }: { context: WorkThreadContextState }) {
+function FilesSection({
+  context,
+  onOpenLibrary,
+}: {
+  context: WorkThreadContextState;
+  onOpenLibrary: () => void;
+}) {
   const { uploads, addFiles, remove, isUploading, readyAttachments } = useUploads(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -168,7 +193,7 @@ function FilesSection({ context }: { context: WorkThreadContextState }) {
             return (
               <li
                 key={upload.localId}
-                className="flex items-center gap-2 rounded-lg border border-border/70 px-2 py-1.5 motion-safe:animate-rise-in"
+                className="flex items-center gap-2 rounded-control border border-border/70 px-2 py-1.5 motion-safe:animate-rise-in"
               >
                 <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <span className="min-w-0 flex-1">
@@ -189,14 +214,19 @@ function FilesSection({ context }: { context: WorkThreadContextState }) {
                 {added ? (
                   <Check className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
                 ) : (
-                  <button
-                    type="button"
+                  // Was an ~18px square glyph with no growth on touch, against a
+                  // circular badge for the same act on the home composer.
+                  // `Pressable kind="icon"` is one circular affordance at one
+                  // hit size, and grows to 36px on a coarse pointer.
+                  <Pressable
+                    kind="icon"
+                    size="sm"
                     onClick={() => remove(upload.localId)}
                     aria-label={`Remove ${upload.fileName}`}
-                    className="shrink-0 rounded-sm p-0.5 text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="shrink-0"
                   >
                     <X className="size-3.5" aria-hidden="true" />
-                  </button>
+                  </Pressable>
                 )}
               </li>
             );
@@ -214,6 +244,19 @@ function FilesSection({ context }: { context: WorkThreadContextState }) {
           className="gap-1.5"
         >
           <FileUp className="h-3.5 w-3.5" aria-hidden="true" /> Add a file
+        </Button>
+        {/* The home composer offers Files AND the library behind its [+]; this
+            one offered only Files, so the same act — give this task a document
+            — meant re-uploading something the account already holds. */}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onOpenLibrary}
+          disabled={context.saving}
+          className="gap-1.5"
+        >
+          <AppIcons.library className="h-3.5 w-3.5" aria-hidden="true" /> From your library
         </Button>
         {pending.length > 0 && (
           <Button
@@ -315,13 +358,18 @@ function AppsSection({ context }: { context: WorkThreadContextState }) {
             const active = context.connectorIds.includes(connector.id);
             return (
               <li key={connector.id}>
-                <button
-                  type="button"
+                {/* `selected` is deliberately NOT set: the Switch beside the
+                    label already reports on/off, and the row fill would be a
+                    second, louder answer to the same question. This is here for
+                    the shared radius, padding, press and disabled behaviour the
+                    hand-rolled version was re-deciding. */}
+                <Pressable
+                  kind="row"
+                  size="sm"
                   role="switch"
                   aria-checked={active}
                   disabled={context.saving}
                   onClick={() => toggle(connector.id)}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
                 >
                   <AppIcons.connections
                     className={cn(
@@ -332,7 +380,7 @@ function AppsSection({ context }: { context: WorkThreadContextState }) {
                   />
                   <span className="min-w-0 flex-1 truncate text-[12.5px]">{connector.label}</span>
                   <Switch checked={active} tabIndex={-1} aria-hidden className="pointer-events-none" />
-                </button>
+                </Pressable>
               </li>
             );
           })}
@@ -389,12 +437,13 @@ function SkillSection({ context }: { context: WorkThreadContextState }) {
             const active = context.reachKnown && context.skillSlug === skill.slug;
             return (
               <li key={skill.id}>
-                <button
-                  type="button"
+                <Pressable
+                  kind="row"
+                  size="sm"
+                  selected={active}
                   disabled={context.saving}
                   aria-pressed={active}
                   onClick={() => context.change({ skillSlug: active ? null : skill.slug })}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-fast ease-out-soft hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
                 >
                   <Sparkles
                     className={cn(
@@ -410,7 +459,7 @@ function SkillSection({ context }: { context: WorkThreadContextState }) {
                     </span>
                   </span>
                   {active && <Check className="size-3.5 shrink-0 text-primary" aria-hidden="true" />}
-                </button>
+                </Pressable>
               </li>
             );
           })}

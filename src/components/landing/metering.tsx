@@ -1,6 +1,8 @@
+import { ReceiptText } from "lucide-react";
 import { getModel } from "@/lib/models";
 import { estimateCostUsd } from "@/lib/pricing";
-import { Card } from "@/components/ui/card";
+import { Card, CardEyebrow } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Section } from "@/components/landing/section";
 
 /**
@@ -71,20 +73,39 @@ export function Metering() {
             resolves to the same 24px this used to hardcode, and adds the sheen
             the in-app cards are lit by. */}
         <Card className="p-6">
-          <p className="font-mono text-caption text-muted-foreground">One message, priced</p>
+          {/* CardEyebrow, not a hand-rolled <p>: this was the mono kicker at
+              text-caption while PageHeader sets the same role at text-label five
+              times higher up the page. */}
+          <CardEyebrow>One message, priced</CardEyebrow>
           <p className="mt-1.5 text-caption text-muted-foreground">
             The same exchange — about {SAMPLE.input.toLocaleString("en-US")} tokens in,{" "}
             {SAMPLE.output.toLocaleString("en-US")} out — at today&rsquo;s list prices.
           </p>
-          <ul className="mt-5 space-y-3 font-mono text-caption">
-            {ROWS.map(({ name, cost }) => (
-              <li key={name} className="flex items-baseline gap-2.5">
-                <span className="whitespace-nowrap">{name}</span>
-                <span className="min-w-4 flex-1 border-b border-dotted border-border" aria-hidden />
-                <span className="tabular-nums text-muted-foreground">~{cost}</span>
-              </li>
-            ))}
-          </ul>
+          {ROWS.length > 0 ? (
+            <ul className="mt-5 space-y-3 font-mono text-caption">
+              {ROWS.map(({ name, cost }) => (
+                <li key={name} className="flex items-baseline gap-2.5">
+                  <span className="whitespace-nowrap">{name}</span>
+                  <span className="min-w-4 flex-1 border-b border-dotted border-border" aria-hidden />
+                  <span className="tabular-nums text-muted-foreground">~{cost}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            // Dropping one stale id is honest; dropping all six leaves the intro
+            // above and the "this is the exact math" line below bracketing an
+            // empty <ul>, on a server-rendered page with no runtime signal that
+            // anything broke. tone="error" because that is a failure, not a
+            // feature nobody has used yet.
+            <EmptyState
+              className="mt-5"
+              tone="error"
+              size="panel"
+              icon={ReceiptText}
+              title="Receipt unavailable"
+              description="None of the sample models resolve against the current registry, so there is nothing honest to price here."
+            />
+          )}
           <p className="mt-5 border-t border-dotted border-border pt-4 text-caption text-muted-foreground">
             This is the exact math your usage meter runs in the app — shown on every reply, tallied on your plan.
           </p>

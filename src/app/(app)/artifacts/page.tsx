@@ -26,11 +26,11 @@ import {
 import { ShareDialog } from "@/components/share/share-dialog";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { extensionForLanguage, runtimeFor } from "@/lib/artifact-runtime";
-import { cn } from "@/lib/utils";
 import type { ArtifactType } from "@/lib/message-content";
 import { staggerDelay } from "@/lib/motion";
 import { AppPageHeader } from "@/components/app/app-page-header";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Pressable } from "@/components/ui/pressable";
 
 const ICONS: Record<ArtifactType, typeof Code2> = {
   HTML: Globe,
@@ -276,24 +276,25 @@ export default function ArtifactsPage() {
               />
             </div>
             {presentTypes.length > 1 && (
-              <div role="group" aria-label="Filter by type" className="flex flex-wrap items-center gap-1.5">
+              // radiogroup, not a group of aria-pressed toggles: setTypeFilter
+              // replaces the filter, it never toggles one, so a screen reader was
+              // hearing four independent switches instead of one choice.
+              <div role="radiogroup" aria-label="Filter by type" className="flex flex-wrap items-center gap-1.5">
                 {(["ALL", ...presentTypes] as const).map((t) => {
                   const selected = typeFilter === t;
                   return (
-                    <button
+                    <Pressable
                       key={t}
-                      type="button"
+                      kind="chip"
+                      size="sm"
+                      selected={selected}
+                      role="radio"
+                      aria-checked={selected}
                       onClick={() => setTypeFilter(t)}
-                      aria-pressed={selected}
-                      className={cn(
-                        "pressable rounded-full border px-2.5 py-1 font-mono text-[10px]",
-                        selected
-                          ? "border-primary/40 bg-primary/10 text-primary"
-                          : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
-                      )}
+                      className="font-mono text-[10px]"
                     >
                       {t === "ALL" ? "All" : TYPE_LABELS[t]}
-                    </button>
+                    </Pressable>
                   );
                 })}
               </div>
@@ -302,20 +303,27 @@ export default function ArtifactsPage() {
         )}
 
         {error ? (
-          <div className="mt-16 flex flex-col items-center gap-3 text-center motion-safe:animate-rise-in">
-            {error === "offline" && <WifiOff className="h-5 w-5 text-muted-foreground/60" aria-hidden />}
-            <p className="font-serif text-heading">{error === "offline" ? "You're offline" : "Couldn't load your artifacts"}</p>
-            <p className="max-w-sm text-sm text-muted-foreground">
-              {error === "offline"
+          // A failed fetch was the only state on this page rendered as unfenced
+          // floating text, so the failure looked lighter than the empty state 25
+          // lines below it. tone="error" also gets role="status" for free.
+          <EmptyState
+            tone="error"
+            className="mt-10 motion-safe:animate-rise-in"
+            icon={error === "offline" ? WifiOff : undefined}
+            title={error === "offline" ? "You’re offline" : "Couldn’t load your artifacts"}
+            description={
+              error === "offline"
                 ? "Your artifacts will load again the moment the connection returns."
-                : "Something went wrong on the way here."}
-            </p>
-            <Button variant="outline" size="sm" onClick={load}>
-              Try again
-            </Button>
-          </div>
+                : "Something went wrong on the way here."
+            }
+            action={
+              <Button variant="outline" size="sm" onClick={load}>
+                Try again
+              </Button>
+            }
+          />
         ) : loading ? (
-          <div className="mt-6 divide-y divide-border/50 rounded-card border border-border/60">
+          <div className="mt-6 divide-y divide-border/50 rounded-popover border border-border/60">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="flex items-center gap-3 px-4 py-3">
                 <div className="skeleton size-8 rounded-control" style={staggerDelay(i, "tight")} />
@@ -345,24 +353,32 @@ export default function ArtifactsPage() {
             }
           />
         ) : noResults ? (
-          <div className="mt-12 flex flex-col items-center gap-3 py-10 text-center motion-safe:animate-fade-in">
-            <p className="font-serif text-heading">No matches.</p>
-            <p className="max-w-sm text-sm text-muted-foreground">
-              Nothing fits {query.trim() ? `"${query.trim()}"` : "these filters"}.
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setQuery("");
-                setTypeFilter("ALL");
-              }}
-            >
-              Clear filters
-            </Button>
-          </div>
+          // One no-results shape across projects / artifacts / library: panel size,
+          // Search mark, "No matching …", ghost Clear filters.
+          <EmptyState
+            className="mt-6"
+            size="panel"
+            icon={Search}
+            title="No matching artifacts"
+            description={`Nothing fits ${query.trim() ? `“${query.trim()}”` : "these filters"}.`}
+            action={
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                onClick={() => {
+                  setQuery("");
+                  setTypeFilter("ALL");
+                }}
+              >
+                Clear filters
+              </Button>
+            }
+          />
         ) : (
-          <ul className="mt-6 divide-y divide-border/50 overflow-hidden rounded-card border border-border/60 bg-card/40">
+          // rounded-popover (18) is the family's rung for a list container that fences
+          // rows — library's browser already uses it; this was rounded-card (16).
+          <ul className="mt-6 divide-y divide-border/50 overflow-hidden rounded-popover border border-border/60 bg-card/40">
             {filtered.map((item, i) => {
               const Icon = ICONS[item.type] ?? FileCode2;
               const rt = runtimeFor(item.type, item.language);

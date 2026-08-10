@@ -276,10 +276,18 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
               )}
             >
               {status === "done" && <Check className="h-3 w-3" aria-hidden />}
+              {/* `animate-pulse`, not `animate-ping`. Tailwind's ping keyframe
+                  scales its element to 2× and drives opacity to 0, holding it
+                  there for ~75% of the cycle — it is written for a duplicate ring
+                  BEHIND a solid dot. Applied to the dot itself, the one marker
+                  saying which stage is running now was invisible most of the time
+                  and a smeared blob over the pill's label the rest of it. This is
+                  the same solid-dot + pulse marker artifact-inline-card uses for
+                  its live status. */}
               {status === "active" && (
                 <span
                   aria-hidden
-                  className="h-1.5 w-1.5 rounded-full bg-primary motion-safe:animate-ping"
+                  className="h-1.5 w-1.5 rounded-full bg-primary motion-safe:animate-pulse"
                 />
               )}
               {RESEARCH_STAGE_LABEL[key]}

@@ -99,7 +99,7 @@ export function WorkAttempts({
         {[...Array(2)].map((_, index) => (
           <Skeleton
             key={index}
-            className="h-10 w-full rounded-lg"
+            className="h-10 w-full rounded-control"
             style={staggerDelay(index, "tight")}
           />
         ))}
@@ -153,7 +153,9 @@ function AttemptRow({ run, isCurrent }: { run: ClientWorkRun; isCurrent: boolean
   return (
     <div
       className={cn(
-        "rounded-lg px-2 py-1.5",
+        // `rounded-control`, the list-row rung. `rounded-lg` is 24px here, which
+        // on a 30px row is very nearly a pill.
+        "rounded-control px-2 py-1.5",
         isCurrent ? "bg-muted/50" : "transition-colors duration-base ease-out-soft hover:bg-muted/30"
       )}
     >
