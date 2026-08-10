@@ -224,11 +224,25 @@ struct DesktopDraftGreeting: View {
 
             sentence
 
-            // The web's mirror column. `Color.clear` has no intrinsic size, so it
-            // can only ever absorb slack — it cannot report a height back up and
-            // therefore cannot influence the detail column that contains it.
+            // The web's mirror column, balancing the mark's flexible cell on the
+            // other side of the phrase.
+            //
+            // `maxHeight: 0` is the whole fix for the home screen's dead space.
+            // The note that used to sit here said `Color.clear` "has no intrinsic
+            // size, so it can only ever absorb slack — it cannot report a height
+            // back up". That is true of the WIDTH and false of the height: a
+            // `Color` is greedy in both axes, so this cell quietly grew to the
+            // full height of the column, took the greeting's row with it, and
+            // pushed the composer to the floor of the window. The draft screen
+            // read as a greeting stranded at the top of a void with a composer
+            // parked at the bottom, instead of the pair the VStack around it is
+            // written to centre.
+            //
+            // Constraining the height rather than swapping in a `Spacer` keeps
+            // the horizontal behaviour identical: this has to be a flexible CELL
+            // mirroring `frame(maxWidth: .infinity)` opposite, not a spring.
             Color.clear
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: 0)
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, JunoSpace.region)
