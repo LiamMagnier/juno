@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import type { ArtifactType } from "@/lib/message-content";
 import { staggerDelay } from "@/lib/motion";
 import { AppPageHeader } from "@/components/app/app-page-header";
+import { EmptyState } from "@/components/ui/empty-state";
 
 const ICONS: Record<ArtifactType, typeof Code2> = {
   HTML: Globe,
@@ -326,22 +327,23 @@ export default function ArtifactsPage() {
             ))}
           </div>
         ) : empty ? (
-          <div className="mt-12 flex flex-col items-center gap-3 py-10 text-center motion-safe:animate-rise-in">
-            <p className="font-serif text-heading">Nothing here yet.</p>
-            <p className="max-w-sm text-sm leading-6 text-muted-foreground">
-              Ask Juno to build a page, component, document or diagram — or to design a screen — and it opens in the
-              Canvas and collects here.
-            </p>
-            <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-              <Button size="sm" onClick={() => router.push("/chat")}>
-                Start building
-              </Button>
-              <Button size="sm" variant="outline" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
-                <PenTool className="size-3.5" aria-hidden />
-                {startingDesign ? "Creating…" : "New design"}
-              </Button>
-            </div>
-          </div>
+          <EmptyState
+            className="mt-10 motion-safe:animate-rise-in"
+            icon={AppIcons.artifacts}
+            title="Nothing here yet"
+            description="Ask Juno to build a page, component, document or diagram — or to design a screen — and it opens in the Canvas and collects here."
+            action={
+              <>
+                <Button size="sm" onClick={() => router.push("/chat")}>
+                  Start building
+                </Button>
+                <Button size="sm" variant="outline" onClick={startDesign} disabled={startingDesign} className="gap-1.5">
+                  <PenTool className="size-3.5" aria-hidden />
+                  {startingDesign ? "Creating…" : "New design"}
+                </Button>
+              </>
+            }
+          />
         ) : noResults ? (
           <div className="mt-12 flex flex-col items-center gap-3 py-10 text-center motion-safe:animate-fade-in">
             <p className="font-serif text-heading">No matches.</p>

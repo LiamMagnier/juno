@@ -11,6 +11,7 @@ import { WorkScheduleRow } from "@/components/work/work-schedule-row";
 import { fetchWorkSchedules } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 import { staggerDelay } from "@/lib/motion";
+import { EmptyState } from "@/components/ui/empty-state";
 
 /**
  * Everything that starts without being asked.
@@ -96,19 +97,17 @@ export default function WorkSchedulesPage() {
           ))}
         </div>
       ) : schedules.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border/70 px-4 py-8 text-center">
-          <p className="font-serif text-heading">Nothing scheduled</p>
-          <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-muted-foreground">
-            A schedule is a task with a trigger on it: every weekday at eight, when an invoice
-            arrives, when a folder changes. Juno runs it while you are elsewhere and asks before
-            anything it cannot undo.
-          </p>
-          <Button asChild size="sm" className="mt-4 gap-1.5">
-            <Link href="/work/schedules/new">
-              <Plus className="h-3.5 w-3.5" aria-hidden="true" /> New schedule
-            </Link>
-          </Button>
-        </div>
+        <EmptyState
+          title="Nothing scheduled"
+          description="A schedule is a task with a trigger on it: every weekday at eight, when an invoice arrives, when a folder changes. Juno runs it while you are elsewhere and asks before anything it cannot undo."
+          action={
+            <Button asChild size="sm" className="gap-1.5">
+              <Link href="/work/schedules/new">
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" /> New schedule
+              </Link>
+            </Button>
+          }
+        />
       ) : (
         <div className="space-y-2.5">
           {schedules.map((schedule, index) => (

@@ -43,6 +43,7 @@ import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { IndexStatus, type KnowledgeIndexState } from "@/components/library/index-status";
 import { cn, formatBytes } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
+import { EmptyState } from "@/components/ui/empty-state";
 
 interface LibItem {
   id: string;
@@ -900,36 +901,44 @@ export default function LibraryPage() {
         )}
 
         {error ? (
-          <div className="mt-6 flex min-h-64 flex-col items-center justify-center border-y border-border/60 px-5 py-16 text-center">
-            <p className="text-sm font-medium">Couldn’t load your library.</p>
-            <p className="mt-1 max-w-xs text-sm text-muted-foreground">Check your connection and try once more.</p>
-            <Button variant="outline" size="sm" onClick={() => load()} className="group/retry mt-4 gap-2">
-              <RefreshCw className="size-3.5 transition-transform duration-base group-hover/retry:rotate-45 motion-reduce:transition-none" />
-              Try again
-            </Button>
-          </div>
+          <EmptyState
+            tone="error"
+            className="mt-6"
+            title="Couldn’t load your library"
+            description="Check your connection and try once more."
+            action={
+              <Button variant="outline" size="sm" onClick={() => load()} className="group/retry gap-2">
+                <RefreshCw className="size-3.5 transition-transform duration-base group-hover/retry:rotate-45 motion-reduce:transition-none" />
+                Try again
+              </Button>
+            }
+          />
         ) : loading ? (
           <LoadingBrowser view={view} />
         ) : libraryEmpty ? (
-          <div className="mt-6 flex min-h-72 flex-col items-center justify-center border-y border-border/60 px-5 py-16 text-center">
-            <AppIcons.library className="size-6 text-muted-foreground/70" strokeWidth={1.5} />
-            <p className="mt-4 font-serif text-xl font-medium">Your library is empty</p>
-            <p className="mt-1 max-w-sm text-sm leading-relaxed text-muted-foreground">
-              Files and images you share with Juno will appear here automatically.
-            </p>
-            <Button variant="outline" size="sm" asChild className="mt-5">
-              <Link href="/chat">Go to chat</Link>
-            </Button>
-          </div>
+          <EmptyState
+            className="mt-6"
+            icon={AppIcons.library}
+            title="Your library is empty"
+            description="Files and images you share with Juno will appear here automatically."
+            action={
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/chat">Go to chat</Link>
+              </Button>
+            }
+          />
         ) : noResults ? (
-          <div className="mt-6 flex min-h-64 flex-col items-center justify-center border-y border-border/60 px-5 py-16 text-center">
-            <Search className="size-5 text-muted-foreground/65" />
-            <p className="mt-4 text-sm font-medium">No matching files</p>
-            <p className="mt-1 text-sm text-muted-foreground">Try another search or remove the current filter.</p>
-            <Button variant="ghost" size="sm" onClick={clearFilters} className="mt-3 text-muted-foreground">
-              Clear filters
-            </Button>
-          </div>
+          <EmptyState
+            className="mt-6"
+            icon={Search}
+            title="No matching files"
+            description="Try another search or remove the current filter."
+            action={
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="text-muted-foreground">
+                Clear filters
+              </Button>
+            }
+          />
         ) : view === "grid" ? (
           <section className="mt-5 motion-safe:animate-fade-in" aria-label="Files grid">
             <div

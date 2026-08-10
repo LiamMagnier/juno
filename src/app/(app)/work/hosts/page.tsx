@@ -14,6 +14,7 @@ import {
 } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 import { staggerDelay } from "@/lib/motion";
+import { EmptyState } from "@/components/ui/empty-state";
 
 /**
  * Every Mac that has registered itself with Juno Work.
@@ -136,14 +137,10 @@ export default function WorkHostsPage() {
           ))}
         </div>
       ) : hosts.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border/70 px-4 py-8 text-center">
-          <p className="font-serif text-heading">No Macs yet</p>
-          <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-muted-foreground">
-            A Mac appears here on its own once you install Juno on it, sign in and switch Work on
-            from the app. Until one does, every task runs in the cloud — which means a task that
-            needs a folder on your disk, an app or your signed-in browser cannot run at all.
-          </p>
-        </div>
+        <EmptyState
+          title="No Macs yet"
+          description="A Mac appears here on its own once you install Juno on it, sign in and switch Work on from the app. Until one does, every task runs in the cloud — which means a task that needs a folder on your disk, an app or your signed-in browser cannot run at all."
+        />
       ) : (
         <>
           {/* Shown above a list that still has real rows in it. Blanking the

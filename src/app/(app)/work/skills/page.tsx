@@ -11,6 +11,7 @@ import { WorkSkillRow } from "@/components/work/work-skill-row";
 import { fetchWorkSkills } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
 import { staggerDelay } from "@/lib/motion";
+import { EmptyState } from "@/components/ui/empty-state";
 
 /**
  * The instructions Juno can be handed, rather than told again every time.
@@ -81,19 +82,17 @@ export default function WorkSkillsPage() {
           ))}
         </div>
       ) : skills.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border/70 px-4 py-8 text-center">
-          <p className="font-serif text-heading">No skills yet</p>
-          <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-muted-foreground">
-            Write down the way you want something done once — how your invoices are filed, what a
-            weekly summary has to contain — and hand it to Juno by name instead of describing it
-            again each time.
-          </p>
-          <Button asChild size="sm" className="mt-4 gap-1.5">
-            <Link href="/work/skills/new">
-              <Plus className="h-3.5 w-3.5" aria-hidden="true" /> New skill
-            </Link>
-          </Button>
-        </div>
+        <EmptyState
+          title="No skills yet"
+          description="Write down the way you want something done once — how your invoices are filed, what a weekly summary has to contain — and hand it to Juno by name instead of describing it again each time."
+          action={
+            <Button asChild size="sm" className="gap-1.5">
+              <Link href="/work/skills/new">
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" /> New skill
+              </Link>
+            </Button>
+          }
+        />
       ) : (
         <div className="space-y-2.5">
           {skills.map((skill, index) => (
