@@ -251,6 +251,15 @@
     --ease-in: cubic-bezier(0.4, 0, 1, 1);
     --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
     --ease-breathe: cubic-bezier(0.45, 0, 0.55, 1);
+    /* The only curve here that OVERSHOOTS, and the only one for an element with
+       apparent mass — a segmented thumb, a sheet catching itself, anything that
+       should look like it settled rather than stopped.
+       Deliberately mild (y2 = 1.32, roughly a 3% overrun): past about 1.5 the
+       overshoot stops reading as weight and starts reading as a bounce effect,
+       and every other curve in this file is overshoot-free on purpose. Do not
+       use it for opacity or colour — a value that overshoots past its target is
+       meaningless for those and just clips. */
+    --ease-out-back: cubic-bezier(0.34, 1.32, 0.64, 1);
     /* Deprecated alias of --ease-out-strong, kept so existing sites keep
        resolving; delete once they have migrated. */
     --ease-spring: var(--ease-out-strong);

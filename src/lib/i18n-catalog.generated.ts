@@ -326,6 +326,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Provider availability"
   },
   {
+    "id": "04ce686a8565da3c",
+    "source": "icons"
+  },
+  {
     "id": "04d7b48339271ea6",
     "source": "Messages"
   },
@@ -2192,6 +2196,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2795af2817d3745e",
     "source": "File versions"
+  },
+  {
+    "id": "27988c86bba0cc06",
+    "source": "Switcher rework"
   },
   {
     "id": "27990eb1bc893206",
@@ -6130,6 +6138,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "not_queued"
   },
   {
+    "id": "6c973db6a61ddcfd",
+    "source": "over the composer — chat / work"
+  },
+  {
     "id": "6c9aeecc799d6b58",
     "source": "Hide detail"
   },
@@ -6204,6 +6216,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6da8da6d15d1146d",
     "source": "this file"
+  },
+  {
+    "id": "6db7d803e74f1ffa",
+    "source": "before"
   },
   {
     "id": "6dee4bfab0108d08",
@@ -9210,6 +9226,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Download source"
   },
   {
+    "id": "a14ffb67e5bdf52a",
+    "source": "sidebar — home / code"
+  },
+  {
     "id": "a1794783aab72d20",
     "source": "Offline"
   },
@@ -10260,6 +10280,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b3a9f29f68ac9c39",
     "source": "Billed"
+  },
+  {
+    "id": "b3ae57fa802eb6e6",
+    "source": "at 14px"
   },
   {
     "id": "b3bb7ec92505d9e6",
@@ -13342,6 +13366,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No picture yet"
   },
   {
+    "id": "e847792c9314e55f",
+    "source": "Press and hold a selected segment — the thumb now dips into the well with its shadow collapsing, instead of only the label moving."
+  },
+  {
     "id": "e8694d59fdfea80b",
     "source": "Try a chat title, or a command like “settings”."
   },
@@ -14008,6 +14036,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f380d4058df8a9b9",
     "source": "Motion timeline"
+  },
+  {
+    "id": "f39592393ef0859c",
+    "source": "after"
   },
   {
     "id": "f3afa81f0ebab6ae",

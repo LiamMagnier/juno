@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Menu, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
@@ -9,6 +9,7 @@ import { AnimatedTitle } from "@/components/app/animated-title";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
 import { Onboarding } from "@/components/app/onboarding";
 import { CommandPalette } from "@/components/app/command-palette";
+import { ChatWorkSwitcher } from "@/components/chat/chat-work-switcher";
 import { PageTransition } from "@/components/app/page-transition";
 import { AnnouncementPopup } from "@/components/app/announcement-popup";
 import { useApp } from "@/components/app/app-provider";
@@ -33,6 +34,18 @@ function clampWidth(w: number) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { sidebarOpen, setSidebarOpen, activeConversationId, conversations } = useApp();
   const router = useRouter();
+  const pathname = usePathname();
+
+  /**
+   * The Chat/Work slider is scoped to the two surfaces it switches between.
+   *
+   * Not shown app-wide: on /settings or /projects it would be a control that
+   * navigates away from the page you are on, which is a nav item pretending to
+   * be a toggle. Those places reach Work through the sidebar and the command
+   * palette, as they already did.
+   */
+  const showSurfaceSwitcher =
+    pathname === "/" || pathname?.startsWith("/chat") || pathname?.startsWith("/work");
   const [collapsed, setCollapsed] = React.useState(false);
   // Resizable sidebar (desktop). Width lives in state + a CSS var on the aside;
   // the ref mirrors it so pointermove handlers never read a stale closure.
@@ -272,6 +285,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Plus className="h-5 w-5" />
           </Button>
         </div>
+        {/* Chat ⇄ Work. Centred over the conversation rather than parked in the
+            sidebar: the choice belongs where you are already looking when you
+            decide what to ask for, and it survives the sidebar being collapsed
+            or absent. `pt-3 md:pt-4` because on mobile it sits under the nav row
+            above, which has already paid the safe-area inset. */}
+        {showSurfaceSwitcher && (
+          <div className="flex shrink-0 justify-center px-4 pb-1 pt-3 md:pt-4">
+            <ChatWorkSwitcher />
+          </div>
+        )}
         <div className="min-h-0 flex-1">
           <PageTransition>{children}</PageTransition>
         </div>

@@ -68,6 +68,11 @@ type ConfirmState = { title: string; description: string; confirmLabel: string; 
  *  next to the account row where a destination belongs. */
 type SidebarMode = "home" | "work" | "code";
 
+/** The subset the sidebar toggle actually offers; Work moved to the composer's
+ *  Chat/Work slider. Separate from `SidebarMode` so the toggle cannot be handed
+ *  a value it has no segment for. */
+type ToggleMode = Exclude<SidebarMode, "work">;
+
 /** Landing route per mode — what switching the toggle actually navigates to. */
 const MODE_HOME: Record<SidebarMode, string> = {
   home: "/chat",
@@ -145,6 +150,23 @@ export function AppSidebar({
   // not conversations); Code shows Juno Code sessions synced from the app
   // (conversations with kind "code"). Persisted like the collapse prefs.
   const [mode, setMode] = React.useState<SidebarMode>("home");
+
+  /**
+   * Work mode follows the ROUTE, because it is no longer a segment anyone can
+   * click here — it moved to the Chat/Work slider above the composer.
+   *
+   * Scoped to `/work` on purpose. The other two modes stay user-chosen and
+   * persisted: making all three route-derived would mean landing on /settings
+   * or /projects (which match nothing) silently kept whatever mode was last
+   * set, while /chat would forcibly overrule a restored `code` preference on
+   * every cold load. One new rule, for the one mode that gained a new door.
+   */
+  React.useEffect(() => {
+    if (!pathname) return;
+    if (pathname.startsWith("/work")) setMode("work");
+    else setMode((prev) => (prev === "work" ? "home" : prev));
+  }, [pathname]);
+
   // Work mode data: the user's Work tasks, polled like the Code lists below.
   const [workSessions, setWorkSessions] = React.useState<ClientWorkSession[]>([]);
   const [workLoaded, setWorkLoaded] = React.useState(false);
@@ -1079,12 +1101,21 @@ export function AppSidebar({
   );
 }
 
-/** Home/Work/Code switch. A thin wrapper over the shared SegmentedControl: same
+/** Home/Code switch. A thin wrapper over the shared SegmentedControl: same
  *  depth idiom (well track + raised thumb) and radiogroup semantics, laid out
- *  vertically (icon-only) in the collapsed rail. The segment icons keep the
- *  sidebar's hover micro-motion. SegmentedControl measures its own geometry, so
- *  a third option needs no sizing here — the thumb glides between three
- *  segments exactly as it did between two. */
+ *  vertically (icon-only) in the collapsed rail.
+ *
+ *  Work is deliberately NOT a third segment. It is not a third product — it is
+ *  the same assistant doing something on your behalf instead of answering you,
+ *  so it belongs beside Chat, not beside Code. It now lives in the Chat/Work
+ *  slider above the composer (`ChatWorkSwitcher`), which also gives it a place
+ *  where the choice is visible while you are making it, rather than in a
+ *  sidebar that is collapsed half the time.
+ *
+ *  Two consequences worth knowing. The sidebar still HAS a work mode — it swaps
+ *  its list — but it now reads that from the route rather than from this
+ *  toggle. And at 240px the labels get their padding back, because two segments
+ *  fit where three had to be squeezed to `px-2`. */
 function ModeToggle({
   mode,
   onChange,
@@ -1094,9 +1125,14 @@ function ModeToggle({
   onChange: (mode: SidebarMode) => void;
   compact?: boolean;
 }) {
+  // Work has no segment, so while the sidebar is in work mode the toggle shows
+  // Home — which is the truth: Work is a surface inside Home, and the user got
+  // there through Home. Leaving both segments unlit instead would make the
+  // control look broken for the whole time a task is open.
+  const shown: ToggleMode = mode === "code" ? "code" : "home";
   return (
-    <SegmentedControl
-      value={mode}
+    <SegmentedControl<ToggleMode>
+      value={shown}
       onChange={onChange}
       ariaLabel="Sidebar mode"
       orientation={compact ? "vertical" : "horizontal"}
@@ -1107,7 +1143,6 @@ function ModeToggle({
       optionClassName={compact ? undefined : "gap-1.5 px-2"}
       options={[
         { value: "home", label: "Home", icon: <SidebarMotionIcon kind="home" className="h-3.5 w-3.5" /> },
-        { value: "work", label: "Work", icon: <SidebarMotionIcon kind="work" className="h-3.5 w-3.5" /> },
         { value: "code", label: "Code", icon: <SidebarMotionIcon kind="code" className="h-3.5 w-3.5" /> },
       ]}
     />

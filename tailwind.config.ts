@@ -192,6 +192,9 @@ const config: Config = {
         // verbatim in the pulse-ring / status-glow / gen-sweep keyframes below;
         // see the reasoning beside --ease-breathe in globals.css.
         breathe: "cubic-bezier(0.45, 0, 0.55, 1)",
+        // The one overshooting curve — for elements with apparent mass that
+        // should settle rather than stop. See --ease-out-back in globals.css.
+        "out-back": "cubic-bezier(0.34, 1.32, 0.64, 1)",
       },
       transitionDuration: {
         press: "70ms",

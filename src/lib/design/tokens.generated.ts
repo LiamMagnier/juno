@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: fcc87a86da080e62
+// tokens-digest: 8670400e17d08656
 //
 
 /** `--dur-*` in milliseconds. */
@@ -22,6 +22,7 @@ export const EASING = {
   breathe: [0.45, 0, 0.55, 1] as const,
   in: [0.4, 0, 1, 1] as const,
   inOut: [0.65, 0, 0.35, 1] as const,
+  outBack: [0.34, 1.32, 0.64, 1] as const,
   outExpo: [0.16, 1, 0.3, 1] as const,
   outSoft: [0.33, 1, 0.68, 1] as const,
   outStrong: [0.32, 0.72, 0, 1] as const,

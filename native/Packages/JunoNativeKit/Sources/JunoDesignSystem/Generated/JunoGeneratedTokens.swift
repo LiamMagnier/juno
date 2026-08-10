@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: fcc87a86da080e62
+// tokens-digest: 8670400e17d08656
 //
 
 import CoreGraphics
@@ -333,6 +333,8 @@ public enum JunoGeneratedEasing {
     public static let `in`: (x1: CGFloat, y1: CGFloat, x2: CGFloat, y2: CGFloat) = (0.4, 0.0, 1.0, 1.0)
     /// `--ease-in-out`
     public static let inOut: (x1: CGFloat, y1: CGFloat, x2: CGFloat, y2: CGFloat) = (0.65, 0.0, 0.35, 1.0)
+    /// `--ease-out-back`
+    public static let outBack: (x1: CGFloat, y1: CGFloat, x2: CGFloat, y2: CGFloat) = (0.34, 1.32, 0.64, 1.0)
     /// `--ease-out-expo`
     public static let outExpo: (x1: CGFloat, y1: CGFloat, x2: CGFloat, y2: CGFloat) = (0.16, 1.0, 0.3, 1.0)
     /// `--ease-out-soft`

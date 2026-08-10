@@ -9,7 +9,6 @@
 import {
   AlertCircle,
   ArrowUpRight,
-  Briefcase,
   CalendarClock,
   Cloud,
   Code2,
@@ -19,7 +18,6 @@ import {
   GitBranch,
   GitPullRequest,
   Globe,
-  Home,
   ImagePlus,
   Laptop,
   Layers3,
@@ -39,16 +37,41 @@ import {
   ShieldAlert,
   SquarePen,
   Telescope,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 
 export const AppIcons = {
-  home: Home,
-  /** Juno Work — tasks Juno carries out on your Mac or in the cloud. A
-   *  briefcase rather than a cog or a robot: the mode is about the errand, not
-   *  about automation as a technology, and the sidebar already spends its one
-   *  machine-shaped mark (Code2) on the Code mode beside it. */
-  work: Briefcase,
+  /** Home — the assistant surface, whose default landing is `/chat`.
+   *
+   *  A speech bubble, not a house. `Home` was a building: it named the ROUTE
+   *  ("the place you start") rather than the thing the mode actually is, so the
+   *  product's primary surface wore the mark of a dashboard. It also put the
+   *  switcher's three glyphs in three different metaphor classes at once —
+   *  architecture, object, notation — which is why they never read as a set.
+   *
+   *  The SAME bubble the conversation rows use (`conversation`, below), not a
+   *  second drawing of the same idea. A squared variant was tried first for
+   *  silhouette-matching with `work`; it meant the switcher said "chat" with one
+   *  glyph while the list under it said "chat" with another, three pixels apart.
+   *  Matching the thing it navigates to beats matching the thing beside it. */
+  home: MessageCircle,
+  /** Juno Work — tasks Juno carries out on your Mac or in the cloud.
+   *
+   *  A bolt. Two glyphs were tried and rejected first: a briefcase (luggage —
+   *  it says *employment*, and at 14px it is a filled rectangle with a notch),
+   *  and a kanban square (accurate about "tasks at stages", but a board is a
+   *  place you administer work rather than the work happening).
+   *
+   *  The bolt is chosen for the pair it makes rather than for itself. Work now
+   *  sits directly beside Chat in one control, and the distinction that control
+   *  draws is not chat-versus-tasks, it is TALK versus ACT: a speech bubble is
+   *  you asking, a bolt is it going and doing. Two marks, one sentence.
+   *
+   *  It also survives the size this is actually read at — a single unbroken
+   *  stroke with no interior detail to lose at 14px, which is where both
+   *  rejected glyphs failed. */
+  work: Zap,
   code: Code2,
   /** Juno Design — the visual design surface. A pen nib rather than a paint
    *  brush or a square: the mode is about drawing something precise that
