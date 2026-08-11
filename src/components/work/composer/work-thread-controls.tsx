@@ -31,6 +31,17 @@ import { cn } from "@/lib/utils";
  * same three controls wearing the same components, so a reader who has set a
  * model on the home composer has already learned this one.
  *
+ * ── They are exported as two groups, not one ───────────────────────────────
+ *
+ * They used to be one flex-wrap row, and the composer put it in the same row as
+ * the mic and the send button. That is the ranking error `ComposerShell` was
+ * written to fix: "which project this task belongs to" and "send" sat at
+ * identical weight, and the row rewrapped under the reader's hand as the run
+ * context changed. So the model — which is spent on the next attempt, like the
+ * message itself — stays inline, and the two that describe the standing state of
+ * the task go below the hairline, where the home composer now keeps the same
+ * pair.
+ *
  * ── The line underneath is the point ───────────────────────────────────────
  *
  * A run's model, effort and permission policy bind when its agent loop is
@@ -52,7 +63,17 @@ function asEffort(raw: string | null): ReasoningEffort {
     : null;
 }
 
-export function WorkThreadControls({ context }: { context: WorkThreadContextState }) {
+/**
+ * The inline half: which model this task's next attempt runs on.
+ *
+ * Alone in here because it is the only one of the three that belongs to the
+ * message being written rather than to the task. The thinking effort has no
+ * separate button on this surface — it is the slider inside the picker's own
+ * panel — which is deliberate: a running task's composer is a narrow strip and a
+ * second fixed-width control for a value the picker already shows would cost the
+ * model name its room on a phone.
+ */
+export function WorkThreadModelControl({ context }: { context: WorkThreadContextState }) {
   const held = context.saving;
   const resolved = resolveModel(context.model);
   /*
@@ -88,21 +109,39 @@ export function WorkThreadControls({ context }: { context: WorkThreadContextStat
   );
 
   return (
-    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5">
-      {/* Only the models the Work runner can drive. A plan-locked one stays in
-          the list wearing its lock and sending the reader to /upgrade — the
-          picker's own behaviour, and the reason this is that component rather
-          than a smaller one written for a strip. */}
-      <div className={cn("min-w-0", held && "pointer-events-none opacity-60")}>
-        <ModelSelector
-          value={context.model}
-          onChange={changeModel}
-          reasoningEffort={effort}
-          onReasoningChange={changeEffort}
-          filter={isWorkCapableModel}
-        />
-      </div>
+    // Only the models the Work runner can drive. A plan-locked one stays in the
+    // list wearing its lock and sending the reader to /upgrade — the picker's
+    // own behaviour, and the reason this is that component rather than a smaller
+    // one written for a strip.
+    <div className={cn("min-w-0 flex-1 sm:flex-none", held && "pointer-events-none opacity-60")}>
+      <ModelSelector
+        value={context.model}
+        onChange={changeModel}
+        reasoningEffort={effort}
+        onReasoningChange={changeEffort}
+        filter={isWorkCapableModel}
+      />
+    </div>
+  );
+}
 
+/**
+ * The utility half: how often this task stops to ask, and where it is filed.
+ *
+ * Both survive the send. Both are still true of the message after this one, and
+ * of the attempt after that — which is the whole test for what belongs under the
+ * composer's hairline rather than in the row with Send. The home composer keeps
+ * the identical pair in the identical place, wearing the identical chips.
+ *
+ * The spinner is here rather than beside whichever control was used because
+ * `useWorkThreadContext` permits exactly one change in flight at a time: a
+ * single indicator for the strip states that fact, where one per chip would
+ * imply they could be saving independently.
+ */
+export function WorkThreadRunContext({ context }: { context: WorkThreadContextState }) {
+  const held = context.saving;
+  return (
+    <>
       <WorkPermissionChip
         value={context.permissionPolicy}
         onChange={(policy) => context.change({ permissionPolicy: policy })}
@@ -121,7 +160,7 @@ export function WorkThreadControls({ context }: { context: WorkThreadContextStat
           aria-hidden="true"
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -131,6 +170,13 @@ export function WorkThreadControls({ context }: { context: WorkThreadContextStat
  * Drawn separately from the row so the composer can keep it on its own line at
  * every width — a caveat that wrapped in beside the chips would be read as a
  * label for whichever one it landed next to.
+ *
+ * It sits BELOW the composer now rather than inside it, and that follows from
+ * the strip it comments on. The utility tier is one row of controls that does
+ * not scroll and does not wrap; a sentence in there would either wrap the tier
+ * or be truncated to nothing. Under the shell it also lands where every other
+ * "what will actually happen" line in Work lives, which is where a reader has
+ * learned to look for one.
  */
 export function WorkThreadControlsNote({
   context,
@@ -149,7 +195,7 @@ export function WorkThreadControlsNote({
   return (
     <p
       aria-live="polite"
-      className="px-2.5 pb-0.5 font-mono text-[10px] leading-relaxed text-muted-foreground/80"
+      className="px-1.5 pt-1.5 font-mono text-[10px] leading-relaxed text-muted-foreground/80"
     >
       {line}
     </p>

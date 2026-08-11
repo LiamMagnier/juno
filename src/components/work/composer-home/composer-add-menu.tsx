@@ -16,17 +16,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollFade } from "@/components/ui/scroll-fade";
-import { Switch } from "@/components/ui/switch";
-import type { ConnectorStatus } from "@/components/connections/types";
 import { AppIcons } from "@/lib/app-icons";
 import type { ClientWorkSkill } from "@/lib/work/skills";
 import { cn } from "@/lib/utils";
 
 /*
- * The + on a Work composer: everything you can hand a task that is not the
- * sentence describing it.
+ * The + on a Work composer: what you hand THIS task, as opposed to what the run
+ * standing behind it is scoped to.
  *
- * Three sections, and each one is here because it changes what the run can
+ * Two sections, and each one is here because it changes what the run can
  * actually do rather than because Claude's composer has a menu in this spot:
  *
  *   - **Attach** puts documents in front of the agent. `attachedSources` in
@@ -35,18 +33,22 @@ import { cn } from "@/lib/utils";
  *   - **Skills** names the skill the run operates under. There is no session
  *     field for it: `applySkill` reads a leading `/slug` off the goal, so this
  *     section writes into the textarea. See `skill-invocation.ts`.
- *   - **Apps** narrows which of the account's connected apps the task may
- *     reach. `evaluateConnector` refuses everything left off with
- *     `not_selected_for_task`.
+ *
+ * It was three. **Apps** — which of the account's connected apps the task may
+ * reach — is now `WorkConnectorsChip` on the composer's utility strip, and the
+ * move is a tier correction rather than a relocation: a file and a skill are
+ * spent on the sentence being written, while the apps a task may reach are the
+ * standing scope of the run, alongside its project and its executor. The dot
+ * badge this trigger used to wear went with it. That dot marked a granted app
+ * *because* it was the only choice in here with no other trace on the surface;
+ * the chip is that trace, and keeping both would report one fact twice.
  *
  * Every section is optional and entirely prop-driven — no fetching, no state
  * beyond which submenu is open. That is deliberate and it is the reuse story:
- * the composer at the bottom of a running task needs the same menu with the
- * same three sections against different state, and a component that loaded its
- * own lists would be a second answer to "is Gmail linked" arriving at a second
- * moment. The owning surface loads once and passes down, exactly as
- * `useConnectedApps` already does for the three things on the home composer
- * that need it.
+ * the composer at the bottom of a running task needs the same menu against
+ * different state, and a component that loaded its own lists would be a second
+ * answer to "which skills do I have" arriving at a second moment. The owning
+ * surface loads once and passes down.
  *
  * It lives under `composer-home/` because that is the directory the home
  * composer owns. It is written to be lifted out the day the thread composer
@@ -71,58 +73,34 @@ export interface ComposerSkillsSection {
   onInvoke: (slug: string | null) => void;
 }
 
-/** Which connected apps this task may reach. */
-export interface ComposerAppsSection {
-  /** Null while the list is in flight. */
-  connectors: readonly ConnectorStatus[] | null;
-  failed: boolean;
-  onRetry: () => void;
-  selected: readonly string[];
-  onToggle: (connectorId: string) => void;
-}
-
 export function ComposerAddMenu({
   disabled = false,
   attach,
   skills,
-  apps,
 }: {
   disabled?: boolean;
   attach?: ComposerAttachSection;
   skills?: ComposerSkillsSection;
-  apps?: ComposerAppsSection;
 }) {
   const [open, setOpen] = React.useState(false);
 
   /*
    * A section is drawn only once it has something in it, and that rule is
-   * inherited rather than invented: the Apps chip this menu absorbed refused to
-   * render for an account with no linked apps, on the grounds that a control
-   * opening onto "you have none" offers a choice that does not exist. The same
-   * is true one level in. A list still in flight is treated as empty for the
-   * same reason it was there — a row that appears is better than a row that
-   * changes what it says — and a list that failed to load is treated as full,
-   * because "Juno could not find out" is a sentence somebody is owed and a
+   * inherited rather than invented: the Apps chip this menu once absorbed
+   * refused to render for an account with no linked apps, on the grounds that a
+   * control opening onto "you have none" offers a choice that does not exist.
+   * The same is true one level in. A list still in flight is treated as empty
+   * for the same reason it was there — a row that appears is better than a row
+   * that changes what it says — and a list that failed to load is treated as
+   * full, because "Juno could not find out" is a sentence somebody is owed and a
    * Retry to act on.
    */
   const showSkills = skills !== undefined && (skills.failed || (skills.skills?.length ?? 0) > 0);
-  const showApps = apps !== undefined && (apps.failed || (apps.connectors?.length ?? 0) > 0);
 
-  const selectedApps = (apps?.connectors ?? []).filter((connector) =>
-    apps?.selected.includes(connector.id)
-  );
-  // Only what the reader chose gets a dot, and only apps qualify. An attachment
-  // already shows as a chip above the textarea and a named skill is visible in
-  // the goal itself, so a dot for either would mark something the reader can
-  // already see. A granted app is the one choice in here with no other trace on
-  // the surface until the run disclosure resolves.
-  const marked = selectedApps.length > 0;
-
-  // Nothing to add, so no plus. An account with no storage, no skills and no
-  // connected apps had no + at all before this menu existed, and drawing one
-  // that opens onto a heading and three absences would be a new way of saying
-  // nothing.
-  if (!attach && !showSkills && !showApps) return null;
+  // Nothing to add, so no plus. An account with no storage and no skills had no
+  // + at all before this menu existed, and drawing one that opens onto a heading
+  // and two absences would be a new way of saying nothing.
+  if (!attach && !showSkills) return null;
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -132,13 +110,7 @@ export function ComposerAddMenu({
           variant="ghost"
           size="icon-sm"
           disabled={disabled}
-          aria-label={
-            marked
-              ? `Add to this task — ${selectedApps
-                  .map((connector) => connector.label)
-                  .join(", ")} switched on`
-              : "Add to this task"
-          }
+          aria-label="Add to this task"
           className={cn(
             "composer-add-button group relative shrink-0 rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
             open && "bg-accent"
@@ -149,12 +121,6 @@ export function ComposerAddMenu({
             strokeWidth={1.75}
             className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
           />
-          {marked && (
-            <span
-              aria-hidden="true"
-              className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-card motion-safe:animate-fade-in"
-            />
-          )}
         </Button>
       </DropdownMenuTrigger>
 
@@ -180,12 +146,11 @@ export function ComposerAddMenu({
           </>
         )}
 
-        {/* One rule instead of a rule per pair: the hairline separates "things
-            you give this task" from "things you let it reach", and it is drawn
-            only when both halves are actually present. */}
-        {attach && (showSkills || showApps) && <DropdownMenuSeparator />}
+        {/* One rule instead of a rule per pair: the hairline separates the
+            documents this task is handed from the skill it runs under, and it is
+            drawn only when both halves are actually present. */}
+        {attach && showSkills && <DropdownMenuSeparator />}
         {showSkills && skills && <SkillsSubmenu section={skills} />}
-        {showApps && apps && <AppsSubmenu section={apps} />}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -269,95 +234,3 @@ function SkillsSubmenu({ section }: { section: ComposerSkillsSection }) {
   );
 }
 
-/**
- * Which connected apps this task may reach.
- *
- * Off by default, all of them, and that is the design rather than a cautious
- * setting somebody relaxes later. A linked app is an account-wide fact — the
- * mailbox stays connected whether or not this errand needs it — and a task that
- * inherited every one of them would be handed a mailbox, a repository and a
- * calendar to do something that needed none of the three.
- *
- * Nothing here links, unlinks or re-authorises anything. It narrows one task
- * inside what the account already permits, which is why the footer sends the
- * reader to /connections rather than offering to connect an app from a
- * composer.
- */
-function AppsSubmenu({ section }: { section: ComposerAppsSection }) {
-  const { connectors, failed, onRetry, selected, onToggle } = section;
-  const count = (connectors ?? []).filter((connector) => selected.includes(connector.id)).length;
-
-  return (
-    <DropdownMenuSub>
-      <DropdownMenuSubTrigger>
-        <AppIcons.connections
-          className={cn(count > 0 ? "text-primary" : "text-muted-foreground")}
-        />
-        <span className="flex-1">Apps</span>
-        {count > 0 && <span className="mr-1 font-mono text-caption text-primary">{count}</span>}
-      </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent className="flex max-h-[min(22rem,60vh)] w-72 flex-col p-0">
-        <ScrollFade className="min-h-0 flex-1" viewportClassName="p-1.5">
-          {failed ? (
-            <div className="space-y-2 px-2 py-4 text-center">
-              <p className="text-caption leading-relaxed text-muted-foreground">
-                Couldn’t read your connected apps. This task will reach none of them until it can.
-              </p>
-              <Button variant="outline" size="sm" onClick={onRetry} className="gap-1.5">
-                <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Retry
-              </Button>
-            </div>
-          ) : (
-            // Same as the skills list above: the caller does not draw this row
-            // until there is something in it, so there is nothing to say here
-            // about loading or about an account with no apps.
-            (connectors ?? []).map((connector) => {
-              const active = selected.includes(connector.id);
-              return (
-                <DropdownMenuItem
-                  key={connector.id}
-                  role="menuitemcheckbox"
-                  aria-checked={active}
-                  // Held open on select: turning two apps on is one decision, and
-                  // a menu that closed after the first would make the reader
-                  // reopen it to finish the sentence they were in the middle of.
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    onToggle(connector.id);
-                  }}
-                >
-                  <AppIcons.connections
-                    className={cn(active ? "text-primary" : "text-muted-foreground")}
-                  />
-                  <span className="flex-1 truncate">{connector.label}</span>
-                  <Switch
-                    checked={active}
-                    tabIndex={-1}
-                    aria-hidden
-                    className="pointer-events-none"
-                  />
-                </DropdownMenuItem>
-              );
-            })
-          )}
-        </ScrollFade>
-        {/* The rule, said once, where the decision is made. Neither sentence is
-            decoration: the first is why an app being linked is not enough on its
-            own, and the second is what stops a reader reading this as a switch
-            that disconnects things. */}
-        <div className="shrink-0 border-t border-border/60 px-3 py-2">
-          <p className="text-[12px] leading-relaxed text-muted-foreground">
-            Off means this task cannot reach it. Your connections are unchanged —{" "}
-            <Link
-              href="/connections"
-              className="underline underline-offset-2 hover:text-foreground"
-            >
-              manage them
-            </Link>
-            .
-          </p>
-        </div>
-      </DropdownMenuSubContent>
-    </DropdownMenuSub>
-  );
-}

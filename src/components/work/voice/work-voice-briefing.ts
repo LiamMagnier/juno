@@ -40,6 +40,7 @@
 
 import type { VoiceHistoryEntry } from "@/lib/voice-relay-protocol";
 import type { ClientWorkEvent, ClientWorkRun, ClientWorkSession } from "@/lib/work/serializers";
+import { RUN_CEILINGS } from "@/components/work/clarify/run-disclosure";
 import { readEvent, str } from "@/components/work/work-payload";
 import { deriveApprovals, deriveOpenQuestions } from "@/components/work/work-decisions";
 import { deriveCurrentAction, derivePlan, type PlanStep } from "@/components/work/work-timeline";
@@ -263,6 +264,130 @@ export function buildWorkVoiceBriefing(input: WorkVoiceBriefingInput): WorkVoice
     text:
       "Got it. I have read where this task has got to, and I will stick to what you have told " +
       "me — happy to talk it through, but I cannot touch the task itself.",
+  });
+
+  return { entries, digest: kept.join("\n") };
+}
+
+/* ─────────────────── a task nobody has written down yet ─────────────────── */
+
+/**
+ * The state of the Work home composer at the moment the microphone opened.
+ *
+ * Everything here is already on screen. It is repeated to the model because the
+ * model cannot see the screen: a voice that suggests filing the task in a
+ * project it is already filed in, or that proposes reaching an app the reader
+ * switched off, is worse than one that says nothing about either.
+ */
+export interface WorkComposerVoiceBriefingInput {
+  /** Whatever is in the box, which may well be nothing. */
+  goal: string;
+  /** The project this would be filed in, by its name rather than its id. */
+  projectName: string | null;
+  /** The apps switched on for it, in the words the reader chose them by. */
+  connectorLabels: readonly string[];
+  /** The chosen approval mode's own sentence, from `WORK_APPROVAL_MODE_SUMMARY`. */
+  approvalSummary: string;
+  /** Where it would run, in the reader's words. Null while that is unknown. */
+  where: string | null;
+}
+
+/**
+ * What the voice model is told before the task exists.
+ *
+ * A DIFFERENT briefing from `buildWorkVoiceBriefing`, not a degraded one, and
+ * the difference is the job rather than the data. That briefing catches somebody
+ * up on work already under way; this one helps them decide what to ask for, and
+ * the failure it is written against is the opposite: a warm voice that agrees
+ * enthusiastically to an errand no twenty-minute run could finish, and a reader
+ * who finds out at the ceiling.
+ *
+ * So the ceilings are in the briefing, out loud, in the same numbers the
+ * disclosure under the composer shows — and the last section states the one
+ * mechanical fact that governs the whole conversation: nothing here starts
+ * anything. The reader presses a button, and ONE sentence they said lands in the
+ * task box for them to edit. Told any less, the model says "I've set that up for
+ * you", which is the sentence this entire feature exists to prevent.
+ *
+ * Same reversal as the task briefing, for the same reason: both bounding passes
+ * eat from the front, so the section that must survive is written last.
+ */
+export function buildWorkComposerVoiceBriefing(
+  input: WorkComposerVoiceBriefingInput
+): WorkVoiceBriefing {
+  const goal = input.goal.trim();
+
+  const ordered: (string | null)[] = [
+    // 1 — the job, and the rules of this conversation. Never dropped.
+    [
+      "I am about to give Juno Work a task and I want to think it through out loud with you " +
+        "first. Help me turn it into one errand with a clear finish line: ask me what “done” " +
+        "looks like, what you would need from me, and whether it is one task or several.",
+      "",
+      "You cannot create, start, change or look up anything. This is a phone call, nothing " +
+        "more. When I am happy with how we have worded it, I press a button in the app and the " +
+        "LAST thing I said goes into the task box, where I edit it and start the task myself. " +
+        "So when we have converged, say the task back to me as ONE self-contained sentence or " +
+        "short paragraph I can send — do not add a preamble around it. Never say you have set " +
+        "anything up, saved anything or started anything, because you have not. Talk normally, " +
+        "keep it short, and use my words for the work rather than Juno's.",
+    ].join("\n"),
+
+    // 2 — what a run can actually finish, so nothing agreed here is impossible.
+    [
+      "What a Juno Work run can do, so we do not agree on something it cannot finish:",
+      `- It stops at $${RUN_CEILINGS.costUsd}, ${RUN_CEILINGS.tokens.toLocaleString("en-US")} tokens, or ${RUN_CEILINGS.minutes} minutes of working time, whichever comes first.`,
+      "- It runs unattended and reports back. It can stop to ask me something, but it cannot " +
+        "wait around for hours.",
+      "- It works from what I hand it: the task, the project, any files I attach and the apps I " +
+        "switch on. It cannot reach anything else.",
+      "If what I am describing is bigger than that, say so and help me cut it down to the first " +
+        "useful piece.",
+    ].join("\n"),
+
+    // 3 — what is already in the box, so the voice is not re-asking for it.
+    goal
+      ? `Here is what I have written in the box so far: "${oneLine(goal, MAX_QUOTE_CHARS)}"`
+      : "The box is still empty — I have not written anything down yet.",
+
+    // 4 — how it is already set up. Least important; I can see it on screen.
+    [
+      "How I have set it up so far:",
+      input.projectName
+        ? `- Filed in my project "${oneLine(input.projectName, 90)}".`
+        : "- Not filed in a project.",
+      input.connectorLabels.length > 0
+        ? `- It may reach: ${input.connectorLabels.map((label) => oneLine(label, 40)).join(", ")}. Nothing else I have connected.`
+        : "- No connected apps switched on, so it reaches none of them.",
+      `- Approvals: ${oneLine(input.approvalSummary, 220)}`,
+      input.where ? `- It would run on ${oneLine(input.where, 60)}.` : null,
+    ]
+      .filter((line) => line !== null)
+      .join("\n"),
+  ];
+
+  const kept: string[] = [];
+  let remaining = MAX_TOTAL_CHARS;
+  for (const section of ordered
+    .filter((section): section is string => section !== null)
+    .map((section) => block(section, MAX_ENTRY_CHARS))) {
+    if (section.length > remaining) break;
+    kept.push(section);
+    remaining -= section.length;
+  }
+
+  const entries: VoiceHistoryEntry[] = kept
+    .reverse()
+    .map((text) => ({ role: "user" as const, text }));
+
+  // Without a closing assistant turn every provider treats the trailing user
+  // turn as something it still owes an answer to, and the session opens by
+  // reciting the briefing back.
+  entries.push({
+    role: "assistant",
+    text:
+      "Got it — I can talk it through and help you word it, but I can’t set anything up or " +
+      "start it. What are you trying to get done?",
   });
 
   return { entries, digest: kept.join("\n") };

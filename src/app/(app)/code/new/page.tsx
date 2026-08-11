@@ -10,6 +10,7 @@ import {
   Cloud,
   FileText,
   FileUp,
+  GitBranch,
   ImagePlus,
   Library,
   Loader2,
@@ -19,6 +20,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ComposerShell } from "@/components/ui/composer-shell";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
@@ -40,6 +42,8 @@ import {
   type Target,
   type Workspace,
 } from "@/components/code/code-target-picker";
+import { CodeVoicePanel, useCodeVoice, type CodeVoiceSend } from "@/components/code/code-voice";
+import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
@@ -50,6 +54,15 @@ import { cn, formatBytes } from "@/lib/utils";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
 
 const TARGET_KEY = "juno:code:new:target";
+
+/*
+ * The composer's separator, one string, used everywhere one is needed on this
+ * screen. chat/composer.tsx:2205 records what the alternative shipped: two
+ * heights (h-5/h-4) behind two breakpoints (min-[420px]/min-[380px]), so
+ * between 380 and 420px two different separators were on screen at once. This
+ * file carried the losing half of that pair until now.
+ */
+const COMPOSER_DIVIDER = "mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block";
 
 /** Cloud task-dispatch failures surfaced inline under the composer (503/502). */
 type CloudStartError = "not_configured" | "dispatch_failed" | null;
@@ -282,8 +295,20 @@ export default function NewCodeSessionPage() {
   const hasPayload = prompt.trim().length > 0 || readyAttachments.length > 0;
   const canSubmit = hasTarget && hasPayload && !submitting && !isUploading;
 
+  /*
+   * Voice mode, which this screen has never had — only dictation, which is a
+   * different thing (dictation types for you; voice is a conversation). Gated
+   * in `useCodeVoice`: paid plan, a relay configured, not already live, and not
+   * while this screen is mid-submit or mid-dictation, since both of those want
+   * the same microphone.
+   */
+  const codeVoice = useCodeVoice({ disabled: submitting || dictating });
+
+  // Every start path answers the same question — did the session actually
+  // begin? — because the voice panel's hand-off has to know: a refusal leaves
+  // the spoken line on screen to be sent again, and a success ends the call.
   const startDevice = React.useCallback(
-    async (w: Workspace, text: string, attachments: ClientAttachment[]) => {
+    async (w: Workspace, text: string, attachments: ClientAttachment[]): Promise<boolean> => {
       const res = await fetch("/api/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -304,12 +329,13 @@ export default function NewCodeSessionPage() {
       // Carry the chosen model into the client-side session record.
       upsertConversation({ ...conversation, model });
       router.push(`/chat/${conversation.id}`);
+      return true;
     },
     [model, router, upsertConversation],
   );
 
   const startCloud = React.useCallback(
-    async (repo: CloudRepo, text: string, ref: string | null, attachments: ClientAttachment[]) => {
+    async (repo: CloudRepo, text: string, ref: string | null, attachments: ClientAttachment[]): Promise<boolean> => {
       // 1) Ensure a kind:"code" session to stream the run into. The repo is the
       //    cloud "workspace": name for display, owner/name as the path.
       let conversation: ClientConversation | null = null;
@@ -359,7 +385,7 @@ export default function NewCodeSessionPage() {
         }
         clear();
         router.push(`/chat/${conversationId}`);
-        return;
+        return true;
       }
 
       const err = ((await tRes.json().catch(() => ({}))) as { error?: string }).error;
@@ -382,16 +408,17 @@ export default function NewCodeSessionPage() {
         toast.error("Could not start the cloud run. Check your connection and try again.");
         discardOrphanCloudSession();
       }
+      return false;
     },
     [clear, discardOrphanCloudSession, model, router, upsertConversation],
   );
 
   const submit = React.useCallback(
-    async (overrideText?: string) => {
+    async (overrideText?: string): Promise<boolean> => {
       const text = (overrideText ?? prompt).trim();
       const attachments = readyAttachments;
-      if ((!text && attachments.length === 0) || submitting || isUploading) return;
-      if (target === "device" ? !selectedWorkspace : !selectedRepo) return;
+      if ((!text && attachments.length === 0) || submitting || isUploading) return false;
+      if (target === "device" ? !selectedWorkspace : !selectedRepo) return false;
 
       // Past every guard that can still refuse the turn, so the bloom only
       // swells for a session that is genuinely being started.
@@ -400,12 +427,15 @@ export default function NewCodeSessionPage() {
       setCloudStartError(null);
       try {
         if (target === "device" && selectedWorkspace) {
-          await startDevice(selectedWorkspace, text, attachments);
-        } else if (target === "cloud" && selectedRepo) {
-          await startCloud(selectedRepo, text, baseRef.trim() || null, attachments);
+          return await startDevice(selectedWorkspace, text, attachments);
         }
+        if (target === "cloud" && selectedRepo) {
+          return await startCloud(selectedRepo, text, baseRef.trim() || null, attachments);
+        }
+        return false;
       } catch {
         toast.error("Could not start the session. Check your connection and try again.");
+        return false;
       } finally {
         setSubmitting(false);
       }
@@ -470,6 +500,59 @@ export default function NewCodeSessionPage() {
         : "Pick a repository to start"
       : null;
 
+  /*
+   * What the call is told. The relay has no tools and no database, so this is
+   * the model's entire knowledge of the session about to be started — and on
+   * this screen that is exactly the utility strip's contents, which is the
+   * point: what persists across the send is what a conversation about the run
+   * needs to know.
+   *
+   * The default branch stands in when no override is typed, because that is
+   * what the run will actually use — `startCloud` sends `baseRef ?? undefined`
+   * and the runner falls back to the repo's default.
+   */
+  const voiceBriefing = React.useMemo<CodeVoiceBriefingInput>(
+    () => ({
+      stage: "new",
+      target,
+      place: target === "device" ? (selectedWorkspace?.name ?? null) : (selectedRepo?.fullName ?? null),
+      baseRef: target === "cloud" ? (baseRef.trim() || selectedRepo?.defaultBranch) ?? null : null,
+      turns: [],
+      blocked: gateHint,
+    }),
+    [baseRef, gateHint, selectedRepo, selectedWorkspace, target],
+  );
+
+  /*
+   * The one channel out of the call. `submit` already took an override, which
+   * is the whole adapter — the spoken line goes through the identical start
+   * path as a typed one, gates and all, so a call cannot start a session the
+   * keyboard could not have.
+   */
+  const voiceSend = React.useMemo<CodeVoiceSend>(
+    () => ({
+      intent: "start",
+      // The screen's own gate sentence, verbatim. A second wording here would
+      // read as a second rule.
+      blockedReason: gateHint ? `${gateHint} — then these words can start it.` : null,
+      sending: submitting,
+      // Starting navigates to the new session, so the call cannot survive it.
+      endsCall: true,
+      // Merge, never replace — see the note on the session view's onSend. It
+      // matters more here: this screen navigates to the new session on success,
+      // so a typed draft dropped on a voice send is gone past recovery.
+      onSend: (text: string) => submit([prompt.trim(), text.trim()].filter(Boolean).join(" ")),
+    }),
+    [gateHint, prompt, submit, submitting],
+  );
+
+  // Nothing to send yet → the primary action is the way into a conversation
+  // instead of a dead button. Keyed on the payload rather than on `canSubmit`:
+  // with words typed and no project picked, `canSubmit` is false too, and
+  // swapping Send for a phone call at that moment would hide the one control
+  // whose disabled label says what is missing.
+  const showVoiceButton = !submitting && !hasPayload && !!codeVoice.onOpenVoiceMode;
+
   return (
     // overflow-x-clip so the composer aura, which is deliberately wider than
     // the column it lights, can never put a horizontal scrollbar over dead
@@ -500,11 +583,21 @@ export default function NewCodeSessionPage() {
                 that belongs to the column above, so the light falls behind the
                 greeting rather than being trapped in front of it.
 
-                It wraps the grid and nothing else, so the bloom centres on the
-                capsule — the error banners and the footer line below are not
-                part of what is being lit. */}
+                It wraps the composer and the voice call and nothing else, so
+                the bloom centres on the capsule — the error banners and the
+                footer line below are not part of what is being lit. */}
             <div className={cn("composer-aura-host relative w-full", auraSending && "is-sending")}>
-              <div aria-hidden className="composer-aura" />
+              {/* One light at a time: the idle bloom steps aside while the
+                  voice field is live, because two of them behind one composer
+                  read as a mix rather than a colour. */}
+              {!codeVoice.open && <div aria-hidden className="composer-aura" />}
+              {/* A FRAGMENT, and a SIBLING of the composer. The voice field
+                  paints at z-index -1, so anything that boxed it here would put
+                  it behind that box instead of behind the composer — the same
+                  arrangement chat-view.tsx keeps, for the same reason. */}
+              {codeVoice.open && (
+                <CodeVoicePanel briefing={voiceBriefing} send={voiceSend} onClose={codeVoice.close} />
+              )}
               <div
                 className={cn(
                   "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-spring motion-reduce:transition-none",
@@ -528,6 +621,21 @@ export default function NewCodeSessionPage() {
                   )}
                 </div>
 
+                {/*
+                  The dictation cross-fade and the drop target live on this
+                  wrapper rather than on the shell itself.
+
+                  <ComposerShell> already owns a
+                  `transition-[border-color,box-shadow]`; putting a second
+                  `transition-[opacity,transform,…]` on the same element is two
+                  `transition-property` declarations at equal specificity, where
+                  which one survives is decided by Tailwind's emit order rather
+                  than by anything written here. Separating them also fixes the
+                  drop overlay: `absolute inset-0` inside the shell can only
+                  cover one slot, and the shell cannot clip (the drop state has
+                  to reach the utility strip too), so the overlay is a sibling
+                  that covers both tiers and traces the same corners.
+                */}
                 <div
                   onDragOver={(e) => {
                     if (!canAttach || submitting || dictating) return;
@@ -543,221 +651,280 @@ export default function NewCodeSessionPage() {
                     }
                   }}
                   className={cn(
-                    "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-composer border bg-card/95 backdrop-blur sm:rounded-lg",
-                    "transition-[opacity,transform,border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
+                    "col-start-1 row-start-1 relative w-full origin-center",
+                    "transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
                     dictating
                       ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0"
                       : "translate-y-0 scale-100 opacity-100",
-                    "border-border/65 focus-within:border-foreground/15",
-                    dragging && "border-primary/55 ring-2 ring-primary/20",
                   )}
                 >
-                  {dragging && (
-                    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
-                      <FileUp className="h-6 w-6 text-primary" />
-                      <span className="font-mono text-label text-primary">Drop to attach</span>
-                    </div>
-                  )}
-
-                  {/* Chip row — where this session runs. */}
-                  <div className="flex flex-wrap items-center gap-1.5 px-3 pb-0 pt-3 sm:px-3.5 sm:pt-3.5">
-                    <CodeTargetPicker
-                      target={target}
-                      onTargetChange={switchTarget}
-                      selectedWorkspace={selectedWorkspace}
-                      onSelectWorkspace={(w) => {
-                        setSelectedWorkspace(w);
-                        setCloudStartError(null);
-                      }}
-                      selectedRepo={selectedRepo}
-                      onSelectRepo={(r) => {
-                        setSelectedRepo(r);
-                        setBaseRef("");
-                        setCloudStartError(null);
-                        // A held-over session from a failed start belongs to the
-                        // repo it was named for, not this one.
-                        if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
-                      }}
-                      baseRef={baseRef}
-                      onBaseRefChange={setBaseRef}
-                      disabled={submitting}
-                    />
-                  </div>
-
-                  {canAttach && (
-                    <div
-                      className={cn(
-                        "grid transition-[grid-template-rows] duration-base ease-out-soft",
-                        uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
-                      )}
-                    >
-                      <div className="min-h-0 overflow-hidden">
-                        <div className="flex flex-wrap gap-2 px-3 pb-0 pt-2.5 sm:px-3.5">
-                          {uploads.map((u) => (
-                            <div
-                              key={u.localId}
-                              className={cn(
-                                "group relative flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-xs shadow-soft",
-                                removingIds.includes(u.localId)
-                                  ? "pointer-events-none motion-safe:animate-pop-out"
-                                  : "motion-safe:animate-rise-in",
-                              )}
-                            >
-                              {u.attachment?.kind === "IMAGE" ? (
-                                <Image
-                                  src={u.attachment.url}
-                                  unoptimized={requiresViewerCredentials(u.attachment.url)}
-                                  alt={u.fileName}
-                                  width={32}
-                                  height={32}
-                                  className="h-8 w-8 rounded-sm object-cover"
-                                />
-                              ) : (
-                                <FileText className="h-5 w-5 text-muted-foreground" />
-                              )}
-                              <div className="max-w-[140px]">
-                                <p className="truncate font-medium">{u.fileName}</p>
-                                <p className="text-muted-foreground">
-                                  {u.status === "uploading"
-                                    ? `${u.progress}%`
-                                    : u.status === "error"
-                                      ? "Failed"
-                                      : formatBytes(u.size)}
-                                </p>
-                              </div>
-                              {u.status === "uploading" && (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => removeUpload(u.localId)}
-                                className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
-                                aria-label="Remove attachment"
-                              >
-                                <X className="h-3 w-3 coarse:h-4 coarse:w-4" />
-                              </button>
+                  <ComposerShell
+                    className={cn("max-h-[600px]", dragging && "border-primary/55 ring-2 ring-primary/20")}
+                    utilityLabel="Where this session runs"
+                    above={
+                      canAttach && (
+                        <div
+                          className={cn(
+                            "grid transition-[grid-template-rows] duration-base ease-out-soft",
+                            uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                          )}
+                        >
+                          <div className="min-h-0 overflow-hidden">
+                            <div className="flex flex-wrap gap-2 px-3 pb-0 pt-3 sm:px-3.5">
+                              {uploads.map((u) => (
+                                <div
+                                  key={u.localId}
+                                  className={cn(
+                                    "group relative flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-xs shadow-soft",
+                                    removingIds.includes(u.localId)
+                                      ? "pointer-events-none motion-safe:animate-pop-out"
+                                      : "motion-safe:animate-rise-in",
+                                  )}
+                                >
+                                  {u.attachment?.kind === "IMAGE" ? (
+                                    <Image
+                                      src={u.attachment.url}
+                                      unoptimized={requiresViewerCredentials(u.attachment.url)}
+                                      alt={u.fileName}
+                                      width={32}
+                                      height={32}
+                                      className="h-8 w-8 rounded-sm object-cover"
+                                    />
+                                  ) : (
+                                    <FileText className="h-5 w-5 text-muted-foreground" />
+                                  )}
+                                  <div className="max-w-[140px]">
+                                    <p className="truncate font-medium">{u.fileName}</p>
+                                    <p className="text-muted-foreground">
+                                      {u.status === "uploading"
+                                        ? `${u.progress}%`
+                                        : u.status === "error"
+                                          ? "Failed"
+                                          : formatBytes(u.size)}
+                                    </p>
+                                  </div>
+                                  {u.status === "uploading" && (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => removeUpload(u.localId)}
+                                    className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
+                                    aria-label="Remove attachment"
+                                  >
+                                    <X className="h-3 w-3 coarse:h-4 coarse:w-4" />
+                                  </button>
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  )}
+                      )
+                    }
+                    field={
+                      <textarea
+                        ref={textareaRef}
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        onKeyDown={onKeyDown}
+                        rows={1}
+                        disabled={submitting}
+                        placeholder="Describe a task or ask a question"
+                        aria-label="Describe the task for this Juno Code session"
+                        className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]"
+                      />
+                    }
+                    controls={
+                      <>
+                        <div className="flex min-w-0 flex-1 items-center gap-1">
+                          {canAttach && (
+                            <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  aria-label="Add"
+                                  disabled={submitting}
+                                  className={cn(
+                                    "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
+                                    plusOpen && "bg-accent",
+                                  )}
+                                >
+                                  <Plus
+                                    aria-hidden="true"
+                                    strokeWidth={1.75}
+                                    className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                                  />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
+                                <DropdownMenuLabel className="font-mono text-label">Add</DropdownMenuLabel>
+                                <DropdownMenuSub>
+                                  <DropdownMenuSubTrigger>
+                                    <Paperclip className="text-muted-foreground" />
+                                    <span className="flex-1">Attach</span>
+                                  </DropdownMenuSubTrigger>
+                                  <DropdownMenuSubContent className="w-52">
+                                    <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
+                                      <ImagePlus className="text-muted-foreground" />
+                                      <span className="flex-1">Photos</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
+                                      <FileUp className="text-muted-foreground" />
+                                      <span className="flex-1">Files</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
+                                      <Library className="text-muted-foreground" />
+                                      <span className="flex-1">From your library</span>
+                                    </DropdownMenuItem>
+                                  </DropdownMenuSubContent>
+                                </DropdownMenuSub>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
 
-                  <textarea
-                    ref={textareaRef}
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    onKeyDown={onKeyDown}
-                    rows={1}
-                    disabled={submitting}
-                    placeholder="Describe a task or ask a question"
-                    aria-label="Describe the task for this Juno Code session"
-                    className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]"
-                  />
-
-                  {/* Toolbar — + attach, dictate, send. Matches home composer
-                      radius / padding / primary action language. */}
-                  <div className="flex flex-nowrap items-center gap-1.5 px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5">
-                    <div className="flex min-w-0 flex-1 items-center gap-1">
-                      {canAttach && (
-                        <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label="Add"
-                              disabled={submitting}
-                              className={cn(
-                                "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
-                                plusOpen && "bg-accent",
-                              )}
-                            >
-                              <Plus
-                                aria-hidden="true"
-                                strokeWidth={1.75}
-                                className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
-                              />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
-                            <DropdownMenuLabel className="font-mono text-label">Add</DropdownMenuLabel>
-                            <DropdownMenuSub>
-                              <DropdownMenuSubTrigger>
-                                <Paperclip className="text-muted-foreground" />
-                                <span className="flex-1">Attach</span>
-                              </DropdownMenuSubTrigger>
-                              <DropdownMenuSubContent className="w-52">
-                                <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
-                                  <ImagePlus className="text-muted-foreground" />
-                                  <span className="flex-1">Photos</span>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
-                                  <FileUp className="text-muted-foreground" />
-                                  <span className="flex-1">Files</span>
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
-                                  <Library className="text-muted-foreground" />
-                                  <span className="flex-1">From your library</span>
-                                </DropdownMenuItem>
-                              </DropdownMenuSubContent>
-                            </DropdownMenuSub>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </div>
-
-                    <div className="ml-auto flex shrink-0 items-center gap-1">
-                      {speechSupported && (
-                        <>
+                        <div className="ml-auto flex shrink-0 items-center gap-1">
+                          {speechSupported && (
+                            <>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    onClick={() => setDictating(true)}
+                                    // A live call already owns the microphone —
+                                    // the same interlock the Work thread
+                                    // composer keeps between these two.
+                                    disabled={submitting || dictating || codeVoice.open}
+                                    aria-label="Dictate"
+                                    aria-pressed={dictating}
+                                    className="composer-mic-button rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
+                                  >
+                                    <Mic className="composer-mic-icon h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Dictate</TooltipContent>
+                              </Tooltip>
+                              <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+                            </>
+                          )}
+                          {/* One button, three jobs: start the session, wait
+                              for the one it started, or — with nothing written
+                              — open a conversation about what to ask for. Chat
+                              and the Work thread both morph this same control
+                              rather than adding a fourth icon to the row. */}
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
                                 type="button"
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={() => setDictating(true)}
-                                disabled={submitting || dictating}
-                                aria-label="Dictate"
-                                aria-pressed={dictating}
-                                className="composer-mic-button rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
+                                size="icon"
+                                onClick={
+                                  showVoiceButton && codeVoice.onOpenVoiceMode
+                                    ? codeVoice.onOpenVoiceMode
+                                    : () => void submit()
+                                }
+                                disabled={showVoiceButton ? false : !canSubmit}
+                                aria-label={
+                                  showVoiceButton
+                                    ? "Talk this through with Juno"
+                                    : !hasTarget
+                                      ? gateHint ?? "Select where to run first"
+                                      : target === "cloud"
+                                        ? "Start a cloud run"
+                                        : "Start the session"
+                                }
+                                className="composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-spring"
                               >
-                                <Mic className="composer-mic-icon h-4 w-4" />
+                                {submitting ? (
+                                  <Loader2 key="starting" className="h-4 w-4 animate-spin motion-safe:animate-fade-in" aria-hidden="true" />
+                                ) : showVoiceButton ? (
+                                  <span key="voice" className="composer-voice-wave motion-safe:animate-fade-in" aria-hidden="true">
+                                    <span />
+                                    <span />
+                                    <span />
+                                    <span />
+                                    <span />
+                                  </span>
+                                ) : (
+                                  <ArrowUp key="send" className="composer-send-icon h-4 w-4 motion-safe:animate-fade-in" aria-hidden="true" />
+                                )}
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>Dictate</TooltipContent>
-                          </Tooltip>
-                          <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block" aria-hidden="true" />
-                        </>
-                      )}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            size="icon"
-                            onClick={() => void submit()}
-                            disabled={!canSubmit}
-                            aria-label={
-                              !hasTarget
-                                ? gateHint ?? "Select where to run first"
+                            <TooltipContent>
+                              {showVoiceButton
+                                ? "Voice conversation"
                                 : target === "cloud"
-                                  ? "Start a cloud run"
-                                  : "Start the session"
-                            }
-                            className="composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
-                          >
-                            {submitting ? (
-                              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                            ) : (
-                              <ArrowUp className="composer-send-icon h-4 w-4" aria-hidden="true" />
-                            )}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{target === "cloud" ? "Start cloud run" : "Start session"}</TooltipContent>
-                      </Tooltip>
+                                  ? "Start cloud run"
+                                  : "Start session"}
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </>
+                    }
+                    /*
+                      THE SECOND TIER. What used to be a chip row ABOVE the
+                      field, which read as part of the message being composed
+                      when it is the opposite of that: the machine, the checkout
+                      and the branch are all still true after you press start,
+                      and are still true of the session that follows. Under the
+                      hairline they say so.
+                    */
+                    utility={
+                      <>
+                        <CodeTargetPicker
+                          target={target}
+                          onTargetChange={switchTarget}
+                          selectedWorkspace={selectedWorkspace}
+                          onSelectWorkspace={(w) => {
+                            setSelectedWorkspace(w);
+                            setCloudStartError(null);
+                          }}
+                          selectedRepo={selectedRepo}
+                          onSelectRepo={(r) => {
+                            setSelectedRepo(r);
+                            setBaseRef("");
+                            setCloudStartError(null);
+                            // A held-over session from a failed start belongs to
+                            // the repo it was named for, not this one.
+                            if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
+                          }}
+                          baseRef={baseRef}
+                          onBaseRefChange={setBaseRef}
+                          disabled={submitting}
+                          className="h-7"
+                        />
+                        {/* The branch a cloud run starts from — read-only here,
+                            edited in the picker's own popover where it belongs
+                            (it only exists once a repo does). The repo default
+                            stands in when nothing is typed because that is what
+                            actually runs: `startCloud` sends `ref ?? undefined`
+                            and the runner falls back to it. */}
+                        {target === "cloud" && selectedRepo && (
+                          <>
+                            <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+                            <span className="flex min-w-0 items-center gap-1 font-mono">
+                              <GitBranch className="size-3 shrink-0" aria-hidden="true" />
+                              <span className="sr-only">Base branch </span>
+                              <span className="min-w-0 truncate">
+                                {baseRef.trim() || selectedRepo.defaultBranch}
+                              </span>
+                            </span>
+                          </>
+                        )}
+                      </>
+                    }
+                  />
+
+                  {dragging && (
+                    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-composer border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in sm:rounded-lg">
+                      <FileUp className="h-6 w-6 text-primary" />
+                      <span className="font-mono text-label text-primary">Drop to attach</span>
                     </div>
-                  </div>
+                  )}
 
                   <input
                     ref={imageInputRef}

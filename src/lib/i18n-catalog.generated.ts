@@ -82,6 +82,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Meituan's 1.6T-parameter open MoE — native 1M context via LongCat Sparse Attention."
   },
   {
+    "id": "00baab2de496defb",
+    "source": "Those words didn&rsquo;t land. Try again, or type them in the box below."
+  },
+  {
     "id": "00c4a4f5f93a15d3",
     "source": "End time, ISO 8601."
   },
@@ -742,10 +746,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Something went wrong."
   },
   {
-    "id": "0c9a4e72c83eece6",
-    "source": "These exact words go to the task. Juno&rsquo;s side of this call does not."
-  },
-  {
     "id": "0c9c42b47f417e0e",
     "source": "Allow this once"
   },
@@ -862,8 +862,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Bright and expressive"
   },
   {
+    "id": "0ed116aae30506c8",
+    "source": "and how the session has gone so far"
+  },
+  {
     "id": "0ede312062dc5883",
     "source": "Indexing for search…"
+  },
+  {
+    "id": "0ef1ccd580e89c70",
+    "source": "minutes — what this run commits to."
   },
   {
     "id": "0f082e133791d7da",
@@ -1406,6 +1414,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Your Juno task"
   },
   {
+    "id": "18dbedbb5189b40f",
+    "source": "Juno was told where this runs"
+  },
+  {
     "id": "18e34b4d1889a236",
     "source": "More detail"
   },
@@ -1464,6 +1476,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "19f4f8b342da2d05",
     "source": "Still thinking — working in the background"
+  },
+  {
+    "id": "1a15a6773af5331a",
+    "source": "Voice conversation about the task you are writing"
   },
   {
     "id": "1a2303ede07493ac",
@@ -2082,10 +2098,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "transmis aux API des laboratoires d'IA correspondant aux modèles que vous sélectionnez"
   },
   {
-    "id": "24f95dce09509ddc",
-    "source": ", stops at $"
-  },
-  {
     "id": "25070cd932a7309a",
     "source": "browse"
   },
@@ -2560,6 +2572,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2c938047bc75f4d9",
     "source": "Invalid name."
+  },
+  {
+    "id": "2ca74e4cdce1e3bb",
+    "source": "Nothing can run this"
   },
   {
     "id": "2caa2fa6ead091fc",
@@ -3056,10 +3072,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "353d7016825b01b7",
     "source": "Plans & upgrade"
-  },
-  {
-    "id": "3579d1de91e7e03c",
-    "source": "minutes."
   },
   {
     "id": "357f9729ca190712",
@@ -4890,10 +4902,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Only messages received on/after this date (ISO 8601)."
   },
   {
-    "id": "57d23426345ffe67",
-    "source": "Couldn’t be uploaded"
-  },
-  {
     "id": "57d4d064a70f24b6",
     "source": "/research"
   },
@@ -5012,6 +5020,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "59fa4379be1f3398",
     "source": "Reset your password"
+  },
+  {
+    "id": "59ffbe1c0563022f",
+    "source": "when you started talking. This is a separate conversation about the work: it can&rsquo;t see your code, it can&rsquo;t run anything, and nothing said here is kept — only the one line you send."
   },
   {
     "id": "5a00871d49f668d5",
@@ -5472,6 +5484,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "61371bee8a2b37a1",
     "source": "Bring Juno up to date"
+  },
+  {
+    "id": "617579d5e7578130",
+    "source": "Runs in"
   },
   {
     "id": "6176f6b264ea190b",
@@ -6026,6 +6042,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Encouraging"
   },
   {
+    "id": "69ffc846faa20da7",
+    "source": "Apps this task may reach"
+  },
+  {
     "id": "6a1cfdf599246310",
     "source": "Independence"
   },
@@ -6354,6 +6374,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Create task"
   },
   {
+    "id": "6f653c47048c1da3",
+    "source": "Can’t tell where"
+  },
+  {
     "id": "6f7d8b92d58dbfba",
     "source": ".dark"
   },
@@ -6472,10 +6496,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "70eb321d8c393f2c",
     "source": "Extra high"
-  },
-  {
-    "id": "710caf2e33b39176",
-    "source": "Those words didn&rsquo;t land on the task. Try again, or type them in the box below."
   },
   {
     "id": "710d39b7dc50c98d",
@@ -8678,6 +8698,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Approval needed"
   },
   {
+    "id": "993b2dfa9bd2be17",
+    "source": "These exact words go over. Juno&rsquo;s side of this call does not."
+  },
+  {
     "id": "993f024b650eaf0f",
     "source": "Saturation"
   },
@@ -8780,6 +8804,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9ac6a4d7dc28b8ca",
     "source": "passages ·"
+  },
+  {
+    "id": "9acbb9ebea637014",
+    "source": "Base branch"
   },
   {
     "id": "9ada8e83c1186cd6",
@@ -9108,6 +9136,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9f9e949c1b65b9c7",
     "source": "Replace picture…"
+  },
+  {
+    "id": "9fa0a2918ff13203",
+    "source": "This has moved on since Juno was briefed"
   },
   {
     "id": "9fc7f11668697dc6",
@@ -10388,6 +10420,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b5e1b1ba4e156b7a",
     "source": "This Mac's access to Juno Work has been revoked."
+  },
+  {
+    "id": "b5e926bb4f8beaf5",
+    "source": "Juno was told what is in the box and how you have set it up, and nothing else. It can&rsquo;t create the task, start it or look anything up — when you&rsquo;re happy with how you&rsquo;ve worded it, send the line into the box and start it yourself. Nothing else said here is kept."
   },
   {
     "id": "b5ff8386a26706d6",
@@ -11914,6 +11950,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "push"
   },
   {
+    "id": "d11a6a5e7bd5ed72",
+    "source": "Voice conversation about this code session"
+  },
+  {
     "id": "d11c966467521a95",
     "source": "Multi-model AI chat"
   },
@@ -12256,6 +12296,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d6b7e540a8e13888",
     "source": "Artificial Analysis"
+  },
+  {
+    "id": "d6b840c166a45c84",
+    "source": "Stops at $"
   },
   {
     "id": "d6cc9c5929ced349",
@@ -13646,6 +13690,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Thinking effort: Auto — chosen automatically with the model"
   },
   {
+    "id": "ec963ffc911b8401",
+    "source": "Checking…"
+  },
+  {
     "id": "ecbc89cd37a03734",
     "source": "Started"
   },
@@ -14114,6 +14162,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This skill points at a version that is not there, so there are no instructions to show. Anything you write below is saved as a new version and becomes the current one."
   },
   {
+    "id": "f50c3d81035e4b21",
+    "source": "Sending starts the session and ends this call."
+  },
+  {
     "id": "f54ad4f29baf0a52",
     "source": "Mac connected"
   },
@@ -14228,10 +14280,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f7701c10cf7477f5",
     "source": "A schedule pinned to a Mac has to say which one. Left open, a 07:00 fire would land on whichever machine happened to be awake."
-  },
-  {
-    "id": "f77c38def3b24d49",
-    "source": ", reaches"
   },
   {
     "id": "f7828fec9b959260",

@@ -2,19 +2,18 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Check, FileText, FileUp, Loader2, RefreshCw, Sparkles, X } from "lucide-react";
+import { Check, FileUp, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { ScrollFade } from "@/components/ui/scroll-fade";
 import { Switch } from "@/components/ui/switch";
 import { useApp } from "@/components/app/app-provider";
-import { useUploads } from "@/hooks/use-uploads";
 import type { ConnectorStatus } from "@/components/connections/types";
 import { useWorkSkills } from "@/components/work/composer-home/use-work-skills";
 import type { WorkThreadContextState } from "@/components/work/composer/use-work-thread-context";
+import type { WorkThreadFiles } from "@/components/work/composer/work-thread-files";
 import { AppIcons } from "@/lib/app-icons";
-import { DOC_MIME } from "@/lib/uploads";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 /*
  * The [+] on a running task: everything you can hand it that is not a message.
@@ -51,30 +50,24 @@ import { cn, formatBytes } from "@/lib/utils";
  *     nobody could read.
  */
 
-/**
- * What the picker offers — the chat composer's document list with every image
- * type removed, for the reason the home composer gives: `attachedSources` in
- * scripts/work-runner.ts reads `Attachment.extractedText`, which is null for a
- * photo. Offering images would promise Juno a look at a picture it can never
- * get.
- */
-const WORK_ACCEPT_ATTRIBUTE = [
-  ...DOC_MIME,
-  ".txt",
-  ".md",
-  ".csv",
-  ".json",
-  ".ts",
-  ".tsx",
-  ".js",
-  ".py",
-].join(",");
-
 export function WorkThreadAddPanel({
   context,
+  files,
   onOpenLibrary,
 }: {
   context: WorkThreadContextState;
+  /**
+   * The uploads, owned by the composer.
+   *
+   * They cannot live in here. Radix unmounts a popover's content when it closes,
+   * so a `useUploads` in this file lost every in-flight upload the moment the
+   * reader dismissed the menu — and the panel's own "Give it this file" button
+   * is a SECOND deliberate press, which means closing the menu between the two
+   * was not an unlikely path, it was the obvious one. Hoisted to the composer
+   * the uploads also get somewhere to be seen: a chip strip above the field,
+   * exactly as on the home composer.
+   */
+  files: WorkThreadFiles;
   /**
    * Opens the account's library.
    *
@@ -123,7 +116,7 @@ export function WorkThreadAddPanel({
         )}
 
         {features.storage && context.reachKnown && (
-          <FilesSection context={context} onOpenLibrary={onOpenLibrary} />
+          <FilesSection context={context} files={files} onOpenLibrary={onOpenLibrary} />
         )}
 
         {context.reachKnown && <AppsSection context={context} />}
@@ -155,25 +148,13 @@ export function WorkThreadAddPanel({
  */
 function FilesSection({
   context,
+  files,
   onOpenLibrary,
 }: {
   context: WorkThreadContextState;
+  files: WorkThreadFiles;
   onOpenLibrary: () => void;
 }) {
-  const { uploads, addFiles, remove, isUploading, readyAttachments } = useUploads(null);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-
-  const pending = readyAttachments.filter(
-    (attachment) => !context.attachmentIds.includes(attachment.id)
-  );
-
-  const hand = React.useCallback(() => {
-    if (pending.length === 0 || context.saving) return;
-    context.change({
-      attachmentIds: [...context.attachmentIds, ...pending.map((attachment) => attachment.id)],
-    });
-  }, [context, pending]);
-
   return (
     // The hairline separates sections and never opens the panel with one, which
     // is what `first:` is doing on all three: any of them can be the first one
@@ -184,62 +165,18 @@ function FilesSection({
         A run is handed its files when it starts, so anything added now is for the next attempt.
       </p>
 
-      {uploads.length > 0 && (
-        <ul className="mb-2 space-y-1.5">
-          {uploads.map((upload) => {
-            const added =
-              upload.attachment !== undefined &&
-              context.attachmentIds.includes(upload.attachment.id);
-            return (
-              <li
-                key={upload.localId}
-                className="flex items-center gap-2 rounded-control border border-border/70 px-2 py-1.5 motion-safe:animate-rise-in"
-              >
-                <FileText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12.5px]">{upload.fileName}</span>
-                  <span className="block font-mono text-[10px] text-muted-foreground">
-                    {upload.status === "uploading"
-                      ? `${upload.progress}%`
-                      : upload.status === "error"
-                        ? "Couldn’t be uploaded"
-                        : added
-                          ? "On this task from the next attempt"
-                          : formatBytes(upload.size)}
-                  </span>
-                </span>
-                {upload.status === "uploading" && (
-                  <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
-                )}
-                {added ? (
-                  <Check className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
-                ) : (
-                  // Was an ~18px square glyph with no growth on touch, against a
-                  // circular badge for the same act on the home composer.
-                  // `Pressable kind="icon"` is one circular affordance at one
-                  // hit size, and grows to 36px on a coarse pointer.
-                  <Pressable
-                    kind="icon"
-                    size="sm"
-                    onClick={() => remove(upload.localId)}
-                    aria-label={`Remove ${upload.fileName}`}
-                    className="shrink-0"
-                  >
-                    <X className="size-3.5" aria-hidden="true" />
-                  </Pressable>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
+      {/* Two pickers and nothing else. The files themselves — and the press that
+          hands them to the task — are on the composer's own surface, above the
+          field, where the home composer has always shown them. They were listed
+          in here, inside a popover that unmounts on close, which is how a reader
+          who picked a file, closed the menu to re-read the transcript and came
+          back found it gone. */}
       <div className="flex flex-wrap items-center gap-1.5">
         <Button
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => fileInputRef.current?.click()}
+          onClick={files.pick}
           disabled={context.saving}
           className="gap-1.5"
         >
@@ -258,34 +195,7 @@ function FilesSection({
         >
           <AppIcons.library className="h-3.5 w-3.5" aria-hidden="true" /> From your library
         </Button>
-        {pending.length > 0 && (
-          <Button
-            type="button"
-            size="sm"
-            onClick={hand}
-            disabled={context.saving || isUploading}
-            className="gap-1.5"
-          >
-            {context.saving ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-            ) : null}
-            {pending.length === 1 ? "Give it this file" : `Give it these ${pending.length} files`}
-          </Button>
-        )}
       </div>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        accept={WORK_ACCEPT_ATTRIBUTE}
-        className="hidden"
-        onChange={(event) => {
-          if (event.target.files?.length) addFiles(event.target.files);
-          // Cleared so picking the same file twice still fires a change event.
-          event.target.value = "";
-        }}
-      />
     </div>
   );
 }

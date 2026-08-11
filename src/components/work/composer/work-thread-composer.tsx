@@ -1,21 +1,25 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, Loader2, Mic, Plus } from "lucide-react";
+import { ArrowUp, Check, FileText, Loader2, Mic, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ComposerShell } from "@/components/ui/composer-shell";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ComposerDictation } from "@/components/chat/composer-dictation";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { WorkThreadAddPanel } from "@/components/work/composer/work-thread-add-panel";
 import {
-  WorkThreadControls,
   WorkThreadControlsNote,
+  WorkThreadModelControl,
+  WorkThreadRunContext,
 } from "@/components/work/composer/work-thread-controls";
 import { useWorkThreadContext } from "@/components/work/composer/use-work-thread-context";
+import { useWorkThreadFiles } from "@/components/work/composer/work-thread-files";
 import type { ClientWorkSession } from "@/lib/work/serializers";
-import { cn } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 
 /**
  * The box at the bottom of a Work thread. It is always there.
@@ -46,6 +50,17 @@ import { cn } from "@/lib/utils";
  * `accepted: false`. Clearing on submit and hoping is how a refused send costs
  * somebody a paragraph they will not retype.
  *
+ * ── Two tiers, because the row was answering two questions ─────────────────
+ *
+ * `ComposerShell` is the chrome, and adopting it is what split the one row this
+ * composer used to have. It held the model, the permission mode, the project,
+ * the [+], the mic and Send in a single flex-wrap line, so "which project this
+ * task belongs to" and "send this message" sat at identical weight and the row
+ * rewrapped under the reader's hand every time the run context changed. Above
+ * the hairline is now what you do to THIS message — attach, pick the model,
+ * dictate, send. Below it is what stays true afterwards: how often the task
+ * stops to ask, and where it is filed.
+ *
  * ── The controls around it ─────────────────────────────────────────────────
  *
  * Everything the home composer offers before a task exists is offered here
@@ -54,6 +69,14 @@ import { cn } from "@/lib/utils";
  * They were absent for as long as there was no route that could change them,
  * which meant a task started on the wrong model or on Skip could only be
  * corrected by starting a different task.
+ *
+ * Attachments are the last of those to come out of hiding. The files existed —
+ * `WorkThreadAddPanel` has had a picker and a library for a while — but they
+ * lived entirely inside a popover, which meant two things: the reader could not
+ * see what they had picked without reopening the menu, and Radix unmounting that
+ * menu destroyed the upload. Both are fixed the same way, by `useWorkThreadFiles`
+ * living out here: the chips are above the field, exactly as on the home
+ * composer, and the one press that hands them to the task is beside them.
  *
  * They all write through `PATCH /sessions/[id]/context`, and every one of them
  * obeys the same rule, stated in one place in `useWorkThreadContext`: a run's
@@ -179,6 +202,14 @@ export function WorkThreadComposer({
    */
   const live = mode.kind === "steer" || mode.kind === "answer";
   const context = useWorkThreadContext({ session, live });
+  /*
+   * The documents, owned out here rather than inside the [+].
+   *
+   * Radix unmounts a popover's content on close, and the hand-over is
+   * deliberately a second press — so a reader who picked a file and then closed
+   * the menu lost the upload. See `useWorkThreadFiles`.
+   */
+  const files = useWorkThreadFiles(context);
 
   /*
    * The library dialog, mounted here rather than in the [+] panel.
@@ -187,8 +218,8 @@ export function WorkThreadComposer({
    * the popover the moment it takes focus, so the picker has to be a sibling of
    * the composer — the arrangement the chat and Code composers already use.
    * Picking is its own deliberate confirm inside the dialog, so this is the
-   * same one-press / one-request hand-off `FilesSection` argues for, and it
-   * sends the WHOLE list for the reason stated there: a partial one is only
+   * same one-press / one-request hand-off `useWorkThreadFiles` argues for, and
+   * it sends the WHOLE list for the reason stated there: a partial one is only
    * safe if the route is certain to read it as an addition.
    */
   const [libraryOpen, setLibraryOpen] = React.useState(false);
@@ -196,16 +227,6 @@ export function WorkThreadComposer({
     setAddOpen(false);
     setLibraryOpen(true);
   }, []);
-  const attachFromLibrary = React.useCallback(
-    (attachments: readonly { id: string }[]) => {
-      const added = attachments
-        .map((attachment) => attachment.id)
-        .filter((id) => !context.attachmentIds.includes(id));
-      if (added.length === 0) return;
-      context.change({ attachmentIds: [...context.attachmentIds, ...added] });
-    },
-    [context]
-  );
 
   const autoresize = React.useCallback(() => {
     const element = textareaRef.current;
@@ -284,6 +305,13 @@ export function WorkThreadComposer({
       )}
     >
       <div
+        // `inert` is what actually takes this half of the cross-fade out of the
+        // page. `opacity-0 pointer-events-none` hides it from the eye and the
+        // mouse and leaves it in the tab order and the accessibility tree, so a
+        // keyboard or screen-reader user could reach a composer that is not on
+        // screen — and, mid-dictation, type into it. Same defect the chat
+        // transcript's jump-to-latest button had.
+        inert={!dictating}
         className={cn(
           "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
           dictating
@@ -300,169 +328,301 @@ export function WorkThreadComposer({
         )}
       </div>
 
+      {/* The cross-fade lives on a wrapper, not on the shell: `ComposerShell`
+          already declares `transition-[border-color,box-shadow]`, and two
+          arbitrary `transition-[…]` utilities on one element are resolved by
+          stylesheet order rather than class order — one would silently win. */}
       <div
+        // `inert` is what actually takes this half of the cross-fade out of the
+        // page. `opacity-0 pointer-events-none` hides it from the eye and the
+        // mouse and leaves it in the tab order and the accessibility tree, so a
+        // keyboard or screen-reader user could reach a composer that is not on
+        // screen — and, mid-dictation, type into it. Same defect the chat
+        // transcript's jump-to-latest button had.
+        inert={dictating}
         className={cn(
-          "composer-surface col-start-1 row-start-1 flex w-full flex-col gap-1 rounded-surface border border-border/65 bg-card/95 p-1.5 backdrop-blur",
-          "transition-[border-color,opacity,transform] duration-base ease-spring focus-within:border-foreground/15 motion-reduce:transition-none",
+          "col-start-1 row-start-1 w-full transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
           dictating && "pointer-events-none translate-y-1 scale-[0.98] opacity-0"
         )}
       >
-        {/* What sending does, in the same mono register as every other metadata
-            label in Work. Only the echoed question is truncated — the four fixed
-            sentences are the whole point of the strip and a clipped one would be
-            worse than none. */}
-        <p
-          className={cn(
-            "px-2.5 pt-1 font-mono text-[10px] leading-relaxed text-muted-foreground",
-            mode.kind === "answer" && "truncate"
-          )}
-        >
-          {intent(mode)}
-        </p>
-
-        <textarea
-          ref={textareaRef}
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              // Escape gets out of the box rather than out of the page: the
-              // transcript is what a reader wants their keyboard back for.
-              event.preventDefault();
-              event.currentTarget.blur();
-              return;
-            }
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              void submit(draft);
-            }
-          }}
-          rows={1}
-          placeholder={placeholder(mode)}
-          // Stable in every mode but the one where it carries real information.
-          // The page re-renders about once a second while a run is live, and a
-          // field whose accessible name changed as the run moved between states
-          // would be re-announced under the reader mid-sentence. The send button
-          // is where the effect is named, and it is not the thing holding focus.
-          aria-label={mode.kind === "answer" ? `Answer: ${mode.question}` : "Message"}
-          className="max-h-[180px] min-h-[38px] w-full resize-none bg-transparent px-2.5 py-2 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground/70"
-        />
-
-        <div className="flex items-center gap-1.5">
-          <Popover open={addOpen} onOpenChange={setAddOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Add a file, an app or a skill to this task"
+        <ComposerShell
+          utilityLabel="How often this task asks, and where it is filed"
+          above={
+            <>
+              {/* What sending does, in the same mono register as every other
+                  metadata label in Work. Only the echoed question is truncated —
+                  the four fixed sentences are the whole point of the strip and a
+                  clipped one would be worse than none. */}
+              <p
                 className={cn(
-                  "composer-add-button group shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground",
-                  addOpen && "bg-accent"
+                  "px-3 pt-2.5 font-mono text-[10px] leading-relaxed text-muted-foreground sm:px-3.5",
+                  mode.kind === "answer" && "truncate"
                 )}
               >
-                <Plus
+                {intent(mode)}
+              </p>
+
+              {/*
+               * The documents this task has been given, or is about to be.
+               *
+               * Visible on the surface at last. They were listed only inside the
+               * [+], which meant the reader could not see what they had picked
+               * without reopening a menu — and the hand-over is a second press,
+               * so reopening was the normal path rather than a rare one.
+               *
+               * `grid-rows-[0fr]`→`[1fr]` rather than height, so the strip can
+               * animate open without anything being measured. Same collapse, same
+               * chips, same remove affordance as the home composer.
+               */}
+              <div
+                className={cn(
+                  "grid transition-[grid-template-rows] duration-base ease-out-soft",
+                  files.uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+                )}
+              >
+                <div className="min-h-0 overflow-hidden">
+                  <div className="flex flex-wrap items-center gap-2 px-3 pt-2 sm:px-3.5">
+                    {files.uploads.map((upload) => {
+                      const added =
+                        upload.attachment !== undefined &&
+                        context.attachmentIds.includes(upload.attachment.id);
+                      return (
+                        <div
+                          key={upload.localId}
+                          className="flex items-center gap-2 rounded-control border bg-background px-2.5 py-2 text-xs shadow-soft motion-safe:animate-rise-in"
+                        >
+                          <FileText
+                            className="h-5 w-5 shrink-0 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                          <div className="max-w-[140px]">
+                            <p className="truncate font-medium">{upload.fileName}</p>
+                            <p className="text-muted-foreground">
+                              {upload.status === "uploading"
+                                ? `${upload.progress}%`
+                                : upload.status === "error"
+                                  ? "Failed"
+                                  : added
+                                    ? "On this task from the next attempt"
+                                    : formatBytes(upload.size)}
+                            </p>
+                          </div>
+                          {upload.status === "uploading" && (
+                            <Loader2
+                              className="h-3.5 w-3.5 animate-spin text-muted-foreground"
+                              aria-hidden="true"
+                            />
+                          )}
+                          {added ? (
+                            <Check className="h-3.5 w-3.5 shrink-0 text-primary" aria-hidden="true" />
+                          ) : (
+                            <Pressable
+                              kind="icon"
+                              size="sm"
+                              onClick={() => files.remove(upload.localId)}
+                              className="-mr-1 shrink-0"
+                              aria-label={`Remove ${upload.fileName}`}
+                            >
+                              <X className="h-3.5 w-3.5" aria-hidden="true" />
+                            </Pressable>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {/* The hand-over, beside the files it is about rather than
+                        back inside the menu they were picked from. A run is
+                        handed its files at dispatch, so this is a press about the
+                        next attempt and the button says which files it means. */}
+                    {files.pending.length > 0 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={files.hand}
+                        disabled={context.saving || files.isUploading}
+                        className="gap-1.5"
+                      >
+                        {context.saving && (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                        )}
+                        {files.pending.length === 1
+                          ? "Give it this file"
+                          : `Give it these ${files.pending.length} files`}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          }
+          field={
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  // Escape gets out of the box rather than out of the page: the
+                  // transcript is what a reader wants their keyboard back for.
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                  return;
+                }
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  void submit(draft);
+                }
+              }}
+              rows={1}
+              placeholder={placeholder(mode)}
+              // Stable in every mode but the one where it carries real
+              // information. The page re-renders about once a second while a run
+              // is live, and a field whose accessible name changed as the run
+              // moved between states would be re-announced under the reader
+              // mid-sentence. The send button is where the effect is named, and
+              // it is not the thing holding focus.
+              aria-label={mode.kind === "answer" ? `Answer: ${mode.question}` : "Message"}
+              className="max-h-[180px] min-h-[38px] w-full resize-none bg-transparent px-3 py-2.5 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground/70 sm:px-3.5"
+            />
+          }
+          controls={
+            <>
+              <div className="flex min-w-0 flex-1 items-center gap-1">
+                <Popover open={addOpen} onOpenChange={setAddOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Add a file, an app or a skill to this task"
+                      className={cn(
+                        "composer-add-button group shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground",
+                        addOpen && "bg-accent"
+                      )}
+                    >
+                      <Plus
+                        aria-hidden="true"
+                        strokeWidth={1.75}
+                        className="composer-add-icon h-4 w-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                      />
+                    </Button>
+                  </PopoverTrigger>
+                  {/* The panel's requests are made when it mounts, which Radix
+                      does on open — so a reader who never opens the [+] never
+                      makes any of them. */}
+                  <PopoverContent align="start" side="top" sideOffset={10} className="w-80 p-0">
+                    <WorkThreadAddPanel
+                      context={context}
+                      files={files}
+                      onOpenLibrary={openLibrary}
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                {/* One divider class, one height, one breakpoint — the form chat
+                    settled on after shipping two of each. */}
+                <span
+                  className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block"
                   aria-hidden="true"
-                  strokeWidth={1.75}
-                  className="composer-add-icon h-4 w-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
                 />
-              </Button>
-            </PopoverTrigger>
-            {/* The panel's three requests are made when it mounts, which Radix
-                does on open — so a reader who never opens the [+] never makes
-                any of them. */}
-            <PopoverContent align="start" side="top" sideOffset={10} className="w-80 p-0">
-              <WorkThreadAddPanel context={context} onOpenLibrary={openLibrary} />
-            </PopoverContent>
-          </Popover>
 
-          <LibraryPicker
-            open={libraryOpen}
-            onOpenChange={setLibraryOpen}
-            onAttach={attachFromLibrary}
-            existingCount={context.attachmentIds.length}
-          />
+                <WorkThreadModelControl context={context} />
+              </div>
 
-          <WorkThreadControls context={context} />
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                {speechSupported && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setDictating(true)}
+                        // Dictation and the voice conversation want the same
+                        // microphone, and the browser gives it to whoever asked
+                        // last — so opening one while the other is live steals
+                        // the input stream from a session still holding it. Chat
+                        // locks the same pair the same way.
+                        disabled={dictating || voiceActive}
+                        aria-label="Dictate this message"
+                        aria-pressed={dictating}
+                        className="composer-mic-button shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground"
+                      >
+                        <Mic className="composer-mic-icon h-4 w-4" aria-hidden="true" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Dictate</TooltipContent>
+                  </Tooltip>
+                )}
 
-          {/* Right: dictation mic + primary action (voice ⇄ send). */}
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            {speechSupported && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => setDictating(true)}
-                    // Dictation and the voice conversation want the same
-                    // microphone, and the browser gives it to whoever asked last —
-                    // so opening one while the other is live steals the input
-                    // stream from a session still holding it. Chat locks the same
-                    // pair the same way.
-                    disabled={dictating || voiceActive}
-                    aria-label="Dictate this message"
-                    aria-pressed={dictating}
-                    className="composer-mic-button shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground"
-                  >
-                    <Mic className="composer-mic-icon h-4 w-4" aria-hidden="true" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Dictate</TooltipContent>
-              </Tooltip>
-            )}
+                {/* Primary action morphs in place: Voice (empty) → Send (has text). */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      onClick={showVoiceButton ? onOpenVoiceMode : () => void submit(draft)}
+                      disabled={showVoiceButton ? false : !canSend}
+                      aria-label={showVoiceButton ? "Talk to Juno about this task" : sendLabel(mode)}
+                      className={cn(
+                        // The same property list and easing chat transitions on,
+                        // so the two buttons morph identically. `width` and
+                        // `border-radius` are in it even though this composer
+                        // holds both fixed: dropping them here is how the lists
+                        // drift and a later shape change animates on one surface
+                        // only.
+                        "composer-primary-action h-8 w-8 shrink-0 rounded-composer-control",
+                        "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring"
+                      )}
+                    >
+                      {sending ? (
+                        // Work's busy state is a send in flight, not a stream
+                        // being generated — the composer has no stop path, that
+                        // control is in the page header. So this maps to chat's
+                        // `checking` spinner rather than to its Square.
+                        <Loader2
+                          key="sending"
+                          className="h-3.5 w-3.5 animate-spin motion-safe:animate-fade-in"
+                          aria-hidden="true"
+                        />
+                      ) : showVoiceButton ? (
+                        <span
+                          key="voice"
+                          className="composer-voice-wave motion-safe:animate-fade-in"
+                          aria-hidden="true"
+                        >
+                          <span /><span /><span /><span /><span />
+                        </span>
+                      ) : (
+                        <ArrowUp
+                          key="send"
+                          className="composer-send-icon h-3.5 w-3.5 motion-safe:animate-fade-in"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{showVoiceButton ? "Voice conversation" : "Send"}</TooltipContent>
+                </Tooltip>
+              </div>
+            </>
+          }
+          utility={<WorkThreadRunContext context={context} />}
+        />
 
-            {/* Primary action morphs in place: Voice (empty) → Send (has text). */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  onClick={showVoiceButton ? onOpenVoiceMode : () => void submit(draft)}
-                  disabled={showVoiceButton ? false : !canSend}
-                  aria-label={showVoiceButton ? "Talk to Juno about this task" : sendLabel(mode)}
-                  className={cn(
-                    // The same property list and easing chat transitions on, so
-                    // the two buttons morph identically. `width` and
-                    // `border-radius` are in it even though this composer holds
-                    // both fixed: dropping them here is how the lists drift and
-                    // a later shape change animates on one surface only.
-                    "composer-primary-action h-8 w-8 shrink-0 rounded-composer-control",
-                    "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring"
-                  )}
-                >
-                  {sending ? (
-                    // Work's busy state is a send in flight, not a stream being
-                    // generated — the composer has no stop path, that control is
-                    // in the page header. So this maps to chat's `checking`
-                    // spinner rather than to its Square.
-                    <Loader2
-                      key="sending"
-                      className="h-3.5 w-3.5 animate-spin motion-safe:animate-fade-in"
-                      aria-hidden="true"
-                    />
-                  ) : showVoiceButton ? (
-                    <span key="voice" className="composer-voice-wave motion-safe:animate-fade-in" aria-hidden="true">
-                      <span /><span /><span /><span /><span />
-                    </span>
-                  ) : (
-                    <ArrowUp
-                      key="send"
-                      className="composer-send-icon h-3.5 w-3.5 motion-safe:animate-fade-in"
-                      aria-hidden="true"
-                    />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{showVoiceButton ? "Voice conversation" : "Send"}</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-
-        {/* Under the row rather than beside any one control: it is true of all
+        {/* Under the shell rather than beside any one control: it is true of all
             of them, and a caveat that wrapped in among the chips would be read
-            as a label for whichever one it landed next to. */}
+            as a label for whichever one it landed next to. The utility tier does
+            not wrap, so a sentence cannot live in it. */}
         <WorkThreadControlsNote context={context} live={live} />
+
+        <LibraryPicker
+          open={libraryOpen}
+          onOpenChange={setLibraryOpen}
+          onAttach={files.attachFromLibrary}
+          existingCount={context.attachmentIds.length}
+        />
+        {files.input}
       </div>
     </div>
   );

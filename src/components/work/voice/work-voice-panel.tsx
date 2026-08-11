@@ -1,16 +1,21 @@
 "use client";
 
 import * as React from "react";
-import { RefreshCw, Send } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { RealtimeVoice } from "@/components/voice/realtime-voice";
-import { VoiceAura, voiceAuraStatus } from "@/components/voice/voice-aura";
+import { useApp } from "@/components/app/app-provider";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
+import { PLANS } from "@/lib/plans";
 import {
   buildWorkVoiceBriefing,
   workVoiceCatchUp,
   type WorkVoiceBriefingInput,
 } from "@/components/work/voice/work-voice-briefing";
+import {
+  WorkVoiceSurface,
+  type WorkVoiceSend,
+  type WorkVoiceSendIntent,
+} from "@/components/work/voice/work-voice-surface";
 
 /**
  * Talking to Juno about a Work task, out loud, without pretending it is more
@@ -57,67 +62,19 @@ import {
  * there is (`showVoiceButton` in `chat/composer.tsx`). Work now does the same,
  * so what is left here is the live session — the panel — plus `useWorkVoice`,
  * which hands the composer the `onOpenVoiceMode` callback it expects.
+ *
+ * Everything the panel LOOKS like — the aura, the transcript, which line is
+ * sendable, what a refusal leaves behind — is `WorkVoiceSurface`, shared with
+ * the home composer's version of this conversation. Only the briefing and the
+ * catch-up are this file's.
  */
+
+/** Re-exported so a caller needs one import for the whole feature. */
+export type { WorkVoiceSend, WorkVoiceSendIntent };
 
 /** True when this build has a relay to talk to. Inlined at build time. */
 export function isWorkVoiceConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_VOICE_RELAY_URL);
-}
-
-/**
- * What pressing "send to task" would do, in the four cases the thread has.
- *
- * A deliberate copy of `WorkComposerMode` rather than an import of it. The
- * composer is another surface's file and this component is meant to be
- * droppable without dragging that file's shape into its signature; the four
- * kinds are the product's vocabulary, not the composer's private detail. The
- * sentences below are the composer's own, kept identical on purpose — two
- * controls on one page that describe the same send in different words is how a
- * reader concludes they do different things.
- */
-export type WorkVoiceSendIntent =
-  | { kind: "answer"; question: string }
-  | { kind: "steer" }
-  | { kind: "restart" }
-  | { kind: "start" };
-
-function intentSentence(intent: WorkVoiceSendIntent): string {
-  switch (intent.kind) {
-    case "answer":
-      return `Answering: ${intent.question}`;
-    case "steer":
-      return "Not an answer to anything — this is kept on the task";
-    case "restart":
-      return "This attempt is over — sending starts another and hands it this message";
-    case "start":
-      return "Not started yet — sending starts this task and hands it this message";
-  }
-}
-
-function sendButtonLabel(intent: WorkVoiceSendIntent): string {
-  switch (intent.kind) {
-    case "answer":
-      return "Send as my answer";
-    case "steer":
-      return "Add this to the task";
-    case "restart":
-      return "Start again with this";
-    case "start":
-      return "Start the task with this";
-  }
-}
-
-export interface WorkVoiceSend {
-  /** What sending does right now. Shown above the button, before the press. */
-  intent: WorkVoiceSendIntent;
-  /** A send is already in flight elsewhere on the page. Locks the button. */
-  sending?: boolean;
-  /**
-   * The page's own send path. Resolves true when the words landed on the task,
-   * false when they did not — the same contract the thread composer keeps, so
-   * a refusal leaves the spoken line on screen to be sent again.
-   */
-  onSend: (text: string) => Promise<boolean>;
 }
 
 export interface WorkVoicePanelProps extends WorkVoiceBriefingInput {
@@ -130,13 +87,21 @@ export interface WorkVoicePanelProps extends WorkVoiceBriefingInput {
 /**
  * Open / closed for the voice conversation, in the shape the composer wants.
  *
- * `onOpenVoiceMode` is deliberately `undefined` — not a no-op — both when this
- * deployment has no relay and while a session is already live. The composer's
- * primary button reads that exact absence to decide whether it is a voice
- * launcher or a plain Send, so a handler that existed but did nothing would
- * leave a wave-bar button on a build with no voice, and a second launcher
- * pointing at a panel already on screen. Chat gates its own `onOpenVoiceMode`
- * the same way (`!voiceOpen && !!NEXT_PUBLIC_VOICE_RELAY_URL` in `chat-view`).
+ * `onOpenVoiceMode` is deliberately `undefined` — not a no-op — when this
+ * deployment has no relay, when the account's plan has no voice, and while a
+ * session is already live. The composer's primary button reads that exact
+ * absence to decide whether it is a voice launcher or a plain Send, so a handler
+ * that existed but did nothing would leave a wave-bar button on a build with no
+ * voice, and a second launcher pointing at a panel already on screen.
+ *
+ * The PLAN check is here rather than at each call site, and it was missing: this
+ * hook gated on the relay URL alone while chat gated on `PLANS[quota.plan].voice`
+ * as well (`chat-view.tsx`). On a free plan that difference was a live defect
+ * with a user-visible ending — the wave bars drew, the panel mounted, and
+ * `/api/voice/relay-token` answered 403 "Voice mode requires a paid plan", so
+ * the upsell landed inside an opened voice session instead of the button simply
+ * never appearing. One gate in one place is also what stops the Work home
+ * composer inheriting the same bug by copying this hook.
  */
 export function useWorkVoice(): {
   /** True when the panel should be mounted. */
@@ -147,14 +112,15 @@ export function useWorkVoice(): {
   close: () => void;
 } {
   const [open, setOpen] = React.useState(false);
-  const configured = isWorkVoiceConfigured();
+  const { quota } = useApp();
+  const allowed = isWorkVoiceConfigured() && PLANS[quota.plan].voice;
   const openVoice = React.useCallback(() => setOpen(true), []);
   const close = React.useCallback(() => setOpen(false), []);
   return {
-    // A session can outlive the config check only if the env changed mid-page,
-    // which it cannot — but gating the mount too keeps the two in step.
-    open: open && configured,
-    onOpenVoiceMode: configured && !open ? openVoice : undefined,
+    // A session can outlive the gate only if the plan changed mid-page, which a
+    // downgrade genuinely can — gating the mount too keeps the two in step.
+    open: open && allowed,
+    onOpenVoiceMode: allowed && !open ? openVoice : undefined,
     close,
   };
 }
@@ -168,12 +134,8 @@ export function useWorkVoice(): {
  * second while a run streams, and adding a permanent per-frame callback to that
  * page for a conversation nobody has started is a cost with no reader.
  *
- * It returns a FRAGMENT, not a box, and the first thing in it is the aura. The
- * field paints at `z-index: -1`, so it has to be a SIBLING of the composer
- * inside `.composer-aura-host` for that to mean "behind the composer" — wrapped
- * in this component's own `<section>` it would land behind the section instead,
- * and the section's rise-in animation would trap it in a layer of its own. This
- * is the same arrangement `chat-view.tsx` uses for exactly the same reason.
+ * It returns a FRAGMENT, not a box — see `WorkVoiceSurface`, whose first child
+ * is the aura for exactly that reason.
  */
 export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoicePanelProps) {
   const voice = useRealtimeVoice();
@@ -184,9 +146,6 @@ export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoic
 
   /** The digest of what the model has actually been told, briefing or catch-up. */
   const [toldDigest, setToldDigest] = React.useState<string | null>(null);
-  const [sentLineIds, setSentLineIds] = React.useState<readonly number[]>([]);
-  const [sending, setSending] = React.useState(false);
-  const [sendFailed, setSendFailed] = React.useState(false);
   /** Exact texts pushed as context, so they can be kept out of the transcript. */
   const contextPushes = React.useRef<Set<string>>(new Set());
 
@@ -205,7 +164,10 @@ export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoic
     void voiceRef.current.start(undefined, briefing.entries);
   }, [briefingInput]);
 
-  const liveDigest = React.useMemo(() => buildWorkVoiceBriefing(briefingInput).digest, [briefingInput]);
+  const liveDigest = React.useMemo(
+    () => buildWorkVoiceBriefing(briefingInput).digest,
+    [briefingInput]
+  );
   const staleBy = toldDigest !== null && toldDigest !== liveDigest;
 
   const catchUp = React.useCallback(() => {
@@ -214,42 +176,6 @@ export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoic
     contextPushes.current.add(text);
     setToldDigest(buildWorkVoiceBriefing(briefingInput).digest);
   }, [briefingInput]);
-
-  /*
-   * The visible transcript.
-   *
-   * Context pushes are filtered out by exact text. They travel as `input.text`,
-   * which the relay echoes straight back as a user line — correct for the
-   * model, wrong for the reader, who would see a paragraph of status they never
-   * said sitting in their own conversation.
-   */
-  const lines = React.useMemo(
-    () => voice.transcript.filter((line) => !contextPushes.current.has(line.text.trim())),
-    [voice.transcript]
-  );
-
-  /** The last thing the reader finished saying, and has not already sent. */
-  const sendable = React.useMemo(() => {
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const line = lines[i];
-      if (line.role !== "user" || !line.final || !line.text.trim()) continue;
-      return sentLineIds.includes(line.id) ? null : line;
-    }
-    return null;
-  }, [lines, sentLineIds]);
-
-  const submit = React.useCallback(async () => {
-    if (!send || !sendable || sending || send.sending) return;
-    setSending(true);
-    setSendFailed(false);
-    try {
-      const landed = await send.onSend(sendable.text.trim());
-      if (landed) setSentLineIds((current) => [...current, sendable.id]);
-      else setSendFailed(true);
-    } finally {
-      setSending(false);
-    }
-  }, [send, sendable, sending]);
 
   const close = React.useCallback(() => {
     voiceRef.current.end();
@@ -268,24 +194,23 @@ export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoic
   const briefedFromStream = events.length > 0;
 
   return (
-    <>
-      <VoiceAura status={voiceAuraStatus(voice)} levelRef={voice.levelRef} />
-      <section
-        aria-label="Voice conversation about this task"
-        className="mb-2 flex w-full flex-col gap-3 rounded-card border border-border/70 bg-card/80 p-3 motion-safe:animate-rise-in"
-      >
-        {/* The arrangement, stated plainly and kept on screen. Not a tooltip and
-            not a one-time notice: the sentence has to be readable at the moment
-            somebody is deciding whether to believe what they just heard. */}
-        <p className="text-xs leading-relaxed text-muted-foreground">
+    <WorkVoiceSurface
+      label="Voice conversation about this task"
+      voice={voice}
+      hiddenTexts={contextPushes.current}
+      send={send}
+      onClose={close}
+      explanation={
+        <>
           {briefedFromStream
             ? "Juno was told this task’s goal, plan and latest activity when you started talking."
             : "Juno was told this task’s goal and where it has got to when you started talking."}{" "}
           This is a separate conversation about the task: it can&rsquo;t see anything else, it
           can&rsquo;t change the task, and nothing said here reaches the run unless you send it.
-        </p>
-
-        {staleBy && (
+        </>
+      }
+      notice={
+        staleBy ? (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-field border border-border/60 bg-muted/40 px-3 py-2">
             <p className="font-mono text-label text-muted-foreground">
               The task has moved on since Juno was briefed
@@ -295,56 +220,8 @@ export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoic
               Bring Juno up to date
             </Button>
           </div>
-        )}
-
-        {lines.length > 0 && (
-          <div className="max-h-56 space-y-3 overflow-y-auto pr-1">
-            {lines.map((line) =>
-              line.role === "user" ? (
-                <div key={line.id} className="flex justify-end">
-                  <p className="max-w-[85%] whitespace-pre-wrap rounded-card bg-secondary px-3 py-2 text-[13px] leading-relaxed text-secondary-foreground">
-                    {line.text}
-                  </p>
-                </div>
-              ) : (
-                <p key={line.id} className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">
-                  {line.text}
-                </p>
-              )
-            )}
-          </div>
-        )}
-
-        {send && sendable && (
-          <div className="flex flex-col gap-2 rounded-field border border-border/60 bg-background/60 p-2.5">
-            {/* What the press does, before the press — the composer's own line,
-                for the composer's own reason: a steer and a restart are not the
-                same event and finding out afterwards is too late. */}
-            <p className="font-mono text-label text-muted-foreground">{intentSentence(send.intent)}</p>
-            <p className="text-[13px] leading-relaxed text-foreground">{sendable.text}</p>
-            <p className="text-caption text-muted-foreground/80">
-              These exact words go to the task. Juno&rsquo;s side of this call does not.
-            </p>
-            {sendFailed && (
-              <p role="alert" className="text-caption text-destructive">
-                Those words didn&rsquo;t land on the task. Try again, or type them in the box below.
-              </p>
-            )}
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => void submit()}
-              disabled={sending || send.sending === true}
-              className="self-end gap-2"
-            >
-              <Send className="size-3.5" aria-hidden="true" />
-              {sending ? "Sending…" : sendButtonLabel(send.intent)}
-            </Button>
-          </div>
-        )}
-
-        <RealtimeVoice voice={voice} onClose={close} />
-      </section>
-    </>
+        ) : undefined
+      }
+    />
   );
 }

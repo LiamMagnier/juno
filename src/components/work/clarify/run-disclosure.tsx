@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Cloud, Laptop, Loader2 } from "lucide-react";
 import type { WorkEffectiveTarget } from "@/lib/work/domain";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +39,7 @@ import { cn } from "@/lib/utils";
  * behind a unit conversion: if that constant moves, this sentence becomes a
  * lie, and this comment is where whoever moves it finds out.
  */
-const RUN_CEILINGS = {
+export const RUN_CEILINGS = {
   costUsd: 2,
   tokens: 600_000,
   minutes: 20,
@@ -54,6 +54,81 @@ interface RunDisclosureProps {
   connectorLabels: readonly string[];
 }
 
+/**
+ * Where this task will run, in the reader's words.
+ *
+ * One function, read by the strip item and by the disclosure below it, because
+ * the composer now names the executor in two places and the two must not be able
+ * to disagree — a strip saying "your Mac" over a panel saying "Juno's cloud" is
+ * the failure this whole surface's header spends a paragraph on.
+ */
+export function runTargetLabel(
+  target: WorkEffectiveTarget,
+  hostName: string | null
+): string {
+  return target === "cloud" ? "Juno’s cloud" : (hostName ?? "your Mac");
+}
+
+/**
+ * The executor, on the composer's utility strip: the third standing fact about
+ * a run, beside which project it is filed in and which apps it may reach.
+ *
+ * NOT a control, and that is the honest shape rather than an unfinished one.
+ * Work has no executor picker anywhere — `selectForInferred` reads the goal and
+ * decides, and the dispatch route runs the same function over the same list — so
+ * a dropdown here would be a choice the server is entitled to ignore. A reader
+ * still needs the answer before they press Start, which is why it is drawn at
+ * all; what it will do about it is one line down, in the disclosure.
+ *
+ * Every state is a real sentence. "Checking…" while the host list is in flight,
+ * because claiming the cloud and correcting it two hundred milliseconds later is
+ * the one line here nobody can check; "Can’t tell" when that request failed,
+ * because Juno not knowing and nothing being available are different facts.
+ */
+export function WorkRunTarget({
+  target,
+  hostName,
+  loading,
+  unknown,
+}: {
+  target: WorkEffectiveTarget | null;
+  hostName: string | null;
+  /** The host list is still in flight. */
+  loading: boolean;
+  /** The host list could not be read at all. */
+  unknown: boolean;
+}) {
+  const label = loading
+    ? "Checking…"
+    : unknown
+      ? "Can’t tell where"
+      : target === null
+        ? "Nothing can run this"
+        : `Runs on ${runTargetLabel(target, hostName)}`;
+
+  return (
+    <span
+      // Announced when it settles: the strip is the only place a reader who
+      // never opens the disclosure learns where their task is going, and it
+      // changes under them as the host list lands.
+      aria-live="polite"
+      className={cn(
+        "inline-flex h-7 min-w-0 items-center gap-1.5 px-1.5 font-mono text-[11.5px] font-medium min-[480px]:text-[12px]",
+        target === null && !loading ? "text-warning-foreground" : "text-muted-foreground"
+      )}
+    >
+      {loading ? (
+        <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+      ) : target === "local" ? (
+        <Laptop className="size-3.5 shrink-0" aria-hidden="true" />
+      ) : (
+        <Cloud className="size-3.5 shrink-0" aria-hidden="true" />
+      )}
+      <span className="truncate">{label}</span>
+    </span>
+  );
+}
+
 export function WorkRunDisclosure({ target, hostName, connectorLabels }: RunDisclosureProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -62,7 +137,6 @@ export function WorkRunDisclosure({ target, hostName, connectorLabels }: RunDisc
   // the one part of this surface the reader has no way to check.
   if (target === null) return null;
 
-  const where = target === "cloud" ? "Juno’s cloud" : (hostName ?? "your Mac");
   const reaches =
     connectorLabels.length === 0
       ? "no connected apps"
@@ -78,9 +152,15 @@ export function WorkRunDisclosure({ target, hostName, connectorLabels }: RunDisc
         aria-expanded={open}
         className="group flex w-full items-center gap-1.5 rounded-control py-0.5 text-left text-caption leading-relaxed text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
+        {/* The where and the reach used to be in this sentence too. Both are on
+            the composer's utility strip now — the executor as `WorkRunTarget`,
+            the apps as the count on the Apps chip — and repeating them here
+            would be the same two facts in two places, one of them a strip whose
+            entire job is to carry them. What is left is the fact nothing else on
+            this page says out loud, which is also the one that costs money. */}
         <span className="min-w-0 flex-1 truncate">
-          Runs on {where}, reaches {reaches}, stops at ${RUN_CEILINGS.costUsd} or{" "}
-          {RUN_CEILINGS.minutes} minutes.
+          Stops at ${RUN_CEILINGS.costUsd} or {RUN_CEILINGS.minutes} minutes — what this run
+          commits to.
         </span>
         <ChevronDown
           aria-hidden="true"

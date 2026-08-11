@@ -1488,6 +1488,13 @@ export function Composer({
         )}
       >
         <div
+          // `inert` is what actually takes this half of the cross-fade out of the
+          // page. `opacity-0 pointer-events-none` hides it from the eye and the
+          // mouse and leaves it in the tab order and the accessibility tree, so a
+          // keyboard or screen-reader user could reach a composer that is not on
+          // screen — and, mid-dictation, type into it. Same defect the chat
+          // transcript's jump-to-latest button had.
+          inert={!dictating}
           className={cn(
             "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
             dictating ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-1 scale-95 opacity-0"
@@ -1514,6 +1521,13 @@ export function Composer({
             setDragging(false);
             if (features.storage && !privateMode && e.dataTransfer.files.length) addComposerFiles(e.dataTransfer.files);
           }}
+          // `inert` is what actually takes this half of the cross-fade out of the
+          // page. `opacity-0 pointer-events-none` hides it from the eye and the
+          // mouse and leaves it in the tab order and the accessibility tree, so a
+          // keyboard or screen-reader user could reach a composer that is not on
+          // screen — and, mid-dictation, type into it. Same defect the chat
+          // transcript's jump-to-latest button had.
+          inert={dictating}
           className={cn(
             "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-composer border bg-card/95 backdrop-blur sm:rounded-lg",
             "transition-[opacity,transform,border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",

@@ -11,6 +11,7 @@ import {
   FileText,
   FileUp,
   Folder,
+  GitBranch,
   GitPullRequest,
   ImagePlus,
   Library,
@@ -23,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ComposerShell } from "@/components/ui/composer-shell";
 import { Pressable } from "@/components/ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -41,6 +43,8 @@ import { LibraryPicker } from "@/components/chat/library-picker";
 import { ComposerDictation } from "@/components/chat/composer-dictation";
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
 import { deviceOffersWorkspace, type DeviceRow } from "@/components/code/device-presence";
+import { CodeVoicePanel, useCodeVoice, type CodeVoiceSend } from "@/components/code/code-voice";
+import type { CodeVoiceBriefingInput } from "@/components/code/code-voice-briefing";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
@@ -201,6 +205,15 @@ const PRESENCE_META: Record<PresenceState, { label: string; dot: string }> = {
   error: { label: "Presence unavailable", dot: "bg-warning" },
 };
 
+/*
+ * The composer's separator, one string, both places one is needed. The comment
+ * at chat/composer.tsx:2205 records what happens otherwise: two heights
+ * (h-5/h-4) behind two breakpoints (min-[420px]/min-[380px]) put two different
+ * separators on screen at once between 380 and 420px. This file shipped the
+ * losing half of that pair.
+ */
+const COMPOSER_DIVIDER = "mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block";
+
 const TASK_CHIP: Partial<Record<CodeSessionStatus, string>> = {
   queued: "Queued",
   running: "Running",
@@ -355,15 +368,20 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
   );
 
   /** Optional override lets dictate-and-send ship the transcript without
-   * waiting a render for draft state. */
+   * waiting a render for draft state.
+   *
+   * Resolves to whether the words actually landed on a run, which the voice
+   * panel's hand-off needs: a refusal has to leave the spoken line on screen
+   * rather than swallow it. `session.send` already answers that question and
+   * this only forwards the answer. */
   const submit = React.useCallback(
-    async (overrideText?: string) => {
+    async (overrideText?: string): Promise<boolean> => {
       const text = (overrideText ?? draft).trim();
       const attachments = readyAttachments;
-      if ((!text && attachments.length === 0) || session.isBusy || isUploading) return;
+      if ((!text && attachments.length === 0) || session.isBusy || isUploading) return false;
 
       if (isCloud) {
-        if (!meta.repoOwner || !meta.repoName) return;
+        if (!meta.repoOwner || !meta.repoName) return false;
         const { accepted } = await session.send(
           text,
           {
@@ -381,14 +399,14 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
           meta.refresh(); // a follow-up run may open a new PR — pick it up
           requestAnimationFrame(() => textareaRef.current?.focus());
         }
-        return;
+        return accepted;
       }
 
-      if (!presence.device) return;
+      if (!presence.device) return false;
       // The device's workspace path is authoritative when the conversation only
       // carries a name (sessions created before the path was recorded).
       const path = workspacePath ?? null;
-      if (!path) return;
+      if (!path) return false;
       const { accepted } = await session.send(
         text,
         {
@@ -407,6 +425,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
         nameSessionFromFirstPrompt(text, attachments);
         requestAnimationFrame(() => textareaRef.current?.focus());
       }
+      return accepted;
     },
     [
       clear,
@@ -479,6 +498,79 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
     (isCloud || !!workspacePath) &&
     !session.isBusy &&
     !isUploading;
+
+  /*
+   * Voice mode, which this surface has never had — the comment that used to sit
+   * on the composer said "no voice mode here, only dictate", and dictation is a
+   * different thing: it types for you, where this is a conversation about the
+   * run.
+   *
+   * Deliberately NOT gated on `composerDisabled`. That flag means the runner
+   * cannot be reached — an asleep Mac, a repo still resolving — which is
+   * precisely the moment somebody wants to talk through what happened, and the
+   * call needs no runner at all. What it IS gated on is `resolving`: until the
+   * session's own kind is known the briefing would name the wrong machine, and
+   * a voice session can never be re-briefed properly (the relay seeds history
+   * exactly once).
+   */
+  const codeVoice = useCodeVoice({ disabled: dictating || resolving });
+
+  const voiceBriefing = React.useMemo<CodeVoiceBriefingInput>(
+    () => ({
+      stage: "session",
+      target: resolving ? null : isCloud ? "cloud" : "device",
+      place: isCloud ? cloudRepoFull : workspaceName,
+      baseRef: isCloud ? meta.baseRef : null,
+      // Only what a person said and what Juno Code answered. The activity
+      // stream — every tool call and file write — is deliberately left out: it
+      // is the bulk of a code transcript, it would eat the whole history
+      // budget, and the bounding passes drop from the FRONT, so paying for it
+      // would cost the section that says which repo this is.
+      //
+      // Walked only while a call is open. `session.messages` is a new array on
+      // every streamed token, and this memo's dependency on it would otherwise
+      // pay for a full transcript walk on each one, for a briefing nobody has
+      // asked for.
+      turns: codeVoice.open
+        ? session.messages
+            .filter((m) => (m.role === "USER" || m.role === "ASSISTANT") && m.content.trim())
+            .map((m) => ({ role: m.role === "ASSISTANT" ? ("assistant" as const) : ("user" as const), text: m.content }))
+        : [],
+      blocked: sendBlockedReason,
+    }),
+    [cloudRepoFull, codeVoice.open, isCloud, meta.baseRef, resolving, sendBlockedReason, session.messages, workspaceName],
+  );
+
+  const voiceSend = React.useMemo<CodeVoiceSend>(
+    () => ({
+      intent: "send",
+      // The composer's own gate sentences, in the composer's own words — a
+      // second wording for the same refusal reads as a second rule.
+      blockedReason: sendBlockedReason
+        ? sendBlockedReason
+        : session.isBusy
+          ? "Juno Code is working on this. Wait for it to finish, or stop it first."
+          : isUploading
+            ? "Still uploading the attached files."
+            : null,
+      sending: session.status === "submitting",
+      // Merge, never replace. `submit(overrideText)` sends the override and
+      // then clears `draft` regardless — so handing it the spoken text alone
+      // sent the sentence you said and DESTROYED the one you had typed, with no
+      // undo and nothing on screen to say it had happened. Same rule the
+      // dictation path already follows: what you typed survives, the spoken
+      // words are appended to it.
+      onSend: (text: string) => submit([draft.trim(), text.trim()].filter(Boolean).join(" ")),
+    }),
+    [draft, isUploading, sendBlockedReason, session.isBusy, session.status, submit],
+  );
+
+  // Nothing written → the primary action opens the conversation instead of
+  // sitting there disabled. Keyed on the payload, not on `canSend`: with words
+  // in the field and an unreachable Mac, `canSend` is false too, and swapping
+  // Send for a phone call there would hide the control whose disabled state is
+  // the only thing pointing at the problem.
+  const showVoiceButton = !session.isBusy && !hasPayload && !!codeVoice.onOpenVoiceMode;
 
   // Fire the handed-off first prompt as soon as the session can send. Cloud
   // sessions were already dispatched on the New session screen, so this only
@@ -657,281 +749,395 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
           {queuedNote}
         </p>
       )}
-      {/* Composer ⇄ Dictation share one grid cell and cross-fade — same pattern
-          as the home chat composer (no voice mode here, only dictate). */}
-      <div
-        className={cn(
-          "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-spring motion-reduce:transition-none",
-          dictating ? "min-h-[170px]" : "min-h-[68px]",
+      {/*
+        THE SECOND TIER — on the one surface <ComposerShell>'s own header names
+        as the one that omits it ("the Code session composer, where the run
+        target is fixed the moment the session exists").
+
+        That reads the tier as being about what can be CHANGED. It is about what
+        SURVIVES THE SEND, and this composer had the other half of the same
+        mistake: the run target sat in the inline row's LEFT CLUSTER, one gap
+        away from the [+], as `flex-1` — so "this session runs against
+        acme/web" and "attach a file to this message" were drawn at identical
+        weight, and a long repo name squeezed the attach button rather than the
+        row admitting it was carrying two different kinds of thing. Read-only is
+        not a reason to omit the tier; read-only facts are exactly what a tier
+        this quiet is for.
+      */}
+      <div className="composer-aura-host relative isolate w-full">
+        {/* Sibling of the composer, never a wrapper: the voice field paints at
+            `z-index: -1`, and the `isolate` above is the floor it is allowed to
+            fall to. No idle bloom on this surface — a transcript sits above the
+            composer, so the only light here is a live call. */}
+        {codeVoice.open && (
+          <CodeVoicePanel briefing={voiceBriefing} send={voiceSend} onClose={codeVoice.close} />
         )}
-      >
+
+        {/* Composer ⇄ Dictation share one grid cell and cross-fade. */}
         <div
           className={cn(
-            "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
-            dictating ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-1 scale-95 opacity-0",
+            "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-spring motion-reduce:transition-none",
+            dictating ? "min-h-[170px]" : "min-h-[68px]",
           )}
         >
-          {dictating && (
-            <ComposerDictation
-              onCancel={() => setDictating(false)}
-              onStop={(t) => closeDictation(t, false)}
-              onSend={(t) => closeDictation(t, true)}
-            />
-          )}
-        </div>
-
-      <div
-        onDragOver={(e) => {
-          if (!canAttach || composerDisabled || dictating) return;
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragging(false);
-          if (canAttach && !composerDisabled && !dictating && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
-        }}
-        className={cn(
-          "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-composer border bg-card/95 backdrop-blur sm:rounded-lg",
-          "transition-[opacity,transform,border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
-          dictating ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0" : "translate-y-0 scale-100 opacity-100",
-          "border-border/65 focus-within:border-foreground/15",
-          dragging && "border-primary/55 ring-2 ring-primary/20",
-        )}
-      >
-        {dragging && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-inherit border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
-            <FileUp className="h-6 w-6 text-primary" />
-            <span className="font-mono text-label text-primary">Drop to attach</span>
-          </div>
-        )}
-
-        {canAttach && (
           <div
+            // `inert` is what actually takes this half of the cross-fade out of the
+            // page. `opacity-0 pointer-events-none` hides it from the eye and the
+            // mouse and leaves it in the tab order and the accessibility tree, so a
+            // keyboard or screen-reader user could reach a composer that is not on
+            // screen — and, mid-dictation, type into it. Same defect the chat
+            // transcript's jump-to-latest button had.
+            inert={!dictating}
             className={cn(
-              "grid transition-[grid-template-rows] duration-base ease-out-soft",
-              uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+              "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+              dictating ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-1 scale-95 opacity-0",
             )}
           >
-            <div className="min-h-0 overflow-hidden">
-              <div className="flex flex-wrap gap-2 p-3 pb-0">
-                {uploads.map((u) => (
-                  <div
-                    key={u.localId}
-                    className={cn(
-                      "group relative flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-xs shadow-soft",
-                      removingIds.includes(u.localId)
-                        ? "pointer-events-none motion-safe:animate-pop-out"
-                        : "motion-safe:animate-rise-in",
-                    )}
-                  >
-                    {u.attachment?.kind === "IMAGE" ? (
-                      <Image src={u.attachment.url} unoptimized={requiresViewerCredentials(u.attachment.url)} alt={u.fileName} width={32} height={32} className="h-8 w-8 rounded-sm object-cover" />
-                    ) : (
-                      <FileText className="h-5 w-5 text-muted-foreground" />
-                    )}
-                    <div className="max-w-[140px]">
-                      <p className="truncate font-medium">{u.fileName}</p>
-                      <p className="text-muted-foreground">
-                        {u.status === "uploading" ? `${u.progress}%` : u.status === "error" ? "Failed" : formatBytes(u.size)}
-                      </p>
-                    </div>
-                    {u.status === "uploading" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-                    <button
-                      type="button"
-                      onClick={() => removeUpload(u.localId)}
-                      className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
-                      aria-label="Remove attachment"
-                    >
-                      <X className="h-3 w-3 coarse:h-4 coarse:w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {dictating && (
+              <ComposerDictation
+                onCancel={() => setDictating(false)}
+                onStop={(t) => closeDictation(t, false)}
+                onSend={(t) => closeDictation(t, true)}
+              />
+            )}
           </div>
-        )}
 
-        <textarea
-          ref={textareaRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+          {/*
+            The cross-fade and the drop target sit on this wrapper, not on the
+            shell. <ComposerShell> owns a `transition-[border-color,box-shadow]`
+            already, and a second `transition-[opacity,transform,…]` on the same
+            element is two `transition-property` declarations at equal
+            specificity — which one survives would be decided by Tailwind's emit
+            order rather than by anything written here. It also lets the drop
+            overlay cover both tiers: `absolute inset-0` inside the shell reaches
+            only one slot, and the shell cannot clip.
+          */}
+          <div
+            onDragOver={(e) => {
+              if (!canAttach || composerDisabled || dictating) return;
               e.preventDefault();
-              if (canSend) void submit();
-            }
-          }}
-          rows={1}
-          disabled={composerDisabled || session.isBusy}
-          placeholder={
-            composerDisabled
-              ? sendBlockedReason ?? "This session can't run tasks right now."
-              : isCloud
-                ? `Describe the change to make in ${cloudRepoFull ?? "the repo"}…`
-                : presence.state === "offline"
-                  ? "Describe the change — it queues until your Mac reconnects…"
-                  : "Describe what to build or fix…"
-          }
-          aria-label="Prompt for this code session"
-          className="max-h-[200px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]"
-        />
-
-        <div className="flex flex-nowrap items-center gap-1.5 px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5">
-          <div className="flex min-w-0 flex-1 items-center gap-1">
-            {canAttach && (
-              <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Add"
-                    disabled={composerDisabled || session.isBusy}
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              if (canAttach && !composerDisabled && !dictating && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+            }}
+            // `inert` is what actually takes this half of the cross-fade out of the
+            // page. `opacity-0 pointer-events-none` hides it from the eye and the
+            // mouse and leaves it in the tab order and the accessibility tree, so a
+            // keyboard or screen-reader user could reach a composer that is not on
+            // screen — and, mid-dictation, type into it. Same defect the chat
+            // transcript's jump-to-latest button had.
+            inert={dictating}
+            className={cn(
+              "col-start-1 row-start-1 relative w-full origin-center",
+              "transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+              dictating ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0" : "translate-y-0 scale-100 opacity-100",
+            )}
+          >
+            <ComposerShell
+              className={cn("max-h-[600px]", dragging && "border-primary/55 ring-2 ring-primary/20")}
+              utilityLabel="Where this session runs"
+              above={
+                canAttach && (
+                  <div
                     className={cn(
-                      "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
-                      plusOpen && "bg-accent",
+                      "grid transition-[grid-template-rows] duration-base ease-out-soft",
+                      uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
                     )}
                   >
-                    <Plus
-                      aria-hidden="true"
-                      strokeWidth={1.75}
-                      className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
-                    />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
-                  <DropdownMenuLabel className="font-mono text-label">Add</DropdownMenuLabel>
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
-                      <Paperclip className="text-muted-foreground" />
-                      <span className="flex-1">Attach</span>
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="w-52">
-                      <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
-                        <ImagePlus className="text-muted-foreground" />
-                        <span className="flex-1">Photos</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
-                        <FileUp className="text-muted-foreground" />
-                        <span className="flex-1">Files</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
-                        <Library className="text-muted-foreground" />
-                        <span className="flex-1">From your library</span>
-                      </DropdownMenuItem>
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-
-            {/* Identity is the workspace NAME (device) or the repo (cloud); the
-                device-local path is honest secondary metadata, on hover. */}
-            <span
-              title={isCloud ? cloudRepoFull ?? undefined : workspacePath ?? undefined}
-              className="flex min-w-0 flex-1 items-center gap-1.5 truncate font-mono text-label text-muted-foreground"
-            >
-              {isCloud && <Cloud className="h-3 w-3 shrink-0" aria-hidden="true" />}
-              <span className="min-w-0 truncate">{isCloud ? cloudRepoFull ?? workspaceName : workspaceName}</span>
-            </span>
-          </div>
-
-          <div className="ml-auto flex shrink-0 items-center gap-1">
-            {speechSupported && (
-              <>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => setDictating(true)}
-                      disabled={composerDisabled || session.isBusy || dictating}
-                      aria-label="Dictate"
-                      aria-pressed={dictating}
-                      className="composer-mic-button rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
-                    >
-                      <Mic className="composer-mic-icon h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Dictate</TooltipContent>
-                </Tooltip>
-                <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block" aria-hidden="true" />
-              </>
-            )}
-
-            {/* Send morphs into Stop while a task runs — same morph as chat. */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  size="icon"
-                  onClick={session.isBusy ? () => void session.cancel() : () => void submit()}
-                  disabled={session.isBusy ? session.status === "stopping" || session.status === "submitting" : !canSend}
-                  aria-label={
-                    session.isBusy
-                      ? session.status === "stopping"
-                        ? "Stopping task"
-                        : "Stop this task"
+                    <div className="min-h-0 overflow-hidden">
+                      <div className="flex flex-wrap gap-2 p-3 pb-0">
+                        {uploads.map((u) => (
+                          <div
+                            key={u.localId}
+                            className={cn(
+                              "group relative flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-xs shadow-soft",
+                              removingIds.includes(u.localId)
+                                ? "pointer-events-none motion-safe:animate-pop-out"
+                                : "motion-safe:animate-rise-in",
+                            )}
+                          >
+                            {u.attachment?.kind === "IMAGE" ? (
+                              <Image src={u.attachment.url} unoptimized={requiresViewerCredentials(u.attachment.url)} alt={u.fileName} width={32} height={32} className="h-8 w-8 rounded-sm object-cover" />
+                            ) : (
+                              <FileText className="h-5 w-5 text-muted-foreground" />
+                            )}
+                            <div className="max-w-[140px]">
+                              <p className="truncate font-medium">{u.fileName}</p>
+                              <p className="text-muted-foreground">
+                                {u.status === "uploading" ? `${u.progress}%` : u.status === "error" ? "Failed" : formatBytes(u.size)}
+                              </p>
+                            </div>
+                            {u.status === "uploading" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                            <button
+                              type="button"
+                              onClick={() => removeUpload(u.localId)}
+                              className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
+                              aria-label="Remove attachment"
+                            >
+                              <X className="h-3 w-3 coarse:h-4 coarse:w-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )
+              }
+              field={
+                <textarea
+                  ref={textareaRef}
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      if (canSend) void submit();
+                    }
+                  }}
+                  rows={1}
+                  disabled={composerDisabled || session.isBusy}
+                  placeholder={
+                    composerDisabled
+                      ? sendBlockedReason ?? "This session can't run tasks right now."
                       : isCloud
-                        ? "Start a cloud run"
-                        : "Send to your Mac"
+                        ? `Describe the change to make in ${cloudRepoFull ?? "the repo"}…`
+                        : presence.state === "offline"
+                          ? "Describe the change — it queues until your Mac reconnects…"
+                          : "Describe what to build or fix…"
                   }
-                  className={cn(
-                    "composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
-                    session.isBusy && session.status !== "submitting"
-                      ? "w-11 rounded-composer-control ring-2 ring-primary/15"
-                      : "rounded-composer-action",
+                  aria-label="Prompt for this code session"
+                  className="max-h-[200px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]"
+                />
+              }
+              controls={
+                <>
+                  <div className="flex min-w-0 flex-1 items-center gap-1">
+                    {canAttach && (
+                      <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Add"
+                            disabled={composerDisabled || session.isBusy}
+                            className={cn(
+                              "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
+                              plusOpen && "bg-accent",
+                            )}
+                          >
+                            <Plus
+                              aria-hidden="true"
+                              strokeWidth={1.75}
+                              className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                            />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
+                          <DropdownMenuLabel className="font-mono text-label">Add</DropdownMenuLabel>
+                          <DropdownMenuSub>
+                            <DropdownMenuSubTrigger>
+                              <Paperclip className="text-muted-foreground" />
+                              <span className="flex-1">Attach</span>
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent className="w-52">
+                              <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
+                                <ImagePlus className="text-muted-foreground" />
+                                <span className="flex-1">Photos</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
+                                <FileUp className="text-muted-foreground" />
+                                <span className="flex-1">Files</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
+                                <Library className="text-muted-foreground" />
+                                <span className="flex-1">From your library</span>
+                              </DropdownMenuItem>
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
+
+                  <div className="ml-auto flex shrink-0 items-center gap-1">
+                    {speechSupported && (
+                      <>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => setDictating(true)}
+                              // A live call already holds the microphone — the
+                              // same interlock every other composer keeps
+                              // between dictation and voice.
+                              disabled={composerDisabled || session.isBusy || dictating || codeVoice.open}
+                              aria-label="Dictate"
+                              aria-pressed={dictating}
+                              className="composer-mic-button rounded-composer-control coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
+                            >
+                              <Mic className="composer-mic-icon h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Dictate</TooltipContent>
+                        </Tooltip>
+                        <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+                      </>
+                    )}
+
+                    {/* One button, three jobs: stop the run, send the next
+                        instruction, or — with nothing written — open a
+                        conversation about what the run did. Same morph as chat
+                        and the Work thread, so the gesture is one gesture
+                        across the product. */}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          size="icon"
+                          onClick={
+                            session.isBusy
+                              ? () => void session.cancel()
+                              : showVoiceButton && codeVoice.onOpenVoiceMode
+                                ? codeVoice.onOpenVoiceMode
+                                : () => void submit()
+                          }
+                          disabled={
+                            session.isBusy
+                              ? session.status === "stopping" || session.status === "submitting"
+                              : showVoiceButton
+                                ? false
+                                : !canSend
+                          }
+                          aria-label={
+                            session.isBusy
+                              ? session.status === "stopping"
+                                ? "Stopping task"
+                                : "Stop this task"
+                              : showVoiceButton
+                                ? "Talk this session through with Juno"
+                                : isCloud
+                                  ? "Start a cloud run"
+                                  : "Send to your Mac"
+                          }
+                          className={cn(
+                            "composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
+                            session.isBusy && session.status !== "submitting"
+                              ? "w-11 rounded-composer-control ring-2 ring-primary/15"
+                              : "rounded-composer-action",
+                          )}
+                        >
+                          {session.status === "submitting" ? (
+                            <Loader2 key="submitting" className="h-4 w-4 animate-spin motion-safe:animate-fade-in" />
+                          ) : session.isBusy ? (
+                            <Square key="stop" className="composer-stop-icon h-3.5 w-3.5 fill-current motion-safe:animate-fade-in" />
+                          ) : showVoiceButton ? (
+                            <span key="voice" className="composer-voice-wave motion-safe:animate-fade-in" aria-hidden="true">
+                              <span />
+                              <span />
+                              <span />
+                              <span />
+                              <span />
+                            </span>
+                          ) : (
+                            <ArrowUp key="send" className="composer-send-icon h-4 w-4 motion-safe:animate-fade-in" />
+                          )}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {session.isBusy ? "Stop" : showVoiceButton ? "Voice conversation" : "Send"}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                </>
+              }
+              utility={
+                <>
+                  {/* Identity is the workspace NAME (device) or the repo
+                      (cloud); the device-local path stays honest secondary
+                      metadata, on hover. While `resolving` neither can be
+                      claimed, so the strip says only that. */}
+                  <span
+                    title={isCloud ? cloudRepoFull ?? undefined : workspacePath ?? undefined}
+                    className="flex min-w-0 items-center gap-1.5 font-mono"
+                  >
+                    {resolving ? (
+                      <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden="true" />
+                    ) : isCloud ? (
+                      <Cloud className="size-3 shrink-0" aria-hidden="true" />
+                    ) : (
+                      <Folder className="size-3 shrink-0" aria-hidden="true" />
+                    )}
+                    {/* The glyph carries "device or cloud" for everyone who can
+                        see it; this is the same fact for everyone who cannot.
+                        Suppressed while resolving, where the following text is
+                        a sentence and "Runs in Getting this session ready" is
+                        not one. */}
+                    {!resolving && <span className="sr-only">Runs in </span>}
+                    <span className="min-w-0 truncate">
+                      {resolving ? "Getting this session ready…" : isCloud ? cloudRepoFull ?? workspaceName : workspaceName}
+                    </span>
+                  </span>
+                  {!resolving && isCloud && meta.baseRef && (
+                    <>
+                      <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+                      <span className="flex min-w-0 items-center gap-1 font-mono">
+                        <GitBranch className="size-3 shrink-0" aria-hidden="true" />
+                        <span className="sr-only">Base branch </span>
+                        <span className="min-w-0 truncate">{meta.baseRef}</span>
+                      </span>
+                    </>
                   )}
-                >
-                  {session.status === "submitting" ? (
-                    <Loader2 key="submitting" className="h-4 w-4 animate-spin motion-safe:animate-fade-in" />
-                  ) : session.isBusy ? (
-                    <Square key="stop" className="composer-stop-icon h-3.5 w-3.5 fill-current motion-safe:animate-fade-in" />
-                  ) : (
-                    <ArrowUp key="send" className="composer-send-icon h-4 w-4 motion-safe:animate-fade-in" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{session.isBusy ? "Stop" : "Send"}</TooltipContent>
-            </Tooltip>
+                </>
+              }
+            />
+
+            {dragging && (
+              <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-composer border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in sm:rounded-lg">
+                <FileUp className="h-6 w-6 text-primary" />
+                <span className="font-mono text-label text-primary">Drop to attach</span>
+              </div>
+            )}
+
+            <input
+              ref={imageInputRef}
+              type="file"
+              multiple
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files?.length) addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ACCEPT_ATTRIBUTE}
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files?.length) addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+            {canAttach && (
+              <LibraryPicker
+                open={libraryOpen}
+                onOpenChange={setLibraryOpen}
+                onAttach={addAttachments}
+                existingCount={uploads.length}
+              />
+            )}
           </div>
         </div>
-
-        <input
-          ref={imageInputRef}
-          type="file"
-          multiple
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files?.length) addFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept={ACCEPT_ATTRIBUTE}
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files?.length) addFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
-        {canAttach && (
-          <LibraryPicker
-            open={libraryOpen}
-            onOpenChange={setLibraryOpen}
-            onAttach={addAttachments}
-            existingCount={uploads.length}
-          />
-        )}
-      </div>
       </div>
     </div>
   );

@@ -142,6 +142,7 @@ export function CodeTargetPicker({
   baseRef,
   onBaseRefChange,
   disabled = false,
+  className,
 }: {
   target: Target;
   onTargetChange: (t: Target) => void;
@@ -152,6 +153,13 @@ export function CodeTargetPicker({
   baseRef: string;
   onBaseRefChange: (v: string) => void;
   disabled?: boolean;
+  /**
+   * Trigger overrides for the host. The chip used to sit in a row of its own
+   * above the field and could take the composer's full 32px control height; it
+   * now lives in the composer's utility strip, which is a quieter tier and is
+   * only a tier at all if it is shorter than the send row above it.
+   */
+  className?: string;
 }) {
   const [open, setOpen] = React.useState(false);
 
@@ -298,6 +306,7 @@ export function CodeTargetPicker({
             "focus-visible:bg-accent focus-visible:text-foreground",
             "disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100",
             "min-[480px]:text-[13px] coarse:h-11",
+            className,
           )}
         >
           {target === "device" ? (
