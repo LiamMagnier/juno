@@ -338,8 +338,53 @@ const SCOPED = /userId: user\.id/;
  * `device` came out of a query naming `userId: user.id`, and
  * `where: { deviceId: body.deviceId }` names the identical column and is not.
  */
+/**
+ * The fourth shape: the clause carries a bare `userId` shorthand, and `userId`
+ * is a PARAMETER of the helper the clause lives in.
+ *
+ * `where: { id: sessionId, userId, deletedAt: null }` inside
+ * `readWorkSessionContext(userId, sessionId)` is scoped — but one step further
+ * away than the three above, because the value arrives from the caller rather
+ * than from a query in the same file. Exempting it by name would have been the
+ * easy fix and the wrong one: the whole point of this test is that
+ * `where: { userId }` is safe only if that `userId` is the SESSION user, and
+ * nothing about the shorthand alone says it is.
+ *
+ * So the caller is checked instead. Every call to the helper, in this file,
+ * must pass `user.id` in the position the `userId` parameter occupies. A helper
+ * that takes a `userId` from the request body — the exact bug this test
+ * exists to catch — fails here, because its call site says `body.userId`.
+ */
+function scopedThroughUserIdParam(source: string, clause: WhereClause): boolean {
+  // A bare `userId` shorthand, not `userId: something`.
+  if (!/[{,]\s*userId\s*[,}]/.test(clause.text)) return false;
+
+  // The nearest `async function name(` / `function name(` above the clause.
+  const head = source.slice(0, clause.at);
+  const decl = [...head.matchAll(/(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)/g)].pop();
+  if (!decl) return false;
+
+  const [, name, params] = decl;
+  const position = params.split(",").findIndex((p) => /^\s*userId\s*:/.test(p));
+  if (position < 0) return false;
+
+  // Every call site must pass `user.id` at that position.
+  // Exclude the declaration itself. Matching on `decl.index` does not do it:
+  // that index points at `async function …`, while this pattern matches from
+  // the NAME, so the signature would be read as a call site whose first
+  // argument is the string `userId: string`.
+  const calls = [...source.matchAll(new RegExp(`\\b${name}\\s*\\(([^)]*)\\)`, "g"))]
+    .filter((m) => !/\bfunction\s+$/.test(source.slice(Math.max(0, m.index - 24), m.index)));
+  if (calls.length === 0) return false;
+  return calls.every((call) => {
+    const arg = call[1].split(",")[position];
+    return arg !== undefined && arg.trim() === "user.id";
+  });
+}
+
 function scopedToSessionUser(source: string, clause: WhereClause): boolean {
   if (SCOPED.test(clause.text)) return true;
+  if (scopedThroughUserIdParam(source, clause)) return true;
 
   // `where: claimable` — the scope lives in the constant.
   if (!clause.text.startsWith("{") && !clause.text.startsWith("where:")) {

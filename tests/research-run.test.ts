@@ -6,6 +6,7 @@ import {
   RESEARCH_TERMINAL_STATES,
   RESEARCH_WORKING_STATES,
   budgetAllows,
+  MAX_FOLLOW_UP_ROUNDS,
   nextPipelineState,
   parsePlan,
   resumeStateFor,
@@ -622,10 +623,30 @@ test("coverage is durable and an evidence gap schedules one bounded follow-up", 
   const saved = await store.loadRun(run.id, run.userId);
   const plan = parsePlan(saved?.plan);
   assert.equal(saved?.state, "completed");
-  assert.equal(searched.length, 2, "one bounded follow-up search should be issued after the first weak pass");
+  /*
+   * Expressed against MAX_FOLLOW_UP_ROUNDS rather than as a literal.
+   *
+   * This asserted `searched.length === 2`, which encoded the constant's old
+   * value (1) rather than the property being tested. When the constant went to
+   * 4 — deliberately, for deeper recursive research — the engine issued a
+   * second follow-up and the test failed at `3 !== 2`, reporting a behaviour
+   * change as a defect.
+   *
+   * What this test is actually for is the two things below: a weak pass must
+   * schedule at least one follow-up, and follow-ups must stay BOUNDED. Both
+   * survive a change to the ceiling; a hardcoded 2 survives nothing.
+   */
+  assert.ok(searched.length > 1, "an evidence gap should schedule at least one follow-up search");
+  assert.ok(
+    searched.length <= 1 + MAX_FOLLOW_UP_ROUNDS,
+    `follow-ups must stay bounded: ${searched.length} searches exceeds 1 + ${MAX_FOLLOW_UP_ROUNDS}`
+  );
   assert.equal(new Set(searched).size, searched.length, "the follow-up must not repeat the paid query");
   assert.ok(plan.coverage?.some((entry) => entry.status === "missing"));
-  assert.equal(plan.followUpRound, 1);
+  assert.ok(
+    plan.followUpRound >= 1 && plan.followUpRound <= MAX_FOLLOW_UP_ROUNDS,
+    `followUpRound ${plan.followUpRound} outside 1..${MAX_FOLLOW_UP_ROUNDS}`
+  );
   assert.ok(events.some((event) => event.kind === "coverage_matrix_updated"));
   assert.ok(events.some((event) => event.kind === "follow_up_scheduled"));
 });
