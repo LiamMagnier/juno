@@ -63,6 +63,7 @@ public enum AgentBehaviorLabel {
     public static func text(for behavior: AgentBehavior) -> String {
         switch behavior {
         case .ask: "Ask"
+        case .survey: "Survey"
         case .plan: "Plan"
         case .code: "Code"
         }
@@ -71,6 +72,7 @@ public enum AgentBehaviorLabel {
     public static func glyph(for behavior: AgentBehavior) -> String {
         switch behavior {
         case .ask: "questionmark.bubble"
+        case .survey: "scope"
         case .plan: "list.bullet.rectangle"
         case .code: "hammer"
         }
@@ -79,6 +81,8 @@ public enum AgentBehaviorLabel {
     public static func explanation(for behavior: AgentBehavior) -> String {
         switch behavior {
         case .ask: "Answer questions about this project using inspection tools only."
+        case .survey:
+            "Map the project with read-only inspection and, when useful, parallel sub-agents. Nothing is changed."
         case .plan: "Investigate, then write an implementation plan. Nothing is changed."
         case .code: "Carry the task through, with edits checkpointed and gated."
         }
@@ -241,6 +245,7 @@ public struct Composer: View {
         // lifetime a discoverability hint should have.
         switch controller.session.configuration.behavior {
         case .ask: return "Ask about this project…  /  for commands"
+        case .survey: return "Map the project and its risks…  /  for commands"
         case .plan: return "Describe the change to plan…  /  for commands"
         case .code: return "Ask Juno to build, fix, or investigate…  /  for commands"
         }

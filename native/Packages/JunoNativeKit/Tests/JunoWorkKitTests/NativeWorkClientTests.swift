@@ -214,6 +214,9 @@ final class NativeWorkClientTests: XCTestCase {
         XCTAssertEqual(session.effectiveTarget, JunoWorkTarget.local.rawValue)
         XCTAssertEqual(session.currentRunID, "run_1")
         XCTAssertEqual(session.lastSeq, 12)
+        XCTAssertEqual(session.requestedModel, "anthropic:claude-sonnet-5")
+        XCTAssertEqual(session.reasoningEffort, "high")
+        XCTAssertEqual(session.permissionPolicy, .balanced)
         XCTAssertFalse(session.pinned)
 
         let bare = try await client.sessions(for: account)
@@ -255,6 +258,153 @@ final class NativeWorkClientTests: XCTestCase {
         XCTAssertEqual(object["pinned"] as? Bool, true)
         XCTAssertNil(object["archived"], "an untouched field must not be sent")
         XCTAssertNil(object["title"])
+    }
+
+    /// A task's connected-app scope and approval posture are part of the
+    /// composition, not UI-only hints. If either field is dropped here, the
+    /// server has to infer reach and risk from whatever happens to be linked
+    /// to the account — the opposite of an explicit, reviewable task boundary.
+    func testTaskCreationCarriesConnectorAndPermissionContract() async throws {
+        let transport = WorkTransport(routes: [
+            "/api/work/sessions": json(#"{"session":"# + soleSessionJSON + "}")
+        ])
+        let client = NativeWorkClient(transport: transport)
+
+        _ = try await client.createSession(
+            goal: "Prepare the report",
+            target: .cloud,
+            model: "anthropic:claude-sonnet-5",
+            reasoningEffort: "high",
+            attachmentIDs: ["attachment_1"],
+            connectorIDs: ["github", "composio:gmail"],
+            permissionPolicy: .conservative,
+            idempotencyKey: "session-key",
+            for: account
+        )
+
+        let requests = await transport.requests
+        let request = try XCTUnwrap(requests.first)
+        let body = try XCTUnwrap(request.body)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(object["goal"] as? String, "Prepare the report")
+        XCTAssertEqual(object["requestedTarget"] as? String, "cloud")
+        XCTAssertEqual(object["model"] as? String, "anthropic:claude-sonnet-5")
+        XCTAssertEqual(object["reasoningEffort"] as? String, "high")
+        XCTAssertEqual(object["attachmentIds"] as? [String], ["attachment_1"])
+        XCTAssertEqual(object["connectorIds"] as? [String], ["github", "composio:gmail"])
+        XCTAssertEqual(object["permissionPolicy"] as? String, "conservative")
+        XCTAssertEqual(object["idempotencyKey"] as? String, "session-key")
+    }
+
+    /// A retry can change the model or thinking depth for one attempt without
+    /// rewriting the task's durable context. Those fields therefore belong on
+    /// the run request as well as on creation, and the native client must not
+    /// silently discard them when the user starts again from a thread.
+    func testRunStartCarriesModelAndReasoningOverride() async throws {
+        let transport = WorkTransport(routes: [
+            "/api/work/sessions/sess_1/runs": json(
+                #"{"run":{"id":"run_1","sessionId":"sess_1","status":"queued","attempt":1,"requestedTarget":"cloud","lastSeq":0}}"#
+            )
+        ])
+        let client = NativeWorkClient(transport: transport)
+
+        _ = try await client.startRun(
+            sessionID: "sess_1",
+            target: .cloud,
+            model: "anthropic:claude-sonnet-5",
+            reasoningEffort: "high",
+            idempotencyKey: "run-key",
+            for: account
+        )
+
+        let requests = await transport.requests
+        let request = try XCTUnwrap(requests.first)
+        let body = try XCTUnwrap(request.body)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(object["requestedTarget"] as? String, "cloud")
+        XCTAssertEqual(object["model"] as? String, "anthropic:claude-sonnet-5")
+        XCTAssertEqual(object["reasoningEffort"] as? String, "high")
+        XCTAssertEqual(object["idempotencyKey"] as? String, "run-key")
+    }
+
+    /// Context is a separate read because the session list deliberately omits
+    /// join-table state. The native editor must preserve an empty app scope as
+    /// different from a missing one, and it must never turn an attached file
+    /// into a local path.
+    func testContextDecodesConnectorScopeAndAttachments() async throws {
+        let transport = WorkTransport(routes: [
+            "/api/work/sessions/sess_1/context": json("""
+            {"context":{
+                "projectId":"project_1",
+                "model":"anthropic:claude-sonnet-5",
+                "reasoningEffort":"high",
+                "permissionPolicy":"balanced",
+                "connectorIds":["github","composio:gmail"],
+                "attachments":[{"id":"attachment_1","displayName":"Brief.pdf"}],
+                "skillSlug":"/research"
+            }}
+            """)
+        ])
+        let client = NativeWorkClient(transport: transport)
+
+        let context = try await client.context(for: "sess_1", accountID: account)
+
+        XCTAssertEqual(context.projectID, "project_1")
+        XCTAssertEqual(context.model, "anthropic:claude-sonnet-5")
+        XCTAssertEqual(context.reasoningEffort, "high")
+        XCTAssertEqual(context.permissionPolicy, .balanced)
+        XCTAssertEqual(context.connectorIDs, ["github", "composio:gmail"])
+        XCTAssertEqual(context.attachments.map(\.attachmentID), ["attachment_1"])
+        XCTAssertEqual(context.attachments.first?.displayName, "Brief.pdf")
+        XCTAssertEqual(context.skillSlug, "/research")
+    }
+
+    /// Editing context is a partial PATCH. A model change and a deliberate
+    /// thinking reset must not accidentally rewrite permissions, connected
+    /// apps, or files, and the server's timing verdicts must reach the UI.
+    func testContextPatchSendsOnlyTouchedFieldsAndPreservesTiming() async throws {
+        let transport = WorkTransport(routes: [
+            "/api/work/sessions/sess_1/context": json("""
+            {
+                "context":{
+                    "model":"openai:gpt-5",
+                    "reasoningEffort":null,
+                    "permissionPolicy":"balanced",
+                    "connectorIds":["github"],
+                    "attachments":[]
+                },
+                "session":\(soleSessionJSON),
+                "applied":[
+                    {"field":"model","change":"set","effect":"next_attempt","explanation":"The new model will be used on the next attempt."},
+                    {"field":"reasoningEffort","change":"clear","effect":"next_attempt","explanation":"Thinking will return to automatic on the next attempt."}
+                ]
+            }
+            """)
+        ])
+        let client = NativeWorkClient(transport: transport)
+
+        let update = try await client.updateContext(
+            sessionID: "sess_1",
+            WorkSessionContextEdit(
+                model: "openai:gpt-5",
+                reasoningEffort: .clear
+            ),
+            for: account
+        )
+
+        let requests = await transport.requests
+        let request = try XCTUnwrap(requests.first)
+        let body = try XCTUnwrap(request.body)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(object["model"] as? String, "openai:gpt-5")
+        XCTAssertTrue(object["reasoningEffort"] is NSNull)
+        XCTAssertNil(object["permissionPolicy"])
+        XCTAssertNil(object["connectorIds"])
+        XCTAssertNil(object["attachmentIds"])
+        XCTAssertEqual(update.context.model, "openai:gpt-5")
+        XCTAssertNil(update.context.reasoningEffort)
+        XCTAssertEqual(update.applied.map(\.field), ["model", "reasoningEffort"])
+        XCTAssertEqual(update.applied.first?.effect, "next_attempt")
     }
 
     // MARK: - Hosts
@@ -569,6 +719,8 @@ private let soleSessionJSON = """
 {"id":"sess_1","title":"Tidy the downloads folder","goal":"Sort it by kind",\
 "status":"running","needsAttention":false,"requestedTarget":"local",\
 "effectiveTarget":"local","hostId":"host_1","hostDisplayName":"Liam’s MacBook Pro",\
+"requestedModel":"anthropic:claude-sonnet-5","reasoningEffort":"high",\
+"permissionPolicy":"balanced",\
 "pinned":false,"archived":false,"lastActivityAt":"2026-08-05T10:00:00.000Z",\
 "currentRunId":"run_1","lastSeq":12}
 """

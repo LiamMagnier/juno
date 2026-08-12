@@ -91,6 +91,65 @@ public enum PreviewWorkFixtures {
         return json(root)
     }
 
+    /// The durable artifact index for the densest Work thread.
+    public static func artifactsBody(sessionID: String) -> Data {
+        guard sessionID == openSessionID else { return json(["artifacts": .array([])]) }
+        return json([
+            "artifacts": .array([
+                artifact(
+                    id: "art-exceptions",
+                    sessionID: sessionID,
+                    title: "Q3 exceptions",
+                    kind: "spreadsheet",
+                    version: 2,
+                    validatedAt: ago(seconds: 18),
+                    updatedAt: ago(minutes: 1, seconds: 10)
+                )
+            ])
+        ])
+    }
+
+    /// Version history and provenance for the artifact shown in the preview.
+    public static func artifactDetailBody(id: String) -> Data {
+        guard id == "art-exceptions" else {
+            return json(["error": .string("Not found")])
+        }
+        return json([
+            "artifact": artifact(
+                id: id,
+                sessionID: openSessionID,
+                title: "Q3 exceptions",
+                kind: "spreadsheet",
+                version: 2,
+                validatedAt: ago(seconds: 18),
+                updatedAt: ago(minutes: 1, seconds: 10)
+            ),
+            "versions": .array([
+                artifactVersion(
+                    version: 2,
+                    bytes: 18_432,
+                    origin: "generated",
+                    runID: "run-invoices-1",
+                    validated: true,
+                    createdAt: ago(minutes: 1, seconds: 10)
+                ),
+                artifactVersion(
+                    version: 1,
+                    bytes: 12_288,
+                    origin: "generated",
+                    runID: "run-invoices-1",
+                    validated: false,
+                    createdAt: ago(minutes: 1, seconds: 50)
+                )
+            ]),
+            "truncated": .bool(false)
+        ])
+    }
+
+    /// Deterministic placeholder bytes used only by the no-network preview
+    /// sender. The real route returns verified workbook bytes.
+    public static let artifactDownloadBytes = Data("Juno preview workbook\n".utf8)
+
     // MARK: - Sessions
 
     private static var sessions: [JunoPreviewJSON] {
@@ -578,6 +637,59 @@ public enum PreviewWorkFixtures {
 
     private static func fileEntry(_ name: String, change: String) -> JunoPreviewJSON {
         .object(["name": .string(name), "change": .string(change)])
+    }
+
+    private static func artifact(
+        id: String,
+        sessionID: String,
+        title: String,
+        kind: String,
+        version: Int,
+        validatedAt: Date?,
+        updatedAt: Date
+    ) -> JunoPreviewJSON {
+        var object: [String: JunoPreviewJSON] = [
+            "id": .string(id),
+            "sessionId": .string(sessionID),
+            "identifier": .string("q3-exceptions"),
+            "title": .string(title),
+            "kind": .string(kind),
+            "mimeType": .string("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            "currentVersion": .number(Double(version)),
+            "createdAt": .string(iso(ago(minutes: 2))),
+            "updatedAt": .string(iso(updatedAt)),
+        ]
+        object["validatedAt"] = validatedAt.map { .string(iso($0)) } ?? .null
+        return .object(object)
+    }
+
+    private static func artifactVersion(
+        version: Int,
+        bytes: Int,
+        origin: String,
+        runID: String,
+        validated: Bool,
+        createdAt: Date
+    ) -> JunoPreviewJSON {
+        .object([
+            "version": .number(Double(version)),
+            "byteSize": .number(Double(bytes)),
+            "contentHash": .string(String(repeating: validated ? "a" : "b", count: 64)),
+            "origin": .string(origin),
+            "runId": .string(runID),
+            "validation": .object([
+                "ok": .bool(validated),
+                "validator": .string("preview-validator"),
+            ]),
+            "provenance": .array([
+                .object([
+                    "kind": .string("file"),
+                    "label": .string("Finance/Q3/payments.csv"),
+                    "url": .null,
+                ])
+            ]),
+            "createdAt": .string(iso(createdAt)),
+        ])
     }
 
     // MARK: - Time

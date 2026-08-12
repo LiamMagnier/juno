@@ -1,0 +1,20 @@
+{
+  /* Renderer. Deliberately has no `node` types.
+   *
+   * This is a security boundary expressed in the type system, not a style
+   * preference. `THREAT_MODEL.md` requires that the renderer cannot reach the
+   * filesystem or spawn processes; `contextIsolation` and `sandbox` enforce
+   * that at runtime, and omitting @types/node here makes a violation fail to
+   * compile instead of failing review. A renderer file that imports
+   * `node:child_process` is a type error, so it never reaches a reviewer who
+   * might wave it through. */
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+    "jsx": "react-jsx",
+    "outDir": "./node_modules/.cache/tsc/web",
+    "rootDir": "."
+  },
+  "include": ["src/renderer/**/*.ts", "src/renderer/**/*.tsx", "src/shared/**/*.ts"]
+}

@@ -1,0 +1,7 @@
+{
+  /* Solution file. `tsc --build` type-checks both project graphs, which is what
+     `npm run typecheck` and the CI gate run. There are two graphs rather than
+     one so the renderer can be denied Node types — see tsconfig.web.json. */
+  "files": [],
+  "references": [{ "path": "./tsconfig.node.json" }, { "path": "./tsconfig.web.json" }]
+}

@@ -1,0 +1,179 @@
+# Gates for Juno Desktop, the Electron macOS client at `native/desktop-electron`.
+#
+# It is a self-contained sub-workspace with its own lockfile — the same shape as
+# `relay/` and `runner/agent-core/` — so every step runs with `--prefix` rather
+# than from the repository root.
+#
+# Two things this workflow is deliberate about:
+#
+#   1. **agent-core is built first, and that is load-bearing.** The desktop app
+#      consumes it as a `file:` dependency, and `src/shared/agent-protocol.ts`
+#      asserts at compile time that its validators match agent-core's types. If
+#      agent-core is not built, those imports resolve to `any` and every
+#      assertion passes VACUOUSLY. `contract:check` fails closed on exactly that,
+#      but building first is what makes the typecheck meaningful in the first
+#      place.
+#   2. **E2E runs against an unpackaged build, on purpose.** The packaging config
+#      sets the `EnableNodeCliInspectArguments: false` fuse, which is correct
+#      hardening and is also precisely what makes a packaged app undrivable by
+#      Playwright. Do not "fix" the fuse to make E2E run against the artifact.
+
+name: desktop
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "native/desktop-electron/**"
+      - "runner/agent-core/**"
+      - "src/app/globals.css"
+      - "tailwind.config.ts"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "native/desktop-electron/**"
+      - "runner/agent-core/**"
+      - "src/app/globals.css"
+      - "tailwind.config.ts"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DESKTOP: native/desktop-electron
+  AGENT_CORE: runner/agent-core
+
+jobs:
+  gates:
+    name: gates (typecheck · lint · tokens · contract · tests)
+    # macOS because node-pty is a native module and the app is macOS-only;
+    # building it anywhere else would prove nothing about the shipped target.
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            ${{ env.AGENT_CORE }}/package-lock.json
+            ${{ env.DESKTOP }}/package-lock.json
+
+      # The desktop app imports agent-core's *built* declarations, never its
+      # sources — consuming the sources would apply this workspace's stricter
+      # compiler options to code compiled under agent-core's own laxer config.
+      - name: Build @juno/agent-core
+        run: |
+          npm ci --prefix "$AGENT_CORE"
+          npm run build --prefix "$AGENT_CORE"
+
+      - name: Install
+        run: npm ci --prefix "$DESKTOP"
+
+      # Runs typecheck → lint → token drift → agent-contract drift → tests.
+      # Kept as one script so a developer's local command and CI cannot diverge.
+      - name: Gates
+        run: npm run gates --prefix "$DESKTOP"
+
+  e2e:
+    name: build · e2e
+    runs-on: macos-26
+    timeout-minutes: 30
+    needs: gates
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            ${{ env.AGENT_CORE }}/package-lock.json
+            ${{ env.DESKTOP }}/package-lock.json
+
+      - name: Build @juno/agent-core
+        run: |
+          npm ci --prefix "$AGENT_CORE"
+          npm run build --prefix "$AGENT_CORE"
+
+      - name: Install
+        run: npm ci --prefix "$DESKTOP"
+
+      - name: Build
+        run: npm run build --prefix "$DESKTOP"
+
+      # A sandboxed preload cannot resolve imports out of an ASAR, so it must be
+      # a single self-contained chunk. The build already fails on a violation;
+      # this asserts the shipped artefact rather than trusting the build config,
+      # and it is cheap.
+      - name: Assert the preload is self-contained
+        run: |
+          cd "$DESKTOP"
+          test -f out/preload/index.js || { echo "preload was not emitted"; exit 1; }
+          if grep -qE "require\(['\"](\.|@juno)" out/preload/index.js; then
+            echo "the preload bundle has unresolved workspace imports; it must be self-contained"
+            exit 1
+          fi
+          echo "preload: $(wc -c < out/preload/index.js) bytes, self-contained"
+
+      # The E2E suite drives the real IPC bridge: the workspace trust gate, a
+      # real PTY round trip, and the agent host reaching `running`.
+      - name: E2E
+        run: npm run test:e2e --prefix "$DESKTOP"
+
+      - name: Upload the Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: ${{ env.DESKTOP }}/playwright-report
+          retention-days: 7
+
+  package:
+    name: package (unsigned)
+    runs-on: macos-26
+    timeout-minutes: 40
+    needs: e2e
+    # Only on demand and on main: packaging is slow, and on a pull request the
+    # gates plus E2E are the signal that matters.
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            ${{ env.AGENT_CORE }}/package-lock.json
+            ${{ env.DESKTOP }}/package-lock.json
+
+      - name: Build @juno/agent-core
+        run: |
+          npm ci --prefix "$AGENT_CORE"
+          npm run build --prefix "$AGENT_CORE"
+
+      - name: Install
+        run: npm ci --prefix "$DESKTOP"
+
+      # Unsigned. Signing and notarization need the five Apple secrets the repo
+      # already documents; `scripts/notarize.cjs` skips cleanly when they are
+      # absent, so this step proves the packaging pipeline itself works without
+      # them. A signed build is a separate, credentialed workflow.
+      - name: Package
+        run: npm run package:mac --prefix "$DESKTOP"
+
+      - name: Upload the unsigned artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: juno-desktop-unsigned
+          path: |
+            ${{ env.DESKTOP }}/dist/*.dmg
+            ${{ env.DESKTOP }}/dist/*.zip
+          retention-days: 7
+          if-no-files-found: error

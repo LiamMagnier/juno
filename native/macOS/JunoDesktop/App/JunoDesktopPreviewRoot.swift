@@ -5,6 +5,7 @@ import JunoCodeKit
 import JunoCodeUI
 import JunoDesignSystem
 import JunoPreviewSupport
+import JunoWorkKit
 import SwiftUI
 
 /// Development-only host for deterministic visual QA.
@@ -72,6 +73,8 @@ private struct JunoDesktopPreviewWorkspace: View {
             syncModel: world.syncModel,
             outbox: nil,
             attachmentModel: world.attachmentModel,
+            workAttachmentModel: world.attachmentModel,
+            workContextAttachmentModel: world.attachmentModel,
             avatarModel: nil,
             conversationModel: world.conversationModel,
             privateChatModel: world.privateChatModel,
@@ -94,6 +97,9 @@ private struct JunoDesktopPreviewWorkspace: View {
             // list — visible on the reader's phone.
             codeHostModel: nil,
             workModel: world.workModel,
+            workAutomationModel: NativeWorkAutomationModel(
+                client: NativeWorkAutomationClient(sender: sender)
+            ),
             // No host model on purpose. `DesktopWorkHostModel` is this Mac
             // advertising itself as an executor, and the harness must never put
             // a fake Mac in the real account's host list — it would show up on

@@ -180,6 +180,14 @@ public struct WorkSessionSummary: Equatable, Sendable, Identifiable {
     public let effectiveTarget: String?
     public let hostID: String?
     public let hostDisplayName: String?
+    /// The model and reasoning choice saved on the task, if one was explicit.
+    ///
+    /// These belong to the session rather than the run: a task can be retried
+    /// with a different model, while the task's own context remains the thing
+    /// the reader asked Juno to use by default.
+    public let requestedModel: String?
+    public let reasoningEffort: String?
+    public let permissionPolicy: JunoWorkPermissionPolicy?
     public let pinned: Bool
     public let archived: Bool
     public let lastActivityAt: Date
@@ -191,7 +199,9 @@ public struct WorkSessionSummary: Equatable, Sendable, Identifiable {
     public init(
         sessionID: String, title: String, goal: String, status: String,
         needsAttention: Bool, requestedTarget: String, effectiveTarget: String?,
-        hostID: String?, hostDisplayName: String?, pinned: Bool, archived: Bool,
+        hostID: String?, hostDisplayName: String?, requestedModel: String? = nil,
+        reasoningEffort: String? = nil, permissionPolicy: JunoWorkPermissionPolicy? = nil,
+        pinned: Bool, archived: Bool,
         lastActivityAt: Date, currentRunID: String?, lastSeq: Int
     ) {
         self.sessionID = sessionID
@@ -203,11 +213,261 @@ public struct WorkSessionSummary: Equatable, Sendable, Identifiable {
         self.effectiveTarget = effectiveTarget
         self.hostID = hostID
         self.hostDisplayName = hostDisplayName
+        self.requestedModel = requestedModel
+        self.reasoningEffort = reasoningEffort
+        self.permissionPolicy = permissionPolicy
         self.pinned = pinned
         self.archived = archived
         self.lastActivityAt = lastActivityAt
         self.currentRunID = currentRunID
         self.lastSeq = lastSeq
+    }
+}
+
+/// The durable choices a Work task carries between attempts.
+///
+/// Connector scope is optional on purpose. `nil` means the task predates the
+/// explicit app question (or the server could not answer it); an empty array is
+/// a real choice that reaches no connected app. Treating both as `[]` would make
+/// a context editor silently revoke an older task's implicit reach.
+public struct WorkSessionAttachment: Equatable, Sendable, Identifiable {
+    public let attachmentID: String
+    public let displayName: String
+
+    public var id: String { attachmentID }
+
+    public init(attachmentID: String, displayName: String) {
+        self.attachmentID = attachmentID
+        self.displayName = displayName
+    }
+}
+
+public struct WorkSessionContext: Equatable, Sendable {
+    public let projectID: String?
+    public let model: String?
+    public let reasoningEffort: String?
+    public let permissionPolicy: JunoWorkPermissionPolicy?
+    public let connectorIDs: [String]?
+    public let attachments: [WorkSessionAttachment]
+    public let skillSlug: String?
+
+    public init(
+        projectID: String?,
+        model: String?,
+        reasoningEffort: String?,
+        permissionPolicy: JunoWorkPermissionPolicy?,
+        connectorIDs: [String]?,
+        attachments: [WorkSessionAttachment],
+        skillSlug: String?
+    ) {
+        self.projectID = projectID
+        self.model = model
+        self.reasoningEffort = reasoningEffort
+        self.permissionPolicy = permissionPolicy
+        self.connectorIDs = connectorIDs
+        self.attachments = attachments
+        self.skillSlug = skillSlug
+    }
+}
+
+/// A scalar that a context PATCH may leave alone, replace, or clear.
+public enum WorkContextStringChange: Equatable, Sendable {
+    case unchanged
+    case set(String)
+    case clear
+}
+
+public struct WorkSessionContextEdit: Equatable, Sendable {
+    public var model: String?
+    public var reasoningEffort: WorkContextStringChange
+    public var permissionPolicy: JunoWorkPermissionPolicy?
+    public var connectorIDs: [String]?
+    public var attachmentIDs: [String]?
+
+    public init(
+        model: String? = nil,
+        reasoningEffort: WorkContextStringChange = .unchanged,
+        permissionPolicy: JunoWorkPermissionPolicy? = nil,
+        connectorIDs: [String]? = nil,
+        attachmentIDs: [String]? = nil
+    ) {
+        self.model = model
+        self.reasoningEffort = reasoningEffort
+        self.permissionPolicy = permissionPolicy
+        self.connectorIDs = connectorIDs
+        self.attachmentIDs = attachmentIDs
+    }
+}
+
+public struct WorkContextFieldResult: Equatable, Sendable {
+    public let field: String
+    public let change: String
+    public let effect: String
+    public let explanation: String
+
+    public init(field: String, change: String, effect: String, explanation: String) {
+        self.field = field
+        self.change = change
+        self.effect = effect
+        self.explanation = explanation
+    }
+}
+
+public struct WorkSessionContextUpdate: Equatable, Sendable {
+    public let context: WorkSessionContext
+    public let session: WorkSessionSummary?
+    public let applied: [WorkContextFieldResult]
+
+    public init(
+        context: WorkSessionContext,
+        session: WorkSessionSummary?,
+        applied: [WorkContextFieldResult]
+    ) {
+        self.context = context
+        self.session = session
+        self.applied = applied
+    }
+}
+
+// MARK: - Artifacts
+
+/// A durable deliverable produced by a Work session.
+///
+/// Events are intentionally not the source of truth here. They are a useful
+/// live story while a run is moving, but the artifact row owns the current
+/// version, validation state and download identity. A native client therefore
+/// reads this shape from the artifact endpoint before offering a file action.
+public struct WorkArtifactSummary: Equatable, Sendable, Identifiable {
+    public let artifactID: String
+    public let sessionID: String
+    public let identifier: String
+    public let title: String
+    public let kind: JunoWorkArtifactKind
+    public let mimeType: String
+    public let currentVersion: Int
+    public let validatedAt: Date?
+    public let createdAt: Date
+    public let updatedAt: Date
+
+    public var id: String { artifactID }
+
+    public init(
+        artifactID: String,
+        sessionID: String,
+        identifier: String,
+        title: String,
+        kind: JunoWorkArtifactKind,
+        mimeType: String,
+        currentVersion: Int,
+        validatedAt: Date?,
+        createdAt: Date,
+        updatedAt: Date
+    ) {
+        self.artifactID = artifactID
+        self.sessionID = sessionID
+        self.identifier = identifier
+        self.title = title
+        self.kind = kind
+        self.mimeType = mimeType
+        self.currentVersion = currentVersion
+        self.validatedAt = validatedAt
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+/// One source recorded for a durable artifact version.
+public struct WorkArtifactProvenance: Equatable, Sendable, Identifiable {
+    public let kind: String
+    public let label: String
+    public let url: String?
+
+    public var id: String { kind + ":" + label + ":" + (url ?? "") }
+
+    public init(kind: String, label: String, url: String?) {
+        self.kind = kind
+        self.label = label
+        self.url = url
+    }
+}
+
+/// Immutable history for one generated deliverable.
+public struct WorkArtifactVersion: Equatable, Sendable, Identifiable {
+    public let version: Int
+    public let byteSize: Int
+    public let contentHash: String
+    public let origin: String
+    public let runID: String?
+    public let validated: Bool
+    public let provenance: [WorkArtifactProvenance]
+    public let createdAt: Date
+
+    public var id: Int { version }
+
+    public init(
+        version: Int,
+        byteSize: Int,
+        contentHash: String,
+        origin: String,
+        runID: String?,
+        validated: Bool,
+        provenance: [WorkArtifactProvenance],
+        createdAt: Date
+    ) {
+        self.version = version
+        self.byteSize = byteSize
+        self.contentHash = contentHash
+        self.origin = origin
+        self.runID = runID
+        self.validated = validated
+        self.provenance = provenance
+        self.createdAt = createdAt
+    }
+}
+
+/// The artifact detail response, including bounded version history.
+public struct WorkArtifactDetail: Equatable, Sendable {
+    public let artifact: WorkArtifactSummary
+    public let versions: [WorkArtifactVersion]
+    public let warning: String?
+    public let historyTruncated: Bool
+
+    public init(
+        artifact: WorkArtifactSummary,
+        versions: [WorkArtifactVersion],
+        warning: String?,
+        historyTruncated: Bool
+    ) {
+        self.artifact = artifact
+        self.versions = versions
+        self.warning = warning
+        self.historyTruncated = historyTruncated
+    }
+}
+
+/// Verified bytes returned by the artifact download route.
+public struct WorkArtifactDownload: Equatable, Sendable {
+    public let artifactID: String
+    public let version: Int
+    public let bytes: Data
+    public let contentType: String?
+    public let validated: Bool
+    public let validationWarning: String?
+
+    public init(
+        artifactID: String,
+        version: Int,
+        bytes: Data,
+        contentType: String?,
+        validated: Bool,
+        validationWarning: String?
+    ) {
+        self.artifactID = artifactID
+        self.version = version
+        self.bytes = bytes
+        self.contentType = contentType
+        self.validated = validated
+        self.validationWarning = validationWarning
     }
 }
 

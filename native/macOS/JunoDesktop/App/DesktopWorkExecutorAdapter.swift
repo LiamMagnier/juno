@@ -10,6 +10,18 @@ import JunoWorkCore
 import JunoWorkKit
 import JunoWorkRuntime
 
+/// A weak, sendable handle for callbacks that may outlive a host model's local
+/// variable. The box keeps the callback from capturing a mutable weak binding;
+/// the value is still weak, so it cannot create a configuration cycle.
+@MainActor
+final class DesktopWorkHostReference: @unchecked Sendable {
+    weak var value: DesktopWorkHostModel?
+
+    init(_ value: DesktopWorkHostModel?) {
+        self.value = value
+    }
+}
+
 /// The conversion the app owes the two halves of Juno Work.
 ///
 /// `JunoWorkKit.WorkCommandExecuting` and `JunoWorkRuntime.WorkLocalCommandExecuting`
@@ -273,6 +285,7 @@ final class DesktopWorkLocalRuntime {
     /// Builds the thing a claimed command is handed to, for one host row.
     func makeExecutor(hostID: String, accountID: AccountID) -> any WorkCommandExecuting {
         grants.setHostID(hostID)
+        let hostReference = DesktopWorkHostReference(host)
         let runs = DesktopWorkRunHost(
             dependencies: DesktopWorkRunHost.Dependencies(
                 hostID: hostID,
@@ -281,12 +294,12 @@ final class DesktopWorkLocalRuntime {
                 reporter: reporter,
                 defaultModelID: Self.defaultModelID,
                 automationTools: { [weak self] in await self?.automationTools() ?? [] },
-                activityChanged: { [weak host] active in
+                activityChanged: { [hostReference] active in
                     await MainActor.run {
                         // Queued is always zero here: this Mac holds at most the
                         // command it is running, and anything waiting is waiting
                         // in the relay's queue where the relay counts it.
-                        host?.setActivity(active: active, queued: 0)
+                        hostReference.value?.setActivity(active: active, queued: 0)
                     }
                 }
             )

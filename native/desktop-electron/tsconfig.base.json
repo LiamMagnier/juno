@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "composite": true,
+
+    /* Strictness. `strict` alone leaves several real footguns on; the four
+       extra flags below are the ones that matter for a process-boundary app:
+       unchecked index access turns `paths[0]` into `string | undefined`, and
+       exactOptionalPropertyTypes stops `{agentId: undefined}` from passing as
+       an absent optional — which is precisely the distinction the agent
+       protocol uses to mean "root agent" vs "subagent". */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "useUnknownInCatchVariables": true,
+
+    /* `@juno/agent-core` is resolved as a real package (a `file:` dependency
+       linked into node_modules), NOT through a path alias into its `src/`.
+       Aliasing the source pulled agent-core's .ts files into this project,
+       which broke `rootDir` and — worse — applied *this* workspace's stricter
+       compiler options (notably exactOptionalPropertyTypes) to code compiled
+       under its own, laxer config. A shared package must be type-checked by its
+       own tsconfig; we consume its emitted declarations. */
+    "paths": {
+      "@shared/*": ["./src/shared/*"]
+    }
+  }
+}

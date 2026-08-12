@@ -231,6 +231,8 @@ struct PreRunSuggestions: View {
         switch behavior {
         case .ask:
             return "Ask Juno to inspect and explain this project. This session cannot edit files or run commands."
+        case .survey:
+            return "Ask Juno to build a read-only map of this project. It can split independent reconnaissance into inspectable sub-agents, but it cannot edit files or run commands."
         case .plan:
             return "Describe an outcome and Juno will inspect the project, then write a read-only implementation plan."
         case .code:
@@ -246,7 +248,11 @@ struct PreRunSuggestions: View {
     /// was detected.
     private var suggestions: [StarterPrompt] {
         var items = [StarterPrompt.tour]
-        items.append(behavior == .plan ? .plan : .findBug)
+        if behavior == .survey {
+            items.append(.survey)
+        } else {
+            items.append(behavior == .plan ? .plan : .findBug)
+        }
         if controller.isGitRepository {
             items.append(.reviewUncommitted)
         }
@@ -301,6 +307,11 @@ struct StarterPrompt: Identifiable {
         Investigate the project first, then write an ordered implementation plan \
         with the files involved, the risks, and how to validate it.
         """
+    )
+    static let survey = StarterPrompt(
+        title: "Survey this project",
+        glyph: "scope",
+        prompt: "Survey this project: map its entry points, main modules, runtime boundaries, recent changes, and highest-risk unknowns. Use read-only inspection and cite the evidence."
     )
     static let findBug = StarterPrompt(
         title: "Find a likely bug",

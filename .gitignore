@@ -48,6 +48,17 @@ relay/dist
 runner/agent-core/node_modules
 runner/agent-core/dist
 
+# Juno Desktop (Electron). Self-contained sub-workspace with its own lockfile,
+# built in CI. `out/` is electron-vite's bundle output; `dist/` is the packaged
+# .app/.dmg. The generated design tokens under src/renderer/styles ARE tracked,
+# because the drift gate byte-compares them.
+native/desktop-electron/node_modules
+native/desktop-electron/out
+native/desktop-electron/dist
+native/desktop-electron/coverage
+native/desktop-electron/test-results
+native/desktop-electron/playwright-report
+
 # Release artifacts: the build products themselves are large binaries and are
 # reproducible from a tagged commit. The delivery documentation and the current
 # SHA256SUMS.txt in dist/ are tracked; the binaries and the per-commit checksum
@@ -81,3 +92,7 @@ DerivedData/
 # deliberately NOT ignored — those are curated registry state committed by the
 # nightly sync-models workflow and are not reproducible without provider keys.
 /src/lib/i18n-catalog.generated.ts
+
+# Local SQLite dev database — contains real conversation data, never commit it.
+prisma/dev.db
+prisma/dev.db-journal

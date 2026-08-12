@@ -251,6 +251,16 @@ test("the route does not answer a repeated save with a conflict", () => {
   assert.equal(/status:\s*409/.test(source), false, "a replay must not be a conflict");
 });
 
+test("the route has a read path for the context controls", () => {
+  const source = readFileSync(ROUTE, "utf8");
+  assert.match(source, /export async function GET\(/);
+  assert.match(source, /connectorsChosen/);
+  assert.match(source, /kind:\s*"cloud_file"/);
+  assert.match(source, /displayName: true/);
+  assert.match(source, /parseSkillInvocation\(session\.goal\)/);
+  assert.match(source, /return NextResponse\.json\(\{ context \}\)/);
+});
+
 // ---------------------------------------------------------------------------
 // The skill, answered honestly
 // ---------------------------------------------------------------------------

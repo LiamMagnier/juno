@@ -115,11 +115,19 @@ enum DesktopSidebarChromeMetrics {
     /// starting late.
     static let trafficLightClearance: CGFloat = 38
 
+    /// The lockup row that gives the navigation column a stable product identity.
+    /// The mark is intentionally a little larger than a row icon: it is the
+    /// app's anchor, not another destination.
+    static let brandRow: CGFloat = 28
+
     /// The switch's own row: ``DesktopSegmented``'s 28pt segment, the 2pt its
-    /// track adds on each side, and the gap to the first source-list row.
+    /// track adds on each side, and the gap to the brand lockup.
     static let productSwitcherRow: CGFloat = 28 + 4 + JunoSpace.snug
 
-    static let titlebarClearance: CGFloat = trafficLightClearance + productSwitcherRow
+    /// One restrained header for all three products. Keeping this geometry in
+    /// one place prevents Chat, Code and Work from looking like separate apps.
+    static let titlebarClearance: CGFloat =
+        trafficLightClearance + brandRow + JunoSpace.snug + productSwitcherRow + JunoSpace.snug
 }
 
 extension View {
@@ -183,13 +191,28 @@ struct DesktopSidebarProductHeader: View {
     @Binding var product: DesktopProductMode
 
     var body: some View {
-        DesktopProductSwitcher(selection: $product)
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.bottom, JunoSpace.snug)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(
-                height: DesktopSidebarChromeMetrics.titlebarClearance,
-                alignment: .bottom
-            )
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack(spacing: JunoSpace.snug) {
+                JunoLogo()
+                    .foregroundStyle(Color.junoForeground)
+
+                Spacer(minLength: JunoSpace.snug)
+
+                Text("WORKSPACE")
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .tracking(1.1)
+                    .foregroundStyle(Color.junoMutedForeground)
+            }
+
+            DesktopProductSwitcher(selection: $product)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.bottom, JunoSpace.snug)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(
+            height: DesktopSidebarChromeMetrics.titlebarClearance,
+            alignment: .bottom
+        )
     }
 }

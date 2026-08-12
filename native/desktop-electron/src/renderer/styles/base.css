@@ -1,0 +1,363 @@
+/*
+ * Juno Desktop — base stylesheet.
+ *
+ * THIS IS THE RENDERER'S ONE STYLESHEET ENTRY. Import it exactly once, from the
+ * renderer entry module. It pulls in the generated tokens and the three Tailwind
+ * directives; nothing else should carry `@tailwind`, or preflight ships twice.
+ *
+ * Everything in this file is hand-written on purpose — it is the platform
+ * binding, not the design system. Values live in `./tokens.css`, which is
+ * GENERATED from the web's `src/app/globals.css` + `tailwind.config.ts` by
+ * `scripts/generate-tokens.ts` and must never be edited. If a colour, curve,
+ * duration, radius or type step needs to change, it changes on the web and
+ * arrives here through `npm run tokens`.
+ *
+ * What is here that could not be generated, and why:
+ *   · @font-face — the web loads three families over the network through
+ *     next/font. Electron under our CSP has no network, so the desktop binds the
+ *     same three families to local files. See docs/DESIGN.md for the exact files.
+ *   · Base element styles — the body voice, the icon stroke ladder, focus,
+ *     selection, scrollbars, the paper grain. These are RULES, and the generator
+ *     projects TOKENS.
+ *   · The reduced-motion / reduced-transparency behaviour. The token half of
+ *     reduced motion is generated into tokens.css; the behavioural half is here.
+ */
+
+@import "./tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+ * Fonts
+ *
+ * The web asks Google Fonts for Archivo (--font-sans), Newsreader (--font-serif,
+ * normal + italic, with the `opsz` axis explicitly requested) and JetBrains Mono
+ * (--font-mono). None of that survives an Electron renderer with a
+ * network-denying CSP, so the desktop ships the files and binds the same three
+ * variable families to the same three variable names.
+ *
+ * THE FILES ARE NOT IN THE REPOSITORY YET. Four woff2 files are required; they
+ * are listed with their axes in docs/DESIGN.md under "Font follow-up". Until
+ * they land these rules resolve to nothing, `font-display: swap` keeps text
+ * visible, and the stacks in tailwind.config.ts fall through to system-ui /
+ * Georgia / ui-monospace. Nothing is broken; it is only unbranded.
+ *
+ * The URLs are root-absolute (`/fonts/…`) rather than relative. A relative URL
+ * to a file that does not exist is a hard build failure in Vite's asset
+ * resolver; a root-absolute one is passed through untouched, which is what lets
+ * this file be correct before the assets arrive. It also gives the main process
+ * a single stable path to serve, whether the bytes end up in the renderer's
+ * public directory or behind the app protocol.
+ *
+ * `font-optical-sizing: auto` on body below is only real if the Newsreader file
+ * actually carries the `opsz` axis — the same trap the web hit, where the
+ * declaration was a silent no-op until `axes: ["opsz"]` was added to the
+ * next/font call. A static instance will not do.
+ * ------------------------------------------------------------------------ */
+
+@font-face {
+  font-family: "Archivo";
+  src: url("/fonts/Archivo-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Newsreader";
+  src: url("/fonts/Newsreader-Variable.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Newsreader";
+  src: url("/fonts/Newsreader-Italic-Variable.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono-Variable.woff2") format("woff2");
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    /* The three names tailwind.config.ts resolves its stacks through. On the web
+       next/font mints these; here they are the plain family names the @font-face
+       rules above declare. Quoted, because "JetBrains Mono" has a space. */
+    --font-sans: "Archivo";
+    --font-serif: "Newsreader";
+    --font-mono: "JetBrains Mono";
+
+    /*
+     * Glass, as two knobs rather than as a value copied into twelve components.
+     *
+     * DESKTOP-ONLY — there is no web counterpart and the generator did not emit
+     * these. The web's `.overlay-glass` is deliberately opaque
+     * (`backdrop-filter: none`) because a browser tab has nothing worth blurring
+     * behind it. A native window does: the desktop sits on the user's wallpaper
+     * and their other windows, so transient chrome can be real glass here in a
+     * way it never was there.
+     *
+     * Components read these two rather than writing a blur radius or an alpha:
+     *     backdrop-filter: blur(var(--glass-blur));
+     *     background-color: hsl(var(--popover) / var(--glass-veil));
+     * which is what makes the reduced-transparency blocks below a single switch
+     * instead of a hunt.
+     */
+    --glass-blur: 18px;
+    --glass-veil: 0.72;
+
+    /* So native controls, form widgets and the default scrollbar track follow
+       the theme instead of the OS. next-themes does this for the web via the
+       class; the renderer sets the class itself. */
+    color-scheme: light;
+  }
+
+  .dark {
+    color-scheme: dark;
+  }
+
+  * {
+    border-color: hsl(var(--border));
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Themed text selection. The dark alpha is nearly double: a selection wash is
+     read as a DIFFERENCE from the surface under it, and that surface is #000, so
+     coral at 0.25 resolves to about a 10%-lightness tint — a hair off --popover,
+     i.e. selected text that does not look selected. */
+  ::selection {
+    background-color: hsl(var(--primary) / 0.25);
+    color: hsl(var(--foreground));
+  }
+  .dark ::selection {
+    background-color: hsl(var(--primary) / 0.45);
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    /* The interface voice. Serif is asked for, never inherited — anything at UI
+       size (controls, menus, tables, metadata) gets the grotesque. */
+    font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+    font-optical-sizing: auto;
+    /* Both families carry a real weight axis, so never let a client fake one. */
+    font-synthesis: none;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    /* A desktop window is not a document: there is nothing above the top of the
+       app to rubber-band toward, and the bounce detaches the chrome from the
+       frame it is drawn in. */
+    overscroll-behavior: none;
+  }
+
+  /* A window, not a web page — a stray drag on a UI image should not start a
+     file drag out of the app. Content images opt back in with [draggable]. */
+  img:not([draggable="true"]) {
+    -webkit-user-drag: none;
+  }
+
+  /*
+   * Icon optical sizing. TRANSCRIBED, not generated — these are rules rather
+   * than tokens, and the generator projects tokens. Values are byte-for-byte the
+   * ones in src/app/globals.css; if that ladder moves, this block has to be
+   * moved with it (see "Known gaps" in docs/DESIGN.md).
+   *
+   * A single stroke-width on a 24 viewBox does the exact opposite of optical
+   * sizing: the number is in viewBox units, so it scales down with the box and
+   * the smallest icons draw the thinnest — size-4 landed at 1.167px and size-3
+   * at 0.875px, i.e. sub-pixel. Effective stroke has to grow sub-linearly as the
+   * box shrinks; the 24px row holds today's value so the house weight is steady
+   * across sizes rather than redefined.
+   */
+  svg.lucide {
+    stroke-width: 1.75;
+    shape-rendering: geometricPrecision;
+  }
+  svg.lucide.h-3,    svg.lucide.size-3    { stroke-width: 2.50; }  /* 12px → 1.25px  */
+  svg.lucide.h-3\.5, svg.lucide.size-3\.5 { stroke-width: 2.36; }  /* 14px → 1.375px */
+  svg.lucide.h-4,    svg.lucide.size-4    { stroke-width: 2.25; }  /* 16px → 1.50px  */
+  svg.lucide.h-5,    svg.lucide.size-5    { stroke-width: 1.95; }  /* 20px → 1.625px */
+  svg.lucide.h-6,    svg.lucide.size-6    { stroke-width: 1.75; }  /* reference      */
+  svg.lucide.h-7,    svg.lucide.size-7    { stroke-width: 1.60; }
+  svg.lucide.h-8,    svg.lucide.size-8    { stroke-width: 1.50; }
+  svg.lucide.h-9,    svg.lucide.size-9    { stroke-width: 1.42; }
+  svg.lucide.h-10,   svg.lucide.size-10   { stroke-width: 1.35; }
+  svg.lucide.h-12,   svg.lucide.size-12   { stroke-width: 1.25; }
+
+  /* Film grain (2.2%), quiet and non-interactive. A PAPER effect: it belongs to
+     the light theme and is switched off in dark.
+     z-index 1, not --z-toast: at 70 this layer ties with the top rung of the
+     product and paints over every toast, popover and modal in it. 1 lifts it
+     clear of page content and leaves every out-of-flow rung above it. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: 0.022;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  /* Not dimmed — removed. A fixed full-viewport layer at any non-zero opacity
+     means no pixel in the app is ever #000, which is the entire thing the true
+     black in `.dark` buys. Grain is warm paper's texture and has nothing to sit
+     on here. */
+  .dark body::after {
+    display: none;
+  }
+
+  /* Focus stays unmistakable without turning every keyboard target into a second
+     brand CTA. The accent is reserved for actions and status. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--foreground) / 0.55);
+    outline-offset: 2px;
+  }
+
+  /* Thin, theme-aware scrollbars. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover { background-color: hsl(var(--muted-foreground) / 0.5); }
+
+  /* =========================================================================
+   * REDUCED MOTION — Tier C (behaviour).
+   *
+   * Tiers A and B are settled elsewhere and are not repeated here:
+   *   Tier A  opacity, colour and anything carrying real state (thinking
+   *           matrix, status glow, the stream tail) is NOT touched. Removing
+   *           feedback is not an accessibility win.
+   *   Tier B  transforms collapse to identity because --motion-shift and
+   *           --motion-scale-from go to 0/1 and the long curves flatten — all
+   *           of that is in tokens.css, generated from globals.css, for both
+   *           the media query and the attribute.
+   *   Tier C  decorative loops stop outright. Enumerated one by one, below.
+   *           NEVER blanket: the universal-selector clamp this policy replaced
+   *           read the preference as "no motion at all", took away every hover
+   *           colour transition and every press response including the ones
+   *           that were already safe, and its `!important` meant no component
+   *           could opt back in where the motion carried meaning.
+   *
+   * TWO SELECTORS, ONE RULE SET, and the duplication is the point. macOS
+   * exposes "Reduce motion" to Chromium, so the media query fires — but the
+   * main process reads the real system setting (systemPreferences
+   * .getAnimationSettings().prefersReducedMotion) and stamps it on <html>
+   * anyway, because that is also the hook for an in-app override and because the
+   * media query cannot be forced on for testing. Both paths must land on
+   * identical rules or the app behaves differently depending on which one asked.
+   *
+   * MATCH THE VALUE, NOT THE PRESENCE. `applyAppearanceToDocument` in
+   * state/system-state.tsx writes `String(appearance.reduceMotion)`, so the
+   * attribute is ALWAYS on <html> — as "false" when the preference is off. A
+   * bare [data-reduce-motion] selector matches an empty string just as happily
+   * as "true", so it would kill decorative motion in every window in the
+   * product. The same applies to [data-reduce-transparency] below.
+   * ====================================================================== */
+
+  @media (prefers-reduced-motion: reduce) {
+    .composer-aura,
+    .skeleton::after,
+    [class*="animate-icon-breathe"],
+    [class*="animate-gen-"],
+    [class*="animate-ultra-"],
+    [class*="animate-pulse-ring"],
+    [class*="animate-shimmer"],
+    [class*="animate-dot-wave"] {
+      animation: none;
+    }
+    html { scroll-behavior: auto; }
+    /* One mask on the tail of a still-arriving reply. It is a gradient over
+       moving text, which is exactly the class of effect the preference is
+       about. Unprefixed: autoprefixer owns `-webkit-mask-image` and adds it. */
+    .stream-tail { mask-image: none; }
+  }
+
+  [data-reduce-motion="true"] .composer-aura,
+  [data-reduce-motion="true"] .skeleton::after,
+  [data-reduce-motion="true"] [class*="animate-icon-breathe"],
+  [data-reduce-motion="true"] [class*="animate-gen-"],
+  [data-reduce-motion="true"] [class*="animate-ultra-"],
+  [data-reduce-motion="true"] [class*="animate-pulse-ring"],
+  [data-reduce-motion="true"] [class*="animate-shimmer"],
+  [data-reduce-motion="true"] [class*="animate-dot-wave"] {
+    animation: none;
+  }
+  html[data-reduce-motion="true"] { scroll-behavior: auto; }
+  [data-reduce-motion="true"] .stream-tail { mask-image: none; }
+
+  /* =========================================================================
+   * REDUCED TRANSPARENCY
+   *
+   * The attribute is not a convenience here, it is the only path that works.
+   * macOS "Reduce Transparency" lives in System Settings → Accessibility →
+   * Display, and Chromium does not map it to `prefers-reduced-transparency` —
+   * that media query answers the browser/OS hint Chromium knows about, which on
+   * macOS it largely does not. So main reads the real setting
+   * (`nativeTheme.prefersReducedTransparency`, see src/main/appearance.ts) and
+   * stamps data-reduce-transparency="true|false" on <html>. The media query is
+   * kept because it costs nothing and is correct wherever it does fire.
+   *
+   * Turning the two knobs off is most of the work: --glass-blur to 0 and
+   * --glass-veil to 1 make every component that reads them opaque without any of
+   * them knowing why. The explicit `backdrop-filter: none` is for the surfaces
+   * that blur without a veil — edge fades, media placeholders — and for anything
+   * that hardcoded a blur before this policy existed.
+   *
+   * The main process must make the matching move: a window created with a
+   * `vibrancy` / NSVisualEffectView backing stays translucent no matter what
+   * this stylesheet says, so it has to drop vibrancy under the same setting.
+   * ====================================================================== */
+
+  @media (prefers-reduced-transparency: reduce) {
+    :root {
+      --glass-blur: 0px;
+      --glass-veil: 1;
+    }
+  }
+
+  :root[data-reduce-transparency="true"] {
+    --glass-blur: 0px;
+    --glass-veil: 1;
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .overlay-glass,
+    .glass-raised,
+    [data-glass],
+    .scroll-fade-edge,
+    .scroll-fade-edge::before {
+      backdrop-filter: none;
+    }
+  }
+
+  [data-reduce-transparency="true"] .overlay-glass,
+  [data-reduce-transparency="true"] .glass-raised,
+  [data-reduce-transparency="true"] [data-glass],
+  [data-reduce-transparency="true"] .scroll-fade-edge,
+  [data-reduce-transparency="true"] .scroll-fade-edge::before {
+    backdrop-filter: none;
+  }
+}

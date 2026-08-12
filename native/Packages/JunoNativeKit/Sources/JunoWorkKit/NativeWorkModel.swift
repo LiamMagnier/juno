@@ -41,6 +41,19 @@ public final class NativeWorkModel {
     public private(set) var events: [WorkEvent] = []
     public private(set) var pendingApprovals: [WorkApprovalRequest] = []
     public private(set) var isStreaming = false
+    /// Durable deliverables for the open task. Events tell the live story;
+    /// this index owns what can actually be inspected and downloaded now.
+    public private(set) var openArtifacts: [WorkArtifactSummary] = []
+    /// Version history is loaded on demand so opening a task stays fast.
+    public private(set) var artifactDetails: [String: WorkArtifactDetail] = [:]
+    public private(set) var artifactErrorDescription: String?
+    public private(set) var artifactDownloadID: String?
+    /// Join-table context for the open task. Nil means it has not been read or
+    /// the read failed; an empty connector list inside a value is an explicit
+    /// "no apps" answer.
+    public private(set) var openContext: WorkSessionContext?
+    public private(set) var contextErrorDescription: String?
+    public private(set) var lastContextChange: WorkContextFieldResult?
 
     /// What the server did with the last instruction sent to the open task.
     ///
@@ -94,6 +107,52 @@ public final class NativeWorkModel {
     /// ``sendInstruction(_:)`` for why it is cleared on every success and why it
     /// is matched on the text.
     private var retriableInstruction: (text: String, key: String)?
+    /// The composition key for a start/restart carrying a message. It survives
+    /// a lost response to `startRun`, so pressing Send again cannot create two
+    /// attempts for the same words.
+    private var retriableStart: (text: String, key: String)?
+
+    /// The home composer has the same two-request composition as the thread
+    /// composer, but its retry lives longer: a create can succeed while the
+    /// start response is lost and the user may return to the overview before
+    /// pressing the button again. Holding the full input, not only the goal,
+    /// keeps a changed target or connector selection from replaying an older
+    /// task under a new button press.
+    private struct RetriableTaskStart: Equatable, Sendable {
+        let goal: String
+        let title: String?
+        let target: JunoWorkTarget
+        let preferredHostID: String?
+        let model: String?
+        let reasoningEffort: String?
+        let attachmentIDs: [String]?
+        let connectorIDs: [String]?
+        let permissionPolicy: JunoWorkPermissionPolicy?
+        let key: String
+
+        func matches(
+            goal: String,
+            title: String?,
+            target: JunoWorkTarget,
+            preferredHostID: String?,
+            model: String?,
+            reasoningEffort: String?,
+            attachmentIDs: [String]?,
+            connectorIDs: [String]?,
+            permissionPolicy: JunoWorkPermissionPolicy?
+        ) -> Bool {
+            self.goal == goal
+                && self.title == title
+                && self.target == target
+                && self.preferredHostID == preferredHostID
+                && self.model == model
+                && self.reasoningEffort == reasoningEffort
+                && self.attachmentIDs == attachmentIDs
+                && self.connectorIDs == connectorIDs
+                && self.permissionPolicy == permissionPolicy
+        }
+    }
+    private var retriableTaskStart: RetriableTaskStart?
 
     public init(client: NativeWorkClient) {
         self.client = client
@@ -219,12 +278,14 @@ public final class NativeWorkModel {
         return WorkQuestionPrompt(questionID: questionID, text: text)
     }
 
-    /// What the box on the open task is for: a reply, an instruction, or
-    /// nothing.
+    /// What the box on the open task is for: a reply, an instruction, or a
+    /// fresh attempt. A task thread should not dead-end just because its
+    /// current attempt finished: the next message can be the first instruction
+    /// of a new attempt.
     ///
-    /// One value rather than two booleans, because the three states are
-    /// mutually exclusive and a screen that computed "can answer" and "can
-    /// steer" separately would eventually draw both.
+    /// One value rather than several booleans, because the states are mutually
+    /// exclusive and a screen that computed "can answer", "can steer", and
+    /// "can start" separately would eventually draw two promises at once.
     public enum ComposerMode: Equatable, Sendable {
         /// The run asked something and has stopped until it is answered.
         /// Answering is the only thing that restarts it.
@@ -232,11 +293,17 @@ public final class NativeWorkModel {
         /// The run is going and has asked nothing: whatever is typed here is an
         /// instruction it reads before its next step.
         case instruction
+        /// The task has no attempt yet. Sending starts it and carries the
+        /// message into the new attempt before its first model turn.
+        case start
+        /// The previous attempt is terminal. Sending starts a new attempt for
+        /// this same task and carries the message into it.
+        case restart
         /// There is nowhere for words to go, and the sentence saying why.
         case closed(String)
     }
 
-    /// Which of the three the open task is in.
+    /// Which composer state the open task is in.
     ///
     /// This mirrors `src/app/(app)/work/[id]/page.tsx`, decision for decision
     /// and in the same order, because the route behind both surfaces refuses
@@ -282,24 +349,33 @@ public final class NativeWorkModel {
     ) -> ComposerMode {
         guard let session else { return .closed("No task is open.") }
         if let question { return .answer(question) }
+        // A run response is fresher than the session summary. This matters
+        // immediately after a restart: the summary can still say `completed`
+        // for one frame while the new run is already queued and ready to carry
+        // the reader's message.
+        if let run {
+            let current = JunoWorkStatus(rawValue: run.status) ?? .interrupted
+            if !current.isTerminal { return .instruction }
+        }
+
+        // A session with no attempt behind it is a draft. The composer remains
+        // available and the first message becomes the first instruction rather
+        // than forcing the reader through a second "Start" action.
+        guard run != nil || session.currentRunID != nil else {
+            return .start
+        }
+
         // An unreadable status is `interrupted` — terminal — matching
-        // `displayStatus(of:)` and the server's own fallback. Erring the other
-        // way would offer a box on a task whose state this build cannot name.
+        // `displayStatus(of:)` and the server's own fallback. Offering a
+        // restart is safe: the server remains the authority on whether it can
+        // dispatch the new attempt, and the request is idempotent.
         let reported = JunoWorkStatus(rawValue: session.status) ?? .interrupted
         if reported.isTerminal {
-            return .closed("This attempt has finished. Start it again to say more.")
+            return .restart
         }
-        // A session with no attempt behind it is a draft. Read from the session
-        // as well as the run because `openRun` is nil for the moment between
-        // opening a task and its detail arriving, and a box that said "this is
-        // still a draft" for that moment would be wrong about every task in the
-        // list.
-        guard run != nil || session.currentRunID != nil else {
-            return .closed(
-                "This is still a draft. Start it, and everything in the goal goes with it — "
-                    + "there is no attempt yet for anything else to join."
-            )
-        }
+        // The detail can briefly have a current run id while its run payload is
+        // still loading. A non-terminal session is still steerable in that
+        // frame; the stream will replace this with the authoritative run.
         return .instruction
     }
 
@@ -352,12 +428,21 @@ public final class NativeWorkModel {
         openRun = nil
         events = []
         pendingApprovals = []
+        openArtifacts = []
+        artifactDetails = [:]
+        artifactErrorDescription = nil
+        artifactDownloadID = nil
         resumeCursor = 0
         isStreaming = false
         isMutating = false
         lastErrorDescription = nil
         lastInstructionOutcome = nil
+        openContext = nil
+        contextErrorDescription = nil
+        lastContextChange = nil
+        retriableTaskStart = nil
         retriableInstruction = nil
+        retriableStart = nil
         lastRefreshReachedNothing = false
         phase = .idle
     }
@@ -399,26 +484,79 @@ public final class NativeWorkModel {
         goal: String,
         title: String? = nil,
         target: JunoWorkTarget = .automatic,
-        preferredHostID: String? = nil
+        preferredHostID: String? = nil,
+        model: String? = nil,
+        reasoningEffort: String? = nil,
+        attachmentIDs: [String]? = nil,
+        connectorIDs: [String]? = nil,
+        permissionPolicy: JunoWorkPermissionPolicy? = nil
     ) async -> WorkSessionSummary? {
         guard let accountID else { return nil }
         let trimmed = goal.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
+
+        // Preserve the user's order for display and remove duplicates without
+        // sorting provider IDs into an order they did not choose.
+        let normalizedConnectorIDs: [String]? = connectorIDs.map { values in
+            var seen = Set<String>()
+            return values.filter { seen.insert($0).inserted }
+        }
+        let normalizedAttachmentIDs: [String]? = attachmentIDs.map { values in
+            var seen = Set<String>()
+            return values.filter { seen.insert($0).inserted }
+        }
+        let key: String
+        if let retriableTaskStart,
+            retriableTaskStart.matches(
+                goal: trimmed,
+                title: title,
+                target: target,
+                preferredHostID: preferredHostID,
+                model: model,
+                reasoningEffort: reasoningEffort,
+                attachmentIDs: normalizedAttachmentIDs,
+                connectorIDs: normalizedConnectorIDs,
+                permissionPolicy: permissionPolicy
+            )
+        {
+            key = retriableTaskStart.key
+        } else {
+            key = UUID().uuidString
+        }
+        retriableTaskStart = RetriableTaskStart(
+            goal: trimmed,
+            title: title,
+            target: target,
+            preferredHostID: preferredHostID,
+            model: model,
+            reasoningEffort: reasoningEffort,
+            attachmentIDs: normalizedAttachmentIDs,
+            connectorIDs: normalizedConnectorIDs,
+            permissionPolicy: permissionPolicy,
+            key: key
+        )
         isMutating = true
         defer { isMutating = false }
         do {
-            // One key for the whole composition, reused if the caller retries,
-            // so a phone on a bad connection produces one task rather than two.
-            let key = UUID().uuidString
             let session = try await client.createSession(
                 goal: trimmed, title: title, target: target,
-                preferredHostID: preferredHostID, idempotencyKey: key, for: accountID
+                preferredHostID: preferredHostID,
+                model: model,
+                reasoningEffort: reasoningEffort,
+                attachmentIDs: normalizedAttachmentIDs,
+                connectorIDs: normalizedConnectorIDs,
+                permissionPolicy: permissionPolicy,
+                idempotencyKey: key,
+                for: accountID
             )
             let run = try await client.startRun(
                 sessionID: session.sessionID, target: target,
+                model: model,
+                reasoningEffort: reasoningEffort,
                 idempotencyKey: key, for: accountID
             )
             guard self.accountID == accountID else { return nil }
+            retriableTaskStart = nil
             apply(session)
             lastErrorDescription = nil
             open(session)
@@ -482,13 +620,22 @@ public final class NativeWorkModel {
         openRun = nil
         events = []
         pendingApprovals = []
+        openArtifacts = []
+        artifactDetails = [:]
+        artifactErrorDescription = nil
+        artifactDownloadID = nil
         resumeCursor = 0
+        openContext = nil
+        contextErrorDescription = nil
+        lastContextChange = nil
         // Both belong to the task being left, not to the one being opened. A
         // note saying an instruction reached nobody would otherwise appear under
         // the next task's title, and a held retry key would let a failed send on
         // one task deduplicate a first send on another.
         lastInstructionOutcome = nil
+        retriableTaskStart = nil
         retriableInstruction = nil
+        retriableStart = nil
         follow(sessionID: session.sessionID)
     }
 
@@ -498,14 +645,143 @@ public final class NativeWorkModel {
         openRun = nil
         events = []
         pendingApprovals = []
+        openArtifacts = []
+        artifactDetails = [:]
+        artifactErrorDescription = nil
+        artifactDownloadID = nil
         resumeCursor = 0
+        openContext = nil
+        contextErrorDescription = nil
+        lastContextChange = nil
+        retriableTaskStart = nil
         lastInstructionOutcome = nil
         retriableInstruction = nil
+        retriableStart = nil
     }
 
     public func pauseOpenRun() async { await control(.pause) }
     public func resumeOpenRun() async { await control(.resume) }
     public func stopOpenRun() async { await control(.stop) }
+
+    /// Re-reads the open task's join-table context after a failed context load.
+    public func refreshOpenContext() async {
+        guard let accountID, let session = openSession else { return }
+        do {
+            let context = try await client.context(for: session.sessionID, accountID: accountID)
+            guard self.accountID == accountID, openSession?.sessionID == session.sessionID else { return }
+            openContext = context
+            contextErrorDescription = nil
+        } catch {
+            guard self.accountID == accountID, openSession?.sessionID == session.sessionID else { return }
+            contextErrorDescription = presentable(error)
+        }
+    }
+
+    /// Re-reads the durable artifact index for the open task.
+    ///
+    /// This failure stays local to the Made surface. The conversation and live
+    /// run remain useful when an older deployment does not expose the
+    /// deliverable route, while the UI still explains why Save is unavailable.
+    public func refreshOpenArtifacts() async {
+        guard let accountID, let session = openSession else { return }
+        do {
+            let artifacts = try await client.artifacts(for: session.sessionID, accountID: accountID)
+            guard self.accountID == accountID, openSession?.sessionID == session.sessionID else {
+                return
+            }
+            openArtifacts = artifacts
+            artifactErrorDescription = nil
+        } catch {
+            guard self.accountID == accountID, openSession?.sessionID == session.sessionID else {
+                return
+            }
+            artifactErrorDescription = presentable(error)
+        }
+    }
+
+    /// Expands one artifact's immutable history.
+    public func loadArtifactDetail(_ artifactID: String) async {
+        guard let accountID, let session = openSession,
+            let artifact = openArtifacts.first(where: { $0.artifactID == artifactID }),
+            artifact.sessionID == session.sessionID
+        else { return }
+        do {
+            let detail = try await client.artifact(id: artifact.artifactID, for: accountID)
+            guard self.accountID == accountID, openSession?.sessionID == session.sessionID else {
+                return
+            }
+            artifactDetails[artifact.artifactID] = detail
+            artifactErrorDescription = nil
+        } catch {
+            guard self.accountID == accountID, openSession?.sessionID == session.sessionID else {
+                return
+            }
+            artifactErrorDescription = presentable(error)
+        }
+    }
+
+    /// Fetches verified bytes for a Save panel. SwiftUI owns the panel and
+    /// filename; the model owns authenticated transport and validation headers.
+    public func downloadArtifact(
+        _ artifactID: String,
+        version: Int? = nil
+    ) async -> WorkArtifactDownload? {
+        guard let accountID, let session = openSession,
+            let artifact = openArtifacts.first(where: { $0.artifactID == artifactID }),
+            artifact.sessionID == session.sessionID
+        else { return nil }
+        artifactDownloadID = artifactID
+        defer { artifactDownloadID = nil }
+        do {
+            let download = try await client.downloadArtifact(
+                id: artifact.artifactID, version: version, for: accountID
+            )
+            guard self.accountID == accountID, openSession?.sessionID == session.sessionID else {
+                return nil
+            }
+            artifactErrorDescription = nil
+            return download
+        } catch {
+            guard self.accountID == accountID, openSession?.sessionID == session.sessionID else {
+                return nil
+            }
+            artifactErrorDescription = presentable(error)
+            return nil
+        }
+    }
+
+    /// Applies one explicit context edit and retains the server's timing
+    /// explanation for the thread. The route's field result is the contract:
+    /// removing a file or app may be effective now, while changing the model or
+    /// approval posture is for the next attempt.
+    public func updateOpenContext(_ edit: WorkSessionContextEdit) async -> Bool {
+        guard let accountID, let session = openSession else { return false }
+        isMutating = true
+        defer { isMutating = false }
+        do {
+            let update = try await client.updateContext(
+                sessionID: session.sessionID, edit, for: accountID
+            )
+            guard self.accountID == accountID, openSession?.sessionID == session.sessionID else {
+                return false
+            }
+            openContext = update.context
+            if let updated = update.session {
+                openSession = updated
+                apply(updated)
+            }
+            lastContextChange = update.applied.last
+            contextErrorDescription = nil
+            lastErrorDescription = nil
+            return true
+        } catch {
+            guard self.accountID == accountID, openSession?.sessionID == session.sessionID else {
+                return false
+            }
+            contextErrorDescription = presentable(error)
+            return false
+        }
+    }
 
     private func control(_ kind: JunoWorkCommandKind) async {
         guard let accountID, let runID = openRun?.runID ?? openSession?.currentRunID else { return }
@@ -550,12 +826,13 @@ public final class NativeWorkModel {
     }
 
     /// Replies to a question the open task asked.
-    public func answer(_ text: String) async {
+    @discardableResult
+    public func answer(_ text: String) async -> Bool {
         guard let accountID, let session = openSession, let question = pendingQuestion else {
-            return
+            return false
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return false }
         isMutating = true
         defer { isMutating = false }
         do {
@@ -563,11 +840,59 @@ public final class NativeWorkModel {
                 sessionID: session.sessionID, questionID: question.questionID,
                 text: trimmed, for: accountID
             )
-            guard self.accountID == accountID else { return }
+            guard self.accountID == accountID else { return false }
             lastErrorDescription = nil
+            return true
         } catch {
-            guard self.accountID == accountID else { return }
+            guard self.accountID == accountID else { return false }
             record(error)
+            return false
+        }
+    }
+
+    /// Starts a new attempt for the open task and carries the reader's message
+    /// into it before the executor begins its first turn.
+    ///
+    /// The two requests deliberately mirror the Work web client: `startRun`
+    /// creates the attempt, then the same answer route records the message. The
+    /// start idempotency key is held across a lost response, so retrying cannot
+    /// fork the task into duplicate attempts. Once a run exists, a failed
+    /// message send becomes an ordinary instruction retry against that run.
+    @discardableResult
+    public func startOpenRun(carrying text: String) async -> Bool {
+        guard let accountID, let session = openSession else { return false }
+        guard composerMode == .start || composerMode == .restart else { return false }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        let held = retriableStart
+        let key = held?.text == trimmed ? (held?.key ?? UUID().uuidString) : UUID().uuidString
+        retriableStart = (text: trimmed, key: key)
+        isMutating = true
+        defer { isMutating = false }
+
+        do {
+            let requestedTarget = JunoWorkTarget(rawValue: session.requestedTarget)
+            let run = try await client.startRun(
+                sessionID: session.sessionID,
+                target: requestedTarget == .automatic ? nil : requestedTarget,
+                idempotencyKey: key,
+                for: accountID
+            )
+            guard self.accountID == accountID else { return false }
+            openRun = run
+            retriableStart = nil
+            lastErrorDescription = nil
+
+            // `sendInstruction` is called after the run exists. Its own
+            // composer-mode guard now sees the fresh non-terminal run and
+            // protects this hand-off if the task changes underneath us.
+            let outcome = await sendInstruction(trimmed)
+            return outcome != nil
+        } catch {
+            guard self.accountID == accountID else { return false }
+            record(error)
+            return false
         }
     }
 
@@ -704,6 +1029,13 @@ public final class NativeWorkModel {
             append(detail.events)
             merge(detail.approvals)
             lastErrorDescription = nil
+            do {
+                openContext = try await client.context(for: sessionID, accountID: accountID)
+                contextErrorDescription = nil
+            } catch {
+                contextErrorDescription = presentable(error)
+            }
+            await refreshOpenArtifacts()
         } catch {
             guard self.accountID == accountID, openSession?.sessionID == sessionID else { return }
             record(error)

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened Runtime entitlements for the nested executables inside Juno.app:
+  Juno Helper.app, Juno Helper (GPU).app, Juno Helper (Plugin).app,
+  Juno Helper (Renderer).app, the utilityProcess host that runs the agent host,
+  and node-pty's spawn-helper.
+
+  Entitlements are per-binary, not inherited from the outer bundle — the name
+  "inherit" is electron-builder's, not macOS's. (`com.apple.security.inherit` is
+  an App Sandbox mechanism and does nothing for a non-sandboxed, hardened app,
+  which is why it is not here.) So each exception the helpers need has to be
+  restated, and each one they do not need is left off.
+-->
+<plist version="1.0">
+  <dict>
+
+    <!--
+      REQUIRED, and the reason this file cannot be empty. The renderer helper is
+      where V8 actually runs the app's JavaScript and JIT-compiles it. A
+      renderer signed without this entitlement dies on launch and the window
+      renders blank — the classic symptom of a signed build that was never
+      opened before shipping.
+    -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!--
+      REQUIRED. The utilityProcess that hosts src/agent-host and the main
+      process both dlopen node-pty's prebuilt `.node` binary. Same reasoning as
+      the main entitlements file: prebuilt native modules are not signed by this
+      team, and library validation would refuse to load them.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!--
+      REQUIRED for voice dictation. Chromium captures microphone audio in a
+      helper process, not in the browser process, so the audio-input exception
+      has to be on the helper's signature as well as the app's. The TCC grant
+      itself is attributed to Juno.app as the responsible process; this only
+      satisfies the Hardened Runtime side of the check.
+    -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!--
+      Deliberately absent, for the same reasons documented at length in
+      entitlements.mac.plist: allow-unsigned-executable-memory (Electron 12+
+      does not need it and it widens the attack surface),
+      allow-dyld-environment-variables (nothing here is meant to be injectable),
+      and get-task-allow (debug-only, blocks notarization).
+    -->
+
+  </dict>
+</plist>

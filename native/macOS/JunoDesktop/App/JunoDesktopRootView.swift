@@ -174,6 +174,8 @@ struct JunoDesktopRootView: View {
         }
         configuration.syncModel?.start(for: accountID)
         configuration.attachmentModel?.start(for: accountID)
+        configuration.workAttachmentModel?.start(for: accountID)
+        configuration.workContextAttachmentModel?.start(for: accountID)
         configuration.avatarModel?.start(for: session.profile)
         configuration.searchModel?.start(for: accountID)
         configuration.privateChatModel?.start(for: accountID)
@@ -193,6 +195,7 @@ struct JunoDesktopRootView: View {
             // view would notice nothing until the reader had already gone
             // looking.
             await configuration.workModel?.start(for: accountID)
+            await configuration.workAutomationModel?.start(for: accountID)
         }
         configuration.remoteCodeModel?.start(for: accountID)
         // Registration is presence, not capability — a signed-in Mac saying it
@@ -284,6 +287,8 @@ struct JunoDesktopRootView: View {
     private func stopAuthenticatedModels() {
         configuration.syncModel?.stop()
         configuration.attachmentModel?.stop()
+        configuration.workAttachmentModel?.stop()
+        configuration.workContextAttachmentModel?.stop()
         configuration.avatarModel?.clear()
         configuration.conversationModel?.stop()
         configuration.privateChatModel?.stop()
@@ -297,6 +302,7 @@ struct JunoDesktopRootView: View {
         configuration.remoteCodeModel?.stop()
         configuration.codeHostModel?.stop()
         configuration.workModel?.stop()
+        configuration.workAutomationModel?.stop()
         // Not `stopServingWork()`, which only writes the preference off.
         // Sign-out has to take the claim loop down *without* rewriting the
         // reader's standing decision about this machine, so that signing back
@@ -309,16 +315,9 @@ struct JunoDesktopRootView: View {
 
 private struct JunoDesktopLoadingView: View {
     var body: some View {
-        VStack(spacing: 12) {
-            ProgressView()
-                .controlSize(.small)
-            Text("Preparing Juno…")
-                .font(.callout)
-                .junoSecondaryInk()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.junoCanvasWarm)
-        .accessibilityElement(children: .combine)
+        ProgressView()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.ultraThinMaterial)
     }
 }
 

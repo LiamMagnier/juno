@@ -644,6 +644,29 @@ public final class SessionController {
                     controls: live.subagentControls
                 )
             )
+        } else if contract.behavior == .survey {
+            // Survey is read-only by construction, but it is not merely Ask
+            // with a different label. A repository map benefits from several
+            // independent lenses (architecture, recent changes, and risk) and
+            // DelegateTaskTool already provides bounded, inspectable,
+            // read-only children with the same transcript lifecycle as Code.
+            tools.append(
+                DelegateTaskTool(
+                    model: live.modelClient,
+                    registry: ToolRegistry(
+                        tools: context.registry
+                            .inspectionOnly()
+                            .allTools
+                            .filter { !$0.name.hasPrefix("computer_") }
+                    ),
+                    store: live.store,
+                    workspaceID: workspaceID,
+                    workspaceName: workspaceSurface.displayName,
+                    modelID: contract.modelID,
+                    reasoningEffort: contract.reasoningEffort,
+                    parentSystemPrompt: systemPrompt
+                )
+            )
         }
         let activeHooks = hookDiscoveryResult.hooks.filter {
             hookPolicy.allowedHookIDs.contains($0.id)

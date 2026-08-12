@@ -48,6 +48,14 @@ public enum JunoPreviewEnvironment {
             || ProcessInfo.processInfo.environment["JUNO_PREVIEW_WORK_OVERVIEW"] == "1"
     }
 
+    /// Opens the densest Work thread directly on its Files & cost surface.
+    /// This keeps artifact/version QA deterministic and avoids relying on
+    /// screen-coordinate automation against a resizable macOS window.
+    public static var opensWorkFiles: Bool {
+        CommandLine.arguments.contains("--juno-preview-work-files")
+            || ProcessInfo.processInfo.environment["JUNO_PREVIEW_WORK_FILES"] == "1"
+    }
+
     /// Optional accent override from `--juno-preview-accent <name>` or
     /// `JUNO_PREVIEW_ACCENT`, so each of the five accents can be screenshotted by
     /// relaunching instead of tapping into Settings and back out.

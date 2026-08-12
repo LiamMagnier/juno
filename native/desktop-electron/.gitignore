@@ -1,0 +1,62 @@
+# Juno Desktop (Electron) — workspace-local ignores.
+#
+# The repo root already ignores this workspace's build output by explicit path,
+# which is the convention here for self-contained sub-workspaces (see the same
+# treatment of relay/ and runner/agent-core/ in /.gitignore):
+#
+#   native/desktop-electron/node_modules
+#   native/desktop-electron/out
+#   native/desktop-electron/dist
+#   native/desktop-electron/coverage
+#   native/desktop-electron/test-results
+#   native/desktop-electron/playwright-report
+#
+# The root remains canonical for those. They are restated below scoped to this
+# directory so that build output cannot start appearing in `git status` if the
+# root list is ever reorganised — a restatement of an identical, path-scoped
+# rule, which cannot change behaviour for anything outside this directory.
+#
+# Everything under "Not covered at the root" is only here.
+
+# --- Restated from the root, scoped to this workspace ---
+node_modules/
+out/
+dist/
+coverage/
+test-results/
+playwright-report/
+
+# --- Not covered at the root ---
+
+# Vite's on-disk dependency-optimizer cache. Regenerated on demand; churns.
+.vite/
+.eslintcache
+
+# `tsc --build` writes here (tsconfig.*.json outDir) and drops .tsbuildinfo.
+*.tsbuildinfo
+
+# The conventional suffix for a file that overrides a checked-in one on one
+# machine only: electron-builder.local.yml, dev-app-update.local.yml.
+*.local
+
+# --- Signing and notarization material: never commit ---
+#
+# These are credentials, not configuration. A committed .p8 App Store Connect
+# key or exported .p12 identity is a leaked signing credential — anyone holding
+# it can ship software as this developer, and the fix is revocation plus a
+# re-release, not a `git rm`. Apple credentials reach the build through the
+# environment (APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID) or the
+# login keychain; see scripts/notarize.cjs.
+*.p12
+*.pfx
+*.cer
+*.certSigningRequest
+*.provisionprofile
+*.mobileprovision
+AuthKey_*.p8
+*.p8
+
+# electron-builder's own scratch space and the notarization receipts it leaves
+# beside the artifacts.
+.cache/electron-builder/
+*.blockmap

@@ -18,6 +18,12 @@ struct JunoDesktopConfiguration {
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     let outbox: (any MutationOutboxRepository)?
     let attachmentModel: NativeComposerAttachmentModel?
+    /// Work keeps a separate draft attachment bag so a half-written Chat turn
+    /// cannot follow the reader across the product switch into a task.
+    let workAttachmentModel: NativeComposerAttachmentModel?
+    /// Existing-task context edits get their own bag so adding a file to a
+    /// running task cannot consume or clear a half-written home composition.
+    let workContextAttachmentModel: NativeComposerAttachmentModel?
     let avatarModel: NativeAvatarModel?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let privateChatModel: NativePrivateChatModel?
@@ -40,6 +46,10 @@ struct JunoDesktopConfiguration {
     let codeHostModel: DesktopCodeHostModel?
     /// The account's Work tasks, as this Mac reads them.
     let workModel: NativeWorkModel?
+    /// Durable Work schedules and event triggers. Separate from the session
+    /// model so refreshing automation state never opens or interrupts a live
+    /// task stream.
+    let workAutomationModel: NativeWorkAutomationModel?
     /// The other direction, mirroring `codeHostModel`: whether this Mac serves
     /// Juno Work, and on what terms. Separate from `workModel` for the same
     /// reason Code keeps its two apart — one reads the account's tasks, the
@@ -150,16 +160,17 @@ struct JunoDesktopConfiguration {
             let workUndoLedger = WorkUndoLedger()
             let workGrantStore = DesktopWorkGrantStore(undo: workUndoLedger)
             let workHostModel = DesktopWorkHostModel()
+            let workHostReference = DesktopWorkHostReference(workHostModel)
             let workRelayClient = NativeWorkClient(
                 sender: runtime,
                 streamer: runtime,
                 hostIdentity: { DesktopWorkHostModel.identity() },
-                runCounts: { [weak workHostModel] in
+                runCounts: { [workHostReference] in
                     await MainActor.run {
-                        guard let workHostModel else { return .none }
+                        guard let hostModel = workHostReference.value else { return .none }
                         return WorkHostRunCounts(
-                            active: workHostModel.activeRunCount,
-                            queued: workHostModel.queuedRunCount
+                            active: hostModel.activeRunCount,
+                            queued: hostModel.queuedRunCount
                         )
                     }
                 }
@@ -213,6 +224,12 @@ struct JunoDesktopConfiguration {
                 syncModel: syncModel,
                 outbox: outbox,
                 attachmentModel: NativeComposerAttachmentModel(
+                    client: NativeAttachmentAPIClient(sender: runtime)
+                ),
+                workAttachmentModel: NativeComposerAttachmentModel(
+                    client: NativeAttachmentAPIClient(sender: runtime)
+                ),
+                workContextAttachmentModel: NativeComposerAttachmentModel(
                     client: NativeAttachmentAPIClient(sender: runtime)
                 ),
                 avatarModel: NativeAvatarModel(sender: runtime),
@@ -272,6 +289,9 @@ struct JunoDesktopConfiguration {
                 ),
                 workModel: NativeWorkModel(
                     client: NativeWorkClient(sender: runtime, streamer: runtime)
+                ),
+                workAutomationModel: NativeWorkAutomationModel(
+                    client: NativeWorkAutomationClient(sender: runtime)
                 ),
                 // Constructed unconditionally, unlike the loop it drives: the
                 // model has to exist for Settings to show the switch that is
@@ -334,6 +354,8 @@ struct JunoDesktopConfiguration {
             syncModel: nil,
             outbox: nil,
             attachmentModel: nil,
+            workAttachmentModel: nil,
+            workContextAttachmentModel: nil,
             avatarModel: nil,
             conversationModel: nil,
             privateChatModel: nil,
@@ -348,6 +370,7 @@ struct JunoDesktopConfiguration {
             remoteCodeModel: nil,
             codeHostModel: nil,
             workModel: nil,
+            workAutomationModel: nil,
             workHostModel: nil,
             libraryModel: nil,
             requestSender: nil,

@@ -31,6 +31,18 @@ public actor PreviewSender: NativeChatRequestSending {
     ) async throws -> HTTPResponse {
         sentRequestCount += 1
         if fails { throw URLError(.notConnectedToInternet) }
+        if request.path.hasPrefix("/api/work/artifacts/") && request.path.hasSuffix("/download") {
+            return HTTPResponse(
+                statusCode: 200,
+                headers: try HTTPHeaders([
+                    "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "content-length": String(PreviewWorkFixtures.artifactDownloadBytes.count),
+                    "x-juno-artifact-version": "2",
+                    "x-juno-validated": "true",
+                ]),
+                body: PreviewWorkFixtures.artifactDownloadBytes
+            )
+        }
         return HTTPResponse(
             statusCode: 200,
             headers: try HTTPHeaders(["content-type": "application/json"]),
@@ -87,6 +99,12 @@ public actor PreviewSender: NativeChatRequestSending {
     /// Minimal, valid canned bodies keyed by path so any incidental call from a
     /// real code path decodes cleanly. Never fetched from a server.
     private func cannedBody(for path: String) -> Data {
+        if path == "/api/work/artifacts" {
+            return PreviewWorkFixtures.artifactsBody(sessionID: PreviewWorkFixtures.openSessionID)
+        }
+        if path.hasPrefix("/api/work/artifacts/") {
+            return PreviewWorkFixtures.artifactDetailBody(id: "art-exceptions")
+        }
         if path.hasPrefix("/api/work/hosts") {
             return PreviewWorkFixtures.hostsBody(empty: empty)
         }

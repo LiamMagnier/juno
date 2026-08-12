@@ -63,11 +63,11 @@ final class DesktopWorkGrantStore {
     init(
         defaults: UserDefaults = .standard,
         undo: WorkUndoLedger = WorkUndoLedger(),
-        supportDirectory: URL = DesktopWorkGrantStore.defaultSupportDirectory()
+        supportDirectory: URL? = nil
     ) {
         self.defaults = defaults
         self.undo = undo
-        self.supportDirectory = supportDirectory
+        self.supportDirectory = supportDirectory ?? Self.defaultSupportDirectory()
         records = Self.loadRecords(from: defaults)
         rebuild()
     }

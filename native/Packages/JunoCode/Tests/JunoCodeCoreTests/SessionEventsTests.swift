@@ -120,12 +120,12 @@ final class SessionEventsTests: XCTestCase {
     func testAgentBehaviorRoundTripsAndOldSessionsDefaultToCode() throws {
         let configured = AgentConfiguration(
             modelID: "anthropic:claude-sonnet-5",
-            behavior: .plan
+            behavior: .survey
         )
         let data = try JSONEncoder().encode(configured)
         XCTAssertEqual(
             try JSONDecoder().decode(AgentConfiguration.self, from: data).behavior,
-            .plan
+            .survey
         )
 
         let oldSession = """

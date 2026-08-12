@@ -301,7 +301,7 @@ struct DesktopSettingsScreen: View {
         DesktopSettingsAppearanceTile(
             settings: settings,
             disabled: model.isMutating,
-            update: update
+            update: updateHandler
         )
     }
 
@@ -310,7 +310,7 @@ struct DesktopSettingsScreen: View {
             settings: settings,
             modelCatalog: modelCatalog,
             disabled: model.isMutating,
-            update: update
+            update: updateHandler
         )
     }
 
@@ -319,7 +319,7 @@ struct DesktopSettingsScreen: View {
             settings: settings,
             modelCatalog: modelCatalog,
             disabled: model.isMutating,
-            update: update
+            update: updateHandler
         )
     }
 
@@ -331,7 +331,7 @@ struct DesktopSettingsScreen: View {
             Picker(
                 "Response language",
                 selection: junoSettingsBinding(
-                    settings, \.responseLanguage, update: update
+                    settings, \.responseLanguage, update: updateHandler
                 ) { NativeSettingsPatch(responseLanguage: $0) }
             ) {
                 ForEach(
@@ -362,7 +362,7 @@ struct DesktopSettingsScreen: View {
             Picker(
                 "Interface language",
                 selection: junoSettingsBinding(
-                    settings, \.interfaceLocale, update: update
+                    settings, \.interfaceLocale, update: updateHandler
                 ) { NativeSettingsPatch(interfaceLocale: $0) }
             ) {
                 ForEach(
@@ -387,7 +387,7 @@ struct DesktopSettingsScreen: View {
         DesktopSettingsStyleTile(
             settings: settings,
             disabled: model.isMutating,
-            update: update
+            update: updateHandler
         )
     }
 
@@ -395,7 +395,7 @@ struct DesktopSettingsScreen: View {
         DesktopSettingsInstructionsTile(
             settings: settings,
             disabled: model.isMutating,
-            update: update
+            update: updateHandler
         )
     }
 
@@ -563,7 +563,7 @@ struct DesktopSettingsScreen: View {
                 title: "Budget alerts",
                 detail: "Email me at 80% of my monthly budget.",
                 isOn: junoSettingsBinding(
-                    settings, \.emailBudgetAlerts, update: update
+                    settings, \.emailBudgetAlerts, update: updateHandler
                 ) { NativeSettingsPatch(emailBudgetAlerts: $0) }
             )
             .disabled(model.isMutating)
@@ -575,7 +575,7 @@ struct DesktopSettingsScreen: View {
                 title: "Weekly digest",
                 detail: "Usage recap every Monday.",
                 isOn: junoSettingsBinding(
-                    settings, \.emailWeeklyDigest, update: update
+                    settings, \.emailWeeklyDigest, update: updateHandler
                 ) { NativeSettingsPatch(emailWeeklyDigest: $0) }
             )
             .disabled(model.isMutating)
@@ -627,6 +627,18 @@ struct DesktopSettingsScreen: View {
 
     // MARK: - Plumbing
 
+    /// A sendable main-actor closure for child tiles. The model is main-actor
+    /// isolated, so constructing the handler here keeps that isolation at the
+    /// boundary instead of converting a plain method reference at every tile.
+    private var updateHandler: @MainActor (NativeSettingsPatch) -> Void {
+        let settingsModel = model
+        return { patch in
+            Task { @MainActor in
+                await settingsModel.updateSettings(patch)
+            }
+        }
+    }
+
     private var memoryBinding: Binding<Bool> {
         Binding(
             get: { model.settings?.memoryEnabled ?? true },
@@ -638,6 +650,7 @@ struct DesktopSettingsScreen: View {
         )
     }
 
+    @MainActor
     private func update(_ patch: NativeSettingsPatch) {
         Task { await model.updateSettings(patch) }
     }
@@ -914,7 +927,7 @@ private struct DesktopSettingsSwitchRow: View {
 private func junoSettingsBinding<Value: Equatable & Sendable>(
     _ settings: NativeAccountSettings,
     _ keyPath: KeyPath<NativeAccountSettings, Value> & Sendable,
-    update: @escaping @MainActor @Sendable (NativeSettingsPatch) -> Void,
+    update: @escaping @MainActor (NativeSettingsPatch) -> Void,
     patch: @escaping @Sendable (Value) -> NativeSettingsPatch
 ) -> Binding<Value> {
     Binding(
@@ -974,7 +987,7 @@ private enum DesktopSettingsCatalog {
 private struct DesktopSettingsAppearanceTile: View {
     let settings: NativeAccountSettings
     let disabled: Bool
-    let update: @MainActor @Sendable (NativeSettingsPatch) -> Void
+    let update: @MainActor (NativeSettingsPatch) -> Void
 
     private static let themes: [(value: NativeThemePreference, title: LocalizedStringKey, detail: LocalizedStringKey, symbol: String)] = [
         (.system, "System", "Follows this Mac's appearance.", "circle.lefthalf.filled"),
@@ -1098,7 +1111,7 @@ private struct DesktopSettingsModelTile: View {
     let settings: NativeAccountSettings
     let modelCatalog: [NativeChatModelOption]
     let disabled: Bool
-    let update: @MainActor @Sendable (NativeSettingsPatch) -> Void
+    let update: @MainActor (NativeSettingsPatch) -> Void
 
     @State private var isPresented = false
 
@@ -1211,7 +1224,7 @@ private struct DesktopSettingsFavoritesTile: View {
     let settings: NativeAccountSettings
     let modelCatalog: [NativeChatModelOption]
     let disabled: Bool
-    let update: @MainActor @Sendable (NativeSettingsPatch) -> Void
+    let update: @MainActor (NativeSettingsPatch) -> Void
 
     /// In the account's own order, not the catalog's — the order is the reader's
     /// ranking and reshuffling it on every render would erase that.
@@ -1324,7 +1337,7 @@ private struct DesktopSettingsFavoritesTile: View {
 private struct DesktopSettingsStyleTile: View {
     let settings: NativeAccountSettings
     let disabled: Bool
-    let update: @MainActor @Sendable (NativeSettingsPatch) -> Void
+    let update: @MainActor (NativeSettingsPatch) -> Void
 
     private static let columns = [
         GridItem(.flexible(), spacing: JunoSpace.snug),
@@ -1369,7 +1382,7 @@ private struct DesktopSettingsStyleTile: View {
 private struct DesktopSettingsInstructionsTile: View {
     let settings: NativeAccountSettings
     let disabled: Bool
-    let update: @MainActor @Sendable (NativeSettingsPatch) -> Void
+    let update: @MainActor (NativeSettingsPatch) -> Void
 
     @State private var draft = ""
     /// What the field was last handed by the account record. Compared against the

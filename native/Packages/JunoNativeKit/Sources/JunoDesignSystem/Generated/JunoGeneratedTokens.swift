@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: 8670400e17d08656
+// tokens-digest: d610c115459b6598
 //
 
 import CoreGraphics
@@ -37,37 +37,49 @@ public enum JunoGeneratedColors {
     /// `--accent`
     public static let accent = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.9424, 0.9334, 0.8976),
-        dark: JunoColorToken(unchecked: 0.1908, 0.1865, 0.1692)
+        dark: JunoColorToken(unchecked: 0.1785, 0.1751, 0.1615)
     )
 
     /// `--accent-foreground`
     public static let accentForeground = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.1854, 0.1832, 0.1746),
-        dark: JunoColorToken(unchecked: 0.922, 0.9132, 0.878)
+        dark: JunoColorToken(unchecked: 0.9217, 0.9159, 0.8983)
     )
 
     /// `--background`
     public static let background = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.9754, 0.9743, 0.9646),
-        dark: JunoColorToken(unchecked: 0.0963, 0.0938, 0.0837)
+        dark: JunoColorToken(unchecked: 0.0, 0.0, 0.0)
     )
 
     /// `--border`
     public static let border = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.9076, 0.8966, 0.8524),
-        dark: JunoColorToken(unchecked: 0.2226, 0.2176, 0.1974)
+        dark: JunoColorToken(unchecked: 0.168, 0.1648, 0.152)
     )
 
     /// `--card`
     public static let card = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.9944, 0.9935, 0.9856),
-        dark: JunoColorToken(unchecked: 0.1337, 0.1303, 0.1163)
+        dark: JunoColorToken(unchecked: 0.0683, 0.067, 0.0618)
     )
 
     /// `--card-foreground`
     public static let cardForeground = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.1236, 0.1222, 0.1164),
-        dark: JunoColorToken(unchecked: 0.9468, 0.9401, 0.9132)
+        dark: JunoColorToken(unchecked: 0.9484, 0.9442, 0.9316)
+    )
+
+    /// `--code-number`
+    public static let codeNumber = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.828, 0.4845, 0.092),
+        dark: JunoColorToken(unchecked: 0.96, 0.696, 0.24)
+    )
+
+    /// `--code-string`
+    public static let codeString = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.1848, 0.6552, 0.4357),
+        dark: JunoColorToken(unchecked: 0.34, 0.78, 0.5747)
     )
 
     /// `--destructive`
@@ -91,43 +103,43 @@ public enum JunoGeneratedColors {
     /// `--foreground`
     public static let foreground = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.1236, 0.1222, 0.1164),
-        dark: JunoColorToken(unchecked: 0.9468, 0.9401, 0.9132)
+        dark: JunoColorToken(unchecked: 0.9484, 0.9442, 0.9316)
     )
 
     /// `--hairline`
     public static let hairline = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.2016, 0.193, 0.1584, 0.06),
-        dark: JunoColorToken(unchecked: 0.9468, 0.9401, 0.9132, 0.08)
+        dark: JunoColorToken(unchecked: 0.9484, 0.9442, 0.9316, 0.08)
     )
 
     /// `--input`
     public static let input = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.5864, 0.5638, 0.4736),
-        dark: JunoColorToken(unchecked: 0.4452, 0.4351, 0.3948)
+        dark: JunoColorToken(unchecked: 0.336, 0.3296, 0.304)
     )
 
     /// `--muted`
     public static let muted = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.9615, 0.9577, 0.9385),
-        dark: JunoColorToken(unchecked: 0.1605, 0.1563, 0.1395)
+        dark: JunoColorToken(unchecked: 0.0997, 0.0978, 0.0903)
     )
 
     /// `--muted-foreground`
     public static let mutedForeground = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.416, 0.4096, 0.384),
-        dark: JunoColorToken(unchecked: 0.6559, 0.6455, 0.6041)
+        dark: JunoColorToken(unchecked: 0.6428, 0.6314, 0.5972)
     )
 
     /// `--popover`
     public static let popover = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.9944, 0.9935, 0.9856),
-        dark: JunoColorToken(unchecked: 0.1908, 0.1865, 0.1692)
+        dark: JunoColorToken(unchecked: 0.1365, 0.1339, 0.1235)
     )
 
     /// `--popover-foreground`
     public static let popoverForeground = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.1236, 0.1222, 0.1164),
-        dark: JunoColorToken(unchecked: 0.9468, 0.9401, 0.9132)
+        dark: JunoColorToken(unchecked: 0.9484, 0.9442, 0.9316)
     )
 
     /// `--primary`
@@ -154,52 +166,64 @@ public enum JunoGeneratedColors {
         dark: JunoColorToken(unchecked: 0.7084, 0.3358, 0.2116)
     )
 
-    /// `--scrim`  // no .dark override; light value applies to both
+    /// `--scrim`
     public static let scrim = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.0896, 0.0858, 0.0704, 0.42),
-        dark: JunoColorToken(unchecked: 0.0896, 0.0858, 0.0704, 0.42)
+        dark: JunoColorToken(unchecked: 0.0, 0.0, 0.0, 0.66)
     )
 
     /// `--secondary`
     public static let secondary = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.9615, 0.9577, 0.9385),
-        dark: JunoColorToken(unchecked: 0.1605, 0.1563, 0.1395)
+        dark: JunoColorToken(unchecked: 0.0997, 0.0978, 0.0903)
     )
 
     /// `--secondary-foreground`
     public static let secondaryForeground = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.1854, 0.1832, 0.1746),
-        dark: JunoColorToken(unchecked: 0.922, 0.9132, 0.878)
+        dark: JunoColorToken(unchecked: 0.9217, 0.9159, 0.8983)
+    )
+
+    /// `--shadow-ink`
+    public static let shadowInk = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 0.198, 0.1908, 0.162),
+        dark: JunoColorToken(unchecked: 0.0, 0.0, 0.0)
     )
 
     /// `--sheen`
     public static let sheen = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 1.0, 1.0, 1.0, 0.55),
-        dark: JunoColorToken(unchecked: 0.976, 0.9696, 0.944, 0.06)
+        dark: JunoColorToken(unchecked: 0.968, 0.964, 0.952, 0.055)
+    )
+
+    /// `--sheen-strong`
+    public static let sheenStrong = JunoGeneratedPair(
+        light: JunoColorToken(unchecked: 1.0, 1.0, 1.0, 0.7),
+        dark: JunoColorToken(unchecked: 0.968, 0.964, 0.952, 0.085)
     )
 
     /// `--sidebar`
     public static let sidebar = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.9615, 0.9577, 0.9385),
-        dark: JunoColorToken(unchecked: 0.0825, 0.0795, 0.0675)
+        dark: JunoColorToken(unchecked: 0.0, 0.0, 0.0)
     )
 
     /// `--sidebar-accent`
     public static let sidebarAccent = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.9352, 0.9251, 0.8848),
-        dark: JunoColorToken(unchecked: 0.1512, 0.1467, 0.1288)
+        dark: JunoColorToken(unchecked: 0.1155, 0.1133, 0.1045)
     )
 
     /// `--sidebar-border`
     public static let sidebarBorder = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.9076, 0.8966, 0.8524),
-        dark: JunoColorToken(unchecked: 0.1712, 0.1667, 0.1488)
+        dark: JunoColorToken(unchecked: 0.147, 0.1442, 0.133)
     )
 
     /// `--sidebar-foreground`
     public static let sidebarForeground = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.312, 0.3072, 0.288),
-        dark: JunoColorToken(unchecked: 0.721, 0.7126, 0.679)
+        dark: JunoColorToken(unchecked: 0.6992, 0.6896, 0.6608)
     )
 
     /// `--source`
@@ -349,14 +373,14 @@ public enum JunoGeneratedRadius {
     public static let sm: CGFloat = 4.0
     public static let xs: CGFloat = 6.0
     public static let md: CGFloat = 8.0
-    public static let control: CGFloat = 10.0
-    public static let composerControl: CGFloat = 11.0
-    public static let field: CGFloat = 12.0
-    public static let composerAction: CGFloat = 13.0
-    public static let menu: CGFloat = 14.0
-    public static let card: CGFloat = 16.0
-    public static let popover: CGFloat = 18.0
-    public static let surface: CGFloat = 20.0
-    public static let composer: CGFloat = 22.0
-    public static let panel: CGFloat = 28.0
+    public static let control: CGFloat = 9.0
+    public static let field: CGFloat = 10.0
+    public static let menu: CGFloat = 12.0
+    public static let composerControl: CGFloat = 12.0
+    public static let card: CGFloat = 14.0
+    public static let popover: CGFloat = 14.0
+    public static let composerAction: CGFloat = 14.0
+    public static let surface: CGFloat = 16.0
+    public static let panel: CGFloat = 18.0
+    public static let composer: CGFloat = 26.0
 }

@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened Runtime entitlements for the Juno.app main bundle.
+
+  Every entitlement here weakens a macOS protection, so the list is the set the
+  app demonstrably needs and nothing else. What is ABSENT is as deliberate as
+  what is present; see the notes at the bottom before adding anything.
+
+  Nested helpers (Juno Helper.app, Juno Helper (Renderer).app, GPU, and the
+  utilityProcess host) are signed with entitlements.mac.inherit.plist instead.
+-->
+<plist version="1.0">
+  <dict>
+
+    <!--
+      REQUIRED. V8 compiles JavaScript to machine code at runtime and marks
+      those pages executable, which the Hardened Runtime forbids by default.
+      Without this, the app launches and immediately crashes.
+
+      This is the one entitlement @electron/notarize lists as a hard
+      prerequisite for notarizing an Electron app, and the only runtime
+      exception in @electron/osx-sign's current default Darwin entitlements.
+    -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+
+    <!--
+      REQUIRED (pragmatically). Library validation restricts the process to
+      loading code signed by the same Team ID or by Apple.
+
+      Juno loads node-pty, a native N-API addon whose `.node` binary and
+      `spawn-helper` executable arrive as prebuilt artifacts from npm rather
+      than being built and signed here. electron-builder re-signs binaries it
+      finds in the bundle, but prebuilt native modules are the long-standing
+      exception that breaks under library validation
+      (electron-userland/electron-builder#3940), which is why electron-builder's
+      own default entitlements template still carries this key.
+
+      This is the entitlement most worth trying to drop later. The test is
+      cheap and specific: remove it, produce a signed build, open a terminal
+      pane, and see whether node-pty loads. Do not drop it on the basis that
+      the unsigned local build works — library validation is not enforced there.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!--
+      REQUIRED for voice dictation. Under the Hardened Runtime, microphone
+      access needs BOTH this entitlement and a TCC grant from the user; the
+      entitlement alone grants nothing, and its absence makes the TCC prompt
+      moot. Pairs with NSMicrophoneUsageDescription, set via `mac.extendInfo`
+      in electron-builder.yml — macOS terminates a process that triggers the
+      prompt without a purpose string.
+    -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!--
+      ── Deliberately NOT requested ──────────────────────────────────────────
+
+      com.apple.security.cs.allow-unsigned-executable-memory
+        Needed only by Electron 11 and earlier. @electron/notarize's
+        prerequisites are explicit: "If you are using Electron 11 or below, you
+        must add [it] too. When using version 12+, this entitlement should not
+        be applied as it increases your app's attack surface." This app is on
+        Electron 43. It is also gone from @electron/osx-sign's current defaults.
+        electron-builder's bundled template still includes it — that template is
+        stale, which is exactly why this file is checked in rather than
+        inherited.
+
+      com.apple.security.cs.allow-dyld-environment-variables
+        Lets DYLD_* variables inject code into THIS process. Juno never needs to
+        be affected by them: it spawns agent CLIs, node-pty shells and
+        utilityProcess children as separate processes, each subject to its own
+        signature and its own entitlements. Add this only if Juno itself must
+        run under a profiler or an injected dylib — a development need, not a
+        shipping one. Not in @electron/osx-sign's defaults either.
+
+      Spawning child processes
+        There is no Hardened Runtime entitlement for this, and none is needed.
+        `posix_spawn`/`exec` of node-pty's spawn-helper, of agent CLIs, and of
+        Electron's utilityProcess are unrestricted. What child processes
+        actually require is operational, not declarative: every Mach-O inside
+        the bundle must be signed (electron-builder does this), spawn-helper
+        must keep its executable bit, and native code must be unpacked out of
+        app.asar. All three are handled in electron-builder.yml.
+
+      Screen recording and Accessibility
+        These are TCC permissions granted by the user at runtime in System
+        Settings › Privacy & Security. They are NOT entitlements. There is no
+        `com.apple.security.accessibility`, and no screen-recording entitlement
+        of any spelling — nor is there an Info.plist purpose string for either
+        (NSScreenCaptureUsageDescription and NSAccessibilityUsageDescription do
+        not exist; Apple's property-list reference 404s on both, while
+        NSMicrophoneUsageDescription resolves). Plenty of third-party writing
+        claims otherwise. Inventing plausible-looking keys would assert a
+        control that does not exist, which is strictly worse than the silence,
+        so this paragraph is the record that the absence was decided rather than
+        overlooked.
+
+      com.apple.security.automation.apple-events
+        Only if Juno drives other apps via AppleScript / Apple Events. It does
+        not today. Would also need NSAppleEventsUsageDescription.
+
+      com.apple.security.get-task-allow
+        Debug-only. Must never ship: it lets any process attach a debugger to
+        Juno, and notarization rejects it.
+    -->
+
+  </dict>
+</plist>

@@ -1,0 +1,27 @@
+{
+  /* Main process, preload and agent host. These may touch Node and Electron. */
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node", "electron-vite/node"],
+    "outDir": "./node_modules/.cache/tsc/node",
+    "rootDir": "."
+  },
+  "include": [
+    "src/main/**/*.ts",
+    "src/preload/**/*.ts",
+    "src/agent-host/**/*.ts",
+    /* Providers spawn and talk to agent CLIs over stdio, so they are Node code
+       and belong in this graph — never in `web`, which omits @types/node as a
+       security boundary. */
+    "src/providers/**/*.ts",
+    "src/shared/**/*.ts",
+    "scripts/**/*.ts",
+    "tests/unit/**/*.ts",
+    "tests/integration/**/*.ts",
+    "tests/e2e/**/*.ts",
+    "electron.vite.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ]
+}

@@ -3281,7 +3281,7 @@ private struct DesktopVoiceGlyph: View {
 /// The card, its fallback and its press behaviour are the shared
 /// ``NativeFilePreviewTile`` — the same one the Library screen and the phone's
 /// picker draw, so all three cannot drift into three designs again.
-private struct DesktopLibraryPicker: View {
+struct DesktopLibraryPicker: View {
     @Bindable var model: NativeLibraryModel
     let capacity: Int
     let attach: () async -> Void

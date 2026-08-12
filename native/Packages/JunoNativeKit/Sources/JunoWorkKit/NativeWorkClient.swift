@@ -363,10 +363,23 @@ public struct NativeWorkClient: Sendable {
         title: String? = nil,
         target: JunoWorkTarget = .automatic,
         preferredHostID: String? = nil,
+        model: String? = nil,
+        reasoningEffort: String? = nil,
+        attachmentIDs: [String]? = nil,
+        connectorIDs: [String]? = nil,
+        permissionPolicy: JunoWorkPermissionPolicy? = nil,
         idempotencyKey: String,
         for accountID: AccountID
     ) async throws -> WorkSessionSummary {
         if let preferredHostID { try validate(preferredHostID) }
+        if let model { try validate(model) }
+        if let reasoningEffort { try validate(reasoningEffort) }
+        if let attachmentIDs {
+            for attachmentID in attachmentIDs { try validate(attachmentID) }
+        }
+        if let connectorIDs {
+            for connectorID in connectorIDs { try validate(connectorID) }
+        }
         var body: [String: JunoJSONValue] = [
             "goal": .string(goal),
             "requestedTarget": .string(target.rawValue),
@@ -374,6 +387,17 @@ public struct NativeWorkClient: Sendable {
         ]
         if let title { body["title"] = .string(title) }
         if let preferredHostID { body["preferredHostId"] = .string(preferredHostID) }
+        if let model { body["model"] = .string(model) }
+        if let reasoningEffort { body["reasoningEffort"] = .string(reasoningEffort) }
+        if let attachmentIDs {
+            body["attachmentIds"] = .array(attachmentIDs.map { .string($0) })
+        }
+        if let connectorIDs {
+            body["connectorIds"] = .array(connectorIDs.map { .string($0) })
+        }
+        if let permissionPolicy {
+            body["permissionPolicy"] = .string(permissionPolicy.rawValue)
+        }
         let response = try await send(
             .post, "/api/work/sessions", body: .object(body), for: accountID
         )
@@ -389,6 +413,83 @@ public struct NativeWorkClient: Sendable {
             run: try decodeOptionalRun(root["run"]),
             events: try decodeEventList(root["events"]),
             approvals: try decodeApprovalList(root["approvals"])
+        )
+    }
+
+    // MARK: - Artifacts
+
+    /// Reads the durable deliverables attached to one task.
+    ///
+    /// The event log remains useful for a live run, but it is not a file
+    /// catalogue: an event can arrive before the object is stored, an update
+    /// can replace an earlier version, and a reconnect can replay it. The
+    /// artifact route is the authoritative source for actions such as Save.
+    public func artifacts(
+        for sessionID: String,
+        accountID: AccountID
+    ) async throws -> [WorkArtifactSummary] {
+        try validate(sessionID)
+        let response = try await get(
+            "/api/work/artifacts",
+            query: [URLQueryItem(name: "sessionId", value: sessionID)],
+            for: accountID
+        )
+        guard let root = try decodeObject(response), case .array(let items)? = root["artifacts"]
+        else { throw WorkRemoteError.malformedResponse }
+        return try items.map(decodeArtifact)
+    }
+
+    /// Reads one artifact and its bounded immutable version history.
+    public func artifact(
+        id: String,
+        for accountID: AccountID
+    ) async throws -> WorkArtifactDetail {
+        try validate(id)
+        let response = try await get("/api/work/artifacts/\(id)", for: accountID)
+        guard let root = try decodeObject(response),
+            let rawArtifact = root["artifact"],
+            case .array(let rawVersions)? = root["versions"]
+        else { throw WorkRemoteError.malformedResponse }
+        return WorkArtifactDetail(
+            artifact: try decodeArtifact(rawArtifact),
+            versions: try rawVersions.map(decodeArtifactVersion),
+            warning: root["warning"]?.stringValue,
+            historyTruncated: root["truncated"]?.boolValue ?? false
+        )
+    }
+
+    /// Downloads bytes only after the authenticated route has verified their
+    /// recorded SHA-256. The app still keeps the route's validation headers so
+    /// the save UI can warn when a file was served by explicit user request but
+    /// never passed the validator.
+    public func downloadArtifact(
+        id: String,
+        version: Int? = nil,
+        for accountID: AccountID
+    ) async throws -> WorkArtifactDownload {
+        try validate(id)
+        if let version, version < 1 { throw WorkRemoteError.invalidIdentifier }
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/work/artifacts/\(id)/download",
+                queryItems: version.map { [URLQueryItem(name: "version", value: String($0))] } ?? [],
+                headers: try HTTPHeaders(["accept": "application/octet-stream"])
+            ),
+            for: accountID
+        )
+        try requireSuccess(response)
+        guard let rawVersion = response.headers["x-juno-artifact-version"],
+            let resolvedVersion = Int(rawVersion), resolvedVersion > 0
+        else { throw WorkRemoteError.malformedResponse }
+        let contentType = response.headers["content-type"]
+        let validated = response.headers["x-juno-validated"] == "true"
+        return WorkArtifactDownload(
+            artifactID: id,
+            version: resolvedVersion,
+            bytes: response.body,
+            contentType: contentType,
+            validated: validated,
+            validationWarning: response.headers["x-juno-validation-warning"]
         )
     }
 
@@ -408,6 +509,76 @@ public struct NativeWorkClient: Sendable {
         return try decodeSession(try require(response, named: "session"))
     }
 
+    /// Reads the task's durable model, app scope, approval posture and files.
+    ///
+    /// The session list intentionally omits join-table context, so a thread
+    /// must make this explicit read before drawing switches. An absent
+    /// `connectorIds` is preserved as unknown; it is not turned into an empty
+    /// array that would look like a task with no app access.
+    public func context(
+        for sessionID: String,
+        accountID: AccountID
+    ) async throws -> WorkSessionContext {
+        try validate(sessionID)
+        let response = try await get(
+            "/api/work/sessions/\(sessionID)/context", for: accountID
+        )
+        guard let root = try decodeObject(response),
+            let context = root["context"]
+        else { throw WorkRemoteError.malformedResponse }
+        return try decodeContext(context)
+    }
+
+    /// Changes an existing task's context and returns the server's timing
+    /// verdicts. A model or approval change applies to the next attempt; taking
+    /// an app or file away may apply immediately, so the UI must show the
+    /// returned explanation rather than guessing from the control it pressed.
+    public func updateContext(
+        sessionID: String,
+        _ edit: WorkSessionContextEdit,
+        for accountID: AccountID
+    ) async throws -> WorkSessionContextUpdate {
+        try validate(sessionID)
+        var body: [String: JunoJSONValue] = [:]
+        if let model = edit.model {
+            try validate(model)
+            body["model"] = .string(model)
+        }
+        switch edit.reasoningEffort {
+        case .unchanged:
+            break
+        case .set(let effort):
+            try validate(effort)
+            body["reasoningEffort"] = .string(effort)
+        case .clear:
+            body["reasoningEffort"] = .null
+        }
+        if let permissionPolicy = edit.permissionPolicy {
+            body["permissionPolicy"] = .string(permissionPolicy.rawValue)
+        }
+        if let connectorIDs = edit.connectorIDs {
+            for connectorID in connectorIDs { try validate(connectorID) }
+            body["connectorIds"] = .array(connectorIDs.map { .string($0) })
+        }
+        if let attachmentIDs = edit.attachmentIDs {
+            for attachmentID in attachmentIDs { try validate(attachmentID) }
+            body["attachmentIds"] = .array(attachmentIDs.map { .string($0) })
+        }
+        guard !body.isEmpty else { throw WorkRemoteError.malformedResponse }
+
+        let response = try await send(
+            .patch, "/api/work/sessions/\(sessionID)/context",
+            body: .object(body), for: accountID
+        )
+        guard let root = try decodeObject(response), let context = root["context"]
+        else { throw WorkRemoteError.malformedResponse }
+        return WorkSessionContextUpdate(
+            context: try decodeContext(context),
+            session: try decodeOptionalSession(root["session"]),
+            applied: decodeContextResults(root["applied"] ?? root["changes"] ?? root["fields"])
+        )
+    }
+
     public func deleteSession(id: String, for accountID: AccountID) async throws {
         try validate(id)
         _ = try await send(.delete, "/api/work/sessions/\(id)", body: nil, for: accountID)
@@ -425,12 +596,22 @@ public struct NativeWorkClient: Sendable {
     public func startRun(
         sessionID: String,
         target: JunoWorkTarget? = nil,
+        model: String? = nil,
+        reasoningEffort: String? = nil,
         idempotencyKey: String,
         for accountID: AccountID
     ) async throws -> WorkRunSummary {
         try validate(sessionID)
         var body: [String: JunoJSONValue] = ["idempotencyKey": .string(idempotencyKey)]
         if let target { body["requestedTarget"] = .string(target.rawValue) }
+        if let model {
+            try validate(model)
+            body["model"] = .string(model)
+        }
+        if let reasoningEffort {
+            try validate(reasoningEffort)
+            body["reasoningEffort"] = .string(reasoningEffort)
+        }
         let response = try await send(
             .post, "/api/work/sessions/\(sessionID)/runs", body: .object(body), for: accountID
         )
@@ -889,6 +1070,10 @@ public struct NativeWorkClient: Sendable {
             effectiveTarget: object["effectiveTarget"]?.stringValue,
             hostID: object["hostId"]?.stringValue ?? object["preferredHostId"]?.stringValue,
             hostDisplayName: object["hostDisplayName"]?.stringValue,
+            requestedModel: object["requestedModel"]?.stringValue,
+            reasoningEffort: object["reasoningEffort"]?.stringValue,
+            permissionPolicy: object["permissionPolicy"]?.stringValue
+                .flatMap(JunoWorkPermissionPolicy.init(rawValue:)),
             pinned: object["pinned"]?.boolValue ?? false,
             archived: object["archived"]?.boolValue ?? false,
             lastActivityAt: lastActivityAt,
@@ -900,6 +1085,110 @@ public struct NativeWorkClient: Sendable {
     private func decodeOptionalSession(_ value: JunoJSONValue?) throws -> WorkSessionSummary? {
         guard case .object(let object)? = value else { return nil }
         return try decodeSession(.object(object))
+    }
+
+    private func decodeArtifact(_ value: JunoJSONValue) throws -> WorkArtifactSummary {
+        guard case .object(let object) = value,
+            case .string(let artifactID)? = object["id"],
+            case .string(let sessionID)? = object["sessionId"],
+            case .string(let identifier)? = object["identifier"],
+            case .string(let title)? = object["title"],
+            case .string(let rawKind)? = object["kind"],
+            case .string(let mimeType)? = object["mimeType"],
+            let createdAt = object["createdAt"]?.date,
+            let updatedAt = object["updatedAt"]?.date
+        else { throw WorkRemoteError.malformedResponse }
+        return WorkArtifactSummary(
+            artifactID: artifactID,
+            sessionID: sessionID,
+            identifier: identifier,
+            title: title,
+            kind: JunoWorkArtifactKind(rawValue: rawKind) ?? .bundle,
+            mimeType: mimeType,
+            currentVersion: max(1, integer(object["currentVersion"])),
+            validatedAt: object["validatedAt"]?.date,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+
+    private func decodeArtifactVersion(_ value: JunoJSONValue) throws -> WorkArtifactVersion {
+        guard case .object(let object) = value,
+            let createdAt = object["createdAt"]?.date
+        else { throw WorkRemoteError.malformedResponse }
+        let version = integer(object["version"])
+        guard version > 0 else { throw WorkRemoteError.malformedResponse }
+        let provenance: [WorkArtifactProvenance] = {
+            guard case .array(let entries)? = object["provenance"] else { return [] }
+            return entries.compactMap { entry in
+                guard case .object(let source) = entry,
+                    let kind = source["kind"]?.stringValue,
+                    let label = source["label"]?.stringValue,
+                    !kind.isEmpty, !label.isEmpty
+                else { return nil }
+                return WorkArtifactProvenance(
+                    kind: kind, label: label, url: source["url"]?.stringValue
+                )
+            }
+        }()
+        let validated: Bool = {
+            guard case .object(let validation)? = object["validation"] else { return false }
+            return validation["ok"]?.boolValue == true
+        }()
+        return WorkArtifactVersion(
+            version: version,
+            byteSize: max(0, integer(object["byteSize"])),
+            contentHash: object["contentHash"]?.stringValue ?? "",
+            origin: object["origin"]?.stringValue ?? "generated",
+            runID: object["runId"]?.stringValue,
+            validated: validated,
+            provenance: provenance,
+            createdAt: createdAt
+        )
+    }
+
+    private func decodeContext(_ value: JunoJSONValue) throws -> WorkSessionContext {
+        guard case .object(let object) = value else { throw WorkRemoteError.malformedResponse }
+        let attachments: [WorkSessionAttachment] = {
+            guard case .array(let items)? = object["attachments"] else { return [] }
+            return items.compactMap { item in
+                guard case .object(let attachment) = item,
+                    let id = attachment["id"]?.stringValue,
+                    let displayName = attachment["displayName"]?.stringValue,
+                    !id.isEmpty, !displayName.isEmpty
+                else { return nil }
+                return WorkSessionAttachment(attachmentID: id, displayName: displayName)
+            }
+        }()
+        let connectorIDs: [String]? = {
+            guard case .array(let items)? = object["connectorIds"] else { return nil }
+            return items.compactMap(\.stringValue)
+        }()
+        return WorkSessionContext(
+            projectID: object["projectId"]?.stringValue,
+            model: object["model"]?.stringValue,
+            reasoningEffort: object["reasoningEffort"]?.stringValue,
+            permissionPolicy: object["permissionPolicy"]?.stringValue
+                .flatMap(JunoWorkPermissionPolicy.init(rawValue:)),
+            connectorIDs: connectorIDs,
+            attachments: attachments,
+            skillSlug: object["skillSlug"]?.stringValue
+        )
+    }
+
+    private func decodeContextResults(_ value: JunoJSONValue?) -> [WorkContextFieldResult] {
+        guard case .array(let items)? = value else { return [] }
+        return items.compactMap { item in
+            guard case .object(let object) = item,
+                let field = object["field"]?.stringValue,
+                let change = object["change"]?.stringValue,
+                let effect = object["effect"]?.stringValue,
+                let explanation = object["explanation"]?.stringValue
+            else { return nil }
+            return WorkContextFieldResult(
+                field: field, change: change, effect: effect, explanation: explanation
+            )
+        }
     }
 
     private func decodeRun(_ value: JunoJSONValue) throws -> WorkRunSummary {

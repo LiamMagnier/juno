@@ -30,9 +30,9 @@ private enum DesktopCodeInspectorMetrics {
 ///
 /// This is byte-for-byte the shell ``DesktopChatWorkspace`` uses — a
 /// `NavigationSplitView` whose sidebar is `.junoSidebarColumn()` and whose detail
-/// is `.junoReadingCanvas()` plus `.navigationTitle`, `.navigationSubtitle`,
-/// `.toolbar` and `.inspector(isPresented:)` — so Chat and Code stop being two
-/// different applications sharing a window.
+/// is `.junoReadingCanvas()` plus `.navigationTitle`, `.toolbar` and
+/// `.inspector(isPresented:)` — so Chat and Code stop being two different
+/// applications sharing a window.
 ///
 /// Three stability constraints are honoured deliberately, because `.inspector`
 /// and the window toolbar are both `NSSplitViewItem`-backed and that is the
@@ -239,56 +239,27 @@ struct DesktopCodeWorkspace: View {
             )
             .junoSidebarColumn()
         } detail: {
-            // Both web preview and the Apple simulator are real sibling panes,
-            // never a second `.inspector`. They are mutually exclusive: each
-            // needs a readable trailing column, and stacking two overlays would
-            // turn the right side into two competing resize handles.
-            DesktopCodePreviewDock(
-                target: previewTarget,
-                close: closePreview,
-                openInWindow: {
-                    guard let previewTarget else { return }
-                    openPreviewWindow(previewTarget)
-                }
-            ) {
-                DesktopSimulatorDock(
-                    model: simulatorHost.isOpen ? simulatorHost.model : nil,
-                    close: { withAnimation(JunoMotion.fast) { simulatorHost.closePane() } }
-                ) {
-                    detail
+            VStack(spacing: 0) {
+                editorCanvas
+
+                // The persistent shell terminal is a sibling of the reading
+                // canvas, so it can be resized or dismissed without changing
+                // the transcript's own layout contract.
+                if consoleVisible {
+                    DesktopTerminalView(host: DesktopTerminalHost.shared)
+                        .frame(height: 250)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
-                .junoReadingCanvas()
-                .navigationTitle("")
-                // No `.navigationSubtitle`.
-                //
-                // It restated what the detail column already shows in its own header
-                // one line below — the same path, the same "Folder"/"Git repository"
-                // — so the window said it twice. It also made the titlebar two lines
-                // tall, which is what pushed the leading title block wide enough to
-                // shove the `.principal` product switcher off centre — a symptom the
-                // switch's move to the sidebar has taken away, and the reason to
-                // leave it out that has not moved is the first one.
-                .toolbar { detailToolbar }
-                // The search field belongs to the **detail** column, not to the
-                // split view and not to the sidebar.
-                //
-                // Attached to either of those, macOS 27 gives the search field
-                // the leading column's titlebar safe area — the source list then
-                // starts at the very top of the window and its first rows are
-                // drawn behind the toolbar and under the traffic lights, which
-                // is exactly what the Code sidebar was doing. The Chat window has
-                // never had a `.searchable` of its own and has never had the
-                // problem; this puts Code on the same footing. `placement:
-                // .toolbar` still renders it in the same place on screen, and the
-                // text it drives is the workbench's, so what it filters is
-                // unchanged.
-                .searchable(
-                    text: sessionSearchText,
-                    placement: .toolbar,
-                    prompt: "Search sessions"
-                )
-                .searchFocused($sidebarSearchFocused)
+            .junoReadingCanvas()
+            .navigationTitle("")
+            .toolbar { detailToolbar }
+            .searchable(
+                text: sessionSearchText,
+                placement: .toolbar,
+                prompt: "Search sessions"
+            )
+            .searchFocused($sidebarSearchFocused)
         }
         // `.inspector` goes on the split view, **not** on the detail column.
         //
@@ -427,6 +398,82 @@ struct DesktopCodeWorkspace: View {
         }
         .onChange(of: columnVisibility) { _, visibility in
             storedColumnVisibility = visibility == .detailOnly ? "detailOnly" : "all"
+        }
+    }
+
+    private var editorCanvas: some View {
+        VStack(spacing: 0) {
+            if shouldShowContextStrip {
+                DesktopCodeContextStrip(
+                    title: contextTitle,
+                    subtitle: contextSubtitle,
+                    status: currentStatus,
+                    showsPreview: previewTarget != nil
+                )
+                Divider()
+                    .overlay(Color.junoSeparator)
+            }
+
+            DesktopCodePreviewDock(
+                target: previewTarget,
+                close: closePreview,
+                openInWindow: {
+                    guard let previewTarget else { return }
+                    openPreviewWindow(previewTarget)
+                }
+            ) {
+                DesktopSimulatorDock(
+                    model: simulatorHost.isOpen ? simulatorHost.model : nil,
+                    close: {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                            simulatorHost.closePane()
+                        }
+                    }
+                ) {
+                    detail
+                }
+            }
+        }
+    }
+
+    private var shouldShowContextStrip: Bool {
+        switch selection.wrappedValue {
+        case .session, .task, .remote:
+            true
+        default:
+            false
+        }
+    }
+
+    private var contextTitle: String {
+        switch selection.wrappedValue {
+        case .session(let id):
+            return workbenchModel.sessions.first { $0.id == id }?.title ?? "Code session"
+        case .task:
+            return selectedTask?.title ?? "Remote task"
+        case .remote:
+            return selectedRemoteSummary?.title ?? "Remote session"
+        default:
+            return "Juno Code"
+        }
+    }
+
+    private var contextSubtitle: String {
+        switch selection.wrappedValue {
+        case .session(let id):
+            guard let session = workbenchModel.sessions.first(where: { $0.id == id }) else {
+                return "Local workspace"
+            }
+            guard let workspaceID = session.workspaceID,
+                  let workspace = workbenchModel.workspaces.first(where: { $0.id == workspaceID })
+            else { return "Local workspace" }
+            return workspace.descriptor.displayName
+        case .task:
+            return selectedTask?.whereItRuns ?? "Cloud or connected device"
+        case .remote:
+            return selectedRemoteSummary?.workspaceName ?? "Connected computer"
+        default:
+            return ""
         }
     }
 
@@ -1014,6 +1061,20 @@ struct DesktopCodeWorkspace: View {
         }
 
         ToolbarItemGroup(placement: .primaryAction) {
+            Button { openPreview() } label: {
+                Label(
+                    previewTarget == nil ? "Preview" : "Hide preview",
+                    systemImage: previewTarget == nil
+                        ? "rectangle.on.rectangle"
+                        : "rectangle.on.rectangle.slash"
+                )
+            }
+            .tint(previewTarget == nil ? nil : Color.junoAccent)
+            .keyboardShortcut("p", modifiers: [.command, .option])
+            .help(previewTarget == nil ? "Open the live workspace preview" : "Hide the live workspace preview")
+            .accessibilityIdentifier("juno.code.preview.primary")
+            .disabled(controller?.context == nil)
+
             Button { consoleVisible.toggle() } label: {
                 Image(systemName: "terminal")
             }
@@ -1070,7 +1131,6 @@ struct DesktopCodeWorkspace: View {
                             : "rectangle.on.rectangle.slash"
                     )
                 }
-                .keyboardShortcut("p", modifiers: [.command, .option])
                 .disabled(controller?.context == nil)
                 .accessibilityIdentifier("juno.code.preview")
 
@@ -1983,6 +2043,69 @@ private struct DesktopCodeRemoteCanvas: View {
         guard canSend, !text.isEmpty else { return }
         message = ""
         Task { await remote.send(deviceID: deviceID, sessionID: sessionID, text: text) }
+    }
+}
+
+/// A quiet context strip for an active Code surface.
+///
+/// The toolbar owns actions; this strip owns orientation. Keeping the project,
+/// session and run state beside the transcript prevents the reader from having
+/// to infer which of several local, cloud or device rows is currently open.
+private struct DesktopCodeContextStrip: View {
+    let title: String
+    let subtitle: String
+    let status: CodeRunStatus?
+    let showsPreview: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: JunoSpace.cozy) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("JUNO CODE")
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .tracking(1.1)
+                    .foregroundStyle(Color.junoMutedForeground)
+
+                Text(title)
+                    .font(.headline)
+                    .lineLimit(1)
+
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .junoSecondaryInk()
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: JunoSpace.regular)
+
+            HStack(spacing: JunoSpace.snug) {
+                if showsPreview {
+                    Label("Preview live", systemImage: "dot.radiowaves.left.and.right")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.junoSuccess)
+                }
+
+                if let status {
+                    HStack(spacing: JunoSpace.tight) {
+                        Circle()
+                            .fill(status.tint)
+                            .frame(width: 7, height: 7)
+                        Text(status.label)
+                            .font(.caption.weight(.medium))
+                    }
+                    .padding(.horizontal, JunoSpace.snug)
+                    .padding(.vertical, JunoSpace.tight)
+                    .junoCard(cornerRadius: JunoRadius.chip)
+                }
+            }
+        }
+        .padding(.horizontal, JunoSpace.region)
+        .padding(.vertical, JunoSpace.cozy)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.junoCanvas)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("juno.code.context-strip")
     }
 }
 

@@ -98,6 +98,7 @@ struct JunoDesktopApp: App {
         .windowResizability(.contentMinSize)
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
+        .windowBackgroundDragBehavior(.enabled)
         .commands {
             JunoDesktopCommands()
         }

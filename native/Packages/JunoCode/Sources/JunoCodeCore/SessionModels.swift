@@ -174,10 +174,14 @@ public enum ReasoningEffort: String, Codable, CaseIterable, Sendable {
 }
 
 /// What the local agent is allowed and instructed to do during the session.
-/// Ask and Plan are read-only by construction; Code can make checkpointed,
-/// permission-gated changes.
+/// Ask, Survey and Plan are read-only by construction; Code can make
+/// checkpointed, permission-gated changes. Survey is intentionally distinct
+/// from Ask: it is a reconnaissance contract for mapping a repository before
+/// somebody commits to an implementation, and may use bounded read-only
+/// delegation to parallelize that map.
 public enum AgentBehavior: String, Codable, CaseIterable, Sendable {
     case ask
+    case survey
     case plan
     case code
 }

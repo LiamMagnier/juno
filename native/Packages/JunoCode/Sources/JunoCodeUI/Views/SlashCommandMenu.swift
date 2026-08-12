@@ -112,6 +112,7 @@ extension AgentBehavior {
     var slashMenuLabel: String {
         switch self {
         case .ask: "Ask"
+        case .survey: "Survey"
         case .plan: "Plan"
         case .code: "Code"
         }

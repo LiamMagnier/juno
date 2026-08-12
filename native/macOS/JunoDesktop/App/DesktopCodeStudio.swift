@@ -1513,6 +1513,14 @@ struct DesktopCodeDraftDetail: View {
                     icon: "list.bullet"
                 ),
                 LaunchIntent(
+                    id: "survey",
+                    title: "Survey a project",
+                    detail: "Map the codebase first",
+                    prompt: "Survey this project: map its entry points, main modules, runtime boundaries, recent changes, and highest-risk unknowns. Use read-only inspection and cite the evidence.",
+                    behavior: .survey,
+                    icon: "scope"
+                ),
+                LaunchIntent(
                     id: "draft",
                     title: "Draft a feature",
                     detail: "Start from an outcome",
@@ -1539,6 +1547,14 @@ struct DesktopCodeDraftDetail: View {
                 prompt: "Explain the architecture of this project, its main entry points, and where a new contributor should start.",
                 behavior: .ask,
                 icon: "text.book.closed"
+            ),
+            LaunchIntent(
+                id: "survey-project",
+                title: "Survey the codebase",
+                detail: "Map boundaries and risks",
+                prompt: "Survey this project: map its entry points, main modules, runtime boundaries, recent changes, and highest-risk unknowns. Use read-only inspection and cite the evidence.",
+                behavior: .survey,
+                icon: "scope"
             ),
             LaunchIntent(
                 id: "review",
@@ -1724,7 +1740,7 @@ struct DesktopCodeDraftDetail: View {
             Button(action: addProject) {
                 JunoIconLabel(verbatim: "Open a Project…", icon: .projects, size: 13)
             }
-            .buttonStyle(.bordered)
+            .junoGlassButton()
             .keyboardShortcut("o", modifiers: [.command])
             .accessibilityIdentifier("juno.code.draft-open-project")
         }
@@ -1817,7 +1833,7 @@ struct DesktopCodeDraftDetail: View {
                     .junoSecondaryInk()
                     .frame(width: 28, height: 28)
             }
-            .buttonStyle(.borderless)
+            .junoGlassButton()
             .help("Show this repository in Finder")
             .accessibilityLabel("Show repository in Finder")
             .accessibilityIdentifier("juno.code.show-in-finder")
@@ -2536,9 +2552,10 @@ struct DesktopCodeDraftDetail: View {
             .buttonStyle(.plain)
             .junoGlass(
                 in: Circle(),
-                tint: Color.primary.opacity(canSend ? 0.14 : 0.04),
+                tint: canSend ? Color.junoAccent : nil,
                 interactive: true
             )
+            .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
             .disabled(!canSend)
             .help("Start this task (Return)")
             .accessibilityLabel("Start task")

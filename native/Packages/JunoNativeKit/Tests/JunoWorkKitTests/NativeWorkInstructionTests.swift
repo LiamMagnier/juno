@@ -252,9 +252,9 @@ final class NativeWorkInstructionTests: XCTestCase {
         }
     }
 
-    /// A finished attempt takes nothing, and the sentence has to say so rather
-    /// than leave a box that produces a 409.
-    func testAFinishedAttemptIsClosed() {
+    /// A finished attempt keeps the thread actionable. Sending from it starts a
+    /// new attempt for the same task and carries the message into that attempt.
+    func testAFinishedAttemptOffersAHealthyRestartPath() {
         for status in [
             "completed", "failed", "cancelled", "interrupted", "host_offline",
             "budget_exceeded", "timed_out",
@@ -262,34 +262,28 @@ final class NativeWorkInstructionTests: XCTestCase {
             let mode = NativeWorkModel.composerMode(
                 session: session(status: status), run: run(status: status), question: nil
             )
-            guard case .closed(let reason) = mode else {
-                return XCTFail("\(status) must not take an instruction, got \(mode)")
-            }
-            XCTAssertFalse(reason.isEmpty, status)
+            XCTAssertEqual(mode, .restart, status)
         }
     }
 
-    /// A status this build cannot name is treated as finished, matching
-    /// `displayStatus(of:)` and the server's own fallback. Erring the other way
-    /// offers a box on a task whose state nobody here can describe.
-    func testAnUnreadableStatusIsClosedRatherThanOpen() {
+    /// A status this build cannot name is treated as interrupted, matching
+    /// `displayStatus(of:)` and the server's own fallback. A restart remains
+    /// safe because the server is authoritative about whether it can dispatch
+    /// another attempt.
+    func testAnUnreadableStatusOffersAHealthyRestartPath() {
         let mode = NativeWorkModel.composerMode(
             session: session(status: "reticulating"), run: nil, question: nil
         )
-        guard case .closed = mode else { return XCTFail("expected closed, got \(mode)") }
+        XCTAssertEqual(mode, .restart)
     }
 
-    /// A draft has no attempt for an instruction to join. The route says the
-    /// same thing with a 409, and saying it here means the box is never offered
-    /// for one.
-    func testADraftIsClosed() {
+    /// A draft has no attempt for an instruction to join, so its first message
+    /// starts the task and is carried into the new run.
+    func testADraftOffersAStartPath() {
         let mode = NativeWorkModel.composerMode(
             session: session(status: "draft", currentRunID: nil), run: nil, question: nil
         )
-        guard case .closed(let reason) = mode else {
-            return XCTFail("expected closed, got \(mode)")
-        }
-        XCTAssertTrue(reason.contains("draft"))
+        XCTAssertEqual(mode, .start)
     }
 
     /// The moment between opening a task and its detail arriving. `openRun` is

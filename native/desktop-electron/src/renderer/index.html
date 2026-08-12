@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Juno</title>
+
+    <!--
+      No <meta http-equiv="Content-Security-Policy"> here on purpose.
+
+      The policy is served as a response header by main (see
+      `CONTENT_SECURITY_POLICY` in src/main/security.ts). A meta policy would be
+      *intersected* with it rather than replacing it, so the effective policy
+      would become whichever of the two is stricter at every directive — which
+      means a tightening in main could be silently undone, and a mistake here
+      could break the app in a way no one would think to look for in HTML.
+      One policy, one place.
+
+      Consequences worth knowing while working in this file:
+        - `script-src 'self'` with no 'unsafe-inline'. There is no inline
+          bootstrap script; the first-paint theme is applied by main.tsx before
+          the React root mounts.
+        - `connect-src 'self'`. The renderer cannot originate network traffic.
+          Everything privileged goes through window.juno.
+    -->
+  </head>
+
+  <!--
+    `overflow-hidden` belongs to the shell, not to the stylesheet: this document
+    is a fixed-size application window whose panes scroll internally, and a
+    scrolling <body> under a `hiddenInset` title bar detaches the traffic lights
+    from the content they sit on.
+  -->
+  <body class="h-full overflow-hidden">
+    <div id="root" class="h-full"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

@@ -1,10 +1,13 @@
 import JunoAuth
+import JunoChatKit
 import JunoCore
 import JunoDesignSystem
+import AppKit
 #if DEBUG
 import JunoPreviewSupport
 #endif
 import JunoWorkKit
+import UniformTypeIdentifiers
 import SwiftUI
 
 /// The Juno Work window: a source list of tasks, and the thread of one of them.
@@ -51,6 +54,7 @@ struct DesktopWorkWorkspace: View {
     let newChat: () -> Void
 
     @SceneStorage("juno.desktop.work.selection") private var storedSessionID = ""
+    @SceneStorage("juno.desktop.work.automation-selection") private var storedAutomationSelection = false
     @SceneStorage("juno.desktop.work.columns") private var storedColumnVisibility = ""
     /// Chat's destination, which this window writes and never reads.
     ///
@@ -75,6 +79,17 @@ struct DesktopWorkWorkspace: View {
     /// composer so opening a task and coming back does not throw away a
     /// half-written sentence.
     @State private var composerDraft = ""
+    /// The model and thinking depth are task-scoped preferences. They stay in
+    /// the overview while the reader visits an existing task, then are applied
+    /// to the next composition as one explicit run contract.
+    @State private var selectedWorkModelID = ""
+    @State private var workReasoningEffort: NativeReasoningEffort?
+    /// Apps and approval posture chosen for the next task. These are held by
+    /// the workspace rather than the composer so leaving the overview while a
+    /// goal is being edited does not silently change what the eventual run may
+    /// reach or how often it will ask.
+    @State private var selectedConnectorIDs: Set<String> = []
+    @State private var workPermissionPolicy: JunoWorkPermissionPolicy = .balanced
     @FocusState private var composerFocused: Bool
     #if DEBUG
     /// Whether the harness's one-shot landing on the overview has been used up.
@@ -112,13 +127,24 @@ struct DesktopWorkWorkspace: View {
                     return .overview
                 }
                 #endif
+                if storedAutomationSelection { return .automations }
                 return storedSessionID.isEmpty ? .overview : .task(storedSessionID)
             },
             set: {
                 #if DEBUG
                 previewLandingConsumed = true
                 #endif
-                storedSessionID = $0?.taskID ?? ""
+                switch $0 {
+                case .automations:
+                    storedAutomationSelection = true
+                    storedSessionID = ""
+                case .overview, .task:
+                    storedAutomationSelection = false
+                    storedSessionID = $0?.taskID ?? ""
+                case nil:
+                    storedAutomationSelection = false
+                    storedSessionID = ""
+                }
             }
         )
     }
@@ -166,8 +192,26 @@ struct DesktopWorkWorkspace: View {
         }
     }
 
+    /// Work can only use models that can hold an agent loop. The chat manifest
+    /// is still the single source of truth; this narrow filter keeps image,
+    /// video, unavailable and prose-only entries out of a task picker that
+    /// would otherwise accept a choice the runner cannot honour.
+    private var workModelOptions: [NativeChatModelOption] {
+        (configuration.conversationModel?.selectableModels ?? [])
+            .filter { $0.isChatCapable && $0.supportsTools }
+    }
+
+    private var defaultWorkModelID: String? {
+        let configured = configuration.memorySettingsModel?.settings?.defaultModel
+        if let configured, workModelOptions.contains(where: { $0.id == configured }) {
+            return configured
+        }
+        return workModelOptions.first?.id
+    }
+
     private var windowTitle: String {
-        openSession?.title ?? "Juno Work"
+        if case .automations = selection.wrappedValue { return "Automations" }
+        return openSession?.title ?? "Juno Work"
     }
 
     // MARK: - Body
@@ -177,6 +221,7 @@ struct DesktopWorkWorkspace: View {
             DesktopWorkSidebar(
                 model: model,
                 hostModel: hostModel,
+                automationModel: configuration.workAutomationModel,
                 configuration: configuration,
                 session: session,
                 sessions: visibleSessions,
@@ -199,7 +244,11 @@ struct DesktopWorkWorkspace: View {
                 // leading column's titlebar safe area and the source list's
                 // first rows draw behind the toolbar and under the traffic
                 // lights. Code hit exactly this and fixed it the same way.
-                .searchable(text: $query, placement: .toolbar, prompt: "Search tasks")
+                .searchable(
+                    text: $query,
+                    placement: .toolbar,
+                    prompt: selection.wrappedValue == .automations ? "Search automations" : "Search tasks"
+                )
                 .searchFocused($searchFocused)
         }
         .focusedSceneValue(\.junoWorkspaceActions, workspaceActions)
@@ -294,11 +343,23 @@ struct DesktopWorkWorkspace: View {
 
     @ViewBuilder
     private var detail: some View {
-        if let session = openSession {
+        if case .automations = selection.wrappedValue,
+            let automationModel = configuration.workAutomationModel {
+            DesktopWorkAutomationsView(
+                model: automationModel,
+                workModel: model,
+                modelOptions: workModelOptions
+            )
+        } else if let session = openSession {
             DesktopWorkThread(
                 model: model,
                 hostModel: hostModel,
                 session: session,
+                modelOptions: workModelOptions,
+                connectorModel: configuration.connectorModel,
+                openConnections: { leaveForChat(.connections) },
+                contextAttachmentModel: configuration.workContextAttachmentModel,
+                libraryModel: configuration.libraryModel,
                 answerDraft: $answerDraft,
                 instructionDraft: $instructionDraft
             )
@@ -336,7 +397,17 @@ struct DesktopWorkWorkspace: View {
                 firstName: JunoGreeting.firstName(from: session.profile.name),
                 selection: selection,
                 hostModel: hostModel,
+                connectorModel: configuration.connectorModel,
+                openConnections: { leaveForChat(.connections) },
+                modelOptions: workModelOptions,
+                defaultModelID: defaultWorkModelID,
                 draft: $composerDraft,
+                selectedModelID: $selectedWorkModelID,
+                reasoningEffort: $workReasoningEffort,
+                attachmentModel: configuration.workAttachmentModel,
+                libraryModel: configuration.libraryModel,
+                selectedConnectorIDs: $selectedConnectorIDs,
+                permissionPolicy: $workPermissionPolicy,
                 draftFocused: $composerFocused
             )
         }
@@ -437,7 +508,13 @@ struct DesktopWorkWorkspace: View {
     /// own header.
     @ViewBuilder
     private var statusIndicator: some View {
-        if let session = openSession {
+        if case .automations = selection.wrappedValue {
+            Label("Automations", systemImage: "clock.badge.checkmark")
+                .labelStyle(.titleAndIcon)
+                .font(.system(.caption, design: .default, weight: .medium))
+                .foregroundStyle(Color.junoAccent)
+                .accessibilityLabel("Automations")
+        } else if let session = openSession {
             let style = DesktopWorkStatusStyle.of(model.displayStatus(of: session))
             Label(style.label, systemImage: style.symbol)
                 .labelStyle(.titleAndIcon)
@@ -563,13 +640,14 @@ struct DesktopWorkWorkspace: View {
 /// select, arrow-key onto and come back to.
 enum DesktopWorkSidebarItem: Hashable {
     case overview
+    case automations
     case task(String)
 
     /// The task this points at, or nil on the overview. The one place the two
     /// cases are collapsed, so scene storage keeps one key.
     var taskID: String? {
         switch self {
-        case .overview: nil
+        case .overview, .automations: nil
         case .task(let id): id
         }
     }
@@ -838,6 +916,7 @@ private extension View {
 private struct DesktopWorkSidebar: View {
     let model: NativeWorkModel
     let hostModel: DesktopWorkHostModel?
+    let automationModel: NativeWorkAutomationModel?
     let configuration: JunoDesktopConfiguration
     let session: NativeAuthenticatedSession
     let sessions: [WorkSessionSummary]
@@ -879,6 +958,9 @@ private struct DesktopWorkSidebar: View {
         List(selection: $selection) {
             Section {
                 overviewRow
+                if automationModel != nil {
+                    automationsRow
+                }
                 newTaskRow
             }
 
@@ -970,6 +1052,33 @@ private struct DesktopWorkSidebar: View {
             hovered = hovering ? .overview : (hovered == .overview ? nil : hovered)
         }
         .accessibilityIdentifier("juno.work.sidebar.overview")
+    }
+
+    private var automationsRow: some View {
+        HStack(spacing: JunoSpace.snug) {
+            Image(systemName: "clock.badge.checkmark")
+                .junoSidebarMarkInk(selected: selection == .automations)
+                .frame(width: DesktopWorkStatusMark.width)
+            Text("Automations")
+                .junoRowLabel()
+            Spacer(minLength: JunoSpace.hairline)
+            if let automationModel, !automationModel.schedules.isEmpty {
+                Text(automationModel.schedules.count.formatted())
+                    .junoCaption()
+                    .monospacedDigit()
+            }
+        }
+        .junoSidebarRowInk()
+        .junoWorkRow(
+            isSelected: selection == .automations,
+            isHovering: hovered == .automations,
+            isFocused: columnFocused
+        )
+        .tag(DesktopWorkSidebarItem.automations)
+        .onHover { hovering in
+            hovered = hovering ? .automations : (hovered == .automations ? nil : hovered)
+        }
+        .accessibilityIdentifier("juno.work.sidebar.automations")
     }
 
     /// Not a selectable row: it opens a sheet rather than changing what the
@@ -1166,9 +1275,19 @@ private struct DesktopWorkOverview: View {
     let firstName: String?
     @Binding var selection: DesktopWorkSidebarItem?
     let hostModel: DesktopWorkHostModel?
+    let connectorModel: NativeConnectorModel?
+    let openConnections: () -> Void
+    let modelOptions: [NativeChatModelOption]
+    let defaultModelID: String?
     /// The composer's draft, held by the workspace so switching to a task and
     /// back does not throw away a half-typed errand.
     @Binding var draft: String
+    @Binding var selectedModelID: String
+    @Binding var reasoningEffort: NativeReasoningEffort?
+    let attachmentModel: NativeComposerAttachmentModel?
+    let libraryModel: NativeLibraryModel?
+    @Binding var selectedConnectorIDs: Set<String>
+    @Binding var permissionPolicy: JunoWorkPermissionPolicy
     @FocusState.Binding var draftFocused: Bool
 
     /// How many finished tasks are shown before the section folds. The web's
@@ -1200,6 +1319,16 @@ private struct DesktopWorkOverview: View {
                         model: model,
                         draft: $draft,
                         focused: $draftFocused,
+                        connectorModel: connectorModel,
+                        openConnections: openConnections,
+                        modelOptions: modelOptions,
+                        defaultModelID: defaultModelID,
+                        selectedModelID: $selectedModelID,
+                        reasoningEffort: $reasoningEffort,
+                        attachmentModel: attachmentModel,
+                        libraryModel: libraryModel,
+                        selectedConnectorIDs: $selectedConnectorIDs,
+                        permissionPolicy: $permissionPolicy,
                         started: { selection = .task($0.sessionID) }
                     )
                     .padding(.top, JunoSpace.section)
@@ -1357,21 +1486,56 @@ private struct DesktopWorkOverview: View {
 ///     context menu, where the web puts it;
 ///   * where it runs is the menu on the control row, defaulted to automatic;
 ///   * which Mac is folded into that menu rather than being a second control
-///     that appears when the first one changes.
+///     that appears when the first one changes;
+///   * connected-app scope and approval posture live in one adjacent context
+///     menu, stay explicit per task, and reset after a successful start.
 private struct DesktopWorkHomeComposer: View {
     let model: NativeWorkModel
     @Binding var draft: String
     @FocusState.Binding var focused: Bool
+    let connectorModel: NativeConnectorModel?
+    let openConnections: () -> Void
+    let modelOptions: [NativeChatModelOption]
+    let defaultModelID: String?
+    @Binding var selectedModelID: String
+    @Binding var reasoningEffort: NativeReasoningEffort?
+    let attachmentModel: NativeComposerAttachmentModel?
+    let libraryModel: NativeLibraryModel?
+    @Binding var selectedConnectorIDs: Set<String>
+    @Binding var permissionPolicy: JunoWorkPermissionPolicy
     let started: (WorkSessionSummary) -> Void
 
     @State private var target = JunoWorkTarget.automatic
     @State private var preferredHostID: String?
+    @State private var showingModelSelector = false
+    @State private var showingThinking = false
+    @State private var showingFileImporter = false
+    @State private var showingLibrary = false
+    @State private var importError: String?
+    @State private var isHoveringModel = false
+    @State private var isHoveringThinking = false
 
     private var trimmed: String {
         draft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var canStart: Bool { !trimmed.isEmpty && !model.isMutating }
+    private var canStart: Bool {
+        !trimmed.isEmpty
+            && !model.isMutating
+            && (attachmentModel?.canSend ?? true)
+    }
+
+    private var selectedModel: NativeChatModelOption? {
+        modelOptions.first { $0.id == selectedModelID }
+    }
+
+    private var thinkingScale: NativeThinkingScale? {
+        selectedModel.map(NativeThinkingScale.init(model:))
+    }
+
+    private var connectedConnectors: [NativeConnector] {
+        connectorModel?.linked.filter(\.connected) ?? []
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
@@ -1387,8 +1551,42 @@ private struct DesktopWorkHomeComposer: View {
             .onSubmit(start)
             .accessibilityIdentifier("juno.work.composer.goal")
 
+            if let attachmentModel, !attachmentModel.attachments.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(spacing: JunoSpace.tight) {
+                        ForEach(attachmentModel.attachments) { attachment in
+                            DesktopWorkAttachmentChip(
+                                attachment: attachment,
+                                remove: { attachmentModel.remove(attachment.id) },
+                                retry: {
+                                    attachmentModel.retry(attachment.id, conversationID: nil)
+                                }
+                            )
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+                .accessibilityIdentifier("juno.work.composer.attachments")
+            }
+
+            if let importError {
+                Label(importError, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(Color.junoDanger)
+                    .lineLimit(2)
+                    .transition(.opacity)
+            }
+
             HStack(spacing: JunoSpace.snug) {
+                attachmentMenu
                 targetMenu
+                contextMenu
+                if !modelOptions.isEmpty {
+                    modelControl
+                    if let thinkingScale, thinkingScale.isPresentable {
+                        thinkingControl(thinkingScale)
+                    }
+                }
                 Spacer(minLength: JunoSpace.snug)
                 Button(action: start) {
                     Image(systemName: "arrow.up")
@@ -1404,18 +1602,72 @@ private struct DesktopWorkHomeComposer: View {
             }
         }
         .padding(JunoSpace.regular)
-        .background(
-            RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
-                .fill(Color.junoSurface)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.composer, style: .continuous)
-                .strokeBorder(
-                    focused ? Color.junoAccent.opacity(0.45) : Color.junoBorder,
-                    lineWidth: focused ? 1 : 0.5
-                )
-        )
+        .junoFloatingChrome(cornerRadius: CGFloat(JunoRadius.composer), isFocused: focused)
         .animation(JunoMotion.fast, value: focused)
+        .onAppear { configureModelSelection() }
+        .onChange(of: modelOptions) { _, _ in configureModelSelection() }
+        .onChange(of: defaultModelID) { _, _ in configureModelSelection() }
+        .onChange(of: selectedModelID) { _, _ in configureReasoning() }
+        .onDisappear {
+            showingModelSelector = false
+            showingThinking = false
+            showingFileImporter = false
+            showingLibrary = false
+        }
+        .fileImporter(
+            isPresented: $showingFileImporter,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true,
+            onCompletion: importFiles
+        )
+        .sheet(isPresented: $showingLibrary) {
+            if let libraryModel, let attachmentModel {
+                DesktopLibraryPicker(
+                    model: libraryModel,
+                    capacity: max(
+                        0,
+                        NativeComposerAttachmentModel.maximumAttachments
+                            - attachmentModel.attachments.count
+                    ),
+                    attach: {
+                        if let uploaded = await libraryModel.attachSelection() {
+                            attachmentModel.adopt(uploaded)
+                            showingLibrary = false
+                        }
+                    },
+                    cancel: {
+                        libraryModel.selection = []
+                        showingLibrary = false
+                    }
+                )
+            }
+        }
+    }
+
+    private var attachmentMenu: some View {
+        Menu {
+            Button("Attach files…") { showingFileImporter = true }
+                .disabled(attachmentModel?.hasCapacity != true)
+            Button("Choose from Library…") { showingLibrary = true }
+                .disabled(libraryModel == nil || attachmentModel?.hasCapacity != true)
+        } label: {
+            Label(
+                attachmentModel?.attachments.isEmpty == false
+                    ? "Attachments staged"
+                    : "Attach",
+                systemImage: "paperclip"
+            )
+            .junoCodeSmall()
+            .junoSecondaryInk()
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Attach files or choose from your Juno Library")
+        .accessibilityLabel("Attach files")
+        .accessibilityValue(
+            attachmentModel.map { "\($0.attachments.count) staged" } ?? "Unavailable"
+        )
+        .accessibilityIdentifier("juno.work.composer.attach")
     }
 
     /// Where it runs, and on which Mac — one menu, because the second question
@@ -1465,6 +1717,236 @@ private struct DesktopWorkHomeComposer: View {
         }
     }
 
+    /// The same manifest-backed chooser Chat uses, kept compact in the Work
+    /// composer. Work's model is part of the run contract, so it must be
+    /// visible before Start rather than only appearing later in the run facts.
+    private var modelControl: some View {
+        Button {
+            showingModelSelector = true
+        } label: {
+            HStack(spacing: 5) {
+                JunoProviderMark(
+                    providerID: selectedModel?.providerID ?? "juno",
+                    providerName: selectedModel?.providerName ?? "Juno",
+                    size: 14
+                )
+                Text(selectedModel?.displayName ?? "Choose model")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(maxWidth: 150, alignment: .leading)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .junoSecondaryInk()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                Capsule().fill(
+                    isHoveringModel ? Color.junoRowSelected : Color.junoRowHover
+                )
+            )
+            .scaleEffect(isHoveringModel ? 1.015 : 1)
+            .animation(JunoMotion.fast, value: isHoveringModel)
+            .onHover { isHoveringModel = $0 }
+        }
+        .buttonStyle(.junoPress)
+        .fixedSize(horizontal: true, vertical: false)
+        .help("Choose the model for this task")
+        .accessibilityLabel("Task model")
+        .accessibilityValue(selectedModel?.displayName ?? "Not selected")
+        .accessibilityIdentifier("juno.work.composer.model")
+        .popover(
+            isPresented: $showingModelSelector,
+            attachmentAnchor: .rect(.bounds),
+            arrowEdge: .bottom
+        ) {
+            DesktopModelSelector(
+                models: modelOptions,
+                selectedModelID: selectedModelID,
+                select: { option in
+                    selectedModelID = option.id
+                    showingModelSelector = false
+                    configureReasoning()
+                }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func thinkingControl(_ scale: NativeThinkingScale) -> some View {
+        if !scale.isAutomatic {
+            Button {
+                showingThinking = true
+            } label: {
+                Label(currentThinkingLabel(in: scale), systemImage: "gauge.with.dots.needle.33percent")
+                    .font(.system(size: 12, weight: .medium))
+                    .labelStyle(.titleAndIcon)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule().fill(
+                            isHoveringThinking ? Color.junoRowSelected : Color.junoRowHover
+                        )
+                    )
+                    .scaleEffect(isHoveringThinking ? 1.015 : 1)
+                    .animation(JunoMotion.fast, value: isHoveringThinking)
+                    .onHover { isHoveringThinking = $0 }
+            }
+            .buttonStyle(.junoPress)
+            .fixedSize(horizontal: true, vertical: false)
+            .help("Choose how deeply the model thinks")
+            .accessibilityLabel("Thinking")
+            .accessibilityValue(currentThinkingLabel(in: scale))
+            .accessibilityIdentifier("juno.work.composer.thinking")
+            .popover(
+                isPresented: $showingThinking,
+                attachmentAnchor: .rect(.bounds),
+                arrowEdge: .bottom
+            ) {
+                let popover = JunoThinkingPopover(
+                    scale: scale,
+                    effort: $reasoningEffort,
+                    width: 268
+                )
+                popover.frame(width: 268, height: 118)
+            }
+        }
+    }
+
+    private func currentThinkingLabel(in scale: NativeThinkingScale) -> String {
+        scale.stops.first { $0.effort == reasoningEffort }?.label
+            ?? scale.defaultStop?.label
+            ?? "Instant"
+    }
+
+    private func configureModelSelection() {
+        guard !modelOptions.isEmpty else {
+            selectedModelID = ""
+            reasoningEffort = nil
+            return
+        }
+        if !modelOptions.contains(where: { $0.id == selectedModelID }) {
+            selectedModelID = defaultModelID ?? modelOptions[0].id
+        }
+        configureReasoning()
+    }
+
+    private func configureReasoning() {
+        guard let scale = thinkingScale else {
+            reasoningEffort = nil
+            return
+        }
+        if !scale.stops.contains(where: { $0.effort == reasoningEffort }) {
+            reasoningEffort = scale.defaultStop?.effort
+        }
+    }
+
+    private func importFiles(_ result: Result<[URL], Error>) {
+        switch result {
+        case .failure(let error):
+            importError = error.localizedDescription
+        case .success(let urls):
+            importError = nil
+            guard let attachmentModel else { return }
+            for url in urls.prefix(
+                max(0, NativeComposerAttachmentModel.maximumAttachments - attachmentModel.attachments.count)
+            ) {
+                let granted = url.startAccessingSecurityScopedResource()
+                defer {
+                    if granted { url.stopAccessingSecurityScopedResource() }
+                }
+                do {
+                    let values = try url.resourceValues(forKeys: [.contentTypeKey])
+                    let contentType = values.contentType
+                    attachmentModel.add(
+                        data: try Data(contentsOf: url),
+                        fileName: url.lastPathComponent,
+                        mimeType: contentType?.preferredMIMEType ?? "application/octet-stream",
+                        conversationID: nil,
+                        isImage: contentType?.conforms(to: .image) == true
+                    )
+                } catch {
+                    importError = "Could not attach "
+                        + url.lastPathComponent
+                        + ": "
+                        + error.localizedDescription
+                }
+            }
+        }
+    }
+
+    /// The task's reach and approval posture are one compact menu: both are
+    /// context for the errand, neither is a second submit action. The menu is
+    /// intentionally explicit about an empty app selection; leaving every app
+    /// off is a deliberate boundary, not an invitation for the planner to open
+    /// whatever happens to be linked to the account.
+    private var contextMenu: some View {
+        Menu {
+            Section("Connected apps") {
+                if connectorModel == nil {
+                    Text("Connected apps are unavailable")
+                } else if connectedConnectors.isEmpty {
+                    Button("Connect an app…", action: openConnections)
+                } else {
+                    ForEach(connectedConnectors) { connector in
+                        Button {
+                            if selectedConnectorIDs.contains(connector.id) {
+                                selectedConnectorIDs.remove(connector.id)
+                            } else {
+                                selectedConnectorIDs.insert(connector.id)
+                            }
+                        } label: {
+                            HStack {
+                                Text(connector.label)
+                                Spacer(minLength: JunoSpace.roomy)
+                                if selectedConnectorIDs.contains(connector.id) {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                    Button("Manage connected apps…", action: openConnections)
+                }
+            }
+
+            Divider()
+
+            Picker("Approval mode", selection: $permissionPolicy) {
+                ForEach(JunoWorkPermissionPolicy.allCases, id: \.self) { policy in
+                    Text(Self.permissionLabel(policy)).tag(policy)
+                }
+            }
+        } label: {
+            Label(contextLabel, systemImage: "slider.horizontal.3")
+                .junoCodeSmall()
+                .junoSecondaryInk()
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Task context")
+        .accessibilityValue(contextLabel)
+        .accessibilityIdentifier("juno.work.composer.context")
+    }
+
+    private var contextLabel: String {
+        let appLabel: String
+        switch selectedConnectorIDs.count {
+        case 0: appLabel = "No apps"
+        case 1: appLabel = "1 app"
+        default: appLabel = "\(selectedConnectorIDs.count) apps"
+        }
+        return "\(appLabel) · \(Self.permissionLabel(permissionPolicy))"
+    }
+
+    private static func permissionLabel(_ policy: JunoWorkPermissionPolicy) -> String {
+        switch policy {
+        case .conservative: "Ask often"
+        case .balanced: "Balanced"
+        case .permissive: "Ask for sensitive"
+        }
+    }
+
     private func start() {
         guard canStart else { return }
         let goal = trimmed
@@ -1476,7 +1958,12 @@ private struct DesktopWorkHomeComposer: View {
                 goal: goal,
                 title: nil,
                 target: target,
-                preferredHostID: target == .local ? preferredHostID : nil
+                preferredHostID: target == .local ? preferredHostID : nil,
+                model: selectedModel?.id,
+                reasoningEffort: reasoningEffort?.rawValue,
+                attachmentIDs: attachmentModel == nil ? nil : attachmentModel?.uploadedIDs,
+                connectorIDs: connectorModel == nil ? nil : Array(selectedConnectorIDs),
+                permissionPolicy: connectorModel == nil ? nil : permissionPolicy
             ) else {
                 // Handed back, because the model's error is reported in the
                 // column and the reader should not have to retype a sentence the
@@ -1484,8 +1971,70 @@ private struct DesktopWorkHomeComposer: View {
                 draft = goal
                 return
             }
+            selectedConnectorIDs = []
+            permissionPolicy = .balanced
+            attachmentModel?.clear()
+            importError = nil
             started(session)
         }
+    }
+}
+
+private struct DesktopWorkAttachmentChip: View {
+    let attachment: NativeComposerAttachment
+    let remove: () -> Void
+    let retry: () -> Void
+
+    private var symbol: String {
+        switch attachment.state {
+        case .preparing: "clock"
+        case .uploading: "arrow.up.circle"
+        case .uploaded: "checkmark.circle.fill"
+        case .failed: "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var tint: Color {
+        switch attachment.state {
+        case .failed: Color.junoDanger
+        case .uploaded: Color.junoSuccess
+        default: Color.junoMutedForeground
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+                .imageScale(.small)
+            Text(attachment.fileName)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if case .failed(let message, let retryable) = attachment.state {
+                if retryable {
+                    Button("Retry", action: retry)
+                        .buttonStyle(.borderless)
+                        .font(.caption.weight(.medium))
+                } else {
+                    Text(message)
+                        .lineLimit(1)
+                        .foregroundStyle(Color.junoDanger)
+                }
+            }
+            Button(action: remove) {
+                Image(systemName: "xmark")
+                    .imageScale(.small)
+            }
+            .buttonStyle(.borderless)
+            .help("Remove " + attachment.fileName)
+            .accessibilityLabel("Remove " + attachment.fileName)
+            }
+            .font(.caption)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Color.junoMuted.opacity(0.7)))
+        .overlay(Capsule().strokeBorder(Color.junoBorder, lineWidth: 0.5))
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -1936,6 +2485,7 @@ struct DesktopWorkStartPath: View {
 /// wade through it before reaching the result.
 private enum DesktopWorkSurface: String, CaseIterable, Identifiable {
     case overview
+    case context
     case activity
     case files
 
@@ -1944,6 +2494,7 @@ private enum DesktopWorkSurface: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .overview: "Overview"
+        case .context: "Context"
         case .activity: "Activity"
         case .files: "Files & cost"
         }
@@ -1952,6 +2503,7 @@ private enum DesktopWorkSurface: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .overview: "rectangle.topthird.inset.filled"
+        case .context: "scope"
         case .activity: "clock.arrow.circlepath"
         case .files: "folder"
         }
@@ -1969,9 +2521,27 @@ private struct DesktopWorkThread: View {
     /// This Mac's hosting model, for approvals raised by a run executing here.
     var hostModel: DesktopWorkHostModel?
     let session: WorkSessionSummary
+    /// The same manifest-backed catalogue the home composer uses, so the
+    /// context surface can name a requested model instead of exposing a raw
+    /// provider identifier whenever the catalogue is available.
+    let modelOptions: [NativeChatModelOption]
+    let connectorModel: NativeConnectorModel?
+    let openConnections: () -> Void
+    let contextAttachmentModel: NativeComposerAttachmentModel?
+    let libraryModel: NativeLibraryModel?
     @Binding var answerDraft: String
     @Binding var instructionDraft: String
-    @State private var surface: DesktopWorkSurface = .overview
+    @State private var surface: DesktopWorkSurface = {
+#if DEBUG
+        JunoPreviewEnvironment.opensWorkFiles ? .files : .overview
+#else
+        .overview
+#endif
+    }()
+    @State private var expandedArtifactID: String?
+    @State private var pendingArtifactDownload: WorkArtifactDownload?
+    @State private var pendingArtifactName = ""
+    @State private var savedArtifactName: String?
 
     private var status: JunoWorkStatus { model.displayStatus(of: session) }
 
@@ -2062,6 +2632,37 @@ private struct DesktopWorkThread: View {
         }
         .onChange(of: session.sessionID) { _, _ in
             surface = .overview
+        }
+        .confirmationDialog(
+            "This artifact has not been validated",
+            isPresented: Binding(
+                get: { pendingArtifactDownload != nil },
+                set: { if !$0 { pendingArtifactDownload = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Save anyway") {
+                if let download = pendingArtifactDownload {
+                    saveArtifact(download, as: pendingArtifactName)
+                }
+                pendingArtifactDownload = nil
+            }
+            Button("Cancel", role: .cancel) { pendingArtifactDownload = nil }
+        } message: {
+            Text(
+                "Juno verified the bytes but the export validator has not confirmed that this file opens. Save it only if you are ready to check it yourself."
+            )
+        }
+        .alert(
+            "Artifact saved",
+            isPresented: Binding(
+                get: { savedArtifactName != nil },
+                set: { if !$0 { savedArtifactName = nil } }
+            )
+        ) {
+            Button("Done") { savedArtifactName = nil }
+        } message: {
+            Text(savedArtifactName.map { "Saved \($0) and opened its location in Finder." } ?? "")
         }
     }
 
@@ -2160,6 +2761,8 @@ private struct DesktopWorkThread: View {
         case .overview:
             currentAction
             plan
+        case .context:
+            context
         case .activity:
             activity
         case .files:
@@ -2548,14 +3151,40 @@ private struct DesktopWorkThread: View {
     private var artifacts: some View {
         DesktopWorkSection("Made") {
             let produced = DesktopWorkLog.artifacts(in: events)
-            if produced.isEmpty {
+            let durable = model.openArtifacts.filter { $0.sessionID == session.sessionID }
+            let durableIDs = Set(durable.map(\.artifactID))
+            if produced.isEmpty && durable.isEmpty {
                 Text(
                     "No documents yet. Anything Juno produces — a workbook, a report, a deck — is listed here as it is written."
                 )
                 .junoCaption()
                 .fixedSize(horizontal: false, vertical: true)
             } else {
-                ForEach(produced) { artifact in
+                ForEach(durable) { artifact in
+                    DesktopWorkArtifactRow(
+                        artifact: artifact,
+                        detail: model.artifactDetails[artifact.artifactID],
+                        isExpanded: expandedArtifactID == artifact.artifactID,
+                        isDownloading: model.artifactDownloadID == artifact.artifactID,
+                        expand: {
+                            if expandedArtifactID == artifact.artifactID {
+                                expandedArtifactID = nil
+                            } else {
+                                expandedArtifactID = artifact.artifactID
+                                if model.artifactDetails[artifact.artifactID] == nil {
+                                    Task { await model.loadArtifactDetail(artifact.artifactID) }
+                                }
+                            }
+                        },
+                        download: { version in
+                            Task { @MainActor in
+                                await requestArtifactSave(artifact, version: version)
+                            }
+                        }
+                    )
+                }
+
+                ForEach(produced.filter { !durableIDs.contains($0.id) }) { artifact in
                     HStack(spacing: JunoSpace.cozy) {
                         // A glyph, not a bare file extension in a 34pt slot.
                         // A column of "xlsx" / "docx" / "pdf" set in monospace
@@ -2581,8 +3210,52 @@ private struct DesktopWorkThread: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+
+                if let error = model.artifactErrorDescription {
+                    HStack(alignment: .top, spacing: JunoSpace.tight) {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .junoCaption()
+                            .foregroundStyle(Color.junoDanger)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: JunoSpace.tight)
+                        Button("Retry") {
+                            Task { await model.refreshOpenArtifacts() }
+                        }
+                        .junoGlassButton()
+                        .controlSize(.small)
+                    }
+                }
             }
         }
+    }
+
+    private func requestArtifactSave(_ artifact: WorkArtifactSummary, version: Int?) async {
+        guard let download = await model.downloadArtifact(artifact.artifactID, version: version)
+        else { return }
+        if !download.validated {
+            pendingArtifactDownload = download
+            pendingArtifactName = artifactFileName(artifact)
+            return
+        }
+        saveArtifact(download, as: artifactFileName(artifact))
+    }
+
+    private func saveArtifact(_ download: WorkArtifactDownload, as fileName: String) {
+        guard let url = DesktopWorkArtifactSavePanel.save(bytes: download.bytes, fileName: fileName)
+        else { return }
+        savedArtifactName = url.lastPathComponent
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private func artifactFileName(_ artifact: WorkArtifactSummary) -> String {
+        let invalid = CharacterSet(charactersIn: "/\\:\\0")
+        let cleaned = artifact.title
+            .components(separatedBy: invalid)
+            .joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = cleaned.isEmpty ? artifact.identifier : cleaned
+        let suffix = ".\(artifact.kind.fileExtension)"
+        return base.lowercased().hasSuffix(suffix) ? base : base + suffix
     }
 
     // MARK: Budget
@@ -2632,6 +3305,81 @@ private struct DesktopWorkThread: View {
                 .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    // MARK: Context
+
+    /// The durable choices that shape a task before any one attempt runs.
+    ///
+    /// Run facts answer "what happened this time". This surface answers the
+    /// companion question the Work web rail calls Context: what Juno was asked
+    /// to use by default, where it was allowed to go, and how readily it could
+    /// act without asking. Keeping it separate prevents a retry's effective
+    /// model or target from overwriting the task's original intent.
+    private var context: some View {
+        DesktopWorkContextEditor(
+            model: model,
+            session: session,
+            modelOptions: modelOptions,
+            connectorModel: connectorModel,
+            openConnections: openConnections,
+            attachmentModel: contextAttachmentModel,
+            libraryModel: libraryModel
+        )
+    }
+
+    private var requestedContextTarget: String {
+        switch JunoWorkTarget(rawValue: session.requestedTarget) ?? .automatic {
+        case .automatic:
+            return "Wherever it fits"
+        case .cloud:
+            return "In the cloud"
+        case .local:
+            return session.hostDisplayName.map { "On \($0)" } ?? "On a Mac of yours"
+        }
+    }
+
+    private var requestedModelLabel: String {
+        guard let requested = session.requestedModel, !requested.isEmpty else {
+            return "Automatic"
+        }
+        return modelOptions.first { $0.id == requested }?.displayName ?? requested
+    }
+
+    private var reasoningLabel: String {
+        guard let effort = session.reasoningEffort, !effort.isEmpty else {
+            return "Automatic"
+        }
+        return effort.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    private var permissionLabel: String {
+        switch session.permissionPolicy ?? .balanced {
+        case .conservative: "Conservative"
+        case .balanced: "Balanced"
+        case .permissive: "Permissive"
+        }
+    }
+
+    private func contextFact(_ label: String, value: String, symbol: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.junoMutedForeground)
+                .frame(width: 18, alignment: .center)
+                .accessibilityHidden(true)
+            Text(label)
+                .junoCaption()
+                .frame(width: 118, alignment: .leading)
+            Text(value)
+                .junoRowLabel()
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, JunoSpace.snug)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
     }
 
     // MARK: Activity
@@ -2687,6 +3435,708 @@ private struct DesktopWorkThread: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
+            }
+        }
+    }
+}
+
+/// The native deliverable row. History is an explicit disclosure so the
+/// common case stays calm, while a reviewer can inspect validation,
+/// provenance and older immutable versions without leaving the task.
+private struct DesktopWorkArtifactRow: View {
+    let artifact: WorkArtifactSummary
+    let detail: WorkArtifactDetail?
+    let isExpanded: Bool
+    let isDownloading: Bool
+    let expand: () -> Void
+    let download: (Int?) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            HStack(alignment: .top, spacing: JunoSpace.cozy) {
+                Image(systemName: DesktopWorkVocabulary.artifactSymbol(artifact.kind))
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.junoAccent)
+                    .frame(width: 22, alignment: .center)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(artifact.title)
+                        .junoRowLabel()
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    HStack(spacing: JunoSpace.tight) {
+                        Text(DesktopWorkVocabulary.artifactKind(artifact.kind))
+                        Text("v\(artifact.currentVersion)")
+                        Label(
+                            artifact.validatedAt == nil ? "Needs checking" : "Validated",
+                            systemImage: artifact.validatedAt == nil
+                                ? "exclamationmark.triangle"
+                                : "checkmark.seal"
+                        )
+                        .foregroundStyle(
+                            artifact.validatedAt == nil ? Color.junoCaution : Color.junoSuccess
+                        )
+                    }
+                    .junoCaption()
+                    .lineLimit(1)
+                }
+                Spacer(minLength: JunoSpace.tight)
+                HStack(spacing: JunoSpace.tight) {
+                    Button {
+                        download(nil)
+                    } label: {
+                        if isDownloading {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Label("Save", systemImage: "arrow.down.circle")
+                        }
+                    }
+                    .junoProminentGlassButton()
+                    .controlSize(.small)
+                    .disabled(isDownloading)
+                    .help("Save the verified current version")
+                    .accessibilityIdentifier("juno.work.artifact.save.\(artifact.artifactID)")
+
+                    Button {
+                        expand()
+                    } label: {
+                        Label(
+                            isExpanded ? "Hide history" : "History",
+                            systemImage: isExpanded ? "chevron.up" : "clock.arrow.circlepath"
+                        )
+                    }
+                    .junoGlassButton()
+                    .controlSize(.small)
+                    .accessibilityIdentifier("juno.work.artifact.history.\(artifact.artifactID)")
+                }
+            }
+
+            if isExpanded {
+                if let detail {
+                    if let warning = detail.warning {
+                        Label(warning, systemImage: "exclamationmark.triangle")
+                            .junoCaption()
+                            .foregroundStyle(Color.junoCaution)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    ForEach(detail.versions) { version in
+                        HStack(alignment: .top, spacing: JunoSpace.tight) {
+                            Image(
+                                systemName: version.validated
+                                    ? "checkmark.seal"
+                                    : "questionmark.diamond"
+                            )
+                            .foregroundStyle(
+                                version.validated ? Color.junoSuccess : Color.junoCaution
+                            )
+                            .frame(width: 16)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Version \(version.version)")
+                                    .junoRowLabel()
+                                Text(
+                                    "\(byteCount(version.byteSize)) · \(version.origin) · "
+                                        + version.createdAt.formatted(.relative(presentation: .named))
+                                )
+                                .junoCaption()
+                                if !version.provenance.isEmpty {
+                                    Text(version.provenance.map { $0.label }.joined(separator: " · "))
+                                        .junoCaption()
+                                        .foregroundStyle(Color.junoMutedForeground)
+                                        .lineLimit(2)
+                                }
+                            }
+                            Spacer(minLength: JunoSpace.tight)
+                            Button("Save") { download(version.version) }
+                                .junoGlassButton()
+                                .controlSize(.small)
+                                .disabled(isDownloading)
+                        }
+                        .padding(.top, JunoSpace.hairline)
+                    }
+                    if detail.historyTruncated {
+                        Text("Showing the newest 100 versions.")
+                            .junoCaption()
+                            .foregroundStyle(Color.junoMutedForeground)
+                    }
+                } else {
+                    HStack(spacing: JunoSpace.tight) {
+                        ProgressView().controlSize(.small)
+                        Text("Reading version history…").junoCaption()
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, JunoSpace.hairline)
+    }
+
+    private func byteCount(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(max(0, bytes)), countStyle: .file)
+    }
+}
+
+private enum DesktopWorkArtifactSavePanel {
+    @MainActor
+    static func save(bytes: Data, fileName: String) -> URL? {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = fileName
+        panel.title = "Save Juno artifact"
+        panel.message = "Choose where to save this verified deliverable."
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        do {
+            try bytes.write(to: url, options: .atomic)
+            return url
+        } catch {
+            return nil
+        }
+    }
+}
+
+// MARK: - Context editor
+
+/// Edits the durable context of an existing Work task.
+///
+/// The web exposes this from its thread add panel. Keeping the same controls on
+/// the Mac matters because a task is not a one-shot form: model, thinking,
+/// approval posture, connected-app scope and attached files are decisions a
+/// person may need to narrow after seeing the first attempt. Every write goes
+/// through ``NativeWorkModel/updateOpenContext`` and renders the server's
+/// timing sentence, so a control never implies that a running attempt has
+/// adopted a setting it only reads at dispatch.
+private struct DesktopWorkContextEditor: View {
+    let model: NativeWorkModel
+    let session: WorkSessionSummary
+    let modelOptions: [NativeChatModelOption]
+    let connectorModel: NativeConnectorModel?
+    let openConnections: () -> Void
+    let attachmentModel: NativeComposerAttachmentModel?
+    let libraryModel: NativeLibraryModel?
+
+    @State private var selectedModelID = ""
+    @State private var reasoningEffort: NativeReasoningEffort?
+    @State private var permissionPolicy: JunoWorkPermissionPolicy = .balanced
+    @State private var selectedConnectorIDs: Set<String> = []
+    @State private var selectedAttachmentIDs: [String] = []
+    @State private var showingModelSelector = false
+    @State private var showingThinking = false
+    @State private var showingFileImporter = false
+    @State private var showingLibrary = false
+    @State private var importError: String?
+
+    private var context: WorkSessionContext? {
+        guard model.openSession?.sessionID == session.sessionID else { return nil }
+        return model.openContext
+    }
+
+    private var selectedModel: NativeChatModelOption? {
+        modelOptions.first { $0.id == selectedModelID }
+    }
+
+    private var thinkingScale: NativeThinkingScale? {
+        selectedModel.map(NativeThinkingScale.init(model:))
+    }
+
+    private var connectedConnectors: [NativeConnector] {
+        connectorModel?.linked.filter(\.connected) ?? []
+    }
+
+    private var visibleAttachments: [WorkSessionAttachment] {
+        guard let context else { return [] }
+        let byID = Dictionary(uniqueKeysWithValues: context.attachments.map { ($0.attachmentID, $0) })
+        return selectedAttachmentIDs.compactMap { byID[$0] }
+    }
+
+    var body: some View {
+        DesktopWorkSection("Context") {
+            Text(
+                "Change what this task may use between attempts. Juno tells you when a change is immediate and when it starts with the next attempt."
+            )
+            .junoCaption()
+            .fixedSize(horizontal: false, vertical: true)
+
+            if let context {
+                targetFact
+                settings
+                apps
+                files(context)
+
+                if let change = model.lastContextChange {
+                    Label {
+                        Text(change.explanation)
+                            .junoCaption()
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: change.effect == "now" ? "checkmark.circle" : "clock")
+                            .foregroundStyle(change.effect == "now" ? Color.junoSuccess : Color.junoAccent)
+                    }
+                    .padding(.top, JunoSpace.tight)
+                    .accessibilityIdentifier("juno.work.context.last-change")
+                }
+
+                if let error = model.contextErrorDescription {
+                    HStack(alignment: .top, spacing: JunoSpace.tight) {
+                        Label(error, systemImage: "exclamationmark.triangle")
+                            .junoCaption()
+                            .foregroundStyle(Color.junoDanger)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: JunoSpace.tight)
+                        Button("Retry") { Task { await model.refreshOpenContext() } }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
+                    .padding(.top, JunoSpace.tight)
+                }
+            } else if let error = model.contextErrorDescription {
+                VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .junoCaption()
+                        .foregroundStyle(Color.junoDanger)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Read context again") { Task { await model.refreshOpenContext() } }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+            } else {
+                HStack(spacing: JunoSpace.tight) {
+                    ProgressView().controlSize(.small)
+                    Text("Reading this task's context…").junoCaption()
+                }
+            }
+        }
+        .accessibilityIdentifier("juno.work.context")
+        .onAppear(perform: synchronize)
+        .onChange(of: model.openContext) { _, _ in synchronize() }
+        .onChange(of: model.openSession?.sessionID) { _, _ in synchronize() }
+        .fileImporter(
+            isPresented: $showingFileImporter,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true,
+            onCompletion: importFiles
+        )
+        .sheet(isPresented: $showingLibrary) {
+            if let libraryModel, let attachmentModel {
+                DesktopLibraryPicker(
+                    model: libraryModel,
+                    capacity: max(
+                        0,
+                        NativeComposerAttachmentModel.maximumAttachments
+                            - selectedAttachmentIDs.count
+                            - attachmentModel.attachments.count
+                    ),
+                    attach: {
+                        if let uploaded = await libraryModel.attachSelection() {
+                            await commitAttachments(uploaded.map(\.id))
+                            showingLibrary = false
+                        }
+                    },
+                    cancel: {
+                        libraryModel.selection = []
+                        showingLibrary = false
+                    }
+                )
+            }
+        }
+    }
+
+    private var targetFact: some View {
+        contextFact(
+            "Where requested",
+            value: requestedTargetLabel,
+            symbol: "shippingbox"
+        )
+    }
+
+    private var requestedTargetLabel: String {
+        switch JunoWorkTarget(rawValue: session.requestedTarget) ?? .automatic {
+        case .automatic: "Wherever it fits"
+        case .cloud: "In the cloud"
+        case .local: session.hostDisplayName.map { "On \($0)" } ?? "On a Mac of yours"
+        }
+    }
+
+    private var settings: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            contextControl("Model", symbol: "cpu") {
+                if modelOptions.isEmpty {
+                    Text(context?.model ?? "Automatic").junoRowLabel()
+                } else {
+                    modelControl
+                }
+            }
+            Divider()
+            contextControl("Thinking", symbol: "gauge.with.dots.needle.33percent") {
+                if let thinkingScale, thinkingScale.isPresentable {
+                    thinkingControl(thinkingScale)
+                } else {
+                    Text(reasoningLabel).junoRowLabel()
+                }
+            }
+            Divider()
+            contextControl("Approval mode", symbol: "shield.lefthalf.filled") {
+                permissionControl
+            }
+        }
+        .accessibilityIdentifier("juno.work.context.facts")
+    }
+
+    private var modelControl: some View {
+        Button {
+            showingModelSelector.toggle()
+        } label: {
+            HStack(spacing: JunoSpace.tight) {
+                Text(selectedModel?.displayName ?? context?.model ?? "Automatic")
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+        }
+        .buttonStyle(.junoPress)
+        .popover(isPresented: $showingModelSelector, arrowEdge: .bottom) {
+            DesktopModelSelector(
+                models: modelOptions,
+                selectedModelID: selectedModelID,
+                select: { option in
+                    selectedModelID = option.id
+                    showingModelSelector = false
+                    configureReasoning()
+                    save(WorkSessionContextEdit(model: option.id))
+                }
+            )
+        }
+        .accessibilityLabel("Task model")
+        .accessibilityValue(selectedModel?.displayName ?? context?.model ?? "Automatic")
+        .accessibilityIdentifier("juno.work.context.model")
+    }
+
+    private func thinkingControl(_ scale: NativeThinkingScale) -> some View {
+        Button {
+            showingThinking.toggle()
+        } label: {
+            HStack(spacing: JunoSpace.tight) {
+                Text(currentThinkingLabel(in: scale))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+        }
+        .buttonStyle(.junoPress)
+        .popover(isPresented: $showingThinking, arrowEdge: .bottom) {
+            JunoThinkingPopover(scale: scale, effort: $reasoningEffort, width: 268)
+                .frame(width: 268, height: 118)
+                .onChange(of: reasoningEffort, initial: false) { _, value in
+                    guard !model.isMutating else { return }
+                    showingThinking = false
+                    save(WorkSessionContextEdit(
+                        reasoningEffort: value.map { .set($0.rawValue) } ?? .clear
+                    ))
+                }
+        }
+        .accessibilityLabel("Thinking")
+        .accessibilityValue(currentThinkingLabel(in: scale))
+        .accessibilityIdentifier("juno.work.context.thinking")
+    }
+
+    private var permissionControl: some View {
+        Menu {
+            ForEach(JunoWorkPermissionPolicy.allCases, id: \.self) { policy in
+                Button {
+                    permissionPolicy = policy
+                    save(WorkSessionContextEdit(permissionPolicy: policy))
+                } label: {
+                    HStack {
+                        Text(permissionTitle(policy))
+                        Spacer(minLength: JunoSpace.roomy)
+                        if policy == permissionPolicy { Image(systemName: "checkmark") }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: JunoSpace.tight) {
+                Text(permissionTitle(permissionPolicy))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .accessibilityLabel("Approval mode")
+        .accessibilityValue(permissionTitle(permissionPolicy))
+        .accessibilityIdentifier("juno.work.context.approvals")
+    }
+
+    private var apps: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            HStack {
+                Label("Connected apps", systemImage: "link")
+                    .junoSidebarSection()
+                Spacer(minLength: JunoSpace.tight)
+                Menu {
+                    if connectorModel == nil {
+                        Text("Connected apps are unavailable")
+                    } else if connectedConnectors.isEmpty {
+                        Button("Connect an app…", action: openConnections)
+                    } else {
+                        ForEach(connectedConnectors) { connector in
+                            Button {
+                                toggleConnector(connector.id)
+                            } label: {
+                                HStack {
+                                    Text(connector.label)
+                                    Spacer(minLength: JunoSpace.roomy)
+                                    if selectedConnectorIDs.contains(connector.id) {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                        Button("Manage connected apps…", action: openConnections)
+                    }
+                } label: {
+                    Label(
+                        selectedConnectorIDs.isEmpty ? "None" : "\(selectedConnectorIDs.count) selected",
+                        systemImage: "slider.horizontal.3"
+                    )
+                }
+                .menuStyle(.borderlessButton)
+                .accessibilityLabel("Connected apps")
+                .accessibilityValue(selectedConnectorIDs.isEmpty ? "None" : "\(selectedConnectorIDs.count) selected")
+                .accessibilityIdentifier("juno.work.context.apps")
+            }
+            Text(
+                connectorModel == nil
+                    ? "Juno could not read your connected apps."
+                    : selectedConnectorIDs.isEmpty
+                        ? "This task is not allowed to reach a connected app."
+                        : "Only the selected apps are in this task's saved scope."
+            )
+            .junoCaption()
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, JunoSpace.regular)
+    }
+
+    private func files(_ context: WorkSessionContext) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            HStack {
+                Label("Attached files", systemImage: "paperclip")
+                    .junoSidebarSection()
+                Spacer(minLength: JunoSpace.tight)
+                Menu {
+                    Button("Attach files…") { showingFileImporter = true }
+                        .disabled(attachmentModel == nil)
+                    Button("Choose from Library…") { showingLibrary = true }
+                        .disabled(libraryModel == nil || attachmentModel == nil)
+                } label: {
+                    Label("Add", systemImage: "plus")
+                }
+                .menuStyle(.borderlessButton)
+                .accessibilityLabel("Add files to task")
+                .accessibilityIdentifier("juno.work.context.add-files")
+            }
+
+            if visibleAttachments.isEmpty && (attachmentModel?.attachments.isEmpty ?? true) {
+                Text("This task has no attached files.")
+                    .junoCaption()
+            } else {
+                ForEach(visibleAttachments) { attachment in
+                    HStack(spacing: JunoSpace.tight) {
+                        Image(systemName: "doc")
+                            .foregroundStyle(Color.junoMutedForeground)
+                        Text(attachment.displayName)
+                            .junoRowLabel()
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: JunoSpace.tight)
+                        Button {
+                            removeAttachment(attachment.attachmentID)
+                        } label: {
+                            Image(systemName: "xmark")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Remove \(attachment.displayName) from this task")
+                        .accessibilityLabel("Remove \(attachment.displayName)")
+                    }
+                }
+
+                if let attachmentModel {
+                    ForEach(attachmentModel.attachments) { attachment in
+                        DesktopWorkAttachmentChip(
+                            attachment: attachment,
+                            remove: { attachmentModel.remove(attachment.id) },
+                            retry: { attachmentModel.retry(attachment.id, conversationID: nil) }
+                        )
+                    }
+                }
+            }
+
+            if let error = importError ?? attachmentModel?.lastErrorDescription {
+                Text(error)
+                    .junoCaption()
+                    .foregroundStyle(Color.junoDanger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.top, JunoSpace.regular)
+    }
+
+    private func contextControl<Content: View>(
+        _ label: String,
+        symbol: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.junoMutedForeground)
+                .frame(width: 18, alignment: .center)
+                .accessibilityHidden(true)
+            Text(label)
+                .junoCaption()
+                .frame(width: 118, alignment: .leading)
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, JunoSpace.snug)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func contextFact(_ label: String, value: String, symbol: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.junoMutedForeground)
+                .frame(width: 18, alignment: .center)
+                .accessibilityHidden(true)
+            Text(label)
+                .junoCaption()
+                .frame(width: 118, alignment: .leading)
+            Text(value)
+                .junoRowLabel()
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, JunoSpace.snug)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
+    }
+
+    private var reasoningLabel: String {
+        guard let value = context?.reasoningEffort, !value.isEmpty else { return "Automatic" }
+        return value.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    private func currentThinkingLabel(in scale: NativeThinkingScale) -> String {
+        scale.stops.first { $0.effort == reasoningEffort }?.label
+            ?? scale.defaultStop?.label
+            ?? reasoningLabel
+    }
+
+    private func permissionTitle(_ policy: JunoWorkPermissionPolicy) -> String {
+        switch policy {
+        case .conservative: "Conservative"
+        case .balanced: "Balanced"
+        case .permissive: "Permissive"
+        }
+    }
+
+    private func configureReasoning() {
+        guard let selectedModel else {
+            reasoningEffort = context?.reasoningEffort.flatMap(NativeReasoningEffort.init(rawValue:))
+            return
+        }
+        let scale = NativeThinkingScale(model: selectedModel)
+        if !scale.stops.contains(where: { $0.effort == reasoningEffort }) {
+            reasoningEffort = scale.defaultStop?.effort
+        }
+    }
+
+    private func synchronize() {
+        guard !model.isMutating, let context else { return }
+        selectedModelID = context.model ?? ""
+        reasoningEffort = context.reasoningEffort.flatMap(NativeReasoningEffort.init(rawValue:))
+        permissionPolicy = context.permissionPolicy ?? .balanced
+        selectedConnectorIDs = Set(context.connectorIDs ?? [])
+        selectedAttachmentIDs = context.attachments.map(\.attachmentID)
+        configureReasoning()
+    }
+
+    private func save(_ edit: WorkSessionContextEdit) {
+        Task { @MainActor in
+            guard await model.updateOpenContext(edit) else {
+                synchronize()
+                return
+            }
+            synchronize()
+        }
+    }
+
+    private func toggleConnector(_ id: String) {
+        var next = selectedConnectorIDs
+        if next.contains(id) { next.remove(id) } else { next.insert(id) }
+        selectedConnectorIDs = next
+        save(WorkSessionContextEdit(connectorIDs: Array(next)))
+    }
+
+    private func removeAttachment(_ id: String) {
+        let next = selectedAttachmentIDs.filter { $0 != id }
+        selectedAttachmentIDs = next
+        save(WorkSessionContextEdit(attachmentIDs: next))
+    }
+
+    private func commitAttachments(_ ids: [String]) async {
+        guard !ids.isEmpty else { return }
+        var next = selectedAttachmentIDs
+        for id in ids where !next.contains(id) { next.append(id) }
+        guard next.count <= NativeComposerAttachmentModel.maximumAttachments else {
+            importError = "A task can carry up to \(NativeComposerAttachmentModel.maximumAttachments) files."
+            return
+        }
+        let succeeded = await model.updateOpenContext(
+            WorkSessionContextEdit(attachmentIDs: next)
+        )
+        if succeeded {
+            selectedAttachmentIDs = next
+            attachmentModel?.clear()
+            importError = nil
+        }
+    }
+
+    private func importFiles(_ result: Result<[URL], Error>) {
+        switch result {
+        case .failure(let error):
+            importError = error.localizedDescription
+        case .success(let urls):
+            importError = nil
+            guard let attachmentModel else { return }
+            for url in urls.prefix(
+                max(
+                    0,
+                    NativeComposerAttachmentModel.maximumAttachments
+                        - selectedAttachmentIDs.count
+                        - attachmentModel.attachments.count
+                )
+            ) {
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                do {
+                    let values = try url.resourceValues(forKeys: [.contentTypeKey])
+                    let type = values.contentType
+                    attachmentModel.add(
+                        data: try Data(contentsOf: url),
+                        fileName: url.lastPathComponent,
+                        mimeType: type?.preferredMIMEType ?? "application/octet-stream",
+                        conversationID: nil,
+                        isImage: type?.conforms(to: .image) == true
+                    )
+                } catch {
+                    importError = "Could not attach \(url.lastPathComponent): \(error.localizedDescription)"
+                }
+            }
+            Task { @MainActor in
+                while attachmentModel.isUploading {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+                guard attachmentModel.canSend else { return }
+                await commitAttachments(attachmentModel.uploadedIDs)
             }
         }
     }
@@ -2875,12 +4325,34 @@ private struct DesktopWorkThreadComposer: View {
         return false
     }
 
+    private var modeLabel: String {
+        switch mode {
+        case .answer: "Answer Juno's question"
+        case .instruction: "Add an instruction to the running task"
+        case .start: "Not started yet · your message starts this task"
+        case .restart: "This attempt is over · your message starts a new one"
+        case .closed: "This task cannot accept a message right now"
+        }
+    }
+
+    private var modeSymbol: String {
+        switch mode {
+        case .answer: "questionmark.bubble"
+        case .instruction: "text.bubble"
+        case .start: "play.circle"
+        case .restart: "arrow.counterclockwise.circle"
+        case .closed: "lock"
+        }
+    }
+
     private var draft: Binding<String> { isAnswering ? $answerDraft : $instructionDraft }
 
     private var placeholder: String {
         switch mode {
         case .answer: "Answer Juno…"
         case .instruction: "Say something to this task…"
+        case .start: "Start this task with a message…"
+        case .restart: "Start this task again with a message…"
         case .closed(let reason): reason
         }
     }
@@ -2893,6 +4365,17 @@ private struct DesktopWorkThreadComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Label(modeLabel, systemImage: modeSymbol)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(
+                    isClosed
+                        ? Color.junoMutedForeground
+                        : isAnswering
+                            ? Color.junoCaution
+                            : Color.junoMutedForeground
+                )
+                .accessibilityIdentifier("juno.work.thread-composer.intent")
+
             HStack(alignment: .bottom, spacing: JunoSpace.cozy) {
                 TextField(placeholder, text: draft, axis: .vertical)
                     .textFieldStyle(.plain)
@@ -2980,15 +4463,24 @@ private struct DesktopWorkThreadComposer: View {
     private func send() {
         guard canSend else { return }
         let text = draft.wrappedValue
-        // Cleared before the round trip rather than after it, so a slow network
-        // cannot be answered twice by an impatient second press. The model holds
-        // the idempotency key for the retry a genuine failure invites.
-        draft.wrappedValue = ""
         Task {
-            if isAnswering {
-                await model.answer(text)
-            } else {
-                await model.sendInstruction(text)
+            let accepted: Bool
+            switch mode {
+            case .answer:
+                accepted = await model.answer(text)
+            case .instruction:
+                accepted = await model.sendInstruction(text) != nil
+            case .start, .restart:
+                accepted = await model.startOpenRun(carrying: text)
+            case .closed:
+                accepted = false
+            }
+            // Keep the reader's words on any refusal or transport failure. A
+            // start can succeed while the carried instruction fails, and that
+            // is precisely the case where silently clearing the field would
+            // lose the only useful recovery action.
+            if accepted, draft.wrappedValue == text {
+                draft.wrappedValue = ""
             }
         }
     }

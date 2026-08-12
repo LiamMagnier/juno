@@ -198,6 +198,9 @@ public final class WorkspaceContext: Sendable {
         case .ask:
             behaviorInstruction =
                 "Answer the reader's question using inspection tools only. Do not modify files, run commands, commit, or control the computer."
+        case .survey:
+            behaviorInstruction =
+                "Survey the project before implementation: inspect its structure, entry points, runtime boundaries, conventions, recent changes, and risks. Use read-only tools only. When independent questions can be investigated safely in parallel, use the bounded delegate_task tool and reconcile its reports. Do not modify files, run commands, commit, or control the computer."
         case .plan:
             behaviorInstruction =
                 "Inspect the project and produce a concrete, ordered implementation plan with files, risks, and validation. Do not modify files, run commands, commit, or control the computer."

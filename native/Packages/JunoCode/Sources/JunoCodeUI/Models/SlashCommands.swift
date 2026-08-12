@@ -149,6 +149,7 @@ public extension CodeSlashCommand {
     private static func behavior(named value: String) -> AgentBehavior? {
         switch value.lowercased() {
         case "ask": .ask
+        case "survey", "recon", "reconnaissance": .survey
         case "plan": .plan
         case "code": .code
         default: nil
@@ -210,6 +211,19 @@ public struct CodeSlashCommandLibrary: Equatable, Sendable {
                 $ARGUMENTS
                 """,
             behavior: .plan
+        ),
+        CodeSlashCommand(
+            name: "survey",
+            summary: "Map the repository and surface risks before implementation",
+            prompt: """
+                Survey this project before implementation. Build a concise map of its entry points, \
+                main modules, runtime boundaries, conventions, recent changes, and the highest-risk unknowns. \
+                Use read-only inspection only. Delegate independent reconnaissance in parallel when it will \
+                make the map more reliable, then cite the files and evidence behind each conclusion.
+
+                $ARGUMENTS
+                """,
+            behavior: .survey
         ),
         CodeSlashCommand(
             name: "test",

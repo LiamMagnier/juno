@@ -1,0 +1,233 @@
+# Pinned to the installed major, NOT to the project's `master` branch. That
+# branch is now 27.0.0-alpha, which restructured macOS signing (hardenedRuntime,
+# entitlements and entitlementsInherit moved under a sign options object) and
+# dropped `asarUnpack` and `gatekeeperAssess` from the schema entirely. Editors
+# pointed at master would report most of this file as invalid, and the config
+# below is correct for 26.x. Bump this URL as part of the v27 upgrade, not
+# before it.
+$schema: https://cdn.jsdelivr.net/npm/app-builder-lib@26.15.7/scheme.json
+
+appId: dev.liams.juno.desktop
+productName: Juno
+# Shown in DMG window titles and in the About panel's copyright line.
+copyright: Copyright © 2026 Liam Magnier
+
+directories:
+  # build/ holds icon.icns and the two entitlements plists.
+  buildResources: build
+  output: dist
+
+# ── What goes in the app ─────────────────────────────────────────────────────
+#
+# Naming any include pattern replaces electron-builder's default `**/*`, so this
+# list is exhaustive rather than additive: only the compiled output ships. Source
+# TypeScript, tsconfigs, tests, docs and the vite config are absent because they
+# were never included, not because they are excluded.
+#
+# Two things are copied regardless of these patterns and cannot be opted out of:
+# package.json, and node_modules for production `dependencies` only. That is the
+# mechanism the externalized `node-pty` require depends on — see the
+# `externalizeDeps` note in electron.vite.config.ts. It is also why anything the
+# app needs at runtime must live in `dependencies`: `devDependencies` are never
+# copied.
+files:
+  - out/**
+  - package.json
+  # Belt and braces. These paths are already outside the include list above, but
+  # stating them means a future `- "**/*"` added in haste cannot quietly sweep
+  # test fixtures or internal design docs into a shipping build.
+  - "!tests/**"
+  - "!docs/**"
+  - "!src/**"
+  - "!scripts/**"
+  - "!**/*.map"
+  - "!**/{tsconfig.json,tsconfig.*.json,vitest.config.ts,playwright.config.ts}"
+  - "!**/{eslint.config.mjs,electron.vite.config.ts,electron-builder.yml}"
+  - "!**/{.env,.env.*,.npmrc,.editorconfig,.DS_Store}"
+
+# ── ASAR ─────────────────────────────────────────────────────────────────────
+#
+# Native code cannot be loaded from inside an ASAR archive: `process.dlopen`
+# needs a real path on disk, and `posix_spawn` needs a real executable.
+# electron-builder auto-detects `*.node` files, but node-pty also ships
+# `spawn-helper`, a plain Mach-O with no `.node` extension that auto-detection
+# does not catch — hence the explicit node-pty rule. Unpacked files stay
+# addressable at their original paths via app.asar.unpacked/.
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - node_modules/node-pty/**
+
+# ── Electron Fuses ───────────────────────────────────────────────────────────
+#
+# Compile-time feature flags burned into the Electron binary. electron-builder
+# flips them after packaging and BEFORE signing, so the final signature covers
+# the modified binary — which is the whole point, and the reason this is
+# configured here rather than in a post-hoc script.
+#
+# These close off the standard "turn the shipped Electron binary into a general
+# purpose Node interpreter" escalation: an attacker with local code execution
+# but no ability to write to the app bundle can otherwise re-launch Juno's own
+# signed binary as Node and inherit its TCC grants.
+electronFuses:
+  # Stops ELECTRON_RUN_AS_NODE from turning Juno into a Node interpreter.
+  #
+  # This does NOT affect the agent host. `utilityProcess.fork()` is a Chromium
+  # service process and does not go through ELECTRON_RUN_AS_NODE; Electron's own
+  # fuse documentation recommends Utility Processes as the supported replacement
+  # for `child_process.fork` precisely because fork depends on that variable and
+  # utilityProcess does not. What would break is `child_process.fork` from the
+  # main process — the app must not use it.
+  runAsNode: false
+  # NODE_OPTIONS / NODE_EXTRA_CA_CERTS are an arbitrary-code-injection channel
+  # into a signed process.
+  enableNodeOptionsEnvironmentVariable: false
+  # file:// gets no extra privileges, because nothing in this app loads over
+  # file://. Leaving it on would grant a universal-fetch/CORS-exempt origin to a
+  # scheme reachable by any local content that manages to get loaded — a
+  # capability with no user here and a real payoff for an attacker.
+  grantFileProtocolExtraPrivileges: false
+  # --inspect on a shipping build is a remote debugger with full main-process
+  # privileges, reachable by anything that can start the app.
+  #
+  # KNOWN TRADE-OFF, do not "fix" this: this fuse is also precisely what makes
+  # the packaged app undrivable by Playwright, which attaches over the Node
+  # inspector. That is the intended consequence, not a bug. E2E runs against the
+  # unpackaged dev build (`npm run test:e2e`), and the packaged artifact is
+  # smoke-tested by other means — launch, sign, staple, `stapler validate`.
+  # Re-enabling this to make E2E go green would ship a remote debugger to every
+  # user in exchange for testing convenience.
+  enableNodeCliInspectArguments: false
+  # Load app code only from app.asar; no `app/` directory or default_app
+  # fallback for an attacker to drop code into.
+  onlyLoadAppFromAsar: true
+  # Encrypt the on-disk cookie store with OS-level keys.
+  enableCookieEncryption: true
+  #
+  # Left at their defaults, deliberately:
+  #
+  #   enableEmbeddedAsarIntegrityValidation — a real hardening win and the
+  #     natural next step, but it hashes app.asar and validates at load, so it
+  #     needs a signed-build test pass against the asarUnpack rules above before
+  #     it is switched on. Turning it on untested trades a security gap for a
+  #     launch failure.
+  # (grantFileProtocolExtraPrivileges was previously listed here as deferred, on
+  #  the grounds that "the renderer loads from file:// in the packaged app".
+  #  That was simply wrong: `src/main/protocol.ts` serves the renderer from the
+  #  custom `juno://` scheme, and `tests/e2e/smoke.spec.ts` asserts it — there is
+  #  a test named "the renderer is served from the app scheme, not from file://".
+  #  Nothing loads over file://, so the privileges have no legitimate consumer
+  #  and the fuse is now off, below.)
+
+# ── macOS ────────────────────────────────────────────────────────────────────
+mac:
+  category: public.app-category.developer-tools
+  # Hardened Runtime is a hard requirement for notarization. Both entitlement
+  # files are checked in rather than left to electron-builder's bundled
+  # template, which still carries the Electron-11-era
+  # allow-unsigned-executable-memory. See build/entitlements.mac.plist.
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  # Skips @electron/osx-sign's extra `spctl` assessment pass. That check
+  # evaluates the app against Gatekeeper *before* notarization, so on a
+  # correctly-signed build it fails for the one reason that is expected and
+  # about to be fixed. Notarization is the real gate; stapler validate is the
+  # real verification.
+  gatekeeperAssess: false
+  # electron-builder's own notarization is off because notarization is driven by
+  # the afterSign hook below, which skips cleanly when Apple credentials are
+  # absent. Leaving both on would submit the same archive twice.
+  notarize: false
+  # Two architectures, two artifacts each — NOT a universal binary.
+  #
+  # Universal (mergeASARs) is the wrong trade here. It roughly doubles the
+  # download for every user so that neither has to pick, and it is exactly the
+  # configuration that native modules break: a universal app has to merge two
+  # per-architecture copies of node-pty's `.node` and its `spawn-helper`, which
+  # means maintaining `singleArchFiles`/`x64ArchFiles` glob lists that fail
+  # loudly on some builds and quietly on others. Two artifacts, with
+  # electron-updater's latest-mac.yml steering each machine to the right one,
+  # costs a CI matrix entry and nothing else.
+  #
+  # Cross-compiling is tolerated by electron-builder but not reliable for native
+  # modules; build arm64 on Apple Silicon and x64 on Intel (or under Rosetta)
+  # when the artifacts have to be trustworthy.
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      # zip is not optional. electron-updater cannot apply a macOS update from a
+      # DMG — the zip is the update payload, the DMG is the first-run download.
+      arch:
+        - arm64
+        - x64
+  # Info.plist additions.
+  #
+  # A purpose string is not paperwork: macOS terminates a process that triggers
+  # the matching TCC prompt without one. It is also the sentence the user reads
+  # at the moment they decide, so it says what Juno does and when, not what
+  # permission it would like.
+  #
+  # There is exactly ONE such key here, and that is not an oversight:
+  #
+  #   NSScreenCaptureUsageDescription and NSAccessibilityUsageDescription DO NOT
+  #   EXIST. Screen Recording and Accessibility are TCC-only on macOS: the user
+  #   grants them in System Settings › Privacy & Security, and there is no
+  #   Info.plist key and no entitlement that participates. Apple's property-list
+  #   reference has no page for either name (404, while
+  #   NSMicrophoneUsageDescription and NSCameraUsageDescription resolve). A
+  #   great deal of third-party writing asserts otherwise; it is wrong, and
+  #   adding the keys would be worse than leaving them out, because it would
+  #   imply a declared control that does not exist and cannot be relied on.
+  extendInfo:
+    NSMicrophoneUsageDescription: >-
+      Juno uses the microphone only while you hold the dictation button, to
+      transcribe what you say into the message composer.
+  # Sets NSRequiresAquaSystemAppearance=false. Without it macOS pins the app to
+  # the light appearance and `nativeTheme.shouldUseDarkColors` reports false
+  # forever, which is a silent wrong answer rather than a visible failure.
+  darkModeSupport: true
+  # Electron 43 supports "macOS (Monterey and up)" — 12.0. Declared so the
+  # installer refuses a machine where the app would install and then fail in
+  # unhelpful ways.
+  minimumSystemVersion: "12.0"
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.dmg
+  # electron-builder's documented default layout, stated explicitly so a future
+  # background image has coordinates to sit behind.
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+# Notarization runs from the afterSign hook rather than electron-builder's
+# built-in path so that a developer with no Apple credentials still gets a
+# complete local build: the hook logs why it is skipping and returns.
+afterSign: scripts/notarize.cjs
+
+# Restores the executable bit on node-pty's spawn-helper before signing. See the
+# script for why this is not paranoia.
+afterPack: scripts/afterPack.cjs
+
+# ── Updates ──────────────────────────────────────────────────────────────────
+#
+# `generic` = a plain HTTPS directory holding the artifacts plus the
+# latest-mac.yml manifest electron-builder writes at publish time. No GitHub
+# Releases dependency, no vendor account.
+#
+# TODO(owner): replace the placeholder URL below with the real update host
+# before the first published release. It MUST be https — electron-updater
+# verifies the signature of the downloaded artifact, but an http:// feed lets an
+# attacker choose which signed-and-notarized version a user is offered, and
+# downgrade attacks are real. The path must be the directory containing
+# latest-mac.yml, and it must be reachable without authentication.
+publish:
+  provider: generic
+  url: https://updates.example.invalid/juno/mac

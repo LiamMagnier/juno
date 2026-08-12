@@ -142,6 +142,16 @@ struct CodeSlashCommandParsingTests {
         #expect(command?.source == .workspace(".juno/commands/review.md"))
     }
 
+    @Test
+    func reconnaissanceFrontmatterSelectsSurveyMode() {
+        let command = CodeSlashCommand.parse(
+            name: "map",
+            contents: "---\nbehavior: recon\n---\nMap the runtime boundaries.",
+            path: ".juno/commands/map.md"
+        )
+        #expect(command?.behavior == .survey)
+    }
+
     /// These files are shared with other tools. Refusing to load one because it
     /// carries a key Juno does not read would make the feature useless on any
     /// repository that already has commands.
@@ -225,6 +235,7 @@ struct CodeSlashCommandLibraryTests {
         let library = CodeSlashCommandLibrary.merged(workspace: [])
         #expect(library.command(named: "review") != nil)
         #expect(library.command(named: "test") != nil)
+        #expect(library.command(named: "survey")?.behavior == .survey)
     }
 
     // MARK: - Matching
