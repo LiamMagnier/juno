@@ -75,6 +75,20 @@ jobs:
       - name: Install
         run: npm ci --prefix "$DESKTOP"
 
+      # The `tokens:check` gate below reads the WEB app's design tokens, and it
+      # reads tailwind.config.ts by `await import()`ing it rather than parsing
+      # it — so that config's own imports (`tailwindcss/plugin`,
+      # `tailwindcss-animate`) have to resolve, and they live in the ROOT
+      # node_modules that nothing else in this workflow installs. Without this
+      # the gate dies on `Cannot find module 'tailwindcss/plugin'` before it
+      # compares a single token, which is how it failed on its first run.
+      #
+      # `--ignore-scripts` skips the root postinstall (`prisma generate`): this
+      # job never touches the database, and generating a client needs a schema
+      # and env this workflow deliberately does not provide.
+      - name: Install web deps (for the shared token gate)
+        run: npm ci --ignore-scripts
+
       # Runs typecheck → lint → token drift → agent-contract drift → tests.
       # Kept as one script so a developer's local command and CI cannot diverge.
       - name: Gates
