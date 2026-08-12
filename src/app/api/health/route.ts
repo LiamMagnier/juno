@@ -50,6 +50,18 @@ function isDiagnosticHealthRequest(request: Request): boolean {
 async function databaseOk(): Promise<boolean> {
   try {
     /*
+     * Local and desktop builds use SQLite. PostgreSQL's transaction-local
+     * `statement_timeout` does not exist there, but SQLite also has no pooled
+     * network connection to strand after this small probe. Keep the production
+     * Postgres cancellation boundary below and use the portable query directly
+     * for file-backed databases.
+     */
+    if (process.env.DATABASE_URL?.trim().startsWith("file:")) {
+      await prismaUnguarded.$queryRaw`SELECT 1`;
+      return true;
+    }
+
+    /*
      * Do not use Promise.race here. It abandons the JavaScript wait but leaves
      * the Prisma/Postgres query running, which can occupy a pool connection
      * after the monitor has already received 503. A short-lived interactive

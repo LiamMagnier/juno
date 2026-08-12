@@ -39,8 +39,8 @@ export function ComparisonBlock({ comparison }: { comparison: ComparisonData }) 
                 aria-pressed={isFocused}
                 onClick={() => setFocused((current) => (current === colIndex ? null : colIndex))}
                 className={cn(
-                  "group/col min-w-0 rounded-md px-2 py-1 text-left outline-none transition-colors duration-fast",
-                  "hover:bg-accent/40 focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11",
+                  "group/col min-w-0 rounded-control px-2 py-1 text-left transition-colors duration-fast",
+                  "hover:bg-accent/40 coarse:min-h-11",
                   cellTone(colIndex)
                 )}
               >

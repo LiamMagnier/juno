@@ -75,15 +75,21 @@ import { cn } from "@/lib/utils";
  * reimplements exactly that (roving tabindex, Left/Right/Up/Down with wrap), so
  * nothing was lost; it is only 20 lines because it is two options rather than n.
  *
- * ——— One radius, derived rather than picked ———
+ * ——— One radius, for everything seated in a band ———
  *
- * `PopoverContent` is 18px. Every band inside it is padded 8px, and every
- * control inside a band — target row, list row, search field, base-branch field
- * — is 10px, because 18 − 8 = 10 (docs/JUNO.md §3.3, "Concentric: outer = inner
- * + padding"). That is the whole radius language here: no value is chosen, each
- * one falls out of the shell and its padding. It also happens to land on the
- * 10px the composer's own text controls use, so the chip and the popover it
- * opens are the same object.
+ * This paragraph used to derive a 10px inner radius from an 18px shell and 8px
+ * bands. Both halves of that sum have since moved: `PopoverContent` is
+ * `rounded-menu` (12px) now that the whole popper tier is one rung, and every
+ * control here is `rounded-control` (9px). The derivation is recorded as dead
+ * rather than quietly deleted because it is the reason the numbers are close
+ * together at all.
+ *
+ * What still holds, and is the part worth keeping: ONE rung carries every
+ * seated thing — target row, list row, loading skeleton, search field,
+ * base-branch field, error note — so nothing in the panel corners differently
+ * from the row above it. 9px is the nearest rung on the ladder a 46px row can
+ * carry under a 12px shell; going to the strict concentric answer (12 − 8 = 4)
+ * would square the rows off against a panel that is still visibly round.
  */
 
 export type Target = "device" | "cloud";
@@ -315,10 +321,18 @@ export function CodeTargetPicker({
             <Cloud className="size-3.5 shrink-0" aria-hidden="true" />
           )}
           <span className="shrink-0">{target === "device" ? "Device" : "Cloud"}</span>
-          <span aria-hidden="true" className="h-3.5 w-px shrink-0 bg-border/60" />
+          {/* h-4, the height COMPOSER_DIVIDER draws in the same utility strip an
+              inch to the right — this one was h-3.5, putting two divider heights
+              on one row. */}
+          <span aria-hidden="true" className="h-4 w-px shrink-0 bg-border/60" />
           <span className={cn("min-w-0 truncate", !hasSelection && "text-muted-foreground")}>{chipLabel}</span>
+          {/* `ease-out-soft`, the easing the two composer chips this trigger is
+              copied from already use (model-selector.tsx:567,
+              chat/composer.tsx:2349). `ease-in-out` is the stock Tailwind curve
+              and belongs to <Select>; on a chip sitting one gap away from those
+              two, the same gesture was arriving on a different curve. */}
           <ChevronDown
-            className="h-3 w-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180"
+            className="h-3 w-3 shrink-0 opacity-60 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180 motion-reduce:transition-none"
             aria-hidden="true"
           />
         </button>
@@ -427,7 +441,17 @@ function TargetRows({ value, onChange }: { value: Target; onChange: (t: Target) 
     <div
       role="radiogroup"
       aria-label="Where the session runs"
-      className="shrink-0 space-y-0.5 border-b border-border/60 p-2"
+      /*
+       * `border-border` at full strength, on all three of this panel's band
+       * separators. Inside a popover both sides of the seam are `--popover`
+       * (13% on dark), so a /60 hairline composited to ~14.8% — under two
+       * points off the fill it is meant to divide, i.e. no seam at all. These
+       * are not decorative rules: they are the only thing separating "which
+       * machine" from "which checkout on it", and the list from the base-branch
+       * field. `.overlay-glass` makes the same argument for the panel's outer
+       * edge, and it is the same argument one level in.
+       */
+      className="shrink-0 space-y-0.5 border-b border-border p-2"
     >
       {TARGETS.map((t) => (
         <PickerRow
@@ -542,12 +566,18 @@ function DeviceList({
                   trailing={
                     <span className="flex shrink-0 items-center gap-1.5">
                       {devices && (
+                        // Full strength, and `bg-warning` for offline — the same
+                        // two colours the session banner's presence chip uses,
+                        // because it is the same fact one screen later. At /50
+                        // this dot composited to ~2.8:1 on the true-black
+                        // ground, under the 3:1 non-text minimum, on the one
+                        // mark that says whether this project can run anything.
                         <span
-                          className={cn("h-1.5 w-1.5 rounded-full", online ? "bg-success" : "bg-muted-foreground/50")}
+                          className={cn("h-1.5 w-1.5 rounded-full", online ? "bg-success" : "bg-warning")}
                           aria-hidden="true"
                         />
                       )}
-                      <span className="font-mono text-[10px] text-muted-foreground/70">
+                      <span className="font-mono text-caption tabular-nums text-muted-foreground">
                         {timeAgo(w.lastOpenedAt)}
                       </span>
                     </span>
@@ -710,8 +740,9 @@ function CloudList({
         control no voice user could address by the words next to it.
       */}
       {selected && (
-        <div className="shrink-0 space-y-1.5 border-t border-border/60 p-2">
-          <label htmlFor="cloud-base-ref" className="flex items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground">
+        // Full-strength hairline — see the note on TargetRows' separator.
+        <div className="shrink-0 space-y-1.5 border-t border-border p-2">
+          <label htmlFor="cloud-base-ref" className="flex items-center gap-1.5 px-0.5 text-caption text-muted-foreground">
             <GitBranch className="h-3 w-3" aria-hidden="true" />
             Base branch — optional
           </label>
@@ -742,9 +773,11 @@ function CloudList({
  * gesture wherever you are in the panel.
  *
  * Coral appears only as state: an active row tints its fill, its glyph and its
- * check, and nothing at rest is coral. Hover is `bg-accent/60`, which cannot be
- * mistaken for the tinted-plus-ringed active row, so the two never collide the
- * way a bare `bg-accent` selection would.
+ * check, and nothing at rest is coral. Hover is Pressable's own `bg-accent`
+ * (this paragraph said `/60` from when the row was hand-rolled here), which
+ * still cannot be mistaken for the tinted-plus-ringed active row — that is why
+ * `selected` fills with `bg-primary/10` and a ring rather than with the accent
+ * the pointer is already producing on the row you are merely reading past.
  *
  * The press is `active:scale-[0.97]`, the app's press everywhere. The old rows
  * used `0.995`, which on a 46px row is a fifth of a pixel — a press animation
@@ -802,7 +835,7 @@ function PickerRow({
             row in the popover has to stay one height — a wrapping path or hint
             would make the list a ragged column and put the loading skeletons at
             a height no real row has. */}
-        <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] leading-snug text-muted-foreground">
+        <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-caption leading-snug text-muted-foreground">
           {meta}
         </span>
       </span>
@@ -846,9 +879,10 @@ function PickerSearch({
 }) {
   if (!show) return null;
   return (
-    <div className="relative shrink-0 border-b border-border/60 p-2">
+    // Full-strength hairline — see the note on TargetRows' separator.
+    <div className="relative shrink-0 border-b border-border p-2">
       <Search
-        className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/70"
+        className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
         aria-hidden="true"
       />
       <Input
@@ -930,11 +964,15 @@ function PickerNote({
     <div
       role={isError ? "status" : undefined}
       className={cn(
-        "flex flex-col items-center gap-2 px-5 py-8 text-center",
-        isError && "rounded-control border border-destructive/40 bg-destructive/[0.04]",
+        "flex flex-col items-center gap-2 px-5 py-8 text-center motion-safe:animate-fade-in",
+        // bg-destructive/10 — the alpha the risk badge and the dispatch-failure
+        // banner already use. The old `/[0.04]` was off every step in the system
+        // and effectively zero over pure black, so a failed fetch rendered in the
+        // same flat frame as an empty one.
+        isError && "rounded-control border border-destructive/40 bg-destructive/10",
       )}
     >
-      <span className={isError ? "text-destructive/70" : "text-muted-foreground/70"}>{icon}</span>
+      <span className={isError ? "text-destructive" : "text-muted-foreground"}>{icon}</span>
       <p className={cn("text-sm font-medium", isError ? "text-destructive" : "text-foreground")}>{title}</p>
       <p className="max-w-[22rem] text-[13px] leading-relaxed text-muted-foreground">{body}</p>
       {action && <div className="pt-1">{action}</div>}

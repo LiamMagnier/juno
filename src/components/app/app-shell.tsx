@@ -13,15 +13,14 @@ import { ChatWorkSwitcher } from "@/components/chat/chat-work-switcher";
 import { PageTransition } from "@/components/app/page-transition";
 import { AnnouncementPopup } from "@/components/app/announcement-popup";
 import { useApp } from "@/components/app/app-provider";
-import { DotField } from "@/components/signature/dot-field";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
 const COLLAPSE_KEY = "juno:sidebar-collapsed";
 const WIDTH_KEY = "juno:sidebar:width";
-const SIDEBAR_MIN = 240;
-const SIDEBAR_MAX = 400;
-const SIDEBAR_DEFAULT = 280;
+const SIDEBAR_MIN = 224;
+const SIDEBAR_MAX = 336;
+const SIDEBAR_DEFAULT = 256;
 // The landing route of every product mode belongs here: switching modes routes
 // immediately, so a cold /work is the one navigation the user cannot absorb as
 // "the page is loading".
@@ -143,6 +142,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [router]);
 
+  /**
+   * Close the mobile drawer when the viewport crosses into desktop.
+   *
+   * Both the SheetContent and its scrim are `md:hidden`, so after opening the
+   * drawer at phone width and rotating (or dragging the window wider) NOTHING
+   * renders — but Radix keeps the Dialog open, and an open Dialog keeps its
+   * scroll lock and focus trap live. The result was a desktop app that could
+   * not be scrolled, with focus trapped inside a `display:none` panel and no
+   * visible way out. Firing the handler once on mount also covers the case
+   * where the breakpoint was already crossed before this listener attached.
+   */
+  React.useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const sync = () => {
+      if (mq.matches) setSidebarOpen(false);
+    };
+    mq.addEventListener("change", sync);
+    sync();
+    return () => mq.removeEventListener("change", sync);
+  }, [setSidebarOpen]);
+
   const toggleCollapse = React.useCallback(() => {
     setCollapsed((prev) => {
       const next = !prev;
@@ -168,10 +188,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       >
         Skip to content
       </a>
-      <div className="pointer-events-none fixed inset-0 -z-10">
-        <DotField />
-      </div>
-
       {/* overflow-hidden + fixed-width sidebar layouts: the width sweep reveals/clips
           the content instead of reflowing it mid-animation. The expanded width is
           user-resizable (drag handle below); --juno-sidebar-width carries it to the
@@ -184,7 +200,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           like it arrived from somewhere off-screen. */}
       <aside
         className={cn(
-          "relative hidden shrink-0 overflow-hidden border-r border-sidebar-border bg-sidebar md:block",
+          // The seam is drawn ONCE, by `.app-sidebar-frame` (globals.css), which
+          // is the class written to own it: `inset -1px 0 0 hsl(--sidebar-border)`.
+          // A `border-r` in the same token on top of it stacked a second hairline
+          // immediately outside the first, so on the dark theme — where this seam
+          // is the only thing separating panel from canvas — it rendered 2px wide
+          // and also ate a pixel of the user's resized width (border-box).
+          "app-sidebar-frame relative hidden shrink-0 overflow-hidden bg-sidebar md:block",
           !resizing && "transition-[width] duration-base ease-in-out"
         )}
         style={
@@ -234,9 +256,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
       </aside>
 
-      {/* Mobile drawer — Radix-backed Sheet (focus trap, Escape, scroll lock). */}
+      {/* Mobile drawer — Radix-backed Sheet (focus trap, Escape, scroll lock).
+
+          The sidebar's rungs are re-based for the ground it lands on here. The
+          panel is IN FLOW on desktop, where --sidebar-accent (11%) and
+          --sidebar-border (14%) read against a #000 page; inside the drawer the
+          parent is --popover (13%), so both tokens resolved BELOW their own
+          surface and every row hover, every active row and the footer rule
+          turned into a 1-2 point darker patch — i.e. nothing. Lifted above the
+          popover here, and only on dark: on light the sidebar ramp is already
+          darker than the 99% popover, which is the correct direction there. */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent className="p-0 md:hidden" title="Conversations">
+        <SheetContent
+          className="p-0 dark:[--sidebar-accent:48_5%_18%] dark:[--sidebar-border:48_5%_22%] md:hidden"
+          title="Conversations"
+        >
           <AppSidebar />
         </SheetContent>
       </Sheet>
@@ -244,17 +278,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main
         id="juno-main"
         tabIndex={-1}
-        className="flex min-w-0 flex-1 flex-col"
+        className="app-main-canvas flex min-w-0 flex-1 flex-col"
         style={{ "--juno-sidebar-width": collapsed ? "64px" : `${sidebarWidth}px` } as React.CSSProperties}
       >
         {/* Mobile navigation stays out of a full-width toolbar. Each action is a
             self-contained circular surface, so the page background can continue
-            through the top of the screen without sacrificing hit-area contrast. */}
+            through the top of the screen without sacrificing hit-area contrast.
+            They were rounded-control (9px) — three squircles the comment above
+            them called circles, and the one shape the product uses everywhere
+            else for a bare glyph you press (see pressableVariants' `icon`). */}
         <div className="relative z-40 flex shrink-0 items-center gap-2 px-3 pb-2 pt-[calc(0.75rem+env(safe-area-inset-top))] md:hidden">
           <Button
             variant="ghost"
             size="icon"
-            className="group h-10 w-10 shrink-0 rounded-full border border-border/65 bg-card/80 shadow-soft backdrop-blur-xl hover:bg-card coarse:h-11 coarse:w-11"
+            className="group h-10 w-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:h-11 coarse:w-11"
             onClick={() => setSidebarOpen(true)}
             aria-label="Open menu"
           >
@@ -264,12 +301,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             title={activeTitle || "Juno"}
             animate={activeConversation?.titleSource === "ai"}
             className="min-w-0 flex-1 px-1"
-            textClassName="font-serif text-lg font-semibold tracking-tight text-foreground"
+            textClassName="text-base font-semibold tracking-tight text-foreground"
           />
           <Button
             variant="ghost"
             size="icon"
-            className="group ml-auto h-10 w-10 shrink-0 rounded-full border border-border/65 bg-card/80 shadow-soft backdrop-blur-xl hover:bg-card coarse:h-11 coarse:w-11"
+            className="group ml-auto h-10 w-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:h-11 coarse:w-11"
             onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
             aria-label="Search chats and projects"
           >
@@ -278,7 +315,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Button
             variant="ghost"
             size="icon"
-            className="group h-10 w-10 shrink-0 rounded-full border border-border/65 bg-card/80 shadow-soft backdrop-blur-xl hover:bg-card coarse:h-11 coarse:w-11"
+            className="group h-10 w-10 shrink-0 rounded-full border border-border bg-card hover:bg-accent coarse:h-11 coarse:w-11"
             onClick={() => { router.push("/chat"); window.dispatchEvent(new CustomEvent("juno:new-chat")); }}
             aria-label="New chat"
           >
@@ -288,14 +325,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Chat ⇄ Work. Centred over the conversation rather than parked in the
             sidebar: the choice belongs where you are already looking when you
             decide what to ask for, and it survives the sidebar being collapsed
-            or absent. `pt-3 md:pt-4` because on mobile it sits under the nav row
-            above, which has already paid the safe-area inset. */}
+            or absent. The hairline anchors the mode switch to the product shell
+            without turning it into a second toolbar. */}
         {showSurfaceSwitcher && (
-          <div className="flex shrink-0 justify-center px-4 pb-1 pt-3 md:pt-4">
+          // Full --border, like the sidebar edge and the palette's rules: this
+          // hairline carries layout (it is what separates the mode switch from
+          // the conversation), and the token already dropped five points for the
+          // black ground, so a call-site alpha on top of that erases it.
+          <div className="flex min-h-[52px] shrink-0 items-center justify-center border-b border-border px-4 py-2">
             <ChatWorkSwitcher />
           </div>
         )}
-        <div className="min-h-0 flex-1">
+        <div className="relative min-h-0 flex-1">
           <PageTransition>{children}</PageTransition>
         </div>
       </main>

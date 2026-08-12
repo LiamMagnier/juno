@@ -375,8 +375,15 @@ export function ApprovalCard({
           ? // This is holding a generation open. It has to out-shout the prose
             // it sits between, or it gets scrolled past and the model just
             // appears to hang.
-            "border-warning/60 bg-warning/[0.07] shadow-pop ring-1 ring-warning/20"
-          : "border-border/60 bg-card/50",
+            // The dark tint is separate. 7% of --warning over a #000 ground is
+            // ~4% lightness — BELOW --card — so on dark the card that has to
+            // out-shout the prose was dimmer than an ordinary one, and
+            // `shadow-pop` (black ink) added nothing back. 7% is still right
+            // over light paper.
+            "border-warning/60 bg-warning/[0.07] shadow-pop ring-1 ring-warning/20 dark:bg-warning/[0.14]"
+          : // `bg-card`, not `bg-card/50`: half of a 6.5% fill over black is
+            // ~3.3%, so a settled approval was a border around the page.
+            "border-border/60 bg-card",
         "motion-safe:animate-rise-in motion-reduce:animate-fade-in [animation-fill-mode:backwards]"
       )}
     >
@@ -425,12 +432,16 @@ export function ApprovalCard({
       <p className="mt-1 font-mono text-[10px] text-muted-foreground">
         {current.connectorLabel} · {current.toolName}
       </p>
+      {/* 13px here, 12px on the secondary rank below. Those used to be 13 and
+          12.5 — the only fractional type size in the product, a half-pixel that
+          lands off the device grid and reads as a rendering artefact rather than
+          a rank. A 1px step is the smallest one anybody can actually see. */}
       <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{risk.detail}</p>
 
       {current.derivedFromUntrusted && (
         <div className="mt-2.5 flex gap-2 rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5">
           <Sparkles className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
-          <p className="text-[12.5px] leading-relaxed text-warning-foreground">
+          <p className="text-[12px] leading-relaxed text-warning-foreground">
             The model wrote these arguments from content it read — a web page, a file, or output from
             another connector. That content can contain text written to steer what gets sent. Check the
             values below are what you meant before you allow it.
@@ -442,7 +453,7 @@ export function ApprovalCard({
           readable, but never summarised: these are the exact arguments the
           digest was computed over, with credential-shaped keys already redacted
           server-side. */}
-      <details className="group/detail mt-2.5 rounded-field border border-border/50 bg-background/50">
+      <details className="group/detail mt-2.5 rounded-field border border-border/50 bg-secondary">
         <summary
           className={cn(
             // min-h-11 rather than padding: this is a real 44px target on touch,
@@ -453,8 +464,11 @@ export function ApprovalCard({
             // (globals.css) is authoritative, and a ring here would need
             // outline-none first, which trades a working focus ring for a
             // hand-rolled one.
-            "flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-field px-3 text-[12.5px] font-medium text-foreground",
-            "hover:bg-accent/40",
+            "flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-field px-3 text-[12px] font-medium text-foreground",
+            // Full accent. This summary sits on the `bg-secondary` details shell,
+          // and accent at 40% over secondary is a 1.4-point step — the control
+          // that decides whether anyone reads the arguments had no hover.
+          "hover:bg-accent",
             "[&::-webkit-details-marker]:hidden"
           )}
         >
@@ -466,7 +480,7 @@ export function ApprovalCard({
         </summary>
         <div className="border-t border-border/50 px-3 py-2.5">
           {detailRows.length === 0 ? (
-            <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+            <p className="text-[12px] leading-relaxed text-muted-foreground">
               This call sends no arguments.
             </p>
           ) : (
@@ -522,7 +536,7 @@ export function ApprovalCard({
         role="status"
         aria-live="polite"
         className={cn(
-          "flex items-start gap-1.5 text-[12.5px] leading-relaxed",
+          "flex items-start gap-1.5 text-[12px] leading-relaxed",
           resultText ? "mt-2.5" : "sr-only",
           outcome.kind === "refused" ? "text-warning-foreground" : "text-muted-foreground"
         )}

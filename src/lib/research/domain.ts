@@ -457,8 +457,8 @@ export const MAX_RESEARCH_OBJECTIVES = 8;
 export const MAX_EVIDENCE_REQUIREMENTS = 4;
 export const MAX_COVERAGE_ENTRIES = 32;
 export const MAX_CONFLICTS = 24;
-/** One bounded follow-up round keeps the first evidence loop predictable. */
-export const MAX_FOLLOW_UP_ROUNDS = 1;
+/** Bounded follow-up rounds. Increased to 4 for OpenAI-style deep recursive research. */
+export const MAX_FOLLOW_UP_ROUNDS = 4;
 /**
  * Citation repair may send a report through the writer once more. Keeping this
  * in the durable plan, rather than in a worker-local counter, makes a restart

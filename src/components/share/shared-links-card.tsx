@@ -65,7 +65,10 @@ export function SharedLinksCard() {
   };
 
   return (
-    <Card className="p-5 rounded-panel">
+    // No `rounded-card` here — Card's base already sets it. cn() now resolves the
+    // radius ladder, so a duplicate is merely dead weight rather than a coin toss,
+    // but two authorities for one corner is how the drift started.
+    <Card className="p-5">
       <div className="mb-4 flex items-end justify-between gap-3">
         <CardEyebrow>Shared links</CardEyebrow>
         {shares && shares.length > 0 && (
@@ -76,16 +79,29 @@ export function SharedLinksCard() {
       </div>
 
       {error ? (
-        <p className="text-sm text-muted-foreground">Couldn’t load your shared links.</p>
+        // role="alert" and the destructive tint — a failed load was rendering as
+        // muted body copy, indistinguishable from the empty state one branch down.
+        <p className="text-body text-destructive" role="alert">
+          Couldn’t load your shared links.
+        </p>
       ) : !shares ? (
-        <div className="space-y-2">
-          <div className="skeleton h-12 rounded-lg" />
-          <div className="skeleton h-12 rounded-lg" />
+        // `rounded-field`, matching the 36px icon tile and the row height these
+        // stand in for; `rounded-lg` is the 16px surface rung, so the placeholder
+        // was rounder than anything it was a placeholder for.
+        <div className="space-y-2" role="status" aria-label="Loading your shared links">
+          <div className="skeleton h-12 rounded-field" aria-hidden />
+          <div className="skeleton h-12 rounded-field" aria-hidden />
         </div>
       ) : shares.length === 0 ? (
-        <div className="rounded-card border border-dashed border-border/50 bg-muted/10 px-6 py-8 text-center">
+        // `border-border/60`, matching the `divide-border/60` the populated list
+        // uses one branch down: the same rule, under the same header, at two
+        // alphas depending on whether you had any links yet.
+        <div className="border-t border-border/60 px-6 py-8 text-center">
+          {/* The product's heading voice. This was `text-base font-semibold` —
+              16px sans, a Tailwind default on no Juno rung, for a role every
+              other empty state in the tree sets in serif. */}
           <p className="font-serif text-heading">Nothing shared yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 text-body text-muted-foreground">
             Links you create from a chat or artifact appear here, with view counts.
           </p>
         </div>
@@ -93,19 +109,27 @@ export function SharedLinksCard() {
         <ul className="divide-y divide-border/60">
           {shares.map((share) => (
             <li key={share.id} className="flex items-center gap-3 py-2.5">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/40 text-muted-foreground">
-                {share.kind === "CHAT" ? <MessagesSquare className="h-4 w-4" /> : <Code2 className="h-4 w-4" />}
+              {/* `bg-muted` opaque and `rounded-field`: at /40 over the black
+                  card the tile composited to ~7.7% against the card's 6.5% — a
+                  1.2-point step that is invisible on an OLED panel, so the icon
+                  floated with no tile at all. */}
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-field border border-border/60 bg-muted text-muted-foreground">
+                {share.kind === "CHAT" ? (
+                  <MessagesSquare className="size-4" aria-hidden />
+                ) : (
+                  <Code2 className="size-4" aria-hidden />
+                )}
               </span>
               <div className="min-w-0 flex-1">
                 <a
                   href={share.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="block truncate text-sm font-medium underline-offset-4 hover:text-primary hover:underline"
+                  className="block truncate rounded-xs text-body font-medium underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary hover:underline focus-visible:text-primary"
                 >
                   {share.title.trim() || "Untitled"}
                 </a>
-                <p className="font-mono text-caption text-muted-foreground">
+                <p className="font-mono text-caption tabular-nums text-muted-foreground">
                   {share.kind === "CHAT" ? "Chat" : "Artifact"} · shared {formatDate(share.snapshotAt)} ·{" "}
                   {share.views} {share.views === 1 ? "view" : "views"}
                 </p>
@@ -117,13 +141,18 @@ export function SharedLinksCard() {
                 aria-label="Copy link"
                 className="text-muted-foreground hover:text-foreground"
               >
-                {copiedId === share.id ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+                {copiedId === share.id ? (
+                  <Check className="size-4 text-success motion-safe:animate-pop-in" aria-hidden />
+                ) : (
+                  <Copy className="size-4" aria-hidden />
+                )}
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => revoke(share)}
                 disabled={revokingId === share.id}
+                aria-busy={revokingId === share.id}
                 className="text-destructive danger-hover"
               >
                 {revokingId === share.id ? "Revoking…" : "Revoke"}

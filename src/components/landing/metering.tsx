@@ -69,13 +69,27 @@ export function Metering() {
           ))}
         </dl>
 
-        {/* The receipt — live numbers, recomputed on every build/deploy. Card
-            resolves to the same 24px this used to hardcode, and adds the sheen
-            the in-app cards are lit by. */}
-        <Card className="p-6">
+        {/* The receipt — live numbers, recomputed on every build/deploy. Card,
+            so the section's centrepiece is the same primitive as every panel past
+            the sign-in: `rounded-card` (14px), damped hairline, bg-card. (Not the
+            24px and the sheen this comment used to claim — Card sets neither; the
+            highlight is the dark override on the next line.)
+            The dark override is the same lit INSET edge the features privacy row
+            and `.dark .composer-surface` carry: this is the section's whole
+            argument, and on the OLED ground a default card is a 6.5% rectangle
+            behind a hairline with nothing to lift it. */}
+        <Card className="p-6 dark:border-border dark:shadow-[inset_0_1px_0_hsl(var(--sheen)),0_1px_2px_hsl(0_0%_0%/0.5),0_18px_44px_-30px_hsl(0_0%_0%/0.9)]">
           {/* CardEyebrow, not a hand-rolled <p>: this was the mono kicker at
               text-caption while PageHeader sets the same role at text-label five
-              times higher up the page. */}
+              times higher up the page.
+              The four classes this used to spell out are gone. They existed to
+              overrule CardEyebrow's old `text-xs font-semibold text-foreground`
+              default, and card.tsx has since moved that default to exactly
+              `font-mono text-label text-muted-foreground` — so the override had
+              become a verbatim restatement of the component, under a comment
+              still describing a default that no longer exists. A call site that
+              re-declares its component's own values is how the two drift apart
+              the next time one of them changes. */}
           <CardEyebrow>One message, priced</CardEyebrow>
           <p className="mt-1.5 text-caption text-muted-foreground">
             The same exchange — about {SAMPLE.input.toLocaleString("en-US")} tokens in,{" "}

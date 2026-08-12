@@ -63,7 +63,7 @@ function StatusPill({ label, active, value }: { label: string; active: boolean; 
     <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-caption font-medium">
       <span className={cn("size-1.5 shrink-0 rounded-full", active ? "bg-success" : "bg-muted-foreground/40")} aria-hidden="true" />
       <span className={active ? "text-foreground" : "text-muted-foreground"}>{label}</span>
-      {value && <span className="font-mono text-caption text-muted-foreground/70">{value}</span>}
+      {value && <span className="font-mono text-caption text-muted-foreground">{value}</span>}
     </span>
   );
 }
@@ -86,7 +86,7 @@ interface ParamRowProps {
 function ParamRow({ label, value, min, max, step, fallback, format, onChange, onReset, locked, dimmed, caption }: ParamRowProps) {
   const inert = locked || dimmed;
   return (
-    <div className={cn("rounded-md bg-muted/20 px-2.5 py-2 transition-opacity duration-fast", dimmed && "opacity-50")}>
+    <div className={cn("rounded-md bg-secondary px-2.5 py-2 transition-opacity duration-fast", dimmed && "opacity-50")}>
       <div className="flex items-center justify-between gap-2">
         <span className="font-mono text-label text-muted-foreground">{label}</span>
         <span className="flex items-center gap-1">
@@ -194,16 +194,32 @@ export function ModelParamsPanel({
             <Button
               type="button"
               variant="ghost"
-              size="icon-sm"
+              /*
+               * `icon` (36px), not `icon-sm` (32px). This button is the middle
+               * of three peers in one `flex items-center gap-2` cluster on the
+               * chat root — Share is a 36px Pressable, PrivateChatToggle is a
+               * hand-rolled 36px button, and this one was 32. Two consequences,
+               * both visible: the row had one control smaller than its
+               * neighbours for no reason a user could infer, and because the
+               * cluster centres its items, the 4px height difference pushed this
+               * button's top edge 2px below the others. The glyph moves 14 -> 18
+               * for the same reason — the cluster was running three icon sizes
+               * (14, 18, 20) side by side.
+               *
+               * The ghost's 20px mark is deliberately left alone: it is an
+               * illustrative brand glyph with `overflow-visible` and a hover
+               * scale, not a UI icon on the same rung as these two.
+               */
+              size="icon"
               disabled={disabled}
               aria-label="Model parameters"
               className={cn(
-                "relative coarse:h-11 coarse:w-11 [&_svg]:size-3.5",
+                "relative",
                 customized ? "text-primary" : "text-muted-foreground",
                 disabled && "pointer-events-none opacity-50"
               )}
             >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
+              <SlidersHorizontal className="h-[18px] w-[18px]" />
               {customized && <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-primary" aria-hidden="true" />}
             </Button>
           </PopoverTrigger>
@@ -305,7 +321,7 @@ export function ModelParamsPanel({
         </div>
 
         {/* Footer — pinned below the scroll area. */}
-        <div className="shrink-0 border-t border-border/60 bg-muted/20 px-4 py-2.5">
+        <div className="shrink-0 border-t border-border/60 bg-secondary px-4 py-2.5">
           <p className="text-caption text-muted-foreground">Saved per model on this device.</p>
         </div>
       </PopoverContent>

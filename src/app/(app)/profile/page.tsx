@@ -6,7 +6,7 @@ import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
 import { toast } from "sonner";
-import { Camera, ChevronDown, Download, Loader2, Lock, TriangleAlert } from "lucide-react";
+import { Camera, ChevronDown, Download, Loader2, Lock, MessageSquare, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -177,7 +177,7 @@ function AvailabilityBars({ ratio, color, dots = 24 }: { ratio: number; color: s
       {Array.from({ length: dots }).map((_, i) => (
         <span
           key={i}
-          className="h-8 w-2 rounded-full bg-muted ring-1 ring-inset ring-foreground/10 transition-colors"
+          className="h-8 w-2 rounded-full bg-muted ring-1 ring-inset ring-foreground/10 transition-colors duration-base ease-out-soft motion-reduce:transition-none"
           style={i < filled ? { backgroundColor: color } : undefined}
         />
       ))}
@@ -191,7 +191,11 @@ function shortProviderLabel(provider: Provider) {
 
 function ProviderLogoWell({ provider }: { provider: Provider }) {
   return (
-    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-card bg-background shadow-pop">
+    // Up the ladder, not down. This was `bg-background` + `shadow-pop` inside a
+    // `bg-card` row: on `--background: 0 0% 0%` the well became pure black
+    // punched into a 6.5% card, and its only separation was black ink on black.
+    // A hairline plus one rung of lift replaces both.
+    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-card border border-border/60 bg-secondary">
       <ProviderLogo provider={provider} className="h-8 w-8" />
     </div>
   );
@@ -256,7 +260,7 @@ function ProviderRow({
     // The recession is carried by the logo and the muted ink instead, and the
     // status becomes the same bordered mono pill ModelRow uses for Legacy.
     return (
-      <div className="flex items-center gap-4 rounded-card border border-border/50 p-4">
+      <div className="flex items-center gap-4 rounded-card border border-border/60 p-4">
         <span className="opacity-50">
           <ProviderLogoWell provider={provider} />
         </span>
@@ -296,7 +300,7 @@ function ProviderRow({
         <AvailabilityBars ratio={share} color={providerAccent(provider)} />
         <ChevronDown
           className={cn(
-            "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft",
+            "size-4 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
             open && "rotate-180"
           )}
         />
@@ -304,7 +308,9 @@ function ProviderRow({
       <div
         aria-hidden={!open}
         className={cn(
-          "grid transition-[grid-template-rows] duration-base ease-out-soft",
+          // ease-in-out: both endpoints are visible, so an ease-out reads as the
+          // panel arriving from off-screen rather than opening in place.
+          "grid transition-[grid-template-rows] duration-base ease-in-out motion-reduce:transition-none",
           open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
         )}
       >
@@ -404,7 +410,7 @@ function AccountCard({ email }: { email: string }) {
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="font-serif">Delete this account?</DialogTitle>
+            <DialogTitle>Delete this account?</DialogTitle>
             <DialogDescription>
               This deletes your account and everything in it — conversations, memories, uploaded
               files, and your subscription. It takes effect immediately, and nothing can be
@@ -453,7 +459,7 @@ function AccountCard({ email }: { email: string }) {
   );
 }
 
-export default function ProfilePage() {
+function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
   const router = useRouter();
   const { user, quota, features } = useApp();
   const plan = PLANS[quota.plan];
@@ -535,9 +541,9 @@ export default function ProfilePage() {
   const planLevel = planRank(quota.plan);
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6">
-        <AppPageHeader eyebrow="Profile" heading={user.name ?? "You"} />
+    <div className={cn(!hideHeader && "app-page-scroll")}>
+      <div className={cn("mx-auto w-full max-w-4xl", hideHeader ? "px-0 py-0" : "app-page-content")}>
+        {!hideHeader && <AppPageHeader eyebrow="Profile" heading={user.name ?? "You"} />}
 
         {/* Identity */}
         <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
@@ -559,16 +565,29 @@ export default function ProfilePage() {
               )}
               {/* Forced visible while uploading. The spinner lived behind
                   group-hover, so on touch it never showed at all and on desktop
-                  moving the pointer away mid-upload hid every trace of it. */}
+                  moving the pointer away mid-upload hid every trace of it.
+                  group-focus-within added for the same reason in the keyboard
+                  case: the veil is the only confirmation that the focused thing
+                  is a control. */}
               <span
                 className={cn(
-                  "absolute inset-0 flex items-center justify-center bg-foreground/40 text-background opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100",
+                  "absolute inset-0 flex items-center justify-center bg-foreground/40 text-background opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none",
                   uploading && "opacity-100"
                 )}
               >
-                {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Camera className="h-5 w-5" />}
+                {uploading ? <Loader2 className="size-5 animate-spin" /> : <Camera className="size-5" />}
               </span>
             </button>
+            {/* A permanent badge, because hover is not an affordance on touch:
+                the camera glyph above lives behind group-hover, so on a phone
+                the avatar gave no sign it could be changed at all. Pointer-
+                events off — the button underneath owns the whole target. */}
+            <span
+              aria-hidden
+              className="pointer-events-none absolute bottom-0 right-0 grid size-6 place-items-center rounded-full border border-border/60 bg-card text-muted-foreground shadow-soft"
+            >
+              <Camera className="size-3" />
+            </span>
             <input
               ref={fileRef}
               type="file"
@@ -686,7 +705,16 @@ export default function ProfilePage() {
                   <p className="mt-1 text-sm text-muted-foreground">Your mix over the last year.</p>
                 </div>
                 {stats.models.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No chats yet — start one to see your mix.</p>
+                  // The shared primitive, so "you have not used this yet" looks
+                  // the same here as it does everywhere else — it was one grey
+                  // sentence, identical in weight to the failure state above.
+                  <EmptyState
+                    tone="empty"
+                    size="panel"
+                    icon={MessageSquare}
+                    title="No chats yet"
+                    description="Start a conversation and your model mix builds itself here."
+                  />
                 ) : (
                   <ul className="space-y-3">
                     {stats.models.slice(0, 6).map((m) => {
@@ -756,10 +784,6 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
 
   return (
     <Card className="relative overflow-hidden rounded-surface p-5">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(520px_220px_at_100%_-10%,hsl(var(--primary)/0.08),transparent_60%)]"
-      />
       <div className="relative">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -769,17 +793,25 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
               call, including thinking. Not reset by deleting chats.
             </p>
           </div>
-          <span className="shrink-0 rounded-full border border-border/60 bg-card/80 px-2.5 py-1 font-mono text-caption text-muted-foreground shadow-soft">
+          {/* `bg-secondary`, not `bg-card`: this pill sits INSIDE a bg-card
+              Card, so it was painting its own parent's fill onto itself — a
+              zero-point step, leaving the /60 hairline to carry the whole
+              shape. One rung up is the same move AppLogo and the provider well
+              on this page already make. */}
+          <span className="shrink-0 rounded-full border border-border/60 bg-secondary px-2.5 py-1 text-caption font-medium text-muted-foreground">
             {planName}
           </span>
         </div>
 
-        <div className="mt-5 border-t border-border/50 pt-5">
+        <div className="mt-5 border-t border-border/60 pt-5">
           <p className="font-mono text-caption text-muted-foreground">
             API cost
           </p>
           <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <p className="font-serif text-[2rem] font-medium leading-none tracking-[-0.03em] text-foreground sm:text-[2.25rem]">
+            {/* `text-display` already IS this role — a clamped 2rem→3rem with its
+              own tracking — so the hand-rolled responsive pair and the tracking
+              override were a private copy of a scale rung. */}
+          <p className="font-serif text-display font-medium leading-none text-foreground">
               {formatLifetimeCost(costMicroUsd)}
             </p>
             {rate !== 1 && costUsd > 0 ? (
@@ -799,35 +831,35 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
         </div>
 
         <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-card border border-border/60 bg-border/60 sm:grid-cols-4">
-          <div className="bg-card/90 px-3 py-3">
+          <div className="bg-card px-3 py-3">
             <dt className="font-mono text-caption text-muted-foreground">
               Input
             </dt>
-            <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
+            <dd className="mt-1 text-heading font-semibold tracking-[-0.02em] tabular-nums">
               {compactNumber(tokensIn ?? Math.round(tokens * 0.6))}
             </dd>
           </div>
-          <div className="bg-card/90 px-3 py-3">
+          <div className="bg-card px-3 py-3">
             <dt className="font-mono text-caption text-muted-foreground">
               Output
             </dt>
-            <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
+            <dd className="mt-1 text-heading font-semibold tracking-[-0.02em] tabular-nums">
               {compactNumber(tokensOut ?? Math.round(tokens * 0.4))}
             </dd>
           </div>
-          <div className="bg-card/90 px-3 py-3">
+          <div className="bg-card px-3 py-3">
             <dt className="font-mono text-caption text-muted-foreground">
               Replies
             </dt>
-            <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
+            <dd className="mt-1 text-heading font-semibold tracking-[-0.02em] tabular-nums">
               {messages.toLocaleString()}
             </dd>
           </div>
-          <div className="bg-card/90 px-3 py-3">
+          <div className="bg-card px-3 py-3">
             <dt className="font-mono text-caption text-muted-foreground">
               Models
             </dt>
-            <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
+            <dd className="mt-1 text-heading font-semibold tracking-[-0.02em] tabular-nums">
               {modelsTried}
             </dd>
           </div>
@@ -853,15 +885,21 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
                         </span>
                         <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
                           {formatLifetimeCost(row.costMicroUsd)}
-                          <span className="text-muted-foreground/70"> · {row.count.toLocaleString()}</span>
+                          <span className="text-muted-foreground"> · {row.count.toLocaleString()}</span>
                         </span>
                       </div>
-                      <p className="mt-0.5 font-mono text-caption tabular-nums text-muted-foreground/80">
+                      <p className="mt-0.5 font-mono text-caption tabular-nums text-muted-foreground">
                         {compactNumber(row.tokensIn)} in · {compactNumber(row.tokensOut)} out
                       </p>
                       <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
+                        {/* Same fill and the same reduced-motion escape as the
+                            "By surface" bars below. These two lists sit in one
+                            card, measure the same quantity at the same rank,
+                            and were drawn in two different inks on two
+                            different motion contracts — this one animated its
+                            width even for a reader who asked for no motion. */}
                         <div
-                          className="h-full rounded-full bg-foreground/70 transition-[width] duration-base ease-out-soft"
+                          className="h-full rounded-full bg-primary/80 transition-[width] duration-base ease-out-soft motion-reduce:transition-none"
                           style={{ width: `${Math.max(share * 100, row.costMicroUsd > 0 ? 3 : 0)}%` }}
                         />
                       </div>
@@ -893,12 +931,12 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
                       <span className="truncate text-sm">{kindLabel(row.kind)}</span>
                       <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
                         {formatLifetimeCost(row.costMicroUsd)}
-                        <span className="text-muted-foreground/70"> · {row.count.toLocaleString()}</span>
+                        <span className="text-muted-foreground"> · {row.count.toLocaleString()}</span>
                       </span>
                     </div>
                     <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
                       <div
-                        className="h-full rounded-full bg-primary/80 transition-[width] duration-base ease-out-soft"
+                        className="h-full rounded-full bg-primary/80 transition-[width] duration-base ease-out-soft motion-reduce:transition-none"
                         style={{ width: `${Math.max(share * 100, row.costMicroUsd > 0 ? 3 : 0)}%` }}
                       />
                     </div>
@@ -914,7 +952,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
         ) : null}
 
         {stats.memberSince ? (
-          <p className="mt-5 border-t border-border/50 pt-3 font-mono text-caption text-muted-foreground">
+          <p className="mt-5 border-t border-border/60 pt-3 font-mono text-caption text-muted-foreground">
             Member since{" "}
             {new Date(stats.memberSince).toLocaleDateString(undefined, {
               month: "short",
@@ -927,3 +965,11 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
     </Card>
   );
 }
+
+function ProfilePage() {
+  return <ProfileContent />;
+}
+
+ProfilePage.Content = ProfileContent;
+
+export default ProfilePage;

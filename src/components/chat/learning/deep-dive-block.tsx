@@ -24,8 +24,8 @@ export function DeepDiveBlock({ deepDive }: { deepDive: DeepDiveData }) {
         aria-controls={contentId}
         onClick={() => setOpen((value) => !value)}
         className={cn(
-          "grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md text-left outline-none",
-          "transition-colors duration-fast hover:bg-accent/30 focus-visible:ring-1 focus-visible:ring-ring",
+          "grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-control",
+          "transition-colors duration-fast hover:bg-accent/30",
           "-my-1 py-1 coarse:min-h-11"
         )}
       >
@@ -49,7 +49,7 @@ export function DeepDiveBlock({ deepDive }: { deepDive: DeepDiveData }) {
         <span
           aria-hidden
           className={cn(
-            "pr-1 font-mono text-[16px] leading-none text-muted-foreground transition-transform duration-base ease-spring",
+            "pr-1 font-mono text-[16px] leading-none text-muted-foreground transition-transform duration-base ease-out-strong",
             open && "rotate-45"
           )}
         >

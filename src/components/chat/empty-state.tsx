@@ -8,20 +8,16 @@ import { cn } from "@/lib/utils";
 // Time-of-day greeting buckets. Each hour range has a few phrases so the welcome
 // feels fresh — including playful late-night ones (e.g. "Moonlight chat" at 3am).
 const TIME_GREETINGS: { from: number; to: number; phrases: string[] }[] = [
-  { from: 0, to: 5, phrases: ["Moonlight chat", "Burning the midnight oil", "Late-night thoughts", "The world's asleep", "Night owl mode", "Can't sleep?"] },
-  { from: 5, to: 7, phrases: ["Rise and shine", "Early bird", "Up before the sun", "Dawn patrol"] },
-  { from: 7, to: 12, phrases: ["Good morning", "Morning", "Bright and early", "Fresh start", "Rise and grind"] },
-  { from: 12, to: 14, phrases: ["Good afternoon", "Midday check-in", "Lunch-hour thoughts"] },
-  { from: 14, to: 18, phrases: ["Good afternoon", "Afternoon", "Hitting your stride", "Halfway there"] },
-  { from: 18, to: 22, phrases: ["Good evening", "Winding down", "Evening", "Golden hour"] },
-  { from: 22, to: 24, phrases: ["Good evening", "Late shift", "Still going", "Night owl"] },
+  { from: 0, to: 5, phrases: ["Still going"] },
+  { from: 5, to: 12, phrases: ["Good morning"] },
+  { from: 12, to: 18, phrases: ["Good afternoon"] },
+  { from: 18, to: 24, phrases: ["Good evening"] },
 ];
 
-function pickGreeting(random: boolean): string {
+function pickGreeting(): string {
   const h = new Date().getHours();
   const bucket = TIME_GREETINGS.find((b) => h >= b.from && h < b.to) ?? TIME_GREETINGS[2];
-  const idx = random ? Math.floor(Math.random() * bucket.phrases.length) : h % bucket.phrases.length;
-  return bucket.phrases[idx];
+  return bucket.phrases[0];
 }
 
 /** The serif greeting + signature mark — sits above the centered composer.
@@ -35,10 +31,14 @@ function pickGreeting(random: boolean): string {
 export function EmptyGreeting() {
   const { user } = useApp();
   const firstName = user.name?.split(" ")[0];
-  // Deterministic during SSR (stable hydration), then pick a random,
-  // time-appropriate phrase once mounted on the client so it varies per visit.
-  const [phrase, setPhrase] = React.useState(() => pickGreeting(false));
-  React.useEffect(() => setPhrase(pickGreeting(true)), []);
+  // One phrase per bucket, so this is deterministic in both passes. The effect
+  // still runs because the SERVER picks its bucket from UTC and the client from
+  // the visitor's clock: without the re-read, anyone in a timezone that has
+  // crossed a bucket boundary is greeted with the wrong time of day until they
+  // navigate. (The comment here used to describe a random pick; the phrase lists
+  // were collapsed to one entry each and this was left behind.)
+  const [phrase, setPhrase] = React.useState(() => pickGreeting());
+  React.useEffect(() => setPhrase(pickGreeting()), []);
 
   // The mark's press animation: retrigger the spring-pop keyframe per click.
   const [popping, setPopping] = React.useState(false);
@@ -57,21 +57,21 @@ export function EmptyGreeting() {
             // asks for 24x24 CSS px. grid + place-items keeps the mark exactly
             // where it was and grows only the hit area around it, so nothing
             // moves and the button becomes tappable.
-            "grid size-6 shrink-0 place-items-center outline-none [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in sm:size-8",
+            "grid size-6 shrink-0 place-items-center rounded-full [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-fade-in sm:size-7",
             popping && "juno-mark-popping",
           )}
         >
           <JunoMark
             className={cn(
-              "block h-[1.32rem] w-[1.32rem] sm:h-[1.83rem] sm:w-[1.83rem]",
-              "transition-transform duration-base ease-spring motion-reduce:transition-none",
+              "block h-[1.2rem] w-[1.2rem] sm:h-[1.5rem] sm:w-[1.5rem]",
+              "transition-transform duration-base ease-out-strong motion-reduce:transition-none",
               !popping && "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
             )}
           />
         </button>
       </div>
       <h1
-        className="empty-greeting text-center font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
+        className="empty-greeting text-center font-serif text-[1.65rem] font-normal leading-[1.15] tracking-[-0.025em] sm:text-[2rem]"
         suppressHydrationWarning
       >
         {/* The greeting and the name rise as two beats rather than one block.
@@ -107,7 +107,7 @@ export function EmptyGreeting() {
 export function PrivateGreeting() {
   return (
     <div className="flex w-full flex-col items-center gap-2 text-center">
-      <h1 className="font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]">
+      <h1 className="font-serif text-[1.65rem] font-normal leading-[1.15] tracking-[-0.025em] sm:text-[2rem]">
         You&apos;re incognito
       </h1>
       <p className="max-w-md text-sm leading-6 text-muted-foreground sm:text-base">

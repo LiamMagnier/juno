@@ -16,8 +16,10 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { MoreHorizontal, PenTool, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, MoreHorizontal, PenTool, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AppPageHeader } from "@/components/app/app-page-header";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Dialog,
   DialogClose,
@@ -36,6 +38,7 @@ import {
 import { AppIcons } from "@/lib/app-icons";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 interface DesignItem {
   id: string;
@@ -124,26 +127,23 @@ export default function DesignPage() {
   const empty = !loading && !error && items.length === 0;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-6 pb-16 pt-10">
-      <div className="flex items-baseline justify-between gap-4">
-        <h1 className="flex items-center gap-2.5 font-serif text-display font-medium tracking-tight">
-          <AppIcons.design className="size-[0.85em] shrink-0 text-muted-foreground/80" strokeWidth={1.6} aria-hidden />
-          Design
-        </h1>
-        {!loading && !empty && !error && (
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-3xl">
+        <AppPageHeader
+          eyebrow="Design"
+          heading="Design"
+          icon={AppIcons.design}
+          lede="Draw it yourself, or ask Juno. Every design opens as an editable document you can restyle and hand to Juno Code."
+          actions={!loading && !empty && !error ? (
           <span className="shrink-0 font-mono text-caption text-muted-foreground tabular-nums">
             {items.length} {items.length === 1 ? "design" : "designs"}
           </span>
-        )}
-      </div>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Draw it yourself, or ask Juno — “design a mobile sign-in screen”. Either way it opens as an editable document
-        you can select, restyle and hand to Juno Code.
-      </p>
+          ) : undefined}
+        />
 
       {/* Starting a design is the primary action, so it is the first thing on
           the page rather than a button hiding above a list. */}
-      <section className="mt-6" aria-label="Start a design">
+      <section aria-label="Start a design">
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {PRESETS.map((preset) => (
             <button
@@ -152,20 +152,25 @@ export default function DesignPage() {
               disabled={creating !== null}
               onClick={() => void startDesign(preset.key)}
               className={cn(
-                "pressable group flex flex-col items-start gap-0.5 rounded-menu border border-border/60 bg-card/40 px-3 py-2.5 text-left transition-colors duration-fast",
-                "hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+                // No `transition-colors`: utilities are emitted after the components
+                // layer, so it replaced .pressable's own transition shorthand and
+                // dropped `transform` off the list — the press dipped to scale(0.97)
+                // in a single frame instead of easing, on the four biggest buttons
+                // on this page. .pressable already animates colour and border.
+                "pressable group flex flex-col items-start gap-0.5 rounded-menu border border-border/60 bg-card px-3 py-2.5 text-left",
+                "hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 creating !== null && "opacity-60"
               )}
             >
               <span className="flex items-center gap-1.5 text-sm font-medium">
                 {creating === preset.key ? (
-                  <PenTool className="size-3.5 text-primary motion-safe:animate-pulse" aria-hidden />
+                  <PenTool className="size-3.5 text-primary motion-safe:animate-icon-breathe" aria-hidden />
                 ) : (
                   <Plus className="size-3.5 text-muted-foreground group-hover:text-primary" aria-hidden />
                 )}
                 {preset.label}
               </span>
-              <span className="font-mono text-[10px] text-muted-foreground tabular-nums">{preset.detail}</span>
+              <span className="font-mono text-caption tabular-nums text-muted-foreground">{preset.detail}</span>
             </button>
           ))}
         </div>
@@ -175,38 +180,46 @@ export default function DesignPage() {
         {loading ? (
           <div className="space-y-2">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-14 animate-pulse rounded-menu bg-muted/50" />
+              // `i * 60` is STAGGER.loose written out by hand; said in the shared
+              // vocabulary it also inherits the cap this list would need if the
+              // placeholder count ever grew.
+              <div key={i} className="skeleton h-14 rounded-menu" style={staggerDelay(i, "loose")} />
             ))}
           </div>
         ) : error ? (
-          <div className="rounded-menu border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-            {error}
-          </div>
+          // Through EmptyState so a failed load is fenced and role="status" the way
+          // it is on every other list page — this was unfenced text in a tint that
+          // disappeared on the black ground.
+          <EmptyState tone="error" icon={AlertTriangle} title="Couldn’t load your designs" description={error} />
         ) : empty ? (
-          <div className="flex flex-col items-center gap-2 py-10 text-center">
-            <p className="font-serif text-heading">No designs yet.</p>
-            <p className="max-w-sm text-sm leading-6 text-muted-foreground">
-              Pick a size above to start one, or ask Juno in any chat to design a screen.
-            </p>
-          </div>
+          <EmptyState
+            icon={AppIcons.design}
+            title="No designs yet."
+            description="Pick a size above to start one, or ask Juno in any chat to design a screen."
+          />
         ) : (
           <>
-            <p className="pb-2 font-mono text-[10px] text-muted-foreground">Recent</p>
+            <p className="pb-2 font-mono text-label text-muted-foreground">Recent</p>
             <ul className="space-y-1.5">
               {items.map((item) => (
                 <li key={item.id}>
-                  <div className="group flex items-center gap-1 rounded-menu border border-border/60 bg-card/40 p-1 transition-colors duration-fast hover:border-primary/40 hover:bg-accent">
+                  <div className="group flex items-center gap-1 rounded-menu border border-border/60 bg-card p-1 transition-colors duration-fast ease-out-soft hover:border-primary/40 hover:bg-accent">
                     <button
                       type="button"
                       onClick={() => router.push(`/design/${item.id}`)}
-                      className="pressable flex min-w-0 flex-1 items-center gap-3 rounded-composer-control px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      // rounded-control, not rounded-composer-control. The row shell
+                      // is rounded-menu (12) with p-1, so the concentric inner corner
+                      // is 8 and a 12 inside it bulges past the curve containing it —
+                      // visible at the row's left edge on every design in the list.
+                      // The composer rung also has no business naming a list row.
+                      className="pressable flex min-w-0 flex-1 items-center gap-3 rounded-control px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-control bg-primary/10 text-primary">
                         <AppIcons.design className="size-4" aria-hidden />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium">{item.title}</span>
-                        <span className="block font-mono text-[10px] text-muted-foreground">
+                        <span className="block font-mono text-caption tabular-nums text-muted-foreground">
                           v{item.version} · {timeAgo(item.updatedAt)}
                         </span>
                       </span>
@@ -217,14 +230,14 @@ export default function DesignPage() {
                           variant="ghost"
                           size="icon-sm"
                           aria-label={`Actions for ${item.title}`}
-                          className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 coarse:opacity-100"
+                          className="shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 motion-reduce:transition-none coarse:opacity-100"
                         >
                           <MoreHorizontal className="size-4" aria-hidden />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-44">
                         <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
+                          className="text-destructive focus:bg-destructive/10 focus:text-destructive"
                           onSelect={() => setDeleteTarget(item)}
                         >
                           <Trash2 className="size-4" aria-hidden />
@@ -268,6 +281,7 @@ export default function DesignPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   );
 }

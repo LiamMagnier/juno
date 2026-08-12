@@ -50,8 +50,15 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#faf9f6" },
-    { media: "(prefers-color-scheme: dark)", color: "#16140f" },
+    // hsl(54 18% 97%) resolves to #f9f8f6; the old #faf9f6 was a hand-typed
+    // approximation one step lighter in red and green, which shows as a seam
+    // between the iOS status bar and the paper ground it is meant to continue.
+    { media: "(prefers-color-scheme: light)", color: "#f9f8f6" },
+    // Must track --background in `.dark` exactly. This is the colour the OS
+    // paints the browser chrome, the iOS status bar and the PWA splash with, so
+    // any drift from the page's own ground shows up as a seam above the app —
+    // and against a true-black page a #16140f bar is a visible grey lid.
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
   ],
   width: "device-width",
   initialScale: 1,

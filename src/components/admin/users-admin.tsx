@@ -6,6 +6,7 @@ import { Ban, ChevronLeft, ChevronRight, MoreHorizontal, RotateCcw, Search, Tras
 import type { Plan, SubStatus } from "@prisma/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -19,8 +20,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { AdminNav } from "@/components/admin/admin-nav";
+import { AppPageHeader } from "@/components/app/app-page-header";
 import { DotIdenticon } from "@/components/signature/dot-matrix";
 import { PLANS } from "@/lib/plans";
+import { staggerDelay } from "@/lib/motion";
 
 const PLAN_OPTIONS: Plan[] = ["FREE", "PRO", "MAX", "MAX20", "OWNER"];
 const STRIKE_LIMIT = 3;
@@ -60,7 +63,10 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-const TH_CLASS = "px-4 py-2.5 font-mono text-[11px] font-medium text-muted-foreground";
+// `text-caption` is exactly the 11px this used to spell out by hand, and it is
+// the rung the rest of the product's mono metadata sits on — the arbitrary value
+// meant admin was the only surface whose table headers could drift off the scale.
+const TH_CLASS = "px-4 py-2.5 font-mono text-caption font-medium uppercase text-muted-foreground";
 
 export function UsersAdmin({ selfId }: { selfId: string }) {
   const [query, setQuery] = React.useState("");
@@ -68,6 +74,17 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
   const [page, setPage] = React.useState(1);
   const [data, setData] = React.useState<UsersResponse | null>(null);
   const [loading, setLoading] = React.useState(true);
+  /*
+   * A failed load was indistinguishable from an empty account list.
+   *
+   * The catch below toasted and set loading=false, leaving `data` null — so the
+   * table fell through to "No users yet", which is a claim about the database
+   * rather than about the request. A toast is gone in four seconds; the wrong
+   * empty state stays on screen. `reloadKey` exists because the fetch is keyed
+   * off [q, page] and neither changes when you press Try again.
+   */
+  const [failed, setFailed] = React.useState(false);
+  const [reloadKey, setReloadKey] = React.useState(0);
 
   const [banTarget, setBanTarget] = React.useState<AdminUser | null>(null);
   const [banReason, setBanReason] = React.useState("");
@@ -87,6 +104,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
   React.useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
+    setFailed(false);
     const params = new URLSearchParams({ page: String(page) });
     if (q) params.set("q", q);
     fetch(`/api/admin/users?${params}`, { signal: controller.signal })
@@ -99,10 +117,11 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
       .catch((err) => {
         if (controller.signal.aborted) return;
         toast.error(err instanceof Error ? err.message : "Could not load users.");
+        setFailed(true);
         setLoading(false);
       });
     return () => controller.abort();
-  }, [q, page]);
+  }, [q, page, reloadKey]);
 
   const patchUser = (id: string, next: Partial<AdminUser>) => {
     setData((d) => d && { ...d, users: d.users.map((u) => (u.id === id ? { ...u, ...next } : u)) });
@@ -218,28 +237,28 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
   const pageCount = Math.max(1, Math.ceil(total / (data?.pageSize ?? 50)));
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <div className="mb-2 flex items-center gap-2 font-mono text-label text-muted-foreground">
-              <UsersIcon className="h-4 w-4" />
-              Owner
-            </div>
-            <h1 className="font-serif text-display font-medium tracking-tight">Users</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {data
-                ? `${data.totals.users} ${data.totals.users === 1 ? "account" : "accounts"} · ${data.totals.activeThisMonth} active this month`
-                : "Accounts, plans, and monthly usage."}
-            </p>
-          </div>
-          <AdminNav current="users" reviewCount={data?.totals.flaggedCount ?? 0} />
-        </div>
+    <div className="app-page-scroll">
+      <div className="app-page-content flex max-w-6xl flex-col gap-6">
+        {/* The shared app header, not a fourth hand-built one. text-3xl (30px)
+            was not a rung on the Juno scale, and the three admin pages were the
+            only app pages with no back affordance at all. */}
+        <AppPageHeader
+          className="mb-0"
+          eyebrow="Owner"
+          heading="Users"
+          icon={UsersIcon}
+          lede={
+            data
+              ? `${data.totals.users} ${data.totals.users === 1 ? "account" : "accounts"} · ${data.totals.activeThisMonth} active this month`
+              : "Accounts, plans, and monthly usage."
+          }
+          actions={<AdminNav current="users" reviewCount={data?.totals.flaggedCount ?? 0} />}
+        />
 
         <Card className="overflow-hidden p-0">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-4 py-3">
             <div className="relative w-full max-w-xs">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -249,22 +268,56 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
               />
             </div>
             {data && (
-              <p className="font-mono text-[11px] text-muted-foreground">
+              <p className="font-mono text-caption tabular-nums text-muted-foreground">
                 {total} {total === 1 ? "match" : "matches"}
               </p>
             )}
           </div>
 
           {loading ? (
-            <div className="flex flex-col gap-2 p-4">
+            // aria-hidden + a staggered reveal: eight identical bars appearing at
+            // once read as a rendering glitch rather than as loading.
+            <div className="flex flex-col gap-2 p-4" aria-hidden>
               {[...Array(8)].map((_, i) => (
-                <div key={i} className="skeleton h-12 rounded-lg" />
+                <div key={i} className="skeleton h-12 rounded-field" style={staggerDelay(i)} />
               ))}
             </div>
+          ) : failed ? (
+            <EmptyState
+              tone="error"
+              size="panel"
+              icon={UsersIcon}
+              className="m-4"
+              title="Couldn't load users"
+              description="The request didn't come back. Nothing is shown rather than a guess at what's there."
+              action={
+                <Button variant="outline" size="sm" onClick={() => setReloadKey((k) => k + 1)}>
+                  Try again
+                </Button>
+              }
+            />
           ) : users.length === 0 ? (
-            <div className="m-4 rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-              {q ? `No users match “${q}”.` : "No users yet."}
-            </div>
+            // The shared primitive, and a way out of a dead search. This was a
+            // detached top rule floating inside a card that already draws a
+            // border above it, with no icon and no action.
+            <EmptyState
+              tone="empty"
+              size="panel"
+              icon={UsersIcon}
+              title={q ? "No matching users" : "No users yet"}
+              description={
+                q
+                  ? `Nothing matches “${q}”. Try a different name or email.`
+                  : "Accounts appear here as soon as someone signs up."
+              }
+              action={
+                q ? (
+                  <Button variant="outline" size="sm" onClick={() => setQuery("")}>
+                    Clear search
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[48rem] text-sm">
@@ -284,27 +337,40 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                     const isOwner = u.plan === "OWNER";
                     const locked = isSelf || isOwner;
                     return (
-                      <tr key={u.id} className="border-b border-border/40 last:border-b-0">
+                      <tr
+                        key={u.id}
+                        // `hover:bg-accent` at full strength. At /40 the fill
+                        // composited to ~9.1% over the 6.5% card — a 2.6-point
+                        // step on a row you are pointing at across an 800px
+                        // table, where the hover is the only thing tying a name
+                        // on the left to the actions on the right.
+                        className="border-b border-border/60 transition-colors duration-fast ease-out-soft last:border-b-0 hover:bg-accent"
+                      >
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-3">
+                            {/* Both branches wear `rounded-field`. The photo was
+                                `rounded-lg` (16px on a 32px box) while the
+                                identicon draws its own rx=6 on a 20 viewBox
+                                (~9.6px), so one column rendered two different
+                                silhouettes depending on whether a photo existed. */}
                             {u.image ? (
                               // eslint-disable-next-line @next/next/no-img-element
-                              <img src={u.image} alt="" className="h-8 w-8 shrink-0 rounded-lg object-cover" />
+                              <img src={u.image} alt="" className="h-8 w-8 shrink-0 rounded-field object-cover" />
                             ) : (
-                              <DotIdenticon seed={u.id} className="h-8 w-8 shrink-0" />
+                              <DotIdenticon seed={u.id} className="h-8 w-8 shrink-0 overflow-hidden rounded-field" />
                             )}
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
                                 <p className="truncate font-medium">{u.name || "—"}</p>
                                 {u.bannedAt && (
-                                  <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-destructive">
+                                  <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 font-mono text-caption font-semibold text-destructive">
                                     Banned
                                   </span>
                                 )}
                               </div>
                               <p className="truncate text-xs text-muted-foreground">{u.email}</p>
                               {u.strikes > 0 && !u.bannedAt && (
-                                <p className="mt-0.5 font-mono text-[10px] text-warning">
+                                <p className="mt-0.5 font-mono text-caption tabular-nums text-warning">
                                   {u.strikes}/{STRIKE_LIMIT} strikes
                                 </p>
                               )}
@@ -332,7 +398,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                             </SelectContent>
                           </Select>
                           {u.subscriptionStatus && u.subscriptionStatus !== "ACTIVE" && (
-                            <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                            <p className="mt-1 font-mono text-caption text-muted-foreground">
                               {u.subscriptionStatus.toLowerCase().replace(/_/g, " ")}
                             </p>
                           )}
@@ -341,7 +407,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                         <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">
                           {formatSpend(u.monthSpendMicroUsd)}
                           {u.monthSpendAppMicroUsd > 0 && (
-                            <p className="mt-0.5 text-[10px] text-muted-foreground">
+                            <p className="mt-0.5 font-mono text-caption tabular-nums text-muted-foreground">
                               web {formatSpend(u.monthSpendWebMicroUsd)} · app {formatSpend(u.monthSpendAppMicroUsd)}
                             </p>
                           )}
@@ -349,10 +415,15 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                         <td className="px-4 py-2.5 text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
+                              {/* `size="icon-sm"`, not size="icon" cut down to
+                                  h-8 w-8 by hand: the override beat the base
+                                  size but not its `coarse:` pair, so the row's
+                                  only action control was the one thing on the
+                                  page that did not grow to a 40px target on a
+                                  touch pointer. icon-sm IS 8/coarse-10. */}
                               <Button
                                 variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
+                                size="icon-sm"
                                 disabled={locked}
                                 aria-label={`Actions for ${u.email}`}
                               >
@@ -400,7 +471,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
           )}
 
           <div className="flex items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
-            <p className="font-mono text-[11px] text-muted-foreground">
+            <p className="font-mono text-caption tabular-nums text-muted-foreground">
               Page {page} of {pageCount}
             </p>
             <div className="flex gap-2">

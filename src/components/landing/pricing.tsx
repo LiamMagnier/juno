@@ -122,10 +122,14 @@ export function Pricing() {
           </div>
         </>
       ) : (
+        // size="page", not "panel": this state owns the whole 1152px section
+        // column, and "panel" is the compact rung (14px title, size-4 icon, 28px
+        // padding) meant for a state tucked inside a card. At panel size it was
+        // an unfenced 14px line floating in a full-width section.
         <EmptyState
           className="mt-10"
           tone="empty"
-          size="panel"
+          size="page"
           title="Plans are being set up"
           description="Checkout is not configured on this deployment yet. A free account works today — bring your history over and look around."
           action={

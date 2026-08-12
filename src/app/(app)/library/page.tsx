@@ -294,9 +294,16 @@ function VersionsDialog({
         </DialogHeader>
         <div className="max-h-72 space-y-2 overflow-y-auto">
           {loading ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">Loading versions…</p>
+            // A skeleton in the shape of the rows, not the word "Loading" — the
+            // dialog is the one place in this page that still announced its wait
+            // in prose while every list around it drew the shape it was fetching.
+            <div className="space-y-2" role="status" aria-label="Loading versions">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="skeleton h-14 rounded-field" style={{ animationDelay: `${i * 60}ms` }} />
+              ))}
+            </div>
           ) : versions.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">No saved versions yet.</p>
+            <EmptyState size="panel" icon={History} title="No saved versions yet" description="Re-uploading this file keeps the bytes it replaces." />
           ) : (
             versions.map((version) => (
               <div key={version.version} className="flex items-center gap-3 rounded-field border border-border/60 px-3 py-2">
@@ -430,7 +437,11 @@ function LibraryGridItem({
         className={cn(
           // rounded-card (16), the family's rung for a card in a grid — this was
           // rounded-menu (14), one of four answers to the same question.
-          "relative aspect-square overflow-hidden rounded-card border border-border/60 bg-background transition-[border-color,transform,box-shadow] duration-base ease-out-soft group-hover/card:-translate-y-0.5 group-hover/card:border-foreground/20 motion-reduce:transition-none motion-reduce:group-hover/card:translate-y-0",
+          // bg-card, not bg-background: the tile was painted in the SAME token as
+          // the page under it, so on the true-black ground it had no surface at all
+          // and the hairline border was doing the entire job of separating a file
+          // from the page.
+          "relative aspect-square overflow-hidden rounded-card border border-border/60 bg-card transition-[border-color,transform,box-shadow] duration-base ease-out-soft group-hover/card:-translate-y-0.5 group-hover/card:border-foreground/20 motion-reduce:transition-none motion-reduce:group-hover/card:translate-y-0",
           selected && "border-foreground/40 ring-1 ring-foreground/35 ring-offset-2 ring-offset-background"
         )}
       >
@@ -457,7 +468,7 @@ function LibraryGridItem({
       <div className="flex min-w-0 items-start gap-2 px-1 pb-1 pt-2.5">
         <div className="min-w-0 flex-1">
           {item.deletedAt ? (
-            <p className="block truncate text-[13px] font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
+            <p className="block truncate text-sm font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
               {item.fileName}
             </p>
           ) : (
@@ -466,12 +477,12 @@ function LibraryGridItem({
               target="_blank"
               rel="noopener noreferrer"
               title={item.fileName}
-              className="block truncate text-[13px] font-medium underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="block truncate text-sm font-medium underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {item.fileName}
             </a>
           )}
-          <p className="mt-0.5 truncate text-[11px] tabular-nums text-muted-foreground">
+          <p className="mt-0.5 truncate text-caption tabular-nums text-muted-foreground">
             {formatBytes(item.size)} · {timeAgo(item.createdAt)}
           </p>
           {item.knowledge?.documentId ? (
@@ -521,8 +532,13 @@ function LoadingBrowser({ view }: { view: LibraryView }) {
   }
 
   return (
-    <div className="mt-5 overflow-hidden rounded-popover border border-border/60" aria-label="Loading files">
-      <div className={cn(browserGrid, "h-10 border-b border-border/50 bg-muted/20 px-3 sm:px-4")}>
+    // bg-card, like the browser this stands in for. Without it the skeleton was
+    // an unfilled outline on the black page and the real panel arrived carrying a
+    // surface, so the load ended with the whole list stepping up a rung.
+    <div className="mt-5 overflow-hidden rounded-popover border border-border/60 bg-card" aria-label="Loading files">
+      {/* Same rung as the loaded browser's header — a skeleton that paints a
+          different tone than the thing it stands in for is a visible swap. */}
+      <div className={cn(browserGrid, "h-10 border-b border-border/50 bg-secondary px-3 sm:px-4")}>
         <span className="skeleton size-4 rounded-xs" />
         <span className="skeleton h-2.5 w-16 rounded-sm" />
       </div>
@@ -733,8 +749,8 @@ export default function LibraryPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto">
-      <main className="mx-auto w-full max-w-6xl px-4 pb-12 pt-6 sm:px-7 sm:pb-16 sm:pt-9 lg:px-10">
+    <div className="app-page-scroll">
+      <main className="app-page-content max-w-6xl">
         {/* "Recently deleted" is a MODE, not a filter, so it has to be legible in
             the heading — the h1 used to keep saying "Your files" while the list
             showed the trash, and the only tell was the toggle's own label. */}
@@ -812,7 +828,11 @@ export default function LibraryPage() {
               </div>
 
               <div className="flex min-w-0 flex-1 items-center gap-2 sm:justify-end">
-                <div className="group/search flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control border border-border/60 bg-background/70 px-3 transition-[border-color,box-shadow] duration-fast focus-within:border-foreground/25 focus-within:shadow-[0_0_0_3px_hsl(var(--foreground)/0.035)] sm:max-w-[16rem]">
+                {/* The focus affordance was a foreground-tinted box-shadow — the exact
+                    white-halo pattern the shadow rebase removed, which on the true-black
+                    ground painted a glow around the field instead of a ring. It is the
+                    ring token now, like every other focusable surface. */}
+                <div className="group/search flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control border border-border/60 bg-card px-3 transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30 motion-reduce:transition-none sm:max-w-[16rem]">
                   <Search className="size-3.5 shrink-0 text-muted-foreground transition-colors group-focus-within/search:text-foreground" />
                   <label htmlFor="library-search" className="sr-only">Search files</label>
                   <input
@@ -820,7 +840,7 @@ export default function LibraryPage() {
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
                     placeholder="Search files"
-                    className="h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted-foreground/70"
+                    className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                   />
                   {query && (
                     <button
@@ -860,10 +880,10 @@ export default function LibraryPage() {
 
         {selectedItems.length > 0 && (
           <div
-            className="mt-4 flex min-h-11 flex-wrap items-center gap-2 border-y border-border/60 bg-muted/20 px-2 py-1.5 motion-safe:animate-fade-in sm:px-3"
+            className="mt-4 flex min-h-11 flex-wrap items-center gap-2 border-y border-border/60 bg-muted/50 px-2 py-1.5 motion-safe:animate-fade-in sm:px-3"
             aria-live="polite"
           >
-            <span className="text-[13px] font-medium tabular-nums">
+            <span className="text-sm font-medium tabular-nums">
               {selectedItems.length} selected
             </span>
             <div className="ml-auto flex items-center gap-0.5">
@@ -984,11 +1004,21 @@ export default function LibraryPage() {
             </div>
           </section>
         ) : (
-          <section className="mt-5 overflow-hidden rounded-popover border border-border/60 bg-background/45" aria-label="Files">
+          // bg-card, not bg-background/45: 45% of the page's own token over the
+          // black ground is a no-op, so the file browser had no surface and read
+          // as bare rows floating on the page.
+          <section className="mt-5 overflow-hidden rounded-popover border border-border/60 bg-card" aria-label="Files">
             <div
               className={cn(
                 browserGrid,
-                "h-10 border-b border-border/55 bg-muted/20 px-3 font-mono text-[10px] text-muted-foreground sm:px-4"
+                // bg-secondary, not bg-muted/40. Re-based against the black ground
+                // the whole browser had collapsed into one tone: over its bg-card
+                // shell the header sat 1.2 points above it, a hovered row 1.4, and a
+                // SELECTED row 1.8 — three states inside half a rung of each other,
+                // so you could not tell a selected file from one the pointer was
+                // merely over. Header and hover take the rung above card; selection
+                // takes the one above that.
+                "h-10 border-b border-border/55 bg-secondary px-3 font-mono text-caption text-muted-foreground sm:px-4"
               )}
             >
               <SelectCheck
@@ -1015,8 +1045,10 @@ export default function LibraryPage() {
                     style={staggerDelay(i, "tight")}
                     className={cn(
                       browserGrid,
-                      "group/row min-h-[72px] border-b border-border/40 px-3 transition-colors duration-fast last:border-0 hover:bg-muted/25 motion-safe:animate-rise-in [animation-fill-mode:backwards] sm:px-4",
-                      isSelected && "bg-muted/35 hover:bg-muted/40"
+                      "group/row min-h-[72px] border-b border-border/40 px-3 transition-colors duration-fast last:border-0 hover:bg-secondary motion-safe:animate-rise-in [animation-fill-mode:backwards] sm:px-4",
+                      // See the header note above: selection has to clear hover by a
+                      // full rung, or the two states are the same colour.
+                      isSelected && "bg-accent hover:bg-accent"
                     )}
                   >
                     <SelectCheck
@@ -1030,7 +1062,7 @@ export default function LibraryPage() {
                       <ItemPreview item={item} />
                       <div className="min-w-0">
                         {item.deletedAt ? (
-                          <p className="block truncate text-[13px] font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
+                          <p className="block truncate text-sm font-medium text-muted-foreground" title={`${item.fileName} is deleted`}>
                             {item.fileName}
                           </p>
                         ) : (
@@ -1038,16 +1070,16 @@ export default function LibraryPage() {
                             href={item.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="block truncate text-[13px] font-medium text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="block truncate text-sm font-medium text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             title={item.fileName}
                           >
                             {item.fileName}
                           </a>
                         )}
-                        <p className="mt-0.5 truncate text-[11px] tabular-nums text-muted-foreground sm:hidden">
+                        <p className="mt-0.5 truncate text-caption tabular-nums text-muted-foreground sm:hidden">
                           {typeLabel(item)} · {formatBytes(item.size)} · {timeAgo(item.createdAt)}
                         </p>
-                        <div className="mt-0.5 hidden min-h-4 items-center text-[11px] text-muted-foreground sm:flex">
+                        <div className="mt-0.5 hidden min-h-4 items-center text-caption text-muted-foreground sm:flex">
                           {item.conversationId ? (
                             <Link
                               href={`/chat/${item.conversationId}`}

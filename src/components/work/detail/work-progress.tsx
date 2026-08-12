@@ -77,7 +77,7 @@ function StepMark({ state }: { state: PlanStepState }) {
         "mt-[2px] flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full",
         state === "done" && "bg-primary text-primary-foreground",
         state === "failed" && "bg-destructive text-destructive-foreground",
-        state === "skipped" && "border border-border text-muted-foreground/70",
+        state === "skipped" && "border border-border text-muted-foreground",
         state === "active" && "text-primary",
         state === "pending" && "border border-border/70",
         // A hairline dashed ring, which is the one border style nothing else in
@@ -121,7 +121,7 @@ export function WorkProgressChecklist({ steps }: { steps: readonly PlanStep[] })
               // edit; the pair reads as a to-do list.
               step.state === "done" && "text-muted-foreground line-through decoration-border",
               step.state === "skipped" &&
-                "text-muted-foreground/70 line-through decoration-border",
+                "text-muted-foreground line-through decoration-border",
               step.state === "active" && "font-medium text-foreground",
               step.state === "failed" && "text-foreground",
               step.state === "unreported" && "text-muted-foreground"

@@ -266,12 +266,18 @@ export function ImageEditOverlay({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* `bg-background` on purpose — an image editor needs an opaque working
-          surface — but the radius, border and close button are the shared ones
-          so it still reads as the same family of modal. */}
+      {/* No `bg-*` here at all any more. DialogContent already carries
+          `.overlay-glass`, and a utility beats the components layer — so the
+          `bg-background` that used to sit here silently overruled the shared
+          modal material with the PAGE colour, which on dark is #000. A 68rem
+          dialog was therefore the same value as the (scrimmed) page behind it:
+          a hairline rectangle with nothing in it. Letting the class win puts the
+          sheet on the floating rung, where every other modal in the product
+          already sits. The only thing that stays page-black is the mat directly
+          behind the photograph, further down, where black is the right answer. */}
       <DialogContent
         hideClose
-        className="h-[min(92dvh,46rem)] max-h-[92dvh] w-[calc(100%-1rem)] max-w-[68rem] gap-0 overflow-hidden bg-background p-0 backdrop-blur-none sm:w-[calc(100%-2rem)] md:h-[min(86dvh,43rem)]"
+        className="h-[min(92dvh,46rem)] max-h-[92dvh] w-[calc(100%-1rem)] max-w-[68rem] gap-0 overflow-hidden p-0 backdrop-blur-none sm:w-[calc(100%-2rem)] md:h-[min(86dvh,43rem)]"
       >
         {/* Rendered here rather than by DialogContent: the layout is `p-0`, so
             the button has to clear the canvas header instead of the padding. */}
@@ -282,16 +288,20 @@ export function ImageEditOverlay({
 
         <div className="grid h-full min-h-0 w-full grid-rows-[minmax(15rem,42%)_minmax(0,1fr)] md:grid-cols-[minmax(0,1.45fr)_minmax(20rem,0.85fr)] md:grid-rows-1">
           {/* Canvas workspace */}
-          <section className="relative flex min-h-0 flex-col overflow-hidden border-b border-border/60 bg-muted/20 md:border-b-0 md:border-r" aria-label="Image canvas">
+          {/* The two columns are two rungs: the canvas recesses to --secondary,
+              the controls rail stays on the sheet. They used to be `bg-background`
+              and `bg-card`, which is a 2-point difference on light paper and a
+              hole-versus-panel on black. */}
+          <section className="relative flex min-h-0 flex-col overflow-hidden border-b border-border/60 bg-secondary md:border-b-0 md:border-r" aria-label="Image canvas">
             <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/50 px-4 pr-14 sm:px-5 sm:pr-16">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-control border border-border/60 bg-background text-muted-foreground shadow-soft">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-control border border-border/60 bg-accent text-muted-foreground shadow-soft">
                 <ImageIcon className="size-4" aria-hidden="true" />
               </span>
               <div className="min-w-0">
                 <p className="truncate text-[13px] font-medium text-foreground">{attachment.fileName}</p>
                 <p className="text-[11px] text-muted-foreground">Edit canvas</p>
               </div>
-              <span className="ml-auto hidden shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-background px-2.5 py-1 text-[11px] text-muted-foreground shadow-soft sm:inline-flex">
+              <span className="ml-auto hidden shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-accent px-2.5 py-1 text-[11px] text-muted-foreground shadow-soft sm:inline-flex">
                 {region ? <Crop className="size-3" aria-hidden="true" /> : <ImageIcon className="size-3" aria-hidden="true" />}
                 {region ? "Selected area" : "Whole image"}
               </span>
@@ -312,7 +322,17 @@ export function ImageEditOverlay({
                 // the global 2px `:focus-visible` outline. Five controls in this
                 // overlay had the same fork; all of them now defer to the global
                 // rule. (The rest ring at 1px is the frame, not focus.)
-                className="relative shrink-0 select-none overflow-hidden rounded-menu bg-background shadow-[0_18px_50px_hsl(var(--foreground)/0.12)] ring-1 ring-inset ring-border/70"
+                // Elevation from the token, not from --foreground: that variable
+                // is 94% off-white on the black sheet, so the old
+                // `shadow-[0_18px_50px_hsl(var(--foreground)/0.12)]` painted a
+                // 50px white bloom around the frame. `shadow-float` is black ink
+                // plus an inset sheen in dark, and the ring stays the frame line.
+                // `bg-background` here and NOWHERE else in this dialog. A mat behind a
+                // photograph wants to be the darkest thing on screen — that is what
+                // makes the image read — and this element is small, framed by a ring
+                // and lifted by shadow-float, so it is a deliberate well rather than
+                // a hole in the sheet.
+                className="relative shrink-0 select-none overflow-hidden rounded-menu bg-background shadow-float ring-1 ring-inset ring-border/70"
                 style={frameSize ? { width: frameSize.width, height: frameSize.height } : { width: "min(16rem, 100%)", height: "min(11rem, 100%)" }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -337,7 +357,7 @@ export function ImageEditOverlay({
 
                 {!imgReady && !imgFailed && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground" role="status">
-                    <span className="flex size-10 items-center justify-center rounded-full border border-border bg-muted/40">
+                    <span className="flex size-10 items-center justify-center rounded-full border border-border bg-secondary">
                       <ImageIcon className="size-4 animate-pulse motion-reduce:animate-none" aria-hidden="true" />
                     </span>
                     <span className="text-xs">Preparing image…</span>
@@ -346,7 +366,7 @@ export function ImageEditOverlay({
 
                 {imgFailed && (
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
-                    <span className="flex size-10 items-center justify-center rounded-full border border-border bg-muted/40">
+                    <span className="flex size-10 items-center justify-center rounded-full border border-border bg-secondary">
                       <ImageOff className="size-4" aria-hidden="true" />
                     </span>
                     <span className="text-xs">Couldn&apos;t load this image.</span>
@@ -377,7 +397,7 @@ export function ImageEditOverlay({
                   <div
                     aria-hidden="true"
                     className={cn(
-                      "pointer-events-none absolute z-20 rounded-sm border border-white/90",
+                      "pointer-events-none absolute z-20 rounded-micro border border-white/90",
                       "shadow-[0_0_0_9999px_hsl(0_0%_0%/0.58),0_0_0_1px_hsl(0_0%_0%/0.34)]",
                       dragging ? "transition-none" : "transition-[left,top,width,height] duration-fast ease-out-soft motion-reduce:transition-none"
                     )}
@@ -423,7 +443,10 @@ export function ImageEditOverlay({
                     setRegion(null);
                     setSelectionAnnouncement("Selection cleared. Changes apply to the whole image.");
                   }}
-                  className="shrink-0 rounded-md px-2 py-1 font-medium text-foreground transition-colors duration-fast hover:bg-background motion-reduce:transition-none"
+                  // `hover:bg-accent` on the `control` rung. It hovered to `bg-background`,
+                  // which inside this sheet is a step DOWN — on the black ground that is
+                  // no hover at all — and `rounded-md` (8px) is not on the radius ladder.
+                  className="shrink-0 rounded-control px-2 py-1 font-medium text-foreground transition-colors duration-fast hover:bg-accent motion-reduce:transition-none"
                 >
                   Clear selection
                 </button>
@@ -432,11 +455,11 @@ export function ImageEditOverlay({
           </section>
 
           {/* Edit controls */}
-          <aside className="min-h-0 overflow-y-auto bg-card" aria-label="Image edit controls">
+          <aside className="min-h-0 overflow-y-auto" aria-label="Image edit controls">
             <form onSubmit={handleSubmit} className="flex min-h-full flex-col p-5 pt-6 sm:p-6 md:p-7">
               <div className="pr-9">
                 <p className="font-mono text-[10px] font-semibold text-muted-foreground">Image editor</p>
-                <DialogTitle className="mt-2 font-serif text-[26px] font-normal leading-tight tracking-[-0.02em] text-foreground">Edit image</DialogTitle>
+                <DialogTitle className="mt-2 text-xl text-foreground">Edit image</DialogTitle>
                 <DialogDescription className="mt-2 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
                   Describe the change and optionally target a precise area.
                 </DialogDescription>
@@ -444,7 +467,14 @@ export function ImageEditOverlay({
 
               <fieldset className="mt-6">
                 <legend className="mb-2 font-mono text-[10px] font-semibold text-muted-foreground">Edit area</legend>
-                <div className="grid grid-cols-2 gap-1 rounded-field border border-border/60 bg-muted/40 p-1" role="group" aria-label="Edit area">
+                {/* The track lifts and the thumb lifts further. It used to be a
+                    `bg-muted/40` groove with a `bg-background` thumb, which on
+                    black is a fill that resolves to the sheet's own colour
+                    holding a thumb DARKER than the groove — the selected segment
+                    was the least visible thing in the control. You cannot recess
+                    below zero, so both go up: secondary for the track, accent
+                    for the thumb. */}
+                <div className="grid grid-cols-2 gap-1 rounded-field border border-border/60 bg-secondary p-1" role="group" aria-label="Edit area">
                   <button
                     type="button"
                     aria-pressed={region == null}
@@ -453,8 +483,9 @@ export function ImageEditOverlay({
                       setSelectionAnnouncement("Selection cleared. Changes apply to the whole image.");
                     }}
                     className={cn(
-                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12px] font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
-                      region == null ? "bg-background text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
+                      // `xs` (6px), concentric with the `field` (10px) track minus its 4px pad.
+                      "flex h-9 items-center justify-center gap-2 rounded-xs px-3 text-[12px] font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
+                      region == null ? "bg-accent text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
                     <ImageIcon className="size-3.5" aria-hidden="true" />
@@ -465,8 +496,9 @@ export function ImageEditOverlay({
                     aria-pressed={region != null}
                     onClick={() => frameRef.current?.focus({ preventScroll: true })}
                     className={cn(
-                      "flex h-9 items-center justify-center gap-2 rounded-md px-3 text-[12px] font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
-                      region != null ? "bg-background text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
+                      // `xs` (6px), concentric with the `field` (10px) track minus its 4px pad.
+                      "flex h-9 items-center justify-center gap-2 rounded-xs px-3 text-[12px] font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
+                      region != null ? "bg-accent text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
                     <Crop className="size-3.5" aria-hidden="true" />
@@ -484,7 +516,7 @@ export function ImageEditOverlay({
               </fieldset>
 
               {support === "none" && (
-                <div role="status" className="mt-4 flex items-start gap-2.5 rounded-field border border-destructive/25 bg-destructive/[0.045] px-3.5 py-3 text-[12px] leading-relaxed text-destructive">
+                <div role="status" className="mt-4 flex items-start gap-2.5 rounded-field border border-destructive/25 bg-destructive/[0.045] px-3.5 py-3 text-[12px] leading-relaxed text-destructive dark:bg-destructive/[0.14]">
                   <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
                   <span>
                     {editModel
@@ -495,7 +527,7 @@ export function ImageEditOverlay({
               )}
 
               {support === "prompt" && editModel && (
-                <div className="mt-4 flex items-start gap-2.5 rounded-field border border-border/60 bg-muted/25 px-3.5 py-3 text-[11px] leading-relaxed text-muted-foreground">
+                <div className="mt-4 flex items-start gap-2.5 rounded-field border border-border/60 bg-secondary px-3.5 py-3 text-[11px] leading-relaxed text-muted-foreground">
                   <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
                   <span>{editModel.name} uses the selected area as guidance, so nearby details may also adjust.</span>
                 </div>
@@ -505,7 +537,12 @@ export function ImageEditOverlay({
                 <label htmlFor={`${selectionHelpId}-prompt`} className="font-mono text-[10px] font-semibold text-muted-foreground">
                   Instructions
                 </label>
-                <div className="mt-2 overflow-hidden rounded-menu border border-border/70 bg-background shadow-[inset_0_1px_2px_hsl(var(--foreground)/0.035)] transition-[border-color,box-shadow] duration-fast focus-within:border-foreground/25 focus-within:shadow-[0_0_0_3px_hsl(var(--foreground)/0.06)]">
+                {/* The inset was drawn from --foreground (a white top-lip on a black
+                    well) and focus was a 6%-alpha white glow — about 1.1:1 on pure
+                    black, i.e. no focus indicator at all. `shadow-well` is the
+                    themed inset, and focus takes the same offset-ring geometry
+                    reasoning-slider.tsx settled on for this exact problem. */}
+                <div className="mt-2 overflow-hidden rounded-menu border border-border/70 bg-secondary shadow-well transition-[border-color,box-shadow] duration-fast focus-within:border-foreground/25 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-card">
                   <textarea
                     id={`${selectionHelpId}-prompt`}
                     value={prompt}

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Loader2, Pause, Play, Plus, X } from "lucide-react";
+import { Check, ChevronDown, Loader2, Pause, Play, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn, truncate } from "@/lib/utils";
@@ -109,6 +109,14 @@ function formatCost(microUsd: string): string {
   return usd < 0.01 ? "<$0.01" : `$${usd.toFixed(2)}`;
 }
 
+function sourceHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "source";
+  }
+}
+
 export function ResearchRunPanel({ conversationId }: { conversationId: string | null }) {
   const [payload, setPayload] = React.useState<RunPayload | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -116,6 +124,7 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
   const [draftQueries, setDraftQueries] = React.useState<string[] | null>(null);
   const [steerText, setSteerText] = React.useState("");
   const [dismissed, setDismissed] = React.useState<string | null>(null);
+  const [expanded, setExpanded] = React.useState(true);
 
   // The newest run for this conversation, then that run by id. Two requests
   // rather than one, because the id is what the cursor belongs to: a panel that
@@ -126,6 +135,7 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
     setRunId(null);
     setPayload(null);
     setDraftQueries(null);
+    setExpanded(true);
     if (!conversationId) return;
     let cancelled = false;
     void (async () => {
@@ -224,55 +234,84 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
   const awaitingPlan = state === "awaiting_plan_confirmation";
   const paused = state === "paused";
   const queries = draftQueries ?? run.plan.queries;
+  const visibleStages = RESEARCH_STAGES.filter((key) => key !== "done");
+  const activeStageIndex = stage === "done" ? visibleStages.length - 1 : Math.max(0, visibleStages.indexOf(stage));
+  const stageNumber = Math.min(activeStageIndex + 1, visibleStages.length);
+  const progress = run.live ? Math.max(8, ((activeStageIndex + 0.45) / visibleStages.length) * 100) : 100;
 
   return (
     <section
       aria-label="Research run"
-      className="w-full rounded-card border border-border/60 bg-card/70 p-3 shadow-soft backdrop-blur-md sm:p-4"
+      className="mx-auto w-[calc(100%-1rem)] max-w-5xl rounded-card border border-border/75 bg-card p-3 shadow-none sm:w-[calc(100%-2rem)] sm:p-4"
     >
       <header className="flex min-w-0 items-start gap-3">
-        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
+        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
           {run.live ? (
-            <Loader2 className="h-3 w-3 animate-spin text-primary motion-reduce:animate-none" />
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary motion-reduce:animate-none" />
           ) : (
-            <Check className="h-3 w-3 text-primary" />
+            <Check className="h-3.5 w-3.5 text-primary" />
           )}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-foreground">{truncate(run.goal, 120)}</p>
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 text-xs font-semibold text-foreground">Deep Research</span>
+            <span aria-hidden className="h-px min-w-3 flex-1 bg-border/70" />
+          </div>
+          <p className="mt-1 truncate text-sm font-medium text-foreground">{truncate(run.goal, 120)}</p>
           {/* The one line that changes as the run works, announced politely so a
               screen reader hears the stage change without losing its place. */}
           <p aria-live="polite" className="mt-0.5 truncate text-xs text-muted-foreground">
-            {RESEARCH_STATE_MESSAGE[state]}
-            {" · "}
+            {RESEARCH_STATE_MESSAGE[state]} · Stage {stageNumber} of {visibleStages.length} ·{" "}
             {formatCost(run.costMicroUsd)}
             {run.budgetMicroUsd ? ` of ${formatCost(run.budgetMicroUsd)}` : ""}
           </p>
         </div>
-        {!run.live && (
+        <div className="flex shrink-0 items-center gap-0.5">
           <button
             type="button"
-            onClick={() => setDismissed(run.id)}
-            aria-label="Hide this research run"
-            className="pressable inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground coarse:h-11 coarse:w-11"
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
+            aria-label={expanded ? "Hide research details" : "Show research details"}
+            className="pressable inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground coarse:h-11 coarse:w-11"
           >
-            <X className="h-4 w-4" />
+            <ChevronDown className={cn("h-4 w-4 transition-transform duration-base", expanded && "rotate-180")} />
           </button>
-        )}
+          {!run.live && (
+            <button
+              type="button"
+              onClick={() => setDismissed(run.id)}
+              aria-label="Hide this research run"
+              className="pressable inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground coarse:h-11 coarse:w-11"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </header>
 
+      <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+        <div
+          className="h-full rounded-full bg-primary transition-[width] duration-slow ease-out-soft"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+
       {/* Stages, not events. */}
-      <ol className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
-        {RESEARCH_STAGES.filter((key) => key !== "done").map((key) => {
+      <ol className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-5">
+        {visibleStages.map((key) => {
           const status = stageStatus(key, stage, run.live);
           return (
             <li
               key={key}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs transition-colors duration-base ease-out-soft",
-                status === "done" && "border-border/50 text-muted-foreground",
-                status === "active" && "border-primary/40 bg-primary/10 text-foreground",
-                status === "pending" && "border-border/40 text-muted-foreground/60"
+                "flex min-w-0 items-center gap-1.5 border-t pt-1.5 text-[11px] transition-colors duration-base ease-out-soft",
+                // One family for the whole ladder: border → border/55 → primary.
+                // "done" was drawn from --foreground while both its neighbours
+                // came from --border, so the completed rung was a different
+                // material to the rail it belongs to.
+                status === "done" && "border-border text-muted-foreground",
+                status === "active" && "border-primary text-foreground",
+                status === "pending" && "border-border/55 text-muted-foreground/55"
               )}
             >
               {status === "done" && <Check className="h-3 w-3" aria-hidden />}
@@ -290,21 +329,39 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
                   className="h-1.5 w-1.5 rounded-full bg-primary motion-safe:animate-pulse"
                 />
               )}
-              {RESEARCH_STAGE_LABEL[key]}
+              <span className="truncate">{RESEARCH_STAGE_LABEL[key]}</span>
             </li>
           );
         })}
       </ol>
 
+      {expanded && (
+        <>
+
+      {/* One fill for the panel's nested wells. This one and the plan gate below
+          were `bg-background/35` and `bg-background/40` — the same role, 5% apart
+          for no reason, and both resolving DARKER than the bg-card panel they sit
+          inside, i.e. holes rather than nested panels. `bg-secondary` is the rung
+          above card, which is what nesting is supposed to look like. */}
       {run.plan.objectives && run.plan.objectives.length > 0 && !awaitingPlan && (
-        <div className="mt-3 rounded-field border border-border/50 bg-background/35 p-3">
+        <div className="mt-3 rounded-field border border-border/50 bg-secondary p-3">
           <div className="flex items-center justify-between gap-2">
-            <p className="font-mono text-label uppercase text-muted-foreground">Evidence coverage</p>
+            <p className="text-xs font-semibold text-foreground">Evidence coverage</p>
             {run.plan.followUpRound ? (
-              <span className="font-mono text-caption text-muted-foreground">
-                follow-up round {run.plan.followUpRound}
+              <span className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 font-mono text-[10px] uppercase text-primary">
+                Deep Research: Round {run.plan.followUpRound} / 4
               </span>
-            ) : null}
+            ) : (
+              // `bg-accent`, not `bg-background/50`. This badge sits in the
+              // bg-secondary well, which sits in the bg-card panel — the page
+              // colour at half strength resolved BELOW both of them, so the one
+              // badge that says the run is active read as a hole. Its sibling
+              // above uses `bg-primary/10`; accent is the neutral equivalent,
+              // the rung above secondary.
+              <span className="inline-flex items-center gap-1 rounded-full border border-border/50 bg-accent px-2 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
+                Deep Research Active
+              </span>
+            )}
           </div>
           <ul className="mt-2 space-y-1.5">
             {run.plan.objectives.slice(0, 8).map((objective) => {
@@ -319,7 +376,7 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
                     )}
                   />
                   <span className="min-w-0 flex-1 text-muted-foreground">{truncate(objective.question, 96)}</span>
-                  <span className="shrink-0 font-mono text-caption text-muted-foreground/70">{status}</span>
+                  <span className="shrink-0 font-mono text-caption text-muted-foreground">{status}</span>
                 </li>
               );
             })}
@@ -343,7 +400,7 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
           queries that will actually be issued. Editable, because the whole point
           of stopping here is that the user can change them. */}
       {awaitingPlan && (
-        <div className="mt-3 rounded-field border border-border/50 bg-background/40 p-3">
+        <div className="mt-3 rounded-field border border-border/50 bg-secondary p-3">
           <p className="text-xs font-medium text-foreground">
             Juno will search for these. Edit anything before it starts.
           </p>
@@ -392,7 +449,7 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
           than showing an empty box that reads as broken. */}
       {!awaitingPlan && (
         <div className="mt-3">
-          <p className="font-mono text-label uppercase text-muted-foreground">
+          <p className="text-xs font-semibold text-foreground">
             {run.sources.length === 0
               ? "No sources yet"
               : `${run.sources.length} ${run.sources.length === 1 ? "source" : "sources"}`}
@@ -400,7 +457,11 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
           {run.sources.length > 0 && (
             <ul className="mt-1.5 flex flex-col gap-1">
               {run.sources.slice(0, 12).map((source) => (
-                <li key={source.id} className="flex min-w-0 items-center gap-2">
+                // Full-strength accent: the two icon buttons in this panel's
+                // own header already hover on `bg-accent`, and `/55` over the
+                // card landed 3.6 points short of them, so the same gesture on
+                // the same panel produced two different hovers.
+                <li key={source.id} className="flex min-w-0 items-center gap-2 rounded-control px-1.5 py-1 hover:bg-accent">
                   <span
                     aria-hidden
                     className={cn(
@@ -420,6 +481,9 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
                   >
                     {source.title || source.url}
                   </a>
+                  <span className="hidden max-w-28 shrink-0 truncate font-mono text-[10px] text-muted-foreground sm:block">
+                    {sourceHost(source.url)}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -469,7 +533,7 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
               size="icon"
               variant="outline"
               disabled={busy || !steerText.trim()}
-              aria-label="Add to this run"
+              aria-label="Add direction to this run"
             >
               <Plus className="h-4 w-4" />
             </Button>
@@ -504,10 +568,12 @@ export function ResearchRunPanel({ conversationId }: { conversationId: string | 
               disabled={busy}
               onClick={() => post("/control", { action: "cancel" })}
             >
-              Cancel run
+              Stop research
             </Button>
           </div>
         </div>
+      )}
+        </>
       )}
     </section>
   );

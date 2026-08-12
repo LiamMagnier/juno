@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { useApp } from "@/components/app/app-provider";
+import { cn, stagger } from "@/lib/utils";
 import { SummaryCard } from "@/components/memory/summary-card";
 import { EditsPanel } from "@/components/memory/edits-panel";
 import { EntryList } from "@/components/memory/entry-list";
@@ -24,7 +25,7 @@ import {
   type SummaryData,
 } from "@/components/memory/memory-model";
 
-export default function MemoryPage() {
+function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
   const router = useRouter();
   const { user, settings, setSettings } = useApp();
   // The individual facts, listed by EntryList below. They used to be held only
@@ -406,18 +407,20 @@ export default function MemoryPage() {
   };
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-2xl px-4 py-8">
-        <AppPageHeader
-          eyebrow="Memory"
-          heading="What Juno remembers"
-          lede="Distilled from your chats, projects, and connections — and used as context whenever you talk to Juno. Always yours to edit, in plain language."
-        />
+    <div className={cn(!hideHeader && "app-page-scroll")}>
+      <div className={cn("mx-auto w-full max-w-2xl", hideHeader ? "px-0 py-0" : "app-page-content")}>
+        {!hideHeader && (
+          <AppPageHeader
+            eyebrow="Memory"
+            heading="What Juno remembers"
+            lede="Distilled from your chats, projects, and connections — and used as context whenever you talk to Juno. Always yours to edit, in plain language."
+          />
+        )}
 
         {loadError ? (
-          <div className="space-y-2.5 rounded-card border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <div className="space-y-2.5 rounded-card border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
               <p>Couldn’t load your memory. Check your connection and try again.</p>
             </div>
             <Button
@@ -426,14 +429,21 @@ export default function MemoryPage() {
               onClick={() => load()}
               className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
             >
-              <RefreshCw className="h-3.5 w-3.5" /> Retry
+              <RefreshCw className="size-3.5" /> Retry
             </Button>
           </div>
         ) : memories === null ? (
           <div className="space-y-3">
-            <Skeleton className="h-80 w-full rounded-panel" />
-            <Skeleton style={{ animationDelay: "80ms" }} className="h-12 w-full rounded-card" />
-            <Skeleton style={{ animationDelay: "160ms" }} className="h-16 w-full rounded-card" />
+            {/* One block per surface that replaces it, in order and at its radius:
+                summary panel, entry list, edits row, privacy strip. */}
+            {/* stagger(), not a private 80ms formula: the last block was held
+                back 240ms, so the loading state itself took a third of a second
+                to finish arriving — which reads as the load being slower than
+                it is. The shared helper is what every other list uses. */}
+            <Skeleton style={stagger(0)} className="h-80 w-full rounded-panel" />
+            <Skeleton style={stagger(1)} className="h-56 w-full rounded-panel" />
+            <Skeleton style={stagger(2)} className="h-12 w-full rounded-card" />
+            <Skeleton style={stagger(3)} className="h-16 w-full rounded-card" />
           </div>
         ) : (
           <MotionConfig reducedMotion="user">
@@ -451,9 +461,13 @@ export default function MemoryPage() {
                 <div
                   role="status"
                   aria-live="polite"
-                  className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-card border border-border/60 bg-muted/30 px-4 py-3 text-sm"
+                  // bg-card, not bg-muted/30: 30% of a 9.5% token over the page's
+                  // black ground composites to 2.8% lightness, so this notice sat
+                  // between two full --card panels with effectively no fill of its
+                  // own. It is a panel-level message; it gets the panel's rung.
+                  className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-card border border-border/60 bg-card px-4 py-3 text-sm"
                 >
-                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <AlertCircle className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <p className="min-w-0 flex-1 text-muted-foreground">{policyNotice}</p>
                   <Button variant="outline" size="sm" onClick={() => router.push("/settings")}>
                     Open settings
@@ -469,6 +483,12 @@ export default function MemoryPage() {
                   </span>
                 </p>
               )}
+              {/* The comment at the top of this component has said the facts are
+                  "listed by EntryList below" since the component landed — but the
+                  render tree never mounted it, so the rows, the retired-fact
+                  disclosure and every one of editMemory/forgetMemory/deleteMemory
+                  were dead code and a user who spotted a wrong fact still had
+                  nothing to point at. */}
               <EntryList
                 memories={memories}
                 busyIds={busyMemoryIds}
@@ -501,3 +521,11 @@ export default function MemoryPage() {
     </div>
   );
 }
+
+function MemoryPage() {
+  return <MemoryContent />;
+}
+
+MemoryPage.Content = MemoryContent;
+
+export default MemoryPage;

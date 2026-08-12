@@ -36,7 +36,14 @@ function StatusLine({ task }: { task: TaskItem }) {
   }
   const when = timeAgo(run.finishedAt ?? run.startedAt);
   if (run.status === "running") {
-    return <span className="text-xs text-muted-foreground">Running now…</span>;
+    // A live state needs a live mark. "Running now…" in the same grey as
+    // "Paused" was the only difference between a task working and one asleep.
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary motion-safe:animate-status-glow" />
+        Running now…
+      </span>
+    );
   }
   if (run.status === "done") {
     return (
@@ -70,7 +77,7 @@ export function TaskCard({
     <Card className={cn("p-5 transition-opacity duration-base", !task.enabled && "opacity-70")}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-mono text-[10px] text-muted-foreground/70">
+          <p className="font-mono text-caption text-muted-foreground">
             {describeSchedule(task)}
           </p>
           <h3 className="mt-1 truncate font-serif text-heading">{task.name}</h3>
@@ -78,7 +85,7 @@ export function TaskCard({
             <span className="truncate">{task.modelName}</span>
             {task.webSearch && (
               <span className="inline-flex shrink-0 items-center gap-1 text-muted-foreground/70">
-                · <Globe className="h-3 w-3" aria-hidden="true" /> web
+                · <Globe className="size-3 shrink-0" aria-hidden="true" /> web
               </span>
             )}
           </p>
@@ -91,20 +98,20 @@ export function TaskCard({
           />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-sm" className="h-7 w-7 text-muted-foreground hover:text-foreground" aria-label="Task options">
-                <MoreVertical className="h-3.5 w-3.5" />
+              <Button variant="ghost" size="icon-sm" className="size-7 text-muted-foreground hover:text-foreground" aria-label="Task options">
+                <MoreVertical className="size-3.5" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
               <DropdownMenuItem onSelect={onEdit}>
-                <Pencil className="h-4 w-4" /> Edit
+                <Pencil className="size-4" /> Edit
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onSelect={onDelete}
-                className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
+                className="text-destructive focus:bg-destructive/10 focus:text-destructive"
               >
-                <Trash2 className="h-4 w-4" /> Delete
+                <Trash2 className="size-4" /> Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -116,9 +123,9 @@ export function TaskCard({
         {task.conversationId && (
           <Link
             href={`/chat/${task.conversationId}`}
-            className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground transition-colors duration-fast hover:text-foreground"
+            className="group/results inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
           >
-            View results <ArrowUpRight className="h-3 w-3" aria-hidden="true" />
+            View results <ArrowUpRight className="size-3 shrink-0 transition-transform duration-fast ease-out-soft group-hover/results:-translate-y-0.5 group-hover/results:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" />
           </Link>
         )}
       </div>

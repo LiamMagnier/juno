@@ -53,15 +53,18 @@ export function CookieConsent() {
       role="region"
       aria-label="Cookie preferences"
       // The only overlay a signed-out visitor ever sees, so it has to be on the
-      // shared contract: the popover radius (rounded-panel is the 28px MODAL
-      // radius, on a 21rem corner banner), the shared material, and the same
-      // pop-in/out pair as every other floating layer instead of a fifth
-      // entrance curve of its own.
+      // shared contract: the popover radius (14px — `rounded-panel` is the 18px
+      // MODAL rung, too wide for a 21rem corner banner), the shared material,
+      // and the same pop-in/out pair as every other floating layer instead of a
+      // fifth entrance curve of its own.
       data-state={closing ? "closed" : "open"}
       onAnimationEnd={() => closing && setVisible(false)}
       className="fixed bottom-4 left-4 z-popper w-[min(21rem,calc(100vw-2rem))] rounded-popover overlay-glass p-4 data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out motion-reduce:animate-none"
     >
-      <p className="font-mono text-xs font-medium text-muted-foreground">Cookies</p>
+      {/* The shell's eyebrow treatment (mono / uppercase / 0.10em), not a
+          one-off `text-xs`. Every other floating surface in the app opens with
+          this exact label role. */}
+      <p className="font-mono text-label uppercase text-muted-foreground">Cookies</p>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
         Juno only uses essential cookies to keep you signed in — no analytics, no trackers. Your
         choice here also covers anything we might add later.{" "}

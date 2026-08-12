@@ -12,7 +12,7 @@ import { IDLE_RUN, useCompare } from "@/components/compare/use-compare";
 import { resolveModel, DEFAULT_MODEL, type ModelId, type ModelInfo } from "@/lib/models";
 import { getModelMetrics, costScore } from "@/lib/model-metrics";
 import { planRank, effectiveMinPlan } from "@/lib/plans";
-import { cn, truncate } from "@/lib/utils";
+import { cn, stagger, truncate } from "@/lib/utils";
 import type { Provider } from "@/lib/providers";
 import type { ClientMessage, ClientQuota } from "@/types/chat";
 
@@ -259,22 +259,32 @@ export function CompareView() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Page header — serif heading, mono metadata, "not saved" said quietly. */}
+      {/* Page header — compact product heading with quiet metadata. */}
       <header className="flex shrink-0 items-end justify-between gap-3 px-4 pb-3 pt-5 sm:px-6">
         <div>
-          <p className="font-mono text-label text-muted-foreground">
+          {/* text-label already carries 0.10em — the arbitrary tracking-[0.08em]
+              was fighting the scale it sat on. */}
+          <p className="text-label font-semibold uppercase text-muted-foreground">
             One prompt · {panes.length} models
           </p>
-          <h1 className="mt-0.5 font-serif text-title tracking-tight">Compare</h1>
+          {/* The same heading metrics AppPageHeader gives every other app page.
+              This view owns its own fixed-height shell so it cannot use the
+              component, but it must not disagree with it about type. */}
+          <h1 className="mt-1 text-balance text-[clamp(1.65rem,1.4rem+0.8vw,2.1rem)] font-semibold leading-tight tracking-[-0.025em]">
+            Compare
+          </h1>
         </div>
-        <span className="pb-0.5 text-right font-mono text-caption text-muted-foreground/70">
+        <span className="pb-0.5 text-right text-caption text-muted-foreground">
           Comparisons aren&rsquo;t saved
         </span>
       </header>
 
       {/* Prompt composer — one textarea, one coral action. */}
       <div className="shrink-0 px-4 pb-4 sm:px-6">
-        <div className="flex w-full flex-col rounded-panel border border-border/70 bg-card/90 shadow-float backdrop-blur transition-[border-color,box-shadow] duration-base ease-out-soft focus-within:border-border focus-within:shadow-glass">
+        {/* focus-within lands on the ring token, not foreground/35: a near-white
+            border on the true-black ground read as the halo the shadow rebase
+            just removed, and it was the only focus affordance the composer had. */}
+        <div className="flex w-full flex-col rounded-composer border border-border/75 bg-card transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25 motion-reduce:transition-none">
           <textarea
             ref={textareaRef}
             value={prompt}
@@ -284,7 +294,11 @@ export function CompareView() {
             rows={1}
             autoFocus
             placeholder="Ask every model at once…"
-            className="max-h-[160px] min-h-[56px] w-full resize-none bg-transparent px-3.5 py-3.5 text-body-lg leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 sm:px-4"
+            // motion-reduce:transition-none on the growth as well as on the shell:
+            // the box under the caret animating its own height is the single most
+            // literal case of "an interface that moves", and it was the one
+            // transition in this composer without the escape.
+            className="max-h-[160px] min-h-[56px] w-full resize-none bg-transparent px-3.5 py-3.5 text-body-lg leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 motion-reduce:transition-none sm:px-4"
           />
           <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-2.5 pb-2.5 pt-0.5">
             <Tooltip>
@@ -298,7 +312,7 @@ export function CompareView() {
                     disabled={panes.length >= MAX_PANES || anyStreaming}
                     className="gap-1.5 text-foreground/80"
                   >
-                    <Plus className="h-4 w-4" /> Add model
+                    <Plus className="size-4" /> Add model
                   </Button>
                 </span>
               </TooltipTrigger>
@@ -306,7 +320,8 @@ export function CompareView() {
                 {panes.length >= MAX_PANES ? "Up to three models per race" : "Race a third model"}
               </TooltipContent>
             </Tooltip>
-            <span className="font-mono text-caption text-muted-foreground/60">{panes.length}/{MAX_PANES}</span>
+            {/* tabular-nums: this counter changes in place as panes come and go. */}
+            <span className="font-mono text-caption tabular-nums text-muted-foreground">{panes.length}/{MAX_PANES}</span>
 
             {/* Primary action morphs in place: Send → Stop, shared by every pane. */}
             <div className="ml-auto">
@@ -319,14 +334,17 @@ export function CompareView() {
                     disabled={anyStreaming ? stopping : !canSend}
                     aria-label={anyStreaming ? (stopping ? "Stopping all models" : "Stop all models") : "Send to every model"}
                     className={cn(
-                      "coarse:h-11 coarse:w-11 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
-                      anyStreaming ? "w-12 rounded-md shadow-soft ring-2 ring-primary/20" : "rounded-lg"
+                      // The two derived composer rungs, not one flat radius: the corner
+                      // has to fall as the box widens into Stop or the button visibly
+                      // inflates. Both move with the composer shell above them.
+                      "coarse:h-11 coarse:w-11 transition-[width,border-radius,color,background-color,border-color] duration-fast ease-out-soft motion-reduce:transition-none",
+                      anyStreaming ? "w-12 rounded-composer-control" : "rounded-composer-action"
                     )}
                   >
                     {anyStreaming ? (
-                      <Square key="stop" className="h-3.5 w-3.5 fill-current motion-safe:animate-fade-in" />
+                      <Square key="stop" className="size-3.5 fill-current motion-safe:animate-fade-in" />
                     ) : (
-                      <ArrowUp key="send" className="h-4 w-4 motion-safe:animate-fade-in" />
+                      <ArrowUp key="send" className="size-4 motion-safe:animate-fade-in" />
                     )}
                   </Button>
                 </TooltipTrigger>
@@ -342,10 +360,13 @@ export function CompareView() {
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:overflow-hidden">
         {!hasRun && (
           <div className="flex shrink-0 flex-col items-center gap-4 px-6 pb-8 pt-6 text-center motion-safe:animate-rise-in">
-            <h2 className="font-serif text-2xl font-normal tracking-tight sm:text-3xl">
+            {/* The serif display rung, the product's voice for a human moment —
+                this was a hand-set text-xl/2xl with its own tracking, which is the
+                one heading in the app that never landed on the scale. */}
+            <h2 className="text-balance font-serif text-display">
               Same prompt, different minds
             </h2>
-            <p className="max-w-md text-sm leading-6 text-muted-foreground">
+            <p className="max-w-md text-pretty text-sm leading-6 text-muted-foreground">
               Watch {panes.length} models answer live, side by side — with the real cost of every reply.
             </p>
             <div className="flex w-full max-w-2xl flex-wrap justify-center gap-2">
@@ -357,8 +378,12 @@ export function CompareView() {
                     setPrompt(sample);
                     runAll(sample);
                   }}
-                  style={{ animationDelay: `${120 + i * 45}ms` }}
-                  className="rounded-field border border-border/70 bg-card/70 px-3.5 py-2.5 text-left font-sans text-sm leading-5 text-foreground/80 shadow-soft backdrop-blur transition-all duration-base ease-out-soft [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent hover:text-foreground hover:shadow-float active:translate-y-0 active:scale-[0.99] motion-safe:animate-rise-in"
+                  // The shared helper, not a tenth private formula. `120 + i*45`
+                  // held the last starter back 210ms for no reason the user can
+                  // see — and these are the first things anyone clicks on
+                  // /compare, which is the case stagger() is capped for.
+                  style={stagger(i)}
+                  className="rounded-control border border-border/70 bg-card px-3.5 py-2.5 text-left font-sans text-sm leading-5 text-foreground/80 transition-[border-color,background-color,color] duration-fast ease-out-soft [animation-fill-mode:backwards] hover:border-foreground/25 hover:bg-accent hover:text-foreground active:bg-accent/80 motion-safe:animate-rise-in"
                 >
                   {sample}
                 </button>

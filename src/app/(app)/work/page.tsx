@@ -263,29 +263,41 @@ export default function WorkHomePage() {
   const firstName = user.name?.split(" ")[0];
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl px-4 py-10 sm:py-14">
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-3xl">
         {/* Schedules and skills live under /work and are reachable from here
             rather than from the app sidebar: the sidebar is the switch between
             products, and three Work-internal destinations in it would make Work
             look like three of them. */}
-        <div className="mb-6 flex justify-center">
+        <div className="mb-7 flex justify-center">
           <WorkNav />
         </div>
         <div className="flex flex-col items-center text-center">
-          <p className="mb-3 font-mono text-[11px] text-muted-foreground/80 [animation-fill-mode:backwards] motion-safe:animate-fade-in">
+          {/* `font-mono text-label`, the register WorkSection already set for
+              Work's section labels. This page was running three treatments for the
+              same semantic role: a sans eyebrow here, a second one on "Tasks that
+              work well", and the mono label on every section heading between them. */}
+          <p className="mb-3 font-mono text-label text-muted-foreground [animation-fill-mode:backwards] motion-safe:animate-fade-in">
             Juno Work
           </p>
           <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center">
             <div className="flex items-center justify-end pr-[0.38em]">
               <JunoMark
                 className={cn(
-                  "block h-[1.32rem] w-[1.32rem] shrink-0 sm:h-[1.83rem] sm:w-[1.83rem]",
+                  // Kept at ~0.75× the greeting's cap height, which is what the
+                  // old 1.2/1.5rem pair was against the old 1.65/2rem type. The
+                  // heading is on `display` now, so the mark moves with it —
+                  // otherwise it reads as a bullet beside the words rather than
+                  // as part of the line.
+                  "block h-6 w-6 shrink-0 sm:h-9 sm:w-9",
                   "[animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in"
                 )}
               />
             </div>
-            <h1 className="text-center font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]">
+            {/* `text-display` carries its own clamp, -0.02em and weight 500;
+                the hand-rolled pair of sizes here and the task page's own bespoke
+                clamp were two ladders for two titles one click apart. */}
+            <h1 className="text-center font-serif text-display font-normal">
               <span className="inline-block [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
                 What needs doing{firstName ? "," : "?"}
               </span>
@@ -302,7 +314,7 @@ export default function WorkHomePage() {
           </div>
         </div>
 
-        <div className="mt-7 sm:mt-9">
+        <div className="mt-6 sm:mt-7">
           <WorkComposer
             hosts={hosts}
             hostsFailed={hostsFailed}
@@ -400,7 +412,7 @@ export default function WorkHomePage() {
                   a bare Refresh button next to a heading never did.
                 */}
                 {loadedAt !== null && (
-                  <div className="mt-5 flex items-center justify-center gap-1.5 font-mono text-[10px] text-muted-foreground/70">
+                  <div className="mt-5 flex items-center justify-center gap-1.5 font-mono text-[10px] tabular-nums text-muted-foreground">
                     <span>Updated {workTimeAgo(loadedAt)}</span>
                     <span aria-hidden="true">·</span>
                     <Button
@@ -441,13 +453,18 @@ export default function WorkHomePage() {
 function FirstRun() {
   return (
     <WorkSection title="Getting started">
-      <div className="rounded-field border border-dashed border-border/70 px-5 py-7 text-center">
-        <p className="font-serif text-heading">Give Juno an errand with a finish line</p>
+      <div className="border-t border-border/70 px-2 py-7 text-center">
+        {/* `text-heading` — 18px / 1.3 / -0.006em / 600, which is what this line
+            was hand-mixing one rung low out of `text-base`, `font-semibold` and
+            an arbitrary -0.01em. It is the only sentence on the screen somebody
+            with no tasks has to read, and it was set smaller than the section
+            headings above it. */}
+        <p className="text-heading">Give Juno an errand with a finish line</p>
         <p className="mx-auto mt-1.5 max-w-md text-sm leading-relaxed text-muted-foreground">
           It plans the work, shows you every step as it goes, and asks first before anything it
           cannot undo.
         </p>
-        <p className="mt-6 font-mono text-label text-muted-foreground/70">Tasks that work well</p>
+        <p className="mt-6 font-mono text-label text-muted-foreground">Tasks that work well</p>
         <ul className="mx-auto mt-2.5 max-w-md space-y-1.5 text-[13px] leading-relaxed text-muted-foreground">
           {[
             "Tidy my Downloads folder into folders by month.",

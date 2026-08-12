@@ -10,11 +10,21 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        // Solid badges get a hairline top-highlight so they read as lit chips, not flat rectangles.
-        default: "border-transparent bg-primary text-primary-foreground [box-shadow:inset_0_1px_0_hsl(0_0%_100%/0.22)]",
+        // Solid badges get a hairline top-highlight so they read as lit chips, not
+        // flat rectangles — and all three draw it from --sheen. `default` and
+        // `success` had `hsl(0 0% 100% / 0.22)` baked in: pure white at 22%,
+        // where the sibling `secondary` beside them resolves the token to
+        // `45 20% 96% / 0.055` on dark. Three variants of one component were
+        // shipping two sheen systems four times apart in alpha, and the literal
+        // is the one a retheme cannot reach.
+        default: "border-transparent bg-primary text-primary-foreground [box-shadow:inset_0_1px_0_hsl(var(--sheen))]",
         secondary: "border-transparent bg-secondary text-secondary-foreground [box-shadow:inset_0_1px_0_hsl(var(--sheen))]",
-        outline: "border-border/70 bg-background/50 text-foreground",
-        success: "border-transparent bg-success text-success-foreground [box-shadow:inset_0_1px_0_hsl(0_0%_100%/0.22)]",
+        // A real surface and a readable edge. `bg-background/50` is pure black at
+        // 50% on dark, so an outline badge dropped on a card was DARKER than its
+        // own ground and on the page ground was nothing at all; both alpha
+        // modifiers were tuned against the retired 9%-lightness ground.
+        outline: "border-border bg-card text-foreground",
+        success: "border-transparent bg-success text-success-foreground [box-shadow:inset_0_1px_0_hsl(var(--sheen))]",
         muted: "border-transparent bg-muted text-muted-foreground",
         // Tinted "soft" chip — premium, low-noise; the accent hue at low alpha.
         soft: "border-primary/25 bg-primary/12 text-primary",

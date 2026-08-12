@@ -11,6 +11,7 @@ import {
 import { createPrismaResearchStore, gatheringOnlyEngine } from "@/lib/research/run";
 import { buildResearchCorpus, researchSearchConfigured } from "@/lib/research/tools";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
+import { prisma } from "@/lib/db";
 
 /**
  * Deep research, as the chat route sees it.
@@ -62,6 +63,7 @@ export interface ResearchCorpusPage {
 export interface DeepResearchResult {
   /** false = nothing usable came back; the caller answers as plain chat. */
   ok: boolean;
+  state?: string;
   /** System-prompt section: report instructions + the numbered source corpus. */
   context: string;
   /** Numbered sources, in citation order — emit as the stream's sources chunk. */
@@ -90,7 +92,7 @@ export interface DeepResearchResult {
 const EMPTY: DeepResearchResult = { ok: false, context: "", sources: [], costUsd: 0, runId: null, corpus: [] };
 
 /** Total numbered sources handed to the model. */
-const MAX_SOURCES = 12;
+const MAX_SOURCES = 250;
 
 /**
  * The per-run ceiling for research started from chat.
@@ -193,17 +195,45 @@ export async function runDeepResearch(opts: {
 
   let runId: string | null = null;
   try {
-    // `auto` confirmation: the per-send research toggle IS this user's
-    // agreement to the plan. Stopping a chat turn to ask again would leave the
-    // message hanging on a dialog nobody asked for.
-    const run = await engine.start({
-      userId: opts.userId,
-      goal: prompt,
-      conversationId: opts.conversationId ?? null,
-      budgetMicroUsd: CHAT_RUN_BUDGET_MICRO_USD,
-      confirmation: "auto",
-    });
-    runId = run.id;
+    const pendingRun = opts.conversationId ? await prisma.researchRun.findFirst({
+      where: {
+        userId: opts.userId,
+        conversationId: opts.conversationId,
+        state: "awaiting_plan",
+      },
+      orderBy: { createdAt: "desc" },
+    }) : null;
+
+    if (pendingRun) {
+      const lower = prompt.toLowerCase();
+      if (/^(yes|approve|proceed|go ahead|looks good|do it|sure|ok|yep|yeah)/.test(lower)) {
+        await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "confirm" });
+        runId = pendingRun.id;
+      } else if (/^(no|cancel|stop|abort|reject|nah)/.test(lower)) {
+        await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "cancel" });
+        return EMPTY;
+      } else {
+        // Just cancel and start a new one based on the new prompt
+        await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "cancel" });
+        const run = await engine.start({
+          userId: opts.userId,
+          goal: prompt,
+          conversationId: opts.conversationId ?? null,
+          budgetMicroUsd: CHAT_RUN_BUDGET_MICRO_USD,
+          confirmation: "required",
+        });
+        runId = run.id;
+      }
+    } else {
+      const run = await engine.start({
+        userId: opts.userId,
+        goal: prompt,
+        conversationId: opts.conversationId ?? null,
+        budgetMicroUsd: CHAT_RUN_BUDGET_MICRO_USD,
+        confirmation: "required",
+      });
+      runId = run.id;
+    }
   } catch (e) {
     console.error("[deep-research] could not start a run", e);
     return EMPTY;
@@ -269,6 +299,11 @@ export async function runDeepResearch(opts: {
     .filter((source) => source.snapshot)
     .slice(0, MAX_SOURCES);
   const costUsd = finished ? Number(finished.costMicroUsd) / 1_000_000 : 0;
+  
+  if (finished?.state === "awaiting_plan") {
+    return { ok: true, state: "awaiting_plan", context: "", sources: [], costUsd, runId, corpus: [] };
+  }
+  
   if (sources.length === 0) return { ...EMPTY, runId, costUsd };
 
   const plan = parsePlan(finished?.plan);

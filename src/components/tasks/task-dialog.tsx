@@ -16,11 +16,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useApp } from "@/components/app/app-provider";
 import { planRank, effectiveMinPlan } from "@/lib/plans";
 import { DEFAULT_MODEL } from "@/lib/models";
 import { PROVIDERS } from "@/lib/providers";
-import { cn } from "@/lib/utils";
 import {
   CADENCES,
   DEFAULT_TASK_TIMEZONE,
@@ -131,7 +131,7 @@ export function TaskDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-serif">{task ? "Edit task" : "New task"}</DialogTitle>
+          <DialogTitle>{task ? "Edit task" : "New task"}</DialogTitle>
           <DialogDescription>
             {task
               ? "Adjust what runs, on which model, and when."
@@ -183,25 +183,20 @@ export function TaskDialog({
 
           <div className="space-y-2">
             <Label>Schedule</Label>
-            <div className="grid grid-cols-4 gap-0.5 rounded-lg bg-muted p-0.5" role="radiogroup" aria-label="Cadence">
-              {CADENCES.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={cadence === c.id}
-                  onClick={() => setCadence(c.id)}
-                  className={cn(
-                    "rounded-md px-1 py-1.5 text-xs font-medium transition-colors duration-fast",
-                    cadence === c.id
-                      ? "bg-background text-foreground shadow-soft"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
+            {/* The SegmentedControl primitive, not a fourth hand-rolled copy of it.
+                This was a bg-muted track whose active segment was `bg-background` —
+                which on the true-black theme paints the SELECTED cadence in the
+                darkest colour in the ramp, i.e. a hole rather than a raised key —
+                and it had no thumb travel and no radiogroup keyboard behaviour
+                beyond the roles. */}
+            <SegmentedControl
+              value={cadence}
+              onChange={setCadence}
+              options={CADENCES.map((c) => ({ value: c.id, label: c.label }))}
+              ariaLabel="Cadence"
+              className="h-9 w-full"
+              optionClassName="text-xs font-medium"
+            />
             <div className="flex items-center gap-2">
               {cadence === "WEEKLY" && (
                 <Select value={String(weekday)} onValueChange={(v) => setWeekday(Number(v))}>

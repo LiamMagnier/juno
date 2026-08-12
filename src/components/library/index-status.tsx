@@ -38,7 +38,7 @@ export function IndexStatus({
 }) {
   if (!status) return null;
 
-  const shared = "inline-flex min-w-0 items-center gap-1.5 text-[11px]";
+  const shared = "inline-flex min-w-0 items-center gap-1.5 text-caption";
 
   if (IN_PROGRESS.has(status.state)) {
     return (

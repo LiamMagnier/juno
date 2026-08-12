@@ -5,7 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
-import { NotebookPen, Command, Keyboard, LogOut, Map as MapIcon, Search, Settings, Shield, Sparkles, User } from "lucide-react";
+import { LogOut, Settings, User } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useApp } from "@/components/app/app-provider";
-import { PLANS, planRank } from "@/lib/plans";
+import { PLANS } from "@/lib/plans";
 import { DotIdenticon, DotFillBar } from "@/components/signature/dot-matrix";
 import { cn } from "@/lib/utils";
 import { Pressable } from "@/components/ui/pressable";
@@ -22,10 +22,16 @@ import { Pressable } from "@/components/ui/pressable";
 /*
  * Account menu — one shared row anatomy so every item lines up:
  * [16px icon] · gap-2.5 · label · (right-aligned mono shortcut).
- * Rows are rounded-md (8px), concentric with the popover's 14px shell at its
- * 6px inset. Icons carry the sidebar's hover micro-motion (scale, transform
- * only) keyed off Radix's data-highlighted, so keyboard navigation gets the
- * same life as the pointer.
+ * Rows inherit DropdownMenuItem's rounded-xs (6px), which is concentric with the
+ * menu shell: rounded-menu is 12px and the content insets by p-1.5 (6px), so
+ * 12 − 6 = 6. They used to override that with rounded-md on the arithmetic
+ * "14px shell − 6px inset = 8px" — the same wrong sum dropdown-menu.tsx already
+ * unpicked, since the shell is 12px and not 14. It mattered from the moment
+ * cn() learned the radius ladder: before that the override was silently
+ * discarded, and after it the account menu's rows started drawing 2px rounder
+ * than every other menu in the product. Icons carry the sidebar's hover
+ * micro-motion (scale, transform only) keyed off Radix's data-highlighted, so
+ * keyboard navigation gets the same life as the pointer.
  */
 
 function MenuRow({
@@ -43,7 +49,7 @@ function MenuRow({
   shortcut?: string;
   accent?: boolean;
 }) {
-  const rowCls = "group h-9 gap-2.5 rounded-md px-2.5";
+  const rowCls = "group h-9 gap-2.5 px-2.5";
   const iconCls = cn(
     "flex h-4 w-4 shrink-0 items-center justify-center transition-transform duration-fast ease-out-soft group-data-[highlighted]:scale-110",
     accent ? "text-primary" : "text-muted-foreground"
@@ -53,7 +59,7 @@ function MenuRow({
       <span className={iconCls}>{icon}</span>
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {shortcut && (
-        <span className="shrink-0 font-mono text-caption tracking-wide text-muted-foreground/70">{shortcut}</span>
+        <span className="shrink-0 font-mono text-caption text-muted-foreground">{shortcut}</span>
       )}
     </>
   );
@@ -74,7 +80,7 @@ function MenuRow({
 }
 
 export function UserMenu({ compact = false }: { compact?: boolean }) {
-  const { user, quota, features } = useApp();
+  const { user, quota } = useApp();
   const plan = PLANS[quota.plan];
 
   // Photo avatars are circles (matching the Avatar primitive app-wide); the
@@ -122,7 +128,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
               <span className="min-w-0 truncate text-sm font-medium text-foreground">
                 {user.name ?? user.email?.split("@")[0]}
               </span>
-              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-medium leading-none text-primary">
+              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-caption font-medium uppercase leading-none text-primary-ink">
                 {plan.name}
               </span>
             </div>
@@ -130,65 +136,51 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           </div>
         </div>
 
-        {/* Usage — a calm read of the same quota data, in the dot signature. */}
-        <div className="mx-1 rounded-control bg-muted/40 px-2.5 py-2">
+        {/* Usage — a calm read of the same quota data, in the dot signature.
+            `bg-secondary`, the popover's recessed rung, not `bg-muted/40`: that
+            composited to ~11.6% inside a 13% menu, which is under the ~2 points
+            where a fill begins to exist, so the quota block had no block. */}
+        <div className="mx-1 rounded-control bg-secondary px-2.5 py-2">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="font-mono text-[10px] text-muted-foreground">Messages</span>
-            <span className="truncate font-mono text-[11px] tracking-wide text-foreground">
+            <span className="font-mono text-caption uppercase text-muted-foreground">Messages</span>
+            {/* tabular-nums: this counter changes in place as messages are sent,
+                and proportional digits make the whole readout shuffle sideways
+                when 9 becomes 10. */}
+            <span className="truncate font-mono text-caption tabular-nums text-foreground">
               {quota.limit == null ? "No cap" : `${quota.used} / ${quota.limit}`}
             </span>
           </div>
           {quota.limit != null ? (
             <DotFillBar value={quota.used} max={quota.limit} dots={18} className="mt-2" />
           ) : (
-            <>
-              <DotFillBar value={1} max={1} dots={18} className="mt-2 opacity-40" />
-              <p className="mt-1.5 text-caption text-muted-foreground/75">All models, with a monthly token limit.</p>
-            </>
+            <p className="mt-1.5 text-caption leading-4 text-muted-foreground">
+              {quota.plan === "OWNER"
+                ? "Everything unlocked, with no usage cap."
+                : "All models, with a monthly token limit."}
+            </p>
           )}
         </div>
 
         <DropdownMenuSeparator />
 
         {/* Account */}
-        <MenuRow href="/profile" icon={<User className="h-4 w-4" />} label="Profile" />
-        <MenuRow href="/settings" icon={<Settings className="h-4 w-4" />} label="Settings" />
-        <MenuRow href="/memory" icon={<NotebookPen className="h-4 w-4" />} label="Memory" />
-        <MenuRow href="/roadmap" icon={<MapIcon className="h-4 w-4" />} label="Roadmap & requests" />
-        {features.isOwner && <MenuRow href="/admin/users" icon={<Shield className="h-4 w-4" />} label="Admin" />}
-        {features.billing && planRank(quota.plan) < planRank("MAX20") && (
-          <MenuRow href="/upgrade" icon={<Sparkles className="h-4 w-4" />} label="Upgrade plan" accent />
-        )}
-
-        <DropdownMenuSeparator />
-
-        {/* Keyboard */}
         <MenuRow
-          onSelect={() => window.dispatchEvent(new CustomEvent("juno:search"))}
-          icon={<Search className="h-4 w-4" />}
-          label="Search chats and projects"
+          onSelect={() => window.dispatchEvent(new CustomEvent("juno:settings", { detail: "profile" }))}
+          icon={<User className="h-4 w-4" />}
+          label="Profile"
         />
         <MenuRow
-          onSelect={() => window.dispatchEvent(new CustomEvent("juno:command-palette"))}
-          icon={<Command className="h-4 w-4" />}
-          label="Command menu"
-          shortcut="⌘K"
+          onSelect={() => window.dispatchEvent(new CustomEvent("juno:settings", { detail: "general" }))}
+          icon={<Settings className="h-4 w-4" />}
+          label="Settings"
         />
-        <MenuRow
-          onSelect={() => window.dispatchEvent(new CustomEvent("juno:shortcuts"))}
-          icon={<Keyboard className="h-4 w-4" />}
-          label="Keyboard shortcuts"
-          shortcut="⌘/"
-        />
-
-        <DropdownMenuSeparator />
 
         {/* Sign out — the one destructive row: quiet red at rest, full red fill
             with white text/icon on hover (150ms), the icon easing toward the
             door as it goes. */}
         <DropdownMenuItem
           onSelect={() => void signOutToSignIn()}
-          className="group h-9 gap-2.5 rounded-md px-2.5 text-destructive transition-colors duration-fast ease-out-soft focus:bg-destructive focus:text-destructive-foreground data-[highlighted]:bg-destructive data-[highlighted]:text-destructive-foreground"
+          className="group h-9 gap-2.5 px-2.5 text-destructive transition-colors duration-fast ease-out-soft focus:bg-destructive focus:text-destructive-foreground data-[highlighted]:bg-destructive data-[highlighted]:text-destructive-foreground"
         >
           <LogOut className="h-4 w-4 shrink-0 transition-transform duration-fast ease-out-soft group-data-[highlighted]:translate-x-0.5" />
           <span>Sign out</span>

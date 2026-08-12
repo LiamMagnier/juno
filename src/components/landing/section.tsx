@@ -29,7 +29,10 @@ export function Section({
   className?: string;
 }) {
   return (
-    <section id={id} className={cn("mx-auto w-full max-w-6xl px-4 py-14 sm:px-6 sm:py-16", className)}>
+    // `scroll-mt-20`: the landing header is sticky, so an anchor jump to one of
+    // these ids (#models, #pricing, …) would otherwise land the heading directly
+    // underneath the bar.
+    <section id={id} className={cn("mx-auto w-full max-w-6xl scroll-mt-20 px-4 py-14 sm:px-6 sm:py-16", className)}>
       <PageHeader eyebrow={eyebrow} heading={heading} lede={lede} />
       {children}
     </section>

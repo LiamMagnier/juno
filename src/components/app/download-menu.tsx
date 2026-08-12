@@ -72,9 +72,25 @@ export function DownloadMenu({ className }: { className?: string }) {
               aria-label="Download the app"
               className={cn(
                 "pressable inline-flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground",
-                "transition-colors duration-fast ease-out-soft hover:bg-muted hover:text-foreground",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
-                "data-[state=open]:bg-muted data-[state=open]:text-foreground coarse:size-11",
+                // sidebar-accent, not muted: this sits in the sidebar footer
+                // directly beside the account row, which fills with
+                // `hover:bg-sidebar-accent`. Two adjacent controls in one 2px-gap
+                // cluster answering the pointer with two different fills is the
+                // most visible way a footer stops reading as one object — and on
+                // the dark theme --muted (9.5%) sat below --sidebar-accent (11%),
+                // so this one also lifted less than its neighbour.
+                //
+                // No transition-* utility beside `.pressable`: that class ships a
+                // transition covering colour AND transform, and a later
+                // transition-colors replaces the whole shorthand, so the press dip
+                // this button opted into by wearing `.pressable` never animated.
+                "hover:bg-sidebar-accent hover:text-foreground",
+                // No forked focus ring either. The global `:focus-visible` rule is
+                // authoritative (button.tsx's header note explains why: a
+                // ring-offset paints a SOLID named colour into the gap, so this one
+                // wore a sidebar-coloured halo whenever the drawer floated it over
+                // a popover instead).
+                "data-[state=open]:bg-sidebar-accent data-[state=open]:text-foreground coarse:size-11",
                 className,
               )}
             >
@@ -85,13 +101,16 @@ export function DownloadMenu({ className }: { className?: string }) {
         <TooltipContent side="top">Get the app</TooltipContent>
       </Tooltip>
 
-      <DropdownMenuContent
-        align="end"
-        side="top"
-        className="w-64 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out"
-      >
+      {/* Width only. `origin-popper` and the pop-in/out pair are already on
+          DropdownMenuContent, and the `!` on them was winning a specificity
+          fight that no longer exists — restating a primitive's own animation at
+          a call site is how ~30 menus in this product quietly drifted apart. */}
+      <DropdownMenuContent align="end" side="top" className="w-64">
         <div className="px-2.5 pb-1.5 pt-2">
-          <p className="font-serif text-[0.8125rem] font-medium leading-4 tracking-[0.01em] text-foreground">
+          {/* On the scale (`body`), not a hand-typed 0.8125rem with its own
+              0.01em tracking — this is the same menu-header role the rest of the
+              shell sets, and it was the only one carrying bespoke metrics. */}
+          <p className="font-serif text-body font-medium leading-tight text-foreground">
             Juno on your desktop
           </p>
           <p className="mt-0.5 text-caption text-muted-foreground">
@@ -102,7 +121,7 @@ export function DownloadMenu({ className }: { className?: string }) {
 
         {ordered === null ? (
           <div className="flex items-center gap-2 px-2.5 py-3 text-caption text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />
+            <Loader2 className="size-3.5 motion-safe:animate-spin" />
             Checking for builds…
           </div>
         ) : ordered.length === 0 ? (
@@ -134,13 +153,17 @@ function DownloadRow({ download, isMine }: { download: AppDownload; isMine: bool
             matching the machine you are on. */}
         {isMine && <Check className="size-3 shrink-0 text-primary" aria-label="Your device" />}
       </span>
-      <span className="truncate font-mono text-[0.6875rem] text-muted-foreground">{detail}</span>
+      <span className="truncate font-mono text-caption text-muted-foreground">{detail}</span>
     </span>
   );
 
+  // No radius override on either row below: DropdownMenuItem's rounded-xs (6px)
+  // is concentric with the 12px shell at its 6px inset, and cn() now lets a
+  // call-site radius actually win — so the `rounded-md` these carried drew them
+  // 2px rounder than every other menu row in the app.
   if (!download.available || !download.url) {
     return (
-      <DropdownMenuItem disabled className="h-auto gap-2.5 rounded-md px-2.5 py-2">
+      <DropdownMenuItem disabled className="h-auto gap-2.5 px-2.5 py-2">
         <Download className="size-4 shrink-0 opacity-40" />
         {body}
       </DropdownMenuItem>
@@ -148,7 +171,7 @@ function DownloadRow({ download, isMine }: { download: AppDownload; isMine: bool
   }
 
   return (
-    <DropdownMenuItem asChild className="h-auto gap-2.5 rounded-md px-2.5 py-2">
+    <DropdownMenuItem asChild className="h-auto gap-2.5 px-2.5 py-2">
       {/* A plain link with `download`: the browser owns the transfer, so it
           resumes, reports progress in the place people look for it, and survives
           the tab being closed. */}

@@ -176,7 +176,8 @@ export const patchSessionSchema = z
 // ---------------------------------------------------------------------------
 
 /**
- * The body of `PATCH /api/work/sessions/[id]/context`.
+ * The body of `PATCH /api/work/sessions/[id]/context`; its paired GET returns
+ * the same fields after joining the task's durable grants.
  *
  * Separate from `patchSessionSchema` rather than folded into it, and the split
  * is the point. That schema changes how a task is *filed* — its name, whether

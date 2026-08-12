@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AppPageHeader } from "@/components/app/app-page-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { staggerDelay } from "@/lib/motion";
 
 interface Block {
   id: string;
@@ -53,10 +56,13 @@ function locator(block: Block): string {
   return `Passage ${block.ordinal + 1}`;
 }
 
+// The --success / --warning ramps exist for exactly these two states. This was
+// the only badge in the product painted from raw Tailwind palette colours, so it
+// was also the only one that would not follow the theme's black rebalance.
 function statusClass(state: string): string {
-  if (state === "ready") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  if (state === "ready") return "border-success/30 bg-success/10 text-success-ink";
   if (state === "failed") return "border-destructive/30 bg-destructive/10 text-destructive";
-  if (state === "degraded" || state === "stale") return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  if (state === "degraded" || state === "stale") return "border-warning/30 bg-warning/10 text-warning-foreground";
   return "border-border bg-muted text-muted-foreground";
 }
 
@@ -92,109 +98,149 @@ export default function KnowledgeDocumentPage() {
     void load();
   }, [load]);
 
+  // This page hand-rolled its shell — a bare max-w-4xl <main> with its own
+  // gutter — while library, projects, roadmap, tasks, artifacts and memory all
+  // open through app-page-scroll / app-page-content + <AppPageHeader>. Three
+  // different widths and two different gutters is what makes moving between two
+  // screens in this product feel like moving between two products.
   if (failed) {
     return (
-      <main className="mx-auto flex min-h-full max-w-4xl flex-col gap-4 px-5 py-8">
-        <Link href="/library" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="size-4" /> Library
-        </Link>
-        <Card className="p-8 text-center">
-          <p className="font-serif text-heading">This document could not be read.</p>
-          <Button variant="outline" size="sm" onClick={() => void load()} className="mt-4 gap-1.5">
-            <RefreshCw className="size-3.5" /> Try again
-          </Button>
-        </Card>
-      </main>
+      <div className="app-page-scroll">
+        <div className="app-page-content max-w-3xl">
+          <Link href="/library" className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors duration-fast hover:text-foreground">
+            <ArrowLeft className="size-4" /> Library
+          </Link>
+          <EmptyState
+            className="mt-6"
+            tone="error"
+            icon={TriangleAlert}
+            title="This document could not be read."
+            description="The extractor could not open it, or the request did not come back."
+            action={
+              <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5">
+                <RefreshCw className="size-3.5" /> Try again
+              </Button>
+            }
+          />
+        </div>
+      </div>
     );
   }
 
   if (loading && document === null) {
     return (
-      <main className="mx-auto flex min-h-full max-w-4xl flex-col gap-4 px-5 py-8">
-        <Skeleton className="h-5 w-24" />
-        <Skeleton className="h-28 w-full rounded-card" />
-        <Skeleton className="h-48 w-full rounded-card" />
-      </main>
+      <div className="app-page-scroll">
+        <div className="app-page-content max-w-3xl">
+          {/* One block per surface it stands in for: the header, the metadata
+              card, the filter row, then the passage list. */}
+          <Skeleton className="h-5 w-24 rounded-control" />
+          {/* The literal 60/120/180/240+ ladder is STAGGER.loose spelled out; the
+              helper says the same thing in the vocabulary the rest of the product
+              uses, and caps the tail the hand-written `240 + i * 60` could not. */}
+          <Skeleton className="mt-4 h-16 w-2/3 rounded-control" style={staggerDelay(1, "loose")} />
+          <Skeleton className="mt-6 h-24 w-full rounded-card" style={staggerDelay(2, "loose")} />
+          <Skeleton className="mt-5 h-10 w-full rounded-field" style={staggerDelay(3, "loose")} />
+          <div className="mt-5 space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} className="h-28 w-full rounded-card" style={staggerDelay(i, "loose", 240)} />
+            ))}
+          </div>
+        </div>
+      </div>
     );
   }
 
   if (!document) return null;
 
   return (
-    <main className="mx-auto flex min-h-full max-w-4xl flex-col gap-5 px-5 py-8">
-      <Link href="/library" className="inline-flex w-fit items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> Library
-      </Link>
-      <Card className="p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="font-mono text-label text-muted-foreground">Document inspector</p>
-            <h1 className="mt-1 truncate font-serif text-title">{document.fileName}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              v{document.version} · {document.counts.blocks} passages · {document.counts.chunks} chunks
-              {document.pageCount ? ` · ${document.pageCount} pages` : ""}
-            </p>
-          </div>
-          <span className={`rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase ${statusClass(document.state)}`}>
-            {document.state}
-          </span>
-        </div>
-        {document.error ? (
-          <div className="mt-4 flex items-start gap-2 rounded-field border border-amber-500/30 bg-amber-500/5 px-3.5 py-3 text-sm text-muted-foreground">
-            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-600" />
-            <span>{document.error}</span>
-          </div>
-        ) : null}
-        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] text-muted-foreground">
-          <span>{document.parser ?? "unknown parser"} {document.parserVersion ?? ""}</span>
-          <span>checksum {document.checksum}</span>
-          {document.supersededById ? <span>This version is superseded.</span> : null}
-          {document.sourceUrl ? (
-            <a href={document.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
-              Download original
-            </a>
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-3xl">
+        <AppPageHeader
+          eyebrow="Document inspector"
+          heading={<span className="truncate">{document.fileName}</span>}
+          lede={`v${document.version} · ${document.counts.blocks} passages · ${document.counts.chunks} chunks${
+            document.pageCount ? ` · ${document.pageCount} pages` : ""
+          }`}
+          backHref="/library"
+          backLabel="Back to library"
+          actions={
+            <span
+              className={`rounded-full border px-2.5 py-1 font-mono text-caption uppercase ${statusClass(document.state)}`}
+            >
+              {document.state}
+            </span>
+          }
+        />
+
+        <Card variant="flat" className="p-5">
+          {document.error ? (
+            <div className="mb-4 flex items-start gap-2 rounded-field border border-warning/30 bg-warning/10 px-3.5 py-3 text-sm text-muted-foreground">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning-foreground" />
+              <span>{document.error}</span>
+            </div>
           ) : null}
-        </div>
-      </Card>
-
-      <form
-        className="flex flex-wrap gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void load();
-        }}
-      >
-        <div className="relative min-w-[12rem] flex-1">
-          <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find in this document" className="pl-9" />
-        </div>
-        <Input value={page} onChange={(event) => setPage(event.target.value.replace(/\D/g, ""))} placeholder="Page" inputMode="numeric" className="w-24" />
-        <Button type="submit" variant="outline" disabled={loading}>Inspect</Button>
-      </form>
-
-      {blocks === null || blocks.length === 0 ? (
-        <Card className="p-10 text-center text-sm text-muted-foreground">
-          <FileSearch className="mx-auto size-6 opacity-50" />
-          <p className="mt-3">No citable text matches this filter.</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-caption text-muted-foreground">
+            <span>{document.parser ?? "unknown parser"} {document.parserVersion ?? ""}</span>
+            <span className="tabular-nums">checksum {document.checksum}</span>
+            {document.supersededById ? <span>This version is superseded.</span> : null}
+            {document.sourceUrl ? (
+              <a
+                href={document.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 transition-colors duration-fast hover:text-foreground"
+              >
+                Download original
+              </a>
+            ) : null}
+          </div>
         </Card>
-      ) : (
-        <ol className="space-y-3">
-          {blocks.map((block) => (
-            <li key={block.id} id={`block-${block.id}`}>
-              <Card className="p-4">
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 font-mono text-[10px] text-muted-foreground">
-                  <span>{locator(block)} · {block.type}</span>
-                  <span className={block.confidence < 1 ? "text-amber-600 dark:text-amber-300" : ""}>
-                    {block.confidence < 1 ? `OCR confidence ${Math.round(block.confidence * 100)}%` : "Verified embedded text"}
-                  </span>
-                </div>
-                {block.heading.length > 0 ? <p className="mb-1 font-mono text-[10px] text-muted-foreground">{block.heading.join(" / ")}</p> : null}
-                <p className="whitespace-pre-wrap text-sm leading-7 text-foreground">{block.text}</p>
-              </Card>
-            </li>
-          ))}
-        </ol>
-      )}
-    </main>
+
+        <form
+          className="mt-5 flex flex-wrap gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void load();
+          }}
+        >
+          <div className="relative min-w-[12rem] flex-1">
+            {/* top-1/2 + -translate-y-1/2, like the other four search-in-input call
+                sites. The fixed top-2.5 was optically centred only for the Input's
+                current default height. */}
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find in this document" className="pl-9" />
+          </div>
+          <Input value={page} onChange={(event) => setPage(event.target.value.replace(/\D/g, ""))} placeholder="Page" inputMode="numeric" className="w-24 tabular-nums" />
+          <Button type="submit" variant="outline" disabled={loading}>Inspect</Button>
+        </form>
+
+        {blocks === null || blocks.length === 0 ? (
+          <EmptyState
+            className="mt-5"
+            size="panel"
+            icon={FileSearch}
+            title="No citable text here"
+            description="Nothing in this document matches the current filter."
+          />
+        ) : (
+          <ol className="mt-5 space-y-3">
+            {blocks.map((block) => (
+              <li key={block.id} id={`block-${block.id}`}>
+                <Card className="p-4">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2 font-mono text-caption text-muted-foreground">
+                    <span>{locator(block)} · {block.type}</span>
+                    <span className={block.confidence < 1 ? "tabular-nums text-warning-foreground" : ""}>
+                      {block.confidence < 1 ? `OCR confidence ${Math.round(block.confidence * 100)}%` : "Verified embedded text"}
+                    </span>
+                  </div>
+                  {block.heading.length > 0 ? <p className="mb-1 font-mono text-caption text-muted-foreground">{block.heading.join(" / ")}</p> : null}
+                  <p className="whitespace-pre-wrap text-sm leading-7 text-foreground">{block.text}</p>
+                </Card>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+    </div>
   );
 }

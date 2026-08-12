@@ -40,34 +40,77 @@ const PRODUCT_LINKS: { href: string; label: string; file?: boolean }[] = [
   { href: "/downloads/Juno.dmg", label: "Download for macOS", file: true },
 ];
 
-/** One hover/colour treatment for every footer link, whatever element renders it. */
+/**
+ * One hover/colour treatment for every footer link, whatever element renders it.
+ *
+ * `rounded-xs` (6px) is the ladder's rung for inline text links, and it is what
+ * shapes the global :focus-visible outline. This file previously held three
+ * different focus-ring radii — rounded-sm here, rounded-md on both logo lockups
+ * — none of them on the semantic ladder.
+ *
+ * `focus-visible:text-foreground` rides with the hover. The outline alone says
+ * "this is focused"; the colour shift is what says "this is a link you can
+ * follow", and hover was carrying it alone — so a keyboard user tabbing the
+ * footer, and every touch visitor, got a weaker read of these eight links than a
+ * mouse does. The auth and legal shells already pair the two states this way.
+ */
 const FOOTER_LINK =
-  "block w-fit rounded-sm text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground";
+  "block w-fit rounded-xs text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:text-foreground";
+
+/** The two logo lockups (header + footer) — one radius, one press response. */
+const LOGO_LOCKUP =
+  "inline-flex items-center gap-2.5 rounded-control transition-transform duration-press ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100";
 
 export function LandingPage() {
   return (
-    <div className="min-h-dvh bg-background text-foreground">
-      {/* px-4 sm:px-6 throughout: every app screen indents 16px on a phone, and
+    // No `bg-background` here. This div is an in-flow, non-positioned block, so
+    // its background paints AFTER the hero's `-z-10` backdrop layers (the coral
+    // wash and the dot grid) in the root stacking context — both were fully
+    // occluded and the hero rendered as a flat rectangle. `body` already paints
+    // --background (globals.css), so nothing is lost by dropping it, and the
+    // hero section below now carries `isolate` so a future ancestor ground
+    // cannot re-bury them.
+    <div className="min-h-dvh text-foreground">
+      {/* Sticky, because pricing is the last of six sections and the page's own
+          note there records the cost of this: a visitor who read to the bottom
+          and picked a tier had to scroll the whole page back to reach a sign-up
+          control. The bar stays server-only — no scroll listener, so the
+          hairline is permanent rather than appearing on scroll.
+
+          The ground is --background at 72%, not the elevated --card rung the
+          share page's bars use. Those float over a transcript and have to read
+          as a different material; this one is the top of the page's own ground,
+          and holding --background is what lets the hero's coral wash bloom
+          through the blur instead of being flattened by an opaque strip. On
+          black the separation is then carried by the hairline, which is how the
+          dark theme is built to do it.
+
+          px-4 sm:px-6 throughout: every app screen indents 16px on a phone, and
           the landing used to indent 24px, so crossing the sign-in wall shifted
           the whole left edge by 8px. */}
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-5 sm:px-6">
-        <Link href="/" aria-label="Juno" className="inline-flex items-center gap-2.5 rounded-md">
-          <JunoMark className="h-7 w-7" />
-          <AsciiWordmark />
-        </Link>
-        <nav aria-label="Account" className="flex items-center gap-2">
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/sign-in">Sign in</Link>
-          </Button>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/sign-up">Create account</Link>
-          </Button>
-        </nav>
+      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/72 backdrop-blur-xl backdrop-saturate-150">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
+          <Link href="/" aria-label="Juno" className={LOGO_LOCKUP}>
+            <JunoMark className="h-7 w-7" />
+            <AsciiWordmark />
+          </Link>
+          <nav aria-label="Account" className="flex items-center gap-2">
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/sign-in">Sign in</Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href="/sign-up">Create account</Link>
+            </Button>
+          </nav>
+        </div>
       </header>
 
       <main>
         {/* Hero — static dot-grid backdrop (CSS only, no canvas) + faint coral wash. */}
-        <section className="relative overflow-hidden">
+        {/* `isolate`: the two backdrop layers below sit at -z-10, which without a
+            stacking context of their own resolve against the root and paint
+            behind any opaque ancestor ground. */}
+        <section className="relative isolate overflow-hidden">
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(55%_45%_at_50%_0%,hsl(var(--primary)/0.1),transparent_70%)]"
@@ -84,13 +127,17 @@ export function LandingPage() {
           />
           <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-14 sm:px-6 sm:pb-20 sm:pt-20">
             <p className="flex items-center gap-2 font-mono text-label text-muted-foreground motion-safe:animate-fade-in">
-              <DotMatrixMark className="h-4 w-4" />
+              <DotMatrixMark className="size-4" />
               Multi-model AI chat
             </p>
             {/* The hero is one staggered set, indices 0-4 on the "loose" rung.
                 It used to hand-write [animation-delay:60/120/200/260ms] — steps
                 of 60, 60, 80, 60, so the hero did not even hold its own tempo,
-                let alone the product's three-rung scale. */}
+                let alone the product's three-rung scale.
+                One keyframe across all five beats, too: index 4 ran `fade-in`
+                (0.2s, raw ease-out, no travel) while 0-3 ran `rise-in` (0.32s,
+                out-strong, 8px), so the last beat of a choreographed set arrived
+                on a different curve and a different distance from the other four. */}
             <h1
               style={staggerDelay(0, "loose")}
               className="mt-4 max-w-3xl text-balance font-serif text-hero font-medium tracking-tight motion-safe:animate-rise-in [animation-fill-mode:backwards]"
@@ -130,7 +177,7 @@ export function LandingPage() {
             </div>
             <div
               style={staggerDelay(4, "loose")}
-              className="mt-14 motion-safe:animate-fade-in [animation-fill-mode:backwards]"
+              className="mt-14 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
             >
               <DottedDivider label="In the picker today" className="mb-5" />
               <FlagshipStrip />
@@ -149,7 +196,7 @@ export function LandingPage() {
         <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
           <div className="flex flex-col justify-between gap-8 sm:flex-row">
             <div>
-              <Link href="/" aria-label="Juno" className="inline-flex items-center gap-2.5 rounded-md">
+              <Link href="/" aria-label="Juno" className={LOGO_LOCKUP}>
                 <JunoMark className="h-6 w-6" />
                 <AsciiWordmark />
               </Link>

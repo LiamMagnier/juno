@@ -67,14 +67,14 @@ function SourceAudit({ audit, index }: { audit: CitationAudit; index: number }) 
         )}
       >
         <div className="min-h-0 overflow-hidden" inert={!open}>
-          <div className="mb-2 rounded-menu border border-border/70 bg-muted/35 p-3">
+          <div className="mb-2 rounded-menu border border-border/70 bg-card p-3">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
               <ScoreMeter label="Authority" value={source.authority ?? 0} />
               <ScoreMeter label="Freshness" value={source.freshness} />
               <ScoreMeter label="Directness" value={source.directness} />
               <ScoreMeter label="Independence" value={source.independence} />
             </div>
-            <p className="mt-2 font-mono text-caption text-muted-foreground/70">
+            <p className="mt-2 font-mono text-caption text-muted-foreground">
               {source.publishedAt
                 ? `Published ${source.publishedAt.slice(0, 10)}`
                 : "No publication date — this source cannot be placed in time."}
@@ -130,11 +130,18 @@ function SourceRow({ source, index, audit }: { source: ClientSource; index: numb
           "transition-[transform,box-shadow,border-color,background-color] duration-base ease-out-soft motion-reduce:transition-none",
           // Hover is a LIFT: the row resolves into a card and rises. `relative` +
           // `hover:z-10` so the next row's fill can't paint over this one's shadow.
-          "hover:z-10 hover:border-border/70 hover:bg-card hover:shadow-float motion-safe:hover:-translate-y-0.5"
+          // Literally `shadow-lift`, not `shadow-float` — float is the FLOATING
+          // rung, and an in-flow transcript row was casting a bigger shadow than
+          // an open dropdown. On black the shadow does nothing either way, which
+          // is why the fill and border changes below carry the state.
+          "hover:z-10 hover:border-border/70 hover:bg-card hover:shadow-lift motion-safe:hover:-translate-y-0.5",
+          // The row is an <a>: it is reachable by keyboard, and the entire
+          // "this is a link" treatment used to live on :hover alone.
+          "focus-visible:z-10 focus-visible:border-border/70 focus-visible:bg-card"
         )}
       >
         {/* Keeps the inline [n] chips and this list readable as the same numbering. */}
-        <span className="w-4 shrink-0 text-right font-mono text-caption tabular-nums text-muted-foreground/50">
+        <span className="w-4 shrink-0 text-right font-mono text-caption tabular-nums text-muted-foreground">
           {index}
         </span>
         <SourceFavicon url={source.url} variant="list" />
@@ -142,11 +149,11 @@ function SourceRow({ source, index, audit }: { source: ClientSource; index: numb
           <span className="truncate text-body leading-tight text-foreground/90 transition-colors duration-fast group-hover/row:text-foreground motion-reduce:transition-none">
             {titleOf(source)}
           </span>
-          <span className="truncate font-mono text-caption text-muted-foreground/70">{hostOf(source.url)}</span>
+          <span className="truncate font-mono text-caption text-muted-foreground">{hostOf(source.url)}</span>
         </span>
         <ArrowUpRight
           aria-hidden="true"
-          className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-base ease-out-soft group-hover/row:opacity-100 motion-reduce:transition-none"
+          className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-base ease-out-soft group-hover/row:opacity-100 group-focus-visible/row:opacity-100 coarse:opacity-60 motion-reduce:transition-none"
         />
       </Row>
       {audit && <SourceAudit audit={audit} index={index} />}
@@ -213,7 +220,11 @@ export function SourcesPill({
         className={cn(
           "group/pill relative z-0 inline-flex h-9 items-center gap-2 rounded-full border border-border/70 bg-card pl-1.5 pr-3 shadow-soft",
           "transition-[transform,box-shadow,border-color] duration-base ease-out-soft motion-reduce:transition-none",
-          "hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5",
+          // A fill change, not only a shadow: this pill sits directly on
+          // --background, and on pure black a black-ink shadow casts onto black
+          // and produces no visible change at all — the hover was carried by a
+          // 2px translate alone. The shadow still does the work in light.
+          "hover:z-10 hover:border-border hover:bg-accent hover:shadow-lift motion-safe:hover:-translate-y-0.5",
           // 44px touch target keeps its concentric geometry: radius 22 − 10px inset = 12.
           "coarse:h-11 coarse:pl-2.5"
         )}
@@ -237,7 +248,7 @@ export function SourcesPill({
         <span className="font-mono text-label text-muted-foreground transition-colors duration-fast group-hover/pill:text-foreground motion-reduce:transition-none">
           Sources
         </span>
-        <span className="font-mono text-caption tabular-nums text-muted-foreground/60">{sources.length}</span>
+        <span className="font-mono text-caption tabular-nums text-muted-foreground">{sources.length}</span>
         <ChevronDown
           aria-hidden="true"
           className={cn(

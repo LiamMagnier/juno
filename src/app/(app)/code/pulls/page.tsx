@@ -13,8 +13,8 @@ export default async function CodePullsPage() {
   });
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-2xl px-4 py-8">
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-2xl">
         <AppPageHeader
           eyebrow="Code"
           heading="Pull requests"

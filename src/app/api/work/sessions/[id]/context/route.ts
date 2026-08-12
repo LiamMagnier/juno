@@ -6,6 +6,7 @@ import { isOwnerEmail } from "@/lib/owner";
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
 import { isWorkModelAllowed } from "@/lib/work/models";
+import { parseSkillInvocation } from "@/lib/work/skills";
 import {
   WORK_LEASED_STATUSES,
   reconcileSessionAttachments,
@@ -68,6 +69,91 @@ const WORK_CONTEXT_RATE_LIMIT = 30;
  *  apps. A `queued` or `paused` run has read nothing yet, so it is not in
  *  flight for the purpose of the caveat on a narrowing. */
 const IN_FLIGHT_STATUSES = new Set<string>(WORK_LEASED_STATUSES);
+
+type WorkSessionContextPayload = {
+  projectId: string | null;
+  model: string | null;
+  reasoningEffort: string | null;
+  permissionPolicy: string;
+  connectorIds?: string[];
+  attachmentIds: string[];
+  attachments: Array<{ id: string; displayName: string }>;
+  skillSlug?: string;
+};
+
+/** Reads one task's durable context without exposing local paths or account data. */
+async function readWorkSessionContext(
+  userId: string,
+  sessionId: string
+): Promise<WorkSessionContextPayload | null> {
+  const session = await prisma.workSession.findFirst({
+    where: { id: sessionId, userId, deletedAt: null },
+    select: {
+      projectId: true,
+      requestedModel: true,
+      reasoningEffort: true,
+      permissionPolicy: true,
+      goal: true,
+      connectorsChosen: true,
+      connectors: {
+        where: { userId },
+        orderBy: { createdAt: "asc" },
+        select: { connectorId: true },
+      },
+      grants: {
+        where: {
+          userId,
+          sessionId,
+          kind: "cloud_file",
+          revokedAt: null,
+          remoteRef: { not: null },
+        },
+        orderBy: { createdAt: "asc" },
+        select: { remoteRef: true, displayName: true },
+      },
+    },
+  });
+  if (!session) return null;
+
+  const attachments = session.grants.flatMap((grant) =>
+    grant.remoteRef === null
+      ? []
+      : [{ id: grant.remoteRef, displayName: grant.displayName }]
+  );
+  const skillSlug = parseSkillInvocation(session.goal)?.slug;
+  return {
+    projectId: session.projectId,
+    model: session.requestedModel,
+    reasoningEffort: session.reasoningEffort,
+    permissionPolicy: session.permissionPolicy,
+    ...(session.connectorsChosen
+      ? { connectorIds: session.connectors.map((connector) => connector.connectorId) }
+      : {}),
+    attachmentIds: attachments.map((attachment) => attachment.id),
+    attachments,
+    ...(skillSlug ? { skillSlug } : {}),
+  };
+}
+
+/**
+ * Reads the durable choices that shape a task before any one attempt runs.
+ *
+ * The three grant-shaped fields are intentionally returned separately from the
+ * session serializer: a session row has no connector or attachment arrays, and
+ * pretending that an omitted join is an empty selection would turn an older
+ * task's implicit access into an explicit "no access" answer. `connectorsChosen`
+ * is the bit that makes that distinction safe. Attachments are always explicit
+ * because this route only owns the session-scoped cloud-file grants it writes.
+ */
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { user, error } = await requireUser();
+  if (!user) return error;
+
+  const { id } = await params;
+  const context = await readWorkSessionContext(user.id, id);
+  if (!context) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json({ context });
+}
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { user, error } = await requireUser();
@@ -322,8 +408,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         })
       : session;
 
+  const context = await readWorkSessionContext(user.id, session.id);
+
   return NextResponse.json({
     session: serializeSession(updated),
+    context: context ?? {},
     applied,
     // The attempt these promises are about, so the control can name it — "the
     // attempt running now" is a phrase a reader can check, and a client left to

@@ -424,7 +424,7 @@ export function WorkHostSettings({
                 return (
                   <li
                     key={grant.id}
-                    className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card/50 px-3.5 py-2.5"
+                    className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card px-3.5 py-2.5"
                   >
                     <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                     <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
@@ -433,7 +433,7 @@ export function WorkHostSettings({
                     <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                       {ACCESS_LABEL[grant.accessMode]}
                     </span>
-                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground/70">
+                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                       {grant.lastUsedAt === null ? "never used" : `used ${workTimeAgo(grant.lastUsedAt)}`}
                     </span>
                   </li>
@@ -509,7 +509,7 @@ function NameList({
           {names.map((name) => (
             <span
               key={name}
-              className="inline-flex items-center rounded-full border border-border/70 bg-background/50 px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground"
+              className="inline-flex items-center rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground"
             >
               {name}
             </span>

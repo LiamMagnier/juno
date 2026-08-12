@@ -3,9 +3,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, ChevronDown, EyeOff, FolderLock, Loader2, MessageSquare, Pencil, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, EyeOff, FolderLock, Loader2, MessageSquare, Pencil, Sparkles, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import {
@@ -119,7 +120,15 @@ function EntryRow({ memory, busy, onEdit, onForget, onDelete }: EntryRowProps) {
   const categoryMeta = isMemoryCategory(memory.category) ? MEMORY_CATEGORY_META[memory.category] : null;
 
   return (
-    <li className={cn("px-4 py-3", retired && "opacity-70")}>
+    // A hover tint is the only thing telling you the row's controls belong to
+    // THIS fact rather than the one above it — the rows are divided by a hairline
+    // and nothing else, which on the black ground is very little.
+    <li
+      className={cn(
+        "px-4 py-3 transition-colors duration-fast ease-out-soft hover:bg-muted/40 motion-reduce:transition-none",
+        retired && "opacity-70"
+      )}
+    >
       {editing ? (
         <form onSubmit={save} className="flex items-center gap-1.5">
           <Input
@@ -272,9 +281,14 @@ export function EntryList({ memories, busyIds, paused, onEdit, onForget, onDelet
       </p>
 
       {active.length === 0 && retired.length === 0 ? (
-        <p className="border-t border-border/50 px-4 py-6 text-center text-sm text-muted-foreground">
-          Juno hasn’t remembered anything specific yet. Facts appear here as you chat.
-        </p>
+        <div className="border-t border-border/50">
+          <EmptyState
+            size="panel"
+            icon={Sparkles}
+            title="Nothing specific yet"
+            description="Facts appear here as you chat."
+          />
+        </div>
       ) : (
         <ul className="divide-y divide-border/50 border-t border-border/50">
           {active.map((memory) => (

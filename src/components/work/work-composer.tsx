@@ -1095,7 +1095,7 @@ export function WorkComposer({
         <div
           className={cn(
             "relative grid w-full grid-cols-1 grid-rows-1 items-end justify-items-center",
-            "transition-[min-height] duration-slow ease-spring motion-reduce:transition-none",
+            "transition-[min-height] duration-slow ease-out-strong motion-reduce:transition-none",
             dictating ? "min-h-[170px]" : "min-h-0"
           )}
         >
@@ -1108,7 +1108,7 @@ export function WorkComposer({
             // transcript's jump-to-latest button had.
             inert={!dictating}
             className={cn(
-              "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+              "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
               dictating
                 ? "translate-y-0 scale-100 opacity-100"
                 : "pointer-events-none translate-y-1 scale-95 opacity-0"
@@ -1140,7 +1140,7 @@ export function WorkComposer({
             // transcript's jump-to-latest button had.
             inert={dictating}
             className={cn(
-              "col-start-1 row-start-1 w-full transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+              "col-start-1 row-start-1 w-full transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
               dictating && "pointer-events-none translate-y-1 scale-[0.98] opacity-0"
             )}
           >
@@ -1169,7 +1169,13 @@ export function WorkComposer({
                               // composer's attachment rows sit on — these were
                               // 8px there and 24px here for the same object in
                               // the same product.
-                              "flex items-center gap-2 rounded-control border bg-background px-2.5 py-2 text-xs shadow-soft",
+                              // `bg-secondary`, not `bg-background` + `shadow-soft`.
+                              // The shell around this chip is `bg-card`; on a pure-
+                              // black ground `bg-background` made the chip darker
+                              // than the surface holding it, and `--shadow-soft` in
+                              // dark is black ink, so the elevation cue did nothing
+                              // at all. On black the lift has to come from lightness.
+                              "flex items-center gap-2 rounded-control border border-border/60 bg-secondary px-2.5 py-2 text-xs",
                               removingIds.includes(upload.localId)
                                 ? "pointer-events-none motion-safe:animate-pop-out"
                                 : "motion-safe:animate-rise-in"
@@ -1233,7 +1239,11 @@ export function WorkComposer({
                   disabled={submitting}
                   placeholder="Describe the task — what you want done, and what “done” looks like"
                   aria-label="Describe the task for Juno to carry out"
-                  className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]"
+                  // `text-body` and 4px-grid padding. The field carried three
+                  // arbitrary values — text-[1rem], sm:px-[18px], sm:pt-[17px] —
+                  // and that 17/18px half-step matched nothing else in the shell,
+                  // whose controls row sits on px-2/2.5 and its chip strip on px-3/3.5.
+                  className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-body outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-4 sm:pt-4"
                 />
               }
               /*
@@ -1322,8 +1332,16 @@ export function WorkComposer({
                         />
                         <Tooltip>
                           <TooltipTrigger asChild>
+                            {/* The disabled twin of the trigger below, at that
+                                trigger's exact metrics — `rounded-composer-control`
+                                (the inline row's rung, which the mic and the [+]
+                                beside it already sit on), `coarse:h-11`, and the
+                                same three widths. It was `rounded-control` and
+                                auto-width, so switching the model to Auto both
+                                changed the corner radius of one chip in the row
+                                and resized the row under the reader's pointer. */}
                             <span
-                              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-control px-2 font-mono text-[12px] text-muted-foreground min-[480px]:text-[13px]"
+                              className="inline-flex h-8 w-[4.75rem] shrink-0 items-center justify-center gap-1 rounded-composer-control px-2 font-mono text-[12px] text-muted-foreground coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]"
                               aria-label="Thinking effort: Auto — chosen with the model"
                             >
                               <span className="truncate">Auto</span>
@@ -1369,8 +1387,31 @@ export function WorkComposer({
                                       disabled={submitting}
                                       aria-label={`Thinking effort: ${current.label}`}
                                       className={cn(
-                                        "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-control px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
-                                        atTopTier ? "text-ultra" : "text-foreground/80"
+                                        // `.composer-chip` + `rounded-composer-control`
+                                        // + `coarse:h-11`, which is verbatim what
+                                        // chat's identical trigger carries. The
+                                        // claim above — same component, same
+                                        // widths — was true of the widths and of
+                                        // nothing else: this was a bare ghost at
+                                        // `rounded-control` (9px) in a row whose
+                                        // [+] and mic are both 12px, and it topped
+                                        // out at 32px on touch beside two
+                                        // neighbours that grow to 44.
+                                        //
+                                        // The two `ring-0`s went with it: Button
+                                        // declares no ring at all — globals.css's
+                                        // `:focus-visible` outline is what draws
+                                        // keyboard focus here — so they cancelled
+                                        // nothing, while `focus-visible:bg-accent`
+                                        // beside them painted focus in the same
+                                        // fill as hover and as open, leaving the
+                                        // three states indistinguishable.
+                                        "composer-chip group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-composer-control px-2 font-mono text-[12px] tracking-tight focus-visible:ring-offset-card coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
+                                        // Full strength, matching the model name
+                                        // beside it. `/80` put one of the two most
+                                        // consequential values on the row below
+                                        // the ink of everything around it.
+                                        atTopTier ? "text-ultra" : "text-foreground"
                                       )}
                                     >
                                       <span className="min-w-0 flex-1 truncate text-center min-[480px]:hidden">
@@ -1379,7 +1420,7 @@ export function WorkComposer({
                                       <span className="hidden min-w-0 flex-1 truncate text-center min-[480px]:inline">
                                         {current.label}
                                       </span>
-                                      <ChevronDown className="h-3 w-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
+                                      <ChevronDown className="h-3 w-3 shrink-0 opacity-50 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180" />
                                     </Button>
                                   </TooltipTrigger>
                                 </PopoverTrigger>
@@ -1480,7 +1521,7 @@ export function WorkComposer({
                               // this composer holds both fixed: dropping them
                               // here is how the lists drift and a later shape
                               // change animates on one surface only.
-                              "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring"
+                              "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong"
                             )}
                           >
                             {submitting ? (
@@ -1709,7 +1750,12 @@ export function WorkComposer({
         !loadingHosts &&
         selection.target !== null &&
         selection.degradation.length > 0 && (
-          <div className="mt-2.5 rounded-field border border-warning/35 bg-warning/5 px-3.5 py-2.5 motion-safe:animate-rise-in">
+          // `bg-warning/10` and not `/5` — the same fill `WorkStateNote`'s
+          // warning tone uses, which is the box this one sits directly above in
+          // several states. `/5` composited to ~2.9% over the black ground, so
+          // two warning boxes in one column were drawn at visibly different
+          // weights for no difference in what they were saying.
+          <div className="mt-2.5 rounded-field border border-warning/35 bg-warning/10 px-3.5 py-2.5 motion-safe:animate-rise-in">
             <DegradationNotes degradation={selection.degradation} />
           </div>
         )}
@@ -1963,7 +2009,7 @@ function ProjectChip({
             {selected?.name ?? "Project"}
           </span>
           <ChevronDown
-            className="h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180"
+            className="h-3 w-3 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180"
             aria-hidden="true"
           />
         </button>
@@ -2005,7 +2051,7 @@ function ProjectChip({
                   {active ? (
                     <Check className="!size-3.5 text-primary" />
                   ) : (
-                    <span className="font-mono text-caption text-muted-foreground/60">
+                    <span className="font-mono text-caption text-muted-foreground">
                       {project.conversationCount}
                     </span>
                   )}

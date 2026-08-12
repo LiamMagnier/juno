@@ -80,7 +80,7 @@ export function WorkContextSection({
 function SourceCard({ reference }: { reference: WorkReference }) {
   const linked = reference.url !== null;
   return (
-    <li className="flex items-start gap-2.5 rounded-field border border-border/50 bg-card/40 px-2.5 py-2">
+    <li className="flex items-start gap-2.5 rounded-field border border-border/50 bg-card px-2.5 py-2">
       <span className="mt-[1px] flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden="true">
         {linked ? (
           <Link2 className="h-3.5 w-3.5 text-source" />

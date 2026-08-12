@@ -12,10 +12,21 @@ const TabsList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <TabsPrimitive.List
     ref={ref}
-    // rounded-menu (14) − 4px padding = concentric with the rounded-control (10)
-    // triggers; recessed track. Geometry is unchanged — the arbitrary values are
-    // just named now, so SegmentedControl can share the same two rungs.
-    className={cn("inline-flex h-9 items-center justify-center rounded-menu bg-muted/70 p-1 text-muted-foreground field-well", className)}
+    // rounded-menu (12) − 4px padding = concentric with the rounded-control (9)
+    // triggers; recessed track. The comment used to read 14 and 10, which are
+    // neither rung's value (tailwind.config.ts) — an arithmetic that happened to
+    // reach the same conclusion from two wrong numbers. SegmentedControl shares
+    // these exact two rungs.
+    //
+    // `bg-muted/70` is gone and `field-well` supplies the fill alone. The two
+    // were fighting, and worse, they were splitting the track across the two
+    // themes: utilities are emitted after the components layer, so on light
+    // `.bg-muted/70` beat `.field-well`, while on dark `.dark .field-well`
+    // (0,2,0) beat the utility (0,1,0). The light track and the dark track were
+    // therefore coming from two different systems, and a retheme of `.field-well`
+    // — the class whose whole job is knowing that a well LIFTS on black instead
+    // of recessing below it — reached only half of them.
+    className={cn("inline-flex h-9 items-center justify-center rounded-menu p-1 text-muted-foreground field-well", className)}
     {...props}
   />
 ));
@@ -31,7 +42,21 @@ const TabsTrigger = React.forwardRef<
       // Scoped transition, not transition-all: the latter puts width, height,
       // padding and font-size on the compositor's critical path for a change that
       // only ever touches colour and the thumb's shadow (same reasoning as card.tsx).
-      "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control px-3 py-1 text-sm font-medium transition-[color,background-color,box-shadow] duration-base ease-out-soft hover:text-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:[box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)] [&_svg]:size-4",
+      // The INACTIVE tab had a colour-only hover, which is the same failure the
+      // segmented control's inactive segment had: the label brightened with no
+      // ground under it, so on the black theme the hit area was invisible until
+      // the pointer was already inside it. `data-[state=inactive]:hover:bg-accent/60`
+      // is the wash — deliberately below the active thumb's own contrast, so it
+      // reads as "you can press here" and not as a second selected state.
+      //
+      // The ACTIVE fill is `bg-card` on paper and `bg-accent` on dark, because
+      // raised is a lightness relationship and the ramps disagree about which
+      // way it points. Against this track (--muted at /70) --card sits 2.6
+      // points up on paper and a tenth of a point DOWN on black, so the active
+      // tab was distinguished from the well behind it by its sheen alone.
+      // --accent gives dark the same one-rung step light already had.
+      // SegmentedControl's thumb carries the identical pair — same idiom.
+      "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-control px-3 py-1 text-sm font-medium transition-[color,background-color,box-shadow] duration-base ease-out-soft motion-reduce:transition-none hover:text-foreground data-[state=inactive]:hover:bg-accent/60 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-card dark:data-[state=active]:bg-accent data-[state=active]:text-foreground data-[state=active]:[box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)] [&_svg]:size-4 [&_svg]:shrink-0",
       className
     )}
     {...props}

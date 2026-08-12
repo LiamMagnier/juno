@@ -122,7 +122,7 @@ export function WorkDocuments({
             {fromEvents.map((artifact) => (
               <li
                 key={artifact.id}
-                className="flex items-center gap-2.5 rounded-field border border-border/60 bg-card/50 px-3 py-2.5"
+                className="flex items-center gap-2.5 rounded-field border border-border/60 bg-card px-3 py-2.5"
               >
                 <KindBadge extension={ARTIFACT_EXTENSION[artifact.kind]} />
                 <span className="min-w-0 flex-1">
@@ -170,7 +170,13 @@ export function WorkDocuments({
 
 function KindBadge({ extension }: { extension: string }) {
   return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-field bg-muted font-mono text-[9px] text-muted-foreground">
+    // Identical to `FileMark` in detail/work-outputs.tsx, which is the other
+    // half of this pair: the two marks stack inside one rail section and were
+    // still 10px-on-secondary-with-a-hairline there against 9px-on-muted-with-
+    // none here — the parity that file's comment claims was only ever applied to
+    // its own side. 9px was also the smallest type anywhere in Work, two rungs
+    // under `caption`, for three letters lifted off a filename.
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary font-mono text-[10px] uppercase text-muted-foreground">
       {extension}
     </span>
   );
@@ -212,14 +218,16 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
   };
 
   return (
-    <li className="rounded-field border border-border/60 bg-card/50">
+    <li className="rounded-field border border-border/60 bg-card">
       <div className="flex items-center gap-2.5 px-3 py-2.5">
         <KindBadge extension={ARTIFACT_EXTENSION[artifact.kind]} />
         <button
           type="button"
           onClick={toggle}
           aria-expanded={open}
-          className="group min-w-0 flex-1 text-left"
+          // The row's disclosure had no focus ring at all, so a keyboard reader
+          // tabbing down the document list had no idea which row they were on.
+          className="group min-w-0 flex-1 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <span className="flex items-center gap-1.5">
             <span className="min-w-0 truncate text-[13px] font-medium text-foreground">
@@ -227,7 +235,7 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
             </span>
             <ChevronRight
               className={cn(
-                "h-3 w-3 shrink-0 text-muted-foreground/60 transition-transform duration-base ease-out-soft",
+                "h-3 w-3 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-in-out",
                 open && "rotate-90"
               )}
               aria-hidden="true"
@@ -255,7 +263,7 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
       </div>
 
       {open && (
-        <div className="border-t border-border/60 px-3 py-2.5">
+        <div className="border-t border-border/60 px-3 py-2.5 motion-safe:animate-fade-in-up">
           {loading ? (
             <p className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Reading its history…
@@ -295,7 +303,7 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
                             "broken". */}
                         {!version.validated && " · not confirmed to open"}
                       </span>
-                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground/70">
+                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                         {workTimeAgo(version.createdAt)}
                       </span>
                     </div>
@@ -308,7 +316,7 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
                           >
                             {entry.url === null ? (
                               <span
-                                className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50"
+                                className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-muted-foreground/70"
                                 aria-hidden="true"
                               />
                             ) : (

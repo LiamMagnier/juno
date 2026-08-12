@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { AlertCircle, Link2Off, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { type ConnectorStatus } from "@/components/connections/types";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
 import { ConnectorDirectory, type DirectoryItem } from "@/components/connections/connector-directory";
@@ -169,15 +170,15 @@ export default function ConnectionsPage() {
   const connectedCount = connectors?.filter((c) => c.connected).length ?? 0;
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-5xl">
         <AppPageHeader
           eyebrow="Connections"
           heading="Connect your tools"
           lede="Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
           actions={
             !loading && !error && connectedCount > 0 ? (
-              <span className="hidden rounded-full border border-border/60 bg-card/60 px-3 py-1 font-mono text-caption text-muted-foreground shadow-soft sm:inline-block">
+              <span className="hidden rounded-full border border-border/60 bg-card px-3 py-1 text-caption font-medium text-muted-foreground sm:inline-block">
                 {connectedCount} connected
               </span>
             ) : null
@@ -185,23 +186,23 @@ export default function ConnectionsPage() {
         />
 
         {error ? (
-          <div className="mt-6 flex flex-wrap items-start gap-3 rounded-card border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-            <AlertCircle className="mt-0.5 size-4 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="font-medium">Couldn’t load your connections.</p>
-              <p className="mt-0.5 text-destructive/80">
-                The server may still be starting up, or the database isn’t reachable yet.
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={load}
-              className="shrink-0 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            >
-              Try again
-            </Button>
-          </div>
+          // The shared error surface, not a fourth hand-rolled one: permissions,
+          // import-history and profile all say "that didn't load" with
+          // <EmptyState tone="error">, and this page said it with a bespoke box
+          // and a retry button that re-tinted `variant="outline"` by hand.
+          <EmptyState
+            tone="error"
+            size="panel"
+            className="mt-6"
+            icon={AlertCircle}
+            title="Couldn’t load your connections"
+            description="The server may still be starting up, or the database isn’t reachable yet."
+            action={
+              <Button variant="outline" size="sm" onClick={load}>
+                Try again
+              </Button>
+            }
+          />
         ) : loading ? (
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[...Array(6)].map((_, i) => (
@@ -220,7 +221,10 @@ export default function ConnectionsPage() {
           />
         )}
 
-        <p className="mt-8 text-caption text-muted-foreground/70">
+        {/* No second knock-down on the ramp: --muted-foreground at 70% over
+            pure black measures ~4.3:1 at 11px, below AA. The ramp IS the
+            recessive voice. */}
+        <p className="mt-8 text-caption text-muted-foreground">
           Connected tools are available to the model when you enable them in a chat. Each provider shows the exact permissions during its consent flow.
         </p>
       </div>

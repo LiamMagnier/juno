@@ -159,27 +159,49 @@ export function ImportHistoryCard() {
             if (file) start(file);
           }}
           className={cn(
-            "rounded-card border border-dashed border-border/60 bg-muted/10 px-5 py-8 text-center transition-colors duration-fast ease-out-soft",
-            dragging && "border-primary/60 bg-primary/5"
+            // `bg-muted/10` composited to ~1% lightness over pure black — the
+            // drop zone had no ground at all and the dashed edge was carrying
+            // the whole affordance. One real rung instead — and the rung
+            // undiluted: at /60 over the 6.5% Card that holds it, --secondary
+            // composited back down to ~8.3%, a 1.8-point step its own parent,
+            // which is under the threshold where an edge-free fill reads at all.
+            "rounded-card border border-dashed border-border/60 bg-secondary px-5 py-8 text-center transition-colors duration-fast ease-out-soft",
+            dragging && "border-primary/60 bg-primary/10"
           )}
         >
           {phase.name === "uploading" ? (
             <div className="mx-auto max-w-xs">
               <p className="font-serif text-heading">Uploading your export</p>
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
-                <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${Math.round(phase.progress * 100)}%` }} />
+              {/* duration-base ease-out-soft: the visually identical meters on
+                  the profile page run on those rungs, and this one was on the
+                  browser's 150ms `ease` — two progress bars in the same product
+                  moving on different curves. */}
+              <div
+                role="progressbar"
+                aria-label="Upload progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(phase.progress * 100)}
+                className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10"
+              >
+                <div
+                  className="h-full rounded-full bg-primary transition-[width] duration-base ease-out-soft motion-reduce:transition-none"
+                  style={{ width: `${Math.round(phase.progress * 100)}%` }}
+                />
               </div>
-              <p className="mt-2 font-mono text-caption text-muted-foreground">{Math.round(phase.progress * 100)}%</p>
+              <p className="mt-2 font-mono text-caption tabular-nums text-muted-foreground">
+                {Math.round(phase.progress * 100)}%
+              </p>
             </div>
           ) : phase.name === "importing" ? (
             <div className="mx-auto max-w-sm">
-              <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-muted-foreground/60" />
+              <Loader2 className="mx-auto mb-2 size-6 animate-spin text-muted-foreground/70" />
               <p className="font-serif text-heading">Importing conversations</p>
               <p className="pt-1 text-sm text-muted-foreground">Rebuilding your chats with their original titles and dates.</p>
             </div>
           ) : phase.name === "done" ? (
             <div className="mx-auto max-w-sm">
-              <CheckCircle2 className="mx-auto mb-2 h-6 w-6 text-primary" />
+              <CheckCircle2 className="mx-auto mb-2 size-6 text-primary" />
               <p className="font-serif text-heading">
                 {phase.imported > 0
                   ? `Imported ${phase.imported.toLocaleString()} conversation${phase.imported === 1 ? "" : "s"}`
@@ -196,7 +218,7 @@ export function ImportHistoryCard() {
             </div>
           ) : (
             <div className="mx-auto max-w-sm">
-              <FileUp className="mx-auto mb-2 h-6 w-6 text-muted-foreground/60" />
+              <FileUp className="mx-auto mb-2 size-6 text-muted-foreground/70" />
               <p className="font-serif text-heading">Import your history</p>
               <p className="pt-1 text-sm text-muted-foreground">
                 ChatGPT, Claude, Gemini, or Juno export (.zip or .json) — drop it here, up to 100 MB.

@@ -133,8 +133,8 @@ export default function UpgradePage() {
   const cardCount = 1 + (showPro ? 1 : 0) + (maxPlan ? 1 : 0);
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6">
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-5xl">
         <AppPageHeader
           eyebrow="Plans"
           heading={<>Pick the plan that <span className="italic text-primary">fits you</span>.</>}
@@ -149,7 +149,16 @@ export default function UpgradePage() {
         </p>
 
         {!features.billing && (
-          <div className="mt-6 rounded-lg border border-warning/40 bg-warning/5 px-4 py-3 text-sm">
+          // The same callout the two other warning callouts in the product use
+          // (settings/page.tsx's spend-ceiling notice, permissions-section's
+          // lockdown banner): rounded-field, /40 border, /10 fill. This one was
+          // the odd rung out at rounded-lg + /5, and a 5% warning tint over pure
+          // black has no ground left.
+          <div
+            role="status"
+            className="mt-6 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-sm"
+          >
+            <Info className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
             Billing isn’t configured on this deployment. Set the Stripe environment variables to enable upgrades.
           </div>
         )}
@@ -159,7 +168,11 @@ export default function UpgradePage() {
             <div
               role="tablist"
               aria-label="Billing interval"
-              className="inline-flex items-center gap-0.5 rounded-full border border-border/60 bg-muted/50 p-0.5"
+              // Opaque track one rung BELOW the thumb. This was `bg-muted/50`
+              // under a `bg-card` thumb: 6.5% against ~4.75% composited is a
+              // 1.75-point step, and `shadow-pop` is black ink on black, so
+              // which interval was selected became unreadable on the dark theme.
+              className="inline-flex items-center gap-0.5 rounded-full border border-border/60 bg-secondary p-0.5"
             >
               {([
                 { id: "month" as const, label: "Monthly" },
@@ -173,8 +186,16 @@ export default function UpgradePage() {
                     aria-selected={active}
                     onClick={() => setInterval(option.id)}
                     className={cn(
-                      "rounded-full px-3.5 py-1 font-mono text-caption transition-colors duration-fast ease-out-soft",
-                      active ? "bg-card text-foreground shadow-pop" : "text-muted-foreground hover:text-foreground"
+                      // A border on both states, so selecting does not change
+                      // the button's width by 1px on each side. coarse:py-2
+                      // because at py-1 this is a ~24px target, and it is the
+                      // control that decides what the user is billed — every
+                      // other picker in the product grows on a touch pointer.
+                      "rounded-full border px-3.5 py-1 font-mono text-caption coarse:py-2",
+                      "transition-[background-color,border-color,color] duration-fast ease-out-soft",
+                      active
+                        ? "border-border/60 bg-accent text-foreground"
+                        : "border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                     )}
                   >
                     {option.label}
@@ -223,7 +244,12 @@ export default function UpgradePage() {
               priceSuffix={suffixFor()}
               features={PLANS.PRO.features}
               popular
-              delay={70}
+              // 60/120, the `loose` rung in lib/motion — the step reserved for
+              // "large, few, and consequential", which is this row exactly. The
+              // 70/140 it was is one of the eight private stagger steps that
+              // scale exists to end; nobody can name 70 against 60, but a
+              // product where no two lists share a tempo is felt.
+              delay={60}
             >
               {cta("PRO", "default")}
             </PlanCard>
@@ -238,13 +264,14 @@ export default function UpgradePage() {
               priceSuffix={suffixFor()}
               features={maxPlan.features}
               accent
-              delay={140}
+              delay={120}
               header={
                 maxTiers.length > 1 ? (
                   <div
                     role="tablist"
                     aria-label="Max tier"
-                    className="inline-flex items-center gap-0.5 rounded-full border border-border/60 bg-muted/50 p-0.5"
+                    // Same ladder as the billing-interval tablist above.
+                    className="inline-flex items-center gap-0.5 rounded-full border border-border/60 bg-secondary p-0.5"
                   >
                     {maxTiers.map((t) => {
                       const active = activeMaxTier === t.id;
@@ -255,10 +282,11 @@ export default function UpgradePage() {
                           aria-selected={active}
                           onClick={() => setMaxTier(t.id)}
                           className={cn(
-                            "rounded-full px-3 py-1 font-mono text-caption transition-colors duration-fast ease-out-soft",
+                            "rounded-full border px-3 py-1 font-mono text-caption coarse:py-2",
+                            "transition-[background-color,border-color,color] duration-fast ease-out-soft",
                             active
-                              ? "bg-card text-foreground shadow-pop"
-                              : "text-muted-foreground hover:text-foreground"
+                              ? "border-border/60 bg-accent text-foreground"
+                              : "border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                           )}
                         >
                           {t.multiplier}
@@ -333,24 +361,35 @@ function PlanCard({
     <div
       style={{ animationDelay: `${delay}ms` }}
       className={cn(
-        "relative flex flex-col rounded-lg border bg-card p-6 shadow-soft transition-all duration-base ease-out-soft motion-safe:animate-rise-in [animation-fill-mode:backwards]",
+        "relative flex flex-col rounded-card border bg-card p-6 transition-[border-color,background-color] duration-base ease-out-soft motion-safe:animate-rise-in [animation-fill-mode:backwards]",
+        // Every card answers the pointer. The popular card had NO hover state at
+        // all — the one card the page is steering people toward was the only
+        // inert object on it — and its 3.5% primary tint resolves to under 0.3%
+        // lightness over pure black, so its "chosen" ground disappeared with the
+        // retheme. 8% keeps a real ground on the black ladder.
+        // The fills are rungs, not tints. `hover:bg-accent/20` composited to
+        // ~7.8% over the 6.5% card — a 1.3-point step, i.e. nothing on black —
+        // so the plain cards' hover was carried entirely by their border while
+        // the popular card, which had no fill change at all, answered with a
+        // border too. Three cards, one gesture, no visible difference between
+        // the card you are pointing at and the two you are not.
         popular
-          ? "border-primary/50 bg-primary/[0.04] shadow-float"
-          : "hover:-translate-y-0.5 hover:shadow-float"
+          ? "border-primary/45 bg-primary/[0.08] hover:border-primary/70 hover:bg-primary/[0.14]"
+          : "border-border/70 hover:border-foreground/25 hover:bg-accent"
       )}
     >
       {popular && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-primary px-3 py-1 font-mono text-label text-primary-foreground shadow-soft">
-          ◆ Most popular
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-primary px-3 py-1 text-label font-semibold text-primary-foreground">
+          Most popular
         </div>
       )}
       <div className="flex min-h-8 items-start justify-between gap-3">
-        <h2 className="font-serif text-heading font-medium">{name}</h2>
+        <h2 className="text-heading font-semibold tracking-[-0.02em]">{name}</h2>
         {header}
       </div>
       <p className="mt-1 text-sm text-muted-foreground">{tagline}</p>
       <div className="mt-4 flex items-baseline gap-1.5">
-        <span className="font-serif text-display font-medium tabular-nums">{price}</span>
+        <span className="text-display font-semibold tracking-[-0.04em] tabular-nums">{price}</span>
         <span className="font-mono text-caption text-muted-foreground">{priceSuffix}</span>
       </div>
 

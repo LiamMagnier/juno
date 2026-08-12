@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { CheckCircle2, Loader2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,17 +51,32 @@ export function ResetPasswordForm() {
     }
   }
 
+  // The token lives in the URL fragment, which is only readable after mount, so
+  // this branch is the form's real loading state. A skeleton shaped like the two
+  // fields and the submit keeps the card's height stable across the swap — a
+  // lone centred spinner meant the panel visibly grew when the form arrived.
   if (token === null) {
-    return <div className="flex justify-center py-3"><Loader2 className="animate-spin text-muted-foreground" aria-label="Loading" /></div>;
+    return (
+      <div className="space-y-4" role="status" aria-label="Loading">
+        {[0, 1].map((i) => (
+          <div key={i} className="space-y-2" aria-hidden>
+            <div className="skeleton h-3 w-28 rounded-micro" />
+            <div className="skeleton h-9 w-full rounded-field coarse:h-11" />
+          </div>
+        ))}
+        <div className="skeleton h-9 w-full rounded-field coarse:h-11" aria-hidden />
+      </div>
+    );
   }
 
   if (complete) {
     return (
       <div className="space-y-5 text-center" role="status">
-        <CheckCircle2 className="mx-auto h-9 w-9 text-success" aria-hidden />
+        <CheckCircle2 className="mx-auto size-9 text-success motion-safe:animate-pop-in" aria-hidden />
         <div className="space-y-1.5">
-          <h2 className="font-serif text-xl font-medium">Password updated</h2>
-          <p className="text-sm text-muted-foreground">Your new password is ready. You can sign in now.</p>
+          {/* text-heading, not text-xl — see the same note in forgot-password-form. */}
+          <h2 className="font-serif text-heading font-medium">Password updated</h2>
+          <p className="text-body text-muted-foreground">Your new password is ready. You can sign in now.</p>
         </div>
         <Button asChild className="w-full">
           <Link href="/sign-in">Sign in</Link>
@@ -72,8 +87,19 @@ export function ResetPasswordForm() {
 
   if (!token) {
     return (
-      <div className="space-y-5 text-center">
-        <p className="text-sm text-muted-foreground">This reset link is missing, invalid, or has already been used.</p>
+      // Given the same shape as the two terminal states above (icon, h2, body).
+      // This is the only branch in the component that is actually a FAILURE, and
+      // it was the one with the least structure — a bare muted sentence with no
+      // icon, no heading and no destructive tint, so the state that needs to be
+      // read carefully was the quietest thing the card could render.
+      <div className="space-y-5 text-center" role="alert">
+        <TriangleAlert className="mx-auto size-9 text-destructive motion-safe:animate-pop-in" aria-hidden />
+        <div className="space-y-1.5">
+          <h2 className="font-serif text-heading font-medium">This link no longer works</h2>
+          <p className="text-body text-muted-foreground">
+            This reset link is missing, invalid, or has already been used.
+          </p>
+        </div>
         <Button asChild className="w-full">
           <Link href="/forgot-password">Request a new link</Link>
         </Button>
@@ -112,8 +138,10 @@ export function ResetPasswordForm() {
           autoComplete="new-password"
         />
       </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading && <Loader2 className="animate-spin" aria-hidden />}
+      <Button type="submit" className="w-full" disabled={loading} aria-busy={loading}>
+        {/* motion-safe:, matching the majority convention — see the note in
+            auth-form.tsx. The button is disabled and aria-busy either way. */}
+        {loading && <Loader2 className="motion-safe:animate-spin" aria-hidden />}
         Choose new password
       </Button>
     </form>

@@ -89,7 +89,7 @@ export function SubmitDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle className="font-serif text-heading">Request a feature</DialogTitle>
+          <DialogTitle>Request a feature</DialogTitle>
           <DialogDescription>Tell us what would make Juno better. Others can vote it up.</DialogDescription>
         </DialogHeader>
 
@@ -107,8 +107,15 @@ export function SubmitDialog({
           </div>
 
           {similar.length > 0 && (
-            <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
-              <p className="mb-2 font-mono text-[10px] text-muted-foreground">
+            <div
+              // bg-secondary, not bg-muted/40. The dialog is an `overlay-glass`
+              // panel at the popover rung (13% on dark), so 40% of a 9.5% token
+              // over it landed 1.4 points DARKER than its own parent — a patch
+              // that neither recessed nor lifted, it just muddied the panel.
+              // Full --secondary is the recessed rung inside a floating layer.
+              className="rounded-field border border-border/70 bg-secondary p-3 motion-safe:animate-fade-in"
+            >
+              <p className="mb-2 font-mono text-caption text-muted-foreground">
                 Similar requests — vote instead?
               </p>
               <ul className="space-y-1">
@@ -117,10 +124,10 @@ export function SubmitDialog({
                     <Link
                       href={`/roadmap/${s.id}`}
                       onClick={() => onOpenChange(false)}
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-accent"
+                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors duration-fast ease-out-soft hover:bg-accent"
                     >
-                      <span className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground">
-                        <ChevronUp className="h-3 w-3" />
+                      <span className="inline-flex items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground">
+                        <ChevronUp className="size-3 shrink-0" />
                         {s.voteCount}
                       </span>
                       <span className="truncate">{s.title}</span>

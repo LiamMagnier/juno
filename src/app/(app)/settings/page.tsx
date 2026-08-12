@@ -31,11 +31,12 @@ import { AppPageHeader } from "@/components/app/app-page-header";
 import { useApp } from "@/components/app/app-provider";
 import { PermissionsSection } from "@/components/settings/permissions-section";
 import { Tile } from "@/components/settings/tile";
+import { SettingsGroup, SettingsSectionNav, type SettingsSection } from "@/components/settings/section-nav";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
 import { resolveModel } from "@/lib/models";
 import { PROVIDERS, type Provider } from "@/lib/providers";
 import { PLANS, canUseModel } from "@/lib/plans";
-import { ACCENTS } from "@/lib/accents";
+import { ACCENTS, swatchInk } from "@/lib/accents";
 import { PERSONALITIES, DEFAULT_PERSONALITY, isPersonalityId } from "@/lib/personalities";
 import { VOICES, DEFAULT_VOICE } from "@/lib/voices";
 import { AUTO_LOCALE, UI_LOCALES, localeNativeName } from "@/lib/i18n";
@@ -55,56 +56,22 @@ const ACCENT_OPTIONS: string[] = [...ACCENTS.map((a) => a.id), CUSTOM_ACCENT];
 const VOICE_PREVIEW_TEXT = "Hi, I'm Juno. This is how I sound when I read an answer aloud.";
 
 /**
- * Ink that stays legible on an arbitrary swatch.
+ * The rail, and the reading order of the page.
  *
- * The confirming glyph was `text-white` on every swatch. That is not a colour
- * decision, it is an assumption that every accent is dark — and it is wrong for
- * the amber preset (white measures 2.3:1 on it) and wrong for any pale colour a
- * user picks out of the custom wheel, where the only signal that their choice
- * registered disappears into the swatch.
- *
- * A design token cannot express this: the swatch is a runtime colour, not a
- * themed surface, so the ink has to be computed from it and set inline
- * alongside it. White is kept unless white actually fails AA, so the presets
- * that were already fine are untouched.
+ * Order is deliberate: what you are paying and what you have spent first, then
+ * the things people actually come here to change, then account and access, and
+ * the irreversible operations last and alone. `id` must match the SettingsGroup
+ * it names — that string is both the anchor target and the scroll-spy key.
  */
-function swatchInk(color: string): string {
-  const y = relativeLuminance(color);
-  return y != null && 1.05 / (y + 0.05) < 4.5 ? "hsl(0 0% 6%)" : "hsl(0 0% 100%)";
-}
+const SETTINGS_SECTIONS: SettingsSection[] = [
+  { id: "usage", label: "Plan & usage" },
+  { id: "appearance", label: "Appearance" },
+  { id: "chat", label: "Chat defaults" },
+  { id: "data", label: "Memory" },
+  { id: "account", label: "Account & access" },
+  { id: "danger", label: "Danger zone" },
+];
 
-/** WCAG relative luminance of an `hsl(h s% l%)` or `#rgb`/`#rrggbb` colour. */
-function relativeLuminance(color: string): number | null {
-  const rgb = parseColor(color);
-  if (!rgb) return null;
-  const lin = rgb.map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
-  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
-}
-
-/** The two notations the accent list actually uses: presets are hsl(), custom is hex. */
-function parseColor(color: string): [number, number, number] | null {
-  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color.trim());
-  if (hex) {
-    const v = hex[1].length === 3 ? hex[1].replace(/./g, (c) => c + c) : hex[1];
-    return [0, 2, 4].map((i) => parseInt(v.slice(i, i + 2), 16) / 255) as [number, number, number];
-  }
-  const hsl = /^hsla?\(\s*([\d.]+)\s*[, ]\s*([\d.]+)%\s*[, ]\s*([\d.]+)%/i.exec(color.trim());
-  if (!hsl) return null;
-  const [h, s, l] = [Number(hsl[1]) / 360, Number(hsl[2]) / 100, Number(hsl[3]) / 100];
-  const c = (1 - Math.abs(2 * l - 1)) * s;
-  const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
-  const m = l - c / 2;
-  const seg = Math.floor(h * 6) % 6;
-  const table: [number, number, number][] = [
-    [c, x, 0],
-    [x, c, 0],
-    [0, c, x],
-    [0, x, c],
-    [x, 0, c],
-    [c, 0, x],
-  ];
-  return table[seg].map((v) => v + m) as [number, number, number];
-}
 
 /**
  * One accent swatch — the picker and the custom-colour button are the same
@@ -137,7 +104,11 @@ const AccentSwatch = React.forwardRef<
       aria-label={label}
       onClick={onClick}
       className={cn(
-        "overflow-hidden ring-offset-2 ring-offset-card hover:bg-transparent motion-safe:hover:scale-110",
+        // `ring-offset-background`, not `ring-offset-card`: this grid lives
+        // inside <Tile>, which is bg-transparent over the page ground, so the
+        // 2px gap was being painted in --card — a colour that matches nothing
+        // behind it, and on pure black a 6.5% halo around the selected swatch.
+        "overflow-hidden ring-offset-2 ring-offset-background hover:bg-transparent motion-safe:hover:scale-110",
         selected && "ring-2 ring-foreground"
       )}
       style={{ background, color: swatchInk(inkAgainst ?? background) }}
@@ -234,10 +205,21 @@ function UsageMeter({ label, subtitle, pct }: { label: string; subtitle: string;
         <div className="text-caption text-muted-foreground">{subtitle}</div>
       </div>
       <div className="flex min-w-[160px] flex-1 items-center gap-3">
-        <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+        <div
+          role="progressbar"
+          aria-label={label}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={shown}
+          // ring-1 ring-inset: on pure black a bare `bg-muted` track (9.5%) has
+          // no edge, and every other meter in the product draws this hairline.
+          className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10"
+        >
           <div
             className={cn(
-              "absolute inset-y-0 left-0 rounded-full transition-all duration-base",
+              // Scoped, not `transition-all` — the only two properties that
+              // change here are the fill width and its tone at the 90% mark.
+              "absolute inset-y-0 left-0 rounded-full transition-[width,background-color] duration-base ease-out-soft motion-reduce:transition-none",
               hot ? "bg-warning" : "bg-primary"
             )}
             style={{ width: `${Math.min(100, pct * 100)}%` }}
@@ -317,7 +299,7 @@ function SpendCeiling({
   }
 
   return (
-    <form onSubmit={submit} className="rounded-field border border-border/50 p-4">
+    <form onSubmit={submit} className="rounded-field border border-border/60 p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="text-sm font-medium text-foreground">Monthly spend ceiling</span>
         <span className="font-mono text-caption tabular-nums text-muted-foreground">
@@ -363,7 +345,7 @@ function SpendCeiling({
   );
 }
 
-export default function SettingsPage() {
+function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
   const router = useRouter();
   const { user, settings, setSettings, quota, spend, features, models } = useApp();
   const { setTheme } = useTheme();
@@ -613,19 +595,50 @@ export default function SettingsPage() {
   const cancelAtPeriodEnd = spend.billing.cancelAtPeriodEnd;
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6">
-        <AppPageHeader eyebrow="Settings" heading="Settings" lede={user.email} />
+    <div className={cn(!hideHeader && "app-page-scroll")}>
+      {/*
+       * Wider than the old max-w-3xl because the page is now two columns, not
+       * one: the rail takes 13rem and the content column keeps roughly the
+       * measure it always had. Inside the settings MODAL there is no room for a
+       * rail, so `hideHeader` keeps the original single column — the modal shows
+       * a subset and never got long enough to need an index.
+       */}
+      <div className={cn("mx-auto w-full", hideHeader ? "max-w-3xl px-0 py-0" : "max-w-5xl app-page-content")}>
+        {!hideHeader && <AppPageHeader eyebrow="Settings" heading="Settings" lede={user.email} />}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className={cn(!hideHeader && "lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-12")}>
+          {!hideHeader && (
+            /*
+             * Hidden below lg rather than collapsed into a horizontal scroller.
+             * A tab strip that scrolls sideways hides most of its own options,
+             * which is the problem the rail exists to fix — on a phone the
+             * honest answer is the plain scroll the page already was.
+             */
+            <aside className="hidden lg:block">
+              <div className="sticky top-2">
+                <SettingsSectionNav sections={SETTINGS_SECTIONS} />
+              </div>
+            </aside>
+          )}
+
+          <div className="min-w-0">
+        <SettingsGroup
+          id="usage"
+          title="Plan & usage"
+          description="What you are on, what you have spent, and the ceiling that stops it."
+        >
           {/* Usage dashboard */}
           <Tile eyebrow="Usage" i={0} span>
-            <div className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-5">
-              {/* Plan info (Left) */}
-              <div className="field-well md:col-span-2 flex flex-col justify-between rounded-field bg-accent/40 border border-border/50 p-4">
+            <div className="grid grid-cols-1 overflow-hidden rounded-card border border-border/70 lg:grid-cols-[15rem_1fr]">
+              {/* Plan info (Left) — `bg-secondary`, opaque, exactly one rung
+                  apart from the `bg-card` panel beside it. `bg-muted/35`
+                  resolved to ~3.3% lightness over pure black, so the two halves
+                  of the card collapsed into one undifferentiated field and only
+                  the divider survived. */}
+              <div className="flex flex-col justify-between border-b border-border/70 bg-secondary p-5 lg:border-b-0 lg:border-r">
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-serif text-heading font-semibold tracking-tight">
+                    <span className="text-base font-semibold tracking-[-0.01em]">
                       {plan.name} Plan
                     </span>
                     {/* A green liveness pip only where the account can actually
@@ -657,12 +670,19 @@ export default function SettingsPage() {
                   </ul>
                 </div>
                 
-                <div className="mt-4 flex items-center justify-between gap-2 pt-3 border-t border-border/40">
+                <div className="mt-4 flex items-center justify-between gap-2 pt-3 border-t border-border/60">
                   <span className="font-mono text-caption text-muted-foreground">
                     {plan.price > 0 ? `${plan.price} € HT/mo` : "Active tier"}
                   </span>
+                  {/* Outline, because the pane on the right of this same card
+                      renders a filled "Upgrade" for exactly the same condition
+                      (FREE + billing) — so a free account was looking at two
+                      identical primary CTAs 200px apart inside one border. The
+                      one that keeps the fill is the one that comes with the
+                      sentence explaining why you would press it; this one is
+                      the shortcut beside the price. */}
                   {quota.plan === "FREE" && features.billing && (
-                    <Button asChild size="sm" className="h-7 px-3 text-xs">
+                    <Button asChild variant="outline" size="sm" className="h-7 px-3 text-xs">
                       <Link href="/upgrade">Upgrade</Link>
                     </Button>
                   )}
@@ -671,7 +691,7 @@ export default function SettingsPage() {
 
               {/* Usage windows (Right) — euros remaining this period, then the
                   rolling session + weekly percentages */}
-              <div className="field-well md:col-span-3 flex flex-col justify-center rounded-field border border-border/50 p-4 bg-card">
+              <div className="flex flex-col justify-center bg-card p-5">
                 {unlimited ? (
                   <div>
                     <div className="flex items-center gap-[3.5px] py-1.5" aria-hidden>
@@ -709,7 +729,7 @@ export default function SettingsPage() {
                   <div className="flex flex-col gap-4">
                     {budgetEur != null && (
                       <div className="flex items-baseline justify-between gap-3">
-                        <span className="font-serif text-heading font-medium tabular-nums">
+                        <span className="text-base font-semibold tabular-nums">
                           {formatEur(remainingEur ?? 0)}{" "}
                           <span className="font-sans text-caption font-normal text-muted-foreground">
                             left this month
@@ -721,8 +741,8 @@ export default function SettingsPage() {
                       </div>
                     )}
                     <UsageMeter label="Current session" subtitle={sessionSubtitle} pct={windows.session.pct} />
-                    <div className="border-t border-border/40" />
-                    <span className="block font-mono text-caption text-muted-foreground/80">
+                    <div className="border-t border-border/60" />
+                    <span className="block font-mono text-caption text-muted-foreground">
                       Weekly limits
                     </span>
                     <UsageMeter label="All models" subtitle={weeklySubtitle} pct={windows.weekly.pct} />
@@ -747,6 +767,13 @@ export default function SettingsPage() {
             </div>
           </Tile>
 
+          </SettingsGroup>
+
+          <SettingsGroup
+            id="appearance"
+            title="Appearance"
+            description="How Juno looks on this device, and the language its own chrome speaks."
+          >
           {/* Appearance */}
           <Tile eyebrow="Appearance" i={1} span>
             <div className="grid gap-6 sm:grid-cols-2">
@@ -763,7 +790,7 @@ export default function SettingsPage() {
                         selected={selected}
                         aria-checked={selected}
                         onClick={() => void setThemePref(t.value)}
-                        className="items-center gap-1.5 shadow-pop hover:shadow-float motion-safe:hover:-translate-y-0.5"
+                        className="items-center gap-1.5"
                         {...themeOption(i)}
                       >
                         <t.icon className="h-4 w-4" />
@@ -802,9 +829,39 @@ export default function SettingsPage() {
             </div>
           </Tile>
 
+          {/* Interface language — Juno's own chrome, not Juno's replies. */}
+          <Tile eyebrow="Interface language" i={2}>
+            <p className="mb-3 text-sm text-muted-foreground">The language Juno&apos;s buttons and menus are in.</p>
+            <Select value={settings.uiLocale} onValueChange={(v) => void setUiLocale(v)}>
+              <SelectTrigger aria-label="Interface language">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={AUTO_LOCALE}>Auto-detect</SelectItem>
+                {UI_LOCALES.map((l) => (
+                  // Each language names itself, so whoever needs the option can
+                  // read it — and data-no-auto-translate keeps it that way if a
+                  // future catalog ever picks these names up.
+                  <SelectItem key={l} value={l}>
+                    <span data-no-auto-translate lang={l}>
+                      {localeNativeName(l)}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Tile>
+
+          </SettingsGroup>
+
+          <SettingsGroup
+            id="chat"
+            title="Chat defaults"
+            description="The starting point for every new conversation. Anything here can still be overridden per message."
+          >
           {/* Default model — spans so the two language selects below pair off
               in the 2-column grid instead of leaving a half-empty row. */}
-          <Tile eyebrow="Default model" i={2} span>
+          <Tile eyebrow="Default model" i={3} span>
             <p className="mb-3 text-sm text-muted-foreground">
               Used for new conversations. Choose Auto to route each prompt to the cheapest capable model.
             </p>
@@ -839,7 +896,7 @@ export default function SettingsPage() {
           </Tile>
 
           {/* Language */}
-          <Tile eyebrow="Response language" i={3}>
+          <Tile eyebrow="Response language" i={4}>
             <p className="mb-3 text-sm text-muted-foreground">The language Juno replies in.</p>
             <Select value={settings.responseLanguage} onValueChange={(v) => save({ responseLanguage: v })}>
               <SelectTrigger aria-label="Response language">
@@ -849,29 +906,6 @@ export default function SettingsPage() {
                 {LANGUAGES.map((l) => (
                   <SelectItem key={l} value={l}>
                     {l === "auto" ? "Auto-detect" : l}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Tile>
-
-          {/* Interface language — Juno's own chrome, not Juno's replies. */}
-          <Tile eyebrow="Interface language" i={4}>
-            <p className="mb-3 text-sm text-muted-foreground">The language Juno&apos;s buttons and menus are in.</p>
-            <Select value={settings.uiLocale} onValueChange={(v) => void setUiLocale(v)}>
-              <SelectTrigger aria-label="Interface language">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={AUTO_LOCALE}>Auto-detect</SelectItem>
-                {UI_LOCALES.map((l) => (
-                  // Each language names itself, so whoever needs the option can
-                  // read it — and data-no-auto-translate keeps it that way if a
-                  // future catalog ever picks these names up.
-                  <SelectItem key={l} value={l}>
-                    <span data-no-auto-translate lang={l}>
-                      {localeNativeName(l)}
-                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -894,7 +928,13 @@ export default function SettingsPage() {
                     selected={selected}
                     aria-checked={selected}
                     onClick={() => void save({ personality: p.id })}
-                    className="shadow-pop hover:shadow-float motion-safe:hover:-translate-y-0.5"
+                    // No `shadow-none`. Tailwind emits utilities after the
+                    // components layer, so it beat the `tile` kind's own
+                    // selected treatment (`shadow-pop`) and this grid lost the
+                    // one cue that separates the chosen card from the rest —
+                    // while the theme picker three tiles up, which passes no
+                    // className at all, kept it. Two radiogroups in one page
+                    // marking "selected" differently.
                     {...styleOption(i)}
                   >
                     <span className="flex w-full items-center justify-between gap-2 text-sm font-medium">
@@ -945,7 +985,7 @@ export default function SettingsPage() {
                     // shadow lands on its neighbours rather than under them.
                     <div
                       key={v.id}
-                      className="group relative transition-transform duration-fast ease-out-soft hover:z-10 motion-safe:hover:-translate-y-0.5"
+                      className="group relative hover:z-10"
                     >
                       <Pressable
                         kind="tile"
@@ -954,7 +994,11 @@ export default function SettingsPage() {
                         aria-checked={selected}
                         aria-label={`Read aloud in the ${v.label} voice`}
                         onClick={() => void save({ voiceId: v.id })}
-                        className="w-full pr-12 shadow-pop group-hover:shadow-float"
+                        // pr-12 only — `shadow-none` here killed the same
+                        // selected `shadow-pop` the Response style grid above
+                        // was losing, so the two voice tiles in one row could
+                        // differ from the style tiles beside them.
+                        className="w-full pr-12"
                         {...voiceOption(i)}
                       >
                         <span className="flex items-center gap-1.5 text-sm font-medium">
@@ -1012,6 +1056,13 @@ export default function SettingsPage() {
             </div>
           </Tile>
 
+          </SettingsGroup>
+
+          <SettingsGroup
+            id="data"
+            title="Memory"
+            description="What Juno is allowed to remember about you between conversations."
+          >
           {/* Memory — pairs with Account below; both tiles stretch to the same
               height (grid stretch + Tile's flex-col), buttons pinned to the
               bottom edge with mt-auto so the pair reads as one system. */}
@@ -1068,6 +1119,13 @@ export default function SettingsPage() {
             </div>
           </Tile>
 
+          </SettingsGroup>
+
+          <SettingsGroup
+            id="account"
+            title="Account & access"
+            description="Your identity, what reaches your inbox, and which connectors may act on your behalf."
+          >
           {/* Account */}
           <Tile eyebrow="Account" i={9}>
             <div className="space-y-3">
@@ -1109,7 +1167,7 @@ export default function SettingsPage() {
           {/* Email notifications */}
           <Tile eyebrow="Email notifications" i={10} span>
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/40">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/60">
                 <div>
                   <p className="text-sm font-medium">Budget alerts</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -1138,7 +1196,7 @@ export default function SettingsPage() {
               </div>
 
               {!features.email && (
-                <p className="pt-3 border-t border-border/40 text-xs text-muted-foreground/70">
+                <p className="pt-3 border-t border-border/60 text-xs text-muted-foreground">
                   Email delivery isn&apos;t configured yet — your preferences are saved and take effect once it is.
                 </p>
               )}
@@ -1149,12 +1207,24 @@ export default function SettingsPage() {
               the server rather than from bootstrap settings). */}
           <PermissionsSection index={11} />
 
+          </SettingsGroup>
+
+          <SettingsGroup
+            id="danger"
+            title="Danger zone"
+            description="Irreversible. Each of these deletes data permanently."
+          >
           {/* Danger zone — same calm container as every other section; the
               danger lives in the buttons (destructive-outline fills red on
               hover), not in a shouting border. */}
-          <Tile eyebrow="Danger zone" i={12} span className="border-destructive/20">
+          {/* `border-b-destructive/40`, not `border-destructive/20`: <Tile>
+              renders `border-0 border-b`, so the old class only recoloured a
+              bottom hairline — and destructive at 20% over pure black is
+              invisible, which made the override dead code. The one edge that
+              actually exists now reads. */}
+          <Tile eyebrow="Danger zone" i={12} span className="border-b-destructive/40">
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/40">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/60">
                 <div>
                   <p className="text-sm font-medium">Delete all conversations</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -1188,13 +1258,15 @@ export default function SettingsPage() {
               </div>
             </div>
           </Tile>
+          </SettingsGroup>
+        </div>
         </div>
       </div>
 
       <Dialog open={deleteChatsOpen} onOpenChange={setDeleteChatsOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="font-serif">Delete all conversations?</DialogTitle>
+            <DialogTitle>Delete all conversations?</DialogTitle>
             <DialogDescription>
               This permanently deletes all your conversations and message history. This cannot be undone.
             </DialogDescription>
@@ -1212,3 +1284,11 @@ export default function SettingsPage() {
     </div>
   );
 }
+
+function SettingsPage() {
+  return <SettingsContent />;
+}
+
+SettingsPage.Content = SettingsContent;
+
+export default SettingsPage;

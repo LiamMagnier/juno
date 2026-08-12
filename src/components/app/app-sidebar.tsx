@@ -72,8 +72,13 @@ type ConfirmState = { title: string; description: string; confirmLabel: string; 
  *
  *   L1  rounded-control · px-2.5 py-1.5 · text-[14px] · font-medium
  *       Destinations and section toggles — things that own a list.
- *   L2  rounded-md      · pl-6|pl-9 pr-2 py-1 · text-[12.5px]
+ *   L2  rounded-xs      · pl-6|pl-9 pr-2 py-1 · text-[12.5px]
  *       Items inside one — a chat under a project, a run under a task.
+ *
+ * L2 was `rounded-md`, which is Tailwind's generic 8px step and the one rung in
+ * this panel that is not on the product's radius ladder (…xs 6 · control 9 ·
+ * field 10 · menu 12…). 6px is the rung below L1's 9, so the two tiers still
+ * step, and the column stops carrying a radius no other surface can name.
  *
  * The indent (pl-6 vs pl-9) is the only thing that varies within L2, and it
  * encodes real nesting depth rather than taste.
@@ -139,6 +144,33 @@ const CODE_POLL_MS = 30_000;
 // A failed task stays visible for a day; after that it's stale noise.
 const FAILED_TASK_TTL_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_TASK_STATUSES = new Set(["queued", "running", "awaiting_approval"]);
+
+/**
+ * The row kebab, once.
+ *
+ * ConversationRow and ProjectRow had this recipe copy-pasted verbatim, and both
+ * copies lifted on `hover:bg-background` — which worked while the sidebar was a
+ * warm tint over a paper page. On the dark theme `--background` and `--sidebar`
+ * are both pure black, so the hover fill became byte-identical to the panel
+ * behind it while the parent row was simultaneously painting `bg-sidebar-accent`
+ * at 11%: the kebab read as a black hole punched into the hovered row instead of
+ * a control lifting out of it. `--sidebar-accent` is the panel's own elevated
+ * rung and rises in both themes.
+ *
+ * A circle rather than the old rounded-xs. That value existed to stop the
+ * button's corner poking past the row's own rounded-control at 4px of padding —
+ * a circle has no corner, so it satisfies the same constraint strictly, and it
+ * puts the kebab in the one shape every other bare glyph in the product uses.
+ *
+ * `coarse:opacity-100` is not polish. Reveal-on-hover was the ONLY way this
+ * control appeared, and a touch device never hovers: on a phone — where the
+ * sidebar is the drawer and this is the only route to rename, pin, move or
+ * delete a chat — the kebab was permanently invisible, and the 44px hit area
+ * beside it was hitting nothing anyone could see. It stays a hover reveal on a
+ * fine pointer, where the row is quieter for it.
+ */
+const KEBAB_CLASS =
+  "group/kebab size-7 shrink-0 opacity-0 hover:bg-sidebar-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-sidebar-accent data-[state=open]:opacity-100 coarse:size-11 coarse:opacity-100";
 
 export function AppSidebar({
   collapsed,
@@ -621,16 +653,19 @@ export function AppSidebar({
   // layout swap reads as a cross-fade instead of a pop.
   if (collapsed) {
     return (
-      <div key="rail" className="flex h-full w-[64px] flex-col items-center bg-sidebar py-3 text-sidebar-foreground motion-safe:animate-fade-in">
+      <div key="rail" className="flex h-full w-[64px] flex-col items-center py-3 text-sidebar-foreground motion-safe:animate-fade-in">
         <Pressable
           kind="icon"
           size="lg"
           onClick={onToggleCollapse}
           title="Expand sidebar"
           aria-label="Expand sidebar"
-          className="group text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          // hover:text-foreground, like every RailIcon directly beneath it. This
+          // one resolved its hover to the colour it already had, so the top
+          // control in the rail was the only one whose glyph did not answer.
+          className="group text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
         >
-          <SidebarMotionIcon kind="panel-open" className="text-sidebar-foreground" />
+          <SidebarMotionIcon kind="panel-open" />
         </Pressable>
         <div className="mt-3">
           <ModeToggle mode={mode} onChange={switchMode} compact />
@@ -639,7 +674,7 @@ export function AppSidebar({
           {mode === "work" ? (
             <>
               <RailIcon onClick={newWorkTask} label="New task">
-                <span className="flex h-7 w-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                <span className="flex h-7 w-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
                   <SidebarMotionIcon kind="new" className="h-4 w-4" />
                 </span>
               </RailIcon>
@@ -650,7 +685,7 @@ export function AppSidebar({
           ) : mode === "code" ? (
             <>
               <RailIcon onClick={newCodeSession} label="New session">
-                <span className="flex h-7 w-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                <span className="flex h-7 w-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
                   <SidebarMotionIcon kind="new" className="h-4 w-4" />
                 </span>
               </RailIcon>
@@ -661,7 +696,7 @@ export function AppSidebar({
           ) : (
             <>
               <RailIcon onClick={newChat} label="New chat">
-                <span className="flex h-7 w-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                <span className="flex h-7 w-7 items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
                   <SidebarMotionIcon kind="new" className="h-4 w-4" />
                 </span>
               </RailIcon>
@@ -692,15 +727,29 @@ export function AppSidebar({
   return (
     // Desktop width rides the shell's --juno-sidebar-width (user-resizable);
     // keeping it on the inner column preserves the collapse clip-reveal.
-    <div key="expanded" className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground motion-safe:animate-fade-in md:w-[var(--juno-sidebar-width,280px)]">
+    //
+    // No `bg-sidebar` here, and that is not a tidy-up. This column has two
+    // hosts: the desktop <aside>, which already paints --sidebar, and the mobile
+    // Sheet, which paints --popover so a drawer floating over the page reads as
+    // ABOVE it. Filling the column with --sidebar covered the second one edge to
+    // edge — and on dark --sidebar is #000, so the drawer became a black panel
+    // over a black page under a black scrim, which is exactly the failure
+    // SheetContent's own comment says it moved to --popover to avoid. The fill
+    // belongs to whichever frame is hosting the panel.
+    <div key="expanded" className="flex h-full w-full flex-col text-sidebar-foreground motion-safe:animate-fade-in md:w-[var(--juno-sidebar-width,280px)]">
       {/* pb-2 (+ the nav's pt-1) = 12px to the first row. This was pb-7, which
           left a ~32px void between the wordmark and "New chat" and read as a
           layout gap rather than a deliberate break. */}
-      <div className="flex items-center justify-between px-3 pb-2 pt-3">
-        <Link href="/chat" onClick={() => setSidebarOpen(false)} className="group/brand rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <div className="flex items-center justify-between px-3 pb-2 pt-3.5">
+        {/* No `outline-none` + hand-rolled ring. The global `:focus-visible` rule
+            in globals.css is the authoritative focus treatment (see the note at
+            the top of button.tsx, where four forked ring-offset colours had to be
+            unpicked); switching the outline off here bought a ring that draws in
+            the accent, which is reserved for actions and status. */}
+        <Link href="/chat" onClick={() => setSidebarOpen(false)} className="group/brand rounded-control">
           <span className="flex items-center gap-2 pl-1">
-            <JunoMark className="h-[22px] w-[22px] transition-transform duration-base ease-out-soft group-hover/brand:-rotate-6 group-hover/brand:scale-105" />
-            <span className="font-serif text-2xl font-normal tracking-normal text-foreground">Juno</span>
+            <JunoMark className="h-[21px] w-[21px]" />
+            <span className="font-serif text-[1.45rem] font-normal tracking-[-0.02em] text-foreground">Juno</span>
           </span>
         </Link>
         <div className="flex items-center gap-0.5">
@@ -744,7 +793,7 @@ export function AppSidebar({
             <NavRow
               onClick={newWorkTask}
               icon={
-                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-md bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
                   <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
                 </span>
               }
@@ -759,7 +808,7 @@ export function AppSidebar({
             <NavRow
               onClick={newCodeSession}
               icon={
-                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-md bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
                   <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
                 </span>
               }
@@ -774,7 +823,7 @@ export function AppSidebar({
             <NavRow
               onClick={newChat}
               icon={
-                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-md bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-control bg-muted-foreground/10 text-foreground transition-colors duration-fast ease-out-soft group-hover:bg-muted-foreground/15">
                   <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
                 </span>
               }
@@ -795,7 +844,7 @@ export function AppSidebar({
         {!mounted ? (
           <div className="space-y-1 px-1 pt-1">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="skeleton h-8 rounded-lg" style={staggerDelay(i, "tight")} />
+              <div key={i} className="skeleton h-8 rounded-control" style={staggerDelay(i, "tight")} />
             ))}
           </div>
         ) : mode === "work" ? (
@@ -804,7 +853,7 @@ export function AppSidebar({
             {!workLoaded && !workError ? (
               <div className="space-y-1 px-1 pt-1">
                 {[...Array(4)].map((_, i) => (
-                  <div key={i} className="skeleton h-8 rounded-lg" style={staggerDelay(i, "tight")} />
+                  <div key={i} className="skeleton h-8 rounded-control" style={staggerDelay(i, "tight")} />
                 ))}
               </div>
             ) : (
@@ -863,7 +912,7 @@ export function AppSidebar({
               ) : !codeLoaded ? (
                 <div className="space-y-1 px-1 pt-1">
                   {[...Array(3)].map((_, i) => (
-                    <div key={i} className="skeleton h-8 rounded-lg" style={staggerDelay(i, "tight")} />
+                    <div key={i} className="skeleton h-8 rounded-control" style={staggerDelay(i, "tight")} />
                   ))}
                 </div>
               ) : codeProjects.length === 0 ? (
@@ -1068,7 +1117,7 @@ export function AppSidebar({
       <Dialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-serif">{confirm?.title}</DialogTitle>
+            <DialogTitle>{confirm?.title}</DialogTitle>
             <DialogDescription>{confirm?.description}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1092,7 +1141,7 @@ export function AppSidebar({
       <Dialog open={renameTarget !== null} onOpenChange={(o) => !o && setRenameTarget(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-serif">Rename project</DialogTitle>
+            <DialogTitle>Rename project</DialogTitle>
             <DialogDescription>Change the name of this project.</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -1190,13 +1239,13 @@ function WorkSessionRow({
       aria-current={active ? "page" : undefined}
       title={session.title || session.goal}
       className={cn(
-        "group flex items-center gap-2.5 rounded-control py-1.5 pl-2.5 pr-2.5 text-[14px] font-medium transition-[background-color,color] duration-base ease-out-soft",
+        "group flex items-center gap-2.5 rounded-control py-1.5 pl-2.5 pr-2.5 text-[14px] font-medium transition-[background-color,color] duration-fast ease-out-soft",
         active
           ? "bg-sidebar-accent font-semibold text-foreground"
           : "text-sidebar-foreground/90 hover:bg-sidebar-accent hover:text-foreground",
       )}
     >
-      <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-base group-hover:text-foreground">
+      <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
         <SidebarMotionIcon kind="work" className="h-[15px] w-[15px]" />
       </span>
       <span className="min-w-0 flex-1 truncate">{session.title || "Untitled task"}</span>
@@ -1213,7 +1262,10 @@ function InlineErrorRow({ message, onRetry }: { message: string; onRetry: () => 
     // without it the section just reads as empty to a screen reader.
     <div
       role="alert"
-      className="mx-0.5 my-1 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-2.5 py-2 text-[12.5px] text-destructive"
+      // bg-destructive/10, not /5: over the pure-black ground a 5% tint
+      // composites to ~2.5% lightness and disappears, leaving the one row that
+      // must not be mistaken for ordinary content carried by its border alone.
+      className="mx-0.5 my-1 flex items-center gap-2 rounded-xs border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-[12.5px] text-destructive"
     >
       <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1">{message}</span>
@@ -1222,7 +1274,11 @@ function InlineErrorRow({ message, onRetry }: { message: string; onRetry: () => 
         onClick={onRetry}
         // coarse: pad the ~20px target out to 44px without changing the row's
         // density on pointer devices (negative margins absorb the extra box).
-        className="pressable flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-medium transition-colors duration-fast hover:bg-destructive/10 coarse:-my-2.5 coarse:min-h-[44px] coarse:px-3 coarse:py-2.5"
+        // No `transition-colors` beside `.pressable`: the class already declares
+        // a transition covering colour AND transform, and a later transition-*
+        // utility replaces that shorthand wholesale — which dropped `transform`
+        // from the list and made the press dip to scale(.97) in a single frame.
+        className="pressable flex shrink-0 items-center gap-1 rounded-xs px-1.5 py-0.5 font-medium hover:bg-destructive/20 coarse:-my-2.5 coarse:min-h-[44px] coarse:px-3 coarse:py-2.5"
       >
         <RefreshCw className="h-3 w-3" aria-hidden="true" /> Retry
       </button>
@@ -1282,14 +1338,14 @@ function NavRow({
   active?: boolean;
 }) {
   const cls = cn(
-    "group relative flex items-center gap-2.5 rounded-control px-2.5 py-1.5 text-[14px] font-medium transition-[color,background-color,box-shadow] duration-base ease-out-soft",
+    "group relative flex min-h-9 items-center gap-2.5 rounded-control px-2.5 py-1.5 text-[14px] font-medium transition-colors duration-fast ease-out-soft",
     active
       ? "bg-sidebar-accent font-semibold text-foreground"
       : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
   );
   const inner = (
     <>
-      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-base group-hover:text-foreground">{icon}</span>
+      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
     </>
   );
@@ -1328,14 +1384,17 @@ function Section({
     <>
       {/* Claude-style header: sentence-case label with a small chevron hugging
           it ("Pinned ⌄") — no leading icon column, no count badge. */}
-      {Icon && !collapsible && <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />}
-      <span className="min-w-0 truncate text-[12px] font-medium text-muted-foreground/60">
+      {Icon && !collapsible && <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />}
+      {/* Full --muted-foreground, no alpha. At /75 against the black ground this
+          label measured under the 4.5:1 floor, and it is the only thing naming
+          the list under it. */}
+      <span className="min-w-0 truncate text-[12px] font-medium text-muted-foreground">
         {label}
       </span>
       {collapsible && (
         <ChevronDown
           className={cn(
-            "h-3 w-3 shrink-0 text-muted-foreground/50 transition-transform duration-fast ease-out-soft",
+            "h-3 w-3 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-out-soft",
             isCollapsed && "-rotate-90"
           )}
         />
@@ -1356,7 +1415,15 @@ function Section({
             // px-2.5, so each heading hung 2px left of its own list — a ragged
             // margin running the height of the sidebar that no single element
             // looks wrong for.
-            className="min-w-0 flex-1 select-none gap-1.5 rounded-md px-2.5 py-1 hover:bg-sidebar-accent/50"
+            // Full sidebar-accent, like every row beneath it. At /50 on the
+            // black ground the header answered the pointer at 5.5% while its own
+            // list answered at 11% — two hover strengths stacked in one 256px
+            // column, and the weaker one read as no response at all.
+            // No radius here either: Pressable's `row` already sets
+            // rounded-control, and now that cn() resolves the ladder the
+            // `rounded-md` this carried actually won — drawing the section
+            // header at 8px directly above its own 9px rows.
+            className="min-w-0 flex-1 select-none gap-1.5 px-2.5 py-1 hover:bg-sidebar-accent"
           >
             {headerInner}
           </Pressable>
@@ -1365,23 +1432,42 @@ function Section({
         )}
         {action != null && <span className="flex shrink-0 items-center pr-1">{action}</span>}
       </div>
-      {/* Grid-rows sweep so 10+ rows don't appear/vanish in one frame; visibility
-          rides the same transition, which also drops hidden rows from tab order. */}
+      <Disclosure open={!isCollapsed}>
+        <div className="space-y-0.5">{children}</div>
+      </Disclosure>
+    </div>
+  );
+}
+
+/**
+ * The panel's one fold.
+ *
+ * Grid-rows sweep so 10+ rows don't appear/vanish in one frame; visibility rides
+ * the same transition, which also drops hidden rows from tab order.
+ *
+ * Extracted because three disclosures live in this one column and only ONE of
+ * them animated: `Section` swept, while the Code workspace group and the project
+ * row both mounted their children with a bare `{expanded && …}` and popped in
+ * and out in a single frame directly beneath a section that glides. Three folds
+ * in 256px cannot disagree about what folding looks like, and keeping the recipe
+ * in one place is the only way that stays true.
+ */
+function Disclosure({ open, children }: { open: boolean; children: React.ReactNode }) {
+  return (
+    <div
+      className={cn(
+        "grid transition-[grid-template-rows,visibility] duration-base ease-out-soft motion-reduce:transition-none",
+        open ? "visible grid-rows-[1fr]" : "invisible grid-rows-[0fr]"
+      )}
+    >
       <div
         className={cn(
-          "grid transition-[grid-template-rows,visibility] duration-base ease-out-soft",
-          isCollapsed ? "invisible grid-rows-[0fr]" : "visible grid-rows-[1fr]"
+          // -mx/px bleed keeps the rows' hover nudge from clipping at the fold edge.
+          "-mx-2 min-h-0 overflow-hidden px-2 transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+          !open && "opacity-0"
         )}
       >
-        <div
-          className={cn(
-            // -mx/px bleed keeps the rows' hover nudge from clipping at the fold edge.
-            "-mx-2 min-h-0 overflow-hidden px-2 transition-opacity duration-base ease-out-soft",
-            isCollapsed && "opacity-0"
-          )}
-        >
-          <div className="space-y-0.5">{children}</div>
-        </div>
+        {children}
       </div>
     </div>
   );
@@ -1428,20 +1514,20 @@ function CodeWorkspaceGroup({
         onClick={onToggle}
         aria-expanded={expanded}
         aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
-        className="group flex w-full items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left text-[14px] font-medium text-sidebar-foreground/90 transition-[color,background-color] duration-base ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
+        className="group flex w-full items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left text-[14px] font-medium text-sidebar-foreground/90 transition-[color,background-color] duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
       >
-        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-base group-hover:text-foreground">
+        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
           <SidebarMotionIcon kind="folder" className="h-[16px] w-[16px]" />
         </span>
         <span dir="auto" className="min-w-0 flex-1 truncate">{name}</span>
         <ChevronRight
           className={cn(
-            "h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition-transform duration-fast ease-out-soft",
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-out-soft",
             expanded && "rotate-90"
           )}
         />
       </button>
-      {expanded && (
+      <Disclosure open={expanded}>
         <div className="mt-0.5 flex flex-col gap-0.5">
           {sessions.length === 0 && tasks.length === 0 && (
             <p className="py-1 pl-6 pr-2 text-[12.5px] leading-5 text-muted-foreground">No sessions yet.</p>
@@ -1466,14 +1552,18 @@ function CodeWorkspaceGroup({
             <CodeTaskStatusRow key={t.id} task={t} onNavigate={onNavigate} />
           ))}
         </div>
-      )}
+      </Disclosure>
     </div>
   );
 }
 
 const TASK_STATUS_META: Record<string, { label: string; dot: string }> = {
   queued: { label: "Queued", dot: "bg-muted-foreground/50" },
-  running: { label: "Running", dot: "bg-success motion-safe:animate-pulse" },
+  // icon-breathe, not Tailwind's stock `animate-pulse`: that is a 2s
+  // cubic-bezier(0.4,0,0.6,1) loop which appears nowhere in the motion tokens,
+  // and an ease-OUT curve run as a loop visibly stutters at its seam — the exact
+  // failure --ease-breathe was added to fix.
+  running: { label: "Running", dot: "bg-success motion-safe:animate-icon-breathe" },
   awaiting_approval: { label: "Approval", dot: "bg-warning" },
   failed: { label: "Failed", dot: "bg-destructive" },
 };
@@ -1500,14 +1590,17 @@ function CodeTaskStatusRow({ task, onNavigate }: { task: CodeTaskRow; onNavigate
         href={`/chat/${task.conversationId}`}
         onClick={onNavigate}
         title={task.title}
-        className="flex items-center gap-2 rounded-md py-1 pl-6 pr-2 text-[12.5px] text-sidebar-foreground/70 transition-all duration-fast ease-out-soft hover:translate-x-0.5 hover:bg-sidebar-accent hover:text-foreground"
+        // The three properties the hover actually changes, named. `transition-all`
+        // here also animated every layout property the row inherits, so a sidebar
+        // resize drag ran the width change through this rung too.
+        className="flex items-center gap-2 rounded-xs py-1 pl-6 pr-2 text-[12.5px] text-sidebar-foreground/70 transition-[transform,background-color,color] duration-fast ease-out-soft hover:translate-x-0.5 hover:bg-sidebar-accent hover:text-foreground motion-reduce:hover:translate-x-0"
       >
         {inner}
       </Link>
     );
   }
   return (
-    <div className="flex items-center gap-2 rounded-md py-1 pl-6 pr-2 text-[12.5px] text-sidebar-foreground/70" title={task.title}>
+    <div className="flex items-center gap-2 rounded-xs py-1 pl-6 pr-2 text-[12.5px] text-sidebar-foreground/70" title={task.title}>
       {inner}
     </div>
   );
@@ -1610,7 +1703,7 @@ function ConversationRow({
   return (
     <div
       className={cn(
-        "group relative flex items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-base ease-out-soft",
+        "group relative flex items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-fast ease-out-soft",
         nested && "pl-6",
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
       )}
@@ -1621,13 +1714,16 @@ function ConversationRow({
         aria-current={active ? "page" : undefined}
         className={cn(
           "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 font-medium text-sidebar-foreground/90 hover:text-foreground",
-          nested ? "text-[13px]" : "text-[14px]",
+          // 12.5px is L2 (see the header comment). This was the one nested row
+          // in the panel off its own declared tier, sitting half a point above
+          // the code-task, project-chat and "View all" rows beside it.
+          nested ? "text-[12.5px]" : "text-[14px]",
           active && "font-semibold text-foreground"
         )}
         title={conversation.title}
       >
         {/* Claude-style: every chat carries the same speech-bubble mark. */}
-        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-base group-hover:text-foreground">
+        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
           <SidebarMotionIcon kind="conversation" className={nested ? "h-[13px] w-[13px]" : "h-[15px] w-[15px]"} />
         </span>
         <AnimatedTitle
@@ -1646,12 +1742,7 @@ function ConversationRow({
         <DropdownMenuTrigger asChild>
           <Pressable
             kind="icon"
-            // A circle rather than the old rounded-xs. That value existed to stop the
-            // button's corner poking past the row's own rounded-control at 4px of
-            // padding — a circle has no corner, so it satisfies the same constraint
-            // strictly, and it puts the kebab in the one shape every other bare glyph
-            // in the product uses.
-            className="group/kebab size-7 shrink-0 opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-background data-[state=open]:opacity-100 coarse:size-11"
+            className={KEBAB_CLASS}
             aria-label={variant === "code" ? "Session options" : "Conversation options"}
           >
             <SidebarMotionIcon kind="more" className="size-4" />
@@ -1746,7 +1837,7 @@ function ProjectRow({
     <div>
     <div
       className={cn(
-        "group relative flex items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-base ease-out-soft",
+        "group relative flex items-center rounded-control pl-2 pr-1 transition-[background-color,color] duration-fast ease-out-soft",
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
       )}
     >
@@ -1763,8 +1854,13 @@ function ProjectRow({
         )}
         title={project.name}
       >
-        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-base group-hover:text-foreground">
-          <SidebarMotionIcon kind="projects" />
+        {/* 20px box, 15px mark — the same icon column as ConversationRow, which
+            this row is stacked directly on top of under "Pinned". It was a 22px
+            box around an unsized 18px glyph, so a project and the chats beneath
+            it started their titles 2px apart and wore marks three points
+            different in weight, in one list. */}
+        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
+          <SidebarMotionIcon kind="projects" className="h-[15px] w-[15px]" />
         </span>
         <AnimatedTitle title={project.name} animate={project.nameSource === "ai"} className="min-w-0 flex-1" />
       </Link>
@@ -1781,7 +1877,11 @@ function ProjectRow({
           aria-expanded={expanded}
           // 20px is well under the 44px touch minimum — widen on coarse
           // pointers only, with negative margins so row height is unchanged.
-          className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/50 transition-colors hover:text-foreground coarse:-my-3 coarse:h-11 coarse:w-11"
+          // Circular, and it fills on hover: `rounded-sm` (4px, off the ladder)
+          // put a square 2px from the circular kebab it shares a row with, and a
+          // colour-only hover on a 20px glyph gives the pointer nothing to land
+          // on — the kebab beside it has answered with a fill all along.
+          className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground coarse:-my-3 coarse:h-11 coarse:w-11"
         >
           <ChevronRight className={cn("h-3.5 w-3.5 transition-transform duration-fast ease-out-soft", expanded && "rotate-90")} />
         </button>
@@ -1790,12 +1890,7 @@ function ProjectRow({
         <DropdownMenuTrigger asChild>
           <Pressable
             kind="icon"
-            // A circle rather than the old rounded-xs. That value existed to stop the
-            // button's corner poking past the row's own rounded-control at 4px of
-            // padding — a circle has no corner, so it satisfies the same constraint
-            // strictly, and it puts the kebab in the one shape every other bare glyph
-            // in the product uses.
-            className="group/kebab size-7 shrink-0 opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-background data-[state=open]:opacity-100 coarse:size-11"
+            className={KEBAB_CLASS}
             aria-label="Project options"
           >
             <SidebarMotionIcon kind="more" className="size-4" />
@@ -1822,8 +1917,9 @@ function ProjectRow({
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-    {hasChats && expanded && (
-      <div className="mt-0.5 flex flex-col">
+    {hasChats && (
+      <Disclosure open={expanded}>
+        <div className="mt-0.5 flex flex-col">
         {visibleChats.map((c) => (
           <Link
             key={c.id}
@@ -1832,13 +1928,13 @@ function ProjectRow({
             aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
             title={c.title}
             className={cn(
-              "group group/pc flex items-center gap-2 rounded-md py-1 pl-9 pr-2 text-[12.5px] transition-[color,background-color] duration-base ease-out-soft hover:bg-sidebar-accent",
+              "group group/pc flex items-center gap-2 rounded-xs py-1 pl-9 pr-2 text-[12.5px] transition-[color,background-color] duration-fast ease-out-soft hover:bg-sidebar-accent",
               activePath === `/chat/${c.id}`
                 ? "font-medium text-foreground"
                 : "text-sidebar-foreground/70 hover:text-foreground"
             )}
           >
-            <SidebarMotionIcon kind="conversation" className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground transition-colors duration-base group-hover/pc:text-foreground" />
+            <SidebarMotionIcon kind="conversation" className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover/pc:text-foreground" />
             <span dir="auto" className="min-w-0 flex-1 truncate">{c.title || "New chat"}</span>
           </Link>
         ))}
@@ -1846,12 +1942,13 @@ function ProjectRow({
           <button
             type="button"
             onClick={() => setShowAll((v) => !v)}
-            className="flex items-center rounded-md py-1 pl-9 pr-2 text-[12.5px] font-medium text-muted-foreground/70 transition-colors hover:text-foreground"
+            className="flex items-center rounded-xs py-1 pl-9 pr-2 text-[12.5px] font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
           >
             {showAll ? "Show less" : `View all ${chats.length}`}
           </button>
         )}
-      </div>
+        </div>
+      </Disclosure>
     )}
     </div>
   );

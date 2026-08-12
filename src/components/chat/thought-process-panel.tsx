@@ -1004,7 +1004,11 @@ export function ThoughtProcessPanel({
         {showNotice && (
           <section
             aria-labelledby={`${id}-notice`}
-            className="-mx-5 border-l-2 border-warning/35 bg-warning/5 px-5 py-3 motion-safe:animate-fade-in-up"
+            /* The dark tint is separated out. --warning is a 58%-lightness fill in
+               dark, so 5% of it over the --card panel is a 2.6-point step — the
+               one block in the panel that has to be noticed was the quietest
+               thing in it. 5% is still right over light paper. */
+            className="-mx-5 border-l-2 border-warning/35 bg-warning/5 px-5 py-3 motion-safe:animate-fade-in-up dark:bg-warning/10"
           >
             <h3 id={`${id}-notice`} className="font-mono text-label uppercase text-warning">
               Notice
@@ -1056,7 +1060,7 @@ export function ThoughtProcessPanel({
                 run.phases.map((p) => (
                   <React.Fragment key={p.key}>
                     <dt className={cn("text-body", p.active ? "text-primary" : "text-muted-foreground")}>{p.label}</dt>
-                    <dd className="min-w-0 truncate text-body text-foreground/72">
+                    <dd className="min-w-0 truncate text-body text-foreground/70">
                       {/* Effort is an INPUT. It appears exactly once, in SETUP —
                           not here, where it would read as something Think did. */}
                       {p.key === "think" ? "" : p.object}
@@ -1126,7 +1130,7 @@ export function ThoughtProcessPanel({
                         ? `/chat/${memory.sourceRef}`
                         : null;
                     return (
-                      <li key={memory.id} className="rounded-control border border-border/45 bg-muted/20 px-3 py-2">
+                      <li key={memory.id} className="rounded-control border border-border/45 bg-secondary px-3 py-2">
                         <p className="break-words text-body text-foreground/85">{memory.content}</p>
                         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted-foreground">
                           {sourceHref && (
@@ -1167,7 +1171,7 @@ export function ThoughtProcessPanel({
 
             {/* Newsreader italic: the query is text the model wrote. */}
             {run.query && <p className="mt-3 font-serif text-body italic text-muted-foreground">“{run.query}”</p>}
-            {countLine && <p className="mt-1 font-mono text-caption text-muted-foreground/70">{countLine}</p>}
+            {countLine && <p className="mt-1 font-mono text-caption text-muted-foreground">{countLine}</p>}
 
             {run.sources.length > 0 ? (
               <ul className="-mx-2 mt-2.5">
@@ -1177,7 +1181,7 @@ export function ThoughtProcessPanel({
                       href={s.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-baseline gap-3 overflow-hidden rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-muted/50 motion-reduce:transition-none"
+                      className="flex items-baseline gap-3 overflow-hidden rounded-control px-2 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
                     >
                       <span className="min-w-0 flex-1 truncate text-body text-foreground/85">{s.title}</span>
                       {/* Only the exception is marked. A read page and a page
@@ -1186,7 +1190,7 @@ export function ThoughtProcessPanel({
                           default state, and a badge on every row would say
                           nothing while looking like it did. */}
                       {s.access === "listed" && (
-                        <span className="shrink-0 font-mono text-caption text-muted-foreground/70">listed</span>
+                        <span className="shrink-0 font-mono text-caption text-muted-foreground">listed</span>
                       )}
                       <span className="shrink-0 font-mono text-caption text-source">{s.domain}</span>
                     </a>
@@ -1241,7 +1245,7 @@ export function ThoughtProcessPanel({
                 their own data would be wrong. */}
             <p className="mt-2.5 text-body text-muted-foreground">{TOOLS_DESCRIPTION}</p>
             {tools.some((c) => !c.tool) && (
-              <p className="mt-1 text-caption text-muted-foreground/70">{TOOLS_NO_DETAIL_NOTE}</p>
+              <p className="mt-1 text-caption text-muted-foreground">{TOOLS_NO_DETAIL_NOTE}</p>
             )}
 
             <dl className={cn(LEDGER, "mt-3")}>
@@ -1269,7 +1273,7 @@ export function ThoughtProcessPanel({
                              aria-controls pointing at nothing is worse than
                              none at all. */
                           aria-controls={expanded ? bodyId : undefined}
-                          className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-baseline gap-1.5 rounded-control px-1.5 py-0.5 text-left text-body text-foreground/80 transition-colors duration-fast ease-out-soft hover:bg-muted/50 hover:text-foreground motion-reduce:transition-none"
+                          className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-baseline gap-1.5 rounded-control px-1.5 py-0.5 text-left text-body text-foreground/80 transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground motion-reduce:transition-none"
                         >
                           <ChevronRight
                             aria-hidden="true"
@@ -1311,7 +1315,15 @@ export function ThoughtProcessPanel({
                             label={toolArgsLabel(t)}
                             code={t.args}
                             maxBodyHeight={220}
-                            className="mt-1 bg-muted/25"
+                            // `bg-secondary`, and it is a DELIBERATE override of
+                            // `.aicss-cb`'s own fill, not an accident of the
+                            // components-vs-utilities order. The class paints
+                            // --card, this panel is --card, so the block was the
+                            // same colour as the sheet it lies on and only its
+                            // 1px ring said otherwise. What was here — `bg-muted/25`
+                            // — also won that fight and resolved to ~7.25%, i.e.
+                            // it overrode the class in order to change nothing.
+                            className="mt-1 bg-secondary"
                           />
                         ) : (
                           // NEVER an empty code block. An empty box implies the
@@ -1326,7 +1338,8 @@ export function ThoughtProcessPanel({
                             label={toolResultLabel(t)}
                             code={t.result}
                             maxBodyHeight={320}
-                            className="mt-3 bg-muted/25"
+                            // Same override as the args block above, same reason.
+                            className="mt-3 bg-secondary"
                           />
                         ) : (
                           <p className="mt-3 text-body text-muted-foreground">{toolResultNoteText(t)}</p>
@@ -1377,7 +1390,7 @@ export function ThoughtProcessPanel({
                 description passthrough. Worth a `describedBy` prop on the
                 primitive; not worth keeping a second segmented control to have. */}
             {showToggle && (
-              <p id={hintId} className="mt-1 text-caption text-muted-foreground/70">
+              <p id={hintId} className="mt-1 text-caption text-muted-foreground">
                 {VIEW_OPTIONS.find((o) => o.value === view)?.hint}
               </p>
             )}
@@ -1427,7 +1440,7 @@ export function ThoughtProcessPanel({
                   {/* Says why there is no Summary to switch to, rather than
                       leaving the switch's absence to read as a missing feature. */}
                   {!steps && (
-                    <p className="mt-4 text-caption text-muted-foreground/70">
+                    <p className="mt-4 text-caption text-muted-foreground">
                       This model streams one unbroken trace.
                     </p>
                   )}

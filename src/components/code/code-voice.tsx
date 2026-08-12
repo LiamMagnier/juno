@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { RefreshCw, Send } from "lucide-react";
+import { Loader2, RefreshCw, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ScrollFade } from "@/components/ui/scroll-fade";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { VoiceAura, voiceAuraStatus } from "@/components/voice/voice-aura";
 import { useApp } from "@/components/app/app-provider";
@@ -226,6 +227,30 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
     return null;
   }, [lines, sentLineIds]);
 
+  /*
+   * FOLLOW THE CONVERSATION.
+   *
+   * The transcript is a bounded 14rem box. Without this, every line the model
+   * speaks after the box fills lands below the fold and the reader watches a
+   * frozen viewport during a live call — the one surface where new text arrives
+   * without the reader touching anything.
+   *
+   * The viewport's own `scrollTop` is set directly rather than calling
+   * `scrollIntoView` on a sentinel: this panel sits inside a page-level
+   * `overflow-y-auto` on /code/new, and `scrollIntoView` walks EVERY scrollable
+   * ancestor — so pinning the transcript would also yank the page under the
+   * reader on each spoken word.
+   */
+  const transcriptRef = React.useRef<HTMLDivElement>(null);
+  // Keyed on the tail's text as well as the count: a partial line is REWRITTEN
+  // in place as it is spoken, so a count-only dependency would pin the view once
+  // per utterance and then let the line grow off the bottom.
+  const tail = lines.length > 0 ? lines[lines.length - 1].text : "";
+  React.useEffect(() => {
+    const el = transcriptRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lines.length, tail]);
+
   const close = React.useCallback(() => {
     voiceRef.current.end();
     onClose();
@@ -256,9 +281,23 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
   return (
     <>
       <VoiceAura status={voiceAuraStatus(voice)} levelRef={voice.levelRef} />
+      {/* `rounded-field` + `px-3 py-2.5` + `bg-muted`, which is the recipe the
+          four other cards stacked in this column use (the queued note, the
+          changed-files list, the agent cards and the approval card). This panel
+          was the odd one out at `rounded-card p-3 bg-card/80` — a different
+          radius, a different inset and, on the true-black ground, a fill that
+          composited BELOW the composer it sits on top of.
+
+          `mx-1` is the last part of that recipe and was the last thing still
+          missing: the four siblings are inset 4px from the composer they stack
+          on, and this panel — the tallest of them — ran the full width, so the
+          one card that most obviously reads as a stack was the one that broke
+          the stack's left and right edges. `w-full` goes with it; a block
+          <section> already fills its host, and keeping both would have pushed
+          the panel 8px wider than the column. */}
       <section
         aria-label="Voice conversation about this code session"
-        className="mb-2 flex w-full flex-col gap-3 rounded-card border border-border/70 bg-card/80 p-3 motion-safe:animate-rise-in"
+        className="mx-1 mb-2 flex flex-col gap-3 rounded-field border border-border/70 bg-muted px-3 py-2.5 motion-safe:animate-rise-in"
       >
         {/* The arrangement, stated plainly and kept on screen. Not a tooltip and
             not a one-time notice: it has to be readable at the moment somebody
@@ -272,11 +311,15 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
         </p>
 
         {staleBy && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-field border border-border/60 bg-muted/40 px-3 py-2">
+          /* `bg-accent` — one rung further from the page than the panel's own
+             `bg-muted`, in both themes (light steps down 95→92%, dark steps up
+             9.5→13%). The old `bg-muted/40` was a recess, and on a 0%-lightness
+             ground there is no headroom left below the panel to recess into. */
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-border/60 bg-accent px-3 py-2">
             <p className="font-mono text-label text-muted-foreground">
               This has moved on since Juno was briefed
             </p>
-            <Button type="button" variant="outline" size="sm" onClick={catchUp} className="gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={catchUp} className="gap-2 coarse:h-11">
               <RefreshCw className="size-3.5" aria-hidden="true" />
               Bring Juno up to date
             </Button>
@@ -284,31 +327,36 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
         )}
 
         {lines.length > 0 && (
-          <div className="max-h-56 space-y-3 overflow-y-auto pr-1">
-            {lines.map((line) =>
-              line.role === "user" ? (
-                <div key={line.id} className="flex justify-end">
-                  <p className="max-w-[85%] whitespace-pre-wrap rounded-card bg-secondary px-3 py-2 text-[13px] leading-relaxed text-secondary-foreground">
+          // ScrollFade rather than a bare `overflow-y-auto`: this is a bounded
+          // region whose content grows on its own, so it needs the "there is
+          // more this way" edge the project picker's bounded list already has.
+          <ScrollFade className="max-h-56" viewportClassName="pr-1" viewportRef={transcriptRef}>
+            <div className="space-y-3">
+              {lines.map((line) =>
+                line.role === "user" ? (
+                  <div key={line.id} className="flex justify-end">
+                    <p className="max-w-[85%] whitespace-pre-wrap rounded-control bg-secondary px-3 py-2 text-[13px] leading-relaxed text-secondary-foreground">
+                      {line.text}
+                    </p>
+                  </div>
+                ) : (
+                  <p key={line.id} className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">
                     {line.text}
                   </p>
-                </div>
-              ) : (
-                <p key={line.id} className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">
-                  {line.text}
-                </p>
-              ),
-            )}
-          </div>
+                ),
+              )}
+            </div>
+          </ScrollFade>
         )}
 
         {send && sendable && (
-          <div className="flex flex-col gap-2 rounded-field border border-border/60 bg-background/60 p-2.5">
+          <div className="flex flex-col gap-2 rounded-control border border-border/60 bg-accent p-2.5">
             {/* What the press does, before the press: starting a session and
                 steering a running one are not the same event, and finding out
                 afterwards is too late. */}
             <p className="font-mono text-label text-muted-foreground">{intentSentence(send)}</p>
             <p className="text-[13px] leading-relaxed text-foreground">{sendable.text}</p>
-            <p className="text-caption text-muted-foreground/80">
+            <p className="text-caption text-muted-foreground">
               These exact words go over. Juno&rsquo;s side of this call does not.
               {send.endsCall ? " Sending starts the session and ends this call." : ""}
             </p>
@@ -321,14 +369,25 @@ export function CodeVoicePanel({ briefing, send, onClose }: CodeVoicePanelProps)
                     Those words didn&rsquo;t land. Try again, or type them in the box below.
                   </p>
                 )}
+                {/* No `size="sm"`. The line being handed over is irreversible
+                    once sent, and the comparable commit controls in ApprovalCard
+                    are deliberately h-11 for exactly that reason — this was a
+                    32px target with no coarse growth. The default size's own
+                    `coarse:h-11` now covers touch. */}
                 <Button
                   type="button"
-                  size="sm"
                   onClick={() => void submit()}
                   disabled={sending || send.sending === true}
                   className="self-end gap-2"
                 >
-                  <Send className="size-3.5" aria-hidden="true" />
+                  {/* The glyph reports the state instead of sitting still
+                      beside a label that changed — ApprovalCard's Allow does the
+                      same while it waits. */}
+                  {sending ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Send className="size-4" aria-hidden="true" />
+                  )}
                   {sending ? "Sending…" : sendButtonLabel(send)}
                 </Button>
               </>

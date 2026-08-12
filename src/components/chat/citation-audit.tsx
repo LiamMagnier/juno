@@ -159,7 +159,7 @@ const STATES = {
   },
   unsupported: {
     Icon: AlertTriangle,
-    tone: "text-warning-foreground border-warning/45 bg-warning/12",
+    tone: "text-warning-foreground border-warning/45 bg-warning/10",
     dot: "bg-warning",
     label: "Unsupported",
   },
@@ -217,7 +217,7 @@ export function ScoreMeter({ label, value }: { label: string; value: number }) {
   const filled = Math.round(Math.max(0, Math.min(1, value)) * 4);
   return (
     <span className="inline-flex items-center gap-1.5" title={`${label}: ${Math.round(value * 100)} out of 100`}>
-      <span className="font-mono text-caption text-muted-foreground/70">{label}</span>
+      <span className="font-mono text-caption text-muted-foreground">{label}</span>
       <span aria-hidden="true" className="flex gap-0.5">
         {[0, 1, 2, 3].map((i) => (
           <span key={i} className={cn("h-1.5 w-2 rounded-full", i < filled ? "bg-foreground/45" : "bg-border")} />
@@ -246,12 +246,12 @@ function SourceInspector({ link, source }: { link: CitationAuditLink; source?: C
   const published = source?.publishedAt ? new Date(source.publishedAt) : null;
 
   return (
-    <div className="mt-2 rounded-menu border border-border/70 bg-muted/35 p-3">
+    <div className="mt-2 rounded-menu border border-border/70 bg-card p-3">
       <div className="flex items-start gap-2">
         {source && <SourceFavicon url={source.url} variant="list" />}
         <div className="min-w-0 flex-1">
           <p className="truncate text-body leading-tight text-foreground/90">{source?.title ?? "Cited source"}</p>
-          <p className="truncate font-mono text-caption text-muted-foreground/70">
+          <p className="truncate font-mono text-caption text-muted-foreground">
             {source ? hostOf(source.url) : ""}
             {published ? ` · published ${published.toISOString().slice(0, 10)}` : " · no publication date"}
             {link.locator ? ` · ${link.locator}` : ""}
@@ -266,7 +266,11 @@ function SourceInspector({ link, source }: { link: CitationAuditLink; source?: C
           className={cn(
             "inline-flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground",
             "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
-            "hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            // `hover:bg-accent`. This button is inside the `bg-card` inspector
+            // above, so `hover:bg-card` repainted the exact colour already
+            // under it — the only copy-passage control in the audit had no
+            // hover state at all.
+            "hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           )}
         >
           <Copy aria-hidden="true" className="size-3.5" />
@@ -330,7 +334,11 @@ function ClaimRow({ claim, sources }: { claim: CitationAuditClaim; sources: Cita
         className={cn(
           "flex w-full items-start gap-2.5 rounded-field px-2 py-2.5 text-left",
           "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
-          "hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          // Full-strength `bg-muted`. The claim list is drawn straight on the
+          // page, and half a muted fill is a 1-point step over light paper —
+          // the row hover on the widest control in the audit was invisible in
+          // the light theme and thin in the dark one.
+          "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           // 44px minimum target on touch, without stretching the row on a desktop list.
           "coarse:min-h-11"
         )}
@@ -383,7 +391,7 @@ function ClaimRow({ claim, sources }: { claim: CitationAuditClaim; sources: Cita
                 <SourceInspector key={`${link.sourceIndex}-${i}`} link={link} source={sourceOf(link.sourceIndex)} />
               ))
             ) : (
-              <p className="mt-2 rounded-menu border border-border/70 bg-muted/35 p-3 text-body text-muted-foreground">
+              <p className="mt-2 rounded-menu border border-border/70 bg-card p-3 text-body text-muted-foreground">
                 The report states this without citing anything. Juno could not check it against a source, so treat it as
                 unverified.
               </p>
@@ -442,7 +450,7 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
     return (
       <p
         aria-live="polite"
-        className={cn("mt-3 font-mono text-caption text-muted-foreground/70", className)}
+        className={cn("mt-3 font-mono text-caption text-muted-foreground", className)}
       >
         Checking citations…
       </p>
@@ -473,7 +481,7 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
         className={cn(
           "group/audit relative z-0 inline-flex h-9 max-w-full items-center gap-2 rounded-full border bg-card pl-2.5 pr-3 shadow-soft",
           "transition-[transform,box-shadow,border-color] duration-base ease-out-soft motion-reduce:transition-none",
-          "hover:z-10 hover:shadow-float motion-safe:hover:-translate-y-0.5",
+          "hover:z-10 hover:shadow-lift motion-safe:hover:-translate-y-0.5",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           "coarse:h-11",
           trouble > 0 ? "border-warning/45" : "border-border/70"

@@ -123,12 +123,16 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
             ? `Preview unavailable. Open ${attachment.fileName} in a new tab`
             : `Open ${attachment.fileName} in a new tab`
         }
-        className="relative block aspect-square w-full overflow-hidden rounded-field border border-border/60 bg-muted/35 shadow-soft motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-float"
+        // `bg-muted` at full strength, not `/35`. The placeholder frame is drawn
+        // on the transcript ground, which is now #000, so muted at 35% resolved
+        // to ~3% lightness — a frame the same colour as the page, holding a
+        // "Preparing image" label with nothing behind it. Named rung instead.
+        className="relative block aspect-square w-full overflow-hidden rounded-field border border-border/60 bg-muted shadow-soft motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-lift"
       >
         <div
           aria-hidden="true"
           className={cn(
-            "pointer-events-none absolute inset-0 z-10 grid place-items-center bg-muted/35 text-muted-foreground motion-safe:transition-opacity motion-safe:duration-base",
+            "pointer-events-none absolute inset-0 z-10 grid place-items-center bg-muted text-muted-foreground motion-safe:transition-opacity motion-safe:duration-base",
             ready && "opacity-0"
           )}
         >
@@ -168,7 +172,7 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
           type="button"
           onClick={onEdit}
           aria-label={`Edit ${attachment.fileName}`}
-          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-label text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-all duration-base ease-out-soft hover:text-foreground active:scale-95 group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-label text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-[transform,opacity,color] duration-base ease-out-soft hover:text-foreground active:scale-95 group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           <SquareDashed className="h-3.5 w-3.5" aria-hidden="true" /> Edit
         </button>
@@ -190,12 +194,15 @@ function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
       : `Preparing ${attachment.fileName}`;
 
   return (
-    <div className="group/video grid w-full max-w-[480px] grid-rows-[auto_3.25rem] overflow-hidden rounded-field border border-border/60 bg-card/75 shadow-soft motion-safe:animate-fade-in motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-float">
-      <div className="relative aspect-video min-w-0 overflow-hidden bg-muted/35">
+    // Named rungs, not alpha. `bg-card/75` and `bg-muted/35` were tuned against
+    // the old 9%-lightness ground; over #000 they resolve to ~4.9% and ~3.3%,
+    // so the card, its stage and the page were three shades of nothing.
+    <div className="group/video grid w-full max-w-[480px] grid-rows-[auto_3.25rem] overflow-hidden rounded-field border border-border/60 bg-card shadow-soft motion-safe:animate-fade-in motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-lift">
+      <div className="relative aspect-video min-w-0 overflow-hidden bg-muted">
         <div
           aria-hidden="true"
           className={cn(
-            "pointer-events-none absolute inset-0 z-10 grid place-items-center bg-muted/35 text-muted-foreground motion-safe:transition-opacity motion-safe:duration-base",
+            "pointer-events-none absolute inset-0 z-10 grid place-items-center bg-muted text-muted-foreground motion-safe:transition-opacity motion-safe:duration-base",
             ready && "opacity-0"
           )}
         >
@@ -233,7 +240,7 @@ function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
           )}
         />
       </div>
-      <div className="flex min-w-0 items-center justify-between gap-3 border-t border-border/60 bg-card/82 px-3.5">
+      <div className="flex min-w-0 items-center justify-between gap-3 border-t border-border/60 bg-card px-3.5">
         <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
           <VideoIcon className="size-3.5 shrink-0" aria-hidden="true" />
           <span className="shrink-0 font-mono text-caption text-foreground/75">Video</span>
@@ -248,7 +255,7 @@ function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`Open ${attachment.fileName} in a new tab`}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-background/65 px-2.5 font-mono text-caption text-foreground/80 transition-[background-color,border-color,color,transform] duration-base ease-out-soft hover:border-border hover:bg-background hover:text-foreground active:scale-95 coarse:h-10 motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-secondary px-2.5 font-mono text-caption text-foreground/80 transition-[background-color,border-color,color,transform] duration-base ease-out-soft hover:border-border hover:bg-accent hover:text-foreground active:scale-95 coarse:h-10 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           Open
           <ExternalLink className="size-3" aria-hidden="true" />
@@ -344,7 +351,7 @@ function VersionPager({
   // bare glyph affordances, so both are `kind="icon"`; `sm` keeps the pager
   // visually subordinate to the actions without inventing a rung.
   return (
-    <div className="mr-1 flex items-center font-mono text-caption text-muted-foreground/70">
+    <div className="mr-1 flex items-center font-mono text-caption text-muted-foreground">
       <Pressable kind="icon" size="sm" onClick={() => onStep(-1)} disabled={loading || index === 0} aria-label="Previous version">
         <ChevronLeft className="h-3.5 w-3.5" />
       </Pressable>
@@ -767,7 +774,13 @@ export function MessageItem({
         ) : showCursor && !hasRunTrace ? (
           <StreamStatus status={status} />
         ) : message.error && !hasPartialWithError ? (
-          <div className="space-y-2.5 rounded-lg border border-destructive/40 bg-destructive/5 px-3.5 py-3 text-sm text-destructive">
+          // `rounded-field` is the inline-note rung; `rounded-lg` is 16px, the
+          // SURFACE rung, which made this two-line notice rounder than the
+          // finish-note box directly below it. And the dark tint is separated
+          // out: destructive at 5% over a #000 ground computes to ~2.5%
+          // lightness, so on dark the error block had no fill at all — it was a
+          // red border around the page. 5% is still right against 97% paper.
+          <div className="space-y-2.5 rounded-field border border-destructive/40 bg-destructive/5 px-3.5 py-3 text-sm text-destructive dark:bg-destructive/[0.14]">
             <p>{message.content}</p>
             {onRegenerate && isLast && !busy && (
               <Button
@@ -848,7 +861,11 @@ export function MessageItem({
                 redundant now: the tail fade already says "still writing", and
                 the composer is showing its stop button throughout. */}
             {(view.errorMessage || finishNote || canContinue) && (
-              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
+              // Same rung and same fill logic as the error notice above — these
+              // two are siblings in the same slot and were disagreeing about
+              // both. `bg-muted/45` over black resolved to ~4.3%, between the
+              // page and --card and equal to neither.
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-field border border-border/70 bg-muted px-3.5 py-2.5 text-xs text-muted-foreground">
                 <span className="min-w-0 flex-1">{view.errorMessage ?? finishNote}</span>
                 {canContinue && (
                   <Button type="button" variant="outline" size="sm" onClick={onContinue} className="h-7 gap-1.5">

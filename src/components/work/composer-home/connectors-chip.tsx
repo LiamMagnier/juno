@@ -103,7 +103,7 @@ export function WorkConnectorsChip({
           <span className="truncate">Apps</span>
           {count > 0 && <span className="shrink-0 tabular-nums text-primary">{count}</span>}
           <ChevronDown
-            className="h-3 w-3 shrink-0 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180"
+            className="h-3 w-3 shrink-0 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180"
             aria-hidden="true"
           />
         </button>

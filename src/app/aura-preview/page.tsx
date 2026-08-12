@@ -63,7 +63,7 @@ export default function AuraPreview() {
           >
             <div aria-hidden className={cn("composer-aura", docked && "composer-aura--docked")} />
             <div className="mx-auto w-full px-0 pb-4 sm:max-w-[48rem] sm:px-4">
-              <div className="composer-surface relative flex w-full flex-col rounded-composer border border-border/65 bg-card/95 p-3 backdrop-blur sm:rounded-lg">
+              <div className="composer-surface relative flex w-full flex-col rounded-composer border border-border/65 bg-card/95 p-3 backdrop-blur">
                 <textarea
                   placeholder="Message Juno…"
                   className="min-h-[56px] w-full resize-none bg-transparent px-1 text-base outline-none placeholder:text-muted-foreground/70"

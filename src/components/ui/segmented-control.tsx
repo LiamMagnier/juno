@@ -135,6 +135,13 @@ export function SegmentedControl<T extends string>({
    * Capped hard at 8%. Beyond roughly that it stops being physics and starts
    * being an effect — and this control sits in a 240px sidebar, where the whole
    * travel is ~90px and an over-eager stretch just looks like a rubber band.
+   *
+   * Both constants had been zeroed, which made `along` always 0, `grow`/`shrink`
+   * always 1 and `setTravel` a no-op that wrote `scale: "1 1"` — so the effect
+   * these ~70 lines of comment exist to justify never ran once. Restored to the
+   * spec above: 0.0011/px reaches the 8% cap at ~73px of travel, which is inside
+   * the ~90px the sidebar toggle covers, so a full-width switch saturates and a
+   * neighbour-to-neighbour one does not.
    */
   const STRETCH_PER_PX = 0.0011;
   const MAX_STRETCH = 0.08;
@@ -246,10 +253,23 @@ export function SegmentedControl<T extends string>({
         // offsetLeft/offsetTop, which agree with left-0/top-0 only while the
         // padding edge and border edge coincide.
         // Concentric corners: the track's outer radius = the thumb's inner
-        // radius + the padding that separates them (menu 14 = control 10 + 4),
-        // and the padding is uniform (p-1) so the thumb's inset is identical on
-        // all four sides.
-        "field-well relative gap-1 rounded-menu bg-muted/70 p-1",
+        // radius + the padding that separates them (menu 12 = control 9 + 4, to
+        // within the 1px that a rounded corner cannot show), and the padding is
+        // uniform (p-1) so the thumb's inset is identical on all four sides.
+        //
+        // This line said "shares TabsList's material and geometry" while
+        // diverging from it on four axes at once: radius 9 vs 12, fill 55% vs
+        // 70%, a border TabsList does not have, and no `field-well` — the inset
+        // the docstring at the top of this file calls the track's defining
+        // feature. Two renderings of one idiom cannot disagree about all four.
+        // It is TabsList's string now, verbatim — including the removal of
+        // `bg-muted/70`, which was silently overriding `field-well`'s own fill.
+        // Utilities are emitted after the components layer, so on light the
+        // utility won; on dark `.dark .field-well` (0,2,0) outranked it and won
+        // instead. One track, two themes, two different sources of truth — and
+        // the one that knows a well has to LIFT on a black ground rather than
+        // recess below it was the half that kept getting overruled.
+        "relative gap-1 rounded-menu p-1 field-well",
         orientation === "vertical" ? "flex flex-col items-center" : "grid",
         className,
       )}
@@ -273,18 +293,27 @@ export function SegmentedControl<T extends string>({
               : undefined
         }
         className={cn(
-          "pointer-events-none absolute left-0 top-0 z-0 rounded-control",
-          // Glass, not paint. The thumb is a lens over the well rather than an
-          // opaque tile laid on it: the track's colour shows through, so the
-          // segment behind stays faintly readable as it passes under. That
-          // read-through is the whole difference between a pane of glass
-          // sliding and a card being repositioned.
+          // rounded-control (9), not rounded-xs (6): the track is 12 with p-1, so
+          // 12 − 4 = 8 ≈ 9 is the concentric answer, the same one TabsTrigger
+          // already uses inside the identical shell.
+          "pointer-events-none absolute left-0 top-0 z-0 rounded-control border border-border/80 bg-card",
+          // Opaque, and the fill is per-theme, because "raised" is a lightness
+          // relationship and the two themes do not agree on which direction it
+          // points from here.
           //
-          // `bg-card/80` keeps the label above it at full contrast — glass that
-          // drops legibility is decoration. `saturate-150` is what stops the
-          // blur from turning the warm ground grey, which is the usual way a
-          // backdrop-filter quietly desaturates a brand palette.
-          "bg-card/80 backdrop-blur-xl backdrop-saturate-150 supports-[not(backdrop-filter:blur(0))]:bg-card",
+          // On paper the well is --background (97%) and the thumb is --card
+          // (99%): two points up, which is the whole read. On dark the well
+          // lifts to --secondary (9.5%) and --card would land at 6.5% — the
+          // thumb DARKER than the well it is supposed to stand out of, so the
+          // selection was carried entirely by a 1px sheen. --accent (13%)
+          // restores the same "one rung up" the light theme has.
+          //
+          // This is also why the earlier `bg-card/80 backdrop-blur-xl` glass is
+          // gone rather than restored: a translucent pane reads as a lens only
+          // when there is a lightness difference for it to sample, and on a
+          // black ground it sampled a surface identical to itself — a
+          // compositor layer per switch, for nothing visible.
+          "bg-card dark:bg-accent",
           // THE SLIDE. `ease-out-back` overshoots by ~3% and comes back, so the
           // pane arrives with weight instead of stopping on the mark. This is
           // the one curve in the system that overshoots and this is what it was
@@ -317,16 +346,32 @@ export function SegmentedControl<T extends string>({
           //                                          stretched on the way.
           //   box-shadow --dur-fast                  depth answers the pointer,
           //                                          not the journey
+          //
+          // What shipped was 180ms/ease-out-soft for transform and --dur-press
+          // for scale: an off-ladder duration (the rungs are 70/120/160/220/360/
+          // 560), no overshoot anywhere, and a "relax" that finished before the
+          // travel did — i.e. the exact three things the block above says are the
+          // point. It is the spec now.
           "[transition:transform_var(--dur-base)_var(--ease-out-back),width_var(--dur-base)_var(--ease-out-back),height_var(--dur-base)_var(--ease-out-back),scale_var(--dur-slow)_var(--ease-out-soft),box-shadow_var(--dur-fast)_var(--ease-out-soft)]",
           // The specular edge: a glass pane is lit along its top and shadowed
-          // where it meets the recess it floats in.
+          // where it meets the recess it floats in. This was `shadow-sm` —
+          // Tailwind's STOCK default, a raw `rgb(0 0 0 / 0.05)` that is not on
+          // the Juno ramp, is invisible on black, and drew none of the lit top
+          // edge the sentence above promises. Same recipe TabsTrigger uses, plus
+          // the --hairline bottom edge that is the "shadowed where it meets the
+          // recess" half of the sentence.
           "[box-shadow:inset_0_1px_0_hsl(var(--sheen)),inset_0_-1px_0_hsl(var(--hairline)),var(--shadow-pop)]",
           // Held: the pane goes down into its well and its cast shadow collapses
           // to a single tight rung, which is what closing the gap to the ground
           // looks like. `scale` is re-timed to --dur-press here — the slow rung
           // above is right for relaxing a stretch and far too slow for answering
           // a finger.
-          "data-[pressed]:[box-shadow:inset_0_1px_0_hsl(var(--sheen)),0_1px_1px_-1px_hsl(48_12%_18%/0.10)]",
+          // --shadow-ink, not the literal `48 12% 18%` that was baked in here:
+          // that is the LIGHT theme's warm ink, and an 18%-lightness shadow on a
+          // #000 ground is a light patch under the thumb — the halo again with
+          // the saturation turned down. The token is exactly this value on light
+          // and pure black on dark, which is what the line was reaching for.
+          "data-[pressed]:[box-shadow:inset_0_1px_0_hsl(var(--sheen)),0_1px_1px_-1px_hsl(var(--shadow-ink)/0.10)]",
           "data-[pressed]:[transition:scale_var(--dur-press)_var(--ease-out-strong),box-shadow_var(--dur-press)_var(--ease-out-soft)]",
           // Rest value for the independent `scale` property. Independent rather
           // than a transform utility because `place()` writes
@@ -362,7 +407,13 @@ export function SegmentedControl<T extends string>({
             "transition-[color,transform,background-color] duration-fast ease-out-soft",
             "active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50",
             "motion-reduce:transition-none motion-reduce:active:scale-100",
-            labelHidden ? "h-8 w-8" : "gap-1.5 px-3 py-1 text-[13px]",
+            // `coarse:` growth on the icon rail. This is the one variant meant
+            // for a sidebar toggle on touch and it was the only control in the
+            // product still under the 44px target — Button (button.tsx) and
+            // Pressable (pressable.tsx) both grow every icon target on a coarse
+            // pointer. `text-sm` rather than the off-ladder 13px: this is the
+            // same idiom as TabsTrigger and now says so at the same size.
+            labelHidden ? "h-8 w-8 coarse:h-10 coarse:w-10" : "gap-1.5 px-3 py-1 text-sm",
             value === opt.value
               ? "text-foreground"
               : // An inactive segment had colour-only hover: the label brightened
@@ -370,7 +421,12 @@ export function SegmentedControl<T extends string>({
                 // you were already on it. A faint wash names the target. It is
                 // deliberately far below the thumb's own contrast — this is
                 // "you can press here", not a second selected state.
-                "text-muted-foreground hover:bg-foreground/[0.035] hover:text-foreground",
+                //
+                // `bg-accent/60`, not `bg-foreground/[0.035]`: 3.5% of a 94%
+                // foreground over the track lands at ~3% lightness, so on pure
+                // black the wash the comment above describes was still invisible.
+                // The accent rung is what the rest of the product hovers with.
+                "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
             optionClassName,
           )}
         >

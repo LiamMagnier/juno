@@ -280,7 +280,7 @@ export default function WorkHostPage() {
               : (workload ?? "Nothing running on it right now.")}
           </span>
           {revokedAt === null && pendingCommands > 0 && (
-            <span className="font-mono text-[10px] text-muted-foreground/70">
+            <span className="font-mono text-[10px] text-muted-foreground">
               {pendingCommands === 1
                 ? "1 instruction waiting to be picked up"
                 : `${pendingCommands} instructions waiting to be picked up`}

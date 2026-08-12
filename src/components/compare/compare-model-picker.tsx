@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronDown, Lock, Search } from "lucide-react";
+import { Check, ChevronDown, Lock, Search, SearchX } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useApp } from "@/components/app/app-provider";
@@ -72,7 +73,7 @@ export function CompareModelPicker({
         <button
           type="button"
           disabled={disabled}
-          className="group inline-flex h-8 min-w-0 items-center gap-1.5 rounded-control px-2 text-[13px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] disabled:pointer-events-none disabled:opacity-60 data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:h-10"
+          className="group inline-flex h-8 min-w-0 items-center gap-1.5 rounded-control px-2 text-sm font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] motion-reduce:transition-none disabled:pointer-events-none disabled:opacity-60 data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:h-10"
         >
           {current && (
             <ProviderLogo
@@ -97,7 +98,7 @@ export function CompareModelPicker({
         </div>
         <div className="max-h-72 overflow-y-auto p-1.5">
           {visible.length === 0 ? (
-            <p className="px-2 py-8 text-center text-sm text-muted-foreground">No models found.</p>
+            <EmptyState size="panel" icon={SearchX} title="No models found" description="Try a different name or provider." />
           ) : (
             visible.map((m) => {
               const locked = planRank(plan) < planRank(effectiveMinPlan(m.minPlan));
@@ -108,21 +109,24 @@ export function CompareModelPicker({
                   type="button"
                   onClick={() => select(m)}
                   className={cn(
-                    "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors duration-fast hover:bg-accent coarse:py-2.5",
+                    // rounded-md (8px), the same derivation DropdownMenuItem uses:
+                    // 14px popover shell − p-1.5 (6px) = concentric. rounded-lg was
+                    // 16px, i.e. rounder than the popover containing it.
+                    "flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors duration-fast hover:bg-accent focus-visible:bg-accent coarse:py-2.5",
                     active && "bg-accent/60"
                   )}
                 >
-                  <ProviderLogo provider={m.provider} className="h-5 w-5 shrink-0" />
+                  <ProviderLogo provider={m.provider} className="size-5 shrink-0" />
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">{m.name}</span>
                   <span className="shrink-0 text-caption text-muted-foreground">
                     {PROVIDERS[m.provider].label.split(" · ")[0]}
                   </span>
                   {locked ? (
-                    <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-primary">
-                      <Lock className="h-3 w-3" /> {PLANS[effectiveMinPlan(m.minPlan)].name}
+                    <span className="flex shrink-0 items-center gap-1 text-caption font-semibold text-primary">
+                      <Lock className="size-3 shrink-0" /> {PLANS[effectiveMinPlan(m.minPlan)].name}
                     </span>
                   ) : active ? (
-                    <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    <Check className="size-3.5 shrink-0 text-primary" />
                   ) : null}
                 </button>
               );

@@ -67,32 +67,44 @@ export function AppPageHeader({
   className?: string;
 }) {
   return (
-    <header className={cn("mb-6", className)}>
-      <div className="mb-1 flex items-center gap-2">
+    // Full --border: this rule separates the header from the page body, so it
+    // carries layout. The alpha came from a light-theme habit and now compounds
+    // with a token that already dropped five points for the black ground.
+    <header className={cn("mb-6 border-b border-border pb-5", className)}>
+      <div className="mb-3 flex items-center gap-2">
         <Button asChild variant="ghost" size="icon-sm" aria-label={backLabel}>
           <Link href={backHref}>
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           </Link>
         </Button>
-        <span className="font-mono text-label text-muted-foreground">{eyebrow}</span>
+        {/* The mono kicker this component's own prop doc promises. It was set in
+            the UI face at `text-xs`, which is neither the eyebrow treatment the
+            rest of the shell uses nor a rung on the type scale. */}
+        <span className="font-mono text-label uppercase text-muted-foreground">{eyebrow}</span>
       </div>
 
-      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
-          <h1 className="flex items-center gap-2.5 text-balance font-serif text-display font-medium tracking-tight">
+          {/* -0.02em, matching `display`. The hand-rolled -0.025em was TIGHTER
+              than the largest rung on the scale, so the app-page heading tracked
+              harder than the display type it sits below in the hierarchy. The
+              clamp itself still wants to become a `page-title` rung in
+              tailwind.config.ts — a size used on every app page belongs in the
+              scale — but that file is outside this pass. */}
+          <h1 className="flex items-center gap-2.5 text-balance text-[clamp(1.65rem,1.4rem+0.8vw,2.1rem)] font-semibold leading-tight tracking-[-0.02em]">
             {Icon && (
-              // `0.85em`, not a px size: the mark is part of the heading and has
+              // `0.78em`, not a px size: the mark is part of the heading and has
               // to track it through the display scale's responsive steps.
               <Icon
-                className="size-[0.85em] shrink-0 text-muted-foreground/80"
-                strokeWidth={1.6}
+                className="size-[0.78em] shrink-0 text-muted-foreground/75"
+                strokeWidth={1.7}
                 aria-hidden="true"
               />
             )}
             {heading}
           </h1>
           {lede && (
-            <p className="mt-1 max-w-prose text-pretty text-sm text-muted-foreground">{lede}</p>
+            <p className="mt-1.5 max-w-prose text-pretty text-sm leading-6 text-muted-foreground">{lede}</p>
           )}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2.5">{actions}</div>}

@@ -52,7 +52,7 @@ const MAX_CLAIMS = 40;
 /** Passages fetched per source for linking. */
 const MAX_PASSAGES_PER_SOURCE = 24;
 /** Sources whose bodies are split into passages. */
-const MAX_SOURCES = 16;
+const MAX_SOURCES = 250;
 /**
  * Utility-model calls per report. Past this the remaining claims are recorded
  * `unverified` and reported as unchecked — an honest gap the UI shows, rather

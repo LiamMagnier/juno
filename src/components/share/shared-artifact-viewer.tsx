@@ -32,16 +32,27 @@ export function SharedArtifactViewer({
   const hasPreview = isMarkdown || rt.mode === "web";
   const [tab, setTab] = React.useState<"preview" | "code">(hasPreview ? "preview" : "code");
 
-  const panel = "min-h-0 flex-1 overflow-hidden rounded-surface border border-border/60 bg-card/40 shadow-soft";
+  // Opaque `bg-card`, not `bg-card/40`. That alpha was tuned against the old
+  // charcoal ground; over pure black it composites to ~2.6% — indistinguishable
+  // from the page, so the panel that frames a shared artifact had no frame. Its
+  // shadow-soft is black-on-black there too, hence the dark lit inset edge.
+  const panel =
+    "min-h-0 flex-1 overflow-hidden rounded-surface border border-border/60 bg-card shadow-soft dark:shadow-[inset_0_1px_0_hsl(var(--sheen)),0_1px_2px_hsl(0_0%_0%/0.4)]";
 
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as "preview" | "code")} className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 pb-3">
-        <TabsList className="h-8">
+        {/* No `h-8` override. TabsList is h-9 with p-1, and its triggers are
+            `py-1` around a 20px line — 28px of content that needs a 36px shell.
+            Forcing the track to 32px left 24px of slot, so both triggers hung
+            2px past the top and bottom of the well they are supposed to sit in,
+            on the one tab row a visitor sees before signing up. It also put this
+            row at a height no other TabsList in the product uses. */}
+        <TabsList>
           {hasPreview && <TabsTrigger value="preview">Preview</TabsTrigger>}
           <TabsTrigger value="code">Code</TabsTrigger>
         </TabsList>
-        <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">
+        <span className="ml-auto shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
           {rt.label}
           {version > 1 ? ` · v${version}` : ""}
         </span>

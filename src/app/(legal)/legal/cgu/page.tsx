@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 export default function CguPage() {
   return (
     <>
-      <p className="font-mono text-xs font-medium text-muted-foreground">Juno · Conditions</p>
+      <p className="font-mono text-label text-muted-foreground">Juno · Conditions</p>
       <h1 className="mt-3">Conditions générales d&apos;utilisation et de vente</h1>
       <p className="text-muted-foreground">Dernière mise à jour : 7 août 2026.</p>
 

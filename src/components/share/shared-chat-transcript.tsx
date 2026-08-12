@@ -27,13 +27,21 @@ const TYPE_ICON: Record<ArtifactType, typeof Code2> = {
 function ArtifactChip({ title, type }: { title: string; type: ArtifactType }) {
   const Icon = TYPE_ICON[type] ?? FileCode2;
   return (
-    <div className="my-3 flex items-center gap-3 rounded-popover border border-border/70 bg-card/80 px-4 py-3 shadow-soft">
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-        <Icon className="h-4 w-4" />
+    // Opaque `bg-card` and a full-strength border: at /80 over the true-black
+    // ground the chip composited to ~5.2%, below the card rung it is supposed to
+    // sit ON, and its shadow-soft is black ink on black — so the one raised
+    // object in a shared transcript read as a hairline rectangle. The dark
+    // override is the lit INSET edge every raised surface on black uses.
+    // Concentric radii: 14px shell, 12px of padding-to-icon, so the tile lands
+    // on `rounded-field` (10px) rather than `rounded-lg`'s 16px — which was
+    // ROUNDER than the container holding it.
+    <div className="my-3 flex items-center gap-3 rounded-popover border border-border/70 bg-card px-4 py-3 shadow-soft dark:shadow-[inset_0_1px_0_hsl(var(--sheen)),0_1px_2px_hsl(0_0%_0%/0.4)]">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-field bg-primary/10 text-primary">
+        <Icon className="size-4" aria-hidden />
       </span>
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold">{title}</p>
-        <p className="font-mono text-[10px] text-muted-foreground">
+        <p className="truncate text-body font-medium">{title}</p>
+        <p className="font-mono text-caption text-muted-foreground">
           {runtimeFor(type).label} artifact
         </p>
       </div>
@@ -48,7 +56,7 @@ function AssistantMessage({ message, artifactsByIdentifier }: { message: SharedC
   return (
     <div>
       {modelName && (
-        <p className="mb-1.5 font-mono text-[10px] text-muted-foreground">{modelName}</p>
+        <p className="mb-1.5 font-mono text-caption text-muted-foreground">{modelName}</p>
       )}
       <div className="space-y-1">
         {parts.map((part, i) => {
@@ -73,7 +81,7 @@ export function SharedChatTranscript({ messages, artifacts }: { messages: Shared
       <div className="grid min-h-[40vh] place-items-center text-center">
         <div className="max-w-sm">
           <p className="font-serif text-heading">Nothing here yet</p>
-          <p className="pt-1 text-sm leading-6 text-muted-foreground">
+          <p className="pt-1 text-body text-muted-foreground">
             This conversation had no messages when it was shared.
           </p>
         </div>

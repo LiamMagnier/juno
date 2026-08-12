@@ -345,8 +345,11 @@ export function ComposerDictation({
       role="dialog"
       aria-label="Dictation"
       className={cn(
-        "relative z-30 flex items-center justify-center w-full px-3 transition-all duration-fast ease-out-soft",
-        closing ? "translate-y-1.5 scale-[0.98] opacity-0" : "animate-rise-in"
+        // The one rise-in on the chat surface that was unprefixed: composer.tsx,
+        // message-item.tsx and message-list.tsx all gate theirs behind
+        // motion-safe, so reduced-motion users got the slide here anyway.
+        "relative z-30 flex items-center justify-center w-full px-3 transition-[opacity,transform] duration-fast ease-out-soft motion-reduce:transition-none",
+        closing ? "translate-y-1.5 scale-[0.98] opacity-0" : "motion-safe:animate-rise-in"
       )}
     >
       <div className="relative w-full max-w-xl">
@@ -359,7 +362,14 @@ export function ComposerDictation({
           <div
             ref={previewRef}
             aria-live="off"
-            className="absolute bottom-full left-1/2 mb-3 max-h-36 w-[92%] -translate-x-1/2 overflow-y-auto rounded-popover border border-border/60 bg-popover/80 px-4 py-3 text-sm leading-relaxed text-popover-foreground glass-raised backdrop-blur-xl"
+            // `.overlay-glass`, which is the eight-class string this was
+            // open-coding — with two corrections it could not make on its own:
+            // the hairline goes back to full-strength --border (discounted to
+            // /60 it lands at the same value as --popover on black, so the panel
+            // lost its outline), and the fill goes opaque, because a
+            // backdrop-blur over a black transcript has nothing to blur and the
+            // 80% just let the text behind show through the transcription.
+            className="absolute bottom-full left-1/2 mb-3 max-h-36 w-[92%] -translate-x-1/2 overflow-y-auto rounded-popover px-4 py-3 text-sm leading-relaxed overlay-glass"
           >
             {transcript ? (
               <>
@@ -371,7 +381,7 @@ export function ComposerDictation({
               <span className="italic text-muted-foreground/60">Listening…</span>
             )}
             {transcribing && (
-              <span className="mt-1.5 flex items-center gap-1.5 text-caption text-muted-foreground/70">
+              <span className="mt-1.5 flex items-center gap-1.5 text-caption text-muted-foreground">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 Transcribing…
               </span>
@@ -381,7 +391,7 @@ export function ComposerDictation({
 
         {showFallback ? (
           /* Graceful fallback: no Web Speech support, or mic denied. */
-          <div className="flex h-16 items-center justify-between gap-3 rounded-full border border-border bg-card/90 px-3 pl-5 shadow-float backdrop-blur-md">
+          <div className="flex h-16 items-center justify-between gap-3 rounded-full border border-border bg-card px-3 pl-5 shadow-float">
             <span className="flex min-w-0 items-center gap-2.5 text-sm text-muted-foreground">
               <MicOff className="h-4 w-4 shrink-0 text-muted-foreground/60" />
               <span className="truncate">
@@ -396,7 +406,11 @@ export function ComposerDictation({
           </div>
         ) : (
           /* Capsule: 32px shell − 12px padding = 20px-radius inner circles (concentric). */
-          <div className="flex h-16 items-center gap-3 rounded-full border border-border bg-card/90 px-3 shadow-float backdrop-blur-md">
+          // `bg-card`, opaque and unblurred. This capsule stands in for the
+          // composer, which IS `bg-card`, so 90% of that fill behind a blur was
+          // a near-match that let the transcript show through the one control
+          // the user is speaking into.
+          <div className="flex h-16 items-center gap-3 rounded-full border border-border bg-card px-3 shadow-float">
             <Pressable kind="icon" size="lg" onClick={cancel} aria-label="Cancel dictation" className={cn(CAPSULE_CIRCLE, "border border-border")}>
               <X className="h-4 w-4" />
             </Pressable>

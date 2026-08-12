@@ -197,7 +197,10 @@ export function ComposerClarificationPopover({
   // have been shipping two radii and two materials depending on where it sits.
   const shellClass =
     variant === "inline"
-      ? "relative flex w-full flex-col overflow-hidden rounded-popover border border-border/55 bg-card/40 text-foreground"
+      // `bg-card/40` was a no-op: the inline variant is rendered INSIDE the
+      // composer shell, which is itself `bg-card`, so card at 40% over card
+      // resolved to card. A step inside a card is --secondary, per the ladder.
+      ? "relative flex w-full flex-col overflow-hidden rounded-popover border border-border/55 bg-secondary text-foreground"
       : "relative mb-2 flex w-full flex-col overflow-hidden rounded-popover overlay-glass";
 
   return (
@@ -269,8 +272,14 @@ export function ComposerClarificationPopover({
                 aria-current={itemIndex === index ? "step" : undefined}
                 className={cn(
                   "h-1 flex-1 rounded-full transition-[background-color,transform] duration-base ease-out-soft",
-                  filled ? "bg-foreground/70" : "bg-foreground/10",
-                  itemIndex === index && "ring-1 ring-foreground/15 ring-offset-1 ring-offset-card"
+                  // "Which question am I on" was marked with a ring drawn from
+                  // --foreground — a white halo in dark that also computes to
+                  // ~1.1:1 against the card, so the only wayfinding mark on the
+                  // rail was both a glow and invisible. Colour carries it now:
+                  // the current segment is the accent, past segments are ink,
+                  // future ones are the muted track.
+                  filled ? "bg-foreground/70" : "bg-muted",
+                  itemIndex === index && "bg-primary"
                 )}
               />
             );
@@ -310,11 +319,29 @@ export function ComposerClarificationPopover({
                       "group/opt flex min-h-11 w-full items-start gap-3 rounded-menu border px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow,transform,color] duration-base ease-out-soft",
                       "sm:min-h-12 sm:items-center sm:rounded-menu sm:px-3.5 sm:py-3",
                       "active:scale-[0.99] motion-reduce:active:scale-100",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                      // No hand-rolled ring. `ring-offset-card` paints a solid
+                      // CARD-coloured gap, and this component renders in two
+                      // places — inline over the composer and floating as a
+                      // popover — so in the floating case the focused option
+                      // wore a 2px ring of a surface that is not underneath it.
+                      // The global `:focus-visible` outline (globals.css) is the
+                      // authoritative indicator and leaves the real surface
+                      // showing; `outline-none` here was suppressing it.
                       "disabled:pointer-events-none disabled:opacity-55",
                       selected
-                        ? "border-foreground/20 bg-foreground/[0.04] shadow-soft dark:border-foreground/18 dark:bg-foreground/[0.06]"
-                        : "border-border/60 bg-background/40 hover:border-border hover:bg-accent/40"
+                        // `dark:border-foreground/18` is off Tailwind's opacity
+                        // scale and compiled to nothing, so the dark fill next to
+                        // it landed without its paired border. Bracketed so the
+                        // 18 the tuning wanted actually ships.
+                        ? "border-foreground/20 bg-foreground/[0.04] shadow-soft dark:border-foreground/[0.18] dark:bg-foreground/[0.06]"
+                        // Was `bg-background/40`, which is the PAGE colour painted
+                        // inside a floating panel: on dark that is black at 40%
+                        // over the 13% popover, i.e. each unanswered option read
+                        // as a hole punched through the panel. An unselected row
+                        // needs no fill at all — the border carries it, and the
+                        // hover lands on a real rung (accent at full strength;
+                        // accent/40 over accent-lightness popover was invisible).
+                        : "border-border/60 bg-transparent hover:border-border hover:bg-accent"
                     )}
                   >
                     <span
@@ -391,7 +418,10 @@ export function ComposerClarificationPopover({
           type="button"
           onClick={() => void skip()}
           disabled={disabled}
-          className="order-2 self-start rounded-lg px-1 py-1.5 text-left text-[13px] text-muted-foreground transition-colors duration-fast hover:text-foreground disabled:opacity-50 sm:order-1"
+          // `rounded-lg` is 16px — the SURFACE rung, on a bare text button one
+          // line tall, so the focus outline bowed out at the corners. `control`
+          // is the rung the ghost buttons beside it already sit on.
+          className="order-2 self-start rounded-control px-1 py-1.5 text-left text-[13px] text-muted-foreground transition-colors duration-fast hover:text-foreground disabled:opacity-50 sm:order-1"
         >
           Use your judgment
         </button>
@@ -416,7 +446,11 @@ export function ComposerClarificationPopover({
             onClick={() => void continueOrSubmit()}
             disabled={disabled || !canContinue}
             className={cn(
-              "min-w-[7.5rem] rounded-full px-4 shadow-none transition-[transform,opacity,background-color] duration-base ease-out-soft",
+              // No `shadow-none`. Utilities beat the components layer, so it was
+              // erasing the inset top highlight Button's `default` variant draws
+              // — the only elevation cue a solid coral fill has left on a black
+              // ground. This is the primary action of the panel.
+              "min-w-[7.5rem] rounded-full px-4 transition-[transform,opacity,background-color] duration-base ease-out-soft",
               "active:scale-[0.98] motion-reduce:active:scale-100"
             )}
           >
@@ -430,10 +464,12 @@ export function ComposerClarificationPopover({
       {variant === "card" ? (
         <span
           aria-hidden
-          // bg-popover/90 + the blur, not bg-card: the caret has to be made of the
-          // same material as the panel it points out of, and bg-card is a different
-          // fill at a different opacity.
-          className="absolute -bottom-1.5 left-1/2 size-3 -translate-x-1/2 rotate-45 border-b border-r border-border/60 bg-popover/90 backdrop-blur-xl"
+          // The caret has to be made of the same material as the panel it points
+          // out of. That material is now `.overlay-glass`, which is an OPAQUE
+          // --popover with `backdrop-filter: none` — so the old `bg-popover/90`
+          // plus a blur was a second, translucent material meeting the panel at
+          // its bottom edge, and the seam showed. Full opacity, no blur.
+          className="absolute -bottom-1.5 left-1/2 size-3 -translate-x-1/2 rotate-45 border-b border-r border-border/60 bg-popover"
         />
       ) : null}
     </div>

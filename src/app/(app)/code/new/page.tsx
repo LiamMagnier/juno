@@ -89,7 +89,11 @@ function CodeGreeting() {
 
   return (
     <div className="flex w-full flex-col items-center text-center">
-      <p className="mb-3 font-mono text-[11px] text-muted-foreground/80 [animation-fill-mode:backwards] motion-safe:animate-fade-in">
+      {/* `text-label` — the eyebrow token, which carries the 0.10em tracking an
+          eyebrow is meant to have. Every other mono eyebrow on these surfaces
+          (the PR list's section headings, the composer's Add menu, the voice
+          panel's notes) already uses it; this one was a bare 11px. */}
+      <p className="mb-3 font-mono text-label text-muted-foreground [animation-fill-mode:backwards] motion-safe:animate-fade-in">
         Juno Code
       </p>
       {/* 1fr | text | 1fr — text stays screen-centered; mark flanks left. */}
@@ -101,27 +105,35 @@ function CodeGreeting() {
             onClick={() => setPopping(true)}
             onAnimationEnd={() => setPopping(false)}
             className={cn(
-              // The glyph is 1.32rem (21px) — the weight the greeting wants,
-              // and under the 24x24 WCAG 2.2 (2.5.8) target minimum. grid +
-              // place-items grows the hit area around it without moving it,
-              // exactly as the chat greeting's mark does. `outline-none` is
+              // The glyph is under the 24x24 WCAG 2.2 (2.5.8) target minimum, so
+              // grid + place-items grows the hit area around it without moving
+              // it, exactly as the chat greeting's mark does. `outline-none` is
               // gone with it: it removed the global :focus-visible outline and
               // put nothing back, so this control had no keyboard focus at all.
-              "grid size-6 shrink-0 place-items-center [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in sm:size-8",
+              //
+              // Both sizes stepped up with the heading: the h1 moved off two
+              // pinned rem values onto `text-display`, whose clamp tops out at
+              // 48px rather than the old 37.6px, and a mark that did not follow
+              // would have shrunk optically against it at every wide viewport.
+              "grid size-7 shrink-0 place-items-center [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in sm:size-10",
               popping && "juno-mark-popping",
             )}
           >
             <JunoMark
               className={cn(
-                "block h-[1.32rem] w-[1.32rem] sm:h-[1.83rem] sm:w-[1.83rem]",
+                "block h-[1.6rem] w-[1.6rem] sm:h-[2.2rem] sm:w-[2.2rem]",
                 "transition-transform duration-base ease-spring motion-reduce:transition-none",
                 !popping && "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
               )}
             />
           </button>
         </div>
+        {/* `text-display`, the token the identical role in code-session-view
+            uses. This was two arbitrary sizes pinned behind a breakpoint, which
+            is the exact thing the display clamp exists to replace — and the
+            breakpoint made small viewports SMALLER than the scale intends. */}
         <h1
-          className="text-center font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
+          className="text-center font-serif text-display font-normal tracking-tight"
           suppressHydrationWarning
         >
           <span className="inline-block [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
@@ -664,18 +676,37 @@ export default function NewCodeSessionPage() {
                     above={
                       canAttach && (
                         <div
+                          // `motion-reduce:transition-none` — the twin of this
+                          // collapse in code-session-view carries it, and this
+                          // one animates on every attach.
                           className={cn(
-                            "grid transition-[grid-template-rows] duration-base ease-out-soft",
+                            "grid transition-[grid-template-rows] duration-base ease-out-soft motion-reduce:transition-none",
                             uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
                           )}
                         >
                           <div className="min-h-0 overflow-hidden">
-                            <div className="flex flex-wrap gap-2 px-3 pb-0 pt-3 sm:px-3.5">
+                            {/* `p-3 pb-0`, the inset the session view's tray
+                                uses. The chip inside is deliberately identical
+                                across the two screens (see the note on it
+                                below); the tray around it was not — 12px flat
+                                there against 12/14px responsive here — so the
+                                same attachment sat at two different gutters one
+                                screen apart. */}
+                            <div className="flex flex-wrap gap-2 p-3 pb-0">
                               {uploads.map((u) => (
                                 <div
                                   key={u.localId}
                                   className={cn(
-                                    "group relative flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-xs shadow-soft",
+                                    // `bg-muted`, not `bg-background`: the chip
+                                    // sits inside ComposerShell's `bg-card`, and
+                                    // on true black a background-filled chip
+                                    // punches a 0%-lightness hole into a 6.5%
+                                    // panel. Radius is the shell's own seated
+                                    // control rung; `shadow-soft` is gone,
+                                    // being black ink on black here. Identical
+                                    // to the session view's chip on purpose —
+                                    // it is the same chip, one screen apart.
+                                    "group relative flex items-center gap-2 rounded-composer-control border border-border/60 bg-muted px-2.5 py-2 text-xs",
                                     removingIds.includes(u.localId)
                                       ? "pointer-events-none motion-safe:animate-pop-out"
                                       : "motion-safe:animate-rise-in",
@@ -706,10 +737,15 @@ export default function NewCodeSessionPage() {
                                   {u.status === "uploading" && (
                                     <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                                   )}
+                                  {/* `bg-secondary`, not `bg-foreground` — see
+                                      the session view's twin. A 94%-lightness
+                                      disc on a 0% ground made a 20px
+                                      micro-control the brightest object on the
+                                      screen. */}
                                   <button
                                     type="button"
                                     onClick={() => removeUpload(u.localId)}
-                                    className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
+                                    className="absolute -right-1.5 -top-1.5 rounded-full border border-border bg-secondary p-0.5 text-foreground opacity-0 transition-[opacity,background-color,border-color,color] duration-fast ease-out-soft group-hover:opacity-100 hover:border-destructive hover:bg-destructive hover:text-destructive-foreground focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
                                     aria-label="Remove attachment"
                                   >
                                     <X className="h-3 w-3 coarse:h-4 coarse:w-4" />
@@ -731,7 +767,18 @@ export default function NewCodeSessionPage() {
                         disabled={submitting}
                         placeholder="Describe a task or ask a question"
                         aria-label="Describe the task for this Juno Code session"
-                        className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]"
+                        // The eased height is real layout movement — the
+                        // composer and the greeting above it both shift — so it
+                        // takes the reduced-motion escape the rest of this
+                        // screen's transitions already carry.
+                        //
+                        // Placeholder at full --muted-foreground, matching the
+                        // session composer: input.tsx, textarea.tsx and
+                        // select.tsx each removed `/70` with a note recording it
+                        // as a 2.91:1 failure against a token tuned to 5.3:1,
+                        // and this is the only instruction on an otherwise empty
+                        // screen.
+                        className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 motion-reduce:transition-none sm:px-[18px] sm:pt-[17px]"
                       />
                     }
                     controls={
@@ -920,7 +967,13 @@ export default function NewCodeSessionPage() {
                   />
 
                   {dragging && (
-                    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-composer border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in sm:rounded-lg">
+                    // `bg-primary/15`, the alpha the session view's identical
+                    // overlay settled on: over the true-black ground /10 tints
+                    // to roughly 2% lightness, so the scrim vanished and the
+                    // dashed outline was left saying "drop here" alone — and
+                    // the same gesture then read differently on the two Code
+                    // screens.
+                    <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-composer border-2 border-dashed border-primary/45 bg-primary/15 backdrop-blur-sm motion-safe:animate-fade-in">
                       <FileUp className="h-6 w-6 text-primary" />
                       <span className="font-mono text-label text-primary">Drop to attach</span>
                     </div>
@@ -962,14 +1015,25 @@ export default function NewCodeSessionPage() {
 
             {/* Inline task-dispatch failures (cloud only). */}
             {cloudStartError === "not_configured" && (
+              // bg-warning/10, the alpha globals.css names as the product's
+              // warning chip. At /5 the fill was ~1% lightness on the black
+              // ground, so the border carried the banner alone.
               <p
                 role="alert"
-                className="mt-2.5 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/5 px-3.5 py-2.5 text-sm text-warning-foreground motion-safe:animate-rise-in"
+                className="mt-2.5 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 px-3.5 py-2.5 text-sm text-warning-foreground motion-safe:animate-rise-in"
               >
                 <Cloud className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
                 <span>
                   Cloud runs aren’t enabled on this server yet. Ask an admin to configure the cloud runner, or switch to{" "}
-                  <button type="button" onClick={() => switchTarget("device")} className="font-medium underline underline-offset-2 hover:text-foreground">
+                  {/* rounded-xs so the global 2px focus outline traces a corner
+                      rather than a bare rectangle through the sentence, and a
+                      real colour transition — this is the banner's only way
+                      out and it changed colour instantly on hover. */}
+                  <button
+                    type="button"
+                    onClick={() => switchTarget("device")}
+                    className="rounded-xs font-medium underline underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground"
+                  >
                     Device
                   </button>{" "}
                   to run on your Mac.
@@ -982,10 +1046,20 @@ export default function NewCodeSessionPage() {
               // recoverable one carrying the retry — it was the silent one.
               <div
                 role="alert"
-                className="mt-2.5 flex items-center justify-between gap-3 rounded-field border border-destructive/40 bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive motion-safe:animate-rise-in"
+                className="mt-2.5 flex items-center justify-between gap-3 rounded-field border border-destructive/40 bg-destructive/10 px-3.5 py-2.5 text-sm text-destructive motion-safe:animate-rise-in"
               >
                 <span>Couldn’t start the cloud run — this is usually temporary.</span>
-                <Button variant="outline" size="sm" onClick={() => void submit()} disabled={submitting} className="shrink-0 gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive">
+                {/* The button's border matches the banner's: at /30 against the
+                    frame's /40 the retry read as a lighter-weight edge inside a
+                    heavier one, which is a hierarchy the two do not have. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void submit()}
+                  disabled={submitting}
+                  className="shrink-0 gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/20 hover:text-destructive coarse:h-11"
+                >
+                  {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
                   Try again
                 </Button>
               </div>

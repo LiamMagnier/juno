@@ -34,7 +34,13 @@ export function WorkSkillRow({ skill, index = 0 }: { skill: ClientWorkSkill; ind
     <Link
       href={`/work/skills/${skill.id}`}
       className={cn(
-        "group flex items-start gap-3 rounded-field border border-border/60 bg-card/60 px-3.5 py-3 transition-[background-color,border-color] duration-base ease-out-soft hover:border-border hover:bg-card motion-safe:animate-rise-in",
+        // The same rest/hover/press/focus set WorkSessionRow carries. These
+        // three sibling rows are the same object in three lists and had neither a
+        // focus ring — a keyboard reader could not see which row they were on —
+        // nor any press feedback.
+        "group flex items-start gap-3 rounded-field border border-border/60 bg-card px-3.5 py-3 transition-[background-color,border-color,transform] duration-base ease-out-soft hover:border-border hover:bg-secondary motion-safe:animate-rise-in",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "motion-safe:hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.997]",
         "[animation-fill-mode:backwards]",
         !skill.enabled && "opacity-75"
       )}
@@ -45,12 +51,12 @@ export function WorkSkillRow({ skill, index = 0 }: { skill: ClientWorkSkill; ind
           <span className="min-w-0 truncate text-sm font-medium text-foreground">{skill.name}</span>
           <span className="shrink-0 font-mono text-[10px] text-muted-foreground">/{skill.slug}</span>
           {!skill.enabled && (
-            <span className="shrink-0 rounded-full border border-border/70 bg-background/50 px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
+            <span className="shrink-0 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
               Off
             </span>
           )}
           {auto && (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background/50 px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
               <Sparkles className="h-2.5 w-2.5" aria-hidden="true" /> Chosen for you
             </span>
           )}
@@ -60,12 +66,12 @@ export function WorkSkillRow({ skill, index = 0 }: { skill: ClientWorkSkill; ind
             {skill.description}
           </span>
         )}
-        <span className="mt-1.5 block font-mono text-[10px] text-muted-foreground/70">
+        <span className="mt-1.5 block font-mono text-[10px] tabular-nums text-muted-foreground">
           v{skill.currentVersion} · {trustLabel(skill.trust)} · {workTimeAgo(skill.updatedAt)}
         </span>
       </span>
       <ChevronRight
-        className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
+        className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
         aria-hidden="true"
       />
     </Link>

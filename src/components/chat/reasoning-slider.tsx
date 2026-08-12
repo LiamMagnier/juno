@@ -77,7 +77,7 @@ const travelX = (frac: number) => `translateX(calc((100% - ${THUMB}) * ${frac}))
 /** Shared verbatim by the thumb carrier and the fill carrier — the lockstep
  *  guarantee is that neither can drift from the other without editing this. */
 const TRAVEL_MOTION =
-  "motion-safe:transition-[transform] motion-safe:duration-base motion-safe:ease-spring";
+  "motion-safe:transition-[transform] motion-safe:duration-base motion-safe:ease-out-strong";
 
 /** The recoil layer: leads the travel by RECOIL while a move is in flight, then
  *  releases. Faster in than the travel, so the thumb is running ahead of its own
@@ -275,18 +275,24 @@ export function ReasoningSlider({
                   // that only exists inside a popover reached by keyboard. The
                   // global :focus-visible rule is authoritative and draws a real
                   // 2px ring.
-                  "reasoning-fast-toggle group relative inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-spring coarse:size-11",
+                  "reasoning-fast-toggle group relative inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong coarse:size-11",
                   "active:scale-90 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none",
                   fastMode
                     ? "border-foreground bg-foreground text-background shadow-pop"
-                    : "border-border/70 bg-background/70 text-muted-foreground shadow-soft hover:border-foreground/20 hover:bg-accent hover:text-foreground"
+                    // `bg-secondary`, not `bg-background/70`. This control only
+                    // ever renders inside a popover, and the page colour at 70%
+                    // over the popover ground resolves BELOW it — the off state
+                    // was a hole punched in the panel rather than a raised chip.
+                    // Secondary is the rung the ladder gives a control inside a
+                    // floating layer.
+                    : "border-border/70 bg-secondary text-muted-foreground shadow-soft hover:border-foreground/20 hover:bg-accent hover:text-foreground"
                 )}
               >
                 <Zap
                   aria-hidden="true"
                   strokeWidth={1.75}
                   className={cn(
-                    "reasoning-fast-icon size-3.5 transition-transform duration-base ease-spring group-hover:-rotate-6 group-hover:scale-110 motion-reduce:transform-none motion-reduce:transition-none",
+                    "reasoning-fast-icon size-3.5 transition-transform duration-base ease-out-strong group-hover:-rotate-6 group-hover:scale-110 motion-reduce:transform-none motion-reduce:transition-none",
                     fastMode && "fill-current"
                   )}
                 />
@@ -308,18 +314,24 @@ export function ReasoningSlider({
                 onClick={() => onProModeChange(!proMode)}
                 className={cn(
                   // Same as the Flash toggle above: the global :focus-visible rule owns focus.
-                  "reasoning-pro-toggle group relative inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-spring coarse:size-11",
+                  "reasoning-pro-toggle group relative inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong coarse:size-11",
                   "active:scale-90 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none",
                   proMode
                     ? "border-foreground bg-foreground text-background shadow-pop"
-                    : "border-border/70 bg-background/70 text-muted-foreground shadow-soft hover:border-foreground/20 hover:bg-accent hover:text-foreground"
+                    // `bg-secondary`, not `bg-background/70`. This control only
+                    // ever renders inside a popover, and the page colour at 70%
+                    // over the popover ground resolves BELOW it — the off state
+                    // was a hole punched in the panel rather than a raised chip.
+                    // Secondary is the rung the ladder gives a control inside a
+                    // floating layer.
+                    : "border-border/70 bg-secondary text-muted-foreground shadow-soft hover:border-foreground/20 hover:bg-accent hover:text-foreground"
                 )}
               >
                 <Sparkles
                   aria-hidden="true"
                   strokeWidth={1.75}
                   className={cn(
-                    "reasoning-pro-icon size-3.5 transition-transform duration-base ease-spring group-hover:scale-110 motion-reduce:transform-none motion-reduce:transition-none",
+                    "reasoning-pro-icon size-3.5 transition-transform duration-base ease-out-strong group-hover:scale-110 motion-reduce:transform-none motion-reduce:transition-none",
                     proMode && "fill-current"
                   )}
                 />
@@ -345,7 +357,12 @@ export function ReasoningSlider({
           // never seen. What it must NOT be is `ring-foreground/15` (~1.1:1
           // here) — the ring token is the one the rest of the product focuses
           // with, and 2px/offset-2 mirrors the global rule's geometry.
-          "reasoning-slider-track relative h-9 w-full rounded-full bg-muted/70 transition-[opacity,box-shadow] duration-base ease-out-soft focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background",
+          // `bg-secondary` and `ring-offset-popover`, both for the same reason:
+          // this control lives in a popover. `bg-muted/70` resolved to an
+          // unnamed 10.6% against the 13% panel, and the focus ring's offset
+          // painted a 2px band of the PAGE colour — pure black inside a lit
+          // panel — around the track whenever it was focused.
+          "reasoning-slider-track relative h-9 w-full rounded-full bg-secondary transition-[opacity,box-shadow] duration-base ease-out-soft focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-popover",
           disabled && "pointer-events-none opacity-50"
         )}
       >
@@ -476,7 +493,12 @@ export function ReasoningSlider({
                   not playing. */}
               <span
                 className={cn(
-                  "block size-full rounded-full bg-white shadow-pop ring-1 ring-black/[0.06]",
+                  // The thumb keeps its light-theme white, but on the black sheet a
+                  // pure #fff disc out-glares --foreground (deliberately softened
+                  // to 94%) and its `ring-black/[0.06]` rim does nothing against a
+                  // black ground, so the grip lost its edge exactly where it needs
+                  // one. Dark takes the foreground ink and a real black rim.
+                  "block size-full rounded-full bg-white shadow-pop ring-1 ring-black/[0.06] dark:bg-foreground dark:ring-black/50",
                   "motion-safe:transition-[transform] motion-safe:duration-fast motion-safe:ease-out-soft",
                   held
                     ? "motion-safe:scale-[1.06]"

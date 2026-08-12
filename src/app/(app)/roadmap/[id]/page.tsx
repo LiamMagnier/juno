@@ -3,10 +3,12 @@
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, BadgeCheck, Pin } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BadgeCheck, MessageSquare, Pin, SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -26,6 +28,7 @@ import {
   type FeatureStatus,
 } from "@/lib/roadmap";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 
 type Detail = {
   request: RoadmapRequest;
@@ -121,10 +124,31 @@ export default function RoadmapDetailPage() {
     return <CenteredMessage title="Couldn’t load this request" body="Something went wrong." retry={load} onBack={() => router.push("/roadmap")} />;
   }
   if (!data) {
+    // The skeleton previews the shape that replaces it — vote rail beside a
+    // title block, then the description — rather than two anonymous bars that
+    // reflow the whole column the moment data lands.
     return (
-      <div className="mx-auto w-full max-w-3xl px-4 py-8">
-        <div className="skeleton mb-4 h-8 w-40 rounded-lg" />
-        <div className="skeleton h-40 w-full rounded-lg" />
+      <div className="app-page-scroll">
+        <div className="app-page-content max-w-3xl">
+          <div className="skeleton mb-4 h-8 w-28 rounded-control" />
+          <div className="flex gap-4">
+            <div className="skeleton h-14 w-12 shrink-0 rounded-control" />
+            <div className="min-w-0 flex-1 space-y-2">
+              {/* The literal 60/120/…/360ms ladder written out by hand is exactly
+                  STAGGER.loose, so this is the same rhythm said in the shared
+                  vocabulary — and it now inherits the cap, which the hand-written
+                  version could not. */}
+              <div className="skeleton h-5 w-40 rounded-full" style={staggerDelay(1, "loose")} />
+              <div className="skeleton h-7 w-3/4 rounded-control" style={staggerDelay(2, "loose")} />
+              <div className="skeleton h-4 w-32 rounded-control" style={staggerDelay(3, "loose")} />
+            </div>
+          </div>
+          <div className="mt-5 space-y-2">
+            <div className="skeleton h-4 w-full rounded-control" style={staggerDelay(4, "loose")} />
+            <div className="skeleton h-4 w-11/12 rounded-control" style={staggerDelay(5, "loose")} />
+            <div className="skeleton h-4 w-2/3 rounded-control" style={staggerDelay(6, "loose")} />
+          </div>
+        </div>
       </div>
     );
   }
@@ -132,10 +156,10 @@ export default function RoadmapDetailPage() {
   const { request: r, comments, events, isOwner } = data;
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-3xl">
         <Button variant="ghost" size="sm" onClick={() => router.push("/roadmap")} className="mb-4 gap-1.5 text-muted-foreground">
-          <ArrowLeft className="h-4 w-4" /> Roadmap
+          <ArrowLeft className="size-4" /> Roadmap
         </Button>
 
         {/* Header card */}
@@ -146,14 +170,14 @@ export default function RoadmapDetailPage() {
               <StatusBadge status={r.status} />
               <CategoryChip category={r.category} />
               {r.pinned && (
-                <span className="inline-flex items-center gap-1 font-mono text-[10px] text-primary">
-                  <Pin className="h-3 w-3 fill-primary text-primary" /> Pinned
+                <span className="inline-flex items-center gap-1 font-mono text-caption text-primary">
+                  <Pin className="size-3 shrink-0 fill-primary text-primary" /> Pinned
                 </span>
               )}
             </div>
             <h1 className="mt-2 font-serif text-title font-medium">{r.title}</h1>
             <p className="mt-1 flex items-center gap-2 text-caption text-muted-foreground">
-              <DotIdenticon seed={r.author.id} className="h-4 w-4" />
+              <DotIdenticon seed={r.author.id} className="size-4 shrink-0" />
               {r.author.name ?? "Someone"} · {timeAgo(r.createdAt)}
             </p>
           </div>
@@ -162,7 +186,7 @@ export default function RoadmapDetailPage() {
         <p className="mt-5 whitespace-pre-wrap text-body leading-relaxed text-foreground/90">{r.description}</p>
 
         {r.status === "DECLINED" && r.declineReason && (
-          <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          <div className="mt-4 rounded-field border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
             <span className="font-medium">Declined:</span> {r.declineReason}
           </div>
         )}
@@ -185,7 +209,7 @@ export default function RoadmapDetailPage() {
                 </SelectContent>
               </Select>
               <Button variant={r.pinned ? "default" : "outline"} size="sm" onClick={() => moderate({ pinned: !r.pinned })} className="gap-1.5">
-                <Pin className={`h-3.5 w-3.5 ${r.pinned ? "fill-current" : ""}`} /> {r.pinned ? "Unpin" : "Pin"}
+                <Pin className={cn("size-3.5 shrink-0", r.pinned && "fill-current")} /> {r.pinned ? "Unpin" : "Pin"}
               </Button>
               {r.status === "DECLINED" && (
                 <Button
@@ -210,7 +234,7 @@ export default function RoadmapDetailPage() {
             <ol className="mt-4 space-y-3">
               {events.map((e) => (
                 <li key={e.id} className="flex items-start gap-3">
-                  <span className={cn("mt-1 h-2 w-2 shrink-0 rounded-full", STATUS_META[e.status].dot)} />
+                  <span aria-hidden className={cn("mt-1 size-2 shrink-0 rounded-full", STATUS_META[e.status].dot)} />
                   <div className="min-w-0">
                     <p className="text-sm">
                       <span className="font-medium">{STATUS_META[e.status].label}</span>
@@ -232,16 +256,20 @@ export default function RoadmapDetailPage() {
               <li
                 key={c.id}
                 className={cn(
-                  "rounded-lg border p-3.5 motion-safe:animate-rise-in",
-                  c.official ? "border-primary/40 bg-primary/5" : "border-border bg-card"
+                  "rounded-card border p-3.5 motion-safe:animate-rise-in",
+                  // bg-primary/15, not /5: re-based against black, a 5% coral wash
+                  // resolved to ~2.3% lightness — DARKER than the plain bg-card
+                  // comment beside it, so the official reply was the one that sank.
+                  // /15 lands level with --card and separates by hue instead.
+                  c.official ? "border-primary/40 bg-primary/15" : "border-border bg-card"
                 )}
               >
                 <div className="mb-1.5 flex items-center gap-2 text-caption text-muted-foreground">
-                  <DotIdenticon seed={c.author.id} className="h-4 w-4" />
+                  <DotIdenticon seed={c.author.id} className="size-4 shrink-0" />
                   <span className="font-medium text-foreground/90">{c.author.name ?? "Someone"}</span>
                   {c.official && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-1.5 py-0.5 font-mono text-[9px] text-primary">
-                      <BadgeCheck className="h-3 w-3" /> Juno team
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-1.5 py-0.5 font-mono text-caption text-primary">
+                      <BadgeCheck className="size-3 shrink-0" /> Juno team
                     </span>
                   )}
                   <span>· {timeAgo(c.createdAt)}</span>
@@ -250,7 +278,7 @@ export default function RoadmapDetailPage() {
               </li>
             ))}
             {comments.length === 0 && (
-              <p className="py-4 text-center text-sm text-muted-foreground">No comments yet — start the conversation.</p>
+              <EmptyState size="panel" icon={MessageSquare} title="No comments yet" description="Start the conversation." />
             )}
           </ul>
 
@@ -265,13 +293,11 @@ export default function RoadmapDetailPage() {
             />
             <div className="flex items-center justify-between">
               {isOwner ? (
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={official}
-                    onChange={(e) => setOfficial(e.target.checked)}
-                    className="h-4 w-4 accent-[hsl(var(--primary))]"
-                  />
+                // The Switch primitive, not a bare native checkbox: this was the only
+                // `accent-[…]` in the area and the only control on the page rendering
+                // with browser-default sizing, focus ring and hover.
+                <label htmlFor="official-reply" className="flex cursor-pointer items-center gap-2.5 text-sm text-muted-foreground">
+                  <Switch id="official-reply" checked={official} onCheckedChange={setOfficial} />
                   Post as official reply
                 </label>
               ) : (
@@ -299,20 +325,29 @@ function CenteredMessage({
   onBack: () => void;
   retry?: () => void;
 }) {
+  // Through EmptyState so a dead-end on this page is framed the same way as one
+  // anywhere else. `retry` present means the fetch failed — that is the error
+  // tone; a 404 is not a failure, it is a page that is genuinely not there.
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
-      <p className="font-serif text-heading">{title}</p>
-      <p className="text-sm text-muted-foreground">{body}</p>
-      <div className="flex gap-2">
-        {retry && (
-          <Button variant="outline" size="sm" onClick={retry}>
-            Try again
-          </Button>
-        )}
-        <Button size="sm" onClick={onBack}>
-          Back to roadmap
-        </Button>
-      </div>
+    <div className="flex h-full items-center justify-center px-4">
+      <EmptyState
+        tone={retry ? "error" : "empty"}
+        icon={retry ? AlertTriangle : SearchX}
+        title={title}
+        description={body}
+        action={
+          <>
+            {retry && (
+              <Button variant="outline" size="sm" onClick={retry}>
+                Try again
+              </Button>
+            )}
+            <Button size="sm" onClick={onBack}>
+              Back to roadmap
+            </Button>
+          </>
+        }
+      />
     </div>
   );
 }

@@ -297,16 +297,16 @@ export function ActivityTimeline({
                   thought process invites the reader to open a panel that has
                   nothing in it — and quietly implies the model reasoned when it
                   did not. `hasReasoning` is already computed above. */}
-              <span className="block font-serif text-[0.8125rem] font-medium leading-4 tracking-[0.01em] text-muted-foreground/65">
+              <span className="block font-serif text-[0.8125rem] font-medium leading-4 tracking-[0.01em] text-muted-foreground">
                 {hasReasoning ? "Thought process" : "Run"}
               </span>
-              <span className="block truncate text-body leading-5 text-foreground/78">
+              <span className="block truncate text-body leading-5 text-foreground/80">
                 {detail}
                 {run.note && <span className="text-warning"> · {run.note}</span>}
               </span>
             </span>
-            {run.elapsedMs !== null && <span aria-hidden="true" className="shrink-0 px-1 font-mono text-caption tabular-nums text-muted-foreground/60">{formatSpan(run.elapsedMs)}</span>}
-            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/35 transition-[color,transform] duration-base ease-out-soft group-hover/thought:translate-x-0.5 group-hover/thought:text-foreground/70 motion-reduce:transition-none" aria-hidden="true" />
+            {run.elapsedMs !== null && <span aria-hidden="true" className="shrink-0 px-1 font-mono text-caption tabular-nums text-muted-foreground">{formatSpan(run.elapsedMs)}</span>}
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/60 transition-[color,transform] duration-base ease-out-soft group-hover/thought:translate-x-0.5 group-hover/thought:text-foreground/70 motion-reduce:transition-none" aria-hidden="true" />
           </>
         )}
       </Pressable>

@@ -119,7 +119,7 @@ export function ComposerAddMenu({
           <Plus
             aria-hidden="true"
             strokeWidth={1.75}
-            className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+            className="composer-add-icon size-4 transition-transform duration-base ease-out-strong group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
           />
         </Button>
       </DropdownMenuTrigger>
@@ -205,7 +205,7 @@ function SkillsSubmenu({ section }: { section: ComposerSkillsSection }) {
                   <Sparkles className={cn(active ? "text-primary" : "text-muted-foreground")} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{skill.name}</span>
-                    <span className="block truncate font-mono text-[10px] text-muted-foreground/70">
+                    <span className="block truncate font-mono text-[10px] text-muted-foreground">
                       /{skill.slug}
                     </span>
                   </span>

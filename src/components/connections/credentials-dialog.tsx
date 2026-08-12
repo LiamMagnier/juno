@@ -56,7 +56,11 @@ function loadMusicKit(): Promise<MusicKitGlobal> {
 
 function HelpSteps() {
   return (
-    <div className="rounded-card border border-border/50 bg-muted/20 p-3.5 text-caption text-muted-foreground">
+    // `bg-secondary` (9.5% L), opaque. This was `bg-muted/20`, which inside a
+    // dialog painted on --popover (13% L) composites DARKER than the surface it
+    // sits on — so the well that is meant to read as a recess read as a smudge,
+    // and in light mode it barely existed at all.
+    <div className="rounded-card border border-border/60 bg-secondary p-3.5 text-caption text-muted-foreground">
       <p className="flex items-start gap-1.5">
         <KeyRound className="mt-0.5 size-3.5 shrink-0 text-primary" />
         Juno signs in with an app-specific password — never your main Apple ID password.
@@ -166,7 +170,14 @@ export function CredentialsDialog({
         {isMusic ? (
           <>
             {error && (
-              <p className="flex items-start gap-2 rounded-field border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              // role="alert": this replaces a failed submit and appears with no
+              // other cue, so a screen-reader user got silence where a sighted
+              // user got red. /10 rather than /5 — a 5% destructive tint over
+              // pure black has no ground left to speak of.
+              <p
+                role="alert"
+                className="flex items-start gap-2 rounded-field border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive motion-safe:animate-fade-in"
+              >
                 <AlertCircle className="mt-0.5 size-4 shrink-0" />
                 {error}
               </p>
@@ -175,8 +186,15 @@ export function CredentialsDialog({
               <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
                 Cancel
               </Button>
+              {/* Same spinner-swap and same icon size as the Connect button in
+                  the password branch below. This one kept its Music2 glyph
+                  while waiting on Apple's popup — the only sign anything was
+                  happening was the label — and drew it at 3.5 where its
+                  sibling draws 4, which is also the size the Button base
+                  forces on any icon that does not name one. */}
               <Button className="gap-1.5" onClick={authorizeMusic} disabled={busy}>
-                <Music2 className="h-3.5 w-3.5" /> {busy ? "Waiting for Apple…" : "Sign in with Apple Music"}
+                {busy ? <Loader2 className="size-4 animate-spin" /> : <Music2 className="size-4" />}
+                {busy ? "Waiting for Apple…" : "Sign in with Apple Music"}
               </Button>
             </DialogFooter>
           </>
@@ -208,7 +226,14 @@ export function CredentialsDialog({
               />
             </div>
             {error && (
-              <p className="flex items-start gap-2 rounded-field border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              // role="alert": this replaces a failed submit and appears with no
+              // other cue, so a screen-reader user got silence where a sighted
+              // user got red. /10 rather than /5 — a 5% destructive tint over
+              // pure black has no ground left to speak of.
+              <p
+                role="alert"
+                className="flex items-start gap-2 rounded-field border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive motion-safe:animate-fade-in"
+              >
                 <AlertCircle className="mt-0.5 size-4 shrink-0" />
                 {error}
               </p>

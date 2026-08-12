@@ -57,8 +57,15 @@ export function ChatWorkSwitcher({ className }: { className?: string }) {
     [router, value],
   );
 
+  const [incognito, setIncognito] = React.useState(false);
+  React.useEffect(() => {
+    const handleIncognito = (event: Event) => setIncognito((event as CustomEvent<boolean>).detail);
+    window.addEventListener("juno:incognito", handleIncognito);
+    return () => window.removeEventListener("juno:incognito", handleIncognito);
+  }, []);
+
   return (
-    <div className={cn("flex justify-center", className)}>
+    <div className={cn("flex justify-center transition-opacity duration-fast", className, incognito && "pointer-events-none opacity-50")}>
       <SegmentedControl<Surface>
         value={value}
         onChange={go}
@@ -67,7 +74,7 @@ export function ChatWorkSwitcher({ className }: { className?: string }) {
         // panel behind it, so it earns its size from the two words in it rather
         // than from a column width it has to fill.
         className="w-auto"
-        optionClassName="gap-1.5 px-4 py-1.5 text-[13px]"
+        optionClassName="gap-1.5 px-4 py-1.5 text-[13px] font-medium"
         options={[
           { value: "chat", label: "Chat", icon: <AppIcons.home className="h-3.5 w-3.5" /> },
           { value: "work", label: "Work", icon: <AppIcons.work className="h-3.5 w-3.5" /> },

@@ -206,22 +206,36 @@ function itemCount(block: VisualBlock): number {
   return itemsFor(block).length;
 }
 
+/*
+ * One note on radii for the whole file, because they were all wrong the same way.
+ *
+ * Every shape in here — the outer section, an 80px card, a 24px number badge, a
+ * mono chip — was drawn at `rounded-lg`, which is `var(--radius)`, 16px, the
+ * SURFACE rung. So a badge barely wider than its own corner radius rendered as a
+ * lozenge, and the outer section was rounder than the transcript card it sits
+ * beside (artifact-inline-card, `rounded-card`). The handful of `rounded-md`
+ * (8px) tiles were worse: 8 is not on the ladder at all.
+ *
+ * They now land where the ladder says they land: `card` (14) for the section,
+ * `field` (10) for rows, panels and icon tiles — the ladder names that rung for
+ * exactly this — and `xs` (6) for chips and badges.
+ */
 function Header({ block }: { block: VisualBlock }) {
   const Icon = iconFor(block.type);
   const count = itemCount(block);
   return (
     <div className="border-b border-border/70 bg-card px-4 py-3">
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-primary/10 shadow-soft">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-field border bg-primary/10 shadow-soft">
           <Icon className="h-4 w-4 text-primary" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-md border bg-muted/45 px-2 py-1 font-mono text-[10px] text-muted-foreground">
+            <span className="rounded-xs border bg-muted px-2 py-1 font-mono text-[10px] text-muted-foreground">
               {typeLabel(block.type)}
             </span>
             {count > 0 && (
-              <span className="font-mono text-[10px] text-muted-foreground/70">
+              <span className="font-mono text-[10px] text-muted-foreground">
                 {count} {count === 1 ? "part" : "parts"}
               </span>
             )}
@@ -251,11 +265,12 @@ function CardsBlock({ block }: { block: VisualBlock }) {
               onPointerDown={() => setActive(index)}
               onClick={() => setActive(index)}
               className={cn(
-                "group flex min-h-20 items-start gap-3 rounded-lg border bg-background/65 p-3 text-left transition-all duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent/35 active:translate-y-0 active:scale-[0.99]",
+                "group flex min-h-20 items-start gap-3 rounded-field border bg-card p-3 text-left transition-[transform,background-color,border-color,box-shadow] duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent active:translate-y-0 active:scale-[0.99]",
+                "motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
                 isActive && "border-primary/55 bg-primary/10 shadow-soft"
               )}
             >
-              <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-card font-mono text-[11px] font-semibold transition-colors duration-base ease-out-soft", isActive && "border-primary/40 text-primary")}>
+              <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-xs border bg-card font-mono text-[11px] font-semibold transition-colors duration-base ease-out-soft", isActive && "border-primary/40 text-primary")}>
                 {item.label ?? index + 1}
               </span>
               <span className="min-w-0">
@@ -267,14 +282,18 @@ function CardsBlock({ block }: { block: VisualBlock }) {
         })}
       </div>
       {/* Keyed so the focus panel animates on each selection. */}
-      <div key={active} className="rounded-lg border bg-muted/30 p-4 motion-safe:animate-fade-in">
+      <div key={active} className="rounded-field border bg-secondary p-4 motion-safe:animate-fade-in">
         <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
           <Maximize2 className="h-3.5 w-3.5" /> Focus
         </div>
         <h4 className="mt-3 text-base font-semibold leading-6">{itemTitle(selected, "Selected card")}</h4>
         {primaryText(selected) && <p className="mt-2 whitespace-pre-line text-sm leading-6 text-muted-foreground">{primaryText(selected)}</p>}
         {selected.detail && selected.detail !== primaryText(selected) && (
-          <p className="mt-3 rounded-md bg-background/65 px-3 py-2 text-sm leading-6 text-muted-foreground">{selected.detail}</p>
+          // `bg-accent`, not `bg-card`. This note is nested inside the
+          // `bg-secondary` focus panel, so card (6.5%) was a step DOWN from its
+          // own container — on the black ground you cannot recess, so it read as
+          // a hole in the panel. Accent is the rung above secondary.
+          <p className="mt-3 rounded-xs bg-accent px-3 py-2 text-sm leading-6 text-muted-foreground">{selected.detail}</p>
         )}
       </div>
     </div>
@@ -298,7 +317,8 @@ function FlowBlock({ block }: { block: VisualBlock }) {
               onPointerDown={() => setActive(index)}
               onClick={() => setActive(index)}
               className={cn(
-                "flex min-w-0 items-start gap-2 rounded-lg border bg-background/65 p-3 text-left transition-all duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent/35 active:translate-y-0 active:scale-[0.99]",
+                "flex min-w-0 items-start gap-2 rounded-field border bg-card p-3 text-left transition-[transform,background-color,border-color,box-shadow] duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent active:translate-y-0 active:scale-[0.99]",
+                "motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
                 isActive && "border-primary/55 bg-primary/10 shadow-soft"
               )}
             >
@@ -318,7 +338,7 @@ function FlowBlock({ block }: { block: VisualBlock }) {
         })}
       </div>
       {/* Keyed so the detail panel animates on each selection. */}
-      <div key={active} className="rounded-lg border bg-muted/30 p-4 motion-safe:animate-fade-in">
+      <div key={active} className="rounded-field border bg-secondary p-4 motion-safe:animate-fade-in">
         <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
           <CornerDownRight className="h-3.5 w-3.5 text-primary" /> Selected node
         </div>
@@ -328,7 +348,7 @@ function FlowBlock({ block }: { block: VisualBlock }) {
       {block.edges && block.edges.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {block.edges.map((edge, index) => (
-            <span key={index} className="rounded-md border bg-muted/45 px-2 py-1 font-mono text-[10px] text-muted-foreground">
+            <span key={index} className="rounded-xs border bg-muted px-2 py-1 font-mono text-[10px] text-muted-foreground">
               {[edge.from, edge.label, edge.to].filter(Boolean).join(" -> ")}
             </span>
           ))}
@@ -351,15 +371,21 @@ function ComparisonBlock({ block }: { block: VisualBlock }) {
   return (
     <div className="overflow-x-auto p-3">
       <div className="min-w-[34rem] space-y-2">
+      {/* Two rungs, not three. Header / row-label / value cells used to carry
+          three different fills (muted/45, background/65, card/50) which resolve
+          on the black ground to roughly 4.3%, 0% and 3.3% lightness — three
+          surfaces within four points of each other AND of the page, so the
+          table read as one flat field of borders. Headers and row labels are
+          the chrome (`bg-secondary`), values are the content (`bg-card`). */}
       <div
         className="grid gap-2"
         style={{ gridTemplateColumns: `minmax(7rem, 0.8fr) repeat(${columns.length}, minmax(9rem, 1fr))` }}
       >
-        <div className="rounded-lg border bg-muted/45 px-3 py-2 font-mono text-[10px] text-muted-foreground">
+        <div className="rounded-field border bg-secondary px-3 py-2 font-mono text-[10px] text-muted-foreground">
           Focus
         </div>
         {columns.map((col) => (
-          <div key={col} className="rounded-lg border bg-muted/45 px-3 py-2 text-sm font-semibold">
+          <div key={col} className="rounded-field border bg-secondary px-3 py-2 text-sm font-semibold">
             {col}
           </div>
         ))}
@@ -371,9 +397,9 @@ function ComparisonBlock({ block }: { block: VisualBlock }) {
             className="grid min-w-[34rem] gap-2"
             style={{ gridTemplateColumns: `minmax(7rem, 0.8fr) repeat(${columns.length}, minmax(9rem, 1fr))` }}
           >
-            <div className="rounded-lg border bg-background/65 px-3 py-3 text-sm font-semibold">{itemTitle(row, `Row ${rowIndex + 1}`)}</div>
+            <div className="rounded-field border bg-secondary px-3 py-3 text-sm font-semibold">{itemTitle(row, `Row ${rowIndex + 1}`)}</div>
             {columns.map((col, colIndex) => (
-              <div key={col} className="rounded-lg border bg-card/50 px-3 py-3 text-sm leading-6 text-muted-foreground">
+              <div key={col} className="rounded-field border bg-card px-3 py-3 text-sm leading-6 text-muted-foreground">
                 {valueFor(row, col, colIndex)}
               </div>
             ))}
@@ -407,12 +433,13 @@ function QuizBlock({ block }: { block: VisualBlock }) {
               onPointerDown={() => setSelected(index)}
               onClick={() => setSelected(index)}
               className={cn(
-                "group flex items-start gap-3 rounded-lg border bg-background/65 p-3 text-left transition-all duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent/35 active:translate-y-0 active:scale-[0.99]",
+                "group flex items-start gap-3 rounded-field border bg-card p-3 text-left transition-[transform,background-color,border-color,box-shadow] duration-base ease-out-soft hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent active:translate-y-0 active:scale-[0.99]",
+                "motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
                 active && correct && "border-success/60 bg-success/10 shadow-soft",
                 active && answered && !correct && "border-destructive/50 bg-destructive/10 shadow-soft"
               )}
             >
-              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border bg-card font-mono text-[10px] font-semibold">
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-xs border bg-card font-mono text-[10px] font-semibold">
                 {active && correct ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : active ? <XCircle className="h-3.5 w-3.5 text-destructive" /> : index + 1}
               </span>
               <span className="min-w-0">
@@ -426,7 +453,7 @@ function QuizBlock({ block }: { block: VisualBlock }) {
       {selectedOption && (
         <div
           className={cn(
-            "rounded-lg border px-3 py-3 text-sm leading-6 motion-safe:animate-rise-in",
+            "rounded-field border px-3 py-3 text-sm leading-6 motion-safe:animate-rise-in",
             selectedOption.correct === true ? "border-success/45 bg-success/10" : "border-destructive/40 bg-destructive/10"
           )}
         >
@@ -448,7 +475,10 @@ function CalloutBlock({ block }: { block: VisualBlock }) {
       {items.length > 0 && (
         <div className="grid gap-2">
           {items.map((item, index) => (
-            <div key={index} className="flex gap-2 rounded-lg bg-muted/40 px-3 py-2">
+            // `bg-secondary`, not `bg-muted/40`: muted at 40% over the card this
+            // callout sits in resolves ~1.2 points above it, i.e. the row had no
+            // fill of its own and the bulleted list read as loose paragraphs.
+            <div key={index} className="flex gap-2 rounded-field bg-secondary px-3 py-2">
               <Wand2 className="mt-1 h-3.5 w-3.5 shrink-0 text-primary" />
               <p className="text-sm leading-6">
                 <span className="font-semibold">{itemTitle(item, `Point ${index + 1}`)}</span>
@@ -499,7 +529,10 @@ export function InlineVisualBlock({ source, streaming }: { source: string; strea
 
   if (!block) {
     return (
-      <div className="my-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+      // Same fix on the parse-failure/streaming notice: `bg-muted/40` over the
+      // #000 transcript ground computed to ~3.8% lightness, so the one surface
+      // that has to say "this did not render" had nothing behind its text.
+      <div className="my-3 rounded-field border bg-card px-4 py-3 text-sm text-muted-foreground">
         <div className="flex items-center gap-2">
           {streaming ? <Wand2 className="h-4 w-4 animate-pulse text-primary" /> : <AlertCircle className="h-4 w-4 text-warning" />}
           <span>{streaming ? "Drawing inline visual..." : "This inline visual could not be rendered."}</span>
@@ -522,7 +555,7 @@ export function InlineVisualBlock({ source, streaming }: { source: string; strea
   }
 
   return (
-    <section className="juno-visual my-4 overflow-hidden rounded-lg border bg-card text-foreground shadow-soft motion-safe:animate-rise-in">
+    <section className="juno-visual my-4 overflow-hidden rounded-card border bg-card text-foreground shadow-soft motion-safe:animate-rise-in">
       <Header block={block} />
       <VisualBody block={block} />
     </section>

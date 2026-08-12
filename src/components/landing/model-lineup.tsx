@@ -75,9 +75,15 @@ export function FlagshipStrip() {
             cannot, because the model names are real content. So the costume
             goes and the content stays — logo plus the registry's own mono name,
             under a label that already says where they come from. */}
+        {/* `text-body`, not `text-[13px]`. 13px is not a rung — the ladder steps
+            caption (11) → label (12) → body (15) — so the hero's model names were
+            set at a size that appears nowhere else, half a step under the count
+            line's sibling. Body is the right rung on the merits too: these names
+            ARE the strip's content, and the mono meta line below stays at caption,
+            so the two now read as two levels instead of one blurred one. */}
         {LABS.slice(0, STRIP_LABS).map(({ provider, label, flagships }) => (
-          <li key={provider} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-foreground/80">
-            <ProviderLogo provider={provider} label={label} className="size-4 shrink-0 rounded-sm" />
+          <li key={provider} className="inline-flex items-center gap-1.5 text-body font-medium text-foreground/80">
+            <ProviderLogo provider={provider} label={label} className="size-4 shrink-0" />
             <span className="whitespace-nowrap font-mono">{flagships[0]}</span>
           </li>
         ))}
@@ -107,7 +113,7 @@ export function ModelLineup() {
             style={staggerDelay(i)}
             className="flex items-center gap-3 border-t border-dotted border-border py-3.5 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
           >
-            <ProviderLogo provider={provider} label={label} className="h-6 w-6" />
+            <ProviderLogo provider={provider} label={label} className="size-6" />
             <div className="min-w-0 flex-1">
               <span className="block text-body font-medium">{label}</span>
               <span className="block truncate text-caption text-muted-foreground">{flagships.join(" · ")}</span>

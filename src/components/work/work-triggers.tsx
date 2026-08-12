@@ -322,7 +322,7 @@ export function TriggerListEditor({
       {triggers.map((trigger, index) => (
         <div
           key={`${trigger.kind}-${index}`}
-          className="rounded-field border border-border/60 bg-card/50 px-3.5 py-3"
+          className="rounded-field border border-border/60 bg-card px-3.5 py-3"
         >
           <div className="flex flex-wrap items-center gap-2">
             {isTimeTriggerKind(trigger.kind) ? (
@@ -366,7 +366,7 @@ export function TriggerListEditor({
                     : "A schedule needs at least one trigger. Change this one instead."
               }
               aria-label="Remove this trigger"
-              className="text-muted-foreground/60 hover:text-destructive"
+              className="text-muted-foreground/70 hover:text-destructive"
             >
               <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
             </Button>
@@ -482,7 +482,11 @@ function Field({
       {control ? (
         <Label htmlFor={id}>{label}</Label>
       ) : (
-        <p className="font-mono text-xs font-medium text-muted-foreground">{label}</p>
+        // `text-label`, which is what `Label` above resolves to. Both branches
+        // draw the same field label and only one of them is bound to a control,
+        // so the pair was rendering 12px at 0.10em tracking beside 12px at none
+        // — visibly two registers for one role, in one column of fields.
+        <p className="font-mono text-label text-muted-foreground">{label}</p>
       )}
       <div className="mt-1">
         {control && React.isValidElement(children)
@@ -581,12 +585,28 @@ function ChoiceField({
     <Field label={label}>
       {/* A native select rather than the Radix one: this sits inside a form of
           a dozen fields, and a listbox that traps focus for each of them is
-          slower to fill in than the control every platform already has. */}
+          slower to fill in than the control every platform already has.
+
+          NO `bg-*` utility beside `field-well`. Tailwind emits utilities after
+          the components layer at equal specificity, so the `bg-secondary` that
+          was here beat the class outright — and `.field-well` is precisely where
+          the per-theme answer lives (page fill on light, one rung UP on dark,
+          because nothing recesses below black). Carrying the utility meant this
+          select was secondary on BOTH themes while the `Input` and `Textarea`
+          two fields above it were background on light: three controls in one
+          form, two fills.
+
+          The ring is the same `ring-2 ring-ring` every other control in Work
+          focuses with — a 1px border tint was the only keyboard indicator here,
+          which is a focus bug rather than a style choice. `px-3.5` and
+          `coarse:h-11` are Input's, for the same reason: a native select and a
+          text field in one column that disagree about their gutter and their
+          touch height read as two form kits. */}
       <select
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="field-well h-9 w-full rounded-field border border-input bg-background px-3 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        className="field-well h-9 w-full rounded-field border border-input px-3.5 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>
@@ -610,7 +630,10 @@ function SwitchField({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 rounded-field border border-border/50 px-3 py-2">
+    // `px-3.5 py-2.5`, the metrics the identical switch row in
+    // work-host-settings.tsx uses. One object — a bordered row with a label and
+    // a Switch — was drawn at two gutters and two heights in two Work forms.
+    <label className="flex items-center justify-between gap-3 rounded-field border border-border/50 px-3.5 py-2.5">
       <span className="min-w-0 text-[13px] leading-relaxed text-foreground">{label}</span>
       <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} />
     </label>
@@ -645,8 +668,13 @@ function UnservableOption({
   onClear: () => void;
 }) {
   return (
-    <div className="rounded-field border border-border/50 bg-muted/20 px-3 py-2.5">
-      <p className="font-mono text-xs font-medium text-muted-foreground">{label}</p>
+    // `px-3.5`, the gutter every other bordered block in this editor uses. Three
+    // sibling blocks in one trigger card — this, the switch row and the limit
+    // note below — were on px-3, px-3 and px-3.5.
+    <div className="rounded-field border border-border/50 bg-secondary px-3.5 py-2.5">
+      {/* `text-label` — this stands where a `Field`'s label would, and that is
+          the register `Field` and `Label` both use. */}
+      <p className="font-mono text-label text-muted-foreground">{label}</p>
       <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">{message}</p>
       {asked && (
         <>
@@ -701,7 +729,7 @@ function TriggerConfigFields({
   const limit = kindLimit(trigger.kind);
   if (limit) {
     return (
-      <div className="rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5">
+      <div className="rounded-field border border-warning/40 bg-warning/10 px-3.5 py-2.5">
         <p className="text-[12.5px] leading-relaxed text-warning-foreground">{limit}</p>
         <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
           The schedule cannot be saved while this trigger is on it. Remove it, and everything else
@@ -1116,11 +1144,15 @@ function TriggerConfigFields({
                 trigger to watch. Grant one in the Juno app on that Mac.
               </p>
             ) : (
+              // Same shape as the interval select above, and for the same
+              // reasons: no `bg-*` beside `field-well` (the utility beats the
+              // class and forces one theme's fill onto both), Input's `px-3.5`
+              // and Input's `coarse:h-11`.
               <select
                 value={stringAt(config, "grantId")}
                 disabled={disabled}
                 onChange={(event) => set({ grantId: event.target.value })}
-                className="field-well h-9 w-full rounded-field border border-input bg-background px-3 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                className="field-well h-9 w-full rounded-field border border-input px-3.5 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <option value="">Choose a folder…</option>
                 {grants.map((grant) => (

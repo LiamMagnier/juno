@@ -300,7 +300,7 @@ export function WorkThreadComposer({
         // Only min-height animates. Dictation's transcript preview floats above
         // the capsule and needs the headroom; animating the two layers'
         // opacity/transform keeps the swap on the compositor.
-        "transition-[min-height] duration-slow ease-spring motion-reduce:transition-none",
+        "transition-[min-height] duration-slow ease-out-strong motion-reduce:transition-none",
         dictating ? "min-h-[170px]" : "min-h-0"
       )}
     >
@@ -313,7 +313,7 @@ export function WorkThreadComposer({
         // transcript's jump-to-latest button had.
         inert={!dictating}
         className={cn(
-          "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+          "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
           dictating
             ? "translate-y-0 scale-100 opacity-100"
             : "pointer-events-none translate-y-1 scale-95 opacity-0"
@@ -341,7 +341,7 @@ export function WorkThreadComposer({
         // transcript's jump-to-latest button had.
         inert={dictating}
         className={cn(
-          "col-start-1 row-start-1 w-full transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+          "col-start-1 row-start-1 w-full transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
           dictating && "pointer-events-none translate-y-1 scale-[0.98] opacity-0"
         )}
       >
@@ -389,7 +389,11 @@ export function WorkThreadComposer({
                       return (
                         <div
                           key={upload.localId}
-                          className="flex items-center gap-2 rounded-control border bg-background px-2.5 py-2 text-xs shadow-soft motion-safe:animate-rise-in"
+                          // `bg-secondary`, not `bg-background` + `shadow-soft` —
+                          // the same correction as the home composer's chips. On a
+                          // pure-black ground the chip was darker than the shell it
+                          // sits in and its shadow was black ink on black.
+                          className="flex items-center gap-2 rounded-control border border-border/60 bg-secondary px-2.5 py-2 text-xs motion-safe:animate-rise-in"
                         >
                           <FileText
                             className="h-5 w-5 shrink-0 text-muted-foreground"
@@ -482,7 +486,10 @@ export function WorkThreadComposer({
               // mid-sentence. The send button is where the effect is named, and
               // it is not the thing holding focus.
               aria-label={mode.kind === "answer" ? `Answer: ${mode.question}` : "Message"}
-              className="max-h-[180px] min-h-[38px] w-full resize-none bg-transparent px-3 py-2.5 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground/70 sm:px-3.5"
+              // `text-body`. Writing the thing Juno will act on was set at 14px
+              // here and 16px in the home composer — the same act, two pixels
+              // apart, neither on the scale.
+              className="max-h-[180px] min-h-[38px] w-full resize-none bg-transparent px-3 py-2.5 text-body outline-none placeholder:text-muted-foreground/70 sm:px-3.5"
             />
           }
           controls={
@@ -496,14 +503,17 @@ export function WorkThreadComposer({
                       size="icon-sm"
                       aria-label="Add a file, an app or a skill to this task"
                       className={cn(
-                        "composer-add-button group shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground",
+                        // `coarse:h-11 coarse:w-11` to match the home composer's
+                        // [+]. Without it this button tops out at 32px on touch,
+                        // under the 44px the coarse variant exists to guarantee.
+                        "composer-add-button group shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground coarse:h-11 coarse:w-11",
                         addOpen && "bg-accent"
                       )}
                     >
                       <Plus
                         aria-hidden="true"
                         strokeWidth={1.75}
-                        className="composer-add-icon h-4 w-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                        className="composer-add-icon h-4 w-4 transition-transform duration-base ease-out-strong group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
                       />
                     </Button>
                   </PopoverTrigger>
@@ -546,7 +556,7 @@ export function WorkThreadComposer({
                         disabled={dictating || voiceActive}
                         aria-label="Dictate this message"
                         aria-pressed={dictating}
-                        className="composer-mic-button shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground"
+                        className="composer-mic-button shrink-0 rounded-composer-control text-muted-foreground hover:text-foreground coarse:h-11 coarse:w-11"
                       >
                         <Mic className="composer-mic-icon h-4 w-4" aria-hidden="true" />
                       </Button>
@@ -571,8 +581,13 @@ export function WorkThreadComposer({
                         // holds both fixed: dropping them here is how the lists
                         // drift and a later shape change animates on one surface
                         // only.
-                        "composer-primary-action h-8 w-8 shrink-0 rounded-composer-control",
-                        "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring"
+                        // 36px on `rounded-composer-action`, 44px on touch — the
+                        // same as the home composer's send. `composer-action` is the
+                        // radius the token file reserves for the primary at its 36px
+                        // rest size, and the button reached only 32px before, which
+                        // is under the touch floor its neighbours already clear.
+                        "composer-primary-action h-9 w-9 shrink-0 rounded-composer-action coarse:h-11 coarse:w-11",
+                        "transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong"
                       )}
                     >
                       {sending ? (

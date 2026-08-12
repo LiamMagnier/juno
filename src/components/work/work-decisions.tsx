@@ -103,7 +103,12 @@ export function WorkQuestionCard({
   };
 
   return (
-    <div className="rounded-field border border-warning/40 bg-warning/[0.06] px-3.5 py-3">
+    // `bg-warning/10`, which is the fill `WorkStateNote` gives its warning tone
+    // and therefore the one warning wash in Work. At `/[0.06]` this composited
+    // to ~3.5% lightness over the black ground — under `--card`, so the card
+    // holding the question the run has STOPPED for sat lower than an ordinary
+    // card beside it. The alpha was tuned against the old 9%-lightness page.
+    <div className="rounded-field border border-warning/40 bg-warning/10 px-3.5 py-3">
       <p className="font-mono text-[10px] text-warning-foreground">
         Waiting on you · asked {workTimeAgo(question.askedAt)}
       </p>
@@ -363,8 +368,12 @@ function ApprovalCard({
             // is read and one that is scrolled past — which, for the request
             // that is holding the whole task, is the difference between a
             // decision and a task that quietly never finishes.
-            "border-warning/60 bg-warning/[0.08] px-3.5 py-3.5 shadow-pop ring-1 ring-warning/20"
-          : "border-border/60 bg-card/50 px-3.5 py-3"
+            //
+            // The lift is lightness, not shadow. `--shadow-pop` in dark is black ink
+            // at 38% — invisible on a near-black card — so the card's prominence
+            // rested entirely on a 20%-alpha ring. Fill and ring both carry it now.
+            "border-warning/60 bg-warning/[0.12] px-3.5 py-3.5 ring-1 ring-warning/40"
+          : "border-border/60 bg-card px-3.5 py-3"
       )}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -406,13 +415,24 @@ function ApprovalCard({
           className={cn(
             // `rounded-field` — the small-container/well rung. `rounded-lg` is
             // 24px in this config and was rounding a two-row well like a card.
+            // The well lifts off its parent rather than sinking into it. It was
+            // `bg-background/60` when answerable, which on a pure-black ground made
+            // the most consequential well in the product darker than the card
+            // holding it and inverted the elevation. A lighter tint of the parent
+            // warning fill keeps the ladder card < well.
+            //
+            // `/10`, not `/[0.04]`. Composited against the card's own `/[0.12]`
+            // the 4% tint landed ~2 points above its parent, which is at the
+            // floor of what the eye resolves — the well was drawn and did not
+            // read as one. `/10` is a ~5-point step, the same size as the
+            // card→secondary step the non-answerable branch beside it takes.
             "mt-2.5 space-y-1 rounded-field px-2.5 py-2",
-            answerable ? "bg-background/60" : "bg-muted/40"
+            answerable ? "bg-warning/10" : "bg-secondary"
           )}
         >
           {detailRows.map(([key, value]) => (
             <div key={key} className="flex gap-2 font-mono text-[10px] leading-relaxed">
-              <dt className="w-20 shrink-0 text-muted-foreground/70">{key}</dt>
+              <dt className="w-20 shrink-0 text-muted-foreground">{key}</dt>
               <dd className="min-w-0 break-all text-foreground">{String(value)}</dd>
             </div>
           ))}

@@ -13,14 +13,12 @@ import animate from "tailwindcss-animate";
  * Overlays .............. animate-{pop-in,pop-out} (floating layers) · animate-{overlay-in,overlay-out}
  *                         (backdrops) — pair with Radix data-[state=open/closed]
  * Touch ................. p{t,b,l,r}-safe (env safe-area insets) · .pressable (press feedback, globals.css)
- * Elevation ............. shadow-{soft,float,glass} — theme-aware via --shadow-* CSS vars
+ * Elevation ............. shadow-{soft,lift,glass,float} — theme-aware via --shadow-* CSS vars,
+ *                         and monotonic in that order: an in-flow element must never
+ *                         out-elevate a floating one
  *                         (names avoid the `card`/`accent`/… color keys to dodge collisions)
- * Radius ................ NON-MONOTONIC — overriding `lg` reorders Tailwind's scale. Real sizes:
- *                           sm 4 · md 8 · xl 12* · 2xl 16* · lg 24 (=--radius) · 3xl 24* · panel 28
- *                         (* = stock Tailwind, not overridden below.) So `rounded-lg` is BIGGER than
- *                         `rounded-xl`/`rounded-2xl`, not a mid step. Want ~8px? rounded-md. ~12px?
- *                         rounded-xl. ~16px? rounded-2xl. A pill? rounded-full. Reach for rounded-lg
- *                         only when you actually mean 24px. panel = floating layers.
+ * Radius ................ compact product scale: controls 9 · fields 10 · menus 12 · cards 14 ·
+ *                         surfaces 16 · floating panels 18. Pills remain explicit rounded-full.
  * Dot atoms ............. h-dot / w-dot / gap-dot-gap — the dot/ASCII signature unit
  * Thinking .............. animate-thinking-matrix (3×3 mark) · animate-status-glow ·
  *                         animate-icon-breathe + .scroll-fade-y (globals.css)
@@ -101,13 +99,12 @@ const config: Config = {
         scrim: "hsl(var(--scrim))",
       },
       borderRadius: {
-        // Legacy scale — values UNCHANGED so no existing surface moves. `lg` stays
-        // 24px; renumbering it would shift 77 live surfaces.
+        // The generic large step follows the product surface radius.
         lg: "var(--radius)",
         md: "8px",
         sm: "4px",
-        // Floating layers (composer, command palette, canvas sheet) — softer, bigger.
-        panel: "28px",
+        // Floating layers stay distinct without becoming oversized capsules.
+        panel: "18px",
         // Semantic steps, named after what they wrap. These replace the arbitrary
         // rounded-[Npx] values 1:1, so the compiled CSS is identical — the point is
         // that there is now somewhere to look up the right answer. Eleven different
@@ -120,27 +117,38 @@ const config: Config = {
         // sites before this; `eslint-local/no-arbitrary-radius` now keeps it shut.
         micro: "2px",     // heatmap cells, crop handles — anything under ~12px square
         xs: "6px",        // chips, dots, tiny badges
-        control: "10px",  // sm buttons, menu items, list rows
-        // 12px. Named for inputs because that is where it started, but it is the
+        control: "9px",   // sm buttons, menu items, list rows
+        // 10px. Named for inputs because that is where it started, but it is the
         // general small-container rung: wells, segmented thumbs, icon tiles,
         // inline notes, the dashed box a short empty state sits in. 99 sites were
         // reaching Tailwind's undefined `rounded-xl` for exactly this, so the
         // scope is being written down to match the use rather than the use bent
         // to match a narrower name.
-        field: "12px",
-        menu: "14px",     // dropdown / select / tabs shells
-        card: "16px",     // cards, toasts, tiles
-        popover: "18px",  // popovers, transcripts
-        surface: "20px",  // in-flow panels and section wells
-        composer: "22px", // the composer shell
+        field: "10px",
+        menu: "12px",     // dropdown / select / tabs shells
+        card: "14px",     // cards, toasts, tiles
+        popover: "14px",  // popovers, transcripts
+        surface: "16px",  // in-flow panels and section wells
+        // The composer shell. Deliberately the largest rung on the ladder and a
+        // long way clear of `surface` — this is the one box on the page the user
+        // is aiming at before they have done anything, and at 16px it was
+        // indistinguishable from the panels around it. 26px is the point where
+        // the shell reads as a distinct object rather than another section well,
+        // and it is still short of a capsule, which the two-tier layout could not
+        // take: a pill radius on a box this tall pinches the utility strip's
+        // corners into its own content.
+        composer: "26px",
         // The two composer-seated control radii. The primary action sits at
-        // `composer-action` (13px) at its 36px rest size and morphs to
-        // `composer-control` (11px) as it widens to 44px while busy — the corner
+        // `composer-action` at its 36px rest size and morphs to
+        // `composer-control` as it widens to 44px while busy — the corner
         // curvature has to fall as the box grows or the button visibly inflates.
-        // Both are nested inside the 22px shell and neither is on the main ladder,
-        // which is exactly why they need names: they are derived, not chosen.
-        "composer-control": "11px",
-        "composer-action": "13px",
+        // Both are nested inside the composer shell and neither is on the main
+        // ladder, which is exactly why they need names: they are derived, not
+        // chosen. They move WITH the shell — nesting reads as concentric only
+        // while the inner radius stays a consistent fraction of the outer one,
+        // so a shell that got 10px rounder hands its children a share of it.
+        "composer-control": "12px",
+        "composer-action": "14px",
         // Provider/product marks. A PERCENTAGE, not px, so one value is one shape
         // at every size — 24% is the iOS app-icon superellipse ratio these marks
         // are imitating. Owned by <ProviderLogo>; call sites must not override it.
@@ -153,6 +161,12 @@ const config: Config = {
       boxShadow: {
         // Theme-aware elevation (values live in globals.css so light/dark differ).
         soft: "var(--shadow-soft)",
+        // The rung between soft and glass. It has existed in both theme blocks
+        // since the ladder was made monotonic, but was never mapped here — so
+        // `shadow-lift` compiled to nothing and hover states on in-flow cards
+        // went on reaching for `shadow-float`, which put a hovered tile above
+        // every dropdown in the product. A scale you cannot type is not a scale.
+        lift: "var(--shadow-lift)",
         float: "var(--shadow-float)",
         glass: "var(--shadow-glass)",
         // Depth kit: crisp shadow for buttons/chips, colored halo for the primary,
@@ -242,6 +256,23 @@ const config: Config = {
         hero: ["clamp(2.4rem, 1.7739rem + 2.7826vw, 4rem)", { lineHeight: "1.1", letterSpacing: "-0.02em" }],
         // Type scale. Contrast comes from family (serif/sans/mono) + 3x size jumps, not timid weights.
         display: ["clamp(2rem, 1.6087rem + 1.7391vw, 3rem)", { lineHeight: "1.08", letterSpacing: "-0.02em", fontWeight: "500" }],
+        /*
+         * The <h1> of an app page — the rung between `display` (marketing) and
+         * `title` (a section head). It was missing, so the size that appears on
+         * more screens than any other display size in the product was being
+         * hand-written at each call site, and had already drifted three ways:
+         *
+         *   app-page-header.tsx   clamp(1.65rem, 1.4rem  + 0.8vw, 2.1rem)  -0.02em
+         *   compare-view.tsx      clamp(1.65rem, 1.4rem  + 0.8vw, 2.1rem)  -0.025em
+         *   projects/[id]         clamp(1.7rem,  1.45rem + 0.8vw, 2.15rem) -0.025em
+         *
+         * Two of those differ only in tracking and one only in a 0.05rem step —
+         * differences nobody chose, which is what an unnamed size always
+         * produces. The rem intercept is kept for the reason the two clamps above
+         * document: a pure-vw preferred value ignores the user's base font size,
+         * so text zoom cannot move it (WCAG 1.4.4).
+         */
+        "page-title": ["clamp(1.65rem, 1.4rem + 0.8vw, 2.1rem)", { lineHeight: "1.15", letterSpacing: "-0.02em", fontWeight: "600" }],
         title: ["1.375rem", { lineHeight: "1.25", letterSpacing: "-0.012em", fontWeight: "600" }],
         heading: ["1.125rem", { lineHeight: "1.3", letterSpacing: "-0.006em", fontWeight: "600" }],
         "body-lg": ["1.0625rem", { lineHeight: "1.6" }],
@@ -302,8 +333,17 @@ const config: Config = {
           from: { opacity: "0" },
           to: { opacity: "1" },
         },
+        // Every travelling/scaling keyframe below reads --motion-shift and
+        // --motion-scale-from. That is the ENTIRE mechanism behind Tier B of the
+        // reduced-motion policy in globals.css: the two vars are set to 0 and 1
+        // under `prefers-reduced-motion`, which collapses travel and overshoot to
+        // identity while the fade keeps its timing. Both vars were declared and
+        // read by nothing, so Tier B silently did not exist and every entrance
+        // kept its full transform — "worse than the clamp it replaced", as the
+        // note beside them says. The fallback in each `var()` is that keyframe's
+        // own original value, so nothing changes when the preference is unset.
         "fade-in-up": {
-          from: { opacity: "0", transform: "translateY(6px)" },
+          from: { opacity: "0", transform: "translateY(calc(6px * var(--motion-shift, 1)))" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
         "pulse-ring": {
@@ -347,21 +387,21 @@ const config: Config = {
           "50%": { transform: "scale(1.1)", opacity: "1" },
         },
         "rise-in": {
-          from: { opacity: "0", transform: "translateY(8px)" },
+          from: { opacity: "0", transform: "translateY(calc(8px * var(--motion-shift, 1)))" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
         // Learning blocks (step-lab-block.tsx + quiz-block.tsx). One parametrized
         // keyframe covers both navigation directions: the caller sets --stage-dx
         // to 12px (forward) or -12px (back) on the keyed stage element.
         "stage-in": {
-          from: { opacity: "0", transform: "translateX(var(--stage-dx, 12px))" },
+          from: { opacity: "0", transform: "translateX(calc(var(--stage-dx, 12px) * var(--motion-shift, 1)))" },
           to: { opacity: "1", transform: "none" },
         },
         // Wrong-answer feedback — a one-shot 3px sideways nudge, then still.
         nudge: {
           "0%, 100%": { transform: "translateX(0)" },
-          "35%": { transform: "translateX(-3px)" },
-          "70%": { transform: "translateX(2px)" },
+          "35%": { transform: "translateX(calc(-3px * var(--motion-shift, 1)))" },
+          "70%": { transform: "translateX(calc(2px * var(--motion-shift, 1)))" },
         },
         // Draws an SVG path once (next-token autoregression return arc). The
         // caller sets stroke-dasharray and --draw-len to the path length.
@@ -370,12 +410,19 @@ const config: Config = {
           to: { strokeDashoffset: "0" },
         },
         "title-in": {
-          "0%": { opacity: "0", transform: "translateY(4px) scale(0.985)", backgroundColor: "hsl(var(--primary) / 0.12)" },
+          "0%": {
+            opacity: "0",
+            transform: "translateY(calc(4px * var(--motion-shift, 1))) scale(var(--motion-scale-from, 0.985))",
+            backgroundColor: "hsl(var(--primary) / 0.12)",
+          },
           "100%": { opacity: "1", transform: "translateY(0) scale(1)", backgroundColor: "transparent" },
         },
         "title-out": {
           "0%": { opacity: "1", transform: "translateY(0) scale(1)" },
-          "100%": { opacity: "0", transform: "translateY(-4px) scale(0.985)" },
+          "100%": {
+            opacity: "0",
+            transform: "translateY(calc(-4px * var(--motion-shift, 1))) scale(var(--motion-scale-from, 0.985))",
+          },
         },
         // Overlay enter/exit pair — sized for Radix data-[state=open/closed].
         // --pop-shift makes the 4px drift origin-aware: .origin-popper layers
@@ -383,12 +430,18 @@ const config: Config = {
         // trigger — a bottom-anchored menu rises 4px, a top-anchored one settles
         // 4px down. Non-popper users of animate-pop-in keep the 4px-rise default.
         "pop-in": {
-          from: { opacity: "0", transform: "translateY(var(--pop-shift, 4px)) scale(0.96)" },
+          from: {
+            opacity: "0",
+            transform: "translateY(calc(var(--pop-shift, 4px) * var(--motion-shift, 1))) scale(var(--motion-scale-from, 0.96))",
+          },
           to: { opacity: "1", transform: "translateY(0) scale(1)" },
         },
         "pop-out": {
           from: { opacity: "1", transform: "translateY(0) scale(1)" },
-          to: { opacity: "0", transform: "translateY(var(--pop-shift, 4px)) scale(0.96)" },
+          to: {
+            opacity: "0",
+            transform: "translateY(calc(var(--pop-shift, 4px) * var(--motion-shift, 1))) scale(var(--motion-scale-from, 0.96))",
+          },
         },
         "fade-out": {
           from: { opacity: "1" },
@@ -450,39 +503,51 @@ const config: Config = {
         // These two previously used the raw `ease-out` keyword — off-token entirely.
         "accordion-down": "accordion-down var(--dur-base) var(--ease-in-out)",
         "accordion-up": "accordion-up var(--dur-exit) var(--ease-in-out)",
-        "fade-in": "fade-in 0.2s ease-out",
-        "fade-in-up": "fade-in-up 0.25s ease-out",
-        "pulse-ring": "pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        // `fade-in` is the keyframe `page-in` and `overlay-in` both build on, so
+        // it is the most-run animation in the product — and it was the last pair
+        // still on the raw `ease-out` keyword and off-ladder 200/250ms, the exact
+        // fault the accordion pair above was fixed for.
+        "fade-in": "fade-in var(--dur-base) var(--ease-out-soft)",
+        "fade-in-up": "fade-in-up var(--dur-base) var(--ease-out-soft)",
+        "pulse-ring": "pulse-ring 1.6s var(--ease-breathe) infinite",
         // One-shot variant (quiz correct-answer flourish) — the arbitrary
         // [animation-iteration-count:1] override does NOT work on animate-*
         // utilities (the shorthand re-declares iteration-count later in the
         // stylesheet at equal specificity), so a named one-shot is required.
-        "pulse-ring-once": "pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) 1 both",
-        shimmer: "shimmer 1.5s infinite",
+        "pulse-ring-once": "pulse-ring 1.6s var(--ease-breathe) 1 both",
+        // linear: the band exits one edge and teleports to the other, so there is
+        // no turn to ease — an eased sweep decelerates into the seam and jumps.
+        shimmer: "shimmer 1.5s linear infinite",
         blink: "blink 1.1s steps(1) infinite",
-        "rise-in": "rise-in 0.32s cubic-bezier(0.32,0.72,0,1)",
-        // Learning blocks: direction-aware step navigation (spring), one-shot
+        "rise-in": "rise-in var(--dur-slow) var(--ease-out-strong)",
+        // Learning blocks: direction-aware step navigation (strong), one-shot
         // wrong-answer nudge (soft), one-shot SVG path draw (expo).
-        "stage-in": "stage-in 220ms cubic-bezier(0.32, 0.72, 0, 1) both",
-        nudge: "nudge 240ms cubic-bezier(0.33, 1, 0.68, 1)",
-        "stroke-draw": "stroke-draw 360ms cubic-bezier(0.16, 1, 0.3, 1) both",
-        "dot-wave": "dot-wave 1.2s ease-in-out infinite",
+        "stage-in": "stage-in var(--dur-base) var(--ease-out-strong) both",
+        nudge: "nudge var(--dur-base) var(--ease-out-soft)",
+        "stroke-draw": "stroke-draw var(--dur-slow) var(--ease-out-expo) both",
+        // A loop turns around at both ends, so it takes the symmetric curve —
+        // `ease-in-out` the keyword is NOT --ease-in-out the token, and neither
+        // is the loop curve. See --ease-breathe.
+        "dot-wave": "dot-wave 1.2s var(--ease-breathe) infinite",
         // Thinking signature (ThinkingDots) + live reasoning header (ActivityTimeline).
-        "thinking-matrix": "thinking-matrix 1.8s ease-in-out infinite",
-        "status-glow": "status-glow 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite",
-        "icon-breathe": "icon-breathe 2.6s cubic-bezier(0.33, 1, 0.68, 1) infinite",
-        "title-in": "title-in 240ms cubic-bezier(0.33,1,0.68,1)",
+        "thinking-matrix": "thinking-matrix 1.8s var(--ease-breathe) infinite",
+        "status-glow": "status-glow 2.8s var(--ease-breathe) infinite",
+        "icon-breathe": "icon-breathe 2.6s var(--ease-breathe) infinite",
+        "title-in": "title-in var(--dur-base) var(--ease-out-soft)",
         "title-out": "title-out var(--dur-exit) var(--ease-in)",
         // Floating layers: data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out
         // (pair with .origin-popper on Radix popper content so scale anchors to the trigger).
         // Enter on ease-out-soft — out-expo front-loaded so hard here that the
         // pop read as an instant snap; exit reverses faster, as leaving should.
+        // 180ms is the one deliberate half-rung in this block: a popper travels
+        // 4px, so --dur-base overshoots it and --dur-fast clips the scale. Its
+        // exit is the fast rung, as every exit here is.
         "pop-in": "pop-in 180ms var(--ease-out-soft) both",
-        "pop-out": "pop-out 120ms var(--ease-in) both",
+        "pop-out": "pop-out var(--dur-fast) var(--ease-in) both",
         // Dialogs travel further than a popper, so they get the next rung up.
         // Replaces the tailwindcss-animate utility chain on DialogContent.
-        "modal-in": "pop-in 220ms var(--ease-out-soft) both",
-        "modal-out": "pop-out 160ms var(--ease-in) both",
+        "modal-in": "pop-in var(--dur-base) var(--ease-out-soft) both",
+        "modal-out": "pop-out var(--dur-exit) var(--ease-in) both",
         // Route changes (page-transition.tsx). Reuses the opacity-only `fade-in`
         // keyframe on purpose — a transform here would create a containing block
         // and break the `fixed` model-selector / canvas panel.
@@ -494,21 +559,21 @@ const config: Config = {
         // the panel it dims). Previously the scrim cleared in 150ms while
         // SheetContent took 220ms to leave, so the drawer finished sliding over an
         // already-undimmed page.
-        "overlay-in": "fade-in 120ms var(--ease-out-soft) both",
-        "overlay-out": "fade-out 220ms var(--ease-in) both",
+        "overlay-in": "fade-in var(--dur-fast) var(--ease-out-soft) both",
+        "overlay-out": "fade-out var(--dur-base) var(--ease-in) both",
         // Reasoning slider's top tier (reasoning-slider.tsx).
         // 24s, not 6s: the gradient should read as a slow luminous drift, not a
         // sweep. `linear` is deliberate — an eased loop visibly pulses at the
         // seam, which is the thing that looked like flashing.
         "ultra-pan": "ultra-pan 24s linear infinite",
         // Per-particle durations (7-13s) are set inline; this is only the fallback.
-        "ultra-spark": "ultra-spark 9s ease-in-out infinite",
-        "ultra-pop": "ultra-pop 420ms cubic-bezier(0.32, 0.72, 0, 1)",
+        "ultra-spark": "ultra-spark 9s var(--ease-breathe) infinite",
+        "ultra-pop": "ultra-pop 420ms var(--ease-out-strong)",
         // Media-generation placeholder (generation-placeholder.tsx).
-        "gen-drift-a": "gen-drift-a 16s ease-in-out infinite",
-        "gen-drift-b": "gen-drift-b 22s ease-in-out infinite",
-        "gen-grid-pulse": "gen-grid-pulse 5.2s ease-in-out infinite",
-        "gen-sweep": "gen-sweep 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite",
+        "gen-drift-a": "gen-drift-a 16s var(--ease-breathe) infinite",
+        "gen-drift-b": "gen-drift-b 22s var(--ease-breathe) infinite",
+        "gen-grid-pulse": "gen-grid-pulse 5.2s var(--ease-breathe) infinite",
+        "gen-sweep": "gen-sweep 1.8s var(--ease-breathe) infinite",
       },
     },
   },

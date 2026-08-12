@@ -439,8 +439,12 @@ export default function WorkSkillPage() {
         <section className="space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="font-mono text-label text-muted-foreground">Security review</h2>
+            {/* `inline-flex … leading-none`, which is what `WorkStatusPill` and
+                `RiskPill` carry. Without it this chip inherited the section's
+                line-height and stood ~4px taller than every other pill in Work,
+                on a page that shows two of them a scroll apart. */}
             <span
-              className={`rounded-full border px-2 py-0.5 font-mono text-[10px] ${securityClassName(securityStatus)}`}
+              className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 font-mono text-[10px] leading-none ${securityClassName(securityStatus)}`}
             >
               {securityLabel(securityStatus)}
             </span>
@@ -539,7 +543,7 @@ export default function WorkSkillPage() {
               {versions.map((entry) => (
                 <li
                   key={entry.id}
-                  className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card/50 px-3.5 py-2.5"
+                  className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card px-3.5 py-2.5"
                 >
                   <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   <span className="shrink-0 font-mono text-[10px] text-foreground">
@@ -548,7 +552,7 @@ export default function WorkSkillPage() {
                   <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">
                     {entry.instructions.slice(0, 120)}
                   </span>
-                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground/70">
+                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                     {workTimeAgo(entry.createdAt)}
                   </span>
                   {entry.version !== skill.currentVersion && (

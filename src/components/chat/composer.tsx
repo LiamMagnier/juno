@@ -266,7 +266,7 @@ function PaletteEyebrow({ label, counter }: { label: string; counter?: string })
   return (
     <div aria-hidden className="flex items-baseline justify-between gap-2 px-2 pb-1 pt-1.5">
       <span className="font-mono text-label text-muted-foreground">{label}</span>
-      {counter && <span className="font-mono text-caption tabular-nums text-muted-foreground/60">{counter}</span>}
+      {counter && <span className="font-mono text-caption tabular-nums text-muted-foreground">{counter}</span>}
     </div>
   );
 }
@@ -1358,19 +1358,23 @@ export function Composer({
       role="menuitemcheckbox"
       aria-checked={research && planAllowsResearch}
       disabled={!planAllowsResearch}
+      className="min-h-11"
       onSelect={(event) => {
         event.preventDefault();
         setResearch((v) => !v);
       }}
     >
       <Telescope className="text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate">Deep research</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">Deep research</span>
+        <span className="block truncate text-caption font-normal text-muted-foreground">Plan, browse, verify, and cite</span>
+      </span>
       {/* Just the Switch (no caption), so the toggle sits in the same column as
           the sibling rows and the row can never outgrow the menu. */}
       {planAllowsResearch ? (
         <Switch checked={research} tabIndex={-1} aria-hidden className="pointer-events-none" />
       ) : (
-        <span className="shrink-0 whitespace-nowrap text-caption text-muted-foreground/60">paid plan</span>
+        <span className="shrink-0 whitespace-nowrap text-caption text-muted-foreground">paid plan</span>
       )}
     </DropdownMenuItem>
   ) : null;
@@ -1396,6 +1400,16 @@ export function Composer({
         event.preventDefault();
         toggleToolsCollapsed();
       }}
+      /*
+       * `min-h-8` so this row is the same 32px as every other row in the menu.
+       * It carries LABEL type (12px) among rows that carry body type (14px),
+       * which is right — it is a group header — but a menu item's height is a
+       * hit target, not a typographic consequence. Left to its contents it
+       * measured 29px: the one interactive row in the menu that was a different
+       * size from its neighbours, breaking the vertical rhythm at exactly the
+       * point where the eye is scanning for the next row.
+       */
+      className="min-h-8"
     >
       {/* The chevron takes the icon slot (as it does in the sidebar's Section) and
           is boxed to size-4 so the eyebrow aligns with the rows it discloses. */}
@@ -1483,7 +1497,7 @@ export function Composer({
        */}
       <div
         className={cn(
-          "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-spring motion-reduce:transition-none",
+          "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-out-strong motion-reduce:transition-none",
           dictating ? "min-h-[170px]" : "min-h-[68px]"
         )}
       >
@@ -1496,7 +1510,7 @@ export function Composer({
           // transcript's jump-to-latest button had.
           inert={!dictating}
           className={cn(
-            "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+            "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
             dictating ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-1 scale-95 opacity-0"
           )}
         >
@@ -1529,13 +1543,24 @@ export function Composer({
           // transcript's jump-to-latest button had.
           inert={dictating}
           className={cn(
-            "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-composer border bg-card/95 backdrop-blur sm:rounded-lg",
-            "transition-[opacity,transform,border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
+            /*
+             * No `shadow-none`. It used to close this line, and because Tailwind
+             * emits utilities after the components layer at equal specificity, it
+             * beat `.composer-surface`'s box-shadow — so the composer rendered as
+             * a flat bordered rectangle with no material at all, and the
+             * `[data-juno-chat-root] .composer-surface` rule written specifically
+             * to give this surface its in-product elevation was dead code that
+             * never painted a pixel. On the black ground that mattered twice over:
+             * the dark treatment carries an INSET top highlight, which is the only
+             * depth cue that survives on #000, and it was being suppressed too.
+             */
+            "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-composer border bg-card",
+            "transition-[opacity,transform,border-color,box-shadow,height] duration-base ease-out-strong motion-reduce:transition-none",
             dictating ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0" : "translate-y-0 scale-100 opacity-100",
             clarificationOpen ? "gap-3 p-3 sm:gap-3.5 sm:p-3.5" : "",
             privateMode
               ? "border-dashed border-foreground/25"
-              : "border-border/65 focus-within:border-foreground/15",
+              : "border-border/80 focus-within:border-foreground/25",
             dragging && "border-primary/55 ring-2 ring-primary/20"
           )}
         >
@@ -1567,7 +1592,7 @@ export function Composer({
             "relative flex w-full flex-col transition-[opacity,transform] duration-base ease-out-soft",
             // Keep the free-text path calm under a clarification — no second heavy card.
             clarificationOpen
-              ? "rounded-card border border-border/45 bg-background/35 px-3 py-2.5 sm:rounded-popover sm:px-3.5 sm:py-3"
+              ? "rounded-card border border-border/45 bg-secondary px-3 py-2.5 sm:rounded-popover sm:px-3.5 sm:py-3"
               : ""
           )}
         >
@@ -1585,7 +1610,13 @@ export function Composer({
                   <div
                     key={u.localId}
                     className={cn(
-                      "group relative flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-xs shadow-soft",
+                      // The chip sits inside the composer shell, which is `bg-card`.
+                      // `bg-background` is pure black in dark — DARKER than its own
+                      // container — so an attached file read as a hole punched in
+                      // the composer, and its `shadow-soft` (black ink) had nothing
+                      // to cast onto. `bg-secondary` is the rung above card, which
+                      // is what "raised chip" actually means here.
+                      "group relative flex items-center gap-2 rounded-md border bg-secondary px-2.5 py-2 text-xs",
                       removingIds.includes(u.localId) ? "pointer-events-none motion-safe:animate-pop-out" : "motion-safe:animate-rise-in"
                     )}
                   >
@@ -1662,7 +1693,7 @@ export function Composer({
 
         {showCollapsedDraft && (
           <div
-            className="mx-3 mt-3 flex flex-col gap-2 rounded-field border border-border/70 bg-muted/40 px-3 py-3 sm:mx-3.5"
+            className="mx-3 mt-3 flex flex-col gap-2 rounded-field border border-border/70 bg-secondary px-3 py-3 sm:mx-3.5"
             tabIndex={0}
             role="group"
             aria-label="Large paste ready to send. Press Enter to send."
@@ -1839,7 +1870,7 @@ export function Composer({
                             <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">{item.hint}</span>
                           </span>
                           {item.note ? (
-                            <span className="shrink-0 whitespace-nowrap text-caption text-muted-foreground/60">
+                            <span className="shrink-0 whitespace-nowrap text-caption text-muted-foreground">
                               {item.note}
                             </span>
                           ) : item.on !== undefined ? (
@@ -1902,26 +1933,16 @@ export function Composer({
                   <Plus
                     aria-hidden="true"
                     strokeWidth={1.75}
-                    className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                    // `ease-out-soft`, not Tailwind's stock `ease-out`: the stock
+                    // curve is not on the project's ease ladder, and this was the
+                    // only control in the chat surface running one.
+                    className="composer-add-icon size-4 transition-transform duration-base ease-out-soft group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
                   />
-                  {/* The armed badge used to be gated on `researchArmed` alone, so
-                      turning on web search, canvas, memory or three connectors left
-                      the whole composer with no at-rest signal that anything was
-                      armed — the count existed but only INSIDE the menu you had to
-                      open to see it. Same count, now on the outside. Past one, the
-                      dot cannot say how many, so it becomes the number. */}
                   {activeToolCount > 0 && (
                     <span
                       aria-hidden
-                      className={cn(
-                        "absolute -right-0.5 -top-0.5 flex items-center justify-center rounded-full bg-primary ring-2 ring-card motion-safe:animate-fade-in",
-                        activeToolCount > 1
-                          ? "h-3.5 min-w-3.5 px-[3px] font-mono text-[10px] font-medium leading-none tabular-nums text-primary-foreground"
-                          : "h-2 w-2"
-                      )}
-                    >
-                      {activeToolCount > 1 ? activeToolCount : null}
-                    </span>
+                      className="absolute right-0 top-0 flex size-2 items-center justify-center rounded-full bg-primary ring-2 ring-card motion-safe:animate-fade-in"
+                    />
                   )}
                 </Button>
               </DropdownMenuTrigger>
@@ -1930,8 +1951,8 @@ export function Composer({
               <DropdownMenuContent
                 align="start"
                 side="top"
-                sideOffset={8}
-                className={voiceActive && !researchMenuItem ? "w-52" : "w-64"}
+                sideOffset={12}
+                className={cn(voiceActive && !researchMenuItem ? "w-52" : "w-72")}
               >
                 {voiceActive ? (
                   <>
@@ -1942,13 +1963,13 @@ export function Composer({
                       <ImagePlus className="text-muted-foreground" />
                       <span className="flex-1">Add photos</span>
                       {(privateMode || !features.storage) && (
-                        <span className="text-caption text-muted-foreground/60">{privateMode ? "private" : "no storage"}</span>
+                        <span className="text-caption text-muted-foreground">{privateMode ? "private" : "no storage"}</span>
                       )}
                     </DropdownMenuItem>
                     <DropdownMenuItem disabled>
                       <FileUp className="text-muted-foreground" />
                       <span className="flex-1">Add files</span>
-                      <span className="text-caption text-muted-foreground/60">chat only</span>
+                      <span className="text-caption text-muted-foreground">chat only</span>
                     </DropdownMenuItem>
                     {/* Research stays reachable in voice mode — the chip it
                         replaced lived on the toolbar, which voice also renders. */}
@@ -1970,7 +1991,7 @@ export function Composer({
                       <DropdownMenuSubTrigger disabled={!canAttach}>
                         <Paperclip className="text-muted-foreground" />
                         <span className="flex-1">Attach</span>
-                        {!canAttach && <span className="text-caption text-muted-foreground/60">{attachBlockedReason}</span>}
+                        {!canAttach && <span className="text-caption text-muted-foreground">{attachBlockedReason}</span>}
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="w-52">
                         <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
@@ -1998,7 +2019,7 @@ export function Composer({
                       <DropdownMenuItem disabled>
                         <AppIcons.projects className="text-muted-foreground" />
                         <span className="flex-1">Add to project</span>
-                        <span className="text-caption text-muted-foreground/60">private</span>
+                        <span className="text-caption text-muted-foreground">private</span>
                       </DropdownMenuItem>
                     ) : (
                       <DropdownMenuSub>
@@ -2029,7 +2050,7 @@ export function Composer({
                                     {active ? (
                                       <Check className="!size-3.5 text-primary" />
                                     ) : (
-                                      <span className="font-mono text-caption text-muted-foreground/60">{project.conversationCount}</span>
+                                      <span className="font-mono text-caption text-muted-foreground">{project.conversationCount}</span>
                                     )}
                                   </DropdownMenuItem>
                                 );
@@ -2094,20 +2115,28 @@ export function Composer({
                                 onKeyDown={(event) => event.stopPropagation()}
                                 placeholder="Search connected apps…"
                                 aria-label="Search connected apps"
-                                className="h-9 w-full rounded-control border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-foreground/70"
+                                className="h-9 w-full rounded-control border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none transition-[border-color,box-shadow] duration-fast ease-out-soft placeholder:text-muted-foreground/70 focus:border-foreground/70 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-popover motion-reduce:transition-none"
                               />
                             </label>
                           </div>
                           <div className="max-h-64 overflow-y-auto p-1.5 overscroll-contain">
                             {connectorsLoading && connectors.length === 0 ? (
-                              <div role="status" className="px-2 py-5 text-center text-xs text-muted-foreground">
-                                Loading connected apps…
+                              // Skeleton rows at the connector row's own height, not
+                              // a centred sentence: the wait resolves into a list, so
+                              // the placeholder should have the list's shape and the
+                              // menu should not resize when it arrives. The sentence
+                              // stays for screen readers, which cannot see a skeleton.
+                              <div role="status" className="flex flex-col gap-1 p-0.5">
+                                <span className="sr-only">Loading connected apps…</span>
+                                {[0, 1, 2].map((row) => (
+                                  <span key={row} aria-hidden className="skeleton h-8 rounded-control" />
+                                ))}
                               </div>
                             ) : connectors.length === 0 ? (
                               <DropdownMenuItem onSelect={() => router.push("/connections")}>
                                 <Plug className="text-muted-foreground" />
                                 <span className="flex-1">Connect an app</span>
-                                <span className="text-caption text-muted-foreground/60">set up</span>
+                                <span className="text-caption text-muted-foreground">set up</span>
                               </DropdownMenuItem>
                             ) : visibleConnectors.length === 0 ? (
                               <div className="px-2 py-5 text-center text-xs text-muted-foreground">
@@ -2181,7 +2210,7 @@ export function Composer({
                           {canWebSearch ? (
                             <Switch checked={webSearchEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
                           ) : (
-                            <span className="text-caption text-muted-foreground/60">{modality === "chat" ? "not on this model" : "chat only"}</span>
+                            <span className="text-caption text-muted-foreground">{modality === "chat" ? "not on this model" : "chat only"}</span>
                           )}
                         </DropdownMenuItem>
                         <DropdownMenuItem
@@ -2297,8 +2326,22 @@ export function Composer({
                               // stops at coarse:h-10, so this was the one 40px
                               // control in a 44px touch row, and `rounded-control`
                               // made it the one 10px corner between two 11s.
-                              "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-composer-control px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
-                              atTopTier ? "text-ultra" : "text-foreground/80"
+                              // `.composer-chip` — the same material the model
+                              // trigger beside it now carries. These two are a
+                              // pair (which model, how hard it thinks) and were
+                              // drifting apart: this one had an open state and no
+                              // hover fill, that one had a hover fill and a press
+                              // scale, and neither had a focus ring. One class
+                              // owns all four states for both.
+                              // No `focus-visible:ring-offset-*` here either —
+                              // Button deliberately ships no focus override so
+                              // the global :focus-visible rule stays
+                              // authoritative (button.tsx:7).
+                              "composer-chip group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-composer-control px-2 font-mono text-[12px] tracking-tight coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
+                              // Full strength, matching the model name. `/80` put
+                              // the two most consequential values on the row below
+                              // the ink of everything around them.
+                              atTopTier ? "text-ultra" : "text-foreground"
                             )}
                           >
                             <span className="min-w-0 flex-1 truncate text-center min-[480px]:hidden">
@@ -2382,7 +2425,7 @@ export function Composer({
                         : "Send message"
                   }
                   className={cn(
-                    "composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
+                    "composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong",
                     isBusy && status !== "checking" ? "w-11 rounded-composer-control ring-2 ring-primary/15" : "rounded-composer-action"
                   )}
                 >

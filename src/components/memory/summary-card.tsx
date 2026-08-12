@@ -88,17 +88,17 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
         )}
       >
         <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <h2 id="memory-summary-heading"className="font-mono text-label text-muted-foreground">
+          <h2 id="memory-summary-heading" className="font-mono text-label text-muted-foreground">
             Memory summary
           </h2>
           {paused && (
-            <Badge variant="muted"className="text-[10px]">
+            <Badge variant="muted" className="text-caption">
               Paused
             </Badge>
           )}
           <div className="ml-auto flex items-center gap-1.5">
             {summary && (
-              <span className="text-caption text-muted-foreground/70">Updated {timeAgo(summary.updatedAt)}</span>
+              <span className="text-caption tabular-nums text-muted-foreground">Updated {timeAgo(summary.updatedAt)}</span>
             )}
             {summary && sections.length > 0 && (
               <Button
@@ -107,7 +107,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
                 onClick={() => setExpanded(true)}
                 aria-label="Expand the memory summary"
               >
-                <Maximize2 className="h-3.5 w-3.5" />
+                <Maximize2 className="size-3.5" />
               </Button>
             )}
             <Button
@@ -117,7 +117,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
               disabled={consolidating}
               aria-label="Rebuild the summary from your chats and projects"
             >
-              <RefreshCw className={cn("h-3.5 w-3.5", consolidating && "animate-spin")} />
+              <RefreshCw className={cn("size-3.5", consolidating && "animate-spin")} />
             </Button>
           </div>
         </div>
@@ -154,9 +154,28 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
           <motion.form
             layoutId="memory-composer"
             transition={MORPH_TRANSITION}
-            style={{ borderRadius: 24 }}
+            // Both ends of this morph are CAPSULES — the bar is 48px tall and the
+            // pencil is 44px square, so the old literal 24 was simply half of each.
+            // Written as a capsule it renders identically and stops being a magic
+            // number off the radius ladder. It has to live in `style` rather than a
+            // className: framer-motion only corrects radius distortion during a
+            // layout projection for radii it can read off the style object.
+            style={{ borderRadius: 9999 }}
             onSubmit={submit}
-            className="pointer-events-auto flex w-full items-center gap-1.5 border border-border/70 bg-popover/95 py-1.5 pl-5 pr-1.5 glass-raised backdrop-blur-xl"
+            /* Two things here.
+             *
+             * The input inside carries `outline-none` and nothing put the focus
+             * affordance back, so tabbing into the memory composer drew nothing at
+             * all — the only writable control on this card had no focus state.
+             * focus-within on the shell is how the chat and /compare composers do
+             * it, and the ring follows the capsule radius set in `style`.
+             *
+             * And `shadow-glass`, not `.glass-raised`: Tailwind's ring compiles to
+             * `box-shadow: <offset>, <ring>, var(--tw-shadow)`, so it REPLACES a
+             * components-layer box-shadow outright — the bar would have gone flat
+             * at the exact moment it gained a ring. The utility writes the same
+             * --shadow-glass value into --tw-shadow, so lift and ring compose. */
+            className="pointer-events-auto flex w-full items-center gap-1.5 border border-border/70 bg-popover/95 py-1.5 pl-5 pr-1.5 shadow-glass backdrop-blur-xl transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25 motion-reduce:transition-none"
           >
             <motion.div
               layout="position"
@@ -183,7 +202,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
                   maxLength={600}
                   placeholder="Tell Juno what to remember, update, or forget…"
                   aria-label="Memory instruction"
-                  className="h-9 w-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
+                  className="h-9 w-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
               )}
             </motion.div>
@@ -202,7 +221,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
                   onClick={() => setComposing(false)}
                   aria-label="Cancel editing"
                 >
-                  <X className="h-4 w-4" />
+                  <X className="size-4" />
                 </Button>
               )}
               <Button
@@ -212,7 +231,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
                 disabled={drafting || !value.trim()}
                 aria-label="Send instruction"
               >
-                {drafting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+                {drafting ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
               </Button>
             </motion.div>
           </motion.form>
@@ -220,7 +239,8 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
           <motion.button
             layoutId="memory-composer"
             transition={MORPH_TRANSITION}
-            style={{ borderRadius: 24 }}
+            // Same capsule as the composer it morphs into — see the note above.
+            style={{ borderRadius: 9999 }}
             ref={fabRef}
             type="button"
             onClick={() => {
@@ -231,7 +251,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
             aria-disabled={paused}
             whileTap={paused ? undefined : { scale: 0.95 }}
             className={cn(
-              "pointer-events-auto flex h-11 w-11 items-center justify-center bg-primary text-primary-foreground btn-glossy halo-primary hover:brightness-[1.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background coarse:h-12 coarse:w-12",
+              "pointer-events-auto flex size-11 items-center justify-center bg-primary text-primary-foreground btn-glossy halo-primary transition-[filter] duration-fast ease-out-soft hover:brightness-[1.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none coarse:size-12",
               paused && "opacity-50"
             )}
             aria-label={
@@ -243,7 +263,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
             {/* initial={false}: the icon must be visible in server-rendered HTML,
                 not fade in after hydration. */}
             <motion.span layout="position" initial={false}>
-              <Pencil className="h-4 w-4" />
+              <Pencil className="size-4" />
             </motion.span>
           </motion.button>
         )}
@@ -253,7 +273,7 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
       <Dialog open={expanded} onOpenChange={setExpanded}>
         <DialogContent className="flex h-[min(85dvh,52rem)] max-w-3xl flex-col gap-0 overflow-hidden p-0">
           <DialogHeader className="shrink-0 border-b border-border/50 p-6 pb-4">
-            <DialogTitle className="font-serif">Memory summary</DialogTitle>
+            <DialogTitle>Memory summary</DialogTitle>
             {summary && <DialogDescription>Updated {timeAgo(summary.updatedAt)}</DialogDescription>}
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-y-auto p-6">

@@ -266,9 +266,13 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
           }
         />
       ) : !state ? (
-        <div className="space-y-2" aria-hidden>
+        // gap-2 and rounded-card, because a skeleton's whole job is to be the
+        // shape that arrives: these stood in for five `Pressable kind="tile"`
+        // cards at rounded-card (14) and were drawn at rounded-field (10), so
+        // the corners visibly stepped out when the real policy list landed.
+        <div className="grid grid-cols-1 gap-2" aria-hidden>
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="skeleton h-16 rounded-field" style={staggerDelay(i, "loose")} />
+            <div key={i} className="skeleton h-16 rounded-card" style={staggerDelay(i, "loose")} />
           ))}
         </div>
       ) : (
@@ -302,7 +306,19 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
                   role="radio"
                   aria-checked={selected}
                   onClick={() => selectPolicy(policy)}
-                  className="min-h-11 shadow-pop hover:shadow-float motion-safe:hover:-translate-y-0.5"
+                  // No shadows. `--shadow-float` is the OUT-OF-FLOW token —
+                  // card.tsx explicitly forbids an in-flow tile reaching for it,
+                  // because a hovered tile then outranks every dropdown in the
+                  // product — and on a black ground both shadows are black ink,
+                  // so the whole hover state degraded to a 2px translate. The
+                  // Pressable `tile` kind already carries border + fill hover.
+                  //
+                  // And no `hover:bg-card` either, which is what the line above
+                  // used to say while doing the opposite: utilities are emitted
+                  // after the components layer, so it beat the kind's
+                  // `hover:bg-accent` and repainted the hover in the tile's OWN
+                  // rest fill. Five policy cards whose only hover was a 2px lift.
+                  className="min-h-11 motion-safe:hover:-translate-y-0.5"
                   {...policyOption(position)}
                 >
                   <span className="flex w-full items-center justify-between gap-2 text-sm font-medium">
@@ -316,12 +332,12 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
               );
             })}
           </div>
-          <p className="mt-2 text-xs text-muted-foreground/80">
+          <p className="mt-2 text-xs text-muted-foreground">
             Juno only ever offers to remember an approval for reversible actions. Anything
             destructive or sensitive is asked again every single time.
           </p>
 
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border/40 pt-4">
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium" id="lockdown-label">
                 Lockdown
@@ -339,7 +355,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
             />
           </div>
 
-          <div className="mt-5 border-t border-border/40 pt-4">
+          <div className="mt-5 border-t border-border/60 pt-4">
             <p className="text-sm font-medium">Blocked apps</p>
             <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
               A blocked app is refused everything, reads included — lockdown for one app instead of
@@ -347,7 +363,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
             </p>
 
             {connectorRows.length === 0 ? (
-              <p className="mt-3 text-xs text-muted-foreground/80">
+              <p className="mt-3 text-xs text-muted-foreground">
                 No apps are connected yet.{" "}
                 <Link href="/connections" className="underline underline-offset-2 hover:text-foreground">
                   Connect one

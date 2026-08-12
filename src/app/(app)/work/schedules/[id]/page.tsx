@@ -258,7 +258,7 @@ export default function WorkSchedulePage() {
               <li key={run.id}>
                 <Link
                   href={`/work/${run.sessionId}`}
-                  className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card/50 px-3.5 py-2.5 transition-colors duration-base ease-out-soft hover:border-border hover:bg-card"
+                  className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card px-3.5 py-2.5 transition-colors duration-base ease-out-soft hover:border-border hover:bg-secondary"
                 >
                   <WorkStatusPill status={run.status} />
                   <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">

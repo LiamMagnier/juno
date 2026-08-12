@@ -150,7 +150,7 @@ export function WorkRunDisclosure({ target, hostName, connectorLabels }: RunDisc
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         aria-expanded={open}
-        className="group flex w-full items-center gap-1.5 rounded-control py-0.5 text-left text-caption leading-relaxed text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="group flex w-full items-center gap-1.5 rounded-control py-0.5 text-left text-caption leading-relaxed text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {/* The where and the reach used to be in this sentence too. Both are on
             the composer's utility strip now — the executor as `WorkRunTarget`,
@@ -165,7 +165,7 @@ export function WorkRunDisclosure({ target, hostName, connectorLabels }: RunDisc
         <ChevronDown
           aria-hidden="true"
           className={cn(
-            "size-3 shrink-0 transition-transform duration-base ease-out-soft",
+            "size-3 shrink-0 transition-transform duration-base ease-in-out",
             open && "rotate-180"
           )}
         />
@@ -204,7 +204,12 @@ export function WorkRunDisclosure({ target, hostName, connectorLabels }: RunDisc
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <dt className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+      {/* `text-label` supplies the 0.10em the config names as the editorial
+          maximum for caps, plus the weight. This was hand-tracked at 0.16em —
+          past that ceiling, where uppercase micro-labels stop grouping into
+          words — and it is the same defect `WorkPreflightCard` already fixed on
+          its own two badges. */}
+      <dt className="font-mono text-label uppercase text-muted-foreground">
         {label}
       </dt>
       <dd className="mt-0.5 text-caption leading-relaxed text-muted-foreground">{children}</dd>

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { GitFork, GripVertical, Loader2, RefreshCw, Share, Trash2, X } from "lucide-react";
+import { GitFork, GripVertical, Loader2, RefreshCw, Share, Trash2, TriangleAlert, X } from "lucide-react";
 import { AppIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
@@ -308,6 +308,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     });
   }, []);
   const [privateMode, setPrivateMode] = React.useState(false);
+  React.useEffect(() => {
+    window.dispatchEvent(new CustomEvent("juno:incognito", { detail: privateMode }));
+  }, [privateMode]);
   // Set when this view is an unsaved branch forked from another conversation.
   const [forkedFrom, setForkedFrom] = React.useState<{ title: string; count: number } | null>(null);
   // The project this chat belongs to. For a brand-new chat it's the target the
@@ -1467,16 +1470,32 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       aria-live="polite"
       className={cn(
         "mx-auto mb-2 flex w-[calc(100%-1rem)] max-w-2xl items-center gap-3 rounded-field border px-3 py-2 text-sm shadow-soft sm:w-full",
+        // Both states now sit on the floating rung. They were on two different
+        // grounds — a 5% destructive tint and `bg-background/85` behind a blur —
+        // and on the #000 page those resolve to ~2.5% and ~0% lightness, so a
+        // notice that floats over the transcript had the transcript showing
+        // through it. The tone is carried by the border and the icon disc, which
+        // is where it was legible in the first place.
         voiceSaveError
-          ? "border-destructive/30 bg-destructive/5 text-foreground"
-          : "border-border/70 bg-background/85 text-muted-foreground backdrop-blur-xl"
+          ? "border-destructive/40 bg-popover text-foreground"
+          : "border-border/70 bg-popover text-muted-foreground"
       )}
     >
-      {voiceSaving ? (
-        <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
-      ) : (
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">!</span>
-      )}
+      {/* One fixed 28px leading slot for both states. Saving showed a bare 16px
+          spinner and failing showed a 28px disc, so the row's text jumped 12px
+          sideways at the exact moment the user was reading it. The error glyph
+          was also a literal "!" character — a text baseline inside a circle
+          never optically centres, and it is the one mark here not drawn from the
+          icon set. */}
+      <span
+        aria-hidden
+        className={cn(
+          "flex size-7 shrink-0 items-center justify-center rounded-full",
+          voiceSaving ? "bg-primary/10 text-primary" : "bg-destructive/10 text-destructive"
+        )}
+      >
+        {voiceSaving ? <Loader2 className="size-4 animate-spin" /> : <TriangleAlert className="size-4" />}
+      </span>
       <div className="min-w-0 flex-1">
         <p className="font-medium text-foreground">{voiceSaving ? "Saving voice transcript…" : "Voice transcript isn’t saved yet"}</p>
         {voiceSaveError && <p className="mt-0.5 truncate text-xs text-muted-foreground">{voiceSaveError}</p>}
@@ -1486,7 +1505,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           <button
             type="button"
             onClick={closeVoice}
-            className="pressable inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-primary hover:bg-primary/10"
+            className="pressable inline-flex h-9 items-center gap-1.5 rounded-control px-2.5 text-xs font-medium text-primary hover:bg-primary/10 coarse:h-11 coarse:px-3"
           >
             <RefreshCw className="size-3.5" />
             Retry
@@ -1497,7 +1516,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             onClick={discardFailedVoiceSave}
             aria-label="Discard unsaved voice transcript"
             // danger-hover overrides the default accent fill: this one deletes.
-            className="danger-hover hover:bg-transparent"
+            // It does that on its own — the selector is doubled (globals.css)
+            // precisely so it outranks a variant's hover utility — so the
+            // `hover:bg-transparent` that used to ride along here never painted
+            // and only made it look as though two rules were fighting.
+            className="danger-hover"
           >
             <Trash2 className="size-3.5" />
           </Pressable>
@@ -1519,7 +1542,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onSubmitClarification={(answers) => chat.resolvePendingClarification(answers)}
       onSkipClarification={() => chat.resolvePendingClarification([], true)}
       onCancelClarification={chat.cancelPendingClarification}
-      onOpenVoiceMode={planAllowsVoice && !!process.env.NEXT_PUBLIC_VOICE_RELAY_URL && !privateMode && !voiceOpen && !voiceSaving && !voiceSaveError && !voiceTurnSending && !chat.pendingClarification ? openVoice : undefined}
+      onOpenVoiceMode={planAllowsVoice && !privateMode && !voiceOpen && !voiceSaving && !voiceSaveError && !voiceTurnSending && !chat.pendingClarification ? openVoice : undefined}
       quotaReached={quotaReached}
       planIncludesNoMessages={planIncludesNoMessages}
       canvasEnabled={canvasEnabled}
@@ -1571,7 +1594,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           ARIA gymnastics. */}
       <div
         className={cn(
-          "absolute right-3 top-3 z-20 flex items-center gap-0.5 transition-[opacity,transform] duration-slow ease-out-soft md:right-4 md:top-4",
+          "absolute left-1/2 -translate-x-1/2 top-2 z-20 flex items-center gap-2 transition-[opacity,transform] duration-slow ease-out-soft md:top-3",
           privateMode ? "pointer-events-none translate-y-1 opacity-0" : "translate-y-0 opacity-100",
           (openArtifact || thoughtOpenId) && "hidden lg:flex"
         )}
@@ -1639,7 +1662,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           // cluster (share / params / incognito ≈ 9rem incl. coarse targets)
           // sharing the same row — 18rem alone overlaps it under ~450px.
           <div className="pointer-events-none absolute left-3 top-3 z-20 flex max-w-[min(18rem,calc(100%-10rem))] sm:max-w-[min(18rem,calc(100%-1.5rem))] md:left-4 md:top-4">
-            <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-full border border-border/60 bg-card/70 py-1 pl-1 pr-1 shadow-soft backdrop-blur-md motion-safe:animate-fade-in">
+            {/* `bg-popover`, opaque. This pill is absolutely positioned over the
+                live transcript, and `bg-card/70` behind a blur resolves to ~4.6%
+                on the black ground with nothing for the blur to smear — message
+                text scrolled straight through the project name. */}
+            <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-full border border-border/60 bg-popover py-1 pl-1 pr-1 shadow-soft motion-safe:animate-fade-in">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
                 <AppIcons.projects className="h-3 w-3 text-primary" />
               </span>
@@ -1653,7 +1680,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     <button
                       type="button"
                       onClick={() => router.push(`/projects/${activeProjectId}`)}
-                      className="min-w-0 truncate text-sm font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+                      className="min-w-0 truncate text-sm font-medium text-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary hover:underline motion-reduce:transition-none"
                     >
                       {projectMeta.name}
                     </button>
@@ -1690,12 +1717,22 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             <span
               role="status"
               className={cn(
-                "inline-flex items-center gap-2 rounded-full border border-border/60 bg-card/80 px-3 py-1 shadow-glass backdrop-blur",
+                // Same reason as the project pill: this is a floating status
+                // token wearing `shadow-glass`, so it belongs on the floating
+                // rung rather than on 80% of a fill that is itself near black.
+                "inline-flex items-center gap-2 rounded-full border border-border/60 bg-popover px-3 py-1 shadow-glass",
                 memoryLeaving ? "motion-safe:animate-title-out motion-safe:[animation-fill-mode:forwards]" : "motion-safe:animate-rise-in"
               )}
             >
               <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-primary opacity-70 motion-safe:animate-ping" />
+                {/* `pulse-ring`, not Tailwind's stock `ping`. Two reasons, both
+                    about the system rather than this dot: ping runs a 2× scale on
+                    `cubic-bezier(0,0,0.2,1)`, which is not on the ease ladder and
+                    is a visibly wider halo than the identical indicator elsewhere
+                    in the product; and `pulse-ring` is the named keyframe every
+                    other live dot here uses, so there is one place to tune them.
+                    Same reasoning as the note at research-run-panel.tsx. */}
+                <span aria-hidden className="absolute inline-flex h-full w-full rounded-full bg-primary opacity-70 motion-safe:animate-pulse-ring" />
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
               </span>
               <span className="font-mono text-label uppercase text-muted-foreground">Memory updated</span>
@@ -1744,9 +1781,16 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         {/* Main column — settles into a quiet framed card in incognito. */}
         <div
           className={cn(
-            "flex min-h-0 flex-1 flex-col overflow-hidden transition-[margin,border-radius,border-color,background-color,box-shadow] duration-slow ease-out-soft",
+            // `motion-reduce:transition-none`: this animates margin and
+            // border-radius, i.e. it reflows the whole transcript column over
+            // `duration-slow`, and it had no escape for a reader who asked the
+            // OS for less motion.
+            "flex min-h-0 flex-1 flex-col overflow-hidden transition-[margin,border-radius,border-color,background-color,box-shadow] duration-slow ease-out-soft motion-reduce:transition-none",
             privateMode
-              ? "m-2 rounded-popover border border-border/70 bg-card/50 shadow-soft sm:m-3 sm:rounded-composer"
+              // `bg-card`, not `bg-card/50` — half a 6.5% fill over black is
+              // ~3.3%, so the "quiet framed card" incognito settles into was a
+              // rounded border with the page inside it.
+              ? "m-2 rounded-popover border border-border/70 bg-card shadow-soft sm:m-3 sm:rounded-composer"
               : "m-0 rounded-none border border-transparent bg-transparent shadow-none"
           )}
         >
@@ -1829,7 +1873,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 )}
                 {composer}
               </div>
-              <p className="shrink-0 select-none pb-2 text-center text-[10px] leading-4 text-muted-foreground">
+              <p className="shrink-0 select-none pb-2 text-center text-caption leading-4 text-muted-foreground">
                 {forkedFrom
                   ? "This branch isn't saved — it continues from the fork point with full context."
                   : privateMode
@@ -1842,7 +1886,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             // is wider than the column it sits in, can never put a horizontal
             // scrollbar over dead space (it still scrolls vertically).
             <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip">
-              <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-3 py-6 sm:px-5 md:py-10">
+              <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col items-center justify-center px-3 py-6 sm:px-5 md:py-8">
                 {/*
                   `isolate` bounds where the aura is allowed to fall. It paints
                   on z-index -1, and the column below deliberately does NOT
@@ -1852,7 +1896,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 */}
                 <div className="relative isolate flex w-full flex-col items-center justify-center">
                   {/* Headers cross-fade — opacity only; scale was causing a jump. */}
-                  <div className="mb-5 grid w-full grid-cols-1 grid-rows-1 justify-items-center sm:mb-6">
+                  <div className="mb-4 grid w-full grid-cols-1 grid-rows-1 justify-items-center sm:mb-5">
                     <div
                       className={cn(
                         "col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity duration-slow ease-out-soft",
@@ -1910,7 +1954,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               {/* Disclaimer — pinned to the bottom of the page, not centered with the greeting. */}
               <p
                 className={cn(
-                  "shrink-0 select-none pb-2 text-center text-[10px] leading-4 text-muted-foreground transition-opacity duration-slow ease-out-soft",
+                  "shrink-0 select-none pb-2 text-center text-caption leading-4 text-muted-foreground transition-opacity duration-slow ease-out-soft",
                   privateMode ? "pointer-events-none opacity-0" : "opacity-100"
                 )}
               >
@@ -1972,7 +2016,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             title="Drag to resize. Arrow keys adjust, Home resets."
             className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center lg:flex"
           >
-            <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-background/90 text-muted-foreground opacity-0 shadow-soft backdrop-blur transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+            {/* `bg-popover`. The grip was `bg-background/90` behind a blur — the
+                page colour, over the page, i.e. a handle whose only visible part
+                was its 1px border. It floats above two panels, so it takes the
+                floating rung. */}
+            <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
               <GripVertical className="h-3.5 w-3.5" />
             </span>
           </button>
@@ -2009,7 +2057,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               title="Drag to resize canvas. Double-click to reset."
               className="group absolute inset-y-0 left-0 z-popper hidden w-3 -translate-x-1/2 cursor-col-resize touch-none items-center justify-center lg:flex"
             >
-              <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-background/90 text-muted-foreground opacity-0 shadow-soft backdrop-blur transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+              <span className="flex h-12 w-1.5 items-center justify-center rounded-full border border-border/70 bg-popover text-muted-foreground opacity-0 shadow-soft transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none">
                 <GripVertical className="h-3.5 w-3.5" />
               </span>
             </button>

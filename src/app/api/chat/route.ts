@@ -1929,7 +1929,7 @@ async function handleChat(req: Request) {
         });
         researchCostUsd = research.costUsd;
         if (research.ok) {
-          synthesisSystem = `${system}\n\n${research.context}`;
+          synthesisSystem = `${system}\n\n${research.context}\n\nIMPORTANT: You must output the entire research report inside a single <juno:artifact identifier="research-report" type="MARKDOWN" title="Research Report" language="md">...</juno:artifact> block. Include images and interactive elements in the markdown where appropriate. Do not write the report directly in the chat.`;
           // Sources are known up front (unlike native search, which streams
           // them): publish the numbered list now so citations resolve as the
           // report streams. Order must match the corpus numbering exactly, so

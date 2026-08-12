@@ -92,31 +92,18 @@
 
 @layer base {
   :root {
-    /* fonts provided by next/font (see layout.tsx): --font-sans, --font-serif, --font-mono */
-    /* The neutral ramp is ONE hue family (48). Saturation and lightness are the
-       values this palette has always had — only the hue was ever inconsistent,
-       and four unrelated hue families with no rule is what let the native and
-       Windows clients each author a second palette. */
+    /* Juno warm paper: a quiet editorial ground for native glass chrome. */
     --background: 54 18% 97%;
     --foreground: 48 3% 12%;
 
-    /* Not pure white. A pure-white float over warm paper is the one pairing that
-       reads as somebody else's product; 99% is a 1% step, indistinguishable as a
-       surface, and it keeps `0 0% 100%` out of the token file. */
     --card: 54 44% 99%;
     --card-foreground: 48 3% 12%;
 
     --popover: 54 44% 99%;
     --popover-foreground: 48 3% 12%;
 
-    /* 46%, not 51%: white on the old fill measured 4.08:1, under the 4.5:1 bar
-       for the 14px medium label the primary CTA actually carries. Hue and
-       saturation are untouched, so the warm coral character is exactly as it was. */
     --primary: 15 54% 46%;
     --primary-foreground: 0 0% 100%;
-    /* The AA text ramp for the accent, mirroring --success-ink /
-       --warning-foreground / --destructive-ink. The fill tone is for fills; text
-       that happens to be the accent (prose links, soft badges) uses this. */
     --primary-ink: 15 54% 44%;
 
     --secondary: 50 23% 95%;
@@ -146,6 +133,16 @@
        5.2:1 on --background and 4.8:1 on a bg-warning/10 chip. */
     --warning-foreground: 40 57% 33%;
     --source: 187 62% 34%;
+    /* Syntax tokens for the highlight.js block at the foot of this file. They
+       are not --success / --warning: those two carry meaning (a run passed, a
+       run is degraded) and a string literal is neither, so tying code colour to
+       a state colour means a theme change to one silently repaints the other.
+       They exist as tokens at all because the alternative — and what was here —
+       was four raw HSL literals no theme could reach, in the same file that
+       spends twenty lines explaining why every AIcss literal had to become a
+       token. Values are unchanged from those literals. */
+    --code-string: 152 56% 42%;
+    --code-number: 32 80% 46%;
     /* Deepest-thinking ("Max") accent — the one place violet is allowed, to mark
        the tier that is materially slower and pricier. Kept as tokens so the
        accent-swapping in app-provider can't be bypassed by a hardcoded hex. */
@@ -154,12 +151,6 @@
     --ultra-to: 271 91% 65%;
 
     --border: 48 23% 88%;
-    /* --input is the only thing that says a text field EXISTS: the field is
-       `bg-background` on a `bg-card` surface, a 1.05:1 difference, so the 1px
-       border carries the whole affordance and owes SC 1.4.11 its 3:1. The old
-       value measured 1.29:1. Saturation drops to 12% so the darker value reads
-       as a neutral hairline rather than olive. --border above is the DECORATIVE
-       rim (dividers, card edges), outside 1.4.11, and is deliberately untouched. */
     --input: 48 12% 53%;
     --ring: 15 54% 46%;
 
@@ -168,7 +159,7 @@
     --sidebar-border: 48 23% 88%;
     --sidebar-accent: 48 28% 91%;
 
-    --radius: 24px;
+    --radius: 16px;
 
     /* ---- Motion tokens ------------------------------------------------------
        One vocabulary, mirrored as ease-* / duration-* in tailwind.config.ts.
@@ -260,8 +251,10 @@
        use it for opacity or colour — a value that overshoots past its target is
        meaningless for those and just clips. */
     --ease-out-back: cubic-bezier(0.34, 1.32, 0.64, 1);
-    /* Deprecated alias of --ease-out-strong, kept so existing sites keep
-       resolving; delete once they have migrated. */
+    /* Deprecated alias of --ease-out-strong. This file no longer reads it —
+       all 23 of its own uses were migrated to the real name — but the Tailwind
+       `ease-spring` utility it mirrors is still on ~47 component call sites, so
+       the token stays until those are moved. Do not add a 24th. */
     --ease-spring: var(--ease-out-strong);
     --dur-press: 70ms;
     --dur-fast: 120ms;
@@ -277,27 +270,52 @@
     --dot-size: 5px;
     --dot-gap: 3px;
 
+    /*
+     * The colour a shadow is made of. One token, because the alternative was
+     * what this file actually had: a dozen box-shadows written with
+     * `hsl(var(--foreground) / a)`.
+     *
+     * On the light theme that reads correctly — --foreground is near-black ink,
+     * so the shadow is dark. Flip to dark and --foreground becomes near-WHITE,
+     * and every one of those shadows inverts into a glowing white halo around
+     * the element: the composer, the overlay chrome, the raised surfaces. That
+     * is the halo, and it was never a design decision — it was --foreground
+     * being used as a synonym for "dark" by rules that only ever got looked at
+     * in light mode.
+     *
+     * Shadow ink is not text ink. It is declared per theme and it stays dark in
+     * both, so a shadow is always something the surface blocks rather than
+     * something it emits.
+     */
+    --shadow-ink: 48 10% 18%;
+
     /* Elevation (light) — warm, soft, low-throw + 1px inner top-highlight on floats.
        The shadow ink is hue 48 like everything else, so a shadow reads as a
        darker version of the paper it falls on rather than a separate warm tint.
        Geometry, blur, spread and alpha are all exactly as they were. */
-    --shadow-soft: 0 1px 2px hsl(48 10% 20% / 0.05), 0 4px 12px -4px hsl(48 10% 20% / 0.08);
-    --shadow-float: 0 4px 14px -4px hsl(48 10% 16% / 0.12), 0 14px 36px -10px hsl(48 10% 16% / 0.14), inset 0 1px 0 hsl(0 0% 100% / 0.65);
-    --shadow-glass: 0 8px 32px -10px hsl(48 12% 12% / 0.18), inset 0 1px 0 hsl(0 0% 100% / 0.55);
+    --shadow-soft: 0 1px 2px hsl(48 10% 20% / 0.06);
+    --shadow-float: 0 2px 6px hsl(48 10% 16% / 0.07), 0 18px 42px -28px hsl(48 10% 16% / 0.28);
+    --shadow-glass: 0 2px 6px hsl(48 10% 16% / 0.06), 0 14px 34px -24px hsl(48 10% 16% / 0.22);
     /* The missing rung. The ladder is soft < lift < glass < float, and it has to
        be monotonic: an element that has not left the flow cannot out-elevate one
        that has. Hover states on in-flow cards reached for --shadow-float for want
        of anything between soft and glass, which put a hovered tile above every
        dropdown in the product. */
-    --shadow-lift: 0 2px 6px -2px hsl(48 10% 18% / 0.09), 0 8px 20px -8px hsl(48 10% 16% / 0.12);
+    --shadow-lift: 0 6px 18px -16px hsl(48 10% 16% / 0.2);
 
     /* Depth kit (Awwwards-lean): a top sheen for raised surfaces, a crisp pop shadow
        for small interactive elements, a colored halo for the primary, and an inset
        "well" for recessed inputs. Tuned separately for light/dark below. */
     --sheen: 0 0% 100% / 0.55;
+    /* The second rung of the same ramp: the rim light on a surface that is
+       FOCUSED. It exists because the dark composer was writing this value out as
+       a raw `hsl(45 20% 96% / .085)` in two places — the last colour literals in
+       the file — which is a value only those two rules know, in a token file
+       whose stated rule is to keep raw colour out of components. */
+    --sheen-strong: 0 0% 100% / 0.7;
     --hairline: 48 12% 18% / 0.06;
-    --shadow-pop: 0 1px 1px hsl(48 12% 18% / 0.05), 0 2px 4px -1px hsl(48 12% 18% / 0.09), 0 8px 18px -8px hsl(48 12% 18% / 0.12);
-    --glow-primary: 0 1px 2px hsl(var(--primary) / 0.32), 0 5px 14px -5px hsl(var(--primary) / 0.42), 0 14px 30px -14px hsl(var(--primary) / 0.34);
+    --shadow-pop: 0 1px 2px hsl(48 12% 18% / 0.08);
+    --glow-primary: 0 1px 2px hsl(var(--primary) / 0.18);
     --well-inset: inset 0 1px 2px hsl(48 12% 18% / 0.07);
 
     /* The dim behind a modal. A raw `black` literal is the most-seen surface in
@@ -306,41 +324,94 @@
     --scrim: 48 12% 8% / 0.42;
 
     /* Stacking order for out-of-flow layers, so a new one has somewhere to look
-       up its answer instead of picking a number. */
-    --z-popper: 50;
+       up its answer instead of picking a number.
+
+       popper is ABOVE modal, by five, and the gap is the whole point. They were
+       both 50 — two named rungs holding the same number, which is a ladder that
+       does not ladder: a select, dropdown or tooltip opened inside a dialog tied
+       with the dialog's own panel and resolved on DOM order. Radix portals both
+       to <body>, so which one wins was an accident of mount order. The menu has
+       to clear the surface that opened it. */
+    --z-popper: 55;
     --z-modal: 50;
     --z-toolbar: 60;
     --z-toast: 70;
   }
 
   .dark {
-    /* Same one hue family (48) as light, and for the same reason. Every
-       saturation and lightness is the value it already was, so the four-step
-       dark elevation ladder (9 → 12.5 → 18 → 21) is untouched. */
-    --background: 48 7% 9%;
-    --foreground: 48 24% 93%;
+    /*
+     * True black. The ground is #000000 — not a charcoal that photographs as
+     * black, the actual value, so an OLED panel keeps those pixels switched off
+     * and the app's edge dissolves into the bezel.
+     *
+     * That one value changes how the whole ladder has to work, in two ways.
+     *
+     * ELEVATION CANNOT COME FROM SHADOW. A black drop shadow on a black ground
+     * is nothing. Every rung below therefore lifts by LIGHTNESS, and the ladder
+     * is re-based from 0 rather than from the old 9%: what used to be a 3.5-point
+     * step from the ground (9 -> 12.5) is now a 6.5-point one, because a step
+     * measured against black has to be bigger to read as the same lift. Order is
+     * preserved exactly — ground < card < muted/secondary < popover/accent — so
+     * every existing call site still stacks the way its author intended.
+     *
+     * HUE HAS TO THIN OUT. Warm charcoal worked because 7% saturation at 9%
+     * lightness is a tint you cannot name. The same 7% over pure black reads as
+     * brown sludge in the shadows, because there is no longer any lightness to
+     * dilute it. Saturation drops to 4-5% and the hue stays at 48: enough that
+     * the greys sit in the same family as the light theme's paper and the coral
+     * accent has something to belong to, not enough to name a colour.
+     */
+    --background: 0 0% 0%;
+    /* Off-white, not white. Pure #fff on pure #000 is a 21:1 glare that makes
+       long prose vibrate; 94% lands at 18.4:1 with the edge taken off. The warm
+       cast is halved from the charcoal era for the same reason the surfaces
+       thinned out — cream type over black reads as a colour cast, not warmth. */
+    --foreground: 45 14% 94%;
 
-    --card: 48 7% 12.5%;
-    --card-foreground: 48 24% 93%;
+    --card: 48 5% 6.5%;
+    --card-foreground: 45 14% 94%;
 
-    --popover: 48 6% 18%;
-    --popover-foreground: 48 24% 93%;
+    /* Floating layers lift furthest, because on black they have nothing else to
+       separate them: the shadow under a popover is invisible here, so the panel
+       has to be visibly lighter than whatever it covers. */
+    --popover: 48 5% 13%;
+    --popover-foreground: 45 14% 94%;
 
-    /* Light/dark parity on the accent, as today. */
     --primary: 15 54% 46%;
     --primary-foreground: 0 0% 100%;
-    /* Dark fills already pass as text (see --success-ink), but the accent's text
-       ramp is lifted so a link inside a run of body copy stays legible. */
     --primary-ink: 15 62% 66%;
 
-    --secondary: 48 7% 15%;
-    --secondary-foreground: 48 22% 90%;
+    --secondary: 48 5% 9.5%;
+    --secondary-foreground: 45 13% 91%;
 
-    --muted: 48 7% 15%;
-    --muted-foreground: 48 7% 63%;
+    --muted: 48 5% 9.5%;
+    --muted-foreground: 45 6% 62%;
 
-    --accent: 48 6% 18%;
-    --accent-foreground: 48 22% 90%;
+    /*
+     * ONE RUNG ABOVE --popover, not equal to it.
+     *
+     * These two were both 13% when the ladder was re-based, which looked
+     * harmless — they are adjacent rungs and the old charcoal theme had them a
+     * hair apart. It is not harmless, because the two tokens are used AGAINST
+     * each other: a menu, popover, select or dialog paints itself `bg-popover`
+     * and paints the row under the cursor `hover:bg-accent`. Identical values
+     * mean the hover state of every row in every floating layer in the product
+     * rendered as no change at all.
+     *
+     * The worst case was the command palette, where the sliding selection bar is
+     * the ONLY thing telling you which row Enter will open — painted in exactly
+     * the colour of the panel behind it. The same collision silently removed the
+     * pressed state of its filter chips and every `hover:bg-accent` in
+     * onboarding.
+     *
+     * 17% clears --popover by four points, which is the smallest step that reads
+     * as a state change on an OLED panel without turning a hover into a
+     * selection. It also stays correct on the other grounds `--accent` lands on:
+     * +10.5 over a card, +17 over the page. The sidebar is unaffected either way
+     * — it has its own --sidebar-accent rung for exactly this reason.
+     */
+    --accent: 48 5% 17%;
+    --accent-foreground: 45 13% 91%;
 
     --destructive: 11 51% 49.5%;
     --destructive-foreground: 0 0% 100%;
@@ -357,37 +428,79 @@
        token exists per theme so call sites never have to know which is which. */
     --warning-foreground: 40 60% 58%;
     --source: 187 58% 49%;
+    /* Lifted against the black ground, as every code colour has to be. */
+    --code-string: 152 50% 56%;
+    --code-number: 38 90% 60%;
     /* Lifted a touch on dark so violet keeps contrast against the near-black. */
     --ultra: 258 92% 74%;
     --ultra-from: 252 100% 76%;
     --ultra-to: 271 93% 73%;
 
-    --border: 48 6% 21%;
-    /* 1.67:1 against the background was not enough to say a field exists; see
-       the light --input note. --border stays where it is. */
-    --input: 48 6% 42%;
+    /* Down from 21%, and it is not a taste change. A border is read as a
+       DIFFERENCE from the surface behind it, and that surface just dropped nine
+       points to zero, so holding the border still would have widened every
+       hairline in the product by the same nine points. 16% keeps the contrast
+       the border always had against the ground it sits on. */
+    --border: 48 5% 16%;
+    --input: 48 5% 32%;
     --ring: 15 54% 46%;
 
-    --sidebar: 48 10% 7.5%;
-    --sidebar-foreground: 48 7% 70%;
-    --sidebar-border: 48 7% 16%;
-    --sidebar-accent: 48 8% 14%;
+    /* The sidebar used to be DARKER than the page, which is how it separated.
+       Nothing is darker than black, so it is flush with the ground now and the
+       separation moves entirely to --sidebar-border. This is the better read
+       anyway on OLED: one uninterrupted black field, divided by a hairline,
+       instead of two nearly-identical greys meeting at an invisible seam. */
+    --sidebar: 0 0% 0%;
+    --sidebar-foreground: 45 6% 68%;
+    --sidebar-border: 48 5% 14%;
+    --sidebar-accent: 48 5% 11%;
 
-    /* Elevation (dark) — deeper throw + faint warm top inner-highlight for real lift,
-       not an inverted light shadow. */
-    --shadow-soft: 0 1px 2px hsl(0 0% 0% / 0.3), 0 4px 12px -4px hsl(0 0% 0% / 0.4);
-    --shadow-float: 0 4px 16px -4px hsl(0 0% 0% / 0.45), 0 16px 40px -12px hsl(0 0% 0% / 0.5), inset 0 1px 0 hsl(45 24% 93% / 0.06);
-    --shadow-glass: 0 8px 32px -10px hsl(0 0% 0% / 0.55), inset 0 1px 0 hsl(45 24% 93% / 0.07);
+    /*
+     * Elevation (dark) — and the rule that changes on a black ground.
+     *
+     * A drop shadow is black ink spread on whatever is behind the element. On a
+     * #000 page there is nothing for it to darken, so ON THE GROUND these
+     * shadows are invisible and elevation is carried entirely by the lightness
+     * ladder above plus the inset sheen below. They are kept, at strength,
+     * because the moment a layer floats over a CARD or another panel — a menu
+     * over a tile, a dialog over the composer — there is something to darken
+     * again and the shadow does its job.
+     *
+     * Hence the inset top highlight on the two floating rungs. It is the one
+     * depth cue that works on black in both cases: a 1px lit edge along the top
+     * of a panel reads as a surface catching light from above, and it does not
+     * depend on what is underneath.
+     */
+    /* Pure black, not the light theme's warm ink: on a #000 ground a shadow with
+       any lightness left in it is a light patch, which is the halo again with
+       the saturation turned down. */
+    --shadow-ink: 0 0% 0%;
+    --shadow-soft: 0 1px 2px hsl(0 0% 0% / 0.28);
+    --shadow-float: 0 2px 8px hsl(0 0% 0% / 0.3), 0 20px 46px -28px hsl(0 0% 0% / 0.72), inset 0 1px 0 hsl(var(--sheen));
+    --shadow-glass: 0 2px 8px hsl(0 0% 0% / 0.28), 0 16px 38px -24px hsl(0 0% 0% / 0.64), inset 0 1px 0 hsl(var(--sheen));
     /* The rung between soft and glass, so the ladder stays monotonic on dark too. */
-    --shadow-lift: 0 2px 8px -2px hsl(0 0% 0% / 0.38), 0 10px 26px -10px hsl(0 0% 0% / 0.45);
+    --shadow-lift: 0 8px 22px -18px hsl(0 0% 0% / 0.62);
 
-    /* Depth kit (dark) — a fainter warm top sheen reads as real lift, not an inverted
-       light shadow; shadows deepen; the primary halo carries the accent hue. */
-    --sheen: 48 40% 96% / 0.06;
-    --hairline: 48 24% 93% / 0.08;
-    --shadow-pop: 0 1px 2px hsl(0 0% 0% / 0.4), 0 3px 8px -2px hsl(0 0% 0% / 0.5), 0 10px 22px -10px hsl(0 0% 0% / 0.5);
-    --glow-primary: 0 1px 3px hsl(var(--primary) / 0.4), 0 6px 18px -6px hsl(var(--primary) / 0.5), 0 18px 36px -16px hsl(var(--primary) / 0.42);
+    /* Depth kit (dark). The sheen loses most of its saturation with everything
+       else — a warm top highlight over a black panel is a visible yellow line,
+       where over charcoal it was just light. */
+    --sheen: 45 20% 96% / 0.055;
+    /* Focused rim light. The step over --sheen is small on purpose: on a black
+       ground the eye reads a lit edge against nothing, so a large jump reads as
+       the panel switching a light on rather than as it catching one. */
+    --sheen-strong: 45 20% 96% / 0.085;
+    --hairline: 45 14% 94% / 0.08;
+    --shadow-pop: 0 1px 2px hsl(0 0% 0% / 0.38);
+    --glow-primary: 0 1px 2px hsl(var(--primary) / 0.2);
     --well-inset: inset 0 1px 2px hsl(0 0% 0% / 0.38);
+
+    /* The modal dim, which dark never declared and so inherited from the light
+       theme: a warm grey at 42%. Over a charcoal page that was invisible enough
+       to pass; over a black one it is a grey film that LIGHTENS the background
+       behind the dialog, so opening a modal made the page brighter. Dark gets
+       its own — pure black, and heavier, because dimming something already at
+       zero lightness needs opacity to do all the work. */
+    --scrim: 0 0% 0% / 0.66;
   }
 
   /* ---- Accent overrides (coral is the default; drive --primary + --ring) ----
@@ -441,6 +554,13 @@
     background-color: hsl(var(--primary) / 0.25);
     color: hsl(var(--foreground));
   }
+  /* A selection wash is read as a DIFFERENCE from the surface it lies on, and
+     that surface is now zero. Coral at 46% lightness times 0.25 alpha over #000
+     resolves to about a 10%-lightness tint — a hair off --popover, i.e. selected
+     text that does not look selected. 0.25 is still correct against 97% paper. */
+  .dark ::selection {
+    background-color: hsl(var(--primary) / 0.45);
+  }
 
   body {
     background-color: hsl(var(--background));
@@ -480,15 +600,29 @@
   svg.lucide.h-10,   svg.lucide.size-10   { stroke-width: 1.35; }
   svg.lucide.h-12,   svg.lucide.size-12   { stroke-width: 1.25; }
 
-  /* App-wide film grain (2–3%), quiet and non-interactive. */
+  /* Film grain (2–3%), quiet and non-interactive. A PAPER effect: it belongs to
+     the light theme and is switched off in dark below.
+
+     z-index 1, not 70. 70 is --z-toast, so this layer tied with the top rung of
+     the product and painted over every toast, floating toolbar, popover and
+     modal in it — grain on top of a dialog is grain on the wrong side of the
+     glass. 1 lifts it clear of page content and leaves every out-of-flow rung
+     above it. */
   body::after {
     content: "";
     position: fixed;
     inset: 0;
-    z-index: 70;
+    z-index: 1;
     pointer-events: none;
     opacity: 0.022;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  /* Not dimmed — removed. A fixed full-viewport layer at any non-zero opacity
+     means no pixel in the app is ever #000, which is the entire thing the true
+     black in `.dark` buys: an OLED panel only switches a pixel off at zero.
+     Grain is warm paper's texture and it has nothing to sit on here. */
+  .dark body::after {
+    display: none;
   }
 
   /*
@@ -513,7 +647,13 @@
    *
    * Tier B only works if every keyframe that translates, scales or rotates reads
    * --motion-shift / --motion-scale-from. Any keyframe that does not keeps its
-   * full transform here, which is worse than the clamp it replaced.
+   * full transform here, which is worse than the clamp it replaced — and for a
+   * while none of them did: both vars were declared and consumed by nothing, so
+   * fade-in-up, rise-in, stage-in, nudge, pop-in/out and title-in/out all ran
+   * their full travel under the preference. They read the vars now (see the
+   * keyframes block in tailwind.config.ts). Each `var()` carries that keyframe's
+   * own original value as its fallback, so nothing moves differently when the
+   * preference is unset. ANY NEW TRANSFORMING KEYFRAME MUST DO THE SAME.
    */
   @media (prefers-reduced-motion: reduce) {
     :root {
@@ -533,7 +673,9 @@
 
   /* Focus visibility for keyboard users */
   :focus-visible {
-    outline: 2px solid hsl(var(--ring));
+    /* Focus stays unmistakable without turning every keyboard target into a
+       second brand CTA. The accent is reserved for actions and status. */
+    outline: 2px solid hsl(var(--foreground) / 0.55);
     outline-offset: 2px;
   }
 
@@ -951,29 +1093,32 @@
     }
   }
 
-  /* ---- Depth kit (Awwwards-lean) --------------------------------------------
-     Small, composable primitives so every surface shares one lighting model:
-     a light source above the element (top sheen + inner top-hairline) and a
-     warm ambient shadow below. Layered as background-IMAGE so they sit over a
-     component's own bg-* fill without replacing it. */
+  /* ---- Surface depth --------------------------------------------------------
+     Juno uses restrained depth: hairline borders and one close shadow. Floating
+     layers may blur the canvas slightly, but everyday cards stay matte. */
 
   /* Raised panels/cards — faint top sheen + hairline edge for a lit, lifted read. */
   .surface-raised {
-    background-image:
-      linear-gradient(180deg, hsl(var(--sheen)), transparent 44%),
-      linear-gradient(0deg, hsl(var(--card)), hsl(var(--card)));
-    box-shadow: inset 0 1px 0 hsl(var(--sheen)), var(--shadow-soft);
+    background-image: none;
+    box-shadow: 0 1px 2px hsl(var(--shadow-ink) / .04);
   }
 
   /* Glossy fill for the primary action — a specular top highlight over the accent
-     fill. Pair with `.halo-primary` for the colored ambient glow. */
+     fill. Pair with `.halo-primary` for the colored ambient glow.
+
+     Both of these had been emptied out: `.btn-glossy`'s whole body was
+     `background-image: none` and `.halo-primary` drew a neutral grey shadow with
+     the same geometry as `.surface-raised`, so two classes that cost a selector
+     each at every call site produced, between them, nothing the caller asked for.
+     They are restored against the tokens that already exist for exactly this:
+     --sheen is the top highlight every lifted surface in the file uses, and
+     --glow-primary is the accent-tinted halo, declared per theme since the depth
+     kit landed and until now read by nobody. */
   .btn-glossy {
-    background-image: linear-gradient(180deg, hsl(0 0% 100% / 0.17), hsl(0 0% 100% / 0) 52%);
+    background-image: linear-gradient(hsl(var(--sheen)), transparent 45%);
   }
   .halo-primary {
-    /* Rim highlight only — the ambient --glow-primary halo read as a smudge on
-       hover and is retired product-wide. */
-    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.22);
+    box-shadow: var(--glow-primary);
   }
 
   /* The Juno mark's press: a quick spring pop (dip, overshoot with a tilt,
@@ -984,8 +1129,11 @@
     62% { transform: scale(1.12) rotate(4deg); }
     100% { transform: scale(1) rotate(0deg); }
   }
+  /* --ease-out-back, not a hand-written near-copy of it. The inlined curve here
+     was cubic-bezier(0.34, 1.56, 0.64, 1) — the token with roughly four times the
+     overshoot its own comment permits, on the product's own mark. */
   .juno-mark-popping {
-    animation: juno-mark-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    animation: juno-mark-pop 0.5s var(--ease-out-back) both;
   }
   @media (prefers-reduced-motion: reduce) {
     .juno-mark-popping { animation: none; }
@@ -1079,7 +1227,7 @@
      * gesture with spring easing and staggered weight.
      */
     .sidebar-motion-icon--library .sidebar-motion-icon__glyph > * {
-      transition: transform 400ms var(--ease-spring);
+      transition: transform 400ms var(--ease-out-strong);
     }
     .sidebar-motion-icon--library .sidebar-motion-icon__glyph > :nth-child(1) {
       transform-origin: 17px 20px; /* foot of the leaning spine */
@@ -1127,7 +1275,7 @@
       transform-origin: 50% 92%;
       transition:
         opacity 200ms var(--ease-out-soft),
-        transform 440ms var(--ease-spring);
+        transform 440ms var(--ease-out-strong);
     }
     .sidebar-motion-icon--projects .sidebar-motion-icon__glyph--alternate,
     .sidebar-motion-icon--folder .sidebar-motion-icon__glyph--alternate {
@@ -1141,7 +1289,7 @@
       transform: scale(0.93) translateY(0.6px);
       transition:
         opacity 160ms var(--ease-out-soft),
-        transform 360ms var(--ease-spring);
+        transform 360ms var(--ease-out-strong);
     }
     .group:is(:hover, :focus-visible) .sidebar-motion-icon--projects .sidebar-motion-icon__glyph--alternate,
     .group:is(:hover, :focus-visible) .sidebar-motion-icon--folder .sidebar-motion-icon__glyph--alternate {
@@ -1149,7 +1297,7 @@
       transform: scale(1) translateY(0) rotate(0deg);
       transition:
         opacity 220ms var(--ease-out-soft) 45ms,
-        transform 500ms var(--ease-spring) 25ms;
+        transform 500ms var(--ease-out-strong) 25ms;
     }
 
     /* Tasks: clock hand advances; face stays still. */
@@ -1321,18 +1469,40 @@
      Focus stays neutral and still, so entering the field never flashes an accent
      halo or nudges the layout. */
   .composer-surface {
-    background-image: linear-gradient(180deg, hsl(var(--sheen) / .62), transparent 28%);
+    background-image: none;
     box-shadow:
-      inset 0 1px 0 hsl(var(--sheen) / .86),
-      0 1px 2px hsl(var(--foreground) / .045),
-      0 9px 24px -20px hsl(var(--foreground) / .32);
+      0 1px 2px hsl(var(--shadow-ink) / .055),
+      0 10px 28px -24px hsl(var(--shadow-ink) / .28);
   }
   .composer-surface:focus-within {
     transform: none;
     box-shadow:
+      0 1px 2px hsl(var(--shadow-ink) / .07),
+      0 12px 30px -24px hsl(var(--shadow-ink) / .32);
+  }
+  /*
+   * On black the two shadows above are doing nothing — see the elevation note in
+   * `.dark`. The composer is the one surface in the product where that matters
+   * most, because it is the thing the user is aiming at on an otherwise empty
+   * page, so it gets its depth rebuilt out of the two cues that survive: a lit
+   * top edge, and a border that brightens as you approach it.
+   *
+   * The lit edge is 1px and inset. It is emphatically NOT an outer glow — an
+   * outer light on a dark ground is exactly the halo that was removed, and the
+   * difference between "this panel catches the light" and "this panel emits
+   * light" is entirely whether the highlight falls inside the border box.
+   */
+  .dark .composer-surface {
+    box-shadow:
       inset 0 1px 0 hsl(var(--sheen)),
-      0 1px 2px hsl(var(--foreground) / .05),
-      0 10px 24px -21px hsl(var(--foreground) / .34);
+      0 1px 2px hsl(0 0% 0% / .5),
+      0 18px 44px -30px hsl(0 0% 0% / .9);
+  }
+  .dark .composer-surface:focus-within {
+    box-shadow:
+      inset 0 1px 0 hsl(var(--sheen-strong)),
+      0 1px 2px hsl(0 0% 0% / .55),
+      0 22px 52px -30px hsl(0 0% 0% / .95);
   }
 
   /* Accent aura — a soft bloom of the live accent behind the empty-state
@@ -1387,7 +1557,7 @@
   .composer-aura {
     /* One knob for the whole effect: every alpha below is scaled by it, so the
        bloom can be dialled up or down without re-balancing the ramp. */
-    --aura: 1;
+    --aura: .72;
     /* Thinking, folded into the two things you can see: --aura-lit rides the
        alphas, --aura-reach rides the box. At Instant the bloom is a hint, at
        Max it is the full light. Reach tops out at exactly 1 — the envelope
@@ -1415,8 +1585,8 @@
        than from the width, which keeps the bloom inside the slack a centred
        greeting leaves at any window size instead of handing short windows a
        scrollbar over dead space. The cap stops it ballooning on tall screens. */
-    width: min(180%, 72rem);
-    height: min(32rem, 54vh);
+    width: min(138%, 58rem);
+    height: min(22rem, 38vh);
     /*
      * Effort scales the bloom, it does not resize it. The box stays exactly the
      * size and place it always was and `scale` grows or shrinks it about its own
@@ -1472,7 +1642,7 @@
       hsl(from var(--aura-tint) h calc(s * .84) calc(l * .4) / calc(.014 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 88%,
       hsl(from var(--aura-tint) h calc(s * .8) calc(l * .3) / 0) 100%
     );
-    opacity: .85;
+    opacity: .68;
     transition: opacity var(--dur-slow) var(--ease-out-soft);
   }
   /* Dither. Even a perfect ramp bands: alpha is quantised to 1/255, so a slow
@@ -1485,30 +1655,32 @@
     content: "";
     position: absolute;
     inset: 0;
-    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
+    pointer-events: none;
+    /* Faint enough to read as paper grain rather than as texture — its whole job
+       is to scatter each 1/255 alpha step across its own boundary. */
     opacity: .04;
-    mix-blend-mode: overlay;
-    /* Masked to the bloom, or the grain paints its own rectangle: this box is
-       wider than the light inside it, and unmasked noise over dark paper shows
-       every one of those edges. Held flat across the lit middle — where the
-       steps actually are — and released only at the rim. */
-    -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 0%, #000 62%, transparent 96%);
-    mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 0%, #000 62%, transparent 96%);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='a'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23a)'/%3E%3C/svg%3E");
   }
-  /* Warm charcoal swallows a low-alpha wash that light paper shows plainly, so
-     dark gets a little more of it. */
-  .dark .composer-aura { --aura: 1.5; }
+  /* Dark takes LESS of the wash, not more.
+     This used to read 1.02 against a light 0.72, on the argument that warm
+     charcoal swallows a low-alpha bloom. There is no warm charcoal any more:
+     the same alpha ramp over #000 has nothing diluting it and reads stronger
+     than it does over 97% paper, so the boost is now an over-strength aura.
+     0.82 keeps dark a touch above light — a coloured wash still loses a little
+     to a black ground — without the bloom becoming the brightest thing on an
+     empty page. */
+  .dark .composer-aura { --aura: .82; }
   /* Typing warms it a little — the one place the composer is allowed an accent
      response to focus, since it happens behind the surface, not on it. */
   .composer-aura-host:has(.composer-surface:focus-within) .composer-aura {
-    opacity: 1;
+    opacity: .82;
   }
   /* The landing's composer preview is not focusable — it is aria-hidden and
      pointer-events-none — so it pins the aura to the state a real composer only
      reaches when you type in it. Without this the front door shows the surface
      with its light off. */
   .composer-aura-host.is-preview .composer-aura {
-    opacity: 1;
+    opacity: .76;
   }
   /*
    * In an open conversation the same bloom sits behind the docked composer, but
@@ -1518,7 +1690,7 @@
    * colour while you type, the swell when you send.
    */
   .composer-aura--docked {
-    --aura: .38;
+    --aura: .22;
     /* No --aura-reach here: the scale on .composer-aura already applies it, and
        multiplying it in twice would shrink this one quadratically. */
     height: min(15rem, 26vh);
@@ -1528,7 +1700,10 @@
        overhangs it would leave the container quietly scrollable. */
     width: 100%;
   }
-  .dark .composer-aura--docked { --aura: .58; }
+  /* Same correction as the full aura above, and it matters more here: this one
+     sits behind a live transcript, so an over-strength wash washes up into text
+     somebody is reading. */
+  .dark .composer-aura--docked { --aura: .26; }
 
   /*
    * ——— Voice aura ———
@@ -1633,18 +1808,22 @@
   }
   @media (prefers-reduced-motion: no-preference) {
     .composer-aura {
-      animation: composer-aura-breathe 11s var(--ease-out-soft) infinite;
+      /* --ease-breathe, the symmetric curve. This is a loop that returns to its
+         own start value, and an ease-out reaches the turn still decelerating, so
+         a 14-second breath acquires a visible pulse at each end — the exact
+         failure --ease-breathe was named for. */
+      animation: composer-aura-breathe 14s var(--ease-breathe) infinite;
     }
   }
   /* Scale only — opacity stays out of the keyframes so the focus rule above can
      still win (an animation's declarations outrank a plain one at any origin). */
   @keyframes composer-aura-breathe {
     0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.06); }
+    50% { transform: scale(1.015); }
   }
 
   .reasoning-fast-toggle[aria-pressed="true"] .reasoning-fast-icon {
-    animation: reasoning-fast-charge 480ms var(--ease-spring) both;
+    animation: reasoning-fast-charge 480ms var(--ease-out-strong) both;
   }
   /* The animated carriers intentionally span a full lane before translating.
      Clip their invisible overflow while retaining enough margin for the thumb's
@@ -1662,13 +1841,13 @@
 
   .composer-add-icon__plus {
     transform-origin: 10px 10px;
-    transition: transform 420ms var(--ease-spring);
+    transition: transform 420ms var(--ease-out-strong);
   }
   .composer-add-icon__spark {
     transform-origin: 10px 10px;
   }
   .composer-add-button:hover .composer-add-icon__plus {
-    animation: composer-add-plus 420ms var(--ease-spring) both;
+    animation: composer-add-plus 420ms var(--ease-out-strong) both;
   }
   .composer-add-button:hover .composer-add-icon__spark {
     animation: composer-add-spark 480ms var(--ease-out-soft) both;
@@ -1696,10 +1875,10 @@
   }
   .composer-mic-icon {
     transform-origin: center bottom;
-    transition: transform var(--dur-slow) var(--ease-spring);
+    transition: transform var(--dur-slow) var(--ease-out-strong);
   }
   .composer-mic-button:hover .composer-mic-icon {
-    animation: composer-mic-listen 520ms var(--ease-spring) both;
+    animation: composer-mic-listen 520ms var(--ease-out-strong) both;
   }
   .composer-mic-button:hover::before {
     animation: composer-mic-ring 600ms var(--ease-out-soft) both;
@@ -1716,14 +1895,91 @@
     100% { transform: scale(1.45); opacity: 0; }
   }
 
-  .composer-primary-action {
+  /* The send button's rim light is --sheen, like every other lifted surface in
+     the file, and not the raw `hsl(0 0% 100% / .2)` it carried. That literal was
+     tuned once against the light theme and never revisited: --sheen was
+     deliberately thinned to .055 for the black ground, so a fixed 20% white made
+     this one 24px control about four times more specular than the composer shell
+     it is seated inside.
+
+     Hover deepens the CAST shadow and leaves the specular alone — a highlight is
+     a fact about where the light is, and the light does not move when a pointer
+     arrives. */
+  /*
+   * The composer's SETTING chips — the model picker and the thinking-effort
+   * picker. One material, because they are one kind of thing: a value you are
+   * choosing, sitting inline with the actions you take.
+   *
+   * They used to be bare text buttons, transparent until hovered. That is the
+   * single biggest reason the control row read as unfinished: a bare word on a
+   * dark panel is a LABEL, and a label with a chevron after it is a label with a
+   * decoration. Nothing at rest said "press me" — the affordance only existed
+   * once the pointer was already on it, which is no affordance at all on touch,
+   * and no affordance ever for someone scanning the row deciding what they can
+   * change.
+   *
+   * So they get a surface. Recessed rather than raised, because they sit INSIDE
+   * the composer and a raised chip inside a raised panel is a stacking error:
+   * `--secondary` is one rung below `--card`, so the chips read as wells cut
+   * into the composer rather than as tiles resting on it. The hairline is what
+   * carries the shape on the light theme, where a one-rung fill difference is
+   * nearly invisible.
+   */
+  .composer-chip {
+    background-color: hsl(var(--secondary) / .7);
+    border: 1px solid hsl(var(--border) / .55);
+    transition:
+      background-color var(--dur-fast) var(--ease-out-soft),
+      border-color     var(--dur-fast) var(--ease-out-soft),
+      color            var(--dur-fast) var(--ease-out-soft),
+      transform        var(--dur-press) var(--ease-out-soft);
+  }
+  @media (hover: hover) {
+    .composer-chip:hover {
+      background-color: hsl(var(--accent));
+      border-color: hsl(var(--border));
+    }
+  }
+  /* Open is not a louder hover. Hover says "this is pressable", open says "the
+     panel you are looking at belongs to THIS chip" — so it takes the brighter
+     edge, which is the one thing hover deliberately does not do. */
+  .composer-chip[data-state="open"] {
+    background-color: hsl(var(--accent));
+    border-color: hsl(var(--foreground) / .22);
+    color: hsl(var(--foreground));
+  }
+  .composer-chip:active {
+    transform: scale(.975);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .composer-chip { transition: none; }
+    .composer-chip:active { transform: none; }
+  }
+
+  /*
+   * The class name is doubled to raise specificity to (0,2,0), and that is not
+   * a style preference — it is the only way this rule paints at all.
+   *
+   * The send button is a `<Button variant="default">`, and that variant carries
+   * `[box-shadow:inset_0_1px_0_hsl(var(--sheen))]` as an arbitrary UTILITY.
+   * Tailwind emits utilities after the components layer, so at equal specificity
+   * the utility wins and everything below was dead code: the composer's primary
+   * action rendered with the same flat inset sheen as every other filled button
+   * and none of the coral cast shadow that is its whole point. On black that
+   * cost the one control the eye is meant to land on its only elevation cue.
+   *
+   * Doubling the selector rather than reaching for `!important` keeps the rule
+   * overridable by anything genuinely more specific, and rather than editing the
+   * variant, because that sheen is correct for the other ~200 default Buttons.
+   */
+  .composer-primary-action.composer-primary-action {
     box-shadow:
-      inset 0 1px 0 hsl(0 0% 100% / .2),
+      inset 0 1px 0 hsl(var(--sheen)),
       0 1px 2px hsl(var(--primary) / .22);
   }
-  .composer-primary-action:hover {
+  .composer-primary-action.composer-primary-action:hover {
     box-shadow:
-      inset 0 1px 0 hsl(0 0% 100% / .25),
+      inset 0 1px 0 hsl(var(--sheen)),
       0 2px 5px -2px hsl(var(--primary) / .38);
   }
   .composer-voice-wave {
@@ -1747,7 +2003,7 @@
   .composer-voice-wave > span:nth-child(4) { height: 9px; }
   .composer-voice-wave > span:nth-child(3) { height: 13px; }
   .composer-primary-action:hover .composer-voice-wave > span {
-    animation: composer-wave 640ms var(--ease-spring) both;
+    animation: composer-wave 640ms var(--ease-out-strong) both;
   }
   .composer-primary-action:hover .composer-voice-wave > span:nth-child(2) { animation-delay: 45ms; }
   .composer-primary-action:hover .composer-voice-wave > span:nth-child(3) { animation-delay: 90ms; }
@@ -1758,10 +2014,10 @@
     transform-origin: center;
   }
   .composer-primary-action:hover .composer-send-icon {
-    animation: composer-send 520ms var(--ease-spring) both;
+    animation: composer-send 520ms var(--ease-out-strong) both;
   }
   .composer-primary-action:hover .composer-stop-icon {
-    animation: composer-stop 420ms var(--ease-spring) both;
+    animation: composer-stop 420ms var(--ease-out-strong) both;
   }
   @keyframes composer-wave {
     0%, 100% { transform: scaleY(1); }
@@ -1793,8 +2049,33 @@
   }
 
   /* Recessed field — a subtle inset so inputs read as wells you type into. */
+  /*
+   * A form field, and the one thing about it that pure black broke.
+   *
+   * The recipe was `bg-background` + an inset shadow, which is the correct way
+   * to draw a well on paper: the fill matches the page and the shadow sinks it.
+   * On a #000 ground both halves stop working at once — the fill is the same
+   * black as the page, and `--well-inset` is BLACK INK, so the shadow that was
+   * meant to sink it is painted black-on-black. What was left was an outline:
+   * every input, select and textarea in the dark theme was defined solely by its
+   * 1px border.
+   *
+   * You cannot recess below black, so on dark the field goes the other way and
+   * lifts one rung instead. That is the convention every credible dark UI
+   * settles on for the same reason, and it keeps the relationship RELATIVE: on
+   * the page ground (#000) `--secondary` reads as a field standing out of the
+   * page, and inside a `--popover` dialog the same token sits a rung below its
+   * parent and reads as recessed — which is why the fill lives here rather than
+   * as a `bg-*` utility on each component. A utility would beat this rule (they
+   * are emitted after the components layer) and would have to pick one theme's
+   * answer for both.
+   */
   .field-well {
+    background-color: hsl(var(--background));
     box-shadow: var(--well-inset);
+  }
+  .dark .field-well {
+    background-color: hsl(var(--secondary));
   }
 
   /* Floating glass layers (menus/popovers/selects) — a crisp top-edge highlight over
@@ -1814,32 +2095,24 @@
      a competing `shadow-*` or `bg-*` utility on the same element silently wins.
      Check each call site for one. */
   .overlay-glass {
-    border: 1px solid hsl(var(--border) / 0.6);
-    background-color: hsl(var(--popover) / 0.9);
+    /* No alpha on the hairline. --border was already dropped from 21% to 16%
+       precisely to hold its contrast against the black ground; discounting it a
+       second time by 0.82 landed the edge at ~13.5% effective — the same value
+       as --popover, so the panel's own outline became a half-point step and
+       disappeared. The token carries the right number for each theme; a call
+       site that thins it is overruling a decision made with the ground in view. */
+    border: 1px solid hsl(var(--border));
+    background-color: hsl(var(--popover));
     color: hsl(var(--popover-foreground));
-    backdrop-filter: blur(24px);
+    backdrop-filter: none;
+    /* The exact recipe `.glass-raised` uses, and for the same reason. What was
+       here was two hardcoded shadows drawn in --shadow-ink, which is pure black
+       in dark — black ink spread on a black page, i.e. nothing. Every popover,
+       dropdown, select, tooltip, dialog and toast in the product read as a flat
+       13% rectangle with no lift at all. --shadow-glass already carries the
+       inset rim light that survives on black; the leading inset here is what
+       makes that unconditional. */
     box-shadow: inset 0 1px 0 hsl(var(--sheen)), var(--shadow-glass);
-  }
-
-  /* Diagonal sheen sweep on hover — the signature "premium" catch of light.
-     Element must be relative + overflow-clip; the band lives in ::after. */
-  .sheen-sweep { position: relative; overflow: hidden; }
-  .sheen-sweep::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(105deg, transparent 30%, hsl(0 0% 100% / 0.22) 48%, transparent 66%);
-    transform: translateX(-130%);
-    pointer-events: none;
-  }
-  /* Transition lives on the hover state only, so the band animates across on hover-in
-     and snaps back off-canvas on hover-out (a clean one-way sweep, no reverse flash). */
-  .sheen-sweep:hover::after {
-    transform: translateX(130%);
-    transition: transform 620ms var(--ease-out-expo);
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .sheen-sweep::after { display: none; }
   }
 
   /* Media generation.
@@ -1866,15 +2139,24 @@
     width: 3rem;
     height: 3rem;
     padding: .75rem .7rem .75rem .9rem;
-    color: hsl(var(--foreground) / .42);
-    background: hsl(var(--card) / .5);
-    border: 1px solid hsl(var(--border) / .45);
+    color: hsl(var(--foreground) / .55);
+    /* Both alphas are gone. They were tuned against a 9% charcoal ground, where
+       discounting --card and --border still left something to see; over #000
+       they resolved to a ~3% plate behind a ~7% edge, so a 48px play button on a
+       video placeholder had neither a visible plate nor a visible rim — and the
+       blur below had nothing but black to blur. The tokens already hold the
+       right value for each theme. */
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
     border-radius: 999px;
     backdrop-filter: blur(14px);
-    box-shadow:
-      0 10px 28px -12px hsl(var(--foreground) / .4),
-      inset 0 1px 0 hsl(var(--sheen));
-    animation: generation-play-breathe 2.6s ease-in-out infinite;
+    /* On the ladder, at the `float` rung, rather than the hand-rolled
+       `0 10px 28px -12px / .4` this carried — which was heavier than
+       --shadow-float itself, so a play glyph sitting inside a media card
+       out-elevated every dropdown in the product. The leading inset is the rim
+       light: on black the drop shadow is invisible and this is the only cue left. */
+    box-shadow: inset 0 1px 0 hsl(var(--sheen)), var(--shadow-float);
+    animation: generation-play-breathe 2.6s var(--ease-breathe) infinite;
   }
 
   @keyframes generation-play-breathe {
@@ -1908,9 +2190,18 @@
    *      and the OS preference is only its default; keyed on the media query,
    *      every one of these would ignore the app's own theme toggle.
    *
-   * Geometry, easing curves and keyframe stops are AIcss's, to the frame. Where
-   * a size is stated in the original it is stated here — the point of adopting a
-   * component library is not to redraw it.
+   *   3. Easing and the off-ladder metrics went the same way as the colours,
+   *      and for the same reason. The port arrived with a seventh curve
+   *      (`.22,1,.36,1`) inlined six times, an eighth on the shine, a dozen
+   *      transitions on the bare `ease` keyword, three font weights (550/450/425)
+   *      the type scale does not define, and 12.5px alongside 12px for one
+   *      semantic role. Each of those is a value only this block knows, in a
+   *      product whose whole argument is that there is somewhere to look the
+   *      answer up. They now read the motion tokens and the type scale.
+   *
+   * Geometry and keyframe stops are AIcss's, to the frame. Where a size is
+   * stated in the original it is stated here — the point of adopting a component
+   * library is not to redraw it.
    * ------------------------------------------------------------------------- */
 
   /*
@@ -1938,7 +2229,7 @@
     background-size: 300% 100%;
     -webkit-background-clip: text;
     background-clip: text;
-    animation: aicss-shine 2.25s cubic-bezier(.25, .1, .25, 1) infinite;
+    animation: aicss-shine 2.25s var(--ease-breathe) infinite;
   }
   /* Settled: the same node keeps its box and simply stops moving, so nothing
      reflows at the moment a run completes. */
@@ -1969,7 +2260,7 @@
   .aicss-tr {
     display: flex;
     flex-direction: column;
-    animation: aicss-fade-in 320ms cubic-bezier(.22, 1, .36, 1) both;
+    animation: aicss-fade-in 320ms var(--ease-out-soft) both;
   }
   .aicss-tr-header {
     display: inline-flex;
@@ -1986,18 +2277,22 @@
   .aicss-tr-label {
     font-size: 13px;
     line-height: 18px;
-    font-weight: 500;
+    /* Hierarchy by WEIGHT, not by alpha. This carried
+       `hsl(var(--muted-foreground) / .68)` so that "for 5s" would sit below
+       "Thought" — which at 13px lands near 3.9:1 on the black ground, under the
+       4.5:1 floor, on text that appears on every assistant turn. Weight
+       separates the two at no cost to contrast. */
+    font-weight: 400;
     letter-spacing: -.005em;
-    /* Softer than the verb, so "for 5s" sits below "Thought" in the hierarchy. */
-    color: hsl(var(--muted-foreground) / .68);
+    color: hsl(var(--muted-foreground));
   }
-  .aicss-tr-verb { color: hsl(var(--muted-foreground)); }
+  .aicss-tr-verb { color: hsl(var(--muted-foreground)); font-weight: 500; }
   .aicss-tr-chevron {
     flex: none;
     color: hsl(var(--muted-foreground) / .7);
     /* The path is drawn as an up-caret; the collapsed summary points down. */
     transform: rotate(180deg);
-    transition: transform 280ms cubic-bezier(.22, 1, .36, 1), color var(--dur-base) var(--ease-out-soft);
+    transition: transform 280ms var(--ease-out-soft), color var(--dur-base) var(--ease-out-soft);
   }
   .aicss-tr-header[aria-expanded="true"] .aicss-tr-chevron { transform: rotate(0deg); }
   .aicss-tr-header[data-clickable="true"]:hover .aicss-tr-chevron { color: hsl(var(--foreground) / .7); }
@@ -2005,7 +2300,7 @@
     display: grid;
     grid-template-rows: 1fr;
     opacity: 1;
-    transition: grid-template-rows 320ms cubic-bezier(.22, 1, .36, 1), opacity 220ms ease;
+    transition: grid-template-rows 320ms var(--ease-out-soft), opacity 220ms var(--ease-out-soft);
   }
   .aicss-tr-collapsible[data-collapsed="true"] {
     grid-template-rows: 0fr;
@@ -2016,7 +2311,7 @@
   .aicss-tr-viewport {
     margin-top: 6px;
     overflow: hidden;
-    transition: height 360ms cubic-bezier(.22, 1, .36, 1);
+    transition: height 360ms var(--ease-out-soft);
   }
   .aicss-tr-viewport[data-scroll="true"] { overflow-y: auto; scrollbar-width: none; }
   .aicss-tr-viewport[data-scroll="true"]::-webkit-scrollbar { display: none; }
@@ -2024,7 +2319,7 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
-    transition: transform 560ms cubic-bezier(.22, 1, .36, 1);
+    transition: transform 560ms var(--ease-out-soft);
     will-change: transform;
   }
   .aicss-tr-sentence {
@@ -2032,14 +2327,17 @@
     height: 40px;
     line-height: 20px;
     font-size: 13px;
-    font-weight: 425;
+    /* 400, not 425. `font-synthesis: none` (see body) means a face without a
+       continuous weight axis snaps a non-standard weight wherever it likes, so
+       425 was a promise the renderer never had to keep. */
+    font-weight: 400;
     letter-spacing: -.005em;
     color: hsl(var(--muted-foreground));
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    animation: aicss-fade-in 420ms cubic-bezier(.22, 1, .36, 1) both;
+    animation: aicss-fade-in 420ms var(--ease-out-soft) both;
   }
   @keyframes aicss-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
@@ -2060,7 +2358,12 @@
     border-radius: 12px;
     background: hsl(var(--muted));
   }
-  .dark .aicss-ig { background: hsl(var(--muted) / .55); }
+  /* Not `--muted / .55`. That alpha was tuned for the 9% charcoal ground; over
+     #000 it resolves to about 5.2% lightness — DARKER than --card (6.5%) — so
+     the held space the comment above describes disappeared into the page. On a
+     black ground elevation comes from the lightness ladder, not from an opacity;
+     --card is the rung this canvas belongs on. */
+  .dark .aicss-ig { background: hsl(var(--card)); }
   .aicss-ig-dots,
   .aicss-ig-glow {
     position: absolute;
@@ -2109,7 +2412,11 @@
     right: 8px;
     padding: 2px 7px;
     border-radius: 999px;
-    background: hsl(var(--card) / .72);
+    /* --popover, not --card. The canvas underneath this badge IS --card on dark
+       now, so a translucent card fill resolved to the same value as its own
+       ground and the plate vanished. A badge floating over media belongs on the
+       floating rung; the alpha stays so it still reads as glass over a picture. */
+    background: hsl(var(--popover) / .82);
     backdrop-filter: blur(4px);
     color: hsl(var(--muted-foreground));
     font-family: var(--font-mono), ui-monospace, monospace;
@@ -2137,7 +2444,8 @@
     align-items: center;
     gap: 4px;
     min-width: 0;
-    font-weight: 550;
+    /* 500 — the type scale defines 400/500/600 and nothing between. */
+    font-weight: 500;
     white-space: nowrap;
   }
   .aicss-ws-label .aicss-shine {
@@ -2158,7 +2466,7 @@
     background: none;
     color: hsl(var(--muted-foreground) / .7);
     cursor: pointer;
-    transition: color var(--dur-fast) var(--ease-spring), transform 280ms var(--ease-spring);
+    transition: color var(--dur-fast) var(--ease-out-strong), transform 280ms var(--ease-out-strong);
   }
   .aicss-ws-chevron:hover { color: hsl(var(--muted-foreground)); }
   .aicss-ws-chevron[aria-expanded="false"] { transform: rotate(180deg); }
@@ -2166,7 +2474,7 @@
     display: grid;
     grid-template-rows: 1fr;
     opacity: 1;
-    transition: grid-template-rows 320ms var(--ease-spring), opacity 220ms var(--ease-spring);
+    transition: grid-template-rows 320ms var(--ease-out-strong), opacity 220ms var(--ease-out-strong);
   }
   .aicss-ws-collapsible[data-collapsed="true"] {
     grid-template-rows: 0fr;
@@ -2203,7 +2511,7 @@
     color: hsl(var(--muted-foreground));
     opacity: 0;
     transform: translateY(4px);
-    animation: aicss-ws-enter .34s var(--ease-spring) forwards;
+    animation: aicss-ws-enter .34s var(--ease-out-strong) forwards;
   }
   .aicss-ws-site[data-state="done"] { cursor: pointer; }
   /* Three glyphs in one 12px box, crossfading: dashed ring (pending) → spinning
@@ -2227,19 +2535,19 @@
     justify-content: center;
     color: hsl(var(--muted-foreground) / .7);
   }
-  .aicss-ws-dots { opacity: 1; transition: opacity .32s var(--ease-spring); pointer-events: none; }
+  .aicss-ws-dots { opacity: 1; transition: opacity .32s var(--ease-out-strong); pointer-events: none; }
   .aicss-ws-site[data-state="loading"] .aicss-ws-dots,
   .aicss-ws-site[data-state="done"] .aicss-ws-dots { opacity: 0; }
   .aicss-ws-globe {
     opacity: 0;
     transform: scale(.88);
-    transition: opacity .32s var(--ease-spring), transform .36s var(--ease-spring);
+    transition: opacity .32s var(--ease-out-strong), transform .36s var(--ease-out-strong);
   }
   .aicss-ws-site[data-state="loading"] .aicss-ws-globe { opacity: 1; transform: scale(1); }
   .aicss-ws-site[data-state="done"] .aicss-ws-globe {
     opacity: 0;
     transform: scale(.775);
-    transition: opacity .22s var(--ease-spring), transform .26s var(--ease-spring);
+    transition: opacity .22s var(--ease-out-strong), transform .26s var(--ease-out-strong);
   }
   .aicss-ws-check {
     display: inline-flex;
@@ -2248,11 +2556,11 @@
     color: hsl(var(--success-ink));
     opacity: 0;
     transform: scale(1.175);
-    transition: opacity .24s var(--ease-spring) .06s, transform .28s var(--ease-spring) .06s;
+    transition: opacity .24s var(--ease-out-strong) .06s, transform .28s var(--ease-out-strong) .06s;
   }
   .dark .aicss-ws-check { color: hsl(var(--success)); }
   .aicss-ws-site[data-state="done"] .aicss-ws-check { opacity: 1; transform: scale(1); }
-  .aicss-ws-title { flex: none; font-weight: 450; white-space: nowrap; color: hsl(var(--foreground)); }
+  .aicss-ws-title { flex: none; font-weight: 500; white-space: nowrap; color: hsl(var(--foreground)); }
   .aicss-ws-site[data-state="pending"] .aicss-ws-title { color: hsl(var(--muted-foreground)); }
   .aicss-ws-sep { flex: none; color: hsl(var(--muted-foreground) / .7); }
   .aicss-ws-url {
@@ -2262,7 +2570,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: hsl(var(--muted-foreground));
-    transition: color var(--dur-fast) var(--ease-spring);
+    transition: color var(--dur-fast) var(--ease-out-strong);
   }
   /* The arrow only exists once the row is a link worth following. */
   .aicss-ws-arrow {
@@ -2272,7 +2580,7 @@
     color: hsl(var(--muted-foreground) / .7);
     opacity: 0;
     transform: rotate(45deg) translate(0, 2px);
-    transition: opacity var(--dur-fast) var(--ease-spring), transform .22s var(--ease-spring);
+    transition: opacity var(--dur-fast) var(--ease-out-strong), transform .22s var(--ease-out-strong);
   }
   .aicss-ws-site[data-state="done"]:hover .aicss-ws-arrow { opacity: 1; transform: rotate(45deg) translate(0, 0); }
   .aicss-ws-site[data-state="done"]:hover .aicss-ws-url { color: hsl(var(--foreground)); }
@@ -2283,10 +2591,14 @@
    * edge, so the divider under it is the card's own inlay rather than a second
    * border inside it.
    * ------------------------------------------------------------------------- */
+  /* 14px, the `card` rung. This card and `.aicss-todo` stack in the same column
+     and disagreed with each other (12 vs 8) and with the ladder, because
+     `eslint-local/no-arbitrary-radius` can only see className strings and never
+     looks inside raw CSS — which is exactly how these drifted. */
   .aicss-cb {
     overflow: hidden;
     padding: 12px 16px 16px;
-    border-radius: 12px;
+    border-radius: 14px;
     background: hsl(var(--card));
     box-shadow: 0 0 0 1px hsl(var(--border));
   }
@@ -2296,8 +2608,12 @@
     gap: 8px;
     margin: -12px -16px 0;
     padding: 10px 12px 10px 16px;
-    border-bottom: .5px solid hsl(var(--border));
-    font-size: 12.5px;
+    /* 1px, not .5px. At DPR 1 a half-pixel line either rounds away or renders at
+       roughly half alpha, which against --border on a black ground leaves about
+       8% — the code block's header divider, gone. Let the token carry the
+       weight; it was re-based for this ground already. */
+    border-bottom: 1px solid hsl(var(--border));
+    font-size: 12px;
   }
   .aicss-cb-file { display: inline-flex; min-width: 0; align-items: center; gap: 7px; }
   .aicss-cb-icon { display: block; flex: none; width: 15px; height: 15px; color: hsl(var(--muted-foreground)); }
@@ -2307,7 +2623,7 @@
     white-space: nowrap;
     color: hsl(var(--foreground));
     font-family: var(--font-mono), ui-monospace, monospace;
-    font-size: 12.5px;
+    font-size: 12px;
     line-height: 1;
   }
   .aicss-cb-copy {
@@ -2317,20 +2633,29 @@
     margin: -7px 0 -7px auto;
     padding: 3px 3px 3px 7px;
     border: 0;
-    border-radius: 7px;
+    /* `control` — the rung for a small button. 7px was off the ladder entirely. */
+    border-radius: 9px;
     background: none;
     color: hsl(var(--muted-foreground));
     font-size: 12px;
     cursor: pointer;
     transition: color var(--dur-fast) var(--ease-out-soft), background-color var(--dur-fast) var(--ease-out-soft);
   }
-  .aicss-cb-copy:hover { color: hsl(var(--foreground)); background: hsl(var(--muted)); }
+  /* --accent (13%), not --muted (9.5%). This button sits on `.aicss-cb`, which is
+     --card at 6.5%, so a muted hover fill was a three-point step — invisible on
+     black, leaving the copy button on every code block with a text-colour change
+     as its only hover affordance. --accent is the value every menu row already
+     hovers to, so the gesture reads the same here as everywhere else. */
+  .aicss-cb-copy:hover { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
+  /* Hover is not an affordance on touch, and this control is a peer of the menu
+     rows that already answer the keyboard. */
+  .aicss-cb-copy:focus-visible { color: hsl(var(--foreground)); background: hsl(var(--accent)); }
   .aicss-cb-body {
     position: relative;
     margin: 0 -16px -16px;
     padding: 10px 0;
     font-family: var(--font-mono), ui-monospace, monospace;
-    font-size: 12.5px;
+    font-size: 12px;
     line-height: 20px;
   }
   /* Full-height gutter hairline, independent of the body's padding so it runs
@@ -2341,7 +2666,7 @@
     top: 0;
     bottom: 0;
     left: 32px;
-    width: .5px;
+    width: 1px;
     background: hsl(var(--border));
   }
   .aicss-cb-row { display: grid; grid-template-columns: 32px minmax(0, 1fr); }
@@ -2372,7 +2697,7 @@
     margin: 0 -16px -16px;
     padding: 4px 0;
     overflow: hidden;
-    font-size: 12.5px;
+    font-size: 12px;
     line-height: 20px;
   }
   /* 32 + 32: two line-number columns, so the hairline lands on the sign gutter.
@@ -2384,7 +2709,7 @@
     bottom: 0;
     left: 64px;
     z-index: 1;
-    width: .5px;
+    width: 1px;
     background: hsl(var(--border));
   }
   .aicss-diff-row {
@@ -2436,6 +2761,13 @@
   .dark .aicss-diff-row[data-type="add"] .aicss-diff-ln-new { color: hsl(var(--success)); }
   .dark .aicss-diff-row[data-type="del"] .aicss-diff-sign,
   .dark .aicss-diff-row[data-type="del"] .aicss-diff-ln-old { color: hsl(var(--destructive)); }
+  /* The row tints need more alpha here than they did over the old 9% charcoal
+     card. --card is 6.5% now, so a .12 wash lands about two lightness points off
+     the surface it is meant to distinguish itself from, and added and deleted
+     lines stopped reading as tinted at all — leaving the 3px accent bar as the
+     only channel, which is the redundancy, not the signal. */
+  .dark .aicss-diff-row[data-type="add"] { background: hsl(var(--success) / .18); }
+  .dark .aicss-diff-row[data-type="del"] { background: hsl(var(--destructive) / .18); }
 
   /* ---- Streaming Text -----------------------------------------------------
    * AIcss's own component fakes the stream with a setInterval typewriter. Juno
@@ -2510,7 +2842,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: hsl(var(--foreground));
-    font-weight: 450;
+    font-weight: 500;
   }
   .aicss-cite-sep { flex: none; color: hsl(var(--muted-foreground) / .7); }
   .aicss-cite-host {
@@ -2539,7 +2871,8 @@
    * ------------------------------------------------------------------------- */
   .aicss-todo {
     padding: 6px 12px 12px;
-    border-radius: 8px;
+    /* `card`, matching `.aicss-cb` — the two stack in one column. */
+    border-radius: 14px;
     background: hsl(var(--card));
     box-shadow: 0 0 0 1px hsl(var(--border));
     color: hsl(var(--foreground));
@@ -2562,14 +2895,14 @@
   .aicss-todo-list-icon,
   .aicss-todo-chevron,
   .aicss-todo-head-check,
-  .aicss-todo-pie { position: absolute; inset: 0; margin: auto; transition: opacity 140ms ease; }
+  .aicss-todo-pie { position: absolute; inset: 0; margin: auto; transition: opacity 140ms var(--ease-out-soft); }
   .aicss-todo-list-icon,
   .aicss-todo-chevron { width: 13px; height: 13px; }
   /* A solid glyph reads smaller than an outlined one at the same box, so the
      check is drawn full size where the others are inset. */
   .aicss-todo-head-check { width: 16px; height: 16px; color: hsl(var(--success-ink)); }
   .dark .aicss-todo-head-check { color: hsl(var(--success)); }
-  .aicss-todo-chevron { opacity: 0; transition: opacity 140ms ease, transform 220ms ease; }
+  .aicss-todo-chevron { opacity: 0; transition: opacity 140ms var(--ease-out-soft), transform 220ms var(--ease-out-soft); }
   .aicss-todo-head[aria-expanded="false"] .aicss-todo-chevron { transform: rotate(-90deg); }
   .aicss-todo-head:hover .aicss-todo-list-icon,
   .aicss-todo-head:hover .aicss-todo-pie,
@@ -2584,7 +2917,9 @@
   .aicss-todo-digit-inner {
     display: flex;
     flex-direction: column;
-    transition: transform 350ms cubic-bezier(.4, 0, .2, 1);
+    /* An A-to-B move with both endpoints on screen — the old digit leaves as the
+       new one arrives — so it takes the symmetric curve, not a decelerate. */
+    transition: transform 350ms var(--ease-in-out);
   }
   .aicss-todo-digit-inner > span { height: 1em; line-height: 1em; }
   .aicss-todo-digit-inner[data-rolled="true"] { transform: translateY(-1em); }
@@ -2593,7 +2928,7 @@
     height: 13px;
     border-radius: 50%;
     color: hsl(var(--foreground));
-    transition: opacity 140ms ease, --aicss-todo-pie 400ms ease;
+    transition: opacity 140ms var(--ease-out-soft), --aicss-todo-pie 400ms var(--ease-out-soft);
   }
   .aicss-todo-pie::after {
     content: "";
@@ -2614,7 +2949,7 @@
     display: grid;
     grid-template-rows: 1fr;
     opacity: 1;
-    transition: grid-template-rows 280ms ease, opacity 200ms ease;
+    transition: grid-template-rows 280ms var(--ease-out-soft), opacity 200ms var(--ease-out-soft);
   }
   .aicss-todo-collapsible[data-collapsed="true"] { grid-template-rows: 0fr; opacity: 0; pointer-events: none; }
   .aicss-todo-inner { min-height: 0; overflow: hidden; }
@@ -2632,7 +2967,7 @@
     gap: 9px;
     line-height: 18px;
     color: hsl(var(--muted-foreground));
-    animation: aicss-todo-in 360ms ease backwards;
+    animation: aicss-todo-in var(--dur-slow) var(--ease-out-soft) backwards;
     animation-delay: calc(var(--aicss-todo-i, 0) * 50ms);
   }
   @keyframes aicss-todo-in {
@@ -2647,14 +2982,14 @@
     height: 16px;
     color: hsl(var(--muted-foreground));
     opacity: 0;
-    transition: opacity 320ms ease;
+    transition: opacity 320ms var(--ease-out-soft);
   }
   .aicss-todo-icon[data-on="true"] { opacity: 1; }
   .aicss-todo-icon-strong { color: hsl(var(--foreground)); }
   /* The active label crossfades from muted into a shining foreground copy of
      itself, layered via data-label so the two states occupy one box and the row
      cannot shift as a task starts. */
-  .aicss-todo-label { position: relative; color: hsl(var(--muted-foreground)); font-weight: 400; transition: color 360ms ease; }
+  .aicss-todo-label { position: relative; color: hsl(var(--muted-foreground)); font-weight: 400; transition: color 360ms var(--ease-out-soft); }
   .aicss-todo-label::before {
     content: attr(data-label);
     position: absolute;
@@ -2675,12 +3010,12 @@
     -webkit-text-fill-color: transparent;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 360ms ease;
+    transition: opacity 360ms var(--ease-out-soft);
   }
   .aicss-todo-item[data-state="active"] .aicss-todo-label { color: transparent; }
   .aicss-todo-item[data-state="active"] .aicss-todo-label::before {
     opacity: 1;
-    animation: aicss-shine 2.25s cubic-bezier(.25, .1, .25, 1) infinite;
+    animation: aicss-shine 2.25s var(--ease-breathe) infinite;
   }
   .aicss-todo-item[data-state="done"] .aicss-todo-label { color: hsl(var(--muted-foreground)); text-decoration: line-through; }
 
@@ -2710,7 +3045,6 @@
     .aicss-todo-digit-inner,
     .aicss-todo-pie { transition: none; }
     .aicss-ig-glow { animation: none; opacity: .7; }
-    .aicss-caret[data-streaming="false"] { animation: none; }
   }
 
   /* Markdown prose used in chat messages */
@@ -2828,7 +3162,12 @@
   .skeleton {
     position: relative;
     overflow: hidden;
-    background: hsl(var(--muted) / 0.7);
+    /* Full --muted. The 0.7 was a charcoal-era discount and it costs in both
+       directions now: over #000 it resolved to ~6.6%, indistinguishable from a
+       card, and over 97% paper it landed at 96.4%, half a point off the page.
+       A placeholder that cannot be told from the surface it stands in for is not
+       a loading state. */
+    background: hsl(var(--muted));
     box-shadow: inset 0 0 0 1px hsl(var(--hairline));
   }
   .skeleton::after {
@@ -2837,7 +3176,11 @@
     inset: 0;
     transform: translateX(-100%);
     background: linear-gradient(90deg, transparent, hsl(var(--foreground) / 0.05) 40%, hsl(var(--primary) / 0.08) 50%, hsl(var(--foreground) / 0.05) 60%, transparent);
-    animation: shimmer 1.6s var(--ease-out-soft) infinite;
+    /* linear, and it is the same argument as --ease-breathe's, one step further.
+       This band travels off one edge and teleports back to the other, so there
+       is no turn to soften — an eased sweep decelerates into the seam and then
+       jumps, which reads as a stutter once a second on every loading screen. */
+    animation: shimmer 1.6s linear infinite;
   }
   .text-balance { text-wrap: balance; }
   /* Anchor pop-in/pop-out scaling to the trigger side on Radix popper content
@@ -2954,7 +3297,13 @@
      There is no entrance keyframe below, deliberately. A row arriving uses
      `animate-rise-in`, the same entrance every other list in the app uses; what
      Work was missing was never another curve but the right DELAY on that one,
-     and a delay is a number, not a stylesheet (see use-work-arrivals.ts). */
+     and a delay is a number, not a stylesheet (see use-work-arrivals.ts).
+
+     THIS IS THE ONLY COPY. The whole block — all four classes and all three
+     keyframes — also existed verbatim in `@layer components` further down, ~82
+     duplicated lines including three competing @keyframes of the same names.
+     Utilities are emitted after components, so that copy never won anything and
+     any fix applied to it silently did nothing. It has been deleted. */
 
   /* A status pill whose status has just changed — swapped, rather than quietly
      re-lettered under the reader.
@@ -2969,7 +3318,7 @@
      should never be *missing* from the row, only unsettled — 0.35 is faint
      enough to read as a change and solid enough to still be a status. */
   .work-status-shift {
-    animation: work-status-shift var(--dur-emphasis) var(--ease-spring) both;
+    animation: work-status-shift var(--dur-emphasis) var(--ease-out-strong) both;
   }
   @keyframes work-status-shift {
     from {
@@ -3052,127 +3401,112 @@
   }
 }
 
-/* ---- Minimal, theme-aware syntax highlighting (highlight.js token classes) ---- */
+/* ---- Minimal, theme-aware syntax highlighting (highlight.js token classes) ----
+ *
+ * THIS BLOCK MUST STAY OUTSIDE @layer. It is not an oversight, and moving it
+ * inside `@layer components` — the obvious tidy, since unlayered rules outrank
+ * every layer — was tried and measured: the emitted stylesheet came back with
+ * `.hljs` and NOTHING else. Tailwind v3 tree-shakes rules declared in its own
+ * layers against the content glob, and every `.hljs-*` class here is stamped at
+ * RUNTIME by highlight.js, so none of them appears in a .tsx file for the glob
+ * to find. Layered, syntax highlighting compiles down to one grey.
+ *
+ * The colours ARE now tokens (--code-string / --code-number, declared in both
+ * theme blocks). They were four raw HSL literals no theme could reach, in the
+ * file that spends twenty lines above explaining why every AIcss literal had to
+ * become one. Values are unchanged; only their reachability is. */
 .hljs { color: hsl(var(--foreground)); background: transparent; }
 .hljs-comment, .hljs-quote { color: hsl(var(--muted-foreground)); font-style: italic; }
-.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-name, .hljs-tag { color: hsl(var(--primary)); }
-.hljs-string, .hljs-title, .hljs-section, .hljs-attribute, .hljs-literal, .hljs-template-tag, .hljs-template-variable, .hljs-type, .hljs-addition { color: hsl(152 56% 42%); }
-.dark .hljs-string, .dark .hljs-title, .dark .hljs-section, .dark .hljs-attribute, .dark .hljs-literal, .dark .hljs-type, .dark .hljs-addition { color: hsl(152 50% 56%); }
-.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-meta, .hljs-link { color: hsl(32 80% 46%); }
-.dark .hljs-number, .dark .hljs-symbol, .dark .hljs-bullet, .dark .hljs-meta, .dark .hljs-link { color: hsl(38 90% 60%); }
+/* --primary-ink, not --primary: a keyword is TEXT at 12px, and the fill tone only
+   reaches ~3.7:1 as dark-mode type. The ink ramp exists for this and every other
+   reading context; see the textColor block in tailwind.config.ts. */
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-name, .hljs-tag { color: hsl(var(--primary-ink)); }
+.hljs-string, .hljs-title, .hljs-section, .hljs-attribute, .hljs-literal, .hljs-template-tag, .hljs-template-variable, .hljs-type, .hljs-addition { color: hsl(var(--code-string)); }
+.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-meta, .hljs-link { color: hsl(var(--code-number)); }
 .hljs-emphasis { font-style: italic; }
 .hljs-strong { font-weight: 600; }
 
 @layer components {
-  /* ---- Work ----------------------------------------------------------------
-     Work is the one surface a person opens and then leaves open. Its list moves
-     because a machine somewhere finished something, not because anybody
-     clicked, so every rule here answers the same question: how does a change
-     nobody asked for become legible without becoming an interruption?
-
-     Three of these are one-shots that fire on a change and then stop. The
-     fourth is the only loop, and it is slow on purpose. Nothing here spins. A
-     spinner is a promise that the wait is nearly over, and a Work task can run
-     for an hour — `animate-spin` belongs on the button you just pressed, not on
-     a row you are going to walk away from.
-
-     There is no entrance keyframe below, deliberately. A row arriving uses
-     `animate-rise-in`, the same entrance every other list in the app uses; what
-     Work was missing was never another curve but the right DELAY on that one,
-     and a delay is a number, not a stylesheet (see use-work-arrivals.ts). */
-
-  /* A status pill whose status has just changed — swapped, rather than quietly
-     re-lettered under the reader.
-
-     Colour-free on purpose. The pill already carries its tone's colours, so the
-     same treatment has to serve queued -> running and running -> failed; a
-     tinted bloom here would end up congratulating the user on a failure. Scale
-     and opacity say "this word is not the word that was here" and say nothing
-     about whether that is good news.
-
-     It does not start from opacity 0. A status is a fact about the task and
-     should never be *missing* from the row, only unsettled — 0.35 is faint
-     enough to read as a change and solid enough to still be a status. */
-  .work-status-shift {
-    animation: work-status-shift var(--dur-emphasis) var(--ease-spring) both;
+  /* Shared page chrome and content rhythm. */
+  .app-main-canvas {
+    background-color: hsl(var(--background));
   }
-  @keyframes work-status-shift {
-    from {
-      opacity: 0.35;
-      transform: scale(0.94);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
+  /* The sidebar's own edge. It was drawn in --background, which worked only
+     while the sidebar was darker than the page: --sidebar is 0 0% 0% now and
+     identical to --background, so this painted black on black and rendered
+     nothing, leaving one discounted hairline to separate two #000 fields.
+     --sidebar-border is the token that owns that seam. */
+  .app-sidebar-frame {
+    box-shadow: inset -1px 0 0 hsl(var(--sidebar-border));
+  }
+  .app-page-scroll {
+    height: 100%;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+  .app-page-content {
+    margin-inline: auto;
+    width: 100%;
+    padding: 1.75rem clamp(1rem, 2.5vw, 2rem) 3rem;
+  }
+  @media (max-width: 639px) {
+    .app-page-content {
+      padding-block: 1.25rem 2.5rem;
     }
   }
 
-  /* The row of a task that is executing right now: a slow breath along its own
-     edge, drawn as an inset ring so it lies over the border without fighting
-     the `border-*` utilities the row already carries (or its hover state).
-
-     5.2 seconds because the thing it describes takes minutes. A breath at
-     1-2s is a heartbeat — it implies something is about to happen, and then
-     nothing does, over and over, for half an hour. At this period the row is
-     merely alive, which is the entire claim being made.
-
-     --ease-breathe, not an ease-out: an asymmetric loop snaps at the turn, and
-     a ring that snaps is a ring that flashes. */
-  .work-breathing {
-    animation: work-breathing 5.2s var(--ease-breathe) infinite;
+  /* The authenticated product stays matte and task-first. The landing page can
+     keep its ambient brand bloom, but the working chat surface does not glow
+     behind every input or animate routine menu glyphs. */
+  [data-juno-chat-root] .composer-aura {
+    display: none;
   }
-  @keyframes work-breathing {
-    0%,
-    100% {
-      box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.05);
-    }
-    50% {
-      box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.22);
-    }
+  [data-juno-chat-root] .composer-surface {
+    box-shadow:
+      0 1px 2px hsl(var(--shadow-ink) / .05),
+      0 10px 28px -24px hsl(var(--shadow-ink) / .24);
   }
-  @media (prefers-reduced-motion: reduce) {
-    /* Held at the middle of the breath rather than switched off. The ring is not
-       decoration — it is the row's only mark for "running right now" — and the
-       global reduce rule would otherwise freeze it on the 100% frame, which is
-       the invisible one. */
-    .work-breathing {
-      animation: none;
-      box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.16);
-    }
+  /* --ring, not --foreground. This was the last foreground-derived edge in the
+     file: on dark it resolved to ~22% off-white, brighter than --border (16%)
+     and than every other hairline in the product, so focusing the in-product
+     composer painted a whiter line than anything else on screen. It was also the
+     only focus affordance here not speaking the same language as :focus-visible. */
+  [data-juno-chat-root] .composer-surface:focus-within {
+    border-color: hsl(var(--ring) / .5);
+    box-shadow:
+      0 1px 2px hsl(var(--shadow-ink) / .06),
+      0 12px 30px -24px hsl(var(--shadow-ink) / .28);
+  }
+  /* The in-product composer keeps the dark treatment from `.dark
+     .composer-surface` — this selector is more specific and would otherwise
+     flatten it back to the two invisible black shadows above. Matte here means
+     no ACCENT bloom behind the input, which the `.composer-aura` rule above
+     already handles; it does not mean the capsule loses its edge. */
+  .dark [data-juno-chat-root] .composer-surface {
+    box-shadow:
+      inset 0 1px 0 hsl(var(--sheen)),
+      0 1px 2px hsl(0 0% 0% / .5),
+      0 18px 44px -30px hsl(0 0% 0% / .9);
+  }
+  .dark [data-juno-chat-root] .composer-surface:focus-within {
+    box-shadow:
+      inset 0 1px 0 hsl(var(--sheen-strong)),
+      0 1px 2px hsl(0 0% 0% / .55),
+      0 22px 52px -30px hsl(0 0% 0% / .95);
+  }
+  [data-juno-chat-root] .empty-greeting {
+    text-shadow: none;
   }
 
-  /* Skeleton -> content. The placeholder is held for one more beat and fades
-     out ON TOP of the real rows rather than being unmounted the frame before
-     they appear: at this size a hard swap reads as a flicker even though
-     nothing has moved.
-
-     The outgoing placeholder is taken out of flow so the arriving content owns
-     the height immediately. It cannot be otherwise — the content's height is
-     not knowable before it renders — so the honest version of this is that the
-     layout resolves in one frame, exactly as it does today, and the fade is
-     there to stop the *pixels* snapping while it does.
-
-     Pinned top/left/right and NOT bottom, so the ghost keeps its own natural
-     height. `inset: 0` would stretch three 86px placeholder rows down over a
-     700px list for the length of the fade, which is a distortion the reader
-     has never seen before and would read as a glitch — worse than the snap
-     this exists to hide. Overflowing the short direction instead is invisible:
-     it is already fading and already `pointer-events: none`. */
-  .work-crossfade {
-    position: relative;
-  }
-  .work-crossfade-ghost {
-    position: absolute;
-    inset: 0 0 auto 0;
-    pointer-events: none;
-    animation: work-crossfade-out var(--dur-base) var(--ease-out-soft) both;
-  }
-  @keyframes work-crossfade-out {
-    from {
-      opacity: 1;
-    }
-    to {
-      opacity: 0;
+  @media (hover: hover) {
+    .menu-item:is(:hover, :focus, :focus-visible) > svg,
+    .menu-item:is(:hover, :focus, :focus-visible) > a > svg,
+    .menu-item:is(:hover, :focus, :focus-visible) [class*="lucide"],
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) > svg,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) [class*="lucide"],
+    [role="option"]:is(:hover, :focus, :focus-visible, [aria-selected="true"]) [class*="lucide"] {
+      animation: none !important;
+      transform: none !important;
     }
   }
 }

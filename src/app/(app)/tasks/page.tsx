@@ -20,6 +20,7 @@ import type { TaskItem } from "@/components/tasks/task-model";
 import { staggerDelay } from "@/lib/motion";
 import { AppPageHeader } from "@/components/app/app-page-header";
 import { EmptyState } from "@/components/ui/empty-state";
+import { AppIcons } from "@/lib/app-icons";
 
 export default function TasksPage() {
   const [tasks, setTasks] = React.useState<TaskItem[] | null>(null);
@@ -104,8 +105,8 @@ export default function TasksPage() {
   const atLimit = !loading && tasks !== null && tasks.length >= limit;
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-2xl px-4 py-8">
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-2xl">
         <AppPageHeader
           eyebrow="Tasks"
           heading="Scheduled tasks"
@@ -113,11 +114,11 @@ export default function TasksPage() {
           actions={
             !loading && !locked && !empty ? (
               <>
-                <span className="font-mono text-caption tabular-nums text-muted-foreground/60">
+                <span className="font-mono text-caption tabular-nums text-muted-foreground">
                   {tasks.length} / {limit}
                 </span>
                 <Button size="sm" className="gap-1.5" onClick={openCreate} disabled={atLimit}>
-                  <Plus className="h-3.5 w-3.5" /> New task
+                  <Plus className="size-3.5" /> New task
                 </Button>
               </>
             ) : null
@@ -125,9 +126,9 @@ export default function TasksPage() {
         />
 
         {loadError ? (
-          <div className="space-y-2.5 rounded-card border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <div className="space-y-2.5 rounded-card border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
               <p>Couldn’t load your tasks. Check your connection and try again.</p>
             </div>
             <Button
@@ -136,18 +137,19 @@ export default function TasksPage() {
               onClick={() => load()}
               className="gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
             >
-              <RefreshCw className="h-3.5 w-3.5" /> Retry
+              <RefreshCw className="size-3.5" /> Retry
             </Button>
           </div>
         ) : loading ? (
           <div className="space-y-3">
             {[...Array(3)].map((_, i) => (
-              <Skeleton key={i} className="h-[124px] w-full rounded-lg" style={staggerDelay(i)} />
+              <Skeleton key={i} className="h-[124px] w-full rounded-card" style={staggerDelay(i)} />
             ))}
           </div>
         ) : locked ? (
           <EmptyState
             className="mt-10"
+            icon={AppIcons.tasks}
             title="Tasks are part of Pro"
             description="Juno can run a prompt for you every morning — a news brief, a metrics check, a language lesson."
             action={
@@ -159,24 +161,33 @@ export default function TasksPage() {
         ) : empty ? (
           <EmptyState
             className="mt-10"
+            icon={AppIcons.tasks}
             title="Nothing scheduled"
             description="Juno can run a prompt for you every morning — a news brief, a metrics check, a language lesson."
             action={
               <Button onClick={openCreate} className="gap-1.5">
-                <Plus className="h-4 w-4" /> New task
+                <Plus className="size-4" /> New task
               </Button>
             }
           />
         ) : (
           <div className="space-y-3">
-            {tasks.map((task) => (
-              <TaskCard
+            {/* The skeletons above stagger and the cards replacing them did not, so
+                the loading state was more choreographed than the content — the same
+                mismatch the library grid was fixed for. Same rung, same cap. */}
+            {tasks.map((task, i) => (
+              <div
                 key={task.id}
-                task={task}
-                onToggle={(enabled) => toggle(task, enabled)}
-                onEdit={() => openEdit(task)}
-                onDelete={() => setDeleting(task)}
-              />
+                style={staggerDelay(i)}
+                className="motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+              >
+                <TaskCard
+                  task={task}
+                  onToggle={(enabled) => toggle(task, enabled)}
+                  onEdit={() => openEdit(task)}
+                  onDelete={() => setDeleting(task)}
+                />
+              </div>
             ))}
           </div>
         )}
@@ -188,7 +199,7 @@ export default function TasksPage() {
       <Dialog open={deleting !== null} onOpenChange={(o) => !o && setDeleting(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-serif">Delete this task?</DialogTitle>
+            <DialogTitle>Delete this task?</DialogTitle>
             <DialogDescription>
               The schedule stops and its run history is removed. The results chat is kept. This can’t be undone.
             </DialogDescription>

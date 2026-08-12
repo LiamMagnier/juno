@@ -103,9 +103,18 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
          * lets the utility strip run full-bleed to the border so its hairline
          * reaches both edges instead of stopping short in a gutter.
          */
-        "composer-surface relative flex w-full flex-col rounded-composer border border-border/65 bg-card/95 backdrop-blur",
+        /*
+         * ONE radius at every width. `sm:rounded-lg` used to close this line and
+         * silently undid `rounded-composer` from the sm breakpoint upward — so
+         * the composer was only ever round on a phone, and every desktop user
+         * saw it at the generic 16px surface radius no matter what the composer
+         * rung said. If a narrow viewport ever genuinely needs a tighter corner
+         * it belongs in the radius ladder as its own rung, not as a utility that
+         * quietly overrides the semantic one from a breakpoint up.
+         */
+        "composer-surface relative flex w-full flex-col rounded-composer border border-border/80 bg-card",
         "transition-[border-color,box-shadow] duration-base ease-out-soft motion-reduce:transition-none",
-        "focus-within:border-foreground/15 sm:rounded-lg",
+        "focus-within:border-foreground/25",
         className
       )}
       {...props}
@@ -144,7 +153,25 @@ const ComposerShell = React.forwardRef<HTMLDivElement, ComposerShellProps>(funct
         <div
           role="group"
           aria-label={utilityLabel}
-          className="flex min-w-0 flex-nowrap items-center gap-1 rounded-b-inherit border-t border-border/60 bg-muted/25 px-2 py-1.5 text-caption text-muted-foreground sm:px-2.5"
+          /*
+           * The recessed fill is `bg-background`, not `bg-muted`, and the
+           * direction is the reason. A recess has to be DARKER than the surface
+           * it is cut into, in both themes. On paper --muted (95%) does darken
+           * the card (99%) and the /25 read as intended; on dark --muted is 9.5%
+           * against a 6.5% card, so the strip came out LIGHTER than the composer
+           * body and the quieter tier was the brighter one. --background is
+           * below the card in both ramps — 97 vs 99 on paper, 0 vs 6.5 on black
+           * — so it recesses either way.
+           *
+           * The alpha is gone, and light is why. --card and --background are two
+           * points apart on paper, so ANY discount below 1 spends the whole
+           * budget: at /40 the strip composited to 98.2% against a 99% card — a
+           * 0.8-point step, i.e. a tier that is not drawn. At full strength the
+           * step is the same 2 points that separates a `field-well` from the
+           * card it sits in, which is the relationship this strip is: a tray cut
+           * into the composer, fenced by its own hairline and the shell's border.
+           */
+          className="flex min-w-0 flex-nowrap items-center gap-1 rounded-b-inherit border-t border-border/60 bg-background px-2 py-1.5 text-caption text-muted-foreground sm:px-2.5"
         >
           {utility}
         </div>

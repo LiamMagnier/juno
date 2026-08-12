@@ -150,7 +150,16 @@ export function WorkScheduleRow({
   return (
     <div
       className={cn(
-        "group flex items-start rounded-field border border-border/60 bg-card/60 transition-[background-color,border-color] duration-base ease-out-soft hover:border-border hover:bg-card motion-safe:animate-rise-in",
+        // The same rest/hover/press/focus set WorkSessionRow carries. These
+        // three sibling rows are the same object in three lists and had neither a
+        // focus ring — a keyboard reader could not see which row they were on —
+        // nor any press feedback.
+        "group flex items-start rounded-field border border-border/60 bg-card transition-[background-color,border-color,transform] duration-base ease-out-soft hover:border-border hover:bg-secondary motion-safe:animate-rise-in",
+        // Drawn off the inner anchor with `:has()`, exactly as WorkSessionRow
+        // does: this row is a div wrapping a Link so that its options button is
+        // not nested inside an anchor, which means the div itself never focuses.
+        "[&:has(>a:focus-visible)]:ring-2 [&:has(>a:focus-visible)]:ring-ring [&:has(>a:focus-visible)]:ring-offset-2 [&:has(>a:focus-visible)]:ring-offset-background",
+        "motion-safe:hover:-translate-y-px [&:has(>a:active)]:translate-y-0 motion-safe:[&:has(>a:active)]:scale-[0.997]",
         "[animation-fill-mode:backwards]",
         !schedule.enabled && "opacity-75"
       )}
@@ -158,7 +167,7 @@ export function WorkScheduleRow({
     >
       <Link
         href={`/work/schedules/${schedule.id}`}
-        className="flex min-w-0 flex-1 items-start gap-3 px-3.5 py-3"
+        className="flex min-w-0 flex-1 items-start gap-3 rounded-field px-3.5 py-3 focus-visible:outline-none"
       >
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -166,7 +175,7 @@ export function WorkScheduleRow({
               {schedule.name}
             </span>
             {!schedule.enabled && (
-              <span className="shrink-0 rounded-full border border-border/70 bg-background/50 px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
+              <span className="shrink-0 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
                 Paused
               </span>
             )}
@@ -174,14 +183,14 @@ export function WorkScheduleRow({
           <span className="mt-1 block truncate text-[13px] leading-relaxed text-muted-foreground">
             {schedule.triggers.map((trigger) => describeTrigger(trigger)).join(" · ")}
           </span>
-          <span className="mt-1.5 block font-mono text-[10px] text-muted-foreground/70">
+          <span className="mt-1.5 block font-mono text-[10px] tabular-nums text-muted-foreground">
             {nextFireSentence(schedule)}
             {schedule.lastRunAt !== null && ` · last ran ${workTimeAgo(schedule.lastRunAt)}`}
             {notify !== null && ` · ${notify}`}
           </span>
         </span>
         <ChevronRight
-          className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
+          className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
           aria-hidden="true"
         />
       </Link>
@@ -207,7 +216,7 @@ export function WorkScheduleRow({
           disabled={busy !== null}
           onClick={() => void toggle()}
           aria-label={schedule.enabled ? `Pause ${schedule.name}` : `Resume ${schedule.name}`}
-          className="h-7 w-7 text-muted-foreground/70 hover:text-foreground"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
         >
           {busy === "toggle" ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />

@@ -13,7 +13,12 @@ export function AdminNav({ current, reviewCount = 0 }: { current: AdminSection; 
   return (
     <nav
       aria-label="Admin sections"
-      className="flex w-fit items-center gap-1 rounded-full border border-border/60 bg-secondary/50 p-1"
+      // Opaque track, one rung BELOW the active pill. It was `bg-secondary/50`
+      // with a `bg-background` active tab, which on the true-black dark ramp put
+      // the selected section at 0% lightness inside a ~4.75% track — the current
+      // page read as a hole punched in the control. The ladder now climbs:
+      // secondary (9.5%) track → accent (13%) pill.
+      className="flex w-fit items-center gap-1 rounded-full border border-border/60 bg-secondary p-1"
     >
       {TABS.map((tab) => (
         <Link
@@ -21,15 +26,20 @@ export function AdminNav({ current, reviewCount = 0 }: { current: AdminSection; 
           href={tab.href}
           aria-current={tab.id === current ? "page" : undefined}
           className={cn(
-            "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 font-mono text-xs font-medium transition-colors duration-fast ease-out-soft",
+            // Scoped transition, and a border on both states so the active pill
+            // gains an edge rather than 1px of width when it becomes active.
+            "flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 font-mono text-xs font-medium",
+            "transition-[background-color,border-color,color] duration-fast ease-out-soft",
             tab.id === current
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
+              ? "border-border/60 bg-accent text-foreground"
+              : "border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground"
           )}
         >
           {tab.label}
           {tab.id === "moderation" && reviewCount > 0 && (
-            <span className="grid h-4 min-w-4 place-items-center rounded-full bg-destructive/15 px-1 text-[10px] font-semibold tracking-normal text-destructive">
+            // tabular-nums: this count changes in place as flags are reviewed,
+            // and proportional digits made the pill twitch on every change.
+            <span className="grid h-4 min-w-4 place-items-center rounded-full bg-destructive/15 px-1 font-mono text-caption font-semibold tabular-nums tracking-normal text-destructive">
               {reviewCount > 99 ? "99+" : reviewCount}
             </span>
           )}

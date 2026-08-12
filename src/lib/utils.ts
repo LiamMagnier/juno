@@ -12,10 +12,39 @@ import { extendTailwindMerge } from "tailwind-merge";
  * what makes the type scale usable at all — see the hand-rolled workarounds this
  * replaces in card.tsx and label.tsx.
  */
+/*
+ * The radius ladder has exactly the same problem, and it is worse because it
+ * fails silently in the other direction.
+ *
+ * `rounded-composer-control` is not a value stock tailwind-merge recognises, so
+ * it cannot tell that it CONFLICTS with `rounded-field`. Both survive the merge,
+ * and which one wins is then decided by the order Tailwind happened to emit them
+ * in — not by the order the author wrote them. The consequence: any radius
+ * passed to a component that already sets one is quietly discarded.
+ *
+ * Measured on the composer's thinking-effort trigger, which ended up carrying
+ * THREE at once — `rounded-field` (10px, Button's base), `rounded-control` (9px,
+ * from size="sm") and `rounded-composer-control` (12px, from the call site). The
+ * call site lost, so the two chips in one control pair rendered at 12px and 10px.
+ * That is true of every `<Button className="rounded-*">` in the product, which is
+ * a large share of the radius drift the ladder was introduced to end.
+ *
+ * Registering the keys is what makes the ladder authoritative: last one wins,
+ * which is what every author already assumed.
+ */
 const merge = extendTailwindMerge({
   extend: {
     classGroups: {
-      "font-size": [{ text: ["hero", "display", "title", "heading", "body", "body-lg", "label", "caption"] }],
+      "font-size": [{ text: ["hero", "display", "page-title", "title", "heading", "body", "body-lg", "label", "caption"] }],
+      rounded: [
+        {
+          rounded: [
+            "micro", "xs", "control", "field", "menu", "card", "popover",
+            "surface", "composer", "composer-control", "composer-action",
+            "panel", "logo",
+          ],
+        },
+      ],
     },
   },
 });

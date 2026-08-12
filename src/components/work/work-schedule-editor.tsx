@@ -412,12 +412,20 @@ export function WorkScheduleEditor({
         {draft.target !== "cloud" && (
           <div className="mt-3">
             <Label htmlFor="schedule-host">Mac</Label>
+            {/* No `bg-*` utility beside `field-well`. Utilities are emitted
+                after the components layer at equal specificity, so `bg-secondary`
+                here silently beat the class — and `.field-well` is exactly where
+                the per-theme fill belongs (page ground on light, one rung UP on
+                dark, because nothing recesses below black). With the utility on,
+                this select was secondary on both themes while the `Input` for
+                Timezone directly below it was background on light: one form,
+                two fills. `px-3.5` and `coarse:h-11` are that Input's too. */}
             <select
               id="schedule-host"
               value={draft.hostId ?? ""}
               disabled={saving || hosts === null}
               onChange={(event) => set("hostId", event.target.value === "" ? null : event.target.value)}
-              className="field-well mt-1 h-9 w-full max-w-xs rounded-field border border-input bg-background px-3 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+              className="field-well mt-1 h-9 w-full max-w-xs rounded-field border border-input px-3.5 text-sm transition-[color,border-color,box-shadow] duration-base ease-out-soft coarse:h-11 hover:border-input/80 focus-visible:border-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="">
                 {draft.target === "local" ? "Choose a Mac…" : "Any of my Macs"}
@@ -524,12 +532,27 @@ function PolicyGroup<T extends string>({
   const name = React.useId();
   return (
     <fieldset className="min-w-0" disabled={disabled}>
-      <legend className="font-mono text-xs font-medium text-muted-foreground">{label}</legend>
+      {/* `text-label`, the register `Label` resolves to. A fieldset legend and a
+          field label do the same job on this page and sat two paragraphs apart
+          at 12px/0.10em against 12px/0 — one form, two label voices. */}
+      <legend className="font-mono text-label text-muted-foreground">{label}</legend>
       <div className="mt-1.5 space-y-1.5">
         {options.map((option) => (
           <label
             key={option.value}
-            className="flex cursor-pointer items-start gap-2.5 rounded-field border border-border/50 px-3 py-2 transition-colors duration-fast ease-out-soft hover:border-border has-[:checked]:border-foreground/25 has-[:checked]:bg-accent/40"
+            // `bg-secondary` on the chosen row, not `accent/40`: 40% of accent
+            // over the black ground composites to ~5.2% lightness, BELOW
+            // `--card`, so the row somebody had selected sat lower than an
+            // unselected card elsewhere on the page. `secondary` is the named
+            // rung one step above the ground and is what every other selected
+            // row in Work fills with.
+            //
+            // The focus ring is drawn on the ROW rather than left to the global
+            // outline on the 14px radio inside it. This is the control that
+            // decides what happens to somebody's files at three in the morning,
+            // and a 14px outline inside a full-width row is not where a keyboard
+            // reader looks to find out where they are.
+            className="flex cursor-pointer items-start gap-2.5 rounded-field border border-border/50 px-3 py-2 transition-colors duration-fast ease-out-soft hover:border-border has-[:checked]:border-foreground/25 has-[:checked]:bg-secondary has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-background"
           >
             <input
               type="radio"

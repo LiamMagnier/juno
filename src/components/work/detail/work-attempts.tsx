@@ -156,7 +156,10 @@ function AttemptRow({ run, isCurrent }: { run: ClientWorkRun; isCurrent: boolean
         // `rounded-control`, the list-row rung. `rounded-lg` is 24px here, which
         // on a 30px row is very nearly a pill.
         "rounded-control px-2 py-1.5",
-        isCurrent ? "bg-muted/50" : "transition-colors duration-base ease-out-soft hover:bg-muted/30"
+        // Two rungs, not one alpha of the same fill. On a pure-black ground the
+        // old muted/50-vs-muted/30 pair collapsed to the same wash, so the row
+        // you are looking at and the row under your pointer were indistinguishable.
+        isCurrent ? "bg-accent" : "transition-colors duration-base ease-out-soft hover:bg-secondary"
       )}
     >
       <div className="flex items-baseline gap-2">
@@ -177,13 +180,13 @@ function AttemptRow({ run, isCurrent }: { run: ClientWorkRun; isCurrent: boolean
           {run.terminalDetail ?? statusSentence(run.status)}
         </span>
         {isCurrent && (
-          <span className="shrink-0 font-mono text-[10px] text-muted-foreground/70">this one</span>
+          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">this one</span>
         )}
       </div>
       {/* The three numbers a comparison is actually made on. Omitted individually
           rather than shown as zero: a run that never started has no duration,
           and printing "0s" would say it ran instantly. */}
-      <p className="mt-0.5 flex flex-wrap items-baseline gap-x-3 pl-[18px] font-mono text-[10px] tabular-nums text-muted-foreground/70">
+      <p className="mt-0.5 flex flex-wrap items-baseline gap-x-3 pl-[18px] font-mono text-[10px] tabular-nums text-muted-foreground">
         {ran !== null && <span>{formatDuration(ran)}</span>}
         {run.usage.costMicroUsd > 0 && <span>{formatMicroUsd(run.usage.costMicroUsd)}</span>}
         {run.effectiveModel !== null && (

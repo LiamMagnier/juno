@@ -15,8 +15,8 @@ export default async function ResetPasswordPage() {
   return (
     <div className="space-y-6">
       <div className="space-y-1.5 text-center">
-        <h1 className="text-balance font-serif text-3xl font-medium tracking-tight">Choose a new password</h1>
-        <p className="text-sm text-muted-foreground">Use at least eight characters you don’t use elsewhere.</p>
+        <h1 className="text-balance font-serif text-display">Choose a new password</h1>
+        <p className="text-body text-muted-foreground">Use at least eight characters you don’t use elsewhere.</p>
       </div>
       <ResetPasswordForm />
     </div>

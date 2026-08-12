@@ -52,13 +52,27 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
   return (
     // Chat scrolls as a document; the artifact sandbox fills a fixed viewport.
     <div className={cn("flex flex-col bg-background text-foreground", artifact ? "h-dvh overflow-hidden" : "min-h-dvh")}>
-      <header className="sticky top-0 z-20 shrink-0 border-b border-border/60 bg-background/85 backdrop-blur-md">
+      {/* `bg-card/85`, not `bg-background/85`. On the true-black theme the
+          background rung IS the transcript's ground, so the sticky chrome was
+          chromatically identical to the content scrolling under it and only a
+          damped hairline said the bar existed. --card is the first rung above
+          the ground (6.5%), which is exactly what a floating bar wants. */}
+      <header className="sticky top-0 z-20 shrink-0 border-b border-border/60 bg-card/85 backdrop-blur-md">
         <div className="mx-auto flex h-14 w-full max-w-3xl items-center gap-3 px-4 sm:px-6">
-          <Link href="/" aria-label="Juno" className="shrink-0 rounded-md">
+          <Link
+            href="/"
+            aria-label="Juno"
+            className="shrink-0 rounded-control transition-transform duration-press ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100"
+          >
             <JunoMark className="h-6 w-6" />
           </Link>
-          <h1 className="min-w-0 flex-1 truncate font-serif text-base font-medium tracking-tight">{title}</h1>
-          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+          {/* text-heading — this was `text-base` (16px), a Tailwind default that
+              sits between body (15px) and heading (18px) and is on no Juno rung. */}
+          <h1 className="min-w-0 flex-1 truncate font-serif text-heading">{title}</h1>
+          {/* text-caption (11px), not an arbitrary text-[10px] below the bottom of
+              the scale — on the one page a prospect sees before the marketing
+              site. */}
+          <span className="shrink-0 whitespace-nowrap font-mono text-caption text-muted-foreground">
             Shared {sharedOn}
           </span>
         </div>
@@ -79,9 +93,10 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
         </main>
       ) : null}
 
-      <footer className="sticky bottom-0 z-20 shrink-0 border-t border-border/60 bg-background/85 backdrop-blur-md">
+      {/* Same rung as the header above — the two bars are one piece of chrome. */}
+      <footer className="sticky bottom-0 z-20 shrink-0 border-t border-border/60 bg-card/85 backdrop-blur-md">
         <div className="mx-auto flex h-14 w-full max-w-3xl items-center justify-between gap-3 px-4 sm:px-6">
-          <span className="inline-flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
+          <span className="inline-flex items-center gap-2 font-mono text-caption text-muted-foreground">
             <JunoMark className="h-4 w-4" />
             Made with Juno
           </span>

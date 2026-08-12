@@ -1,6 +1,6 @@
 "use client";
 
-import { BlockShell, LessonKicker } from "@/components/chat/learning/block-shell";
+import { BlockShell, BlockTitle, LessonKicker } from "@/components/chat/learning/block-shell";
 import { cn } from "@/lib/utils";
 import type { LearningCardData, LearningCardTone } from "@/lib/learning-blocks";
 
@@ -28,14 +28,14 @@ export function LearningCardBlock({ card }: { card: LearningCardData }) {
           {tone.label}
         </LessonKicker>
         <div className={cn("flex flex-col gap-1.5 border-l-2 pl-4", tone.rule)}>
-          <h4 className="font-serif text-[19px] font-medium leading-snug tracking-[-0.01em]">
+          <BlockTitle className="leading-snug">
             {card.icon && (
               <span aria-hidden className="pr-2 text-[17px] leading-none">
                 {card.icon}
               </span>
             )}
             {card.title}
-          </h4>
+          </BlockTitle>
           <p className="whitespace-pre-line text-[15px] leading-7 text-foreground/80">{card.content}</p>
         </div>
       </div>

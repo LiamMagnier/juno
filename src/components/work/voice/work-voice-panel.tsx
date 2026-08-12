@@ -211,7 +211,7 @@ export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoic
       }
       notice={
         staleBy ? (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-field border border-border/60 bg-muted/40 px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-field border border-border/60 bg-secondary px-3 py-2">
             <p className="font-mono text-label text-muted-foreground">
               The task has moved on since Juno was briefed
             </p>

@@ -197,13 +197,41 @@ function useCodeTaskMeta(conversationId: string): CodeTaskMeta & { refresh: () =
   return { ...meta, refresh };
 }
 
+/*
+ * FULL-STRENGTH FILLS, and that is a contrast fix rather than a taste one.
+ *
+ * The two most-seen states were drawn as opacity-thinned dots — /40 for checking
+ * and /50 for offline and none — alphas tuned against the old 9%-lightness
+ * ground. That ground is now `0 0% 0%`, where /40 composites to ~2.1:1 and /50
+ * to ~2.8:1, both under the 3:1 minimum for a non-text indicator. The dot is the
+ * only mark in the banner that says whether this session can run anything, so it
+ * has to survive.
+ *
+ * `offline` takes `bg-warning`, not a grey: a Mac that exists but is asleep is a
+ * recoverable blocker, and it should not read the same as `none`, which is a
+ * project no Mac has ever synced.
+ */
 const PRESENCE_META: Record<PresenceState, { label: string; dot: string }> = {
-  checking: { label: "Checking your Mac…", dot: "bg-muted-foreground/40 motion-safe:animate-pulse" },
+  checking: { label: "Checking your Mac…", dot: "bg-muted-foreground motion-safe:animate-pulse" },
   online: { label: "Mac connected", dot: "bg-success" },
-  offline: { label: "Mac offline", dot: "bg-muted-foreground/50" },
-  none: { label: "No Mac has synced this project", dot: "bg-muted-foreground/50" },
+  offline: { label: "Mac offline", dot: "bg-warning" },
+  none: { label: "No Mac has synced this project", dot: "bg-muted-foreground" },
   error: { label: "Presence unavailable", dot: "bg-warning" },
 };
+
+/*
+ * The banner's status chips, one recipe. Four of them can sit on that row at
+ * once — the task chip, the resolving chip, the cloud/PR chip and the presence
+ * chip — and they had drifted into two families and two sizes (a mono 10px task
+ * chip beside three sans 12px siblings with the same pill, border and fill).
+ *
+ * `bg-card` at full alpha, not `bg-card/70`: 6.5% × 0.7 is ~4.5% lightness on
+ * the black ground, which is below the hairline that rings it.
+ */
+const BANNER_CHIP =
+  "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/70 bg-card px-2.5 py-1 text-xs text-muted-foreground";
+/** The chip's leading dot, at the one size all four use. */
+const BANNER_DOT = "h-1.5 w-1.5 shrink-0 rounded-full";
 
 /*
  * The composer's separator, one string, both places one is needed. The comment
@@ -744,8 +772,12 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
         />
       )}
       {queuedNote && (
-        <p className="mx-1 mb-2 flex items-center gap-2 rounded-field border border-border/70 bg-muted/45 px-3 py-2 text-xs text-muted-foreground motion-safe:animate-rise-in">
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50 motion-safe:animate-pulse" aria-hidden="true" />
+        // `bg-muted` at full alpha, `px-3 py-2.5` — the one fill and the one
+        // inset every card stacked above the composer now shares. The three of
+        // them used to be 3.8%, 3.8% and 4.3% lightness: three fills for one
+        // elevation rung, all of them BELOW the `bg-card` composer they sit on.
+        <p className="mx-1 mb-2 flex items-center gap-2 rounded-field border border-border/70 bg-muted px-3 py-2.5 text-xs text-muted-foreground motion-safe:animate-rise-in">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground motion-safe:animate-pulse" aria-hidden="true" />
           {queuedNote}
         </p>
       )}
@@ -843,8 +875,12 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
               above={
                 canAttach && (
                   <div
+                    // `motion-reduce:transition-none`, which the identical
+                    // grid-rows collapse in ChangedFiles below already carries.
+                    // Without it the one collapse a user sees on every attach
+                    // was the only one in the file that ignored the setting.
                     className={cn(
-                      "grid transition-[grid-template-rows] duration-base ease-out-soft",
+                      "grid transition-[grid-template-rows] duration-base ease-out-soft motion-reduce:transition-none",
                       uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
                     )}
                   >
@@ -854,7 +890,14 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                           <div
                             key={u.localId}
                             className={cn(
-                              "group relative flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-xs shadow-soft",
+                              // `bg-muted`, not `bg-background`: this chip sits
+                              // INSIDE ComposerShell's `bg-card`, and on true
+                              // black a background-filled chip punches a
+                              // 0%-lightness hole into a 6.5% panel. It also
+                              // takes the shell's own seated-control radius
+                              // rather than a stray `rounded-md`. `shadow-soft`
+                              // is gone — it is black ink on black here.
+                              "group relative flex items-center gap-2 rounded-composer-control border border-border/60 bg-muted px-2.5 py-2 text-xs",
                               removingIds.includes(u.localId)
                                 ? "pointer-events-none motion-safe:animate-pop-out"
                                 : "motion-safe:animate-rise-in",
@@ -872,10 +915,15 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                               </p>
                             </div>
                             {u.status === "uploading" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                            {/* `bg-secondary`, not `bg-foreground`. A
+                                94%-lightness disc on a 0% ground made a 20px
+                                micro-control the single brightest object on the
+                                screen; the hairline is what shapes it now, and
+                                `shadow-soft` — black on black here — is gone. */}
                             <button
                               type="button"
                               onClick={() => removeUpload(u.localId)}
-                              className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
+                              className="absolute -right-1.5 -top-1.5 rounded-full border border-border bg-secondary p-0.5 text-foreground opacity-0 transition-[opacity,background-color,border-color,color] duration-fast ease-out-soft group-hover:opacity-100 hover:border-destructive hover:bg-destructive hover:text-destructive-foreground focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
                               aria-label="Remove attachment"
                             >
                               <X className="h-3 w-3 coarse:h-4 coarse:w-4" />
@@ -910,7 +958,21 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                           : "Describe what to build or fix…"
                   }
                   aria-label="Prompt for this code session"
-                  className="max-h-[200px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]"
+                  // The height eased here is real layout movement — the whole
+                  // composer, and everything stacked on it, rises as you type —
+                  // so it needs the same reduced-motion escape every other
+                  // transition on this surface carries.
+                  //
+                  // PLACEHOLDER AT FULL --muted-foreground, and on this surface
+                  // that is not a nicety. input.tsx, textarea.tsx and select.tsx
+                  // each removed `/70` with a note recording it as a 2.91:1
+                  // contrast failure against a token tuned to 5.3:1. Here the
+                  // placeholder is also the error channel — `sendBlockedReason`
+                  // renders through it ("Open this project in the Juno app on
+                  // your Mac…") — and `disabled:opacity-70` is live at exactly
+                  // that moment, so the one sentence explaining why the session
+                  // cannot run was being drawn at ~0.49 of the token.
+                  className="max-h-[200px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 motion-reduce:transition-none sm:px-[18px] sm:pt-[17px]"
                 />
               }
               controls={
@@ -1029,8 +1091,11 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                           }
                           className={cn(
                             "composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
+                            // ring-primary/30, not /15: the halo that says "this
+                            // is now a stop button" was ~2% lightness against
+                            // the black ground and did not read at all.
                             session.isBusy && session.status !== "submitting"
-                              ? "w-11 rounded-composer-control ring-2 ring-primary/15"
+                              ? "w-11 rounded-composer-control ring-2 ring-primary/30"
                               : "rounded-composer-action",
                           )}
                         >
@@ -1100,7 +1165,11 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
             />
 
             {dragging && (
-              <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-composer border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in sm:rounded-lg">
+              // `rounded-composer` alone. The `sm:rounded-lg` override restated
+              // the shell's corner in a second file (and a third, on /code/new),
+              // so the overlay stopped tracing the shell the moment the token
+              // moved — which it just did, to 26px.
+              <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-composer border-2 border-dashed border-primary/45 bg-primary/15 backdrop-blur-sm motion-safe:animate-fade-in">
                 <FileUp className="h-6 w-6 text-primary" />
                 <span className="font-mono text-label text-primary">Drop to attach</span>
               </div>
@@ -1149,10 +1218,19 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
           Cloud: the repo + a calm "runs in the cloud, opens a PR" note (no
           device-offline/queue copy), plus the PR link once the run opens one.
           While `resolving`, it says only what is true of both. */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 bg-background/95 px-3 py-2 md:px-4">
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
+      {/* `bg-background` flat: the translucency bought nothing — this row is
+          `shrink-0` in a flex column, so nothing scrolls beneath it, and on a
+          0%-lightness ground a 5% bleed is unobservable. The bottom hairline is
+          `border-border` at full strength for the same reason; at /60 it was
+          9.6% lightness, the faintest edge on the surface doing the most work. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-background px-3 py-2 md:px-4">
+        {/* `bg-primary/20 border-primary/45` — at /10 and /25 the fill was ~2%
+            lightness and the border ~4%, so the badge vanished and only the 12px
+            glyph inside it survived. Same recipe as the PR chip below, so the
+            banner's two coral elements are one object. */}
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/45 bg-primary/20">
           {resolving ? (
-            <Loader2 className="h-3 w-3 animate-spin text-primary/70" aria-hidden="true" />
+            <Loader2 className="h-3 w-3 animate-spin text-primary" aria-hidden="true" />
           ) : isCloud ? (
             <Cloud className="h-3 w-3 text-primary" aria-hidden="true" />
           ) : (
@@ -1169,22 +1247,26 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
           ? null
           : isCloud
           ? meta.baseRef && (
-              <span className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
+              <span className="hidden min-w-0 truncate font-mono text-caption text-muted-foreground sm:inline">
                 on {meta.baseRef}
               </span>
             )
           : workspacePath && (
-              <span className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
+              <span className="hidden min-w-0 truncate font-mono text-caption text-muted-foreground sm:inline">
                 {workspacePath}
               </span>
             )}
         <span className="flex-1" />
         {taskChip && (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-2.5 py-1 font-mono text-[10px] text-muted-foreground motion-safe:animate-fade-in">
+          <span className={cn(BANNER_CHIP, "motion-safe:animate-fade-in")}>
             <span
               className={cn(
-                "h-1.5 w-1.5 rounded-full",
-                session.status === "running" ? "bg-success motion-safe:animate-pulse" : session.status === "awaiting_approval" ? "bg-warning" : "bg-muted-foreground/50"
+                BANNER_DOT,
+                session.status === "running"
+                  ? "bg-success motion-safe:animate-pulse"
+                  : session.status === "awaiting_approval"
+                    ? "bg-warning"
+                    : "bg-muted-foreground",
               )}
               aria-hidden="true"
             />
@@ -1192,44 +1274,35 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
           </span>
         )}
         {resolving ? (
-          <span
-            role="status"
-            className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-2.5 py-1 text-xs text-muted-foreground"
-          >
-            <span
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/40 motion-safe:animate-pulse"
-              aria-hidden="true"
-            />
+          <span role="status" className={BANNER_CHIP}>
+            <span className={cn(BANNER_DOT, "bg-muted-foreground motion-safe:animate-pulse")} aria-hidden="true" />
             <span className="min-w-0 truncate">Getting this session ready…</span>
           </span>
         ) : isCloud ? (
           meta.prUrl ? (
+            // The banner's only call to action, and at `bg-primary/10` its fill
+            // composited to roughly 2% lightness on black — the chip collapsed
+            // into bare coral text inside a faint outline. /20 makes it a chip
+            // again, and hover has to step UP from there, not down to /15.
             <a
               href={meta.prUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="pressable inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors duration-fast hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background motion-safe:animate-fade-in"
+              className="pressable inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/45 bg-primary/20 px-2.5 py-1 text-xs font-medium text-primary hover:border-primary/60 hover:bg-primary/30 motion-safe:animate-fade-in"
             >
               <GitPullRequest className="h-3.5 w-3.5" aria-hidden="true" />
               View pull request
               <ArrowUpRight className="h-3 w-3" aria-hidden="true" />
             </a>
           ) : (
-            <span
-              role="status"
-              className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-2.5 py-1 text-xs text-muted-foreground"
-            >
+            <span role="status" className={BANNER_CHIP}>
               <Cloud className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               <span className="min-w-0 truncate">Runs in the cloud · opens a pull request</span>
             </span>
           )
         ) : (
-          <span
-            role="status"
-            title={presence.device?.name}
-            className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-2.5 py-1 text-xs text-muted-foreground"
-          >
-            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", presenceMeta.dot)} aria-hidden="true" />
+          <span role="status" title={presence.device?.name} className={BANNER_CHIP}>
+            <span className={cn(BANNER_DOT, presenceMeta.dot)} aria-hidden="true" />
             <span className="min-w-0 truncate">{presenceMeta.label}</span>
           </span>
         )}
@@ -1304,7 +1377,12 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
         {thoughtOpenId && (
           <div
             ref={setThoughtContainer}
-            className="relative z-40 h-full w-full shrink-0 border-border/70 bg-card duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 lg:w-[30rem] lg:min-w-0 lg:border-l"
+            // No z-index. `z-40` was a number picked outside the
+            // z-popper/modal/toolbar/toast scale, and it bought nothing: this is
+            // an in-flow flex sibling that already paints after the transcript
+            // column. Naming a layer here would instead put the dock over the
+            // composer's own portalled dropdowns, which sit at z-popper.
+            className="relative h-full w-full shrink-0 border-border bg-card duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 lg:w-[30rem] lg:min-w-0 lg:border-l"
           />
         )}
       </div>
@@ -1332,17 +1410,28 @@ function ChangedFiles({ files }: { files: { path: string; changeKind: string; ch
   return (
     <section
       aria-label="Files this session changed"
-      // p-0.5 is what makes the row's own rounded-control (10px) concentric
-      // inside this rounded-field (12px) shell: outer = inner + padding.
-      className="mx-1 mb-2 rounded-field border border-border/70 bg-muted/40 p-0.5 motion-safe:animate-rise-in"
+      // p-0.5 is what makes the row's own rounded-control (9px) concentric
+      // inside this rounded-field (10px) shell: outer = inner + padding.
+      //
+      // `bg-muted` at full alpha. At /40 this panel was ~3.8% lightness on the
+      // black ground while the ComposerShell it sits directly on top of is
+      // `bg-card` at 6.5% — the run summary rendered DARKER than the input
+      // below it. The stack now lifts: background 0% → composer 6.5% → run
+      // cards 9.5%.
+      className="mx-1 mb-2 rounded-field border border-border/70 bg-muted p-0.5 motion-safe:animate-rise-in"
     >
       <Pressable
         kind="row"
         size="sm"
         aria-expanded={open}
-        // Only while it exists — never point at an id that is not in the document.
-        aria-controls={open ? listId : undefined}
+        // The list is now always in the document (it collapses rather than
+        // unmounting), so this can point at it unconditionally — previously it
+        // had to be dropped while closed to avoid naming an absent id.
+        aria-controls={listId}
         onClick={() => setOpen((v) => !v)}
+        // ~30px otherwise, on the only disclosure above a composer whose every
+        // other control carries `coarse:h-11`.
+        className="coarse:min-h-11"
       >
         <ChevronRight
           className={cn(
@@ -1355,19 +1444,39 @@ function ChangedFiles({ files }: { files: { path: string; changeKind: string; ch
           {files.length === 1 ? "1 file changed" : `${files.length} files changed`}
         </span>
       </Pressable>
-      {open && (
-        <ul id={listId} className="space-y-1 px-2.5 pb-2 pt-1">
-          {files.map((file) => (
-            <li key={file.path} className="flex items-baseline gap-2 text-[11px]">
-              <span className="shrink-0 font-mono text-muted-foreground/70">{file.changeKind}</span>
-              <span className="min-w-0 flex-1 truncate font-mono text-foreground/80" title={file.path}>
-                {file.path}
-              </span>
-              {file.churn && <span className="shrink-0 font-mono tabular-nums text-muted-foreground">{file.churn}</span>}
-            </li>
-          ))}
-        </ul>
-      )}
+      {/*
+        The same grid/`grid-template-rows` collapse the attachment tray in this
+        component already uses. As `{open && <ul>}` the list snapped in
+        instantly while its own chevron rotated over `duration-fast` — the
+        disclosure and the thing it disclosed were animating to two different
+        rules.
+
+        `aria-hidden` while closed because the rows stay in the document for the
+        transition to have something to animate; without it a screen reader
+        would read out a file list the disclosure says is collapsed.
+      */}
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-base ease-out-soft motion-reduce:transition-none",
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">
+          <ul id={listId} aria-hidden={!open} className="space-y-1 px-2.5 pb-2 pt-1">
+            {files.map((file) => (
+              <li key={file.path} className="flex items-baseline gap-2 text-caption">
+                <span className="shrink-0 font-mono text-muted-foreground">{file.changeKind}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-foreground" title={file.path}>
+                  {file.path}
+                </span>
+                {file.churn && (
+                  <span className="shrink-0 font-mono tabular-nums text-muted-foreground">{file.churn}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
     </section>
   );
 }
@@ -1389,13 +1498,15 @@ function AgentCards({ agents }: { agents: CodeAgentState[] }) {
   return (
     <section
       aria-label="Helper agents"
-      className="mx-1 mb-2 rounded-field border border-border/70 bg-muted/40 px-3 py-2 motion-safe:animate-rise-in"
+      // `bg-muted` + `px-3 py-2.5`, matching ChangedFiles and the queued note —
+      // see the fill note there. This card repeated the same recessed /40.
+      className="mx-1 mb-2 rounded-field border border-border/70 bg-muted px-3 py-2.5 motion-safe:animate-rise-in"
     >
       <p className="mb-1.5 flex items-center gap-2 font-mono text-label text-muted-foreground">
         <span
           className={cn(
             "h-1.5 w-1.5 shrink-0 rounded-full",
-            active ? "bg-primary/70 motion-safe:animate-pulse" : "bg-muted-foreground/50",
+            active ? "bg-primary motion-safe:animate-pulse" : "bg-muted-foreground",
           )}
           aria-hidden="true"
         />
@@ -1412,27 +1523,31 @@ function AgentCards({ agents }: { agents: CodeAgentState[] }) {
           return (
             <li key={agent.id} className="flex flex-col gap-0.5 text-xs">
               <span className="flex items-baseline gap-2">
-                <span className="font-medium capitalize text-foreground/90">{agent.role}</span>
+                <span className="font-medium capitalize text-foreground">{agent.role}</span>
                 <span className="truncate text-foreground/80">{agent.title}</span>
-                <span className={cn("ml-auto shrink-0 font-mono text-[10px]", tone)}>
+                <span className={cn("ml-auto shrink-0 font-mono text-caption", tone)}>
                   {status.replace("_", " ")}
                 </span>
               </span>
-              <span className="flex items-baseline gap-2 text-[11px] text-muted-foreground">
+              <span className="flex items-baseline gap-2 text-caption text-muted-foreground">
                 <span className="truncate">
                   {agent.status === "failed" && agent.error ? agent.error : agent.currentActivity ?? ""}
                 </span>
                 {tokens > 0 && (
-                  <span className="ml-auto shrink-0 font-mono">{tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : tokens} tok</span>
+                  // tabular-nums: this counter ticks up in place while the agent
+                  // runs, and proportional digits make the row jitter sideways.
+                  <span className="ml-auto shrink-0 font-mono tabular-nums">
+                    {tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : tokens} tok
+                  </span>
                 )}
               </span>
               {agent.filesChanged && agent.filesChanged.length > 0 && (
-                <span className="text-[11px] text-muted-foreground">
+                <span className="text-caption text-muted-foreground">
                   {agent.applied ? "applied" : "proposed"}: {agent.filesChanged.join(", ")}
                 </span>
               )}
               {agent.conflictedFiles && agent.conflictedFiles.length > 0 && (
-                <span className="text-[11px] text-warning">
+                <span className="text-caption text-warning">
                   conflicts with your checkout: {agent.conflictedFiles.join(", ")}
                 </span>
               )}
@@ -1465,7 +1580,11 @@ function ApprovalCard({
     <div
       role="group"
       aria-label="Juno Code approval request"
-      className="mx-1 mb-2 space-y-2.5 rounded-field border border-warning/40 bg-warning/5 px-3.5 py-3 text-sm motion-safe:animate-rise-in"
+      // `bg-warning/10` — the alpha globals.css names as the product's warning
+      // chip. At /5 the highest-stakes surface in Juno Code was a ~1%-lightness
+      // tint on the black ground, leaving `border-warning/40` to carry the whole
+      // alarm on its own. Inset matches the sibling cards above the composer.
+      className="mx-1 mb-2 space-y-2.5 rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5 text-sm motion-safe:animate-rise-in"
     >
       {/* The announcement lives in the composer wrapper, permanently mounted —
           a live region that appears with its text is frequently not announced. */}
@@ -1480,7 +1599,17 @@ function ApprovalCard({
             // rounded-xs, not rounded-lg: `lg` is the legacy alias for 24px, so
             // this block's corner was twice the 12px card holding it, inside
             // ~6px of inset. Concentric wants inner = outer − padding.
-            <pre className="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-xs border border-border/60 bg-background/60 px-2.5 py-2 font-mono text-[11px] leading-5 text-muted-foreground">
+            //
+            // `bg-muted/60` RAISES the well instead of darkening it: recessing
+            // by darkening has no headroom left on a 0%-lightness ground, so the
+            // old `bg-background/60` read as a hole punched in the card rather
+            // than an inset. `tabIndex={0}` because this region scrolls, and a
+            // scrollable region no keyboard can reach is a scrollable region a
+            // keyboard user cannot read the end of.
+            <pre
+              tabIndex={0}
+              className="mt-1.5 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-xs border border-border/60 bg-muted/60 px-2.5 py-2 font-mono text-caption leading-5 text-muted-foreground"
+            >
               {detail}
             </pre>
           )}
@@ -1488,7 +1617,7 @@ function ApprovalCard({
         {(risk === "destructive" || risk === "outside") && (
           <span
             className={cn(
-              "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px]",
+              "shrink-0 rounded-full border px-2 py-0.5 font-mono text-caption",
               risk === "destructive"
                 ? "border-destructive/40 bg-destructive/10 text-destructive"
                 : "border-warning/40 bg-warning/10 text-warning-foreground"

@@ -279,7 +279,13 @@ export function CodeSurface({
   return (
     <div
       ref={scrollRef}
-      className={cn("relative h-full overflow-auto overscroll-contain bg-background/40", className)}
+      // bg-muted, not bg-background/40. `--background` is the ground of whatever
+      // page this is on, so at 40% it composited to the parent's own colour in
+      // both themes — the source pane had no surface of its own, and in the
+      // canvas it sat beside a Console tab painted in full `bg-muted`. Same rung
+      // now for both: a well in light (95% under 97% paper), a lift in dark,
+      // which is the only direction a recess can go on #000.
+      className={cn("relative h-full overflow-auto overscroll-contain bg-muted", className)}
     >
       <div className={cn("flex min-h-full", !wrap && "w-max min-w-full")}>
         {/* Gutter — sticky through horizontal scroll, hidden when wrapping
@@ -288,7 +294,15 @@ export function CodeSurface({
           <div
             aria-hidden
             className={cn(
-              "sticky left-0 z-10 shrink-0 select-none border-r border-border/40 bg-background/85 px-2 py-3 text-right text-muted-foreground/45 backdrop-blur-sm",
+              // /45 composited to ~28% lightness on the black ground — about 1.9:1,
+              // which made the line numbers invisible on OLED. /70 clears 4.5:1 and
+              // matches the diff view's gutter.
+              // The gutter has to be OPAQUE: code scrolls horizontally behind it.
+              // `bg-background/85` was neither — 15% of the pane showed through as
+              // a smear of moving code, and the blur behind it cost a compositor
+              // layer to soften that smear rather than remove it. Same rung as the
+              // pane, with the border as the only divider.
+              "sticky left-0 z-10 shrink-0 select-none border-r border-border/40 bg-muted px-2 py-3 text-right text-muted-foreground/70",
               metrics
             )}
           >
@@ -334,7 +348,7 @@ export function CodeSurface({
             className={cn(
               "absolute inset-0 h-full w-full cursor-text resize-none overflow-hidden bg-transparent px-3 py-3 pr-8",
               "text-transparent caret-foreground outline-none",
-              "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40",
+              "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               metrics,
               whitespace
             )}

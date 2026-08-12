@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ScrollFade } from "@/components/ui/scroll-fade";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { VoiceAura, voiceAuraStatus } from "@/components/voice/voice-aura";
 import type { useRealtimeVoice } from "@/hooks/use-realtime-voice";
@@ -176,14 +177,21 @@ export function WorkVoiceSurface({
       <VoiceAura status={voiceAuraStatus(voice)} levelRef={voice.levelRef} />
       <section
         aria-label={label}
-        className="mb-2 flex w-full flex-col gap-3 rounded-card border border-border/70 bg-card/80 p-3 motion-safe:animate-rise-in"
+        // `bg-popover`, the documented floating-layer rung. This panel sits over
+        // the composer while a call is live, and at card lightness it read as part
+        // of the page rather than as a layer above it — with the send-preview well
+        // nested inside it ending up the darkest thing on screen.
+        className="mb-2 flex w-full flex-col gap-3 rounded-card border border-border/70 bg-popover p-3 motion-safe:animate-rise-in"
       >
         <p className="text-xs leading-relaxed text-muted-foreground">{explanation}</p>
 
         {notice}
 
         {lines.length > 0 && (
-          <div className="max-h-56 space-y-3 overflow-y-auto pr-1">
+          // The one region in Work that overflows constantly — a live call adds a
+          // line every few seconds — was the only scroller with no edge treatment,
+          // so there was nothing saying the transcript continued past the crop.
+          <ScrollFade className="max-h-56" viewportClassName="space-y-3 pr-1">
             {lines.map((line) =>
               line.role === "user" ? (
                 <div key={line.id} className="flex justify-end">
@@ -200,18 +208,25 @@ export function WorkVoiceSurface({
                 </p>
               )
             )}
-          </div>
+          </ScrollFade>
         )}
 
         {send && sendable && (
-          <div className="flex flex-col gap-2 rounded-field border border-border/60 bg-background/60 p-2.5">
+          // `bg-secondary`, not `bg-card`. A surface token is only valid on its
+          // own surface: `card` is the rung for something resting on the PAGE,
+          // and this well sits inside a `bg-popover` panel — 6.5% nested in 13%,
+          // i.e. six points DARKER than its own parent, which reads as a hole
+          // punched through the panel rather than as a well cut into it. Inside
+          // a popover the recessed rung is `secondary`, one step below it, and
+          // it is what the transcript bubbles above already use.
+          <div className="flex flex-col gap-2 rounded-field border border-border/60 bg-secondary p-2.5">
             {/* What the press does, before the press: a steer and a restart are
                 not the same event and finding out afterwards is too late. */}
             <p className="font-mono text-label text-muted-foreground">
               {intentSentence(send.intent)}
             </p>
             <p className="text-[13px] leading-relaxed text-foreground">{sendable.text}</p>
-            <p className="text-caption text-muted-foreground/80">{landingSentence(send.intent)}</p>
+            <p className="text-caption text-muted-foreground">{landingSentence(send.intent)}</p>
             {sendFailed && (
               <p role="alert" className="text-caption text-destructive">
                 Those words didn&rsquo;t land. Try again, or type them in the box below.

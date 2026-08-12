@@ -32,7 +32,10 @@ export function PrivacyStrip({ paused, onPausedChange, onExport, onReset, resett
   }, [confirming]);
 
   return (
-    <div className="rounded-card border border-border/50 bg-muted/20 px-4 py-3">
+    // /40, not /20: --muted at a fifth over the true-black ground composites to
+    // under 2% lightness, so the strip that fences the destructive controls had
+    // no fill and only its hairline told you where it began.
+    <div className="rounded-card border border-border/50 bg-muted/40 px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
         <label htmlFor="pause-memory" className="flex cursor-pointer items-center gap-2.5 text-sm">
           <Switch

@@ -77,7 +77,7 @@ export function WorkPermissionChip({
           />
           <span className="truncate">{WORK_APPROVAL_MODE_LABEL[value]}</span>
           <ChevronDown
-            className="h-3 w-3 shrink-0 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180"
+            className="h-3 w-3 shrink-0 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180"
             aria-hidden="true"
           />
         </button>
@@ -102,7 +102,7 @@ export function WorkPermissionChip({
                     {WORK_APPROVAL_MODE_LABEL[policy]}
                   </span>
                   {policy === DEFAULT_WORK_PERMISSION_POLICY && (
-                    <span className="font-mono text-[10px] text-muted-foreground/70">default</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">default</span>
                   )}
                 </span>
                 <span className="mt-0.5 block whitespace-normal text-[12px] leading-relaxed text-muted-foreground">

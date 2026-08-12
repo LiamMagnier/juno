@@ -165,8 +165,8 @@ export default function ProjectsPage() {
   const empty = !loading && items.length === 0;
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-5xl">
         <AppPageHeader
           eyebrow="Projects"
           heading="Your projects"
@@ -233,17 +233,23 @@ export default function ProjectsPage() {
             {[...Array(6)].map((_, i) => (
               <div
                 key={i}
-                className="surface-raised flex h-40 flex-col justify-between rounded-card border border-border/70 p-5"
+                // bg-card: the tile this stands in for is a <Card>, which carries the
+                // fill. Without it the placeholder was an unfilled outline on the
+                // black page and the load ended with every tile stepping up a rung.
+                className="surface-raised flex h-40 flex-col justify-between rounded-card border border-border/70 bg-card p-5"
                 style={staggerDelay(i)}
               >
+                {/* One tempo. The card used staggerDelay(i) and its own five lines
+                    used `i * 50 + N` — a second cadence, at a step (50ms) that is on
+                    no rung, inside a card already moving on the shared one. */}
                 <div className="space-y-2.5">
                   <div className="skeleton h-4 w-1/2 rounded-full" style={staggerDelay(i)} />
-                  <div className="skeleton h-3 w-4/5 rounded-full" style={{ animationDelay: `${i * 50 + 40}ms` }} />
-                  <div className="skeleton h-3 w-3/5 rounded-full" style={{ animationDelay: `${i * 50 + 80}ms` }} />
+                  <div className="skeleton h-3 w-4/5 rounded-full" style={staggerDelay(i, "base", 40)} />
+                  <div className="skeleton h-3 w-3/5 rounded-full" style={staggerDelay(i, "base", 80)} />
                 </div>
                 <div className="flex items-center justify-between border-t border-border/40 pt-3">
-                  <div className="skeleton h-2.5 w-20 rounded-full" style={{ animationDelay: `${i * 50 + 120}ms` }} />
-                  <div className="skeleton h-2.5 w-10 rounded-full" style={{ animationDelay: `${i * 50 + 160}ms` }} />
+                  <div className="skeleton h-2.5 w-20 rounded-full" style={staggerDelay(i, "base", 120)} />
+                  <div className="skeleton h-2.5 w-10 rounded-full" style={staggerDelay(i, "base", 160)} />
                 </div>
               </div>
             ))}
@@ -309,7 +315,7 @@ export default function ProjectsPage() {
                             the `closest("button")` hit-test the onClick needed. */}
                         <Link
                           href={`/projects/${p.id}`}
-                          className="flex-1 truncate font-serif text-lg font-semibold outline-none transition-colors hover:text-primary after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-card focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-primary/40"
+                          className="flex-1 truncate text-base font-semibold tracking-[-0.01em] outline-none transition-colors hover:text-primary after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-card focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
                         >
                           {p.name}
                         </Link>
@@ -364,7 +370,11 @@ export default function ProjectsPage() {
                 </div>
 
                 {/* Card Footer (Metadata) */}
-                <div className="px-5 pb-4 pt-3 border-t border-border/40 flex items-center justify-between text-[11px] text-muted-foreground bg-muted/10 font-mono shrink-0">
+                {/* No fill: --muted at 10% over an already near-black card resolves
+                    to under 1% lightness, so the tint simply disappeared and the
+                    border-t was doing the separation alone. Let it — which is also
+                    how the artifacts card footer is drawn. */}
+                <div className="flex shrink-0 items-center justify-between border-t border-border/40 px-5 pb-4 pt-3 font-mono text-caption text-muted-foreground">
                   <span>Updated {timeAgo(p.updatedAt)}</span>
                   <div className="flex items-center gap-2">
                     <span className="flex items-center gap-0.5" title={`${p.conversationCount} chats`}><MessageSquare className="h-3 w-3" /> {p.conversationCount}</span>
@@ -382,7 +392,7 @@ export default function ProjectsPage() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-serif">New project</DialogTitle>
+            <DialogTitle>New project</DialogTitle>
             <DialogDescription>Name it, or leave it blank and Juno will name it from your first chat.</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -409,7 +419,7 @@ export default function ProjectsPage() {
       <Dialog open={editingProject !== null} onOpenChange={(v) => { if (!v) setEditingProject(null); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-serif">Rename project</DialogTitle>
+            <DialogTitle>Rename project</DialogTitle>
             <DialogDescription>Change the name of this project.</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -436,7 +446,7 @@ export default function ProjectsPage() {
       <Dialog open={deletingProject !== null} onOpenChange={(v) => { if (!v) setDeletingProject(null); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-serif">Delete this project?</DialogTitle>
+            <DialogTitle>Delete this project?</DialogTitle>
             <DialogDescription>
               Its chats are kept (just unlinked), but the project’s instructions and files are removed. This can’t be undone.
             </DialogDescription>

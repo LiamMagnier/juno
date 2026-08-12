@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUpRight, Link2, Link2Off, Loader2, Plug, Search } from "lucide-react";
+import { AlertCircle, ArrowUpRight, Link2, Link2Off, Loader2, Plug, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
@@ -116,14 +117,23 @@ function appLabel(item: Pick<CatalogItem, "name" | "slug">): string {
 
 function AppLogo({ item }: { item: DirectoryItem }) {
   return (
-    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-field border border-border/60 bg-card shadow-soft">
+    // One optical padding for every tile in the grid. The three branches used to
+    // draw at three different glyph sizes (5 / 6 / 4), so logos sitting side by
+    // side in the same row read at three different weights.
+    //
+    // `bg-secondary`, not `bg-card`: the well sits INSIDE a bg-card article, so
+    // the fill matched its own container and the only separation left was a
+    // `shadow-soft` that is black ink on a black ground. One rung up instead.
+    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-field border border-border/60 bg-secondary">
       {item.source === "native" ? (
         <ConnectorMark id={item.id} className="size-5" />
       ) : item.logo ? (
+        // A bitmap logo carries its own padding, so it sits one rung larger than
+        // a stroked mark to end up optically the same size.
         // eslint-disable-next-line @next/next/no-img-element
         <img src={item.logo} alt="" className="size-6 object-contain" loading="lazy" />
       ) : (
-        <Plug className="size-4 text-primary" />
+        <Plug className="size-5 text-primary" strokeWidth={1.7} />
       )}
     </span>
   );
@@ -149,16 +159,22 @@ function CategoryChip({
         // Solid, uniform fills — no borders, no per-chip shadows. Outlined pills
         // read as ten boxes competing with the app cards below; borderless text
         // read as nothing at all. A filled set reads as one control.
-        "inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-full px-3.5 text-[13px] font-medium",
+        // `text-label`, not an arbitrary 13px that sat between the label rung
+        // (12) and the body rung (15) and appeared nowhere else in the product.
+        // The rung already carries weight 500, so `font-medium` came off with it.
+        "inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-full px-3.5 text-label",
         "transition-colors duration-fast ease-out-soft coarse:h-11",
         active
           ? "bg-foreground text-background"
-          : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
+          : "bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground"
       )}
     >
       {label}
       {count !== undefined && (
-        <span className={cn("ml-1.5 font-mono text-[10px] tabular-nums", active ? "text-background/60" : "text-muted-foreground/55")}>
+        // No alpha knock-down on the inactive count: --muted-foreground at 55%
+        // over pure black is far under AA at this size, and the ramp is already
+        // the recessive voice.
+        <span className={cn("ml-1.5 font-mono text-caption tabular-nums", active ? "text-background/70" : "text-muted-foreground")}>
           {count}
         </span>
       )}
@@ -168,11 +184,24 @@ function CategoryChip({
 
 type TileState = "connected" | "connecting" | "available" | "setup" | "unavailable";
 
-/** Status pill echoing the connector's state, keyed off the shared theme tokens. */
+/**
+ * Status pill echoing the connector's state, keyed off the shared theme tokens.
+ *
+ * ONE geometry for all five, declared once. They had drifted into five different
+ * border alphas (success/30, warning/40, full-strength border, dashed /70, /60)
+ * and three text alphas, so on a pure-black ground they read as five unrelated
+ * components rather than as one state vocabulary. The rule now: `/40` on the
+ * tinted pills, `/60` on the neutral ones, and the DASH is the only structural
+ * difference — reserved for `unavailable`, because a dashed edge means "not a
+ * finished thing" everywhere else in the product (see EmptyState).
+ */
+const PILL =
+  "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-caption font-medium";
+
 function TileStatus({ state }: { state: TileState }) {
   if (state === "connected") {
     return (
-      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-caption font-medium text-success">
+      <span className={cn(PILL, "border-success/40 bg-success/10 text-success")}>
         <span className="relative flex h-1.5 w-1.5">
           <span className="absolute inline-flex h-full w-full rounded-full bg-success/70 motion-safe:animate-ping" />
           <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
@@ -183,29 +212,23 @@ function TileStatus({ state }: { state: TileState }) {
   }
   if (state === "connecting") {
     return (
-      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-caption font-medium text-warning">
+      <span className={cn(PILL, "border-warning/40 bg-warning/10 text-warning")}>
         <span className="h-1.5 w-1.5 rounded-full bg-warning motion-safe:animate-pulse" />
         Connecting
       </span>
     );
   }
   if (state === "setup") {
-    return (
-      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-caption font-medium text-muted-foreground">
-        Setup needed
-      </span>
-    );
+    return <span className={cn(PILL, "border-border/60 text-muted-foreground")}>Setup needed</span>;
   }
   if (state === "unavailable") {
     return (
-      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-dashed border-border/70 px-2 py-0.5 text-caption font-medium text-muted-foreground/70">
-        Unavailable
-      </span>
+      <span className={cn(PILL, "border-dashed border-border/60 text-muted-foreground")}>Unavailable</span>
     );
   }
   return (
-    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/60 px-2 py-0.5 text-caption font-medium text-muted-foreground/80">
-      <span className="h-1.5 w-1.5 rounded-full border border-muted-foreground/40" />
+    <span className={cn(PILL, "border-border/60 text-muted-foreground")}>
+      <span className="h-1.5 w-1.5 rounded-full border border-muted-foreground/60" />
       Available
     </span>
   );
@@ -260,14 +283,25 @@ function ConnectorTile({
   return (
     <article
       className={cn(
-        // Canonical card: 16px radius, hairline border, card fill, soft shadow,
-        // with the shared lift-on-hover treatment used across the app.
-        "group flex flex-col justify-between gap-3 rounded-card border bg-card p-4 shadow-soft transition-all duration-base ease-out-soft",
+        // Quiet utility tile: status and actions carry the hierarchy, not elevation.
+        "group flex flex-col justify-between gap-3 rounded-card border bg-card p-4 transition-[border-color,background-color] duration-fast ease-out-soft",
+        // Alphas match TileStatus's, so the tile edge and the pill inside it are
+        // the same statement at the same strength.
         item.connected
-          ? "border-success/30"
+          ? "border-success/40"
           : unavailable
-            ? "border-border/60 bg-card/60"
-            : "border-border/70 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-float"
+            ? // Opaque, not `bg-card/60`: 60% of --card over pure black composites
+              // to ~3.9% — BELOW the card rung it is meant to recede from, so the
+              // tile fell out of the grid rather than sitting quietly in it. The
+              // dashed pill and the muted ink carry the recession instead.
+              "border-border/60"
+            : // `bg-accent` whole, not `/25`: a quarter of the 13% accent over
+              // the 6.5% card composites to ~8.1%, a 1.6-point step — under
+              // what an edge-free fill can show on black, so the only hover
+              // this tile had was its border. Card's `interactive` variant made
+              // the same correction for the same reason; the step is 6.5 → 13,
+              // the same one the ground→card move already uses.
+              "border-border/70 hover:border-foreground/25 hover:bg-accent"
       )}
     >
       <div className="flex items-start gap-3">
@@ -530,7 +564,15 @@ export function ConnectorDirectory({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search Gmail, Slack, GitHub…"
             aria-label="Search apps"
-            className="h-10 rounded-field bg-card pl-9"
+            // pl-9 only. `bg-card` was a utility sitting on top of Input's
+            // `.field-well`, and utilities are emitted after the components
+            // layer — so the per-theme fill the well exists to supply never
+            // painted here, and this was the one input in the product with a
+            // hand-picked ground. `h-10` and `rounded-field` were restating or
+            // fighting the primitive too: rounded-field is already its radius,
+            // and h-10 made it 4px taller than the SegmentedControl beside it
+            // and dropped the coarse:h-11 touch growth the base declares.
+            className="pl-9"
           />
         </label>
       </div>
@@ -544,8 +586,8 @@ export function ConnectorDirectory({
           role="group"
           aria-label="Filter by category"
           // overflow-x forces the block axis to clip too, so the padding here is
-          // load-bearing: it is the room the selected chip's shadow-pop needs
-          // instead of having it shorn off flat.
+          // load-bearing: it is the room a focused chip's outline needs instead
+          // of having it shorn off flat against the scroll edge.
           className="-mx-1 mt-3 flex gap-1 overflow-x-auto px-1 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           <CategoryChip label="All categories" active={!category} onClick={() => setCategory(null)} />
@@ -567,9 +609,23 @@ export function ConnectorDirectory({
         {!composioConfigured && <ComposioSetupCallout />}
 
         {error && (
-          <div className="mb-4 rounded-card border border-dashed border-destructive/40 bg-destructive/5 p-4 text-center text-sm text-destructive">
-            The app directory couldn’t be loaded. Check <code className="font-mono text-xs">COMPOSIO_API_KEY</code> on the server.
-          </div>
+          // The shared error tone. This was a DASHED destructive box, and the
+          // dash is EmptyState's signal for "nothing here yet" — a failed catalog
+          // fetch wearing the placeholder edge is exactly the collapse the two
+          // tones exist to prevent.
+          <EmptyState
+            tone="error"
+            size="panel"
+            icon={AlertCircle}
+            className="mb-4"
+            title="The app directory couldn’t be loaded"
+            description={
+              <>
+                Check <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-caption">COMPOSIO_API_KEY</code> on
+                the server.
+              </>
+            }
+          />
         )}
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -591,20 +647,49 @@ export function ConnectorDirectory({
         </div>
 
         {!loading && items.length === 0 && (
-          <div className="flex flex-col items-center gap-4 rounded-card border border-border/70 bg-card/40 px-6 py-12 text-center">
-            <span className="flex size-12 items-center justify-center rounded-card bg-muted text-muted-foreground">
-              <Plug className="size-6" />
-            </span>
-            <p className="max-w-xs text-sm text-muted-foreground">
-              {filter === "connected"
-                ? "No connected apps yet. Connect one from All apps to get started."
+          // The shared primitive, with a way out. The hand-rolled block had no
+          // action at all — a search that matches nothing was a dead end — and
+          // its `bg-card/40` fill composites to ~2.6% on pure black, so the
+          // ground it drew disappeared entirely.
+          <EmptyState
+            tone="empty"
+            size="page"
+            icon={Plug}
+            title={
+              filter === "connected"
+                ? "No connected apps yet"
+                : q || categoryLabel
+                  ? "Nothing here"
+                  : "No apps available"
+            }
+            description={
+              filter === "connected"
+                ? "Connect one from All apps and it will show up here."
                 : q
                   ? `No apps match “${query.trim()}”${categoryLabel ? ` in ${categoryLabel}` : ""}.`
                   : categoryLabel
                     ? `No apps in ${categoryLabel}.`
-                    : "No apps available."}
-            </p>
-          </div>
+                    : "The catalog came back empty."
+            }
+            action={
+              filter === "connected" ? (
+                <Button variant="outline" size="sm" onClick={() => setFilter("all")}>
+                  Browse all apps
+                </Button>
+              ) : q || category ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setQuery("");
+                    setCategory(null);
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : undefined
+            }
+          />
         )}
 
         {cursor && !loading && !error && (
@@ -623,7 +708,7 @@ export function ConnectorDirectory({
 /** Actionable setup steps — the old copy just said the directory "is not active". */
 function ComposioSetupCallout() {
   return (
-    <div className="mb-3 rounded-card border border-dashed border-primary/30 bg-primary/[0.04] p-5">
+    <div className="mb-4 border-b border-border/60 pb-5">
       <div className="flex items-start gap-3">
         <Plug className="mt-0.5 size-4 shrink-0 text-primary" />
         <div className="min-w-0">
@@ -647,8 +732,8 @@ function ComposioSetupCallout() {
               and copy its API key (free, no card).
             </li>
             <li>
-              2. Add <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-[10px]">COMPOSIO_API_KEY=…</code> to the
-              server’s <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-[10px]">.env</code>.
+              2. Add <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-caption">COMPOSIO_API_KEY=…</code> to the
+              server’s <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-caption">.env</code>.
             </li>
             <li>3. Restart Juno, then reload this page.</li>
           </ol>

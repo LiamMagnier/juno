@@ -240,7 +240,7 @@ function ModelDetailPanel({
             ))}
             {/* Attribution required by the Artificial Analysis API terms. */}
             {hasLiveBenchmark(model) && (
-              <p className="font-mono text-[9px] text-muted-foreground/60">
+              <p className="font-mono text-[9px] text-muted-foreground">
                 Scores by{" "}
                 <a href="https://artificialanalysis.ai" target="_blank" rel="noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-muted-foreground">
                   Artificial Analysis
@@ -263,7 +263,7 @@ function ModelDetailPanel({
                 </span>
                 <span className="font-semibold">{formatPrice(metrics.outputUsdPerMTok)}</span>
                 <span className="text-[11px] text-muted-foreground">out</span>
-                <span className="text-[11px] text-muted-foreground/70">/ MTok</span>
+                <span className="text-[11px] text-muted-foreground">/ MTok</span>
               </p>
             )}
           </div>
@@ -327,7 +327,7 @@ function RailButton({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "flex h-10 w-10 shrink-0 items-center justify-center rounded-field transition-all duration-fast ease-out-soft hover:scale-105 active:scale-95",
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-field transition-[transform,background-color,box-shadow,opacity] duration-fast ease-out-soft hover:scale-105 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 motion-reduce:active:scale-100",
         active ? "bg-primary/10 ring-1 ring-primary/40" : "hover:bg-accent",
         dimmed && "opacity-30 hover:scale-100 active:scale-100"
       )}
@@ -453,18 +453,18 @@ export function ModelSelector({
         onMouseEnter={() => setHoveredId(m.id)}
         onFocus={() => setHoveredId(m.id)}
         className={cn(
-          "group relative flex flex-col justify-between rounded-control border p-3 transition-all duration-base ease-out-soft animate-rise-in [animation-fill-mode:backwards]",
+          "group relative flex flex-col justify-between rounded-control border p-3 transition-[transform,background-color,border-color,box-shadow] duration-base ease-out-soft motion-safe:animate-rise-in [animation-fill-mode:backwards] motion-reduce:transition-none",
           soon
             ? "border-border/60 bg-card/40 opacity-60"
             : "active:scale-[0.99] " + (active
               ? "border-primary bg-primary/5 shadow-sm"
-              : "border-border/70 bg-card/65 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/40 hover:shadow-soft active:translate-y-0 active:shadow-none")
+              : "border-border/70 bg-card/65 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/40 hover:shadow-soft focus-within:border-primary/40 focus-within:bg-accent/40 active:translate-y-0 active:shadow-none motion-reduce:hover:translate-y-0")
         )}
       >
         <button
           type="button"
           onClick={() => select(m)}
-          className="flex min-w-0 flex-col items-start gap-2 text-left outline-none w-full h-full"
+          className="flex h-full w-full min-w-0 flex-col items-start gap-2 rounded-control text-left"
         >
           {/* Logo & Name Row */}
           <div className="flex items-center gap-2.5 w-full pr-6">
@@ -499,7 +499,7 @@ export function ModelSelector({
               {m.vision && <RowChip icon={Eye} label="Vision" />}
               {m.webSearch && <RowChip icon={Globe} label="Search" />}
               {isFastModel(m) && <RowChip icon={Zap} label="Fast" />}
-              <span className="font-mono text-[9px] font-semibold text-muted-foreground/60">
+              <span className="font-mono text-[9px] font-semibold text-muted-foreground">
                 {"$".repeat(m.cost)}
               </span>
             </div>
@@ -534,7 +534,28 @@ export function ModelSelector({
           // sits inline with the composer's + and mic buttons, which use the rung
           // that exists for exactly that row. One radius across the satellites;
           // composer-action stays reserved for the primary send.
-          className="group inline-flex h-8 w-full min-w-0 max-w-[12rem] items-center gap-1 rounded-composer-control px-1.5 text-[12px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground max-[359px]:w-auto max-[359px]:px-2 sm:w-auto sm:max-w-[16rem] sm:gap-1.5 sm:px-2 sm:text-[13px] coarse:h-11"
+          /*
+           * `.composer-chip` (globals.css) carries the fill, hairline, hover,
+           * open and press states — shared with the thinking-effort trigger
+           * beside it, because the two are the same kind of control and were
+           * drifting apart one hand-written state at a time.
+           *
+           * Text is full strength, not `foreground/80`. The model in play is the
+           * single most consequential thing on this row — it decides what the
+           * answer costs and how good it is — and it was the dimmest text in the
+           * composer, quieter than the placeholder above it.
+           *
+           * No focus override here, deliberately. This is a bare <button>, so
+           * the global `:focus-visible` rule in globals.css already reaches it
+           * and is authoritative. An earlier pass through this line added
+           * `focus-visible:outline-none` plus a ring — which SUPPRESSES that
+           * rule and repaints the 2px gap in a solid `ring-offset-card`, a
+           * colour that belongs to no surface once the composer sits on
+           * anything else. button.tsx:7 documents why four hand-forked offset
+           * colours accumulated the last time that pattern spread; outline-offset
+           * leaves the real surface showing and is correct by construction.
+           */
+          className="composer-chip group inline-flex h-8 w-full min-w-0 max-w-[12rem] items-center gap-1 rounded-composer-control px-2 text-[12px] font-medium text-foreground max-[359px]:w-auto max-[359px]:px-2 sm:w-auto sm:max-w-[16rem] sm:gap-1.5 sm:px-2.5 sm:text-[13px] coarse:h-11"
         >
           {autoSelected ? (
             <JunoMark className="size-3.5 shrink-0 rounded-sm transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
@@ -579,7 +600,7 @@ export function ModelSelector({
           {/* Pane 1: rail + list — one full-width swipe page on mobile, side panes on desktop. */}
           <div className="flex w-full shrink-0 snap-start md:w-auto md:flex-1 md:shrink">
           {/* Rail */}
-          <div className="flex w-14 shrink-0 flex-col items-center gap-2 overflow-y-auto border-r bg-muted/30 py-3">
+          <div className="flex w-14 shrink-0 flex-col items-center gap-2 overflow-y-auto border-r bg-card py-3">
             <RailButton active={filter === "all"} title="All models" onClick={() => setFilter("all")}>
               <LayoutGrid className={cn("h-5 w-5", filter === "all" ? "text-primary" : "text-muted-foreground")} />
             </RailButton>
@@ -635,11 +656,11 @@ export function ModelSelector({
                             onMouseEnter={() => setHoveredId(AUTO_MODEL_ID)}
                             onFocus={() => setHoveredId(AUTO_MODEL_ID)}
                             className={cn(
-                              "group relative flex flex-col justify-between rounded-control border p-3 transition-all duration-base ease-out-soft",
+                              "group relative flex flex-col justify-between rounded-control border p-3 transition-[transform,background-color,border-color,box-shadow] duration-base ease-out-soft motion-reduce:transition-none",
                               "active:scale-[0.99] " +
                                 (autoSelected
                                   ? "border-primary bg-primary/5 shadow-sm"
-                                  : "border-border/70 bg-card/65 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/40 hover:shadow-soft active:translate-y-0 active:shadow-none")
+                                  : "border-border/70 bg-card/65 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/40 hover:shadow-soft focus-within:border-primary/40 focus-within:bg-accent/40 active:translate-y-0 active:shadow-none motion-reduce:hover:translate-y-0")
                             )}
                           >
                             <button type="button" onClick={() => select(AUTO_MODEL_INFO)} className="flex w-full items-start gap-2.5 text-left">
@@ -672,12 +693,12 @@ export function ModelSelector({
                       {legacyItems.length > 0 && (
                         <div className="mt-2.5">
                           {/* Auto-expand while searching so past matches are visible. */}
-                          <details key={q ? "open" : "closed"} open={!!q} className="group/legacy rounded-control border border-border/40 bg-muted/10 overflow-hidden">
+                          <details key={q ? "open" : "closed"} open={!!q} className="group/legacy overflow-hidden rounded-control border border-border/40 bg-card">
                             <summary className="cursor-pointer flex items-center justify-between px-3 py-2 text-[10px] font-bold text-muted-foreground hover:bg-accent/30 transition-colors duration-fast ease-out-soft">
                               <span>Past models ({legacyItems.length})</span>
                               <ChevronDown className="h-3.5 w-3.5 transition-transform duration-base group-open/legacy:rotate-180" />
                             </summary>
-                            <div className="p-2 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-1 border-t border-dashed border-border/45 bg-background/45">
+                            <div className="p-2 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-1 border-t border-dashed border-border/45 bg-secondary">
                               {legacyItems.map((m, i) => renderRow(m, i + standardItems.length))}
                             </div>
                           </details>

@@ -24,16 +24,26 @@ const ICONS: Record<ArtifactType, typeof Code2> = {
   DESIGN: PenTool,
 };
 
+/**
+ * The console readout for an inline artifact. It used to be a private palette —
+ * a `#0b0b0e` shell with `white/40` labels and a `white/5` divider — which put
+ * the labels under 4:1 on their own fill, made the divider invisible, and set a
+ * cool blue-black against the hue-48 neutral ladder the rest of the transcript
+ * runs on. Everything here is now a theme token, so it tracks both themes and
+ * inherits the contrast tuning the ladder already passed.
+ */
 function ConsolePreview({ entries }: { entries: ConsoleEntry[] }) {
   return (
-    <div className="flex h-full flex-col bg-[#0b0b0e] text-[#e7e7ea]">
-      <div className="flex items-center gap-2 border-b border-white/5 px-3 py-2">
-        <Terminal className="size-3.5 text-white/40" aria-hidden />
-        <span className="font-mono text-[10px] text-white/40">Console</span>
+    <div className="flex h-full flex-col bg-card text-card-foreground">
+      <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
+        <Terminal className="size-3.5 text-muted-foreground" aria-hidden />
+        <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">Console</span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs leading-relaxed">
         {entries.length === 0 ? (
-          <p className="text-white/35">No console output yet.</p>
+          <p role="status" className="text-muted-foreground">
+            No console output yet.
+          </p>
         ) : (
           entries.slice(-80).map((entry, index) => (
             <div
@@ -41,12 +51,12 @@ function ConsolePreview({ entries }: { entries: ConsoleEntry[] }) {
               className={cn(
                 "whitespace-pre-wrap break-words py-0.5",
                 entry.level === "error"
-                  ? "text-[#f87171]"
+                  ? "text-destructive"
                   : entry.level === "warn"
-                    ? "text-[#fbbf24]"
+                    ? "text-warning"
                     : entry.level === "info"
-                      ? "text-[#7dd3fc]"
-                      : "text-[#e7e7ea]"
+                      ? "text-source"
+                      : "text-foreground"
               )}
             >
               {entry.text}
@@ -199,7 +209,10 @@ export function ArtifactInlineCard({
     <>
       <span
         className={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-control border border-border/60 bg-muted/50",
+          // `bg-secondary` is the rung above --card, which is what this tile is
+          // meant to be. `bg-muted/50` over the card resolved to ~8% against a
+          // 6.5% card — a step and a half, i.e. a tile with no edge but its own.
+          "flex size-8 shrink-0 items-center justify-center rounded-control border border-border/60 bg-secondary",
           "transition-colors duration-base ease-out-soft",
           streaming ? "text-primary" : "text-muted-foreground",
           onOpen && "group-hover/art:border-primary/25 group-hover/art:text-primary"
@@ -244,7 +257,10 @@ export function ArtifactInlineCard({
     <article
       aria-busy={streaming || undefined}
       className={cn(
-        "group/art my-5 w-full overflow-hidden rounded-card border border-border/60 bg-card/40",
+        // `bg-card`, not `bg-card/40`. The card sits directly on the transcript
+        // ground, which is now #000, so 40% of a 6.5% fill resolved to ~2.6% —
+        // an artifact card that was, in dark, a border around the page.
+        "group/art my-5 w-full overflow-hidden rounded-card border border-border/60 bg-card",
         "transition-colors duration-base ease-out-soft hover:border-border",
         "motion-safe:animate-rise-in [animation-fill-mode:backwards]"
       )}
@@ -314,16 +330,38 @@ export function ArtifactInlineCard({
         // card never jumps, the content quietly trades places.
         <div key={view} className="h-[min(44vh,360px)] min-h-[240px] overflow-hidden motion-safe:animate-fade-in">
           {showPreview ? (
-            <div className={cn("h-full", isSandboxPreview ? "bg-white" : "bg-background/40")}>
-              <RuntimePreview
-                type={type}
-                content={resolvedContent}
-                language={language}
-                runNonce={runNonce}
-                mode={rt.mode}
-                onStatus={setRunStatus}
-                onConsole={handleConsole}
-              />
+            // The sandbox document still needs a light canvas — it ships
+            // `color:#111` and most artifacts never set a background — but a
+            // raw full-bleed white 360px block flashing inside a pure-black
+            // transcript is the brightest event on the page. Insetting it turns
+            // that bleed into a framed sheet: the transcript's own ground runs
+            // to the card edge, and the white is bounded by a hairline.
+            //
+            // The markdown branch had `bg-background/40` — the page colour, at
+            // an opacity that resolves to ~3.9% on black, painted INSIDE a 6.5%
+            // card. It read as a hole, and it was pretending to be a surface
+            // that does not exist on the ladder. Markdown just reads on the
+            // card; only the sandbox keeps its deliberate dark mat above.
+            <div className={cn("h-full", isSandboxPreview && "bg-background p-2")}>
+              <div
+                className={cn(
+                  "h-full",
+                  // Concentric with the card: 14px outer minus the 8px mat is 6,
+                  // the `xs` rung. At `field` (10) the white sheet's corners were
+                  // cutting outside the card's own bottom corners.
+                  isSandboxPreview && "overflow-hidden rounded-xs bg-white ring-1 ring-inset ring-border/70"
+                )}
+              >
+                <RuntimePreview
+                  type={type}
+                  content={resolvedContent}
+                  language={language}
+                  runNonce={runNonce}
+                  mode={rt.mode}
+                  onStatus={setRunStatus}
+                  onConsole={handleConsole}
+                />
+              </div>
             </div>
           ) : showConsole ? (
             <ConsolePreview entries={consoleEntries} />
@@ -339,7 +377,7 @@ export function ArtifactInlineCard({
           )}
         </div>
       ) : streaming ? (
-        <div className="grid min-h-[180px] place-items-center bg-background/40 p-5">
+        <div className="grid min-h-[180px] place-items-center p-5">
           <div className="flex flex-col items-center gap-3 text-center">
             <ThinkingDots className="text-primary" />
             <div>

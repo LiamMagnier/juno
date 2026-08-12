@@ -193,7 +193,7 @@ function ReferenceGroup({
 }) {
   return (
     <div>
-      <p className="mb-1.5 font-mono text-[10px] text-muted-foreground/70">{title}</p>
+      <p className="mb-1.5 font-mono text-label text-muted-foreground">{title}</p>
       <ul className="space-y-1.5">
         {references.map((reference) => (
           <li key={reference.id} className="flex items-start gap-2">
@@ -378,7 +378,7 @@ export function WorkRunSettings({
 
       {run.requiredCapabilities.length > 0 && (
         <div>
-          <p className="mb-1.5 font-mono text-[10px] text-muted-foreground/70">Needs</p>
+          <p className="mb-1.5 font-mono text-label text-muted-foreground">Needs</p>
           <div className="flex flex-wrap gap-1.5">
             {run.requiredCapabilities.map((capability) => (
               <CapabilityChip
@@ -392,7 +392,11 @@ export function WorkRunSettings({
       )}
 
       {run.degradation.length > 0 && (
-        <div className="rounded-field border border-warning/35 bg-warning/5 px-3 py-2.5">
+        // The degradation box, at `WorkStateNote`'s warning metrics rather than
+        // its own: `bg-warning/10` (at `/5` it composited to ~2.9% over the
+        // black ground and read as an untinted card) and `px-3.5`, which is the
+        // gutter every other bordered note in the rail uses.
+        <div className="rounded-field border border-warning/35 bg-warning/10 px-3.5 py-2.5">
           <DegradationNotes degradation={run.degradation} />
         </div>
       )}
@@ -528,7 +532,7 @@ function WorkBudget({ run }: { run: ClientWorkRun }) {
 
   return (
     <div>
-      <p className="mb-1.5 font-mono text-[10px] text-muted-foreground/70">Budget</p>
+      <p className="mb-1.5 font-mono text-label text-muted-foreground">Budget</p>
       <div className="space-y-1.5">
         <BudgetBar
           label="Cost"
@@ -604,7 +608,7 @@ function Meter({
 }) {
   return (
     <div className="flex items-center gap-1.5">
-      <Icon className="h-3 w-3 text-muted-foreground/60" aria-hidden="true" />
+      <Icon className="h-3 w-3 text-muted-foreground/70" aria-hidden="true" />
       <dt className="sr-only">{label}</dt>
       <dd>{value}</dd>
     </div>
@@ -628,7 +632,7 @@ function BudgetBar({
   return (
     <div>
       <div className="flex items-baseline justify-between gap-2 font-mono text-[10px] tabular-nums">
-        <span className="text-muted-foreground/70">{label}</span>
+        <span className="text-muted-foreground">{label}</span>
         <span className={cn(near ? "text-warning-foreground" : "text-muted-foreground")}>
           {used}
           {limit !== null && ` / ${limit}`}
@@ -637,7 +641,12 @@ function BudgetBar({
       <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted">
         <div
           className={cn(
-            "h-full rounded-full transition-[width] duration-slow ease-out-soft",
+            // `motion-reduce:transition-none`: the bar is the one element in the
+            // rail that animates a LAYOUT property, and under the preference it
+            // was still sweeping for `duration-slow` with nothing to opt out
+            // through — the reduce tiers in globals.css shorten `--dur-slow` but
+            // do not stop a transition a utility declared.
+            "h-full rounded-full transition-[width] duration-slow ease-out-soft motion-reduce:transition-none",
             near ? "bg-warning" : "bg-foreground/30"
           )}
           style={{ width: `${filled * 100}%` }}
@@ -677,7 +686,7 @@ export function WorkActionsPerformed({ performed }: { performed: PerformedAction
             <ShieldCheck className="mt-[3px] h-3.5 w-3.5 shrink-0 text-success-ink" aria-hidden="true" />
           ) : (
             <span
-              className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50"
+              className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-muted-foreground/70"
               aria-hidden="true"
             />
           )}

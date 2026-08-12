@@ -94,7 +94,7 @@ export function WorkToolbox() {
   return (
     <div className="space-y-4">
       <div>
-        <p className="mb-1.5 font-mono text-[10px] text-muted-foreground/70">Skills</p>
+        <p className="mb-1.5 font-mono text-label text-muted-foreground">Skills</p>
         {skills === null ? (
           <p className="text-[12.5px] leading-relaxed text-muted-foreground">
             Your skills couldn’t be read just now.
@@ -141,7 +141,7 @@ export function WorkToolbox() {
       </div>
 
       <div>
-        <p className="mb-1.5 font-mono text-[10px] text-muted-foreground/70">Apps</p>
+        <p className="mb-1.5 font-mono text-label text-muted-foreground">Apps</p>
         {connectors === null ? (
           <p className="text-[12.5px] leading-relaxed text-muted-foreground">
             Your connections couldn’t be read just now.

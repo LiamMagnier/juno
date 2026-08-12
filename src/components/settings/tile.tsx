@@ -29,19 +29,28 @@ export function Tile({
   aside?: React.ReactNode;
   i: number;
   span?: boolean;
+  /**
+   * Note for anyone recolouring the edge: the container below is
+   * `border-0 border-b`, so there is exactly ONE border here and it is the
+   * bottom one. A plain `border-destructive/20` passed in only recolours that
+   * hairline — the Danger zone tile shipped with precisely that class and it
+   * was dead code, because at 20% over pure black it was invisible too. Target
+   * the side you mean (`border-b-*`) and give it enough alpha to read.
+   */
   className?: string;
   children: React.ReactNode;
 }) {
   return (
     <Card
+      variant="flat"
       style={staggerDelay(i, "loose")}
       className={cn(
-        "flex h-full flex-col rounded-surface p-5 motion-safe:animate-rise-in [animation-fill-mode:backwards]",
-        span && "sm:col-span-2",
+        "flex h-full flex-col rounded-none border-0 border-b border-border/70 bg-transparent px-0 py-6 shadow-none motion-safe:animate-fade-in [animation-fill-mode:backwards]",
+        span && "col-span-full",
         className
       )}
     >
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <CardEyebrow>{eyebrow}</CardEyebrow>
         {aside}
       </div>

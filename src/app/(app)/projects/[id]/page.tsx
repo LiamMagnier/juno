@@ -510,14 +510,14 @@ export default function ProjectDetailPage() {
     // Mirrors the real header rhythm (eyebrow · title · meta) so the page doesn't
     // reflow when data lands.
     return (
-      <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+      <div className="app-page-content max-w-6xl">
         <div className="skeleton mb-8 h-8 w-28 rounded-field" />
         <div className="skeleton mb-3 h-3 w-20 rounded-sm" />
         <div className="skeleton mb-3 h-10 w-72 rounded-md" />
         <div className="skeleton mb-8 h-3 w-56 rounded-sm" />
         <div className="grid gap-6 lg:grid-cols-[1fr_20rem] lg:gap-8">
-          <div className="skeleton h-40 w-full rounded-lg" />
-          <div className="skeleton h-64 w-full rounded-lg" />
+          <div className="skeleton h-40 w-full rounded-card" />
+          <div className="skeleton h-64 w-full rounded-card" />
         </div>
       </div>
     );
@@ -533,8 +533,8 @@ export default function ProjectDetailPage() {
   );
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-6xl">
         {/* A real link, not router.push on a button: this one is not cmd- or
             middle-clickable and announces itself as a button. Same defect
             AppPageHeader's docblock item 2 exists to kill. */}
@@ -549,7 +549,7 @@ export default function ProjectDetailPage() {
           </Link>
         </Button>
 
-        {/* Header — eyebrow · serif hero · mono meta. The old single 22px title had no
+        {/* Header — eyebrow · compact title · supporting meta. The old single 22px title had no
             supporting hierarchy, so it read as a form label on a 1152px page. */}
         <header className="mb-8 flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
@@ -558,7 +558,7 @@ export default function ProjectDetailPage() {
                 metrics verbatim (text-[length:inherit]). Passing `text-display` into
                 Input would be silently dead: twMerge reads custom type tokens as colour
                 classes and keeps Input's `text-sm`, which wins on alphabetical order. */}
-            <div className="mt-2 flex items-center gap-2 font-serif text-display">
+            <div className="mt-2 flex items-center gap-2 text-[clamp(1.7rem,1.45rem+0.8vw,2.15rem)] font-semibold leading-tight tracking-[-0.025em]">
               {editingName ? (
                 <Input
                   value={nameDraft}
@@ -570,14 +570,20 @@ export default function ProjectDetailPage() {
                     if (e.key === "Escape") setEditingName(false);
                   }}
                   aria-label="Project name"
-                  className="h-auto max-w-xl rounded-md px-2 py-0.5 text-[length:inherit]"
+                  // No radius override. Input already sets rounded-field, and until
+                  // cn() learned the ladder both classes survived the merge — the
+                  // emit order handed the win to rounded-field, so the 8px written
+                  // here never rendered and everything around it was tuned at 10px.
+                  // Now the last class wins, which would have silently squared this
+                  // field off against every other input in the product.
+                  className="h-auto max-w-xl px-2 py-0.5 text-[length:inherit]"
                 />
               ) : (
                 <>
                   <h1 className="truncate">{data.project.name}</h1>
                   <button
                     onClick={() => { setNameDraft(data.project.name); setEditingName(true); }}
-                    className="pressable shrink-0 rounded-md p-1.5 text-base text-muted-foreground hover:bg-accent hover:text-foreground"
+                    className="pressable shrink-0 rounded-control p-1.5 text-base text-muted-foreground hover:bg-accent hover:text-foreground"
                     aria-label="Rename project"
                   >
                     <Pencil className="h-4 w-4" />
@@ -585,7 +591,7 @@ export default function ProjectDetailPage() {
                 </>
               )}
             </div>
-            <p className="mt-2 font-mono text-caption text-muted-foreground">
+            <p className="mt-2 text-xs text-muted-foreground">
               {plural(data.conversations.length, "chat")} · {plural(workspaceFiles.length, "file")} · Updated{" "}
               {timeAgo(data.project.updatedAt)}
             </p>
@@ -686,7 +692,7 @@ export default function ProjectDetailPage() {
                           key={c.id}
                           className="group relative flex items-center gap-2 rounded-field border border-border/60 bg-card px-3 py-2.5 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none"
                         >
-                          <Link href={`/chat/${c.id}`} className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-md">
+                          <Link href={`/chat/${c.id}`} className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-xs">
                             <span className="truncate text-body font-medium text-foreground">{c.title}</span>
                             <span className="font-mono text-caption text-muted-foreground">
                               Last message {timeAgo(c.lastMessageAt)}
@@ -754,15 +760,25 @@ export default function ProjectDetailPage() {
               </div>
 
               {/* Unified Project Sidebar (Right Column).
-                  Card radius 24 − p-4 (16) = 8 → every persistent inner surface is
-                  rounded-md. The transient <EmptyState>s keep the primitive's own
+                  The old note here derived "radius 24 − p-4 (16) = 8" for every
+                  inner surface, but Card is rounded-card (14) on the ladder, so the
+                  subtraction goes negative and concentricity constrains nothing at
+                  this inset. Inner surfaces take the rung that names what they are:
+                  rounded-field for wells and rows, rounded-control for the icon
+                  buttons. The transient <EmptyState>s keep the primitive's own
                   radius rather than re-deciding it per call site. */}
               <div>
                 <Card className="overflow-hidden">
                   {coverUrl ? (
                     <div className="group/cover relative h-32 w-full overflow-hidden border-b bg-muted">
                       <img src={coverUrl} className="h-full w-full object-cover" alt="" />
-                      <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/40 opacity-0 transition-opacity duration-base ease-out-soft focus-within:opacity-100 group-hover/cover:opacity-100 motion-reduce:transition-none">
+                      {/* bg-scrim — the one dim value every backdrop in the product
+                          shares. A hardcoded bg-black/40 here made a fifth treatment. */}
+                      {/* coarse:opacity-100 — this overlay is the ONLY way to change
+                          or remove a project image, and it was gated on hover, which
+                          a touch device does not have. Every other hover-revealed
+                          control on this page already pins itself on coarse pointers. */}
+                      <div className="absolute inset-0 flex items-center justify-center gap-2 bg-scrim opacity-0 transition-opacity duration-base ease-out-soft focus-within:opacity-100 group-hover/cover:opacity-100 motion-reduce:transition-none coarse:opacity-100">
                         <Button variant="secondary" size="sm" onClick={() => coverRef.current?.click()}>
                           Change
                         </Button>
@@ -775,7 +791,11 @@ export default function ProjectDetailPage() {
                     <button
                       type="button"
                       onClick={() => coverRef.current?.click()}
-                      className="group flex h-24 w-full flex-col items-center justify-center border-b border-dashed bg-muted/20 transition-colors duration-fast ease-out-soft hover:bg-muted/40 motion-reduce:transition-none"
+                      // The drop zone is the one thing on this Card that has to
+                      // announce itself as empty-and-fillable, and bg-muted/40 →
+                      // /60 was 1.2 points of fill moving to 1.8 over the card
+                      // behind it. Named rungs give it a plate and a real hover.
+                      className="group flex h-24 w-full flex-col items-center justify-center border-b border-dashed bg-secondary transition-colors duration-fast ease-out-soft hover:bg-accent motion-reduce:transition-none"
                     >
                       <Plus className="mb-1 h-5 w-5 text-muted-foreground/60 transition-transform duration-base ease-out-soft group-hover:scale-110 motion-reduce:transition-none" />
                       <span className="font-mono text-caption text-muted-foreground">
@@ -809,7 +829,7 @@ export default function ProjectDetailPage() {
                           </span>
                           <button
                             onClick={() => router.push("/memory")}
-                            className="pressable rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                            className="pressable rounded-control p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                             aria-label="Manage memories"
                           >
                             <Pencil className="h-3.5 w-3.5" />
@@ -840,7 +860,7 @@ export default function ProjectDetailPage() {
                         <CardEyebrow>Instructions</CardEyebrow>
                         <button
                           onClick={() => setInstructionsOpen(true)}
-                          className="pressable rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          className="pressable rounded-control p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                           aria-label="Edit project instructions"
                         >
                           <Pencil className="h-3.5 w-3.5" />
@@ -850,7 +870,12 @@ export default function ProjectDetailPage() {
                         <button
                           type="button"
                           onClick={() => setInstructionsOpen(true)}
-                          className="block w-full rounded-md border border-border/60 bg-muted/30 p-2.5 text-left transition-[border-color,background-color] duration-fast ease-out-soft hover:border-border hover:bg-muted/50 motion-reduce:transition-none"
+                          // bg-secondary → hover bg-accent. Inside the sidebar Card
+                          // (6.5% on dark), bg-muted/30 resolved 0.9 points above
+                          // its own parent and the hover moved it 0.6 further, so
+                          // the prompt preview had no well and hovering it changed
+                          // only the border. The two rungs above card are the step.
+                          className="block w-full rounded-field border border-border/60 bg-secondary p-2.5 text-left transition-[border-color,background-color] duration-fast ease-out-soft hover:border-border hover:bg-accent motion-reduce:transition-none"
                         >
                           {/* Mono preview — it's a prompt, and the structure is the point. */}
                           <p className="line-clamp-4 whitespace-pre-wrap break-words font-mono text-caption leading-relaxed text-muted-foreground">
@@ -885,7 +910,7 @@ export default function ProjectDetailPage() {
                         <button
                           onClick={() => fileRef.current?.click()}
                           disabled={uploading}
-                          className="pressable rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                          className="pressable rounded-control p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
                           aria-label="Add file"
                         >
                           {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-4 w-4" />}
@@ -915,13 +940,18 @@ export default function ProjectDetailPage() {
                           {workspaceFiles.map((f) => (
                             <li
                               key={f.id}
-                              className="group/file relative flex items-center gap-2 rounded-md border border-border/60 bg-background/40 p-2 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-soft motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none"
+                              // bg-secondary, not bg-background/40: --background is
+                              // the PAGE's token, and 40% of #000 over the Card these
+                              // rows sit in painted them 2.6 points DARKER than their
+                              // own container — a row that lifts on hover was punched
+                              // into the panel at rest.
+                              className="group/file relative flex items-center gap-2 rounded-field border border-border/60 bg-secondary p-2 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-soft motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none"
                             >
                               <a
                                 href={f.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex min-w-0 flex-1 items-center gap-2 rounded-sm"
+                                className="flex min-w-0 flex-1 items-center gap-2 rounded-xs"
                               >
                                 <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
                                 <div className="min-w-0 flex-1">
@@ -975,7 +1005,11 @@ export default function ProjectDetailPage() {
                   placeholder="How should Juno behave? (role, tone, constraints…)"
                   spellCheck={false}
                   aria-label="Project instructions"
-                  className="min-h-[18rem] rounded-md font-mono text-[13px] leading-relaxed"
+                  // Textarea's own rounded-field, for the same reason as the name
+                  // field above: the 8px here was dead until cn() started resolving
+                  // the ladder, and letting it wake up now would square one prompt
+                  // well against the other in the dialog below.
+                  className="min-h-[18rem] font-mono text-sm leading-relaxed"
                 />
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3 font-mono text-caption">
                   {/* Colour set on a bare span: cn() would treat `text-caption` as a colour
@@ -998,7 +1032,10 @@ export default function ProjectDetailPage() {
                   </div>
                 </div>
 
-                <div className="mt-4 flex items-start gap-2 rounded-md bg-muted/40 p-3 text-caption leading-relaxed text-muted-foreground">
+                {/* Same rung as the prompt preview in the sidebar: bg-muted/40 over
+                    the Card this note sits in was 1.2 points of fill, which on the
+                    black ground is an unfenced paragraph. */}
+                <div className="mt-4 flex items-start gap-2 rounded-field bg-secondary p-3 text-caption leading-relaxed text-muted-foreground">
                   <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
                   <p>
                     These instructions are prepended to every chat in this project — Juno reads them
@@ -1098,7 +1135,7 @@ export default function ProjectDetailPage() {
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-serif text-heading">Delete this project?</DialogTitle>
+            <DialogTitle>Delete this project?</DialogTitle>
             <DialogDescription>
               Its chats are kept (just unlinked), but the project’s instructions and files are removed. This can’t be undone.
             </DialogDescription>
@@ -1115,7 +1152,7 @@ export default function ProjectDetailPage() {
       <Dialog open={chatToDelete !== null} onOpenChange={(open) => !open && setChatToDelete(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-serif text-heading">Delete this chat?</DialogTitle>
+            <DialogTitle>Delete this chat?</DialogTitle>
             <DialogDescription>
               “{chatToDelete?.title}” and its messages are removed for good. This can’t be undone.
             </DialogDescription>
@@ -1153,7 +1190,7 @@ export default function ProjectDetailPage() {
         >
           <DialogHeader className="shrink-0 space-y-0 border-b border-border/60 px-6 py-5 pr-14 text-left">
             <CardEyebrow>Project instructions</CardEyebrow>
-            <DialogTitle className="mt-2 font-serif text-title">
+            <DialogTitle className="mt-2 text-xl">
               How Juno behaves in this project
             </DialogTitle>
             {/* No type token here: twMerge would read `text-body` as a colour and evict
@@ -1164,7 +1201,11 @@ export default function ProjectDetailPage() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Panel radius 28 − p-5 (20) = 8 → the editor well is rounded-md. */}
+          {/* The arithmetic this comment used to state — "panel radius 28 − p-5
+              (20) = 8" — no longer describes anything: the dialog is rounded-panel
+              (18) since the ladder landed, so 18 − 20 leaves no concentric
+              constraint at all and the well simply takes Textarea's own
+              rounded-field. */}
           <div className="flex min-h-0 flex-1 flex-col p-5">
             <Textarea
               value={instructions}
@@ -1180,11 +1221,15 @@ export default function ProjectDetailPage() {
               autoFocus
               aria-label="Project instructions"
               // Monospace: this is a prompt, so alignment and indentation carry meaning.
-              className="min-h-0 flex-1 resize-none rounded-md px-4 py-3.5 font-mono text-[13px] leading-relaxed"
+              className="min-h-0 flex-1 resize-none px-4 py-3.5 font-mono text-sm leading-relaxed"
             />
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 bg-muted/30 px-6 py-4">
+          {/* bg-secondary, not bg-muted/30. The dialog is an overlay-glass panel at
+              the popover rung, so 30% of a 9.5% token over 13% landed the footer a
+              point DARKER than the panel — a recess nobody asked for and nobody
+              could see. Inside a floating layer the recessed rung is --secondary. */}
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 bg-secondary px-6 py-4">
             <div className="flex items-center gap-3 font-mono text-caption">
               <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
                 {instructions.length.toLocaleString()} chars
@@ -1193,7 +1238,11 @@ export default function ProjectDetailPage() {
               <span className="text-muted-foreground">{plural(instructionLines, "line")}</span>
             </div>
             <div className="flex items-center gap-2">
-              <kbd className="hidden rounded-sm border border-border/60 bg-background px-1.5 py-0.5 font-mono text-caption text-muted-foreground sm:inline-block">
+              {/* bg-accent, not bg-background: a key cap has to read as RAISED, and
+                  --background inside a floating dialog is pure black on dark — 13
+                  points below the panel, i.e. a hole in the footer rather than a
+                  key sitting on it. */}
+              <kbd className="hidden rounded-xs border border-border/60 bg-accent px-1.5 py-0.5 font-mono text-caption text-muted-foreground sm:inline-block">
                 ⌘↵
               </kbd>
               <Button variant="ghost" size="sm" onClick={requestCloseInstructions}>
@@ -1283,7 +1332,12 @@ function WorkspaceFileRow({
 
   return (
     <li
-      className="group relative flex items-center gap-3 rounded-md border border-border/60 bg-background/40 px-3 py-2.5 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-safe:animate-rise-in motion-reduce:transition-none [animation-fill-mode:backwards]"
+      // rounded-field + bg-card, exactly the chat rows above it. These two lists
+      // are the same object on the same page and disagreed about both: 8px against
+      // 10px, and a bg-background/40 fill that resolved to the page itself while
+      // the chat rows carried a real surface — so a file row was an outline and a
+      // chat row was a card.
+      className="group relative flex items-center gap-3 rounded-field border border-border/60 bg-card px-3 py-2.5 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-safe:animate-rise-in motion-reduce:transition-none [animation-fill-mode:backwards]"
       style={staggerDelay(index)}
     >
       <Icon className={cn("h-4 w-4 shrink-0", isImage ? "text-source" : "text-muted-foreground")} />
@@ -1293,7 +1347,7 @@ function WorkspaceFileRow({
           href={file.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="block truncate rounded-sm text-body font-medium text-foreground"
+          className="block truncate rounded-xs text-body font-medium text-foreground"
         >
           {file.fileName}
         </a>

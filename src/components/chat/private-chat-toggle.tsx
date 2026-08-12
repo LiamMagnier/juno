@@ -43,13 +43,17 @@ export function PrivateChatToggle({
           onPointerMove={onPointerMove}
           onPointerLeave={onPointerLeave}
           className={cn(
-            "group inline-flex h-9 w-9 items-center justify-center rounded-full text-foreground/75 transition-all duration-base ease-out-soft hover:-translate-y-0.5 hover:text-foreground active:translate-y-0 active:scale-95 disabled:pointer-events-none disabled:opacity-50 coarse:h-11 coarse:w-11",
+            // Was `transition-all`, which swept the disabled opacity fade and the
+            // hover lift into one unbounded property list with no reduced-motion
+            // escape anywhere on the button or on the nested SVG transforms.
+            "group inline-flex h-9 w-9 items-center justify-center rounded-full text-foreground/75 transition-[color,transform] duration-base ease-out-soft hover:-translate-y-0.5 hover:text-foreground active:translate-y-0 active:scale-95 disabled:pointer-events-none disabled:opacity-50 coarse:h-11 coarse:w-11",
+            "motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
             active && "text-primary"
           )}
         >
           <svg
             viewBox="0 0 48 48"
-            className="h-5 w-5 overflow-visible transition-transform duration-base ease-out-soft group-hover:-translate-y-0.5 group-hover:scale-105"
+            className="h-5 w-5 overflow-visible transition-transform duration-base ease-out-soft group-hover:-translate-y-0.5 group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:translate-y-0 motion-reduce:group-hover:scale-100"
             aria-hidden="true"
           >
             <path
@@ -67,7 +71,7 @@ export function PrivateChatToggle({
             </g>
             <path
               d="M20.5 30c1.7 1.4 5.3 1.4 7 0"
-              className="stroke-current opacity-70 transition-opacity group-hover:opacity-100"
+              className="stroke-current opacity-70 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 motion-reduce:transition-none"
               strokeWidth="2"
               strokeLinecap="round"
               fill="none"

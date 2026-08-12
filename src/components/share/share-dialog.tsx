@@ -111,7 +111,7 @@ export function ShareDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-serif">
+          <DialogTitle>
             {kind === "CHAT" ? "Share this chat" : "Share this artifact"}
           </DialogTitle>
           <DialogDescription>
@@ -122,21 +122,38 @@ export function ShareDialog({
         </DialogHeader>
 
         {status === "loading" || status === "idle" ? (
-          <div className="skeleton h-9 rounded-field" aria-hidden />
+          // Two bars, not one: the ready state is a field row PLUS a metadata
+          // row, so a single 36px placeholder meant the dialog grew ~28px the
+          // moment the link arrived — a box that resizes under the cursor.
+          <div className="space-y-3" role="status" aria-label="Creating the link">
+            <div className="flex items-center gap-2" aria-hidden>
+              <div className="skeleton h-9 flex-1 rounded-field coarse:h-11" />
+              <div className="skeleton h-8 w-20 shrink-0 rounded-control coarse:h-10" />
+            </div>
+            <div className="skeleton h-3 w-48 rounded-micro" aria-hidden />
+          </div>
         ) : status === "error" ? (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Couldn’t create the link. Please try again.</p>
+          // role="alert" and the destructive tint: this was a muted grey sentence,
+          // i.e. a failure dressed as ordinary help text, in a dialog whose whole
+          // job had just not happened.
+          <div className="space-y-3" role="alert">
+            <p className="text-body text-destructive">Couldn’t create the link. Please try again.</p>
             <Button variant="outline" size="sm" onClick={createLink}>
               Try again
             </Button>
           </div>
         ) : status === "revoked" ? (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
+          <div className="space-y-3" role="status">
+            <p className="text-body text-muted-foreground">
               The link was revoked — anyone opening it now sees nothing.
             </p>
+            {/* size-4, not size-3.5. That is what Button gives an unsized icon
+                (`.ui-button svg:not([class*="size-"])` in globals.css), it is
+                what the same Copy/Check pair renders at in the shared-links card,
+                and one feature was drawing one glyph at two sizes depending on
+                which surface you reached it from. */}
             <Button size="sm" onClick={createLink}>
-              <Link2 className="h-3.5 w-3.5" /> Create a new link
+              <Link2 className="size-4" aria-hidden /> Create a new link
             </Button>
           </div>
         ) : share ? (
@@ -147,15 +164,22 @@ export function ShareDialog({
                 value={share.url}
                 onFocus={(e) => e.currentTarget.select()}
                 aria-label="Share link"
-                className="font-mono text-xs"
+                className="font-mono text-caption"
               />
+              {/* aria-live on the label, not just a swapped glyph: the copy
+                  confirmation was a purely visual state change, so a screen
+                  reader got no acknowledgement that anything had happened. */}
               <Button size="sm" onClick={copy} className="shrink-0">
-                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                {copied ? "Copied" : "Copy"}
+                {copied ? (
+                  <Check className="size-4 motion-safe:animate-pop-in" aria-hidden />
+                ) : (
+                  <Copy className="size-4" aria-hidden />
+                )}
+                <span aria-live="polite">{copied ? "Copied" : "Copy"}</span>
               </Button>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <p className="font-mono text-[10px] text-muted-foreground">
+              <p className="font-mono text-caption tabular-nums text-muted-foreground">
                 Snapshot · {formatSnapshotDate(share.snapshotAt)} · {share.views}{" "}
                 {share.views === 1 ? "view" : "views"}
               </p>
@@ -164,6 +188,7 @@ export function ShareDialog({
                 size="sm"
                 onClick={revoke}
                 disabled={revoking}
+                aria-busy={revoking}
                 className="text-destructive danger-hover"
               >
                 {revoking ? "Revoking…" : "Revoke link"}

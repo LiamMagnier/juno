@@ -221,15 +221,22 @@ export function outputsLabel(count: number): string {
 }
 
 const DOT_CLASS: Record<StatusTone, string> = {
-  neutral: "bg-muted-foreground/50",
+  // Full muted-foreground, not /50. The dot is the only mark on WorkStatusDot, so
+  // it is a meaningful graphical indicator and has to clear 3:1 — at 50% alpha on
+  // a pure-black ground it lands near 2.6:1 and the neutral statuses lose their mark.
+  neutral: "bg-muted-foreground",
   live: "bg-primary motion-safe:animate-pulse",
   attention: "bg-warning",
   good: "bg-success",
   bad: "bg-destructive",
 };
 
+// `neutral` is `bg-secondary`, not `bg-background/50`. With --background at 0 0% 0%
+// a half-alpha background fill is black over whatever it sits on, so the neutral
+// pill punched a hole in its card instead of lifting off it. Secondary is the first
+// rung above the ground on both themes, which is what a chip should read as.
 const PILL_CLASS: Record<StatusTone, string> = {
-  neutral: "border-border/70 bg-background/50 text-muted-foreground",
+  neutral: "border-border/70 bg-secondary text-muted-foreground",
   live: "border-primary/25 bg-primary/10 text-primary",
   attention: "border-warning/35 bg-warning/10 text-warning-foreground",
   good: "border-success/30 bg-success/10 text-success-ink",
@@ -327,7 +334,7 @@ export function CapabilityChip({
       className={cn(
         "inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] leading-none",
         available
-          ? "border-border/70 bg-background/50 text-muted-foreground"
+          ? "border-border/70 bg-secondary text-muted-foreground"
           : "border-warning/35 bg-warning/10 text-warning-foreground line-through decoration-warning/60"
       )}
       title={available ? undefined : `${describeCapability(capability)} is not available on this run.`}
@@ -430,7 +437,7 @@ export function RiskPill({ risk }: { risk: WorkRiskLevel }) {
         "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] leading-none",
         severe
           ? "border-destructive/35 bg-destructive/10 text-destructive"
-          : "border-border/70 bg-background/50 text-muted-foreground"
+          : "border-border/70 bg-secondary text-muted-foreground"
       )}
     >
       {severe && <ShieldAlert className="h-3 w-3" aria-hidden="true" />}
@@ -445,11 +452,16 @@ export function RiskPill({ risk }: { risk: WorkRiskLevel }) {
 
 export type NoteTone = "info" | "warning" | "blocked" | "error";
 
+// The four tones used to be separated by fill alpha alone — muted/40, warning/5,
+// warning/10, destructive/5 — which over a pure-black ground all composited to
+// roughly the same 3-to-5% wash, so the one component that distinguishes "a note"
+// from "this failed" stopped distinguishing them. The fills are now spread far
+// enough apart to survive on black; the border alphas were already carrying the hue.
 const NOTE_CLASS: Record<NoteTone, string> = {
-  info: "border-border/70 bg-muted/40 text-muted-foreground",
-  warning: "border-warning/35 bg-warning/5 text-warning-foreground",
-  blocked: "border-warning/40 bg-warning/10 text-warning-foreground",
-  error: "border-destructive/40 bg-destructive/5 text-destructive",
+  info: "border-border/70 bg-secondary text-muted-foreground",
+  warning: "border-warning/35 bg-warning/10 text-warning-foreground",
+  blocked: "border-warning/40 bg-warning/20 text-warning-foreground",
+  error: "border-destructive/40 bg-destructive/15 text-destructive",
 };
 
 const NOTE_ICON: Record<NoteTone, typeof Info> = {

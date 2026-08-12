@@ -32,7 +32,26 @@ export const DialogCloseButton = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Close>
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Close ref={ref} asChild {...props}>
-    <Pressable kind="icon" size="lg" className={cn("absolute right-4 top-4 rounded-full", className)}>
+    <Pressable
+      kind="icon"
+      size="lg"
+      // No focus override. `focus-visible:outline-foreground/45` dimmed the
+      // global ring's 0.55 on this one control — a fifth hand-forked focus
+      // treatment on exactly the affordance the comment above exists to
+      // de-duplicate, and a weaker indicator on the escape hatch of a modal.
+      //
+      // And no radius override either. `rounded-control` (9) was passed here
+      // alongside `kind="icon"`, which sets `rounded-full` — the house idiom for
+      // a bare glyph affordance, arrived at by counting (see pressable.tsx: 20
+      // of 34 were already circular and the other 14 were spread over seven
+      // radii). While cn() could not see that the two conflict, both survived
+      // and Tailwind's emit order picked the winner; now that the radius ladder
+      // is registered, last-one-wins would make the ONE close button every
+      // dialog in the product shares the only non-circular icon control left.
+      // Position is genuinely the only thing a call site needs to vary here,
+      // which is what the note above already says.
+      className={cn("absolute right-4 top-4", className)}
+    >
       <X className="h-4 w-4" />
       <span className="sr-only">Close</span>
     </Pressable>
@@ -51,7 +70,17 @@ const DialogOverlay = React.forwardRef<
       // the onboarding scrim can be reconciled with this one. Timing lives in the
       // overlay-in/out pair: the scrim leads on open and trails on close, because
       // a scrim that finishes first leaves a frame of undimmed app behind the panel.
-      "fixed inset-0 z-modal bg-scrim backdrop-blur-sm data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out motion-reduce:animate-none",
+      //
+      // A 2px backdrop blur, because on the black theme opacity alone cannot say
+      // "pushed back": dimming a page that is already at zero lightness changes
+      // almost nothing, so the scrim was reading as present-but-inert. Defocusing
+      // what is behind the panel is the depth cue that still works at #000.
+      //
+      // No `motion-reduce:animate-none`: overlay-in/out are the opacity-only
+      // fade-in/fade-out keyframes, and Tier A of the reduced-motion policy
+      // (globals.css) explicitly keeps opacity. Killing them made a modal appear
+      // by hard cut for exactly the users least able to follow a hard cut.
+      "fixed inset-0 z-modal bg-scrim backdrop-blur-[2px] data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out",
       className
     )}
     {...props}
@@ -83,7 +112,15 @@ const DialogContent = React.forwardRef<
         // does not have. The old 360ms on ease-out-expo spent ~80% of its travel
         // in the first quarter of the time — a lunge, then a crawl; expo needs
         // 440ms or more to read as intended.
-        "fixed left-[50%] top-[50%] z-modal grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] gap-4 overflow-y-auto rounded-panel overlay-glass p-6 data-[state=open]:animate-modal-in data-[state=closed]:animate-modal-out motion-reduce:animate-none",
+        //
+        // The modal pair runs the pop-in/pop-out keyframes, which read
+        // --motion-shift and --motion-scale-from — so under the reduced-motion
+        // preference the travel and the overshoot already collapse to identity
+        // and the panel cross-fades. The `motion-reduce:animate-none` that used
+        // to close this string went one step further and removed the fade too,
+        // which is the Tier A mistake globals.css warns about: the transform is
+        // the part that needs reducing, not the feedback.
+        "fixed left-[50%] top-[50%] z-modal grid w-[calc(100%-2rem)] max-w-lg max-h-[calc(100dvh-2rem)] [translate:-50%_-50%] gap-4 overflow-y-auto rounded-panel overlay-glass p-5 data-[state=open]:animate-modal-in data-[state=closed]:animate-modal-out sm:p-6",
         className
       )}
       {...props}
@@ -112,8 +149,11 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   // font-serif here rather than at 19 call sites: a primitive every consumer has
   // to correct is not a primitive. `text-heading` is the token that the old
-  // `text-lg font-semibold tracking-tight` triple was approximating by hand.
-  <DialogPrimitive.Title ref={ref} className={cn("font-serif text-heading leading-none", className)} {...props} />
+  // `text-lg font-semibold tracking-tight` triple was approximating by hand —
+  // and the class list had gone on shipping that triple (plus an arbitrary
+  // -0.02em where the token specifies -0.006em) while this comment described the
+  // refactor as done. The token carries 1.125rem / 600 / -0.006em itself.
+  <DialogPrimitive.Title ref={ref} className={cn("font-serif text-heading", className)} {...props} />
 ));
 DialogTitle.displayName = DialogPrimitive.Title.displayName;
 

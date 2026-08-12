@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { BlockShell, LessonKicker, Microcap, Reveal, TextToggle } from "@/components/chat/learning/block-shell";
+import { BlockLead, BlockShell, BlockTitle, LessonKicker, Microcap, Reveal, TextToggle } from "@/components/chat/learning/block-shell";
 import { cn } from "@/lib/utils";
 import type { QuizData } from "@/lib/learning-blocks";
 
@@ -97,10 +97,10 @@ export function QuizInteraction({
       <div className={cn("flex flex-col gap-3", className)}>
         <div className="flex flex-col gap-1">
           <Microcap className="text-primary">Recap</Microcap>
-          <p className="font-serif text-[18px] font-medium leading-snug">
+          <BlockLead>
             You got <span className="text-primary">{score}</span> of {total} correct
             {perfect ? " — nothing missed." : "."}
-          </p>
+          </BlockLead>
         </div>
         <ol className="flex flex-col divide-y divide-border/30">
           {questions.map((question, i) => {
@@ -130,7 +130,7 @@ export function QuizInteraction({
         <button
           type="button"
           onClick={reset}
-          className="self-start rounded-md py-1 font-mono text-[11px] font-semibold text-muted-foreground outline-none transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
+          className="self-start rounded-control py-1 font-mono text-[11px] font-semibold text-muted-foreground transition-colors duration-fast hover:text-foreground coarse:min-h-11"
         >
           Start over
         </button>
@@ -151,7 +151,7 @@ export function QuizInteraction({
               <span
                 key={i}
                 className={cn(
-                  "h-1 rounded-full transition-all duration-base ease-out-soft",
+                  "h-1 rounded-full transition-[width,background-color] duration-base ease-out-soft motion-reduce:transition-none",
                   i === current ? "w-4 bg-primary" : answers[i] != null ? "w-1.5 bg-primary/45" : "w-1.5 bg-muted-foreground/25"
                 )}
               />
@@ -160,9 +160,9 @@ export function QuizInteraction({
         </div>
       )}
 
-      <p key={current} className="font-serif text-[17px] font-medium leading-snug tracking-[-0.01em] motion-safe:animate-fade-in">
+      <BlockLead key={current} className="motion-safe:animate-fade-in">
         {q.question}
-      </p>
+      </BlockLead>
 
       <div className="flex flex-col divide-y divide-border/30" role="group" aria-label="Answer options">
         {q.options.map((option, index) => {
@@ -182,9 +182,9 @@ export function QuizInteraction({
               aria-disabled={answered}
               onClick={() => choose(index)}
               className={cn(
-                "grid w-full grid-cols-[1.75rem_minmax(0,1fr)] items-baseline gap-3 border-l-2 border-transparent px-2 py-3 text-left outline-none",
+                "grid w-full grid-cols-[1.75rem_minmax(0,1fr)] items-baseline gap-3 border-l-2 border-transparent px-2 py-3 text-left",
                 "transition-[background-color,border-color,opacity] duration-base ease-out-soft",
-                "focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11",
+                "coarse:min-h-11",
                 state === "idle" && "cursor-pointer hover:bg-accent/40",
                 state === "correct" && "border-l-success/70 bg-success/[0.08]",
                 state === "wrong" && "border-l-destructive/60 bg-destructive/[0.06] motion-safe:animate-nudge",
@@ -247,7 +247,7 @@ export function QuizInteraction({
               <button
                 type="button"
                 onClick={advance}
-                className="shrink-0 rounded-md py-1 font-mono text-[11px] font-semibold text-primary outline-none transition-colors duration-fast hover:text-primary/80 focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
+                className="shrink-0 rounded-control py-1 font-mono text-[11px] font-semibold text-primary transition-colors duration-fast hover:text-primary/80 coarse:min-h-11"
               >
                 {isLast ? "See results →" : "Next question →"}
               </button>
@@ -255,7 +255,7 @@ export function QuizInteraction({
               <button
                 type="button"
                 onClick={reset}
-                className="shrink-0 rounded-md py-1 font-mono text-[11px] font-semibold text-muted-foreground outline-none transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
+                className="shrink-0 rounded-control py-1 font-mono text-[11px] font-semibold text-muted-foreground transition-colors duration-fast hover:text-foreground coarse:min-h-11"
               >
                 Try again
               </button>
@@ -276,7 +276,7 @@ export function InteractiveQuizBlock({ quiz }: { quiz: QuizData }) {
     <BlockShell aria-label={quiz.title ? `Quiz: ${quiz.title}` : `Quick check: ${quiz.questions[0]?.question ?? ""}`}>
       <div className="flex flex-col gap-1.5 pb-3">
         <LessonKicker className="text-primary">Quick check</LessonKicker>
-        {quiz.title && <h4 className="font-serif text-[19px] font-medium leading-snug tracking-[-0.01em]">{quiz.title}</h4>}
+        {quiz.title && <BlockTitle className="leading-snug">{quiz.title}</BlockTitle>}
       </div>
       <QuizInteraction questions={quiz.questions} />
     </BlockShell>

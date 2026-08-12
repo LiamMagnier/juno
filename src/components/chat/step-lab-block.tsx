@@ -168,7 +168,8 @@ const showSpaces = (text: string) => text.replace(/ /g, "␣");
 
 /* ── Visuals ──────────────────────────────────────────────────────────────
  * Every visual follows the same grammar: rendered directly on the paper (only
- * a field-needing chart gets the single bg-muted/30 well), exactly two inks
+ * a field-needing chart gets the single bg-card well — muted/30 resolved to
+ * ~2.9% lightness on the black ground, i.e. no field at all), exactly two inks
  * (foreground + coral) plus sanctioned semantic hues, one CaptionLine readout
  * whose empty state is the visual's action prompt, and motion ONLY as an A→B
  * response to the learner (or a one-shot self-drawing of the data encoding).
@@ -211,7 +212,9 @@ function TokenizationVisual({ step }: { step: StepLabStep }) {
             aria-pressed={index === selected}
             onClick={() => setSelected(index)}
             className={cn(
-              "rounded-sm px-1 py-0.5 transition-colors duration-base ease-out-soft",
+              // `xs` (6px), the chip rung. `rounded-sm` is 4px, which is not on
+              // the ladder at all.
+              "rounded-xs px-1 py-0.5 transition-colors duration-base ease-out-soft",
               index === selected
                 ? "bg-primary/[0.12] text-primary"
                 : index % 2 === 0
@@ -264,7 +267,7 @@ function EmbeddingVisual({ step, compact }: { step: StepLabStep; compact?: boole
             <span
               aria-hidden
               className={cn(
-                "absolute inset-x-0 bottom-0 h-0.5 origin-left rounded-full bg-primary transition-transform duration-base ease-spring",
+                "absolute inset-x-0 bottom-0 h-0.5 origin-left rounded-full bg-primary transition-transform duration-base ease-out-strong",
                 selected === index ? "scale-x-100" : "scale-x-0"
               )}
             />
@@ -274,7 +277,7 @@ function EmbeddingVisual({ step, compact }: { step: StepLabStep; compact?: boole
 
       {/* The chart well — stems and dots persist and MORPH on token switch. */}
       {active && (
-        <div className="rounded-control bg-muted/30 p-3">
+        <div className="rounded-control bg-card p-3">
           <div className={cn("relative", compact ? "h-28" : "h-32")}>
             <span aria-hidden className="absolute left-0 right-0 top-1/2 border-t border-dashed border-border/70" />
             <span aria-hidden className="absolute right-0 top-0 font-mono text-[10px] text-muted-foreground">+1</span>
@@ -291,7 +294,7 @@ function EmbeddingVisual({ step, compact }: { step: StepLabStep; compact?: boole
                   type="button"
                   onClick={() => setDim(index)}
                   aria-label={`Dimension ${index}: ${value.toFixed(3)}`}
-                  className="absolute inset-y-0 w-8 -translate-x-1/2 rounded-md"
+                  className="absolute inset-y-0 w-8 -translate-x-1/2 rounded-control"
                   style={{ left: center }}
                 >
                   <span
@@ -375,7 +378,7 @@ function AttentionVisual({ step, compact }: { step: StepLabStep; compact?: boole
         </svg>
         <span
           aria-hidden
-          className="absolute bottom-0 size-1.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-primary transition-[left] duration-base ease-spring"
+          className="absolute bottom-0 size-1.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-primary transition-[left] duration-base ease-out-strong"
           style={{ left: `${center(strongest)}%` }}
         />
       </div>
@@ -399,7 +402,7 @@ function AttentionVisual({ step, compact }: { step: StepLabStep; compact?: boole
             <span
               aria-hidden
               className={cn(
-                "absolute inset-x-2 bottom-0 h-0.5 origin-left rounded-full bg-primary transition-transform duration-base ease-spring",
+                "absolute inset-x-2 bottom-0 h-0.5 origin-left rounded-full bg-primary transition-transform duration-base ease-out-strong",
                 index === query ? "scale-x-100" : "scale-x-0"
               )}
             />
@@ -446,7 +449,7 @@ function AttentionVisual({ step, compact }: { step: StepLabStep; compact?: boole
       {/* The full matrix, demoted to curiosity. */}
       <TextToggle open={matrixOpen} onToggle={() => setMatrixOpen((value) => !value)} label="Matrix" controls={matrixId} />
       <Reveal open={matrixOpen} id={matrixId}>
-        <div className="rounded-control bg-muted/30 p-3">
+        <div className="rounded-control bg-card p-3">
           <div className="grid gap-0.5" style={{ gridTemplateColumns: `minmax(2.5rem,auto) repeat(${tokens.length}, minmax(1.25rem, 1fr))` }}>
             <span />
             {tokens.map((token, colIndex) => (
@@ -472,7 +475,10 @@ function AttentionVisual({ step, compact }: { step: StepLabStep; compact?: boole
                       }}
                       aria-label={`${rowToken} attends to ${tokens[colIndex]}: ${Math.round(value * 100)} percent`}
                       className={cn(
-                        "h-6 rounded-sm transition-shadow duration-fast",
+                        // `micro` (2px) — the ladder names that rung for heatmap cells, and
+                        // these are 24px squares in a dense grid where 4px corners
+                        // eat a sixth of each cell.
+                        "h-6 rounded-micro transition-shadow duration-fast",
                         isSelected && "ring-1 ring-primary"
                       )}
                       style={{ backgroundColor: `hsl(var(--primary) / ${Math.max(0.07, Math.min(0.8, value))})` }}
@@ -531,7 +537,7 @@ function TransformerVisual({ step }: { step: StepLabStep }) {
         <div aria-hidden className="relative w-1.5 shrink-0">
           <span className="absolute inset-y-1 left-1/2 w-px -translate-x-1/2 bg-border/60" />
           <span
-            className="absolute left-1/2 size-1.5 -translate-x-1/2 rounded-full bg-primary transition-[top] duration-base ease-spring"
+            className="absolute left-1/2 size-1.5 -translate-x-1/2 rounded-full bg-primary transition-[top] duration-base ease-out-strong"
             style={{ top: `calc(${((stage + 0.5) / TRANSFORMER_STAGES.length) * 100}% - 3px)` }}
           />
         </div>
@@ -681,7 +687,7 @@ function ProbabilityVisual({ step }: { step: StepLabStep }) {
           // a hover state — this button did not respond to the pointer at all,
           // while its sibling "Replay" did. The colour slot is spent, so the
           // hover has to be a ground. duration-base matches the rest of the file.
-          className="shrink-0 rounded-md px-2 py-1 font-mono text-[11px] font-semibold text-primary transition-colors duration-base hover:bg-primary/10 coarse:min-h-11"
+          className="shrink-0 rounded-control px-2 py-1 font-mono text-[11px] font-semibold text-primary transition-colors duration-base hover:bg-primary/10 coarse:min-h-11"
         >
           Sample
         </button>
@@ -712,7 +718,7 @@ function NextTokenSelectionVisual({ step }: { step: StepLabStep }) {
           style={{ animationIterationCount: 3 }}
         />
         <span
-          className="rounded-sm bg-primary/[0.12] px-1.5 font-medium text-primary motion-safe:opacity-0 motion-safe:animate-pop-in"
+          className="rounded-xs bg-primary/[0.12] px-1.5 font-medium text-primary motion-safe:opacity-0 motion-safe:animate-pop-in"
           style={{ animationDelay: "300ms" }}
         >
           {selectedToken}
@@ -745,7 +751,7 @@ function NextTokenSelectionVisual({ step }: { step: StepLabStep }) {
       <button
         type="button"
         onClick={() => setRun((value) => value + 1)}
-        className="self-start rounded-md px-2 py-1 font-mono text-[11px] font-semibold text-muted-foreground transition-colors duration-base hover:text-foreground coarse:min-h-11"
+        className="self-start rounded-control px-2 py-1 font-mono text-[11px] font-semibold text-muted-foreground transition-colors duration-base hover:text-foreground coarse:min-h-11"
       >
         Replay
       </button>
@@ -904,7 +910,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
                     <span
                       aria-hidden
                       className={cn(
-                        "absolute inset-x-1.5 bottom-0 h-0.5 origin-left rounded-full bg-primary transition-transform duration-base ease-spring",
+                        "absolute inset-x-1.5 bottom-0 h-0.5 origin-left rounded-full bg-primary transition-transform duration-base ease-out-strong",
                         isActive ? "scale-x-100" : "scale-x-0"
                       )}
                     />
@@ -995,7 +1001,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
             aria-disabled={active === 0}
             onClick={() => go(active - 1)}
             className={cn(
-              "rounded-md px-2 py-1 font-mono text-[11px] font-semibold text-muted-foreground",
+              "rounded-control px-2 py-1 font-mono text-[11px] font-semibold text-muted-foreground",
               "transition-colors duration-base hover:text-foreground coarse:min-h-11",
               active === 0 && "pointer-events-none opacity-40"
             )}
@@ -1011,7 +1017,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
             aria-disabled={onLast}
             onClick={() => go(active + 1)}
             className={cn(
-              "rounded-md px-2 py-1 font-mono text-[11px] font-semibold",
+              "rounded-control px-2 py-1 font-mono text-[11px] font-semibold",
               "transition-colors duration-base coarse:min-h-11",
               // As with "Sample": hover:text-primary over text-primary is a
               // no-op, so Next sat inert while "‹ Previous" beside it lit up.

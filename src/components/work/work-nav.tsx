@@ -149,7 +149,11 @@ export function WorkNav({ className }: { className?: string }) {
         // all rather than a stray rectangle in the corner. The active
         // destination is still legible in that window: `text-foreground` and
         // `aria-current` are both plain attributes and both render server-side.
-        className="pointer-events-none absolute left-0 top-0 z-0 h-0 w-0 rounded-control bg-accent opacity-0 transition-[transform,width,height] duration-base ease-spring motion-reduce:transition-none"
+        // `duration-base`, against the links' `duration-fast` below. The staging
+        // the link comment describes — the label snaps selected, the fill catches
+        // up — was never actually implemented: both sides ran at 120ms, so the
+        // whole move read as one flat jump.
+        className="pointer-events-none absolute left-0 top-0 z-0 h-0 w-0 rounded-control bg-accent opacity-0 transition-[transform,width,height] duration-base ease-out-soft motion-reduce:transition-none"
       />
       {DESTINATIONS.map((destination) => {
         const active = destination.href === activeHref;
@@ -166,7 +170,15 @@ export function WorkNav({ className }: { className?: string }) {
               // The colour change is `duration-fast` against the thumb's
               // `duration-base` on purpose: the destination should read as
               // selected the instant it is pressed, and the fill catches up.
-              "relative z-10 rounded-control px-2.5 py-1 font-mono text-[12px] transition-[background-color,color] duration-fast ease-out-soft",
+              // The nav had no focus ring at all, so tabbing through Work's four
+              // destinations moved a caret nobody could see.
+              // `coarse:` sizing because this is the top-level switch between
+              // Work's four surfaces and at px-2.5/py-1 it was a ~24px target on
+              // touch, where every button, chip and field around it grows to 44.
+              // The thumb needs no adjustment: it is placed from measured
+              // offsetWidth/offsetHeight, so it follows whatever these resolve to.
+              "relative z-10 rounded-control px-2.5 py-1 text-xs font-medium transition-[background-color,color] duration-fast ease-out-soft coarse:px-3.5 coarse:py-2.5",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               active
                 ? "text-foreground"
                 : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
@@ -212,8 +224,8 @@ export function WorkPageFrame({
 }) {
   const destination = back ?? { href: "/work", label: "Back to Work" };
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:py-10">
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-3xl">
         <AppPageHeader
           eyebrow={<WorkNav />}
           heading={title}

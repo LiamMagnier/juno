@@ -172,7 +172,9 @@ function FileMark({ name }: { name: string }) {
       // file marks stack in the same rail and were 28px/24px-radius here against
       // 32px/12px there — a badge so nearly circular it read as a different kind
       // of thing. `rounded-lg` is 24px in this config, not a small rung.
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-muted/50 font-mono text-[9px] uppercase text-muted-foreground"
+      // 10px, not 9px — 9px was the smallest type anywhere in Work, two rungs
+      // under caption, for a three-letter extension.
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary font-mono text-[10px] uppercase text-muted-foreground"
       aria-hidden="true"
     >
       {extension ?? <FileText className="h-3.5 w-3.5" />}

@@ -14,9 +14,11 @@ export function Toaster(props: ToasterProps) {
         classNames: {
           // .overlay-glass rather than the hand-copied material: bare shadow-glass
           // omitted the `inset 0 1px 0 hsl(var(--sheen))` rim light, which made the
-          // toast the one glass object in the product with no top sheen. Radius
-          // moves onto the popover rung so it matches the surfaces it floats over.
-          toast: "group toast group-[.toaster]:rounded-popover group-[.toaster]:overlay-glass",
+          // toast the one glass object in the product with no top sheen.
+          // `rounded-card` (14), the same value as before under the name that
+          // actually describes this box: the popper tier settled at
+          // `rounded-menu` (12), and a toast is a card that floats, not a menu.
+          toast: "group toast group-[.toaster]:rounded-card group-[.toaster]:overlay-glass",
           // With richColors gone (providers.tsx), the semantic tiers are carried by
           // Juno's own AA text ramps instead of sonner's stock green/red fills.
           success: "group-[.toaster]:text-success-ink",

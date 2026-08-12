@@ -15,6 +15,16 @@
  * (globals.css) zeroes margins on p/h3/h4/ol/ul/li with higher specificity
  * than Tailwind margin utilities — so blocks space their internals with
  * flex/grid gaps and padding, never `mt-*` on those elements.
+ *
+ * Focus note, applying to every control in this directory: none of them draw
+ * their own ring. Eight of them used to pair `outline-none` with
+ * `focus-visible:ring-1 focus-visible:ring-ring` — which suppresses the global
+ * 2px `:focus-visible` outline and replaces it with a 1px accent hairline, no
+ * offset, on a control that has no fill of its own. On the transcript's paper
+ * that is a thinner, lower-contrast indicator than the one it removed, which is
+ * an accessibility regression rather than a style choice. The global rule in
+ * globals.css is the authority, exactly as it is for Button and for the thought
+ * process panel.
  */
 
 import * as React from "react";
@@ -62,6 +72,38 @@ export function LessonKicker({
   );
 }
 
+/**
+ * The block title, one rank for every learning block.
+ *
+ * It existed only inside BlockHeader, so the blocks that build their own header
+ * each picked a size for the same semantic rank: 20px here, 19px in
+ * learning-card-block and in the quiz's own header. Three sizes for one rank in
+ * a transcript that renders them back to back is what makes a page look
+ * assembled rather than designed. Exported so there is one place to change it.
+ */
+export function BlockTitle({ className, children, ...props }: React.ComponentPropsWithoutRef<"h4">) {
+  return (
+    <h4 className={cn("font-serif text-[20px] font-medium leading-tight tracking-[-0.01em]", className)} {...props}>
+      {children}
+    </h4>
+  );
+}
+
+/**
+ * The serif statement that sits INSIDE a block's body — the live quiz question,
+ * the recap headline. A rank below BlockTitle on purpose: it is content, not
+ * chrome. The two call sites disagreed by one pixel (17 vs 18), which reads as
+ * a mistake rather than a distinction; they are the same slot in the same
+ * component, one per state.
+ */
+export function BlockLead({ className, children, ...props }: React.ComponentPropsWithoutRef<"p">) {
+  return (
+    <p className={cn("font-serif text-[17px] font-medium leading-snug tracking-[-0.01em]", className)} {...props}>
+      {children}
+    </p>
+  );
+}
+
 /** Kicker row + serif title + optional description — the shell's fixed anatomy.
  *  `meta` is the single optional right-hand mono slot (step rail, nothing else). */
 export function BlockHeader({
@@ -89,9 +131,7 @@ export function BlockHeader({
         </LessonKicker>
         {meta}
       </div>
-      {title && (
-        <h4 className="font-serif text-[20px] font-medium leading-tight tracking-[-0.01em]">{title}</h4>
-      )}
+      {title && <BlockTitle>{title}</BlockTitle>}
       {description && <p className="text-[15px] leading-7 text-muted-foreground">{description}</p>}
     </header>
   );
@@ -156,8 +196,8 @@ export function TextToggle({
       aria-controls={controls}
       onClick={onToggle}
       className={cn(
-        "group/toggle inline-flex items-center gap-1.5 self-start rounded-md py-1 pr-1.5 font-mono text-[11px] font-semibold text-muted-foreground outline-none",
-        "transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring",
+        "group/toggle inline-flex items-center gap-1.5 self-start rounded-control py-1 pr-1.5 font-mono text-[11px] font-semibold text-muted-foreground",
+        "transition-colors duration-fast hover:text-foreground",
         "coarse:min-h-11",
         className
       )}
@@ -166,7 +206,7 @@ export function TextToggle({
       <span
         aria-hidden
         className={cn(
-          "inline-block font-mono text-[13px] leading-none transition-transform duration-base ease-spring",
+          "inline-block font-mono text-[13px] leading-none transition-transform duration-base ease-out-strong",
           open && "rotate-45"
         )}
       >

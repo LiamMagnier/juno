@@ -92,7 +92,13 @@ export function ConnectorLogoTile({ id, className }: { id: string; className?: s
   return (
     <span
       className={cn(
-        "flex h-11 w-11 shrink-0 items-center justify-center rounded-field border bg-background text-foreground",
+        // `bg-secondary` + a stated hairline, matching AppLogo in
+        // connector-directory — the same well one size up. `bg-background` is
+        // the PAGE token, so on the true-black theme this tile painted #000
+        // inside whatever card held it and read as a hole rather than a well;
+        // a bare `border` (full --border) then made the edge the loudest thing
+        // in a row of quiet ones.
+        "flex h-11 w-11 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary text-foreground",
         className
       )}
     >

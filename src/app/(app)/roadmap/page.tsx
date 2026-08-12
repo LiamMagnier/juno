@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { PartyPopper, Plus, Search } from "lucide-react";
+import { AlertTriangle, Inbox, PartyPopper, Plus, Search, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DottedDivider } from "@/components/signature/dotted-divider";
@@ -20,7 +20,10 @@ import {
   type SortKey,
 } from "@/lib/roadmap";
 import { cn } from "@/lib/utils";
+import { staggerDelay } from "@/lib/motion";
 import { AppPageHeader } from "@/components/app/app-page-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 
 const SORTS: { key: SortKey; label: string }[] = [
   { key: "top", label: "Top" },
@@ -121,24 +124,30 @@ export default function RoadmapPage() {
   const empty = !loading && requests.length === 0;
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-6xl">
         <AppPageHeader
           eyebrow="Roadmap"
           heading={<>What we’re <span className="italic text-primary">building</span></>}
           lede="Vote on what matters to you, or request something new. We read every one."
           actions={
             <Button onClick={() => setSubmitOpen(true)} className="gap-1.5">
-              <Plus className="h-4 w-4" /> Request a feature
+              <Plus className="size-4" /> Request a feature
             </Button>
           }
         />
 
         {/* Recently shipped strip */}
         {shipped.length > 0 && (
-          <div className="mt-6 rounded-surface border border-success/30 bg-success/5 p-4">
+          <div
+            // /10, not /5. Every other tinted state surface in the product settled
+            // on /10 for the same reason: a 5% wash of a mid-lightness token over
+            // the true-black ground composites to under 3 points, and the strip
+            // that celebrates a ship read as bare text between two hairlines.
+            className="mt-6 rounded-surface border border-success/30 bg-success/10 p-4"
+          >
             <p className="mb-2 flex items-center gap-2 font-mono text-label text-success">
-              <PartyPopper className="h-3.5 w-3.5" /> Recently shipped
+              <PartyPopper className="size-3.5 shrink-0" /> Recently shipped
             </p>
             <div className="flex flex-wrap gap-x-5 gap-y-1.5">
               {shipped.map((r) => (
@@ -157,24 +166,22 @@ export default function RoadmapPage() {
         {/* Controls */}
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search requests" className="pl-9" />
           </div>
-          <div className="field-well flex items-center gap-1 rounded-menu border border-border/60 bg-muted/50 p-0.5">
-            {SORTS.map((s) => (
-              <button
-                key={s.key}
-                onClick={() => setSort(s.key)}
-                aria-pressed={sort === s.key}
-                className={cn(
-                  "rounded-control px-2.5 py-1 font-mono text-[11px] transition-all duration-fast",
-                  sort === s.key ? "bg-card text-primary [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)]" : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
+          {/* The primitive, not a hand-rolled copy of it: this was a field-well
+              track with an inline box-shadow on the active segment and no thumb
+              travel, running `transition-all`. SegmentedControl already implements
+              that lighting model with a measured gliding thumb, radiogroup
+              semantics and a reduced-motion guard. */}
+          <SegmentedControl
+            value={sort}
+            onChange={setSort}
+            options={SORTS.map((s) => ({ value: s.key, label: s.label }))}
+            ariaLabel="Sort requests"
+            className="h-9 shrink-0"
+            optionClassName="font-mono text-caption"
+          />
         </div>
 
         {/* Category filter */}
@@ -189,32 +196,45 @@ export default function RoadmapPage() {
 
         {/* Body */}
         {error ? (
-          <div className="mt-12 flex flex-col items-center gap-3 text-center">
-            <p className="text-sm text-muted-foreground">Couldn’t load the roadmap.</p>
-            <Button variant="outline" size="sm" onClick={load}>
-              Try again
-            </Button>
-          </div>
+          // tone="error" — a failed fetch is not an untouched board, and this page
+          // drew the two the same way.
+          <EmptyState
+            className="mt-8"
+            tone="error"
+            icon={AlertTriangle}
+            title="Couldn’t load the roadmap."
+            description="The board is still there — the request didn’t come back."
+            action={
+              <Button variant="outline" size="sm" onClick={load}>
+                Try again
+              </Button>
+            }
+          />
         ) : loading ? (
           <div className="mt-6 grid gap-4 lg:grid-cols-4">
             {[...Array(4)].map((_, c) => (
               <div key={c} className="space-y-3">
                 {[...Array(3)].map((_, i) => (
-                  <div key={i} className="skeleton h-28 rounded-card" style={{ animationDelay: `${(c * 3 + i) * 50}ms` }} />
+                  // staggerDelay, not `(c * 3 + i) * 50`: uncapped and off-rung, the
+                  // last of twelve placeholders waited 550ms before it started, so
+                  // the board finished arriving after the data usually has.
+                  <div key={i} className="skeleton h-28 rounded-card" style={staggerDelay(c * 3 + i)} />
                 ))}
               </div>
             ))}
           </div>
         ) : empty ? (
-          <div className="mt-10 flex flex-col items-center gap-4 text-center">
-            <div>
-              <p className="font-serif text-heading">The board is open.</p>
-              <p className="mt-1 text-sm text-muted-foreground">Be the first to shape where Juno goes next.</p>
-            </div>
-            <Button onClick={() => setSubmitOpen(true)} className="gap-1.5">
-              <Plus className="h-4 w-4" /> Request a feature
-            </Button>
-          </div>
+          <EmptyState
+            className="mt-8"
+            icon={Sparkles}
+            title="The board is open."
+            description="Be the first to shape where Juno goes next."
+            action={
+              <Button onClick={() => setSubmitOpen(true)} className="gap-1.5">
+                <Plus className="size-4" /> Request a feature
+              </Button>
+            }
+          />
         ) : (
           <>
             {/* Desktop: columns */}
@@ -225,13 +245,13 @@ export default function RoadmapPage() {
                 return (
                   <div key={status} className="flex min-w-0 flex-col">
                     <div className="mb-3 flex items-center gap-2">
-                      <span className={cn("h-2 w-2 rounded-full", meta.dot)} />
-                      <span className="font-mono text-[11px] text-foreground/80">{meta.label}</span>
-                      <span className="font-mono text-[11px] text-muted-foreground">{items.length}</span>
+                      <span aria-hidden className={cn("size-2 shrink-0 rounded-full", meta.dot)} />
+                      <span className="font-mono text-caption text-foreground/80">{meta.label}</span>
+                      <span className="font-mono text-caption tabular-nums text-muted-foreground">{items.length}</span>
                     </div>
                     <div className="space-y-3">
                       {items.length === 0 ? (
-                        <p className="field-well rounded-card border border-dashed border-border/50 px-3 py-6 text-center text-caption text-muted-foreground">
+                        <p className="rounded-card border border-dashed border-border/70 px-3 py-6 text-center text-caption text-muted-foreground">
                           Nothing here yet.
                         </p>
                       ) : (
@@ -256,7 +276,7 @@ export default function RoadmapPage() {
               <DottedDivider className="my-3" />
               <div className="space-y-3">
                 {mobileList.length === 0 ? (
-                  <p className="px-3 py-8 text-center text-sm text-muted-foreground">No requests here.</p>
+                  <EmptyState size="panel" icon={Inbox} title="No requests here" description="Try another status or clear the search." />
                 ) : (
                   mobileList.map((r) => <RequestCard key={r.id} req={r} onVote={vote} />)
                 )}
@@ -277,7 +297,7 @@ function CatChip({ active, onClick, children }: { active: boolean; onClick: () =
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors duration-fast",
+        "rounded-full border px-2.5 py-1 font-mono text-caption transition-colors duration-fast",
         active ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent"
       )}
     >

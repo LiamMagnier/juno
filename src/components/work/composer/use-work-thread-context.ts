@@ -274,7 +274,11 @@ export function useWorkThreadContext({
     adopt(result.value);
     // A route that answered with nothing useful is a route that told us
     // nothing, and the menu says so rather than drawing switches over a guess.
-    if (result.value.connectorIds === undefined && result.value.skillSlug === undefined) {
+    if (
+      result.value.connectorIds === undefined &&
+      result.value.attachmentIds === undefined &&
+      result.value.skillSlug === undefined
+    ) {
       setReachUnreadable(true);
     }
   }, [adopt, session.id]);

@@ -208,10 +208,10 @@ const STEP_ICON: Record<PlanStepState, React.ComponentType<{ className?: string 
 };
 
 const STEP_CLASS: Record<PlanStepState, string> = {
-  pending: "text-muted-foreground/60",
+  pending: "text-muted-foreground/70",
   active: "text-primary",
   done: "text-success-ink",
-  skipped: "text-muted-foreground/60",
+  skipped: "text-muted-foreground/70",
   failed: "text-destructive",
   unreported: "text-warning-foreground",
 };
@@ -246,7 +246,7 @@ export function WorkPlan({ steps }: { steps: readonly PlanStep[] }) {
               className={cn(
                 "min-w-0",
                 step.state === "done" && "text-muted-foreground",
-                step.state === "skipped" && "text-muted-foreground/70 line-through",
+                step.state === "skipped" && "text-muted-foreground line-through",
                 step.state === "active" && "font-medium text-foreground",
                 step.state === "unreported" && "text-muted-foreground"
               )}
@@ -362,7 +362,12 @@ function humanizeOrNull(identifier: string | null): string | null {
 export function WorkCurrentAction({ action }: { action: CurrentAction | null }) {
   if (action === null) return null;
   return (
-    <div className="flex items-start gap-2.5 rounded-field border border-primary/25 bg-primary/[0.07] px-3.5 py-2.5">
+    // `bg-primary/10` — the same fill `WorkStatusPill`'s live tone carries, and
+    // the pill sits in the header directly above this box. `/[0.07]` was tuned
+    // against the old 9%-lightness page; over black it composites to ~3.2%,
+    // under `--card`, so the one box on the page that means "this is happening
+    // right now" was dimmer than the inert cards around it.
+    <div className="flex items-start gap-2.5 rounded-field border border-primary/25 bg-primary/10 px-3.5 py-2.5">
       <Loader2
         className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary motion-safe:animate-spin"
         aria-hidden="true"
@@ -799,7 +804,7 @@ export function WorkActivity({
       {groups.map((group, index) => (
         <div key={`${group.step ?? "loose"}-${index}`}>
           {group.step !== null && (
-            <p className="mb-1.5 font-mono text-[10px] text-muted-foreground/70">{group.step}</p>
+            <p className="mb-1.5 font-mono text-label text-muted-foreground">{group.step}</p>
           )}
           <ol className="relative space-y-2.5 border-l border-border/60 pl-4">
             {foldBatches(group.entries).map((piece) =>
@@ -981,7 +986,7 @@ function ActivityBatch({
       >
         <ChevronRight
           className={cn(
-            "h-2.5 w-2.5 shrink-0 text-muted-foreground/60 transition-[transform,color] duration-base ease-out-soft group-hover:text-foreground",
+            "h-2.5 w-2.5 shrink-0 text-muted-foreground/70 transition-[transform,color] duration-base ease-in-out group-hover:text-foreground",
             open && "rotate-90"
           )}
           aria-hidden="true"
@@ -1004,7 +1009,7 @@ function ActivityBatch({
             than the clock did. It is left as a bare number for that reason,
             with no verb claiming it is an elapsed span. */}
         {summary.durationMs !== null && (
-          <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/80">
+          <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
             {formatDuration(summary.durationMs)}
           </span>
         )}
@@ -1054,7 +1059,7 @@ function ActivityRow({ entry, phase }: { entry: ActivityEntry; phase: ActivityPh
         >
           {entry.title}
         </p>
-        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground/80">
+        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
           {running ? (
             <LiveDuration since={entry.at} />
           ) : entry.durationMs === null ? null : (
@@ -1064,7 +1069,7 @@ function ActivityRow({ entry, phase }: { entry: ActivityEntry; phase: ActivityPh
       </div>
 
       {entry.detail !== null && (
-        <p className="mt-0.5 break-words font-mono text-[10px] leading-relaxed text-muted-foreground/80">
+        <p className="mt-0.5 break-words font-mono text-[10px] leading-relaxed text-muted-foreground">
           {entry.detail}
         </p>
       )}
@@ -1092,11 +1097,11 @@ function ActivityRow({ entry, phase }: { entry: ActivityEntry; phase: ActivityPh
             onClick={() => setOpen((current) => !current)}
             aria-expanded={open}
             aria-label={open ? `Hide detail: ${entry.title}` : `Show detail: ${entry.title}`}
-            className="mt-1 inline-flex items-center gap-1 rounded-sm font-mono text-[10px] text-muted-foreground/70 transition-colors duration-base hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="mt-1 inline-flex items-center gap-1 rounded-sm font-mono text-[10px] text-muted-foreground transition-colors duration-base hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronRight
               className={cn(
-                "h-2.5 w-2.5 transition-transform duration-base ease-out-soft",
+                "h-2.5 w-2.5 transition-transform duration-base ease-in-out",
                 open && "rotate-90"
               )}
               aria-hidden="true"
@@ -1110,7 +1115,7 @@ function ActivityRow({ entry, phase }: { entry: ActivityEntry; phase: ActivityPh
                   key={`${fact.label}-${fact.value}`}
                   className="flex gap-2 font-mono text-[10px]"
                 >
-                  <dt className="shrink-0 text-muted-foreground/60">{fact.label}</dt>
+                  <dt className="shrink-0 text-muted-foreground">{fact.label}</dt>
                   <dd className="min-w-0 break-all text-muted-foreground">{fact.value}</dd>
                 </div>
               ))}

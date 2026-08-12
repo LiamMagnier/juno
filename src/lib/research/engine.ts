@@ -316,9 +316,9 @@ const READ_ESTIMATE_MICRO_USD = 2_000;
 const SYNTHESIS_ESTIMATE_MICRO_USD = 120_000;
 
 /** Sources carried into synthesis. Beyond this the corpus stops fitting. */
-const MAX_SOURCES = 12;
+const MAX_SOURCES = 250;
 /** Sources whose full text is stored as a snapshot. */
-const MAX_READ_SOURCES = 8;
+const MAX_READ_SOURCES = 250;
 const SNAPSHOT_CHARS = 8_000;
 const PASSAGE_CHARS = 1_200;
 const MAX_PASSAGES_PER_SOURCE = 6;

@@ -291,7 +291,10 @@ function useRailDisclosure(key: string, defaultOpen: boolean): [boolean, () => v
  * `meta` is the count, or the tally, or whatever short mono fact makes a closed
  * section still worth having: "Outputs 3" answers its own question without being
  * opened, and that is the whole mechanism by which a section earns its space —
- * it has to say how much it holds before it is allowed to hold the screen.
+ * it has to say how much it holds before it is allowed to hold the screen. The
+ * count therefore sits on `caption` at full muted-foreground rather than at 10px
+ * and 60% alpha, which measured about 3.3:1 on a pure-black ground — the least
+ * legible text in the rail, doing the most load-bearing job in it.
  *
  * Children are unmounted while closed, not merely hidden. Context fetches the
  * account's skills and connectors when it mounts, and a rail that opened two
@@ -327,20 +330,30 @@ export function RailSection({
         >
           <ChevronRight
             className={cn(
-              "h-3 w-3 shrink-0 translate-y-[1px] text-muted-foreground/50 transition-transform duration-base ease-out-soft group-hover:text-muted-foreground",
+              "h-3 w-3 shrink-0 translate-y-[1px] text-muted-foreground/70 transition-transform duration-base ease-in-out group-hover:text-muted-foreground",
               open && "rotate-90"
             )}
             aria-hidden="true"
           />
           <span className="font-mono text-label text-foreground/80">{title}</span>
           {meta !== null && (
-            <span className="font-mono text-[10px] tabular-nums text-muted-foreground/60">
+            <span className="font-mono text-caption tabular-nums text-muted-foreground">
               {meta}
             </span>
           )}
         </button>
       </h2>
-      <div id={contentId} hidden={!open} className={cn(open && "mt-3.5 space-y-5")}>
+      {/* The chevron rotates over `duration-base`; before this the panel it
+          controls appeared instantly, so an animated affordance pointed at an
+          unanimated result. It is an entrance rather than a height collapse
+          because the children are UNMOUNTED while closed (see above) — there is
+          nothing left to animate shut, and a collapse would be animating an
+          empty box. */}
+      <div
+        id={contentId}
+        hidden={!open}
+        className={cn(open && "mt-3.5 space-y-5 motion-safe:animate-fade-in-up")}
+      >
         {open && children}
       </div>
     </section>
@@ -386,22 +399,29 @@ export function RailDisclosure({
         >
           <ChevronRight
             className={cn(
-              "h-3 w-3 shrink-0 translate-y-[1px] text-muted-foreground/50 transition-transform duration-base ease-out-soft group-hover:text-muted-foreground",
+              "h-3 w-3 shrink-0 translate-y-[1px] text-muted-foreground/70 transition-transform duration-base ease-in-out group-hover:text-muted-foreground",
               open && "rotate-90"
             )}
             aria-hidden="true"
           />
-          <span className="font-mono text-[11px] tracking-[0.1em] text-muted-foreground">
+          {/* `text-label` is 12px / 0.10em / weight 500 — exactly what this was
+              hand-rolling one pixel low, and the same rung RailSection above and
+              RailHeading below already use, so the outline reads as one scale. */}
+          <span className="font-mono text-label text-muted-foreground">
             {title}
           </span>
           {meta !== null && (
-            <span className="font-mono text-[10px] tabular-nums text-muted-foreground/60">
+            <span className="font-mono text-caption tabular-nums text-muted-foreground">
               {meta}
             </span>
           )}
         </button>
       </h3>
-      <div id={contentId} hidden={!open} className={cn(open && "mt-2.5")}>
+      <div
+        id={contentId}
+        hidden={!open}
+        className={cn(open && "mt-2.5 motion-safe:animate-fade-in-up")}
+      >
         {open && children}
       </div>
     </section>
@@ -417,7 +437,7 @@ export function RailDisclosure({
  */
 export function RailHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h3 className="mb-1.5 font-mono text-[10px] text-muted-foreground/70">{children}</h3>
+    <h3 className="mb-1.5 font-mono text-label text-muted-foreground">{children}</h3>
   );
 }
 

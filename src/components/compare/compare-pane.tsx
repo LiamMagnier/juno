@@ -89,7 +89,10 @@ export function ComparePane({
         : null;
 
   return (
-    <section className="group/pane flex min-h-64 min-w-0 flex-col bg-card/30 md:min-h-0 md:h-full">
+    // bg-card, not bg-card/30: at 30% alpha over the true-black ground the pane
+    // composited to ~1.5% lightness and stopped being a surface, leaving the
+    // divide-x hairline as the only thing separating three streaming answers.
+    <section className="group/pane flex min-h-64 min-w-0 flex-col bg-card md:min-h-0 md:h-full">
       {/* Pane header: the picker IS the change button. */}
       <header className="flex shrink-0 items-center gap-1 border-b border-border/60 px-2 py-1.5">
         <CompareModelPicker value={modelId} onChange={onChangeModel} disabled={streaming} />
@@ -101,9 +104,9 @@ export function ComparePane({
                   type="button"
                   onClick={onRemove}
                   aria-label={`Remove ${model?.name ?? "this model"} from the comparison`}
-                  className="rounded-md p-1.5 text-muted-foreground/70 opacity-0 transition-all duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/pane:opacity-100 coarse:p-2.5 coarse:opacity-100"
+                  className="rounded-md p-1.5 text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast ease-out-soft hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/pane:opacity-100 motion-reduce:transition-none coarse:p-2.5 coarse:opacity-100"
                 >
-                  <X className="h-3.5 w-3.5" />
+                  <X className="size-3.5" />
                 </button>
               </TooltipTrigger>
               <TooltipContent>Remove model</TooltipContent>
@@ -116,13 +119,18 @@ export function ComparePane({
       <div className="min-h-0 flex-1 md:overflow-y-auto">
         {run.status === "idle" ? (
           <div className="flex h-full min-h-40 items-center justify-center px-6 py-8">
-            <p className="max-w-[32ch] text-center text-caption leading-relaxed text-muted-foreground/60">
+            {/* No alpha: /60 over black landed at ~3.3:1, and this is the only copy
+                in an idle pane — the first thing anyone reads on /compare. */}
+            <p className="max-w-[32ch] text-center text-caption leading-relaxed text-muted-foreground">
               {model?.description ?? "Pick a model to put in the race."}
             </p>
           </div>
         ) : run.status === "error" && !run.content ? (
           <div className="px-4 py-4">
-            <div className="space-y-2.5 rounded-lg border border-destructive/40 bg-destructive/5 px-3.5 py-3 text-sm text-destructive">
+            {/* rounded-field, not rounded-lg (=16px surface): this is an inline note
+                inside a pane, not a panel. /10 matches every other tinted state chip —
+                /5 all but vanished on the black ground. */}
+            <div className="space-y-2.5 rounded-field border border-destructive/40 bg-destructive/10 px-3.5 py-3 text-sm text-destructive">
               <p>{run.errorMessage}</p>
               {run.errorAction === "upgrade" ? (
                 <Button
@@ -154,12 +162,18 @@ export function ComparePane({
             <Markdown content={run.content} streaming={streaming} className="text-body" />
             {streaming && run.content.length > 0 && (
               <span
-                className="ml-1 inline-block h-2 w-2 translate-y-[1px] rounded-full bg-primary align-middle motion-safe:animate-pulse"
+                className="ml-1 inline-block size-2 translate-y-px rounded-full bg-primary align-middle motion-safe:animate-status-glow"
                 aria-hidden="true"
               />
             )}
             {(finishNote || (run.status === "error" && run.content)) && (
-              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
+              <div
+                // bg-secondary, not bg-muted/45: 45% of a 9.5% token over the pane's
+                // own 6.5% card composites to ~7.9% — a point and a third of lift,
+                // which is not a step anyone sees. The named rung above card is what
+                // makes this read as a note laid ON the answer.
+                className="mt-2 flex flex-wrap items-center gap-2 rounded-field border border-border/70 bg-secondary px-3 py-2 text-xs text-muted-foreground"
+              >
                 <span className="min-w-0 flex-1">{run.errorMessage ?? finishNote}</span>
               </div>
             )}

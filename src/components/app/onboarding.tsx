@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useApp } from "@/components/app/app-provider";
-import { ACCENTS } from "@/lib/accents";
+import { ACCENTS, swatchInk } from "@/lib/accents";
 import { resolveModel, type ModelInfo } from "@/lib/models";
 import { PROVIDERS, PROVIDER_LIST } from "@/lib/providers";
 import { PLAN_LIST } from "@/lib/plans";
@@ -76,12 +76,18 @@ function ModelField({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
+        {/* `hover:bg-secondary`, not `hover:bg-accent`. Everything on this card
+            floats on --popover, and on the dark theme --accent IS --popover
+            (both 48 5% 13%), so every accent hover inside a floating layer
+            resolves to the panel's own colour and nothing happens. Nothing sits
+            above a popover in the ladder, so a control on one answers by
+            recessing a rung. */}
         <button
           type="button"
-          className="flex w-full items-center justify-between rounded-card border px-3.5 py-2.5 text-left transition-colors duration-fast hover:bg-accent"
+          className="flex w-full items-center justify-between rounded-card border px-3.5 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-secondary"
         >
           <span className="flex min-w-0 items-center gap-2">
-            {current && <ProviderLogo provider={current.provider} className="h-4 w-4 rounded-sm" />}
+            {current && <ProviderLogo provider={current.provider} className="h-4 w-4 rounded-micro" />}
             <span className="truncate font-mono text-[13px]">{current?.name ?? "Select a model"}</span>
           </span>
           <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft", open && "rotate-180")} />
@@ -104,7 +110,7 @@ function ModelField({
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search models…"
             autoFocus
-            className="h-8 w-full rounded-md bg-transparent pl-9 pr-2 text-[13px] outline-none placeholder:text-muted-foreground"
+            className="h-8 w-full bg-transparent pl-9 pr-2 text-[13px] outline-none placeholder:text-muted-foreground"
           />
         </div>
         <div className="max-h-56 overflow-y-auto p-1.5">
@@ -113,9 +119,14 @@ function ModelField({
           ) : (
             groups.map((g) => (
               <div key={g.p} className="mb-1.5 last:mb-0">
-                <p className="px-2 pb-1 pt-1.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                <p className="px-2 pb-1 pt-1.5 font-mono text-caption uppercase text-muted-foreground">
                   {PROVIDERS[g.p]?.label ?? g.p}
                 </p>
+                {/* rounded-xs (6px) — the shell is rounded-menu (12px) and the
+                    list insets it by p-1.5 (6px), which is the same sum every
+                    other menu row in the product is drawn from. These were
+                    rounded-field (10px), a radius wider than the 6px of panel
+                    left beside them. */}
                 {g.items.map((m) => (
                   <button
                     key={m.id}
@@ -124,9 +135,9 @@ function ModelField({
                       onPick(m.id);
                       setOpen(false);
                     }}
-                    className="pressable flex w-full items-center gap-2 rounded-field px-2.5 py-2 text-left hover:bg-accent"
+                    className="pressable flex w-full items-center gap-2 rounded-xs px-2.5 py-2 text-left hover:bg-secondary"
                   >
-                    <ProviderLogo provider={m.provider} className="h-4 w-4 rounded-sm" />
+                    <ProviderLogo provider={m.provider} className="h-4 w-4 rounded-micro" />
                     <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{m.name}</span>
                     {m.id === valueId && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
                   </button>
@@ -143,7 +154,7 @@ function ModelField({
 /** First-run welcome. Self-gates: shows once, only for users with no history. */
 export function Onboarding() {
   const { user, settings, setSettings, features, quota, conversations, models } = useApp();
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const [show, setShow] = React.useState(false);
   const [step, setStep] = React.useState(0);
   const primaryRef = React.useRef<HTMLButtonElement>(null);
@@ -220,6 +231,37 @@ export function Onboarding() {
     document.documentElement.dataset.accent = id;
     save({ accent: id });
   };
+
+  /**
+   * The swatches, in the colours the app will actually use.
+   *
+   * ACCENTS stores only the LIGHT `:root[data-accent]` value, and the dark ramp
+   * is materially different — juniper 31%→54%, teal 31.5%→49%, sage 42.5%→61%.
+   * On the black theme the row was therefore advertising six muddy 31–46% discs
+   * that no surface in the product ever renders, on the very step where the user
+   * is also choosing Dark two fields below.
+   *
+   * Rather than duplicating the ramp into a second constant that can drift from
+   * globals.css the way the first one already did, the real `--primary` is read
+   * off the document: the attribute is swapped and restored inside ONE
+   * synchronous layout effect, so no frame is ever painted with the wrong accent
+   * applied. Re-runs on theme change because that is what the values depend on.
+   */
+  const [swatches, setSwatches] = React.useState<Record<string, string>>({});
+  React.useLayoutEffect(() => {
+    if (!show) return;
+    const root = document.documentElement;
+    const previous = root.dataset.accent;
+    const next: Record<string, string> = {};
+    for (const a of ACCENTS) {
+      root.dataset.accent = a.id;
+      const value = getComputedStyle(root).getPropertyValue("--primary").trim();
+      if (value) next[a.id] = `hsl(${value})`;
+    }
+    if (previous === undefined) delete root.dataset.accent;
+    else root.dataset.accent = previous;
+    setSwatches(next);
+  }, [show, resolvedTheme]);
 
   const checkout = async (plan: Plan) => {
     setCheckoutLoading(plan);
@@ -339,9 +381,16 @@ export function Onboarding() {
                 onClick={() => setStep(i)}
                 aria-label={`Step ${i + 1}`}
                 aria-current={step === i}
+                // The two properties that actually change, named. `transition-all`
+                // on an element whose WIDTH animates hands the browser every
+                // inherited layout property as well, and it also ran the inactive
+                // dots' hover fill at the 220ms travel rung instead of the 120ms
+                // rung for a property changing under the pointer.
                 className={cn(
-                  "h-1.5 rounded-full transition-all duration-base ease-out-soft",
-                  step === i ? "w-5 bg-primary" : "w-1.5 bg-border hover:bg-muted-foreground/50"
+                  "h-1.5 rounded-full transition-[width,background-color] duration-base ease-out-soft motion-reduce:transition-none",
+                  step === i
+                    ? "w-5 bg-primary"
+                    : "w-1.5 bg-border transition-[width,background-color] duration-fast hover:bg-muted-foreground"
                 )}
               />
             ))}
@@ -371,7 +420,10 @@ export function Onboarding() {
               {capabilities.map((c, i) => (
                 <div
                   key={c.label}
-                  className="flex items-start gap-3 rounded-card p-2.5 transition-colors duration-fast hover:bg-secondary/60 motion-safe:animate-fade-in-up"
+                  // hover:bg-secondary at full strength: at /60 the fill landed
+                  // ~1.4 points off the --popover card behind it, which is under
+                  // the threshold where a fill is visible at all.
+                  className="flex items-start gap-3 rounded-card p-2.5 transition-colors duration-fast ease-out-soft hover:bg-secondary motion-safe:animate-fade-in-up"
                   style={{ animationDelay: `${80 + i * 60}ms`, animationFillMode: "backwards" }}
                 >
                   <div className="grid h-9 w-9 shrink-0 place-items-center rounded-field bg-secondary text-foreground">
@@ -410,22 +462,36 @@ export function Onboarding() {
               <div>
                 <p className="mb-2 font-mono text-label uppercase text-muted-foreground">Accent</p>
                 <div className="flex gap-2.5">
-                  {ACCENTS.map((a) => (
-                    <button
-                      key={a.id}
-                      type="button"
-                      onClick={() => pickAccent(a.id)}
-                      aria-label={a.id}
-                      aria-pressed={settings.accent === a.id}
-                      className={cn(
-                        "flex h-9 w-9 items-center justify-center rounded-full ring-offset-2 ring-offset-card transition-transform duration-fast ease-out-soft hover:scale-110 active:scale-95 coarse:h-11 coarse:w-11",
-                        settings.accent === a.id && "ring-2 ring-foreground"
-                      )}
-                      style={{ backgroundColor: a.color }}
-                    >
-                      {settings.accent === a.id && <Check className="h-4 w-4 text-white" />}
-                    </button>
-                  ))}
+                  {ACCENTS.map((a) => {
+                    const color = swatches[a.id] ?? a.color;
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => pickAccent(a.id)}
+                        aria-label={a.id}
+                        aria-pressed={settings.accent === a.id}
+                        className={cn(
+                          // ring-offset-popover: the gap a ring-offset leaves is
+                          // filled with a SOLID named colour, and these swatches
+                          // sit on a DialogContent (--popover), not on a card —
+                          // so the selected accent wore a 6.5% disc of a surface
+                          // that is nowhere near it on the dark theme.
+                          "flex h-9 w-9 items-center justify-center rounded-full ring-offset-2 ring-offset-popover transition-transform duration-fast ease-out-soft hover:scale-110 active:scale-95 motion-reduce:transition-none motion-reduce:hover:scale-100 coarse:h-11 coarse:w-11",
+                          settings.accent === a.id && "ring-2 ring-foreground"
+                        )}
+                        style={{ backgroundColor: color }}
+                      >
+                        {/* Computed, not `text-white`. On the amber preset a white
+                            tick measures 2.3:1 against its own swatch, so the only
+                            confirmation that the accent took disappeared into it —
+                            on the very screen where a new user is choosing one. */}
+                        {settings.accent === a.id && (
+                          <Check className="h-4 w-4" style={{ color: swatchInk(color) }} />
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -442,11 +508,15 @@ export function Onboarding() {
                         "pressable flex flex-col items-center gap-1.5 rounded-card border px-2 py-3",
                         activeTheme === t.id
                           ? "border-primary/50 bg-primary/10 text-primary"
-                          : "text-muted-foreground hover:bg-accent"
+                          // hover:bg-secondary — see the model field above: on a
+                          // popover, --accent resolves to the panel's own colour
+                          // on dark, so the two unselected theme tiles answered
+                          // the pointer with nothing.
+                          : "text-muted-foreground hover:bg-secondary"
                       )}
                     >
                       <t.icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
-                      <span className="font-mono text-[11px] uppercase tracking-wide">{t.label}</span>
+                      <span className="font-mono text-caption uppercase">{t.label}</span>
                     </button>
                   ))}
                 </div>
@@ -476,7 +546,7 @@ export function Onboarding() {
           <div key="plan" className="relative px-7 pb-7 pt-4 motion-safe:animate-fade-in-up">
             <div className="flex items-center gap-2">
               <h2 className="font-serif text-heading font-medium">Choose a plan</h2>
-              <span className="rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span className="rounded-full border px-2 py-0.5 font-mono text-caption uppercase text-muted-foreground">
                 Optional
               </span>
             </div>
@@ -507,20 +577,20 @@ export function Onboarding() {
                   <div
                     key={plan.id}
                     className={cn(
-                      "flex items-center gap-3 rounded-card border p-3.5 transition-colors",
-                      popular ? "border-primary/50 bg-primary/[0.04]" : "border-border"
+                      "flex items-center gap-3 rounded-card border p-3.5 transition-colors duration-fast ease-out-soft",
+                      popular ? "border-primary/50 bg-primary/10" : "border-border"
                     )}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <h3 className="font-serif text-body-lg font-medium leading-none">{plan.name}</h3>
                         {popular && (
-                          <span className="rounded-full bg-primary px-2 py-0.5 font-mono text-[10px] uppercase text-primary-foreground">
+                          <span className="rounded-full bg-primary px-2 py-0.5 font-mono text-caption uppercase text-primary-foreground">
                             Popular
                           </span>
                         )}
                         {isCurrent && (
-                          <span className="rounded-full bg-secondary px-2 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
+                          <span className="rounded-full bg-secondary px-2 py-0.5 font-mono text-caption uppercase text-muted-foreground">
                             Current
                           </span>
                         )}
@@ -584,7 +654,7 @@ export function Onboarding() {
           <div key="memory" className="relative px-7 pb-7 pt-4 motion-safe:animate-fade-in-up">
             <div className="flex items-center gap-2">
               <h2 className="font-serif text-heading font-medium">Bring your memory</h2>
-              <span className="rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span className="rounded-full border px-2 py-0.5 font-mono text-caption uppercase text-muted-foreground">
                 Optional
               </span>
             </div>
@@ -596,18 +666,27 @@ export function Onboarding() {
               {/* step 1 — copy prompt */}
               <div>
                 <p className="mb-1.5 flex items-center gap-2 font-mono text-label uppercase text-muted-foreground">
-                  <span className="grid h-4 w-4 place-items-center rounded-full bg-secondary text-[10px] font-semibold text-foreground">
+                  <span className="grid h-4 w-4 place-items-center rounded-full bg-secondary text-caption font-semibold text-foreground">
                     1
                   </span>
                   Copy this into your other AI
                 </p>
-                <div className="relative rounded-card border bg-secondary/40 p-3">
+                {/* bg-secondary whole: at /40 the prompt well composited to
+                    ~11.6% inside a 13% dialog, so the block the user is being
+                    asked to copy out of had no edge but its border. */}
+                <div className="relative rounded-card border bg-secondary p-3">
                   <p className="pr-8 text-caption leading-relaxed text-muted-foreground">{IMPORT_PROMPT}</p>
                   <button
                     type="button"
                     onClick={copyPrompt}
                     aria-label="Copy prompt"
-                    className="pressable absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-lg border bg-card text-muted-foreground hover:text-foreground coarse:h-9 coarse:w-9"
+                    // bg-accent, not bg-card. The copy button sits on the well
+                    // above, which sits on a --popover dialog; --card is 6.5% on
+                    // dark, i.e. six points BELOW its own panel, so the control
+                    // read as a hole punched in the block rather than a button
+                    // resting on it. --accent is level with the dialog and so
+                    // lifts clear of the recessed well underneath it.
+                    className="pressable absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-control border bg-accent text-muted-foreground hover:text-foreground coarse:h-9 coarse:w-9"
                   >
                     {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
                   </button>
@@ -617,7 +696,7 @@ export function Onboarding() {
               {/* step 2 — paste results */}
               <div>
                 <p className="mb-1.5 flex items-center gap-2 font-mono text-label uppercase text-muted-foreground">
-                  <span className="grid h-4 w-4 place-items-center rounded-full bg-secondary text-[10px] font-semibold text-foreground">
+                  <span className="grid h-4 w-4 place-items-center rounded-full bg-secondary text-caption font-semibold text-foreground">
                     2
                   </span>
                   Paste the results here
@@ -630,7 +709,12 @@ export function Onboarding() {
                   }}
                   rows={4}
                   placeholder={"- Prefers concise answers\n- Building a chatbot called Juno\n- Based in France"}
-                  className="w-full resize-none rounded-card border bg-transparent p-3 text-[13px] leading-relaxed outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/50"
+                  // No `outline-none`. This is one of four tab stops on the step
+                  // and the only one that had switched the global
+                  // `:focus-visible` outline off, leaving a keyboard user with a
+                  // hairline border tint as the sole indication of where they
+                  // were — on the field the step exists to fill in.
+                  className="w-full resize-none rounded-card border bg-transparent p-3 text-[13px] leading-relaxed transition-colors duration-fast ease-out-soft placeholder:text-muted-foreground focus:border-primary/50"
                 />
                 <div className="mt-2 flex items-center justify-between">
                   <span className="text-caption text-muted-foreground">

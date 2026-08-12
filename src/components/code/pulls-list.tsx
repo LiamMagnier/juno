@@ -122,7 +122,10 @@ export function PullsList({ account, connected = true }: { account: string | nul
         action={
           <Button asChild variant="outline" className="gap-1.5">
             <Link href="/connections">
-              <Plug className="h-3.5 w-3.5" /> Reconnect GitHub
+              {/* h-4, like every other icon in an EmptyState action slot. The
+                  same Plug glyph was h-3.5 here and h-4 in the Connect action
+                  seventeen lines below — one icon, one size. */}
+              <Plug className="h-4 w-4" /> Reconnect GitHub
             </Link>
           </Button>
         }
@@ -156,7 +159,7 @@ export function PullsList({ account, connected = true }: { account: string | nul
         description="GitHub may be rate-limiting or briefly down — the list is empty because the request failed, not because you have no pull requests."
         action={
           <Button variant="outline" onClick={() => void load()} className="gap-1.5">
-            <RefreshCw className="h-3.5 w-3.5" /> Retry
+            <RefreshCw className="h-4 w-4" /> Retry
           </Button>
         }
       />
@@ -223,23 +226,55 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
       <div className="space-y-5">
         {groupByRepo(items).map(([repo, pulls]) => (
           <div key={repo}>
-            <p className="mb-1.5 truncate font-mono text-[12px] text-muted-foreground/80">{repo}</p>
+            {/* text-caption, a rung below the section's own text-label: one PR
+                row used to carry three mono sizes (12/11/10px), none of them on
+                the scale and the 10px below the smallest token that exists. */}
+            <p className="mb-1.5 truncate font-mono text-caption text-muted-foreground">{repo}</p>
             <ul className="space-y-2">
-              {pulls.map((pr) => (
-                <li key={`${pr.repo}#${pr.number}`}>
+              {pulls.map((pr, i) => (
+                <li
+                  key={`${pr.repo}#${pr.number}`}
+                  className="[animation-fill-mode:backwards] motion-safe:animate-rise-in"
+                  style={staggerDelay(i, "tight")}
+                >
+                  {/*
+                    `bg-card` at full alpha and a real `border-border` hairline.
+                    The row used to lean on `bg-card/60` plus `shadow-soft`,
+                    which on the true-black ground is black ink on black — no
+                    elevation at all — leaving a 9.6% hairline as the only thing
+                    separating the row from the page.
+
+                    `pressable` replaces `transition-all` + `active:scale-[0.995]`:
+                    the old press was 0.2px on a 60px row, and `transition-all`
+                    animated layout alongside colour. Focus is the global
+                    :focus-visible outline — the ring it carried set
+                    `outline-none` and then drew flush against the row border,
+                    which on black reads as a slightly thicker border.
+
+                    `hover:bg-accent` at full alpha, and that is the hover
+                    working at all rather than a taste call. The fill REPLACES
+                    `bg-card` on hover, so /50 composited --accent (13%) over the
+                    page (0%) at ~6.5% — the exact lightness of the `bg-card` it
+                    was replacing. Pointing at a row changed nothing but its
+                    border. Full accent is the one-rung step every other row in
+                    the product hovers to (Pressable kind="row").
+                  */}
                   <a
                     href={pr.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="group flex w-full items-center gap-3 rounded-card border border-border/60 bg-card/60 px-4 py-3 text-left shadow-soft transition-all duration-fast ease-out-soft hover:border-border hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.995]"
+                    className="pressable group flex w-full items-center gap-3 rounded-card border border-border bg-card px-4 py-3 text-left hover:border-primary/40 hover:bg-accent"
                   >
                     <span
                       className={cn(
                         // rounded-full because that is what a 24px radius
                         // already paints on a 36px square — the browser clamps
                         // it. Authoring the circle says what it renders.
-                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-transform duration-fast group-hover:scale-105",
-                        pr.draft ? "bg-muted text-muted-foreground" : "bg-success/10 text-success"
+                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-transform duration-fast ease-out-soft group-hover:scale-105 motion-reduce:transform-none motion-reduce:transition-none",
+                        // Both states are a real disc. `bg-success/10` composited
+                        // to ~2% lightness on black, so the *secondary* state
+                        // (draft, on `bg-muted`) out-read the primary one.
+                        pr.draft ? "bg-muted text-muted-foreground" : "bg-success/20 text-success"
                       )}
                     >
                       {pr.draft ? (
@@ -250,7 +285,7 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-foreground">{pr.title}</span>
-                      <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                      <span className="block truncate font-mono text-caption text-muted-foreground">
                         #{pr.number}
                         {pr.headRef ? ` · ${pr.headRef}` : ""}
                         {pr.draft ? " · draft" : ""}
@@ -258,12 +293,17 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
                       {pr.updatedAt && (
-                        <span className="font-mono text-[10px] text-muted-foreground">
+                        // tabular-nums: this figure changes in place on refresh,
+                        // and proportional digits make the row twitch sideways.
+                        <span className="font-mono text-caption tabular-nums text-muted-foreground">
                           {timeAgo(pr.updatedAt)}
                         </span>
                       )}
+                      {/* Full-strength: at /50 this glyph — the only affordance
+                          saying the row opens off-site — composited to ~2.8:1 on
+                          black, under the 3:1 non-text minimum. */}
                       <ExternalLink
-                        className="h-3.5 w-3.5 text-muted-foreground/50 transition-colors duration-fast group-hover:text-foreground"
+                        className="h-3.5 w-3.5 text-muted-foreground transition-colors duration-fast group-hover:text-foreground"
                         aria-hidden="true"
                       />
                     </span>

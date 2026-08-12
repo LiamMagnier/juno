@@ -35,6 +35,8 @@ import {
 } from "@/lib/search/types";
 import { cn } from "@/lib/utils";
 import { Pressable } from "@/components/ui/pressable";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { staggerDelay } from "@/lib/motion";
 
 /** One row in either palette. `run` fires on click / Enter; `meta` is the muted
  *  trailing text (relative time, "Project"); `hint` renders as ⌘-keys. A
@@ -73,7 +75,7 @@ function Marked({ text, marks }: { text: string; marks: readonly SearchMark[] })
   marks.forEach((mark, i) => {
     if (mark.start > cursor) parts.push(text.slice(cursor, mark.start));
     parts.push(
-      <mark key={i} className="rounded-sm bg-primary/15 px-0.5 text-primary-ink">
+      <mark key={i} className="rounded-micro bg-primary/15 px-0.5 text-primary-ink">
         {text.slice(mark.start, mark.end)}
       </mark>
     );
@@ -245,14 +247,14 @@ function PaletteShell({
 
         {/* Search — the palette's one input, given real presence (52px) rather
             than the density of a list row. */}
-        <div className="flex items-center gap-3 border-b border-border/60 px-4">
-          <Search className="h-[18px] w-[18px] shrink-0 text-muted-foreground/70" />
+        <div className="flex items-center gap-3 border-b border-border px-4">
+          <Search className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
           <input
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder={placeholder}
-            className="w-full bg-transparent py-4 text-[15px] outline-none placeholder:text-muted-foreground/60"
+            className="w-full bg-transparent py-4 text-[15px] outline-none placeholder:text-muted-foreground"
             aria-label={placeholder}
             role="combobox"
             aria-expanded="true"
@@ -267,7 +269,7 @@ function PaletteShell({
               size="sm"
               onClick={() => onQueryChange("")}
               aria-label="Clear search"
-              className="-mr-1 size-6 shrink-0 text-muted-foreground/70 coarse:size-6"
+              className="-mr-1 size-6 shrink-0 text-muted-foreground coarse:size-6"
             >
               <X className="h-3.5 w-3.5" />
             </Pressable>
@@ -300,7 +302,20 @@ function PaletteShell({
           <div
             ref={highlightRef}
             aria-hidden="true"
-            className="pointer-events-none absolute left-1.5 right-1.5 top-0 rounded-field bg-accent opacity-0 transition-[transform,height,opacity] duration-base ease-spring motion-reduce:transition-none"
+            // `bg-foreground/10`, not `bg-accent`. On the dark theme --accent and
+            // --popover are the SAME value (48 5% 13%), and this bar floats on a
+            // popover — so the one thing telling you which row Enter will open
+            // was painted in the exact colour of the panel behind it and could
+            // not be seen at all. An ink tint lifts off whatever is under it in
+            // both themes, which is the same reasoning the row's icon tile below
+            // already runs on.
+            //
+            // rounded-menu, not rounded-field: the shell is rounded-panel (18px)
+            // and the list insets it by p-1.5 (6px), so 12px is the concentric
+            // radius. The comment on the tile below assumed rounded-field WAS
+            // 12px; it is 10 (tailwind.config.ts), so the bar and every row under
+            // it were drawn 2px too tight for the panel they sit in.
+            className="pointer-events-none absolute left-1.5 right-1.5 top-0 rounded-menu bg-foreground/10 opacity-0 transition-[transform,height,opacity] duration-base ease-out-strong motion-reduce:transition-none"
           />
           {items.length === 0
             ? emptyState
@@ -316,8 +331,13 @@ function PaletteShell({
                       // padding off the index instead.
                       <div
                         aria-hidden="true"
+                        // The shell's eyebrow, not a fourth treatment for it.
+                        // Floating surfaces (onboarding, the announcement, this)
+                        // all set a group header as a mono uppercase label; this
+                        // one was 11px sans at /70, which is both off the scale and
+                        // under 4.5:1 on the black ground.
                         className={cn(
-                          "px-2.5 pb-1 text-[11px] font-medium text-muted-foreground/70",
+                          "px-2.5 pb-1 font-mono text-label uppercase text-muted-foreground",
                           i === 0 ? "pt-1.5" : "pt-3"
                         )}
                       >
@@ -334,7 +354,7 @@ function PaletteShell({
                       onClick={() => c.run()}
                       aria-selected={isActive}
                       className={cn(
-                        "menu-item group group/menu-item relative flex w-full gap-3 rounded-field px-2.5 py-2 text-left text-sm transition-colors duration-fast ease-out-soft coarse:py-2.5",
+                        "menu-item group group/menu-item relative flex w-full gap-3 rounded-menu px-2.5 py-2 text-left text-sm transition-colors duration-fast ease-out-soft coarse:py-2.5",
                         // A two-line result row hangs its icon and trailing meta
                         // off the title, not off the centre of the pair.
                         c.snippet ? "items-start" : "items-center",
@@ -343,15 +363,31 @@ function PaletteShell({
                     >
                       {/* Icon tile — gives every row a consistent optical anchor
                           and lets the active state read without moving anything.
-                          rounded-md (8px): the row is rounded-field (12px) and the tile
-                          sits 8px/10px inside it, so ~8px is the concentric read.
-                          NB rounded-lg is 24px here — on a 28px tile that is a circle. */}
+                          rounded-xs (6px): the row is rounded-menu (12px) and the
+                          tile sits 8px/10px inside it, so the concentric answer is
+                          12 MINUS the inset, not 12 minus 4 — the old sum ran the
+                          subtraction the wrong way and landed on an 8px value that
+                          is not on the ladder either. 6px is the nearest rung. */}
                       <span
                         className={cn(
-                          "flex size-7 shrink-0 items-center justify-center rounded-md border transition-colors duration-fast ease-out-soft",
+                          "flex size-7 shrink-0 items-center justify-center rounded-xs border transition-colors duration-fast ease-out-soft",
+                          // `bg-foreground/10`, not a surface token: the tile has
+                          // to LIFT above the sliding highlight bar it sits on, and
+                          // no surface does that in both themes (--card is 99% on
+                          // light and 6.5% on dark, --background is now pure black,
+                          // i.e. 13 points BELOW the bar). An ink tint lifts off
+                          // whatever is underneath it either way. shadow-soft is
+                          // gone with it — black ink on black renders nothing, so
+                          // the border is what draws the edge here.
+                          //
+                          // At rest the tile takes the popover's recessed rung
+                          // whole. `bg-muted/50` composited to ~11.3% against a 13%
+                          // panel — under two points, which is the threshold below
+                          // which a fill is simply not there; the plate that gives
+                          // every row its optical anchor was missing on dark.
                           isActive
-                            ? "border-border/70 bg-background text-foreground shadow-soft"
-                            : "border-transparent bg-muted/50 text-muted-foreground"
+                            ? "border-border/70 bg-foreground/10 text-foreground"
+                            : "border-transparent bg-secondary text-muted-foreground"
                         )}
                       >
                         <Icon className="h-[15px] w-[15px]" />
@@ -367,7 +403,10 @@ function PaletteShell({
                         )}
                       </span>
                       {c.meta && (
-                        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/55">{c.meta}</span>
+                        // Full --muted-foreground at the caption rung. At /55 this
+                        // composited to ~2.9:1 on black — on the timestamp that is
+                        // the only thing telling two same-titled chats apart.
+                        <span className="shrink-0 text-caption tabular-nums text-muted-foreground">{c.meta}</span>
                       )}
                       {c.hint && (
                         <span className="flex shrink-0 items-center gap-1">
@@ -382,7 +421,10 @@ function PaletteShell({
               })}
         </div>
 
-        <div className="flex items-center justify-between border-t border-border/60 bg-muted/25 px-3.5 py-2.5 font-mono text-[10px] text-muted-foreground/80">
+        {/* `bg-secondary`, the popover's recessed rung, not `bg-muted/25`: that
+            resolved to ~12.1% against a 13% panel, so the footer strip that is
+            supposed to sit BEHIND the list was the same colour as it. */}
+        <div className="flex items-center justify-between border-t border-border bg-secondary px-3.5 py-2.5 font-mono text-caption text-muted-foreground">
           {footer}
         </div>
       </DialogContent>
@@ -424,6 +466,10 @@ const RECENT_ICONS: Record<string, React.ComponentType<{ className?: string }>> 
  */
 const SEARCH_DEBOUNCE_MS = 180;
 
+/** Radix Select reserves "" for "nothing selected", so the "no project filter"
+ *  option needs a real value of its own. */
+const ALL_PROJECTS = "__all__";
+
 /** A filter chip. A real button with a pressed state, not a styled div. */
 function FilterChip({
   active,
@@ -439,11 +485,22 @@ function FilterChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      // No `transition-colors`: `.pressable` already declares one covering both
+      // colour and transform, and a transition-* utility replaces that shorthand
+      // outright — which is what dropped `transform` and left the press dip
+      // snapping to scale(.97) in one frame on every chip in this strip.
+      //
+      // The fills are re-based on the popover this strip floats in. Both were
+      // dead on dark: --accent IS --popover (48 5% 13%), so the pressed chip was
+      // the panel colour, and `bg-muted/50` composited to ~11.3% against 13%,
+      // i.e. under the two points where a fill starts existing. The unpressed
+      // chip now takes the popover's recessed rung whole and the pressed one an
+      // ink tint, which is the only thing that lifts off a floating layer.
       className={cn(
-        "pressable shrink-0 rounded-full border px-2.5 py-1 text-[11px] transition-colors duration-fast ease-out-soft coarse:min-h-11 coarse:px-3",
+        "pressable shrink-0 rounded-full border px-2.5 py-1 text-caption coarse:min-h-11 coarse:px-3",
         active
-          ? "border-border bg-accent text-foreground"
-          : "border-transparent bg-muted/50 text-muted-foreground hover:text-foreground"
+          ? "border-border bg-foreground/10 text-foreground"
+          : "border-transparent bg-secondary text-muted-foreground hover:text-foreground"
       )}
     >
       {children}
@@ -630,15 +687,18 @@ function SearchPalette() {
     const list = (result?.coverage ?? []).filter((c) => c.state !== "complete" && c.detail);
     if (!trimmed || list.length === 0) return null;
     const shown = list.slice(0, 2);
+    // Same recessed rung as the footer strip. `bg-muted/20` landed ~0.7 of a
+    // point off the popover behind it, so the one band saying "part of your
+    // account could not be searched" had no band.
     return (
-      <div className="border-b border-border/60 bg-muted/20 px-4 py-2">
+      <div className="border-b border-border/60 bg-secondary px-4 py-2">
         {shown.map((c) => (
           <p key={c.type} className="text-caption leading-snug text-muted-foreground">
             <span className="text-foreground/80">{SEARCH_TYPE_LABELS[c.type]}:</span> {c.detail}
           </p>
         ))}
         {list.length > shown.length && (
-          <p className="text-caption leading-snug text-muted-foreground/70">
+          <p className="text-caption leading-snug text-muted-foreground">
             {list.length - shown.length} more part of your account was searched only in part.
           </p>
         )}
@@ -667,19 +727,40 @@ function SearchPalette() {
           ))}
         </div>
         {projects.length > 0 && (
-          <select
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            aria-label="Filter by project"
-            className="pressable ml-auto shrink-0 rounded-full border border-transparent bg-muted/50 px-2.5 py-1 text-[11px] text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:min-h-11"
+          // The Radix Select, not a native <select>. This was the only OS popup
+          // list in the app shell: its menu ignored --popover, the border tokens
+          // and the pop-in/out pair, so the last control in a strip of five
+          // FilterChips opened in a completely different material — and it had no
+          // chevron, so it did not even look like it opened anything. `ALL` stands
+          // in for the empty value because Radix reserves "" for "no selection".
+          <Select
+            value={projectId || ALL_PROJECTS}
+            onValueChange={(v) => setProjectId(v === ALL_PROJECTS ? "" : v)}
           >
-            <option value="">All projects</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name || "Untitled project"}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger
+              aria-label="Filter by project"
+              // Deliberately overrides `.field-well` (select.tsx), which paints a
+              // fill and an inset shadow: this trigger is the sixth chip in a row
+              // of FilterChips, not a form field, so it takes their pill shape and
+              // their recessed-on-popover fill instead. `shadow-none` is what
+              // cancels the well's inset — a groove under a 24px pill reads as
+              // damage — and it has to be a utility, because utilities are emitted
+              // after the components layer and nothing else can beat that class
+              // from a call site. The fill was `bg-muted/50`, which resolved to
+              // ~11.3% on a 13% panel and so left the chip with no fill at all.
+              className="ml-auto h-auto w-auto max-w-[10rem] shrink-0 gap-1.5 rounded-full border-transparent bg-secondary px-2.5 py-1 text-caption text-muted-foreground shadow-none hover:text-foreground coarse:min-h-11"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="max-w-[16rem]">
+              <SelectItem value={ALL_PROJECTS}>All projects</SelectItem>
+              {projects.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  <span className="truncate">{p.name || "Untitled project"}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
       </div>
     </div>
@@ -706,28 +787,42 @@ function SearchPalette() {
   // and a request that failed is not an empty account — telling someone their
   // account is empty when the network dropped is the one mistake this surface
   // must never make, because they will believe it.
-  const emptyState = (
+  //
+  // In flight, the surface holds its SHAPE rather than its words. A single
+  // centred "Searching…" inside a 10rem block collapsed the palette to nearly
+  // empty on every keystroke past the debounce, which reads as "no results" for
+  // 200ms at a time; placeholder rows at the result row's own geometry keep the
+  // list's height and say loading instead. The sidebar already answers the
+  // identical situation this way.
+  // rounded-menu on the placeholders, tracking the result row they stand in for
+  // — a skeleton drawn at a different radius from the thing that replaces it is
+  // a visible re-shape at the moment the results land.
+  const emptyState = searching ? (
+    <div className="space-y-1 p-1.5" aria-hidden="true">
+      {[...Array(5)].map((_, i) => (
+        <div key={i} className="skeleton h-11 rounded-menu" style={staggerDelay(i, "tight")} />
+      ))}
+    </div>
+  ) : (
     <div className="px-3 py-10 text-center">
       {failed ? (
         <>
           <p className="text-sm text-muted-foreground">Search is unavailable right now.</p>
-          <p className="mt-1 text-caption text-muted-foreground/60">
+          <p className="mt-1 text-caption text-muted-foreground">
             Check your connection and try the search again.
           </p>
         </>
-      ) : searching ? (
-        <p className="text-sm text-muted-foreground">Searching…</p>
       ) : trimmed ? (
         <>
           <p className="text-sm text-muted-foreground">Nothing matches “{query}”.</p>
-          <p className="mt-1 text-caption text-muted-foreground/60">
+          <p className="mt-1 text-caption text-muted-foreground">
             Try fewer words, or widen the filters above.
           </p>
         </>
       ) : (
         <>
           <p className="text-sm text-muted-foreground">Search everything in Juno</p>
-          <p className="mt-1 text-caption text-muted-foreground/60">
+          <p className="mt-1 text-caption text-muted-foreground">
             Chats and their messages, projects, files, artifacts, memories and Work.
           </p>
         </>
@@ -970,7 +1065,7 @@ function CommandMenu() {
   const emptyState = (
     <div className="px-3 py-10 text-center">
       <p className="text-sm text-muted-foreground">No matches for “{query}”.</p>
-      <p className="mt-1 text-caption text-muted-foreground/60">Try a chat title, or a command like “settings”.</p>
+      <p className="mt-1 text-caption text-muted-foreground">Try a chat title, or a command like “settings”.</p>
     </div>
   );
 
@@ -1015,7 +1110,7 @@ function ShortcutsSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
-        <DialogTitle className="font-serif text-heading">Keyboard shortcuts</DialogTitle>
+        <DialogTitle>Keyboard shortcuts</DialogTitle>
         <ul className="mt-2 divide-y divide-border/60">
           {SHORTCUTS.map((s) => (
             <li key={s.label} className="flex items-center justify-between py-2.5 text-sm">

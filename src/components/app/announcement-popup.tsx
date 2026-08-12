@@ -2,21 +2,33 @@
 
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowRight, X } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogCloseButton, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { JunoMark } from "@/components/brand/logo";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import type { ClientAnnouncement } from "@/lib/announcements";
 
 function AnnouncementVisual({ announcement }: { announcement: ClientAnnouncement }) {
   const videoRef = React.useRef<HTMLVideoElement>(null);
+  // The one thing in the shell that loops forever in the user's peripheral
+  // vision. `prefers-reduced-motion` has to reach it too: read after mount so
+  // the SSR markup does not commit to either answer.
+  const [reducedMotion, setReducedMotion] = React.useState(false);
+
+  React.useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReducedMotion(mq.matches);
+    mq.addEventListener("change", sync);
+    sync();
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   // Nudge autoplay: some browsers block it until the element is ready even when muted.
   React.useEffect(() => {
     const v = videoRef.current;
-    if (v) v.play().catch(() => {});
-  }, []);
+    if (v && !reducedMotion) v.play().catch(() => {});
+  }, [reducedMotion]);
 
   if (announcement.videoUrl) {
     return (
@@ -24,13 +36,16 @@ function AnnouncementVisual({ announcement }: { announcement: ClientAnnouncement
         ref={videoRef}
         src={announcement.videoUrl}
         poster={announcement.imageUrl ?? undefined}
-        autoPlay
+        // Reduced motion gets the poster frame and a real control bar instead of
+        // a clip that restarts every few seconds behind the text being read.
+        autoPlay={!reducedMotion}
         muted
-        loop
+        loop={!reducedMotion}
+        controls={reducedMotion}
         playsInline
         preload="auto"
         // Clean hero clip — no player chrome. Tapping replays if a browser paused it.
-        onClick={() => videoRef.current?.play().catch(() => {})}
+        onClick={() => !reducedMotion && videoRef.current?.play().catch(() => {})}
         className="h-full w-full cursor-default bg-muted object-cover"
       />
     );
@@ -156,12 +171,16 @@ export function AnnouncementPopup() {
         hideClose
         className="max-h-[calc(100dvh-1rem)] max-w-4xl overflow-y-auto overscroll-contain p-0 lg:overflow-hidden"
       >
-        <DialogClose className="absolute right-4 top-4 z-20 flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:h-11 coarse:w-11">
-          <X className="h-4 w-4" />
-          <span className="sr-only">Close</span>
-        </DialogClose>
+        {/* shadow-pop, not Tailwind's stock shadow-sm. `shadow-sm` is
+            `0 1px 2px rgb(0 0 0 / 0.05)` — off the theme-aware --shadow-* ladder
+            and invisible at 5% black on the dark theme, which is precisely where
+            this button floats over arbitrary bright media and most needs an edge. */}
+        <DialogCloseButton className="z-20 bg-popover/85 shadow-pop backdrop-blur-sm" />
         <div className="grid gap-8 p-6 lg:grid-cols-[minmax(16rem,24rem)_minmax(0,1fr)]">
-          <div className="h-64 w-full shrink-0 overflow-hidden rounded-card border border-border/50 bg-muted sm:h-80 lg:h-[26rem]">
+          {/* Full --border. At /50 on dark this hairline resolved to ~8%, DARKER
+              than both the --muted fill inside it and the --popover shell around
+              it, so the frame read as a groove rather than an edge. */}
+          <div className="h-64 w-full shrink-0 overflow-hidden rounded-card border border-border bg-muted sm:h-80 lg:h-[26rem]">
             <AnnouncementVisual announcement={announcement} />
           </div>
           <div className="flex min-h-0 flex-col justify-between gap-6 py-2 pr-2 lg:min-h-[26rem]">
@@ -171,7 +190,12 @@ export function AnnouncementPopup() {
                   {announcement.modelName && (
                     <div className="mb-2 font-mono text-label uppercase text-muted-foreground">{announcement.modelName}</div>
                   )}
-                  <DialogTitle className="font-serif text-2xl font-normal leading-tight text-foreground sm:text-3xl">
+                  {/* `font-serif text-title` — the scale's rung for a modal
+                      heading, and the family every sibling modal already uses.
+                      `xl`/`2xl` are Tailwind defaults, not rungs on this
+                      project's scale, and this was the one modal title in the
+                      shell set in the UI face. */}
+                  <DialogTitle className="font-serif text-title leading-tight text-foreground">
                     {announcement.title}
                   </DialogTitle>
                 </div>
@@ -179,12 +203,15 @@ export function AnnouncementPopup() {
                   <ProviderLogo provider={announcement.provider} className="h-10 w-10 shrink-0 border-0 shadow-none" />
                 )}
               </div>
-              <DialogDescription className="max-w-xl pt-4 text-base leading-relaxed text-muted-foreground lg:max-w-md lg:pt-6">
+              <DialogDescription className="max-w-xl pt-4 text-body leading-relaxed text-muted-foreground lg:max-w-md lg:pt-6">
                 {announcement.description}
               </DialogDescription>
             </DialogHeader>
 
-            <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
+            {/* No `mt-6`: the parent column is already `justify-between gap-6`,
+                so the margin stacked a second 24px onto the gap and the action
+                row sat further from the copy than any other modal's does. */}
+            <div className="flex flex-wrap items-center justify-end gap-3">
               {announcement.newsHref ? (
                 <Button variant="outline" onClick={() => followHref(announcement.newsHref)}>
                   {announcement.newsLabel || "Read more"}

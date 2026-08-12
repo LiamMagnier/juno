@@ -21,7 +21,22 @@ const Switch = React.forwardRef<
     {...props}
     ref={ref}
   >
-    <SwitchPrimitives.Thumb className="pointer-events-none block h-4 w-4 rounded-full bg-background shadow-pop ring-0 transition-transform duration-base ease-spring data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0" />
+    {/*
+     * The thumb has to be the LIGHTEST thing in the control, in both themes.
+     *
+     * It was `bg-background`, which is pure #000 on dark — so an unchecked
+     * switch was a 32%-lightness track with a black hole punched through it,
+     * and the one element that should read as a raised key read as a gap. Light
+     * is unchanged (`--background` is paper there and correct); dark takes
+     * --foreground, the only near-white in the ramp.
+     *
+     * A bare --shadow-pop is pure black ink on dark, which vanishes against the
+     * black track and does nothing against the coral checked fill either. The
+     * inset bottom edge is what keeps the thumb's lower rim defined once it has
+     * slid onto the accent — drawn in --shadow-ink so it stays dark ink in both
+     * themes rather than inverting into a halo.
+     */}
+    <SwitchPrimitives.Thumb className="pointer-events-none block h-4 w-4 rounded-full bg-background ring-0 transition-transform duration-base ease-out-strong [box-shadow:inset_0_-1px_0_hsl(var(--shadow-ink)/0.18),var(--shadow-pop)] motion-reduce:transition-none data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0 dark:bg-foreground" />
   </SwitchPrimitives.Root>
 ));
 Switch.displayName = SwitchPrimitives.Root.displayName;

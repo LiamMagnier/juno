@@ -788,11 +788,17 @@ export default function WorkThreadPage() {
                 <ArrowLeft className="h-4 w-4" aria-hidden="true" />
               </Link>
             </Button>
+            {/* Identical to ThreadFrame's eyebrow below. The same word in the
+                same position was changing face, size and tracking the moment the
+                task resolved. */}
             <span className="font-mono text-label text-muted-foreground">Work</span>
           </div>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <h1 className="font-serif text-display font-medium tracking-tight">
+              {/* `text-display` and the serif face, the same pair the Work home's
+                  h1 uses. Two page titles one click apart were on two bespoke
+                  clamps, neither of them on the ladder. */}
+              <h1 className="font-serif text-display">
                 {session.title || "Untitled task"}
               </h1>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -982,7 +988,7 @@ export default function WorkThreadPage() {
             >
               {questions.length > 0 && (
                 <div>
-                  <h2 className="mb-2.5 font-mono text-[11px] tracking-[0.1em] text-foreground">
+                  <h2 className="mb-2.5 font-mono text-label text-foreground">
                     Waiting on you
                   </h2>
                   <div className="space-y-2.5">
@@ -1000,7 +1006,7 @@ export default function WorkThreadPage() {
 
               {openApprovals.length > 0 && (
                 <div>
-                  <h2 className="mb-2.5 font-mono text-[11px] tracking-[0.1em] text-foreground">
+                  <h2 className="mb-2.5 font-mono text-label text-foreground">
                     {openApprovals.length === 1 ? "Approval needed" : "Approvals needed"}
                   </h2>
                   <WorkApprovals
@@ -1088,8 +1094,8 @@ function uncapitalize(text: string): string {
  */
 function ThreadFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-2xl px-4 py-8">
+    <div className="app-page-scroll">
+      <div className="app-page-content max-w-2xl">
         <div className="mb-1 flex items-center gap-2">
           <Button asChild variant="ghost" size="icon-sm" aria-label="Back to Work">
             <Link href="/work">

@@ -196,7 +196,16 @@ export function WorkSessionRow({
   return (
     <div
       className={cn(
-        "group relative flex items-start rounded-field border border-border/60 bg-card/60 transition-[background-color,border-color,transform,opacity] duration-base ease-out-soft hover:border-border hover:bg-card",
+        // Rest on full `bg-card` and hover to `bg-secondary`. The row used to sit
+        // at `bg-card/60`, which over a pure-black ground composites to about 3.9%
+        // lightness and hovered only as far as card's 6.5% — a delta below the
+        // perceptual floor, so the list flattened into the page and the hover
+        // affordance vanished. Card→secondary is the ladder the .dark block documents.
+        "group relative flex items-start rounded-field border border-border/60 bg-card transition-[background-color,border-color,transform,opacity] duration-base ease-out-soft hover:border-border hover:bg-secondary",
+        // The row's only affordance is an anchor filling it, and an anchor with no
+        // visible focus ring is a keyboard user with no idea where they are. The
+        // ring is drawn on the card so it frames the whole row rather than the text.
+        "[&:has(>a:focus-visible)]:ring-2 [&:has(>a:focus-visible)]:ring-ring [&:has(>a:focus-visible)]:ring-offset-2 [&:has(>a:focus-visible)]:ring-offset-background",
         // The lift is a single pixel. The row is the full width of the column,
         // and a card that wide moving any further stops reading as "under your
         // pointer" and starts reading as "leaving the page".
@@ -213,7 +222,10 @@ export function WorkSessionRow({
         // lands before this is consciously seen; it exists so a slow network
         // shows that the press was received rather than ignored.
         busy && "opacity-60",
-        session.needsAttention && "border-warning/40 bg-warning/[0.04] hover:border-warning/60",
+        // 8%, not 4%. The old alpha was tuned against a 9%-lightness ground; over
+        // pure black it composited to ~2.3% and the one row state meaning "this has
+        // stopped and cannot move" was indistinguishable from an ordinary row.
+        session.needsAttention && "border-warning/40 bg-warning/[0.08] hover:border-warning/60",
         // The breath is a box-shadow, and it lives in @layer components — so a
         // `shadow-*` utility added to this row later would win the cascade and
         // silently switch it off, wherever in this list it were written. If this
@@ -222,7 +234,10 @@ export function WorkSessionRow({
       )}
       style={entrance.current === null ? undefined : staggerDelay(entrance.current, "tight")}
     >
-      <Link href={`/work/${session.id}`} className="flex min-w-0 flex-1 items-start gap-3 px-3.5 py-3">
+      <Link
+        href={`/work/${session.id}`}
+        className="flex min-w-0 flex-1 items-start gap-3 rounded-field px-3.5 py-3 focus-visible:outline-none"
+      >
         <span className="min-w-0 flex-1">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
             {session.pinned && (
@@ -267,7 +282,12 @@ export function WorkSessionRow({
               {statusActivity(session.status, session.lastActivityAt)}
             </span>
           )}
-          <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] text-muted-foreground/70">
+          {/* Full muted-foreground: the /70 was buying separation from a
+              9%-lightness ground that no longer exists, and at 10px over pure
+              black it measured about 4.1:1 — under the AA floor. `tabular-nums`
+              because this line re-renders on every poll and a proportional "12m
+              ago" shifts the separator and the file count sideways as it ticks. */}
+          <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] tabular-nums text-muted-foreground">
             <span>{workTimeAgo(session.lastActivityAt)}</span>
             {outputCount !== undefined && outputCount > 0 && (
               <>
@@ -284,7 +304,7 @@ export function WorkSessionRow({
           </span>
         </span>
         <ChevronRight
-          className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
+          className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-[transform,color] duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
           aria-hidden="true"
         />
       </Link>
@@ -299,7 +319,7 @@ export function WorkSessionRow({
               // Always present rather than revealed on hover: a control that
               // only exists under a pointer is a control a touch device cannot
               // find at all, and this is the row's only way to unpin anything.
-              className="h-7 w-7 text-muted-foreground/60 hover:text-foreground"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
               aria-label={`Options for ${session.title || "this task"}`}
             >
               <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
@@ -459,7 +479,7 @@ export function WorkSection({
       <div className="mb-2.5 flex flex-wrap items-end justify-between gap-2">
         <div className="min-w-0">
           <h2 className="font-mono text-label text-muted-foreground">{title}</h2>
-          {hint && <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground/80">{hint}</p>}
+          {hint && <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{hint}</p>}
         </div>
         {action != null && <div className="shrink-0">{action}</div>}
       </div>

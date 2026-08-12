@@ -195,7 +195,7 @@ export function WorkThreadControlsNote({
   return (
     <p
       aria-live="polite"
-      className="px-1.5 pt-1.5 font-mono text-[10px] leading-relaxed text-muted-foreground/80"
+      className="px-1.5 pt-1.5 font-mono text-[10px] leading-relaxed text-muted-foreground"
     >
       {line}
     </p>
@@ -277,7 +277,7 @@ function ThreadProjectChip({
             {value === null ? "Project" : (selected?.name ?? "In a project")}
           </span>
           <ChevronDown
-            className="h-3 w-3 shrink-0 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180"
+            className="h-3 w-3 shrink-0 transition-transform duration-base ease-in-out group-data-[state=open]:rotate-180"
             aria-hidden="true"
           />
         </button>

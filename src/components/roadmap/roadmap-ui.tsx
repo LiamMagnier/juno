@@ -23,12 +23,12 @@ export function StatusBadge({ status, className }: { status: RoadmapRequest["sta
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px]",
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-caption",
         m.badge,
         className
       )}
     >
-      <span className={cn("h-1.5 w-1.5 rounded-full", m.dot)} />
+      <span className={cn("size-1.5 shrink-0 rounded-full", m.dot)} />
       {m.label}
     </span>
   );
@@ -36,7 +36,7 @@ export function StatusBadge({ status, className }: { status: RoadmapRequest["sta
 
 export function CategoryChip({ category }: { category: RoadmapRequest["category"] }) {
   return (
-    <span className="rounded-full border border-border/70 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+    <span className="rounded-full border border-border/70 px-2 py-0.5 font-mono text-caption text-muted-foreground">
       {CATEGORY_LABEL[category]}
     </span>
   );
@@ -60,14 +60,22 @@ export function VoteButton({
       aria-pressed={voted}
       aria-label={voted ? "Remove your vote" : "Upvote"}
       className={cn(
-        "group/vote flex shrink-0 flex-col items-center justify-center rounded-lg border transition-all duration-fast ease-out-soft active:scale-95",
+        // rounded-control (9px), not rounded-lg (16px): this is the first child of
+        // a rounded-card (14px) Card with p-4, so a 16px corner was ROUNDER than
+        // the box containing it and the two curves fought at the card's top-left.
+        //
+        // transition-all animated the border, the translate and anything layout
+        // resolved; the named properties are the only ones that actually change.
+        // relative z-10 keeps the vote target above RequestCard's stretched link
+        // overlay — without it the overlay swallows every click on the arrow.
+        "group/vote relative z-10 flex shrink-0 flex-col items-center justify-center rounded-control border transition-[background-color,border-color,color,transform] duration-fast ease-out-soft active:scale-95 motion-reduce:transition-none motion-reduce:active:scale-100",
         size === "md" ? "w-12 gap-0.5 py-1.5" : "w-10 gap-0 py-1",
         voted
           ? "border-primary/50 bg-primary/10 text-primary"
-          : "border-border text-muted-foreground hover:-translate-y-0.5 hover:border-primary/40 hover:text-foreground"
+          : "border-border text-muted-foreground hover:border-primary/40 hover:bg-accent/50 hover:text-foreground motion-safe:hover:-translate-y-0.5"
       )}
     >
-      <ChevronUp className={cn("h-4 w-4 transition-transform duration-base", voted && "-translate-y-0.5")} />
+      <ChevronUp className={cn("size-4 transition-transform duration-base ease-out-soft motion-reduce:transition-none", voted && "-translate-y-0.5")} />
       <span key={count} className="font-mono text-xs font-medium tabular-nums motion-safe:animate-fade-in">
         {count}
       </span>
@@ -83,9 +91,16 @@ export function RequestCard({
   onVote: (id: string) => void;
 }) {
   return (
-    <Card variant="interactive" className="flex gap-3 p-4">
+    <Card variant="interactive" className="relative flex gap-3 p-4">
       <VoteButton count={req.voteCount} voted={req.hasVoted} onToggle={() => onVote(req.id)} />
-      <Link href={`/roadmap/${req.id}`} className="min-w-0 flex-1 outline-none">
+      {/* The title link stripped the global :focus-visible outline with `outline-none`
+          and put nothing back, so tabbing the board showed no focus at all. The
+          stretched ::after is the same pattern the projects grid uses — it also makes
+          the whole tile clickable without nesting the vote button inside the link. */}
+      <Link
+        href={`/roadmap/${req.id}`}
+        className="min-w-0 flex-1 outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-card focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+      >
         <div className="flex flex-wrap items-center gap-1.5">
           <StatusBadge status={req.status} />
           <CategoryChip category={req.category} />
@@ -94,11 +109,11 @@ export function RequestCard({
         <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{req.description}</p>
         <div className="mt-3 flex items-center gap-3 text-caption text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
-            <DotIdenticon seed={req.author.id} className="h-4 w-4" />
+            <DotIdenticon seed={req.author.id} className="size-4 shrink-0" />
             {req.author.name ?? "Someone"}
           </span>
-          <span className="inline-flex items-center gap-1">
-            <MessageSquare className="h-3 w-3" /> {req.commentCount}
+          <span className="inline-flex items-center gap-1 tabular-nums">
+            <MessageSquare className="size-3 shrink-0" /> {req.commentCount}
           </span>
           <span>{timeAgo(req.createdAt)}</span>
         </div>

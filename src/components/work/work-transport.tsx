@@ -61,6 +61,7 @@ import type {
  *                                            revoked?: false } → { host, refused }
  *   DELETE /api/work/hosts/[id]            → { host, cancelledCommands }
  *   PATCH /api/work/sessions/[id]          { title?, pinned?, archived? } → { session }
+ *   GET  /api/work/sessions/[id]/context   → { context }
  *   PATCH /api/work/sessions/[id]/context  { model?, reasoningEffort?,
  *                                            permissionPolicy?, projectId?,
  *                                            connectorIds?, attachmentIds?,
@@ -765,7 +766,7 @@ export function patchWorkSession(
 // ---------------------------------------------------------------------------
 
 /*
- * `PATCH /api/work/sessions/[id]/context` — the one request behind every control
+ * `GET` and `PATCH /api/work/sessions/[id]/context` — the one request pair behind every control
  * on the thread composer.
  *
  * Deliberately one function for seven fields rather than seven functions. The
@@ -830,6 +831,7 @@ export interface WorkSessionContext {
   permissionPolicy?: WorkPermissionPolicy;
   connectorIds?: string[];
   attachmentIds?: string[];
+  attachments?: Array<{ id: string; displayName: string }>;
   skillSlug?: string | null;
 }
 
@@ -922,6 +924,15 @@ function contextValues(raw: unknown): WorkSessionContext {
   if (connectorIds !== undefined) context.connectorIds = connectorIds;
   const attachmentIds = stringList(record.attachmentIds);
   if (attachmentIds !== undefined) context.attachmentIds = attachmentIds;
+  if (Array.isArray(record.attachments)) {
+    context.attachments = record.attachments.flatMap((entry) => {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return [];
+      const item = entry as Record<string, unknown>;
+      return typeof item.id === "string" && typeof item.displayName === "string"
+        ? [{ id: item.id, displayName: item.displayName }]
+        : [];
+    });
+  }
   if ("skillSlug" in record) {
     context.skillSlug = typeof record.skillSlug === "string" ? record.skillSlug : null;
   }

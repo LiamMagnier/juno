@@ -1850,7 +1850,9 @@ export const createScheduleSchema = z.object({
   missedRunPolicy: z.enum(WORK_MISSED_RUN_POLICIES).default("run_once"),
   notifyPolicy: z.enum(WORK_NOTIFY_POLICIES).default("on_attention"),
   maxConcurrentRuns: z.int().min(1).max(MAX_SCHEDULE_CONCURRENCY).default(1),
-  model: z.string().trim().min(1).max(MAX_ID_CHARS).optional(),
+  // Null explicitly returns an existing schedule to the account model policy.
+  // An omitted key still means "leave the current override alone" on PATCH.
+  model: z.string().trim().min(1).max(MAX_ID_CHARS).nullable().optional(),
   requiredCapabilities: z.array(z.enum(WORK_CAPABILITIES)).max(WORK_CAPABILITIES.length).optional(),
 });
 
@@ -1872,7 +1874,10 @@ export const patchScheduleSchema = z
     missedRunPolicy: z.enum(WORK_MISSED_RUN_POLICIES).optional(),
     notifyPolicy: z.enum(WORK_NOTIFY_POLICIES).optional(),
     maxConcurrentRuns: z.int().min(1).max(MAX_SCHEDULE_CONCURRENCY).optional(),
-    model: z.string().trim().min(1).max(MAX_ID_CHARS).optional(),
+    // Null explicitly clears a schedule override and restores the account
+    // model policy. An omitted key still means "leave the current override
+    // alone" for a partial PATCH.
+    model: z.string().trim().min(1).max(MAX_ID_CHARS).nullable().optional(),
     requiredCapabilities: z.array(z.enum(WORK_CAPABILITIES)).max(WORK_CAPABILITIES.length).optional(),
   })
   // An empty patch is a client bug, and answering it with 200 and an unchanged

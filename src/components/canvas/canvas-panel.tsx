@@ -121,29 +121,43 @@ function ConsoleView({ entries, onClear }: { entries: ConsoleEntry[]; onClear: (
     endRef.current?.scrollIntoView({ block: "end" });
   }, [entries.length]);
   return (
-    <div className="flex h-full flex-col bg-[#0b0b0e] text-[#e7e7ea]">
-      <div className="flex items-center gap-2 border-b border-white/5 px-3 py-1.5">
-        <Terminal className="h-3.5 w-3.5 text-white/40" aria-hidden />
-        <span className="font-mono text-[10px] text-white/40">Console</span>
+    // The console used to be painted in hardcoded hex (#0b0b0e shell, white/NN
+    // chrome, #f87171/#fbbf24/#7dd3fc levels). That ignored the theme entirely:
+    // in light mode it was a black box, and once --background went to true black
+    // the white-tinted chrome read as a grey slab floating on the canvas. Levels
+    // now come off the semantic ramps, which already carry AA text values.
+    <div className="flex h-full flex-col bg-muted text-foreground">
+      <div className="flex items-center gap-2 border-b border-border/60 px-3 py-1.5">
+        <Terminal className="size-3.5 text-muted-foreground" aria-hidden />
+        <span className="text-caption font-mono text-muted-foreground">Console</span>
         <span className="ml-auto" />
         <button
           type="button"
           onClick={onClear}
-          className="pressable flex items-center gap-1 rounded-md px-1.5 py-1 font-mono text-[10px] text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+          // `transition-colors` is dropped: it is a utility, so it beat .pressable's
+          // own transition shorthand and took `transform` off the property list —
+          // the press scale never animated. .pressable already covers colour.
+          className="pressable flex items-center gap-1 rounded-control px-1.5 py-1 text-caption font-mono text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Eraser className="h-3 w-3" aria-hidden /> Clear
+          <Eraser className="size-3 shrink-0" aria-hidden /> Clear
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs leading-relaxed">
         {entries.length === 0 ? (
-          <p className="text-white/35">No console output yet.</p>
+          <p className="text-muted-foreground">No console output yet.</p>
         ) : (
           entries.map((e, i) => (
             <div
               key={i}
               className={cn(
                 "whitespace-pre-wrap break-words py-0.5",
-                e.level === "error" ? "text-[#f87171]" : e.level === "warn" ? "text-[#fbbf24]" : e.level === "info" ? "text-[#7dd3fc]" : "text-[#e7e7ea]"
+                e.level === "error"
+                  ? "text-destructive"
+                  : e.level === "warn"
+                    ? "text-warning-foreground"
+                    : e.level === "info"
+                      ? "text-source"
+                      : "text-foreground"
               )}
             >
               {e.text}
@@ -710,10 +724,15 @@ export function CanvasPanel({
       className={cn("flex h-full flex-col bg-background", fullscreen && "fixed inset-0 z-modal motion-safe:animate-fade-in")}
     >
       {/* ——— Header: identity + one primary action + overflow + window controls ——— */}
-      <header className="flex items-center gap-2 border-b border-border/60 bg-card/50 py-2 pl-4 pr-2 backdrop-blur-md">
+      {/* bg-card, not bg-card/50 + backdrop-blur-md. The panel root below is an
+          opaque bg-background, and this header is a flex row that nothing ever
+          scrolls under, so the blur had no backdrop to filter and the 50% alpha
+          resolved to ~3.2% lightness over the black ground — half a rung, which
+          is not a rung. Full --card is the step the ladder actually names. */}
+      <header className="flex items-center gap-2 border-b border-border/60 bg-card py-2 pl-4 pr-2">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold leading-tight">{artifact.title}</h2>
-          <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+          <div className="flex items-center gap-1.5 font-mono text-caption text-muted-foreground">
             <span className="truncate">{rt.label}</span>
             {hasHistory && (
               <>
@@ -737,7 +756,10 @@ export function CanvasPanel({
               <>
                 <span aria-hidden>·</span>
                 <span key={status.label} className={cn("inline-flex items-center gap-1 motion-safe:animate-fade-in", status.tone)}>
-                  <span aria-hidden className={cn("size-1.5 rounded-full bg-current", status.live && "motion-safe:animate-pulse")} />
+                  {/* status-glow, not Tailwind's animate-pulse: the built-in runs 2s on
+                      cubic-bezier(.4,0,.6,1), neither of which is on the token ladder, so
+                      this dot breathed on a different curve to every other live indicator. */}
+                  <span aria-hidden className={cn("size-1.5 rounded-full bg-current", status.live && "motion-safe:animate-status-glow")} />
                   {status.label}
                 </span>
               </>
@@ -819,7 +841,7 @@ export function CanvasPanel({
       {historyOpen ? (
         <div className="flex min-h-0 flex-1 motion-safe:animate-fade-in">
           <div className="flex w-48 shrink-0 flex-col overflow-y-auto border-r border-border/60">
-            <p className="px-4 pb-1.5 pt-3 font-mono text-[10px] text-muted-foreground">
+            <p className="px-4 pb-1.5 pt-3 font-mono text-caption text-muted-foreground">
               Versions
             </p>
             <div className="space-y-px px-2 pb-2">
@@ -836,10 +858,13 @@ export function CanvasPanel({
                       isTarget ? "bg-primary/10" : "hover:bg-muted/60"
                     )}
                   >
-                    <button type="button" onClick={() => selectTarget(v.version)} className="min-w-0 flex-1 px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-md">
+                    {/* rounded-control, matching the row it sits flush inside —
+                        rounded-md is 8px against the row's 9px, so the focus ring
+                        traced a shape one pixel tighter than the hover fill. */}
+                    <button type="button" onClick={() => selectTarget(v.version)} className="min-w-0 flex-1 rounded-control px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
                       <span className="flex items-baseline gap-1.5">
                         <span className={cn("font-mono text-xs font-medium", isTarget ? "text-primary" : "text-foreground")}>v{v.version}</span>
-                        {isCurrent && <span className="font-mono text-[9px] text-muted-foreground">current</span>}
+                        {isCurrent && <span className="font-mono text-caption text-muted-foreground">current</span>}
                       </span>
                       <span className="block pt-px text-caption text-muted-foreground">
                         {origin ? `${origin} · ` : ""}
@@ -852,7 +877,7 @@ export function CanvasPanel({
                       aria-label={`Compare from v${v.version}`}
                       aria-pressed={isBase}
                       className={cn(
-                        "shrink-0 rounded-full border px-1.5 py-0.5 font-mono text-[9px] transition-opacity duration-fast ease-out-soft coarse:min-h-9 coarse:px-2.5 coarse:text-[10px]",
+                        "shrink-0 rounded-full border px-1.5 py-0.5 font-mono text-caption transition-opacity duration-fast ease-out-soft coarse:min-h-9 coarse:px-2.5",
                         isBase
                           ? "border-primary/40 bg-primary/10 text-primary"
                           : "border-border/60 text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
@@ -869,13 +894,13 @@ export function CanvasPanel({
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
               <GitCompare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              <span className="font-mono text-[10px] text-muted-foreground">
+              <span className="font-mono text-caption text-muted-foreground">
                 v{baseVersion} → v{targetVersion}
               </span>
               {hasChanges && (
                 <>
-                  <span className="font-mono text-[10px] tabular-nums text-success">+{addedCount}</span>
-                  <span className="font-mono text-[10px] tabular-nums text-destructive">−{removedCount}</span>
+                  <span className="font-mono text-caption tabular-nums text-success">+{addedCount}</span>
+                  <span className="font-mono text-caption tabular-nums text-destructive">−{removedCount}</span>
                 </>
               )}
               <div className="flex-1" />
@@ -893,7 +918,7 @@ export function CanvasPanel({
               tabIndex={0}
               role="region"
               aria-label={`Changes from v${baseVersion} to v${targetVersion}`}
-              className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/40 motion-safe:animate-fade-in"
+              className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring motion-safe:animate-fade-in"
             >
               {hasChanges ? (
                 <div className="min-w-max py-2 font-mono text-xs leading-relaxed">
@@ -905,8 +930,12 @@ export function CanvasPanel({
                         line.type === "added" ? "border-success bg-success/10" : line.type === "removed" ? "border-destructive/70 bg-destructive/10 opacity-80" : "border-transparent"
                       )}
                     >
-                      <span className="w-9 shrink-0 select-none pr-1 text-right font-mono text-[10px] leading-relaxed text-muted-foreground/50">{line.aLine ?? ""}</span>
-                      <span className="w-9 shrink-0 select-none pr-2 text-right font-mono text-[10px] leading-relaxed text-muted-foreground/50">{line.bLine ?? ""}</span>
+                      {/* /50 over a black ground composited to ~2.2:1 — the a/b line
+                          numbers that make a diff readable were the least legible thing
+                          in it. /70 clears 4.5:1, and tabular-nums stops the columns
+                          shifting as the digit count changes. */}
+                      <span className="w-9 shrink-0 select-none pr-1 text-right font-mono text-caption leading-relaxed tabular-nums text-muted-foreground/70">{line.aLine ?? ""}</span>
+                      <span className="w-9 shrink-0 select-none pr-2 text-right font-mono text-caption leading-relaxed tabular-nums text-muted-foreground/70">{line.bLine ?? ""}</span>
                       <span className="whitespace-pre pr-4">{line.text || " "}</span>
                     </div>
                   ))}
@@ -950,7 +979,7 @@ export function CanvasPanel({
                   Console
                   <span
                     className={cn(
-                      "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-mono text-[9px] tabular-nums",
+                      "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 font-mono text-caption tabular-nums",
                       errorCount ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground"
                     )}
                   >
@@ -965,7 +994,7 @@ export function CanvasPanel({
                 type="button"
                 onClick={() => setSelectedVersion(artifact.currentVersion)}
                 aria-label={`Viewing v${selectedVersion} — back to latest`}
-                className="pressable inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 font-mono text-[10px] text-warning-foreground hover:bg-warning/20"
+                className="pressable inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 font-mono text-caption text-warning-foreground hover:bg-warning/20"
               >
                 v{selectedVersion}
                 {panelWide && <span className="normal-case tracking-normal">· back to latest</span>}
@@ -1129,8 +1158,13 @@ export function CanvasPanel({
               </div>
               {/* Save bar — rises in only once there is something to save. */}
               {dirty && (
-                <div className="flex items-center gap-2 border-t border-border/60 bg-card/50 px-3 py-2 motion-safe:animate-rise-in">
-                  <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground">
+                <div
+                  // Same rung as the header, and for the same reason: /50 over
+                  // black is a half-step nobody can see, and the save bar has to
+                  // read as chrome sitting on top of the code it belongs to.
+                  className="flex items-center gap-2 border-t border-border/60 bg-card px-3 py-2 motion-safe:animate-rise-in"
+                >
+                  <span className="min-w-0 truncate font-mono text-caption text-muted-foreground">
                     Unsaved changes · saves as v{artifact.currentVersion + 1}
                   </span>
                   <div className="flex-1" />
@@ -1161,7 +1195,9 @@ export function CanvasPanel({
             aria-label="Selection actions"
             style={barStyle}
             onPointerDown={(e) => e.preventDefault()}
-            className="fixed z-toast flex items-center gap-0.5 rounded-menu border border-border/60 bg-popover/90 p-1 glass-raised backdrop-blur-xl motion-safe:animate-pop-in"
+            /* z-toolbar, not z-toast: a selection toolbar must clear the popper
+               layer but must never cover a toast, which is the top of the product. */
+            className="fixed z-toolbar flex items-center gap-0.5 rounded-menu border border-border/60 bg-popover/90 p-1 glass-raised backdrop-blur-xl motion-safe:animate-pop-in"
           >
             <Button type="button" variant="ghost" size="sm" onClick={() => quoteSelection("ask")} className="h-7 gap-1.5 rounded-control px-2.5 coarse:h-10 coarse:px-3.5">
               <MessageCircleQuestion className="h-3.5 w-3.5 text-primary" aria-hidden />

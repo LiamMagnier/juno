@@ -55,8 +55,8 @@ export function ProcessTimelineBlock({ timeline }: { timeline: ProcessTimelineDa
                 aria-label={`Stage ${index + 1}: ${step.label}`}
                 onClick={() => setActive((current) => (current === index ? null : index))}
                 className={cn(
-                  "grid w-full grid-cols-[2.5rem_minmax(0,1fr)] gap-x-4 rounded-md text-left outline-none",
-                  "transition-colors duration-base ease-out-soft focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11",
+                  "grid w-full grid-cols-[2.5rem_minmax(0,1fr)] gap-x-4 rounded-control text-left",
+                  "transition-colors duration-base ease-out-soft coarse:min-h-11",
                   isActive ? "bg-primary/[0.04]" : "hover:bg-accent/30"
                 )}
               >

@@ -40,14 +40,14 @@ const STATE_DOT: Record<WorkHostState, string> = {
   online: "bg-primary motion-safe:animate-pulse",
   idle: "bg-success",
   stale: "bg-warning",
-  offline: "bg-muted-foreground/50",
+  offline: "bg-muted-foreground/70",
 };
 
 const STATE_PILL: Record<WorkHostState, string> = {
   online: "border-primary/25 bg-primary/10 text-primary",
   idle: "border-success/30 bg-success/10 text-success-ink",
   stale: "border-warning/35 bg-warning/10 text-warning-foreground",
-  offline: "border-border/70 bg-background/50 text-muted-foreground",
+  offline: "border-border/70 bg-secondary text-muted-foreground",
 };
 
 /**
@@ -117,7 +117,13 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
     <Link
       href={`/work/hosts/${host.id}`}
       className={cn(
-        "group flex items-start gap-3 rounded-field border border-border/60 bg-card/60 px-3.5 py-3 transition-[background-color,border-color] duration-base ease-out-soft hover:border-border hover:bg-card motion-safe:animate-rise-in",
+        // The same rest/hover/press/focus set WorkSessionRow carries. These
+        // three sibling rows are the same object in three lists and had neither a
+        // focus ring — a keyboard reader could not see which row they were on —
+        // nor any press feedback.
+        "group flex items-start gap-3 rounded-field border border-border/60 bg-card px-3.5 py-3 transition-[background-color,border-color,transform] duration-base ease-out-soft hover:border-border hover:bg-secondary motion-safe:animate-rise-in",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        "motion-safe:hover:-translate-y-px motion-safe:active:translate-y-0 motion-safe:active:scale-[0.997]",
         "[animation-fill-mode:backwards]",
         // Dimmed for the same reason a paused schedule and a switched-off skill
         // are: it is still yours, it is still listed, and it is not going to do
@@ -137,7 +143,7 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
               already switched off by the DELETE handler, and two chips saying
               the same thing would make the second one look like a second fact. */}
           {!revoked && !host.enabled && (
-            <span className="shrink-0 rounded-full border border-border/70 bg-background/50 px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
+            <span className="shrink-0 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
               Work off
             </span>
           )}
@@ -147,12 +153,12 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
             ? `Revoked ${workTimeAgo(revokedAt)}. It cannot claim anything.`
             : (workload ?? "Nothing running on it right now.")}
         </span>
-        <span className="mt-1.5 block truncate font-mono text-[10px] text-muted-foreground/70">
+        <span className="mt-1.5 block truncate font-mono text-[10px] tabular-nums text-muted-foreground">
           {host.platform} · Juno {host.appVersion} · last seen {workTimeAgo(host.lastSeenAt)}
         </span>
       </span>
       <ChevronRight
-        className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
+        className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/70 transition-transform duration-base ease-out-soft group-hover:translate-x-0.5 group-hover:text-foreground"
         aria-hidden="true"
       />
     </Link>

@@ -128,7 +128,7 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
             key={suggestion}
             style={staggerDelay(i)}
             className={cn(
-              "group/pill relative flex min-w-0 gap-1 border border-border/60 py-1.5 pl-2.5 pr-1.5 text-left font-sans text-sm font-normal leading-5 text-muted-foreground transition-[transform,background-color,border-color,box-shadow,color] duration-base ease-spring [animation-fill-mode:backwards] hover:z-10 hover:-translate-y-0.5 hover:border-border hover:bg-accent hover:text-foreground hover:shadow-soft coarse:py-2 motion-safe:animate-rise-in motion-reduce:transition-none",
+              "group/pill relative flex min-w-0 gap-1 border border-border/60 py-1.5 pl-2.5 pr-1.5 text-left font-sans text-sm font-normal leading-5 text-muted-foreground transition-[transform,background-color,border-color,box-shadow,color] duration-base ease-out-strong [animation-fill-mode:backwards] hover:z-10 hover:-translate-y-0.5 hover:border-border hover:bg-accent hover:text-foreground hover:shadow-soft coarse:py-2 motion-safe:animate-rise-in motion-reduce:transition-none",
               isOpen
                 // Takes the whole row so the sentence has width to wrap into,
                 // instead of unfurling inside a 20rem column. A stadium radius
@@ -146,7 +146,7 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
               // same text twice. Truncation is cosmetic; clicking sends the
               // full suggestion either way.
               className={cn(
-                "flex min-w-0 flex-1 gap-1.5 rounded-full text-left transition-[color] duration-base ease-spring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] motion-reduce:transition-none",
+                "flex min-w-0 flex-1 gap-1.5 rounded-full text-left transition-[color] duration-base ease-out-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] motion-reduce:transition-none",
                 isOpen ? "items-start" : "items-center"
               )}
             >
@@ -157,7 +157,7 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
               <Plus
                 aria-hidden="true"
                 className={cn(
-                  "h-3.5 w-3.5 shrink-0 opacity-60 transition-opacity duration-base ease-spring group-hover/pill:opacity-100",
+                  "h-3.5 w-3.5 shrink-0 opacity-60 transition-opacity duration-base ease-out-strong group-hover/pill:opacity-100",
                   // 14px glyph on a 20px line: 3px centres it on the first line.
                   isOpen && "mt-[3px]"
                 )}
@@ -182,7 +182,16 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
                 aria-expanded={isOpen}
                 aria-label={isOpen ? "Collapse suggestion" : "Show full suggestion"}
                 className={cn(
-                  "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-[color,background-color] duration-base ease-spring hover:bg-border/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background coarse:h-6 coarse:w-6 motion-reduce:transition-none",
+                  // 24px minimum, the rule empty-state.tsx cites. At h-5/coarse:h-6
+                  // this was a 20px box rising to 24 — the smallest target on the
+                  // chat surface, and below the floor on a pointer device. The
+                  // glyph stays 14px; only the box grows.
+                  // `hover:bg-border`, not `/40`. The pill under this glyph is
+                  // already `bg-accent` by the time the pointer reaches the
+                  // chevron, and --border at 40% over --accent computes to a
+                  // 1.2-point step — the chevron's own hover was invisible
+                  // because it only ever fires on top of the pill's.
+                  "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-[color,background-color] duration-base ease-out-strong hover:bg-border hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background coarse:h-8 coarse:w-8 motion-reduce:transition-none",
                   // Rides the first line when the pill is a tall wrapped block.
                   isOpen ? "self-start" : "self-center"
                 )}
@@ -190,7 +199,7 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
                 <ChevronDown
                   aria-hidden="true"
                   className={cn(
-                    "h-3.5 w-3.5 transition-transform duration-base ease-spring motion-reduce:transition-none",
+                    "h-3.5 w-3.5 transition-transform duration-base ease-out-strong motion-reduce:transition-none",
                     isOpen && "rotate-180"
                   )}
                 />

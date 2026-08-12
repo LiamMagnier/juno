@@ -2,20 +2,45 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { CalendarClock, Edit3, Eye, Image as ImageIcon, Loader2, Megaphone, Plus, Trash2, UploadCloud, Video, X } from "lucide-react";
+import { ArrowRight, CalendarClock, Edit3, Eye, Image as ImageIcon, Loader2, Megaphone, Plus, Trash2, UploadCloud, Video, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { AdminNav } from "@/components/admin/admin-nav";
+import { AppPageHeader } from "@/components/app/app-page-header";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import type { ClientAnnouncement } from "@/lib/announcements";
+import { staggerDelay } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+
+/**
+ * `prefers-reduced-motion`, read as state.
+ *
+ * The popup list renders one AnnouncementMedia per row, and a self-starting
+ * video loop per row is exactly the peripheral motion the preference exists to
+ * stop — but `autoPlay` is an attribute, so the reduced-motion block in
+ * globals.css cannot reach it. Starts false so SSR and the first client render
+ * agree, then corrects on mount.
+ */
+function useReducedMotion(): boolean {
+  const [reduced, setReduced] = React.useState(false);
+  React.useEffect(() => {
+    const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!mq) return;
+    setReduced(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setReduced(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return reduced;
+}
 
 type Draft = {
   title: string;
@@ -105,12 +130,16 @@ function statusLabel(item: ClientAnnouncement): { text: string; tone: "muted" | 
 
 function AnnouncementMedia({ draft, className }: { draft: Pick<Draft, "imageUrl" | "videoUrl" | "provider">; className?: string }) {
   const provider = draft.provider === "none" ? null : draft.provider;
+  const reduced = useReducedMotion();
   if (draft.videoUrl) {
     return (
       <video
         src={draft.videoUrl}
         poster={draft.imageUrl || undefined}
-        autoPlay
+        // Autoplay is suppressed under reduced motion, and `controls` replaces
+        // it so the clip is still reachable rather than merely frozen.
+        autoPlay={!reduced}
+        controls={reduced}
         muted
         playsInline
         preload="metadata"
@@ -231,7 +260,7 @@ function MediaDropzone({
         <button
           type="button"
           onClick={() => setUrlMode(false)}
-          className="self-start text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          className="self-start rounded-sm text-caption text-muted-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
         >
           Upload a file instead
         </button>
@@ -241,9 +270,12 @@ function MediaDropzone({
 
   if (value) {
     return (
-      <div className="group relative overflow-hidden rounded-lg border bg-muted">
+      <div className="group relative overflow-hidden rounded-card border border-border/70 bg-muted">
+        {/* `bg-muted`, not a hardcoded `bg-black`: a literal cannot follow the
+            retheme, and it drew a hard black letterbox band inside a bg-muted
+            card in the light theme. Matches the image branch below. */}
         {kind === "video" ? (
-          <video src={value} className="max-h-44 w-full bg-black object-contain" muted playsInline controls />
+          <video src={value} className="max-h-44 w-full bg-muted object-contain" muted playsInline controls />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={value} alt="" className="max-h-44 w-full object-contain" />
@@ -252,9 +284,18 @@ function MediaDropzone({
           type="button"
           onClick={() => onChange("")}
           aria-label={`Remove ${kind}`}
-          className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-md bg-background/80 text-muted-foreground backdrop-blur transition-colors hover:text-foreground"
+          // The remove control is an affordance on touch too, so it does not
+          // hide behind hover — hover only raises its contrast. Scoped
+          // transition on the token ladder, not a bare 150ms `ease`.
+          //
+          // `bg-popover`, not `bg-background`: this floats ABOVE arbitrary
+          // media, which is the popover rung's job, and --background is the
+          // page token — on the true-black theme it made the one control that
+          // has to stay findable over a dark video a pure-black chip held by a
+          // /60 hairline. The same fix DialogCloseButton already carries.
+          className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-control border border-border/60 bg-popover/85 text-muted-foreground backdrop-blur transition-[color,background-color,border-color] duration-fast ease-out-soft hover:border-border hover:bg-popover hover:text-foreground"
         >
-          <X className="h-4 w-4" />
+          <X className="size-4" />
         </button>
       </div>
     );
@@ -283,8 +324,16 @@ function MediaDropzone({
           onFiles(e.dataTransfer.files);
         }}
         className={cn(
-          "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-          dragOver ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+          // `rounded-card` from the ladder, and the transition declared on the
+          // token rungs — this was a bare `transition-colors`, i.e. the browser
+          // default 150ms `ease`, while every other transition on this surface
+          // runs duration-fast/ease-out-soft. `outline-none` is gone with it:
+          // it suppressed the product's own :focus-visible rule and replaced it
+          // with a ring that had no offset, so the focused dropzone was the one
+          // control on the page with a different focus treatment.
+          "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-card border border-dashed px-4 py-6 text-center",
+          "transition-[background-color,border-color] duration-fast ease-out-soft",
+          dragOver ? "border-primary bg-primary/10" : "border-border/70 hover:border-border hover:bg-accent/40"
         )}
       >
         <input
@@ -299,21 +348,33 @@ function MediaDropzone({
         />
         {uploading ? (
           <>
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-            <p className="text-xs text-muted-foreground">Uploading… {progress}%</p>
+            <Loader2 className="size-5 animate-spin text-primary" />
+            {/* A real bar, not a number that changes in place: a percentage on
+                its own gives no sense of how much is left, and the same upload
+                already draws one in import-history. */}
+            <p className="font-mono text-caption tabular-nums text-muted-foreground">Uploading… {progress}%</p>
+            <div className="h-1 w-40 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
+              <div
+                // motion-reduce:transition-none, like the identical upload bar
+                // in import-history: a width that animates is motion, and this
+                // one ran regardless of the preference.
+                className="h-full rounded-full bg-primary transition-[width] duration-base ease-out-soft motion-reduce:transition-none"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
           </>
         ) : (
           <>
             {kind === "video" ? (
-              <Video className="h-6 w-6 text-muted-foreground" />
+              <Video className="size-5 text-muted-foreground" />
             ) : (
-              <UploadCloud className="h-6 w-6 text-muted-foreground" />
+              <UploadCloud className="size-5 text-muted-foreground" />
             )}
             <p className="text-xs">
               <span className="font-medium text-foreground">Drag &amp; drop</span> {kind === "image" ? "an image" : "a video"}, or{" "}
               <span className="text-primary">browse</span>
             </p>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="font-mono text-caption text-muted-foreground">
               {kind === "image" ? "PNG, JPG, WebP, GIF" : "MP4, WebM, MOV"}
             </p>
           </>
@@ -322,7 +383,7 @@ function MediaDropzone({
       <button
         type="button"
         onClick={() => setUrlMode(true)}
-        className="self-start text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        className="self-start rounded-sm text-caption text-muted-foreground underline-offset-2 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
       >
         Paste a URL instead
       </button>
@@ -338,8 +399,14 @@ export function AnnouncementsAdmin() {
   const [draft, setDraft] = React.useState<Draft>(EMPTY_DRAFT);
   const [deleteTarget, setDeleteTarget] = React.useState<ClientAnnouncement | null>(null);
 
+  // Same gap as the other two admin surfaces: a failed load left the list empty
+  // and said "No announcements yet", which is a claim about the database rather
+  // than about the request that failed.
+  const [failed, setFailed] = React.useState(false);
+
   const load = React.useCallback(async () => {
     setLoading(true);
+    setFailed(false);
     try {
       const res = await fetch("/api/admin/announcements");
       const data = await res.json().catch(() => ({}));
@@ -347,6 +414,7 @@ export function AnnouncementsAdmin() {
       setItems(data.announcements ?? []);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not load announcements.");
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -405,25 +473,24 @@ export function AnnouncementsAdmin() {
   };
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <div className="mb-2 flex items-center gap-2 font-mono text-label text-muted-foreground">
-              <Megaphone className="h-4 w-4" />
-              Owner
-            </div>
-            <h1 className="font-serif text-display font-medium tracking-tight">Announcements</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Publish model-release popups and product messages.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <AdminNav current="announcements" />
-            <Button variant="outline" onClick={reset} className="gap-1.5">
-              <Plus className="h-4 w-4" />
-              New draft
-            </Button>
-          </div>
-        </div>
+    <div className="app-page-scroll">
+      <div className="app-page-content flex max-w-6xl flex-col gap-6">
+        <AppPageHeader
+          className="mb-0"
+          eyebrow="Owner"
+          heading="Announcements"
+          icon={Megaphone}
+          lede="Publish model-release popups and product messages."
+          actions={
+            <>
+              <AdminNav current="announcements" />
+              <Button variant="outline" size="sm" onClick={reset} className="gap-1.5">
+                <Plus className="size-4" />
+                New draft
+              </Button>
+            </>
+          }
+        />
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
           <Card className="p-4">
@@ -497,13 +564,13 @@ export function AnnouncementsAdmin() {
                 <div className="flex flex-col gap-1.5 sm:col-span-2">
                   <Label>Video</Label>
                   <MediaDropzone kind="video" value={draft.videoUrl} onChange={(v) => updateDraft("videoUrl", v)} />
-                  <p className="text-[11px] text-muted-foreground">Videos autoplay muted, play inline, and stop at the end.</p>
+                  <p className="text-caption text-muted-foreground">Videos autoplay muted, play inline, and stop at the end.</p>
                 </div>
 
                 <div className="flex flex-col gap-1.5 sm:col-span-2">
                   <Label>Image</Label>
                   <MediaDropzone kind="image" value={draft.imageUrl} onChange={(v) => updateDraft("imageUrl", v)} />
-                  <p className="text-[11px] text-muted-foreground">Used as the poster image or a static visual.</p>
+                  <p className="text-caption text-muted-foreground">Used as the poster image or a static visual.</p>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
@@ -592,24 +659,40 @@ export function AnnouncementsAdmin() {
                 </div>
                 <div className="flex min-h-44 flex-col justify-between gap-6 p-5">
                   <div className="flex items-start justify-between gap-4">
+                    {/* Every rung here is the one announcement-popup.tsx
+                        actually renders, because a preview that is off the
+                        scale of the thing it previews is a preview of nothing:
+                        the eyebrow was caption/primary against the popup's
+                        label/muted, the title was `text-2xl` — a Tailwind
+                        default, not a rung — against `text-title`, and the body
+                        was text-sm against text-body. An editor was choosing
+                        copy length against type that ships two sizes off. */}
                     <div>
-                      {draft.modelName && <p className="mb-2 font-mono text-[11px] text-primary">{draft.modelName}</p>}
-                      <h2 className="font-serif text-2xl font-medium">{draft.title || "[model] just got released"}</h2>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      {draft.modelName && <p className="mb-2 font-mono text-label uppercase text-muted-foreground">{draft.modelName}</p>}
+                      <h2 className="font-serif text-title leading-tight text-foreground">{draft.title || "[model] just got released"}</h2>
+                      <p className="mt-2 text-body leading-relaxed text-muted-foreground">
                         {draft.description || "Write a short release description for users here."}
                       </p>
                     </div>
                     {draft.provider !== "none" && <ProviderLogo provider={draft.provider} className="h-9 w-9" />}
                   </div>
-                  <div className="flex items-center justify-between gap-3">
-                    {draft.newsHref ? (
-                      <span className="text-sm font-medium underline underline-offset-4">{draft.newsLabel || "Read The News"}</span>
-                    ) : (
-                      <span />
+                  {/* The popup's own action row: both controls right-aligned,
+                      the news link an outline Button and the CTA the solid one
+                      with its arrow. The preview drew the news label as bare
+                      underlined text pinned to the opposite edge and the CTA as
+                      a pill, so the one thing this pane exists to show — how
+                      the two labels weigh against each other — was the thing it
+                      got wrong. Buttons here are inert; this is a picture. */}
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    {draft.newsHref && (
+                      <Button variant="outline" size="sm" tabIndex={-1}>
+                        {draft.newsLabel || "Read The News"}
+                      </Button>
                     )}
                     {draft.ctaLabel && (
-                      <Button size="sm" className="w-fit rounded-full px-5">
+                      <Button size="sm" className="group gap-1.5" tabIndex={-1}>
                         {draft.ctaLabel}
+                        <ArrowRight className="h-4 w-4 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5 motion-reduce:transition-none" />
                       </Button>
                     )}
                   </div>
@@ -620,27 +703,58 @@ export function AnnouncementsAdmin() {
             <Card className="p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <h2 className="text-sm font-semibold">Current popups</h2>
-                <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
+                {/* The spinner is the point of a Refresh button: disabled alone
+                    gives no sign anything is happening on a fast connection. */}
+                <Button variant="ghost" size="sm" onClick={load} disabled={loading} className="gap-1.5">
+                  {loading && <Loader2 className="size-3.5 animate-spin" />}
                   Refresh
                 </Button>
               </div>
 
               {loading ? (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2" aria-hidden>
                   {[...Array(3)].map((_, i) => (
-                    <div key={i} className="skeleton h-20 rounded-lg" />
+                    <div key={i} className="skeleton h-20 rounded-field" style={staggerDelay(i)} />
                   ))}
                 </div>
+              ) : failed ? (
+                <EmptyState
+                  tone="error"
+                  size="panel"
+                  icon={Megaphone}
+                  title="Couldn't load announcements"
+                  description="The list didn't come back. Publishing still works — this is only the read."
+                  action={
+                    <Button variant="outline" size="sm" onClick={load}>
+                      Try again
+                    </Button>
+                  }
+                />
               ) : items.length === 0 ? (
-                <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No announcements yet.</div>
+                <EmptyState
+                  tone="empty"
+                  size="panel"
+                  icon={Megaphone}
+                  title="No announcements yet"
+                  description="Fill in the form on the left and publish — the newest active popup is the one users see."
+                />
               ) : (
                 <div className="flex flex-col gap-2">
                   {items.map((item) => {
                     const status = statusLabel(item);
                     return (
-                      <div key={item.id} className="rounded-lg border bg-card p-3">
+                      // A rung LIGHTER and a rung TIGHTER than the card that
+                      // holds it. These were `bg-card` rows nested inside a
+                      // `bg-card` Card — identical fills stacked, so on black
+                      // the rows had no ground of their own — at rounded-lg
+                      // (16px, the surface rung), one step above their own
+                      // container.
+                      <div
+                        key={item.id}
+                        className="rounded-field border border-border/60 bg-secondary p-3 transition-colors duration-fast ease-out-soft hover:border-border"
+                      >
                         <div className="flex items-start gap-3">
-                          <div className="flex h-12 w-12 shrink-0 overflow-hidden rounded-lg border bg-muted">
+                          <div className="flex h-12 w-12 shrink-0 overflow-hidden rounded-control border border-border/60 bg-muted">
                             <AnnouncementMedia
                               draft={{ imageUrl: item.imageUrl ?? "", videoUrl: item.videoUrl ?? "", provider: item.provider ?? "none" }}
                               className="p-2"
@@ -651,7 +765,7 @@ export function AnnouncementsAdmin() {
                               <p className="truncate text-sm font-medium">{item.title}</p>
                               <span
                                 className={cn(
-                                  "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                                  "shrink-0 rounded-full px-2 py-0.5 font-mono text-caption font-semibold",
                                   status.tone === "active" && "bg-primary/10 text-primary",
                                   status.tone === "muted" && "bg-muted text-muted-foreground",
                                   status.tone === "ended" && "bg-destructive/10 text-destructive"
@@ -661,8 +775,8 @@ export function AnnouncementsAdmin() {
                               </span>
                             </div>
                             <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{item.description}</p>
-                            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                              <CalendarClock className="h-3.5 w-3.5" />
+                            <div className="mt-2 flex items-center gap-1.5 font-mono text-caption text-muted-foreground">
+                              <CalendarClock className="size-3.5 shrink-0" />
                               <span>{new Date(item.startsAt).toLocaleString()}</span>
                             </div>
                           </div>

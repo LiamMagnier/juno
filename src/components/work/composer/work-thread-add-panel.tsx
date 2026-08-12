@@ -160,7 +160,7 @@ function FilesSection({
     // is what `first:` is doing on all three: any of them can be the first one
     // drawn, because each is conditional on what the account actually has.
     <div className="border-t border-border/60 pt-4 first:border-t-0 first:pt-0">
-      <p className="mb-1.5 font-mono text-[10px] text-muted-foreground/70">Files</p>
+      <p className="mb-1.5 font-mono text-label text-muted-foreground">Files</p>
       <p className="mb-2 text-[12.5px] leading-relaxed text-muted-foreground">
         A run is handed its files when it starts, so anything added now is for the next attempt.
       </p>
@@ -252,7 +252,7 @@ function AppsSection({ context }: { context: WorkThreadContextState }) {
 
   return (
     <div className="border-t border-border/60 pt-4 first:border-t-0 first:pt-0">
-      <p className="mb-1.5 font-mono text-[10px] text-muted-foreground/70">Apps</p>
+      <p className="mb-1.5 font-mono text-label text-muted-foreground">Apps</p>
       {failed ? (
         <div className="space-y-2">
           <p className="text-[12.5px] leading-relaxed text-muted-foreground">
@@ -328,7 +328,7 @@ function SkillSection({ context }: { context: WorkThreadContextState }) {
 
   return (
     <div className="border-t border-border/60 pt-4 first:border-t-0 first:pt-0">
-      <p className="mb-1.5 font-mono text-[10px] text-muted-foreground/70">Skill</p>
+      <p className="mb-1.5 font-mono text-label text-muted-foreground">Skill</p>
       {failed ? (
         <div className="space-y-2">
           <p className="text-[12.5px] leading-relaxed text-muted-foreground">
@@ -364,7 +364,7 @@ function SkillSection({ context }: { context: WorkThreadContextState }) {
                   />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[12.5px]">{skill.name}</span>
-                    <span className="block truncate font-mono text-[10px] text-muted-foreground/70">
+                    <span className="block truncate font-mono text-[10px] text-muted-foreground">
                       /{skill.slug}
                     </span>
                   </span>

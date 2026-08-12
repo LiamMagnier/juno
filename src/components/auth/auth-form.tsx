@@ -12,7 +12,10 @@ import { Label } from "@/components/ui/label";
 
 function GoogleIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+    // The four hex fills are Google's brand mark, which may not be recoloured —
+    // this is the one place in the tree where a literal colour is correct, and it
+    // is why the mark is inlined rather than tinted from a token.
+    <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
       <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1Z" />
       <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.65l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z" />
       <path fill="#FBBC05" d="M5.84 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.66-2.84Z" />
@@ -80,20 +83,35 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
             variant="outline"
             className="w-full"
             disabled={googleLoading || loading}
+            aria-busy={googleLoading}
             onClick={() => {
               setGoogleLoading(true);
               signIn("google", { callbackUrl });
             }}
           >
-            {googleLoading ? <Loader2 className="animate-spin" /> : <GoogleIcon />}
+            {/* motion-safe:, which is what eleven of the product's nineteen
+                spinners already do and these four did not. A control that spins
+                forever is the plainest case prefers-reduced-motion exists for,
+                and nothing is lost: the button is disabled and aria-busy, so the
+                busy state is still both announced and drawn. */}
+            {googleLoading ? <Loader2 className="motion-safe:animate-spin" aria-hidden /> : <GoogleIcon />}
             Continue with Google
           </Button>
+          {/* The rule is written explicitly at border-border/60. With no colour
+              class it inherited the global `* { border-color: hsl(var(--border)) }`
+              at full 21%, so the one hairline INSIDE the card was louder than the
+              card's own edge and every damped rule on the surrounding pages.
+              `bg-card` on the label, not `bg-background`: the knockout has to
+              match the surface it actually sits on, and on the true-black theme
+              --background punched a pure-black notch through a 6.5% panel. */}
           <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t" />
+            <div className="absolute inset-0 flex items-center" aria-hidden>
+              <span className="w-full border-t border-border/60" />
             </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="bg-background px-2 text-muted-foreground">or</span>
+            {/* text-label, the product's one label voice (mono, uppercase, 0.10em),
+                rather than a bare Tailwind text-xs that appears nowhere else. */}
+            <div className="relative flex justify-center">
+              <span className="bg-card px-2 font-mono text-label uppercase text-muted-foreground">or</span>
             </div>
           </div>
         </>
@@ -122,7 +140,10 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="password">Password</Label>
             {mode === "signin" && (
-              <Link href="/forgot-password" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+              <Link
+                href="/forgot-password"
+                className="rounded-xs text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline focus-visible:text-foreground"
+              >
                 Forgot your password?
               </Link>
             )}
@@ -138,24 +159,29 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
             autoComplete={mode === "signup" ? "new-password" : "current-password"}
           />
         </div>
-        <Button type="submit" className="w-full" disabled={loading}>
-          {loading && <Loader2 className="animate-spin" />}
+        {/* Disabled while the Google redirect is in flight too. Clicking Continue
+            with Google and then Sign in fired a second auth attempt against a
+            page that was already navigating away — the Google button already
+            guards against the reverse order, and this closes the pair.
+            aria-busy so the state is announced, not only drawn. */}
+        <Button type="submit" className="w-full" disabled={loading || googleLoading} aria-busy={loading}>
+          {loading && <Loader2 className="motion-safe:animate-spin" aria-hidden />}
           {mode === "signup" ? "Create account" : "Sign in"}
         </Button>
       </form>
 
-      <p className="text-center text-sm text-muted-foreground">
+      <p className="text-center text-body text-muted-foreground">
         {mode === "signup" ? (
           <>
             Already have an account?{" "}
-            <Link href={`/sign-in?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="font-medium text-foreground underline-offset-4 hover:underline">
+            <Link href={`/sign-in?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="rounded-xs font-medium text-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary hover:underline focus-visible:text-primary">
               Sign in
             </Link>
           </>
         ) : (
           <>
             New to Juno?{" "}
-            <Link href={`/sign-up?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="font-medium text-foreground underline-offset-4 hover:underline">
+            <Link href={`/sign-up?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="rounded-xs font-medium text-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary hover:underline focus-visible:text-primary">
               Create an account
             </Link>
           </>
