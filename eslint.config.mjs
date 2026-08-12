@@ -20,9 +20,25 @@ const config = [
       "deploy/**",
       // Transient agent worktrees and the vendored Cloud Code runner (its own
       // build/lint story lives in CI) are not part of the app's lint surface.
+      //
+      // `**/.claude/**` as well as `.claude/**`: flat-config ignores are
+      // relative to this file, so the bare pattern only ever matched the one at
+      // the repository root. An agent worktree nested under a subproject —
+      // native/desktop-electron/.claude/worktrees/… — was still walked, and
+      // being a full checkout it duplicates every file in the repo, so `eslint .`
+      // reported thousands of errors from a copy of code it had already linted.
       ".claude/**",
+      "**/.claude/**",
       ".worktrees/**",
+      "**/.worktrees/**",
       "runner/**",
+      // The Electron client is a standalone package — its own package.json,
+      // tsconfig, eslint config and node_modules, same as `relay` and `runner`.
+      // It was untracked until it was committed, at which point `eslint .` began
+      // walking it with the WEB app's rules and failing on `require()` in its
+      // CommonJS build configs. It lints itself in the `desktop` workflow, which
+      // is where its rules live. (tsconfig.json excludes it for the same reason.)
+      "native/desktop-electron/**",
       // Native build products are generated artifacts, not application source.
       // They can contain minified WebView bundles and Swift/Xcode intermediates
       // that produce false positives when ESLint walks the repository root.
@@ -88,6 +104,22 @@ const config = [
       ],
       "design-system/no-ad-hoc-stacking": "error",
     },
+  },
+  {
+    /*
+     * Node tooling under `scripts/` written as CommonJS.
+     *
+     * The repo's own convention already says which is which: everything meant
+     * to be maintained is `.ts` or `.mjs` and is ESM, and the handful of plain
+     * `.js` files here are throwaway operational one-offs run with `node` —
+     * `require()` is the correct call in that file type, and the rule is aimed
+     * at application source, not at a script that reads a file and exits.
+     *
+     * Narrow on purpose: `scripts/**` only, and only `.js`. A `.ts` or `.mjs`
+     * script keeps the rule.
+     */
+    files: ["scripts/**/*.js"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
   },
 ];
 
