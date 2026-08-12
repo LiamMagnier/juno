@@ -32,5 +32,14 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "relay", "runner"]
+  // `relay`, `runner` and `native/desktop-electron` are standalone packages with
+  // their own package.json, tsconfig and node_modules. Typechecking them from
+  // here resolves their imports against the WEB app's dependency tree, where
+  // `electron` and `@juno/agent-core` do not exist — 38 errors that say nothing
+  // about either project, only that the wrong compiler was pointed at one.
+  //
+  // desktop-electron is new to this list because it was untracked until it was
+  // committed, so CI had never seen it. Each subproject typechecks itself in its
+  // own workflow.
+  "exclude": ["node_modules", "relay", "runner", "native/desktop-electron"]
 }
