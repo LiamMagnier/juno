@@ -19,7 +19,22 @@ export async function rateLimit(opts: {
   limit: number;
   windowSec: number;
 }): Promise<RateLimitResult> {
-  return { success: true, remaining: opts.limit, resetAt: new Date() };
+  const { key, limit, windowSec } = opts;
+  const resetAt = new Date(Date.now() + windowSec * 1000);
+
+  const rows = await prisma.$queryRaw<Array<{ count: number; expiresAt: Date }>>(Prisma.sql`
+    INSERT INTO "RateLimit" ("key", "count", "expiresAt")
+    VALUES (${key}, 1, ${resetAt})
+    ON CONFLICT ("key") DO UPDATE SET
+      "count" = CASE WHEN "RateLimit"."expiresAt" <= now() THEN 1 ELSE "RateLimit"."count" + 1 END,
+      "expiresAt" = CASE WHEN "RateLimit"."expiresAt" <= now() THEN ${resetAt} ELSE "RateLimit"."expiresAt" END
+    RETURNING "count", "expiresAt";
+  `);
+
+  const row = rows[0];
+  const count = Number(row?.count ?? 1);
+  const expiresAt = row?.expiresAt ?? resetAt;
+  return { success: count <= limit, remaining: Math.max(0, limit - count), resetAt: expiresAt };
 }
 
 /**

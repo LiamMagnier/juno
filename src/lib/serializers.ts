@@ -185,17 +185,6 @@ export function serializeArtifact(art: Artifact & { versions: ArtifactVersion[] 
 }
 
 export function serializeConversation(conv: Conversation): ClientConversation {
-  let activeConnectors: string[] = [];
-  try {
-    const parsed = JSON.parse(conv.activeConnectors) as unknown;
-    if (Array.isArray(parsed)) {
-      activeConnectors = parsed.filter((value): value is string => typeof value === "string");
-    }
-  } catch {
-    // Older or partially migrated rows fall back to no active connectors. A
-    // malformed preference must never make the conversation itself unloadable.
-  }
-
   return {
     id: conv.id,
     title: conv.title,
@@ -209,7 +198,7 @@ export function serializeConversation(conv: Conversation): ClientConversation {
     pinned: conv.pinned,
     folderId: conv.folderId,
     projectId: conv.projectId,
-    activeConnectors,
+    activeConnectors: conv.activeConnectors,
     archivedAt: conv.archivedAt?.toISOString() ?? null,
     lastMessageAt: conv.lastMessageAt.toISOString(),
     createdAt: conv.createdAt.toISOString(),

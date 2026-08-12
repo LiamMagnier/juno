@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider  = "postgresql"
   // Runtime queries. On Supabase this is the Supavisor **session** pooler
   // (port 5432) — not the transaction pooler on 6543, which multiplexes
   // connections and therefore cannot keep the prepared statements Prisma
@@ -21,7 +21,7 @@ datasource db {
   // (`db.<ref>.supabase.co`) resolves to IPv6 only, and the VM this deploys to
   // has no global IPv6 address — so the direct string is unreachable there and
   // the session pooler is the correct choice for both.
-  
+  directUrl = env("DIRECT_URL")
 }
 
 // ----------------------------------------------------------------------------
@@ -131,10 +131,10 @@ model Connection {
   id                String    @id @default(cuid())
   userId            String
   provider          String // connector id: "github" | "figma" | "notion"
-  accessToken       String     // encrypted (AES-256-GCM)
-  refreshToken      String?    // encrypted
+  accessToken       String    @db.Text // encrypted (AES-256-GCM)
+  refreshToken      String?   @db.Text // encrypted
   oauthClientId     String? // mcp_oauth: the dynamically-registered client (RFC 7591)
-  oauthClientSecret String?    // encrypted; only if the MCP server issues a confidential client
+  oauthClientSecret String?   @db.Text // encrypted; only if the MCP server issues a confidential client
   scope             String?
   accountLabel      String? // human label: GitHub login / Figma handle
   expiresAt         DateTime?
@@ -153,12 +153,12 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? 
-  access_token      String? 
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? 
+  id_token          String? @db.Text
   session_state     String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -288,7 +288,7 @@ model MutationReceipt {
   clientMutationId      String
   requestHash           String
   status                Int
-  result                String
+  result                Json
   createdAt             DateTime @default(now())
 
   account User @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -308,7 +308,7 @@ model SavedPrompt {
   id        String   @id @default(cuid())
   userId    String
   title     String
-  body      String   
+  body      String   @db.Text
   /// Times the user has inserted it — drives most-used ordering.
   useCount  Int      @default(0)
   createdAt DateTime @default(now())
@@ -325,7 +325,7 @@ model Settings {
   theme                      Theme    @default(SYSTEM)
   accent                     String   @default("coral")
   defaultModel               String   @default("claude-sonnet-4-6")
-  customInstructions         String   @default("") 
+  customInstructions         String   @default("") @db.Text
   responseLanguage           String   @default("auto")
   // Interface language: "auto" (follow Accept-Language) or a BCP-47 tag.
   // Distinct from responseLanguage, which is the AI's reply language and holds
@@ -348,7 +348,7 @@ model Settings {
   // every other mode.
   backgroundProviderSelected String?
   voiceId                    String? // preferred TTS voice id
-  favoriteModels             String @default("[]") // model ids the user starred
+  favoriteModels             String[] @default([]) // model ids the user starred
   // Lifecycle email opt-ins — no-ops until RESEND_API_KEY is configured.
   emailBudgetAlerts          Boolean  @default(true) // ~80% plan-budget warning
   emailWeeklyDigest          Boolean  @default(false) // weekly usage recap
@@ -358,7 +358,7 @@ model Settings {
   // Lockdown is a hard network/tool stop, not a softer approval mode.
   lockdownMode               Boolean  @default(false)
   // Connector ids explicitly refused even when the account policy would ask.
-  blockedConnectors          String @default("[]")
+  blockedConnectors          String[] @default([])
   // The account's own monthly API-spend ceiling in EUR, on top of whatever the
   // plan allows. null means "use the plan's figure", which for OWNER used to
   // mean no figure at all — the personal account was uncapped, and the
@@ -387,7 +387,7 @@ model ModelCapabilityProbe {
   provider     String
   status       String // passed | failed
   probeVersion Int      @default(1)
-  evidence     String     @default("{}")
+  evidence     Json     @default("{}")
   detail       String?
   checkedAt    DateTime
   expiresAt    DateTime
@@ -448,7 +448,7 @@ model Conversation {
   forkedFromId      String?
   // Tool connectors (github/figma/notion…) the user turned on for this chat.
   // Persisted so they stay active for every later prompt without re-toggling.
-  activeConnectors  String @default("[]")
+  activeConnectors  String[]  @default([])
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   lastMessageAt     DateTime  @default(now())
@@ -474,7 +474,7 @@ model Project {
   userId              String
   name                String   @default("Untitled project")
   nameSource          String   @default("default")
-  instructions        String   @default("") 
+  instructions        String   @default("") @db.Text
   // Starred projects surface in the sidebar's Pinned section. Server-side so
   // stars follow the account across devices (was localStorage-only).
   starred             Boolean  @default(false)
@@ -490,7 +490,7 @@ model Project {
   ///
   /// Defaults, never grants. A project can only narrow what the account and the
   /// host already allow; the resolver intersects, and nothing here can widen.
-  workDefaults        String     @default("{}")
+  workDefaults        Json     @default("{}")
   workDefaultsVersion Int      @default(1)
   // Stable source identity for idempotent Juno package imports. Nullable so
   // ordinary projects and legacy rows remain untouched.
@@ -519,15 +519,15 @@ model Message {
   // by the web pipeline, which has no client-side retry surface.
   clientId         String?
   role             Role
-  content          String    
-  reasoning        String?    // visible chain-of-thought when a thinking model is used
+  content          String    @db.Text
+  reasoning        String?   @db.Text // visible chain-of-thought when a thinking model is used
   // The same thinking kept as the discrete parts the provider actually emitted:
   // an array of encrypted strings, one per part, in order (encrypted exactly
   // like `reasoning`, same message-crypto path). Written only by providers that
   // deliver parts on the wire — NULL means the provider streamed unbroken prose
   // and no step structure ever existed. Nullable and additive, so every message
   // written before this column degrades to "reasoning, no steps" on its own.
-  reasoningParts   String? // [encrypted part, …] — discrete reasoning summary parts
+  reasoningParts   Json? // [encrypted part, …] — discrete reasoning summary parts
   model            String?
   feedback         Feedback? // thumbs up/down on assistant messages
   promptTokens     Int?
@@ -536,8 +536,8 @@ model Message {
   // Serializer prefers this over recomputing from token counts alone (which
   // drop cache writes and web-search fees and under-report badly).
   costMicroUsd     Int?
-  sources          String? // web-search citations: [{ title, url, snippet }]
-  activity         String? // visible generation timeline: [{ id, kind, title, detail?, url?, createdAt }]
+  sources          Json? // web-search citations: [{ title, url, snippet }]
+  activity         Json? // visible generation timeline: [{ id, kind, title, detail?, url?, createdAt }]
   createdAt        DateTime  @default(now())
 
   conversation            Conversation             @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -586,7 +586,7 @@ model VoiceTranscriptSession {
   userId         String
   sessionId      String
   conversationId String
-  messageIds     String @default("[]")
+  messageIds     String[] @default([])
   createdAt      DateTime @default(now())
 
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -606,7 +606,7 @@ model Attachment {
   mimeType       String
   size           Int
   storageKey     String // object key in the bucket
-  extractedText  String?         // text content extracted from documents
+  extractedText  String?        @db.Text // text content extracted from documents
   width          Int?
   height         Int?
   idempotencyKey String?
@@ -666,7 +666,7 @@ model AttachmentVersion {
   mimeType      String
   size          Int
   storageKey    String
-  extractedText String?  
+  extractedText String?  @db.Text
   parserState   String   @default("ready")
   parserVersion String?
   createdAt     DateTime @default(now())
@@ -686,8 +686,8 @@ model ImportRun {
   archiveSha256  String
   leaseToken     String
   status         String    @default("applying") // applying | completed | failed
-  result         String?
-  error          String?   
+  result         Json?
+  error          String?   @db.Text
   leaseExpiresAt DateTime?
   completedAt    DateTime?
   createdAt      DateTime  @default(now())
@@ -729,7 +729,7 @@ model ImportObject {
 model MemoryEntry {
   id              String       @id @default(cuid())
   userId          String
-  content         String       
+  content         String       @db.Text
   source          MemorySource @default(AUTO)
   // FACT = remembered content · SUPPRESSION = "never remember this" (highest-
   // priority layer: filters candidate ingestion AND the consolidated summary).
@@ -765,7 +765,7 @@ model MemoryEntry {
   supersededById  String?
   // Comparable form used for duplicate and contradiction detection, so that
   // matching does not depend on how the sentence happened to be phrased.
-  normalized      String?      
+  normalized      String?      @db.Text
   // Stable source identity for idempotent Juno memory imports.
   importSourceId  String?
   createdAt       DateTime     @default(now())
@@ -791,7 +791,7 @@ model ConversationMemory {
   userId         String
   conversationId String   @unique
   processedAt    DateTime // high-water mark: messages createdAt <= this are extracted
-  digest         String?   // one-line memory digest of the chat
+  digest         String?  @db.Text // one-line memory digest of the chat
   factCount      Int      @default(0) // facts extracted from this chat so far
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -807,7 +807,7 @@ model ConversationMemory {
 model MemorySummary {
   id         String   @id @default(cuid())
   userId     String   @unique
-  content    String   
+  content    String   @db.Text
   entryCount Int      @default(0) // # of memory entries this summary was built from
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -844,7 +844,7 @@ model ArtifactVersion {
   id         String   @id @default(cuid())
   artifactId String
   version    Int
-  content    String   
+  content    String   @db.Text
   // How this version came to be: "generated" (model output), "edit" (manual
   // user edit), "restore" (user restored an older version). Null on rows
   // written before the column existed — the UI renders those without a badge.
@@ -927,7 +927,7 @@ model RateLimit {
 model Announcement {
   id          String    @id @default(cuid())
   title       String
-  description String    
+  description String    @db.Text
   imageUrl    String?
   videoUrl    String?
   provider    String?
@@ -1056,8 +1056,8 @@ model ModerationFlag {
   source         String    @default("auto") // auto | manual
   severity       String    @default("low") // low | medium | high | critical
   category       String    @default("other")
-  detail         String    
-  messagePreview String?    // redacted/truncated snippet that triggered it
+  detail         String    @db.Text
+  messagePreview String?   @db.Text // redacted/truncated snippet that triggered it
   action         String    @default("flagged") // flagged | strike | banned
   reviewedAt     DateTime?
   reviewedBy     String?
@@ -1096,7 +1096,7 @@ model FeatureRequest {
   id            String          @id @default(cuid())
   authorId      String
   title         String
-  description   String          
+  description   String          @db.Text
   category      FeatureCategory @default(OTHER)
   status        FeatureStatus   @default(UNDER_REVIEW)
   pinned        Boolean         @default(false)
@@ -1130,7 +1130,7 @@ model FeatureComment {
   id        String   @id @default(cuid())
   requestId String
   authorId  String
-  body      String   
+  body      String   @db.Text
   official  Boolean  @default(false) // OWNER/team reply styling
   createdAt DateTime @default(now())
 
@@ -1188,7 +1188,7 @@ model CodeDevice {
   // the session-sync PUT bumps — the two must never share a column.
   protocolVersion    Int      @default(1)
   sessionListVersion Int      @default(1)
-  workspaces         String     @default("[]")
+  workspaces         Json     @default("[]")
   // Whether this host claims and executes queued work, as opposed to merely
   // announcing that it is signed in. Registration used to say only "I exist",
   // and the phone read presence as capability — so work dispatched at a Mac
@@ -1227,7 +1227,7 @@ model CodeTask {
   // its own local path, and the workspace row may be re-mirrored freely.
   workspaceKey      String?
   title             String
-  prompt            String    
+  prompt            String    @db.Text
   status            String    @default("queued")
   lastSeq           Int       @default(0)
   // Stable link to the Code session this task creates or continues. It stays a
@@ -1302,15 +1302,15 @@ model CodeRemoteSession {
   transcriptVersion  Int       @default(1)
   snapshotVersion    Int       @default(1)
   transcriptPolicy   String    @default("metadata")
-  transcript         String?
-  changes            String?
-  terminal           String?
-  tests              String?
-  git                String?
-  approvals          String?
-  subagents          String?
-  usage              String?
-  indexedSearch      String    @default("") 
+  transcript         Json?
+  changes            Json?
+  terminal           Json?
+  tests              Json?
+  git                Json?
+  approvals          Json?
+  subagents          Json?
+  usage              Json?
+  indexedSearch      String    @default("") @db.Text
   deletedAt          DateTime?
   syncedAt           DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -1337,7 +1337,7 @@ model CodeRemoteSessionEvent {
   sessionId       String
   seq             Int
   kind            String
-  payload         String
+  payload         Json
   createdAt       DateTime @default(now())
 
   user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1355,10 +1355,10 @@ model CodeSessionCommand {
   remoteSessionId String
   sessionId       String
   kind            String
-  payload         String
+  payload         Json
   idempotencyKey  String
   status          String    @default("pending")
-  result          String?
+  result          Json?
   error           String?
   createdAt       DateTime  @default(now())
   claimedAt       DateTime?
@@ -1378,7 +1378,7 @@ model CodeTaskEvent {
   taskId    String
   seq       Int
   kind      String
-  payload   String
+  payload   Json
   // Stable per-event key from the producer, `<taskId>:<runNonce>:<n>`. The
   // runner retries a batch whose POST succeeded but whose response was lost;
   // without this the retry appended the same events a second time and the
@@ -1445,7 +1445,7 @@ model ScheduledTask {
   id             String      @id @default(cuid())
   userId         String
   name           String
-  prompt         String      
+  prompt         String      @db.Text
   model          String // canonical "provider:model" id
   cadence        TaskCadence @default(DAILY)
   hour           Int         @default(8) // local to timezone
@@ -1492,12 +1492,12 @@ model ScheduledTaskRun {
 model MessageVersion {
   id               String   @id @default(cuid())
   messageId        String
-  content          String   
-  reasoning        String?  
+  content          String   @db.Text
+  reasoning        String?  @db.Text
   model            String?
   promptTokens     Int?
   completionTokens Int?
-  sources          String?
+  sources          Json?
   createdAt        DateTime @default(now())
 
   message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
@@ -1566,7 +1566,7 @@ model ToolInvocation {
   functionName         String
   // classifyToolAccess verdict at call time: read | write | unknown.
   access               String
-  args                 String
+  args                 Json
   argsTruncated        Boolean @default(false)
   // Whether the arguments overlapped untrusted content fetched in the same
   // turn — the signal the confirmation gate acts on. Recorded even when the
@@ -1576,7 +1576,7 @@ model ToolInvocation {
   // pending | executed | failed | denied. A row still `pending` long after
   // createdAt is a call that was blocked and never answered.
   status               String  @default("pending")
-  error                String? 
+  error                String? @db.Text
   durationMs           Int?
 
   createdAt   DateTime  @default(now())
@@ -1620,15 +1620,15 @@ model ActionApprovalReceipt {
   /// read_only | reversible_write | external_write |
   /// destructive_or_sensitive | unknown.
   riskClass             String
-  classificationReasons String   @default("[]")
+  classificationReasons Json   @default("[]")
 
-  normalizedArgs       String
+  normalizedArgs       Json
   argsHash             String
   receiptDigest        String
   /// The exact human sentence and redacted structured detail shown before Allow.
-  preview              String  
-  detail               String    @default("{}")
-  provenance           String    @default("{}")
+  preview              String  @db.Text
+  detail               Json    @default("{}")
+  provenance           Json    @default("{}")
   derivedFromUntrusted Boolean @default(false)
 
   policy       String
@@ -1645,8 +1645,8 @@ model ActionApprovalReceipt {
   decidedVia      String?
   expiresAt       DateTime
   consumedAt      DateTime?
-  executionResult String?   
-  undoInfo        String?
+  executionResult String?   @db.Text
+  undoInfo        Json?
   completedAt     DateTime?
 
   /// Stable per model call. A retry recovers the same receipt; reusing the key
@@ -1740,7 +1740,7 @@ model WorkSession {
   titleSource String @default("default")
   /// What the user actually asked for, verbatim. The runs paraphrase it into
   /// plans; this is the thing a plan is checked back against.
-  goal        String 
+  goal        String @db.Text
 
   /// draft | queued | preparing | running | waiting_input | waiting_approval |
   /// paused | completed | failed | cancelled | interrupted | host_offline |
@@ -1873,7 +1873,7 @@ model WorkRun {
   /// host_offline | interrupted | superseded.
   terminalReason String?
   /// Operator-facing detail behind terminalReason. Never the model's text.
-  terminalDetail String? 
+  terminalDetail String? @db.Text
 
   // --- execution target and capability plan ---------------------------------
   // Requested vs effective, both stored. A run that asked for the Mac and got
@@ -1888,25 +1888,25 @@ model WorkRun {
 
   /// Capabilities the plan says this run needs, e.g. ["local_files",
   /// "web_research"]. Typed payload, versioned by `planVersion`.
-  requiredCapabilities  String @default("[]")
+  requiredCapabilities  Json @default("[]")
   /// Capabilities the chosen target actually advertised at dispatch time.
-  availableCapabilities String @default("[]")
+  availableCapabilities Json @default("[]")
   /// Why the effective target/model differ from the requested ones, in the
   /// user's words. Empty when nothing was degraded. Stored rather than
   /// re-derived: the host's capability manifest changes, and an explanation
   /// recomputed a week later describes a machine that no longer exists.
-  degradation           String @default("[]")
+  degradation           Json @default("[]")
   planVersion           Int  @default(1)
 
   /// Resolved permission policy for this run, after narrowing by host,
   /// project, schedule and session. The value the executor enforced.
-  permissionPolicy String @default("{}")
+  permissionPolicy Json @default("{}")
 
   /// The last provider-neutral snapshot of a paused run. It is deliberately
   /// stored on the attempt rather than the session: a retry is a new attempt,
   /// while resume must continue the exact transcript, plan and budget this
   /// attempt already accumulated.
-  checkpoint String?
+  checkpoint Json?
 
   // --- budgets --------------------------------------------------------------
   maxCostMicroUsd Int @default(0)
@@ -1984,7 +1984,7 @@ model WorkEvent {
   /// kind whose author forgot to classify it is invisible rather than
   /// over-shared, and an invisible event is a bug someone reports.
   visibility     String   @default("internal")
-  payload        String
+  payload        Json
   eventKey       String?
   /// Present when the event came from a subagent rather than the root agent.
   agentId        String?
@@ -2017,10 +2017,10 @@ model WorkApproval {
   risk          String @default("edit")
   /// Human-readable, exactly what the user is shown. Stored so an audit can
   /// prove what was on screen, not what the code would render today.
-  summary       String 
+  summary       String @db.Text
   /// Typed, versioned description of the action for the UI (paths as display
   /// names, counts, before/after). Never raw absolute paths for remote clients.
-  detail        String   @default("{}")
+  detail        Json   @default("{}")
   detailVersion Int    @default(1)
   /// SHA-256 over the canonical serialisation of the action. The executor
   /// recomputes it immediately before acting and refuses on mismatch.
@@ -2052,7 +2052,7 @@ model WorkApproval {
 /// it: chat artifacts are text documents keyed to a conversation and versioned
 /// as strings, while a Work deliverable can be a 4 MB workbook in object
 /// storage with an export that must be validated before download. Sharing one
-/// table would mean `content String ` holding a base64 xlsx.
+/// table would mean `content String @db.Text` holding a base64 xlsx.
 model WorkArtifact {
   id             String    @id @default(cuid())
   sessionId      String
@@ -2097,10 +2097,10 @@ model WorkArtifactVersion {
   origin            String   @default("generated")
   /// Where the content came from: source URLs, connector records, files read.
   /// This is the provenance the UI cites and the reviewer checks.
-  provenance        String     @default("[]")
+  provenance        Json     @default("[]")
   provenanceVersion Int      @default(1)
   /// Validator verdict for THIS version: null = not yet run.
-  validation        String?
+  validation        Json?
   /// The run that produced it. Nullable for user edits made outside a run.
   runId             String?
   createdAt         DateTime @default(now())
@@ -2134,7 +2134,7 @@ model WorkFileGrant {
   displayName String
   /// Absolute path on the host. NEVER serialised to web or iOS — see
   /// serializeGrantForRemote in src/lib/work/serializers.ts.
-  localPath   String? 
+  localPath   String? @db.Text
   /// Stable identity for a cloud source (Drive file id, connector resource id).
   remoteRef   String?
 
@@ -2144,7 +2144,7 @@ model WorkFileGrant {
   /// Whether the host resolved symlinks and confirmed the real path is inside
   /// the grant at the time it was created. Re-checked per operation too — this
   /// records that the grant was sane when made.
-  resolvedRealPath String? 
+  resolvedRealPath String? @db.Text
 
   revokedAt  DateTime?
   lastUsedAt DateTime?
@@ -2199,14 +2199,14 @@ model WorkHost {
   allowsBackground    Boolean @default(false)
   /// Typed manifest: tool families, versions, limits. Versioned so an older
   /// backend can still read the parts it understands.
-  capabilities        String    @default("{}")
+  capabilities        Json    @default("{}")
   capabilitiesVersion Int     @default(1)
 
   /// Bundle identifiers the user allowed / blocked for app control.
-  allowedApps    String @default("[]")
-  blockedApps    String @default("[]")
+  allowedApps    Json @default("[]")
+  blockedApps    Json @default("[]")
   /// Domains the browser tool may drive.
-  allowedDomains String @default("[]")
+  allowedDomains Json @default("[]")
 
   /// Default approval policy this host enforces regardless of what a session
   /// or schedule asks for: conservative | balanced | permissive.
@@ -2257,13 +2257,13 @@ model WorkCommand {
   /// start | pause | resume | stop | answer | approve | deny | undo |
   /// grant_folder | revoke_grant | refresh_capabilities | ping.
   kind           String
-  payload        String   @default("{}")
+  payload        Json   @default("{}")
   payloadVersion Int    @default(1)
 
   /// pending | claimed | succeeded | failed | expired | cancelled.
   status String  @default("pending")
-  result String?
-  error  String? 
+  result Json?
+  error  String? @db.Text
 
   idempotencyKey String
   /// Commands are not valid forever. A "stop" claimed by a host that had been
@@ -2300,7 +2300,7 @@ model WorkSkill {
   /// Slash-invocation name, unique per user. Lowercase, hyphenated.
   slug        String
   name        String
-  description String 
+  description String @db.Text
 
   /// Which version is used when the skill is invoked without pinning one.
   currentVersion    Int       @default(1)
@@ -2334,22 +2334,22 @@ model WorkSkillVersion {
   skillId String
   version Int
 
-  instructions    String 
+  instructions    String @db.Text
   /// Typed declarations, all versioned together by `contractVersion`:
   /// inputs, outputs, allowed tools/connectors/apps/domains, preferred
   /// target/model, budget, approval policy, test examples.
-  contract        String   @default("{}")
+  contract        Json   @default("{}")
   contractVersion Int    @default(1)
 
   /// A skill declares what it WANTS. It can only ever narrow what the user,
   /// project and host already granted — this column records the request, and
   /// the resolver intersects it. A skill that could widen permissions would be
   /// a permission-escalation primitive shipped as a convenience feature.
-  requestedTools String @default("[]")
+  requestedTools Json @default("[]")
 
   /// Bounded, non-secret scanner evidence and the permission surface it saw.
   securityStatus   String  @default("pending")
-  securityScan     String    @default("{}")
+  securityScan     Json    @default("{}")
   permissionDigest String?
   requiresConsent  Boolean @default(false)
 
@@ -2377,7 +2377,7 @@ model WorkSchedule {
 
   /// The instructions this schedule runs, versioned independently of the
   /// session goal so editing the schedule does not silently rewrite history.
-  instructions        String 
+  instructions        String @db.Text
   instructionsVersion Int    @default(1)
 
   /// cloud | local | automatic.
@@ -2393,7 +2393,7 @@ model WorkSchedule {
   /// Pinned skill versions, connector/file context, model and reasoning.
   /// Typed and versioned rather than a bag: a schedule that silently follows
   /// `currentVersion` of a skill changes behaviour when the skill is edited.
-  runConfig        String @default("{}")
+  runConfig        Json @default("{}")
   runConfigVersion Int  @default(1)
 
   maxCostMicroUsd Int @default(0)
@@ -2415,7 +2415,7 @@ model WorkSchedule {
 
   /// Missed-run behaviour after downtime: skip | run_once | run_all.
   missedRunPolicy String @default("run_once")
-  retryPolicy     String   @default("{}")
+  retryPolicy     Json   @default("{}")
 
   lastRunAt   DateTime?
   nextRunAt   DateTime?
@@ -2458,7 +2458,7 @@ model WorkTrigger {
   /// Typed per-kind configuration, versioned. A cron trigger's config is not
   /// an email filter's, and one untyped column that is sometimes both is how
   /// a scheduler ends up parsing a string to decide what it is looking at.
-  config        String   @default("{}")
+  config        Json   @default("{}")
   configVersion Int    @default(1)
 
   enabled Boolean @default(true)
@@ -2481,13 +2481,13 @@ model WorkTrigger {
   /// and fires nothing. Without it, a poller restart — or a trigger created this
   /// morning — reads the inbox, finds twenty-five messages it has never seen,
   /// and starts twenty-five runs for mail the user read last week.
-  cursor String @default("{}")
+  cursor Json @default("{}")
 
   /// When the poller last read this trigger's source, whether or not anything
   /// matched, and why the last read failed. `lastPollError` is cleared by the
   /// first poll that succeeds, so a value in it always describes now.
   lastPolledAt  DateTime?
-  lastPollError String?   
+  lastPollError String?   @db.Text
 
   /// The poller's clock and its lease — the pair `WorkSchedule.nextRunAt` and
   /// `lockedUntil` are for the scheduler, kept separate because the two workers
@@ -2528,7 +2528,7 @@ model WorkRunIO {
   /// Display label safe for any client. Never an absolute path.
   label     String
   /// Typed detail: byte size, mime, connector name, citation range.
-  detail    String   @default("{}")
+  detail    Json   @default("{}")
 
   createdAt DateTime @default(now())
 
@@ -2565,7 +2565,7 @@ model WorkAuditEvent {
   severity String @default("info")
   /// Identifiers and verdicts only. Enforced by the writer in
   /// src/lib/work/audit.ts, which strips anything not on the allowed key list.
-  detail   String   @default("{}")
+  detail   Json   @default("{}")
   /// web | macos | ios | cloud_runner | scheduler.
   actor    String @default("cloud_runner")
 
@@ -2666,7 +2666,7 @@ model KnowledgeDocument {
   supersededById String?
   pageCount      Int?
   /// Why the state is degraded or failed, in words a reader can act on.
-  error          String?   
+  error          String?   @db.Text
   /// Tombstone retained so old citation ids resolve to a clear deletion state.
   deletedAt      DateTime?
   createdAt      DateTime  @default(now())
@@ -2694,7 +2694,7 @@ model KnowledgeBlock {
   /// paragraph | heading | list_item | table | table_cell | slide_title |
   /// speaker_notes | code | caption | image
   type       String
-  text       String    
+  text       String    @db.Text
   /// Where this block physically is. Exactly which of these is set depends on
   /// the format, and that is the point: a citation must be able to say
   /// "page 4" for a PDF and "Sheet2!B7" for a workbook.
@@ -2706,9 +2706,9 @@ model KnowledgeBlock {
   lineStart  Int?
   lineEnd    Int?
   /// Breadcrumb of enclosing headings, outermost first.
-  heading    String @default("[]")
+  heading    String[]  @default([])
   /// Layout box on the page, [x, y, w, h] in page units, when the parser knows it.
-  bbox       String @default("[]")
+  bbox       Float[]   @default([])
   /// 0..1. OCR output carries a real number here; verified embedded text is 1.
   confidence Float     @default(1)
   deletedAt  DateTime?
@@ -2727,16 +2727,16 @@ model KnowledgeChunk {
   userId         String
   documentId     String
   ordinal        Int
-  text           String    
+  text           String    @db.Text
   tokens         Int       @default(0)
   /// The blocks this chunk was packed from, in order — the citation targets.
-  blockIds       String @default("[]")
+  blockIds       String[]  @default([])
   /// Embedding vector. Stored as float[] rather than a pgvector column so the
   /// deployment needs no extension; the corpus here is one person's library,
   /// where an indexed lexical prefilter plus in-process cosine is enough.
   /// `embeddingModel` is versioned so a model change can be reindexed
   /// deliberately instead of silently mixing two vector spaces.
-  embedding      String @default("[]")
+  embedding      Float[]   @default([])
   embeddingModel String?
   deletedAt      DateTime?
   createdAt      DateTime  @default(now())
@@ -2756,7 +2756,7 @@ model KnowledgeIndexJob {
   /// queued | running | done | failed
   state      String    @default("queued")
   attempts   Int       @default(0)
-  error      String?   
+  error      String?   @db.Text
   deletedAt  DateTime?
   createdAt  DateTime  @default(now())
   startedAt  DateTime?
@@ -2777,20 +2777,20 @@ model ResearchRun {
   id                 String    @id @default(cuid())
   userId             String
   conversationId     String?
-  goal               String    
+  goal               String    @db.Text
   /// accepted | planning | awaiting_plan_confirmation | searching | browsing |
   /// reading_documents | checking_coverage | resolving_conflicts | synthesizing |
   /// validating_citations | awaiting_user_input | paused | completed |
   /// partially_completed | failed | cancelled
   state              String    @default("accepted")
   /// The editable plan, and the queries actually issued.
-  plan               String?
-  queries            String @default("[]")
+  plan               Json?
+  queries            String[]  @default([])
   costMicroUsd       BigInt    @default(0)
   /// Per-run ceiling. A research run is the most expensive thing Juno does.
   budgetMicroUsd     BigInt?
-  error              String?   
-  report             String?   
+  error              String?   @db.Text
+  report             String?   @db.Text
   /// Assistant message that received the report, when the run came from chat.
   assistantMessageId String?
   /// Monotonic report revision written by the pre-final citation audit.
@@ -2821,11 +2821,11 @@ model ResearchSource {
   id            String    @id @default(cuid())
   userId        String
   runId         String
-  url           String    
-  title         String    
+  url           String    @db.Text
+  title         String    @db.Text
   /// Hash of the fetched body, so a report stays auditable after the page changes.
   contentHash   String?
-  snapshot      String?   
+  snapshot      String?   @db.Text
   /// Publication date as claimed by the source, distinct from the date of the
   /// event it describes — §8.2 requires telling those apart.
   publishedAt   DateTime?
@@ -2856,7 +2856,7 @@ model ResearchPassage {
   id       String  @id @default(cuid())
   userId   String
   sourceId String
-  text     String  
+  text     String  @db.Text
   /// Where in the source this passage is (char offsets, page, or selector).
   locator  String?
   ordinal  Int     @default(0)
@@ -2872,7 +2872,7 @@ model ResearchClaim {
   id              String   @id @default(cuid())
   userId          String
   runId           String
-  text            String   
+  text            String   @db.Text
   /// fact | statistic | quote | prediction | opinion
   type            String   @default("fact")
   /// unverified | supported | contradicted | unsupported
@@ -2913,7 +2913,7 @@ model ResearchEvent {
   /// Monotonic per run. The cursor a reconnecting client resumes from.
   seq       Int
   kind      String
-  payload   String
+  payload   Json
   createdAt DateTime @default(now())
 
   user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -2932,8 +2932,8 @@ model ResearchReportRevision {
   runId              String
   assistantMessageId String?
   revision           Int
-  report             String   
-  audit              String?
+  report             String   @db.Text
+  audit              Json?
   createdAt          DateTime @default(now())
 
   user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
