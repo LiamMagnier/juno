@@ -643,9 +643,14 @@ test("coverage is durable and an evidence gap schedules one bounded follow-up", 
   );
   assert.equal(new Set(searched).size, searched.length, "the follow-up must not repeat the paid query");
   assert.ok(plan.coverage?.some((entry) => entry.status === "missing"));
+  // Read once into a local: `followUpRound` is optional on the plan, and a
+  // bare `plan.followUpRound >= 1` does not narrow it (TS18048). `?? 0` also
+  // keeps the assertion honest — an absent round fails the lower bound rather
+  // than passing on a nullish comparison.
+  const followUpRound = plan.followUpRound ?? 0;
   assert.ok(
-    plan.followUpRound >= 1 && plan.followUpRound <= MAX_FOLLOW_UP_ROUNDS,
-    `followUpRound ${plan.followUpRound} outside 1..${MAX_FOLLOW_UP_ROUNDS}`
+    followUpRound >= 1 && followUpRound <= MAX_FOLLOW_UP_ROUNDS,
+    `followUpRound ${followUpRound} outside 1..${MAX_FOLLOW_UP_ROUNDS}`
   );
   assert.ok(events.some((event) => event.kind === "coverage_matrix_updated"));
   assert.ok(events.some((event) => event.kind === "follow_up_scheduled"));
