@@ -2041,25 +2041,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 )}
                 style={auraStyle}
               >
-                {/* Dynamic Ambient Accent Glow behind Docked Composer */}
-                {!privateMode && !voiceOpen && (
-                  <div
-                    aria-hidden="true"
-                    className="pointer-events-none absolute bottom-1/2 left-1/2 -translate-x-1/2 translate-y-1/2 -z-10 rounded-full transition-all duration-700 ease-out"
-                    style={{
-                      opacity: thinkingGlow.opacity,
-                      width: thinkingGlow.width,
-                      height: thinkingGlow.height,
-                      filter: `blur(${thinkingGlow.blur})`,
-                      background: thinkingGlow.gradient,
-                    }}
-                  />
-                )}
-                {/* The voice field replaces that bloom while a call is live, and
-                    is mounted HERE rather than inside the dock: it has to be a
-                    sibling of the composer for `z-index: -1` to mean "behind the
-                    composer". The dock's own section is z-20, so anything drawn
-                    inside it lands in front of the thing it is lighting. */}
+                {/* Voice field while a call is live */}
                 {voiceOpen && !privateMode && (
                   <VoiceAura status={voiceAuraStatus(realtimeVoice)} levelRef={realtimeVoice.levelRef} />
                 )}

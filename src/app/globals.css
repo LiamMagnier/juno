@@ -1293,20 +1293,8 @@
    * colour while you type, the swell when you send.
    */
   .composer-aura--docked {
-    --aura: .22;
-    /* No --aura-reach here: the scale on .composer-aura already applies it, and
-       multiplying it in twice would shrink this one quadratically. */
-    height: min(15rem, 26vh);
-    /* Exactly the column, never wider. The empty state can spill sideways
-       because the column above it clips; here the nearest clip is the main
-       column's own overflow-hidden, and leaning on that to hide a bloom that
-       overhangs it would leave the container quietly scrollable. */
-    width: 100%;
+    display: none !important;
   }
-  /* Same correction as the full aura above, and it matters more here: this one
-     sits behind a live transcript, so an over-strength wash washes up into text
-     somebody is reading. */
-  .dark .composer-aura--docked { --aura: .26; }
 
   /*
    * ——— Voice aura ———
