@@ -267,6 +267,129 @@ async function searchExa(query: string, maxResults: number, signal?: AbortSignal
 }
 
 /**
+ * Tavily Search API (High reliability AI search)
+ */
+async function searchTavily(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
+  const key = process.env.TAVILY_API_KEY?.trim();
+  if (!key) return [];
+
+  const res = await fetch("https://api.tavily.com/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      api_key: key,
+      query: query.slice(0, 400),
+      max_results: maxResults,
+      search_depth: "basic",
+      include_raw_content: true,
+    }),
+    signal,
+  });
+
+  if (!res.ok) return [];
+  const data = await res.json();
+  const results = data.results ?? [];
+
+  return results.slice(0, maxResults).map((r: Record<string, unknown>) => ({
+    title: (r.title as string) ?? "",
+    url: (r.url as string) ?? "",
+    snippet: (r.content as string) ?? "",
+    rawContent: typeof r.raw_content === "string" ? r.raw_content : undefined,
+    publishedAt: r.published_date && typeof r.published_date === "string" && Number.isFinite(Date.parse(r.published_date)) ? new Date(r.published_date) : undefined,
+    engine: "tavily",
+  }));
+}
+
+/**
+ * SearXNG Public Meta-Search API
+ */
+async function searchSearxng(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
+  const instances = [
+    "https://searx.be/search",
+    "https://search.sapti.me/search",
+    "https://priv.au/search",
+  ];
+
+  for (const instance of instances) {
+    try {
+      const url = new URL(instance);
+      url.searchParams.set("q", query);
+      url.searchParams.set("format", "json");
+      url.searchParams.set("engines", "google,bing,duckduckgo");
+
+      const res = await fetch(url.toString(), {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+          Accept: "application/json",
+        },
+        signal,
+      });
+
+      if (!res.ok) continue;
+      const data = await res.json();
+      const results = (data.results ?? []) as Array<Record<string, unknown>>;
+      if (results.length === 0) continue;
+
+      return results
+        .filter((r) => typeof r.url === "string" && !isDisallowedHost(r.url))
+        .slice(0, maxResults)
+        .map((r) => ({
+          title: (r.title as string) ?? "",
+          url: (r.url as string) ?? "",
+          snippet: (r.content as string) ?? "",
+          engine: "searxng",
+        }));
+    } catch {
+      continue;
+    }
+  }
+
+  return [];
+}
+
+/**
+ * Wikipedia Encyclopedia API Fallback
+ */
+async function searchWikipedia(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
+  try {
+    const url = new URL("https://en.wikipedia.org/w/api.php");
+    url.searchParams.set("action", "opensearch");
+    url.searchParams.set("search", query);
+    url.searchParams.set("limit", String(Math.min(5, maxResults)));
+    url.searchParams.set("namespace", "0");
+    url.searchParams.set("format", "json");
+
+    const res = await fetch(url.toString(), {
+      headers: { "User-Agent": "JunoSearch/1.0 (https://juno.app)" },
+      signal,
+    });
+
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length < 4) return [];
+
+    const titles = (data[1] ?? []) as string[];
+    const descriptions = (data[2] ?? []) as string[];
+    const urls = (data[3] ?? []) as string[];
+
+    const results: SearchResult[] = [];
+    for (let i = 0; i < titles.length; i++) {
+      if (urls[i] && titles[i]) {
+        results.push({
+          title: titles[i],
+          url: urls[i],
+          snippet: descriptions[i] || `Wikipedia article about ${titles[i]}`,
+          engine: "wikipedia",
+        });
+      }
+    }
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * DuckDuckGo Search API & HTML Fallback (Zero Config Required)
  */
 async function searchDuckDuckGo(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]> {
@@ -277,6 +400,7 @@ async function searchDuckDuckGo(query: string, maxResults: number, signal?: Abor
       headers: {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
         "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
       body: new URLSearchParams({ q: query }).toString(),
       signal,
@@ -339,11 +463,11 @@ async function searchDuckDuckGo(query: string, maxResults: number, signal?: Abor
  * Check if search capability is available in any form.
  */
 export function isSearchEngineAvailable(): boolean {
-  return true; // DuckDuckGo direct fallback is always available, with API engines (Serper, Brave, Exa) prioritized when configured.
+  return true; // DuckDuckGo direct fallback and meta-search engines are always available.
 }
 
 /**
- * Multi-Engine Web Search: Cascading fallback through best-available search backends (Exa, Brave, Serper Google, DuckDuckGo).
+ * Multi-Engine Web Search: Cascading fallback through best-available search backends (Tavily, Serper, Brave, Exa, SearXNG, DuckDuckGo, Wikipedia).
  */
 export async function executeMultiEngineSearch({
   query,
@@ -356,24 +480,38 @@ export async function executeMultiEngineSearch({
 }): Promise<SearchResult[]> {
   if (!query.trim()) return [];
 
-  // Try Exa Neural Search
-  if (process.env.EXA_API_KEY?.trim()) {
-    const hits = await searchExa(query, count, signal).catch(() => []);
+  // 1. Try Tavily Search API (Fast, deep research native)
+  if (process.env.TAVILY_API_KEY?.trim()) {
+    const hits = await searchTavily(query, count, signal).catch(() => []);
     if (hits.length > 0) return hits;
   }
 
-  // Try Brave Search API
-  if (process.env.BRAVE_SEARCH_API_KEY?.trim() || process.env.BRAVE_API_KEY?.trim()) {
-    const hits = await searchBrave(query, count, signal).catch(() => []);
-    if (hits.length > 0) return hits;
-  }
-
-  // Try Serper Google Search
+  // 2. Try Serper Google Search
   if (process.env.SERPER_API_KEY?.trim()) {
     const hits = await searchSerper(query, count, signal).catch(() => []);
     if (hits.length > 0) return hits;
   }
 
-  // Universal High-Reliability DuckDuckGo fallback
-  return searchDuckDuckGo(query, count, signal).catch(() => []);
+  // 3. Try Brave Search API
+  if (process.env.BRAVE_SEARCH_API_KEY?.trim() || process.env.BRAVE_API_KEY?.trim()) {
+    const hits = await searchBrave(query, count, signal).catch(() => []);
+    if (hits.length > 0) return hits;
+  }
+
+  // 4. Try Exa Neural Search
+  if (process.env.EXA_API_KEY?.trim()) {
+    const hits = await searchExa(query, count, signal).catch(() => []);
+    if (hits.length > 0) return hits;
+  }
+
+  // 5. Try SearXNG Meta-Search
+  const searxHits = await searchSearxng(query, count, signal).catch(() => []);
+  if (searxHits.length > 0) return searxHits;
+
+  // 6. Try DuckDuckGo
+  const ddgHits = await searchDuckDuckGo(query, count, signal).catch(() => []);
+  if (ddgHits.length > 0) return ddgHits;
+
+  // 7. Fallback to Wikipedia encyclopedia index
+  return searchWikipedia(query, count, signal).catch(() => []);
 }
