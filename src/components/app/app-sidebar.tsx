@@ -45,6 +45,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Pressable, pressableVariants } from "@/components/ui/pressable";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useApp } from "@/components/app/app-provider";
 import { CODE_SYNC_EVENT } from "@/hooks/use-code-session";
 import {
@@ -70,15 +71,21 @@ type ConfirmState = { title: string; description: string; confirmLabel: string; 
 /**
  * The sidebar has exactly two row scales, and every row is one of them.
  *
- *   L1  rounded-control · px-2.5 py-1.5 · text-[14px] · font-medium
+ *   L1  rounded-control · px-2.5 py-1.5 · text-sm · font-medium
  *       Destinations and section toggles — things that own a list.
- *   L2  rounded-xs      · pl-6|pl-9 pr-2 py-1 · text-[12.5px]
+ *   L2  rounded-xs      · pl-6|pl-9 pr-2 py-1 · text-ui
  *       Items inside one — a chat under a project, a run under a task.
  *
  * L2 was `rounded-md`, which is Tailwind's generic 8px step and the one rung in
  * this panel that is not on the product's radius ladder (…xs 6 · control 9 ·
  * field 10 · menu 12…). 6px is the rung below L1's 9, so the two tiers still
  * step, and the column stops carrying a radius no other surface can name.
+ *
+ * L2's size was `text-[12.5px]` — nine restatements of the half-pixel value
+ * `text-ui` exists to retire (tailwind.config.ts: no 1x display can honour the
+ * .5, and nobody chose it). The token is the same rung to the eye and the one
+ * every other dense list in the product reads at, so the sidebar stops carrying
+ * a private size. L1's `text-[14px]` is `text-sm` under an arbitrary alias.
  *
  * The indent (pl-6 vs pl-9) is the only thing that varies within L2, and it
  * encodes real nesting depth rather than taste.
@@ -654,19 +661,28 @@ export function AppSidebar({
   if (collapsed) {
     return (
       <div key="rail" className="flex h-full w-[64px] flex-col items-center py-3 text-sidebar-foreground motion-safe:animate-fade-in">
-        <Pressable
-          kind="icon"
-          size="lg"
-          onClick={onToggleCollapse}
-          title="Expand sidebar"
-          aria-label="Expand sidebar"
-          // hover:text-foreground, like every RailIcon directly beneath it. This
-          // one resolved its hover to the colour it already had, so the top
-          // control in the rail was the only one whose glyph did not answer.
-          className="group text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
-        >
-          <SidebarMotionIcon kind="panel-open" />
-        </Pressable>
+        {/* A real Tooltip, not the native `title` the rail used to lean on: the
+            OS bubble ignores the provider's 200ms delay and the popper's motion
+            pair, so the rail's labels appeared on a different clock from every
+            other hover hint in the product. `side="right"` for the whole rail —
+            a label has no room over a 64px column and belongs beside it. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Pressable
+              kind="icon"
+              size="lg"
+              onClick={onToggleCollapse}
+              aria-label="Expand sidebar"
+              // hover:text-foreground, like every RailIcon directly beneath it. This
+              // one resolved its hover to the colour it already had, so the top
+              // control in the rail was the only one whose glyph did not answer.
+              className="group text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
+            >
+              <SidebarMotionIcon kind="panel-open" />
+            </Pressable>
+          </TooltipTrigger>
+          <TooltipContent side="right">Expand sidebar</TooltipContent>
+        </Tooltip>
         <div className="mt-3">
           <ModeToggle mode={mode} onChange={switchMode} compact />
         </div>
@@ -749,33 +765,56 @@ export function AppSidebar({
         <Link href="/chat" onClick={() => setSidebarOpen(false)} className="group/brand rounded-control">
           <span className="flex items-center gap-2 pl-1">
             <JunoMark className="h-[21px] w-[21px]" />
+            {/* Off the type scale on purpose: this is the logotype, not a
+                heading — the same exemption AsciiWordmark's tracking carries.
+                Snapping it to `title` (22px) would alter the brand mark to
+                satisfy a ladder built for interface text. */}
             <span className="font-serif text-[1.45rem] font-normal tracking-[-0.02em] text-foreground">Juno</span>
           </span>
         </Link>
+        {/* Every bare glyph in this panel carries a Tooltip on the shared
+            200ms provider clock. `side="bottom"` along this top edge — a
+            top-placed label here would collide with the viewport and flip
+            per-button, so the row states the direction once instead. */}
         <div className="flex items-center gap-0.5">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="group"
-            onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
-            aria-label="Search chats and projects"
-          >
-            <SidebarMotionIcon kind="search" className="h-4 w-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="group"
+                onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
+                aria-label="Search chats and projects"
+              >
+                <SidebarMotionIcon kind="search" className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Search</TooltipContent>
+          </Tooltip>
           {onToggleCollapse && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="group hidden md:inline-flex"
-              onClick={onToggleCollapse}
-              aria-label="Collapse sidebar"
-            >
-              <SidebarMotionIcon kind="panel-close" className="h-4 w-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="group hidden md:inline-flex"
+                  onClick={onToggleCollapse}
+                  aria-label="Collapse sidebar"
+                >
+                  <SidebarMotionIcon kind="panel-close" className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Collapse sidebar</TooltipContent>
+            </Tooltip>
           )}
-          <Button variant="ghost" size="icon-sm" className="group md:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
-            <SidebarMotionIcon kind="close" className="h-4 w-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon-sm" className="group md:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
+                <SidebarMotionIcon kind="close" className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Close</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
@@ -916,7 +955,7 @@ export function AppSidebar({
                   ))}
                 </div>
               ) : codeProjects.length === 0 ? (
-                <p className="px-2.5 py-1 text-[12.5px] leading-5 text-muted-foreground">
+                <p className="px-2.5 py-1 text-ui text-muted-foreground">
                   Your Juno Code projects appear here once the app syncs them.
                 </p>
               ) : (
@@ -1239,7 +1278,7 @@ function WorkSessionRow({
       aria-current={active ? "page" : undefined}
       title={session.title || session.goal}
       className={cn(
-        "group flex items-center gap-2.5 rounded-control py-1.5 pl-2.5 pr-2.5 text-[14px] font-medium transition-[background-color,color] duration-fast ease-out-soft",
+        "group flex items-center gap-2.5 rounded-control py-1.5 pl-2.5 pr-2.5 text-sm font-medium transition-[background-color,color] duration-fast ease-out-soft",
         active
           ? "bg-sidebar-accent font-semibold text-foreground"
           : "text-sidebar-foreground/90 hover:bg-sidebar-accent hover:text-foreground",
@@ -1265,7 +1304,7 @@ function InlineErrorRow({ message, onRetry }: { message: string; onRetry: () => 
       // bg-destructive/10, not /5: over the pure-black ground a 5% tint
       // composites to ~2.5% lightness and disappears, leaving the one row that
       // must not be mistaken for ordinary content carried by its border alone.
-      className="mx-0.5 my-1 flex items-center gap-2 rounded-xs border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-[12.5px] text-destructive"
+      className="mx-0.5 my-1 flex items-center gap-2 rounded-xs border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-ui text-destructive"
     >
       <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1">{message}</span>
@@ -1310,17 +1349,26 @@ function RailIcon({
     "group text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground",
     active && "bg-sidebar-accent text-foreground"
   );
-  if (href) {
-    return (
-      <Link href={href} title={label} aria-label={label} aria-current={active ? "page" : undefined} className={cls}>
-        {children}
-      </Link>
-    );
-  }
+  // Tooltip, not the native `title` this carried: the OS bubble runs on its own
+  // ~1s clock and skips the popper motion pair, so the rail's labels were the
+  // one set of hover hints in the product off the shared 200ms delay.
+  // `side="right"` matches the expand toggle above — beside the rail is the
+  // only direction with room.
   return (
-    <button type="button" onClick={onClick} title={label} aria-label={label} className={cls}>
-      {children}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {href ? (
+          <Link href={href} aria-label={label} aria-current={active ? "page" : undefined} className={cls}>
+            {children}
+          </Link>
+        ) : (
+          <button type="button" onClick={onClick} aria-label={label} className={cls}>
+            {children}
+          </button>
+        )}
+      </TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -1338,7 +1386,7 @@ function NavRow({
   active?: boolean;
 }) {
   const cls = cn(
-    "group relative flex min-h-9 items-center gap-2.5 rounded-control px-2.5 py-1.5 text-[14px] font-medium transition-colors duration-fast ease-out-soft",
+    "group relative flex min-h-9 items-center gap-2.5 rounded-control px-2.5 py-1.5 text-sm font-medium transition-colors duration-fast ease-out-soft",
     active
       ? "bg-sidebar-accent font-semibold text-foreground"
       : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
@@ -1387,8 +1435,13 @@ function Section({
       {Icon && !collapsible && <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />}
       {/* Full --muted-foreground, no alpha. At /75 against the black ground this
           label measured under the 4.5:1 floor, and it is the only thing naming
-          the list under it. */}
-      <span className="min-w-0 truncate text-[12px] font-medium text-muted-foreground">
+          the list under it.
+          text-xs, not text-[12px]: the same 12px, but named — and the exact
+          voice DropdownMenuLabel already speaks (text-xs font-medium
+          text-muted-foreground), so a section heading reads the same whether
+          the list lives in this panel or in a menu. Sentence case throughout;
+          the uppercase `label` token is for mono eyebrows, not headings. */}
+      <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">
         {label}
       </span>
       {collapsible && (
@@ -1514,7 +1567,7 @@ function CodeWorkspaceGroup({
         onClick={onToggle}
         aria-expanded={expanded}
         aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
-        className="group flex w-full items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left text-[14px] font-medium text-sidebar-foreground/90 transition-[color,background-color] duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
+        className="group flex w-full items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left text-sm font-medium text-sidebar-foreground/90 transition-[color,background-color] duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
       >
         <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-fast ease-out-soft group-hover:text-foreground">
           <SidebarMotionIcon kind="folder" className="h-[16px] w-[16px]" />
@@ -1530,7 +1583,7 @@ function CodeWorkspaceGroup({
       <Disclosure open={expanded}>
         <div className="mt-0.5 flex flex-col gap-0.5">
           {sessions.length === 0 && tasks.length === 0 && (
-            <p className="py-1 pl-6 pr-2 text-[12.5px] leading-5 text-muted-foreground">No sessions yet.</p>
+            <p className="py-1 pl-6 pr-2 text-ui text-muted-foreground">No sessions yet.</p>
           )}
           {sessions.map((c) => (
             <ConversationRow
@@ -1579,7 +1632,10 @@ function CodeTaskStatusRow({ task, onNavigate }: { task: CodeTaskRow; onNavigate
     <>
       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", meta.dot)} aria-hidden="true" />
       <span dir="auto" className="min-w-0 flex-1 truncate">{task.title}</span>
-      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+      {/* text-micro is the mono metadata floor (tailwind.config.ts) — the
+          text-[10px] it replaces sat under it, losing hairline strokes on 1x
+          displays in exactly the muted ink this label is set in. */}
+      <span className="shrink-0 font-mono text-micro text-muted-foreground">
         {meta.label}
       </span>
     </>
@@ -1590,17 +1646,18 @@ function CodeTaskStatusRow({ task, onNavigate }: { task: CodeTaskRow; onNavigate
         href={`/chat/${task.conversationId}`}
         onClick={onNavigate}
         title={task.title}
-        // The three properties the hover actually changes, named. `transition-all`
-        // here also animated every layout property the row inherits, so a sidebar
-        // resize drag ran the width change through this rung too.
-        className="flex items-center gap-2 rounded-xs py-1 pl-6 pr-2 text-[12.5px] text-sidebar-foreground/70 transition-[transform,background-color,color] duration-fast ease-out-soft hover:translate-x-0.5 hover:bg-sidebar-accent hover:text-foreground motion-reduce:hover:translate-x-0"
+        // Fill and ink only — no hover:translate-x nudge. Every other L2 row in
+        // the column (project chats, nested sessions, "View all") answers the
+        // pointer with the flat sidebar-accent fill; this was the single row
+        // that also slid, which made one tier carry two hover grammars.
+        className="flex items-center gap-2 rounded-xs py-1 pl-6 pr-2 text-ui text-sidebar-foreground/70 transition-[background-color,color] duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
       >
         {inner}
       </Link>
     );
   }
   return (
-    <div className="flex items-center gap-2 rounded-xs py-1 pl-6 pr-2 text-[12.5px] text-sidebar-foreground/70" title={task.title}>
+    <div className="flex items-center gap-2 rounded-xs py-1 pl-6 pr-2 text-ui text-sidebar-foreground/70" title={task.title}>
       {inner}
     </div>
   );
@@ -1693,9 +1750,14 @@ function ConversationRow({
           }}
           className="h-8 w-full"
         />
-        <Button size="icon-sm" variant="ghost" onClick={commitRename} aria-label="Save">
-          <Check className="h-4 w-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="icon-sm" variant="ghost" onClick={commitRename} aria-label="Save">
+              <Check className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Save</TooltipContent>
+        </Tooltip>
       </div>
     );
   }
@@ -1714,10 +1776,9 @@ function ConversationRow({
         aria-current={active ? "page" : undefined}
         className={cn(
           "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 font-medium text-sidebar-foreground/90 hover:text-foreground",
-          // 12.5px is L2 (see the header comment). This was the one nested row
-          // in the panel off its own declared tier, sitting half a point above
-          // the code-task, project-chat and "View all" rows beside it.
-          nested ? "text-[12.5px]" : "text-[14px]",
+          // text-ui is L2, text-sm is L1 (see the header comment) — the two row
+          // tiers, named, so this row cannot drift half a point off either one.
+          nested ? "text-ui" : "text-sm",
           active && "font-semibold text-foreground"
         )}
         title={conversation.title}
@@ -1732,22 +1793,40 @@ function ConversationRow({
           className="min-w-0 flex-1"
         />
         {taskStatus && TASK_STATUS_META[taskStatus] && (
-          <span className="flex shrink-0 items-center pl-1" title={TASK_STATUS_META[taskStatus].label}>
-            <span className={cn("h-1.5 w-1.5 rounded-full", TASK_STATUS_META[taskStatus].dot)} aria-hidden="true" />
-            <span className="sr-only">{TASK_STATUS_META[taskStatus].label}</span>
-          </span>
+          /* A 6px dot cannot carry a word, so the word rides a Tooltip — in the
+             mono metadata voice, because this is the same readout
+             CodeTaskStatusRow prints inline (font-mono text-micro), shown on
+             demand instead of always. The native `title` it replaces ignored
+             the shared 200ms delay. */
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex shrink-0 items-center pl-1">
+                <span className={cn("h-1.5 w-1.5 rounded-full", TASK_STATUS_META[taskStatus].dot)} aria-hidden="true" />
+                <span className="sr-only">{TASK_STATUS_META[taskStatus].label}</span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="font-mono text-micro">{TASK_STATUS_META[taskStatus].label}</TooltipContent>
+          </Tooltip>
         )}
       </Link>
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Pressable
-            kind="icon"
-            className={KEBAB_CLASS}
-            aria-label={variant === "code" ? "Session options" : "Conversation options"}
-          >
-            <SidebarMotionIcon kind="more" className="size-4" />
-          </Pressable>
-        </DropdownMenuTrigger>
+        {/* Tooltip around DropdownMenuTrigger, the composition DownloadMenu
+            already uses: both slots merge onto the one Pressable, and Radix
+            drops the tooltip the moment the menu opens. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Pressable
+                kind="icon"
+                className={KEBAB_CLASS}
+                aria-label={variant === "code" ? "Session options" : "Conversation options"}
+              >
+                <SidebarMotionIcon kind="more" className="size-4" />
+              </Pressable>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>{variant === "code" ? "Session options" : "Conversation options"}</TooltipContent>
+        </Tooltip>
         {/* Width only. The origin and the pop-in/out pair are already on the
             primitive; re-declaring them here (with `!` to win a specificity fight
             that no longer exists) is how the other ~30 menus quietly drifted. */}
@@ -1790,10 +1869,11 @@ function ConversationRow({
             </>
           )}
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onSelect={remove}
-            className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
-          >
+          {/* The primitive's destructive variant, not a per-site class. The
+              string this carried filled focus with FULL --destructive — the one
+              menu in the product where Delete highlighted like a primary action
+              instead of taking the tinted /10 fill the variant was QA'd to. */}
+          <DropdownMenuItem onSelect={remove} variant="destructive">
             <Trash2 className="h-4 w-4" /> Delete
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -1849,7 +1929,7 @@ function ProjectRow({
           // flex-1 so the link fills the row it paints hover across: a
           // content-width link next to a flex-1 spacer left the middle of the
           // row looking clickable but doing nothing (as ConversationRow does).
-          "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-[14px] font-medium text-sidebar-foreground/90 hover:text-foreground",
+          "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-sm font-medium text-sidebar-foreground/90 hover:text-foreground",
           active && "font-semibold text-foreground"
         )}
         title={project.name}
@@ -1867,35 +1947,47 @@ function ProjectRow({
       {/* Disclosure ›, rotating open. Sits with the kebab at the row's trailing
           edge: the project link owns the whole span it paints hover across. */}
       {hasChats && (
-        <button
-          type="button"
-          onClick={() => {
-            setExpanded((v) => !v);
-            if (expanded) setShowAll(false);
-          }}
-          aria-label={expanded ? `Collapse ${project.name}` : `Expand ${project.name}`}
-          aria-expanded={expanded}
-          // 20px is well under the 44px touch minimum — widen on coarse
-          // pointers only, with negative margins so row height is unchanged.
-          // Circular, and it fills on hover: `rounded-sm` (4px, off the ladder)
-          // put a square 2px from the circular kebab it shares a row with, and a
-          // colour-only hover on a 20px glyph gives the pointer nothing to land
-          // on — the kebab beside it has answered with a fill all along.
-          className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground coarse:-my-3 coarse:h-11 coarse:w-11"
-        >
-          <ChevronRight className={cn("h-3.5 w-3.5 transition-transform duration-fast ease-out-soft", expanded && "rotate-90")} />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => {
+                setExpanded((v) => !v);
+                if (expanded) setShowAll(false);
+              }}
+              aria-label={expanded ? `Collapse ${project.name}` : `Expand ${project.name}`}
+              aria-expanded={expanded}
+              // 20px is well under the 44px touch minimum — widen on coarse
+              // pointers only, with negative margins so row height is unchanged.
+              // Circular, and it fills on hover: `rounded-sm` (4px, off the ladder)
+              // put a square 2px from the circular kebab it shares a row with, and a
+              // colour-only hover on a 20px glyph gives the pointer nothing to land
+              // on — the kebab beside it has answered with a fill all along.
+              className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground coarse:-my-3 coarse:h-11 coarse:w-11"
+            >
+              <ChevronRight className={cn("h-3.5 w-3.5 transition-transform duration-fast ease-out-soft", expanded && "rotate-90")} />
+            </button>
+          </TooltipTrigger>
+          {/* The verb alone — aria-label keeps the project name for readers,
+              but a hover hint restating a title already on screen is noise. */}
+          <TooltipContent>{expanded ? "Collapse" : "Expand"}</TooltipContent>
+        </Tooltip>
       )}
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Pressable
-            kind="icon"
-            className={KEBAB_CLASS}
-            aria-label="Project options"
-          >
-            <SidebarMotionIcon kind="more" className="size-4" />
-          </Pressable>
-        </DropdownMenuTrigger>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Pressable
+                kind="icon"
+                className={KEBAB_CLASS}
+                aria-label="Project options"
+              >
+                <SidebarMotionIcon kind="more" className="size-4" />
+              </Pressable>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>Project options</TooltipContent>
+        </Tooltip>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem onSelect={onNewChat}>
             <Plus className="h-4 w-4" /> New chat in project
@@ -1908,10 +2000,9 @@ function ProjectRow({
             <Pencil className="h-4 w-4" /> Rename
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onSelect={onDelete}
-            className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
-          >
+          {/* Same variant note as ConversationRow's Delete: the primitive owns
+              the destructive treatment. */}
+          <DropdownMenuItem onSelect={onDelete} variant="destructive">
             <Trash2 className="h-4 w-4" /> Delete
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -1928,9 +2019,13 @@ function ProjectRow({
             aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
             title={c.title}
             className={cn(
-              "group group/pc flex items-center gap-2 rounded-xs py-1 pl-9 pr-2 text-[12.5px] transition-[color,background-color] duration-fast ease-out-soft hover:bg-sidebar-accent",
+              "group group/pc flex items-center gap-2 rounded-xs py-1 pl-9 pr-2 text-ui transition-[color,background-color] duration-fast ease-out-soft hover:bg-sidebar-accent",
+              // bg-sidebar-accent on the active row, like every other selected
+              // row in this panel (a deliberate QA decision: neutral fill, no
+              // accent rail). This was the one selected state carried by weight
+              // alone, so the open chat vanished the moment a sibling hovered.
               activePath === `/chat/${c.id}`
-                ? "font-medium text-foreground"
+                ? "bg-sidebar-accent font-medium text-foreground"
                 : "text-sidebar-foreground/70 hover:text-foreground"
             )}
           >
@@ -1942,7 +2037,7 @@ function ProjectRow({
           <button
             type="button"
             onClick={() => setShowAll((v) => !v)}
-            className="flex items-center rounded-xs py-1 pl-9 pr-2 text-[12.5px] font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
+            className="flex items-center rounded-xs py-1 pl-9 pr-2 text-ui font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
           >
             {showAll ? "Show less" : `View all ${chats.length}`}
           </button>

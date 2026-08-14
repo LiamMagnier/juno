@@ -317,8 +317,8 @@ export function SegmentedControl<T extends string>({
           // THE SLIDE. `ease-out-back` overshoots by ~3% and comes back, so the
           // pane arrives with weight instead of stopping on the mark. This is
           // the one curve in the system that overshoots and this is what it was
-          // added for. (`ease-spring`, which this used to name, is a deprecated
-          // alias of ease-out-strong and never sprang at all.)
+          // added for. (`ease-spring`, which this used to name, was an alias of
+          // ease-out-strong that never sprang at all — since deleted.)
           //
           // THE RELAX. `scale` is given a slower rung and a plain decelerate, so
           // the stretch is still unwinding for ~140ms after the travel has

@@ -69,15 +69,16 @@ describe("native model catalog", () => {
     assert.equal(gated.capabilities.streaming, true);
   });
 
-  it("floors the required plan the same way canUseModel does", () => {
-    // A FREE-labelled paid model is Pro-floored by effectiveMinPlan, so a FREE
-    // account must be told "Pro", not "Free".
+  it("enforces the catalog's own minPlan the same way canUseModel does", () => {
+    // A FREE-labelled model is the trial tier since PLANS.FREE grants
+    // messages: a FREE account can call it, and the manifest must say so.
+    // (Before the trial, effectiveMinPlan Pro-floored this to "requires_plan".)
     const catalog = nativeModelCatalog([fakeModel()], "FREE");
-    const gated = entry(catalog, "anthropic:claude-sonnet-4-6");
+    const trial = entry(catalog, "anthropic:claude-sonnet-4-6");
 
-    assert.equal(gated.availability, "requires_plan");
-    assert.equal(gated.minimumPlan, "free");
-    assert.equal(gated.requiredPlan, "pro");
+    assert.equal(trial.availability, "available");
+    assert.equal(trial.minimumPlan, "free");
+    assert.equal(trial.requiredPlan, "free");
   });
 
   it("carries the real 1-10 grades the selector bars read from", () => {

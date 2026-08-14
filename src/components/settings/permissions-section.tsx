@@ -2,15 +2,14 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Check, Loader2, ShieldAlert, TriangleAlert } from "lucide-react";
+import { Check, ShieldAlert, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Label } from "@/components/ui/label";
 import { Pressable } from "@/components/ui/pressable";
 import { Switch } from "@/components/ui/switch";
-import { Tile } from "@/components/settings/tile";
+import { Tile, TileSaveStatus, type TileSaveState } from "@/components/settings/tile";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
-import { cn } from "@/lib/utils";
 import type { ConnectorStatus } from "@/components/connections/types";
 // Type-only on purpose. `@/lib/action-approval` pulls in node:crypto for the
 // receipt and policy digests, so importing a VALUE from it would drag that into
@@ -25,12 +24,6 @@ interface PermissionState {
   lockdownMode: boolean;
   blockedConnectors: string[];
 }
-
-type SaveState =
-  | { name: "idle" }
-  | { name: "saving" }
-  | { name: "saved" }
-  | { name: "failed" };
 
 /**
  * One line per policy, describing what the SERVER actually does — these are read
@@ -82,7 +75,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
   const [state, setState] = React.useState<PermissionState | null>(null);
   const [connectors, setConnectors] = React.useState<ConnectorStatus[]>([]);
   const [loadFailed, setLoadFailed] = React.useState(false);
-  const [save, setSave] = React.useState<SaveState>({ name: "idle" });
+  const [save, setSave] = React.useState<TileSaveState>("idle");
 
   // Toggling three switches quickly puts three PATCHes on the wire. Only the
   // newest one may write the status line or roll the UI back — otherwise a slow
@@ -133,7 +126,7 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
       const seq = ++saveSeqRef.current;
       clearTimeout(savedTimerRef.current);
       setState(next);
-      setSave({ name: "saving" });
+      setSave("saving");
       try {
         const res = await fetch("/api/settings", {
           method: "PATCH",
@@ -142,18 +135,18 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
         });
         if (seq !== saveSeqRef.current) return; // a later change owns the UI
         if (!res.ok) throw new Error(String(res.status));
-        setSave({ name: "saved" });
+        setSave("saved");
         // The confirmation is transient, the state it describes is not. Clearing
         // it keeps a stale "Saved" from sitting next to controls the user has
         // since changed by hand elsewhere.
-        savedTimerRef.current = setTimeout(() => setSave({ name: "idle" }), 4000);
+        savedTimerRef.current = setTimeout(() => setSave("idle"), 4000);
       } catch {
         if (seq !== saveSeqRef.current) return;
         // Put the controls back where the server still has them. Claiming a
         // permission changed when the write failed is the one lie this card
         // cannot afford.
         if (previous) setState(previous);
-        setSave({ name: "failed" });
+        setSave("failed");
       }
     },
     [state]
@@ -209,39 +202,9 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
     <Tile
       eyebrow="Connector permissions"
       i={index}
-      span
-      // One status line for the whole card. It exists in every state so the
-      // live region is present before the first save, which is what makes the
-      // announcement reliable.
-      aside={
-        <span
-          role="status"
-          aria-live="polite"
-          className={cn(
-            "flex items-center gap-1.5 text-caption",
-            save.name === "failed" ? "text-destructive" : "text-muted-foreground"
-          )}
-        >
-          {save.name === "saving" && (
-            <>
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-              Saving…
-            </>
-          )}
-          {save.name === "saved" && (
-            <>
-              <Check className="h-3.5 w-3.5 text-primary" aria-hidden />
-              Saved
-            </>
-          )}
-          {save.name === "failed" && (
-            <>
-              <TriangleAlert className="h-3.5 w-3.5" aria-hidden />
-              Couldn&apos;t save. Your permissions are unchanged.
-            </>
-          )}
-        </span>
-      }
+      // One status line for the whole card, present in every state — see
+      // TileSaveStatus for why it never unmounts.
+      aside={<TileSaveStatus state={save} failedMessage="Couldn't save. Your permissions are unchanged." />}
     >
       <p className="mb-4 text-sm text-muted-foreground">
         What Juno may do with your connected apps on its own, and what it has to stop and ask you
@@ -278,7 +241,9 @@ export function PermissionsSection({ index = 0 }: { index?: number }) {
       ) : (
         <>
           {state.lockdownMode && (
-            <p className="mb-4 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-3 text-sm text-foreground">
+            // p-4, matching the spend-ceiling warning well on this same page:
+            // the two warning states in settings share one chrome.
+            <p className="mb-4 flex items-start gap-2 rounded-field border border-warning/40 bg-warning/10 p-4 text-sm text-foreground">
               <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
               Lockdown is on, so every connector action is refused right now. The choice below takes
               effect again when you turn it off.

@@ -53,7 +53,6 @@ struct DesktopIncognitoChat: View {
     @State private var selectedModelID = ""
     @State private var reasoningEffort: NativeReasoningEffort?
     @FocusState private var composerFocused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -110,7 +109,9 @@ struct DesktopIncognitoChat: View {
     private var greeting: some View {
         VStack(spacing: JunoSpace.snug) {
             Image(systemName: "theatermasks")
-                .font(.system(size: 34))
+                // Rides the greeting title's Dynamic Type scale: the glyph and
+                // the serif line below it are one lockup and must grow together.
+                .junoFont(size: 34, relativeTo: .title)
                 .foregroundStyle(Color.junoMutedForeground)
             Text(profileName.map { "Off the record, \($0)" } ?? "Off the record")
                 .font(JunoSerif.font(size: 26, relativeTo: .title, face: .medium))
@@ -155,8 +156,11 @@ struct DesktopIncognitoChat: View {
                 }
                 if turn.content.isEmpty, model.isStreaming {
                     HStack(spacing: 10) {
+                        // Full-alpha secondary ink: the token is already the
+                        // ramp's floor, and the matrix is quiet by being small,
+                        // not by being scaled below it.
                         JunoThinkingMatrix()
-                            .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
+                            .foregroundStyle(Color.junoMutedForeground)
                         JunoAIcssThinkingLabel("Thinking about your request", size: 15)
                     }
                 } else {

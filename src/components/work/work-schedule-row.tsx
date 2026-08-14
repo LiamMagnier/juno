@@ -175,15 +175,15 @@ export function WorkScheduleRow({
               {schedule.name}
             </span>
             {!schedule.enabled && (
-              <span className="shrink-0 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
+              <span className="shrink-0 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-micro leading-none text-muted-foreground">
                 Paused
               </span>
             )}
           </span>
-          <span className="mt-1 block truncate text-[13px] leading-relaxed text-muted-foreground">
+          <span className="mt-1 block truncate text-ui leading-relaxed text-muted-foreground">
             {schedule.triggers.map((trigger) => describeTrigger(trigger)).join(" · ")}
           </span>
-          <span className="mt-1.5 block font-mono text-[10px] tabular-nums text-muted-foreground">
+          <span className="mt-1.5 block font-mono text-micro tabular-nums text-muted-foreground">
             {nextFireSentence(schedule)}
             {schedule.lastRunAt !== null && ` · last ran ${workTimeAgo(schedule.lastRunAt)}`}
             {notify !== null && ` · ${notify}`}
@@ -201,7 +201,7 @@ export function WorkScheduleRow({
           size="sm"
           disabled={busy !== null}
           onClick={() => void runNow()}
-          className="h-7 gap-1.5 px-2 font-mono text-[10px] text-muted-foreground"
+          className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
         >
           {busy === "run" ? (
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />

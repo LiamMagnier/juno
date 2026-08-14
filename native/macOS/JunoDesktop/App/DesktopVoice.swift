@@ -300,9 +300,10 @@ private struct DesktopVoiceField: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Arriving mid-sentence is worse than arriving late, so the field fades up
     /// rather than appearing at full strength the frame the socket opens —
-    /// `voice-aura-in` over `--dur-slow`. Held here rather than driven by a
-    /// transition from the layer above, because the layer's animation would
-    /// have to be one the composer shares, and the composer must not move.
+    /// `voice-aura-in` over `--dur-slow` (except under Reduce Motion; see the
+    /// `onAppear`). Held here rather than driven by a transition from the layer
+    /// above, because the layer's animation would have to be one the composer
+    /// shares, and the composer must not move.
     @State private var lit = false
 
     var body: some View {
@@ -313,7 +314,13 @@ private struct DesktopVoiceField: View {
         )
         .opacity(lit ? 1 : 0)
         .onAppear {
-            withAnimation(JunoMotion.reduced(.easeOut(duration: 0.36), when: reduceMotion)) {
+            // `voice-aura-in var(--dur-slow) var(--ease-out-soft)` — the inline
+            // ease-out this replaces had the web's duration but not its curve.
+            // Ambient tier, like the loop it reveals: under Reduce Motion the
+            // web keeps the field and drops only the fade (`animation: none;
+            // opacity: 1`), because a live microphone has to stay visible — so
+            // `nil` here, full strength on the first frame, is the same answer.
+            withAnimation(JunoMotion.ambient(JunoMotion.outSoft(), when: reduceMotion)) {
                 lit = true
             }
         }
@@ -356,7 +363,11 @@ struct DesktopVoiceDock: View {
     /// wrapped the change in `withAnimation` — and two screens mount it.
     @State private var risen = false
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// One read for all three switches. The rise consults Reduce Motion, and
+    /// the hand-drawn control fills below consult Reduce Transparency — the
+    /// system swaps the pill's glass for an opaque backer on its own, but it
+    /// cannot see a custom `opacity(…)` fill sitting on top of it.
+    @Environment(\.junoAccessibility) private var accessibility
 
     private var controller: JunoRealtimeVoiceController { column.controller }
 
@@ -391,12 +402,20 @@ struct DesktopVoiceDock: View {
         }
         .frame(maxWidth: 720)
         .opacity(risen ? 1 : 0)
-        .offset(y: risen ? 0 : 8)
+        // Under Reduce Motion the entrance keeps its fade and loses its travel,
+        // exactly as the web's `rise-in` collapses its translate through
+        // `--motion-shift: 0` while opacity keeps its timing.
+        .offset(y: risen || accessibility.reduceMotion ? 0 : 8)
         .onAppear {
             withAnimation(
                 JunoMotion.reduced(
-                    .timingCurve(0.32, 0.72, 0, 1, duration: 0.32),
-                    when: reduceMotion
+                    // `rise-in var(--dur-slow) var(--ease-out-strong)`: the
+                    // curve is the web's `--ease-out-strong` verbatim, and the
+                    // duration is the ladder's `slow` rung — it shipped as an
+                    // inline 0.32, exactly the kind of near-miss beside 0.36
+                    // the `Duration` doc names as the damaging one.
+                    .timingCurve(0.32, 0.72, 0, 1, duration: JunoMotion.Duration.slow),
+                    when: accessibility.reduceMotion
                 )
             ) {
                 risen = true
@@ -452,14 +471,19 @@ struct DesktopVoiceDock: View {
     private var status: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(statusTitle)
-                .font(.system(size: 14, weight: .semibold))
+                .junoFont(size: 14, relativeTo: .body, weight: .semibold)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .help(failureMessage ?? statusTitle)
             if let costLabel {
                 Text(costLabel)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(Color.junoMutedForeground.opacity(0.6))
+                    .junoFont(size: 11, relativeTo: .caption2, design: .monospaced)
+                    // Secondary ink at full alpha. The token already sits at
+                    // the contrast floor, so the `opacity(0.6)` this replaces
+                    // was not a quieter grey, it was an illegible one — the
+                    // small mono face is what makes this read as the quiet
+                    // half of the column.
+                    .junoSecondaryInk()
                     .lineLimit(1)
                     .help(costDetail)
             }
@@ -543,7 +567,7 @@ struct DesktopVoiceDock: View {
     private func failureBanner(_ message: String) -> some View {
         messageStrip(tint: Color.junoDanger) {
             Text(message)
-                .font(.system(size: 12))
+                .junoFont(size: 12, relativeTo: .callout)
                 .lineSpacing(2)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -561,7 +585,7 @@ struct DesktopVoiceDock: View {
                     }
                 }
                 .buttonStyle(.link)
-                .font(.system(size: 12, weight: .medium))
+                .junoFont(size: 12, relativeTo: .callout, weight: .medium)
             }
         }
         .accessibilityIdentifier("juno.desktop.voice-failure")
@@ -573,7 +597,7 @@ struct DesktopVoiceDock: View {
     private func noticeBanner(_ notice: String) -> some View {
         messageStrip(tint: Color.junoCaution) {
             Label(notice, systemImage: "exclamationmark.circle")
-                .font(.system(size: 12))
+                .junoFont(size: 12, relativeTo: .callout)
                 .lineSpacing(2)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -630,7 +654,12 @@ struct DesktopVoiceDock: View {
                     controller.interrupt()
                 }
                 .accessibilityIdentifier("juno.desktop.voice-interrupt")
-                .transition(.scale.combined(with: .opacity))
+                // The vocabulary's overlay transition, not a bare
+                // scale-plus-opacity: it carries its own on-ladder curves —
+                // decelerating entrance, accelerating exit — so the control
+                // animates even though neither screen that mounts the dock
+                // wraps `assistantSpeaking` changes in `withAnimation`.
+                .transition(.junoOverlay)
             }
             control(
                 controller.muted ? "mic.slash.fill" : "mic.fill",
@@ -702,9 +731,17 @@ struct DesktopVoiceDock: View {
             }
         } label: {
             Image(systemName: "chevron.down")
-                .font(.system(size: 13, weight: .medium))
+                .junoFont(size: 13, relativeTo: .body, weight: .medium)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.junoMuted.opacity(0.45), in: Circle())
+                .background(
+                    // Full alpha under Reduce Transparency: the system makes
+                    // the glass beneath opaque on its own, but a hand-drawn
+                    // fill has to answer the switch itself.
+                    Color.junoMuted.opacity(
+                        accessibility.usesOpaqueTransientSurfaces ? 1 : 0.45
+                    ),
+                    in: Circle()
+                )
                 .contentShape(Circle())
         }
         .menuStyle(.borderlessButton)
@@ -725,7 +762,7 @@ struct DesktopVoiceDock: View {
                         .tint(.white)
                 } else {
                     Image(systemName: "phone.down.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                        .junoFont(size: 13, relativeTo: .body, weight: .semibold)
                         .foregroundStyle(.white)
                 }
             }
@@ -756,7 +793,7 @@ struct DesktopVoiceDock: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 14, weight: .medium))
+                .junoFont(size: 14, relativeTo: .body, weight: .medium)
                 // `Color.junoCanvas`, never the `.background` shape style: that
                 // one resolves against whatever surface the control is sitting
                 // on, and on glass it comes back translucent — a filled black
@@ -766,7 +803,13 @@ struct DesktopVoiceDock: View {
                 .foregroundStyle(tone == .prominent ? Color.junoCanvas : Color.junoForeground)
                 .frame(width: Metric.control, height: Metric.control)
                 .background(
-                    tone == .prominent ? Color.primary : Color.junoMuted.opacity(0.65),
+                    // The quiet fill goes opaque under Reduce Transparency —
+                    // same reasoning as the options circle above.
+                    tone == .prominent
+                        ? Color.primary
+                        : Color.junoMuted.opacity(
+                            accessibility.usesOpaqueTransientSurfaces ? 1 : 0.65
+                        ),
                     in: Circle()
                 )
                 .contentShape(Circle())

@@ -30,7 +30,7 @@ import {
 import { AppPageHeader } from "@/components/app/app-page-header";
 import { useApp } from "@/components/app/app-provider";
 import { PermissionsSection } from "@/components/settings/permissions-section";
-import { Tile } from "@/components/settings/tile";
+import { Tile, TileSaveStatus, type TileSaveState } from "@/components/settings/tile";
 import { SettingsGroup, SettingsSectionNav, type SettingsSection } from "@/components/settings/section-nav";
 import { useRadioGroup } from "@/components/settings/use-radio-group";
 import { resolveModel } from "@/lib/models";
@@ -204,7 +204,7 @@ function UsageMeter({ label, subtitle, pct }: { label: string; subtitle: string;
         <div className="text-sm font-medium text-foreground">{label}</div>
         <div className="text-caption text-muted-foreground">{subtitle}</div>
       </div>
-      <div className="flex min-w-[160px] flex-1 items-center gap-3">
+      <div className="flex min-w-40 flex-1 items-center gap-3">
         <div
           role="progressbar"
           aria-label={label}
@@ -311,7 +311,7 @@ function SpendCeiling({
         this figure.
       </p>
       <div className="mt-3 flex flex-wrap items-end gap-2">
-        <div className="min-w-[8rem] flex-1">
+        <div className="min-w-32 flex-1">
           <Label htmlFor="spend-cap" className="mb-1.5 block text-xs text-muted-foreground">
             Your own ceiling, in euros
           </Label>
@@ -350,6 +350,12 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
   const { user, settings, setSettings, quota, spend, features, models } = useApp();
   const { setTheme } = useTheme();
   const [instructions, setInstructions] = React.useState(settings.customInstructions);
+  // The blur-save's voice. Without it the only success signal was silence —
+  // the page toasts failures, so "nothing happened" meant "it worked", which
+  // is not a thing a user can be expected to know.
+  const [instructionsSave, setInstructionsSave] = React.useState<TileSaveState>("idle");
+  const instructionsTimerRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  React.useEffect(() => () => clearTimeout(instructionsTimerRef.current), []);
   const [deleteChatsOpen, setDeleteChatsOpen] = React.useState(false);
   const [deletingChats, setDeletingChats] = React.useState(false);
   const [portalLoading, setPortalLoading] = React.useState(false);
@@ -460,8 +466,16 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
     if (await save({ uiLocale })) window.location.reload();
   };
 
-  const saveInstructions = () => {
-    if (instructions !== settings.customInstructions) save({ customInstructions: instructions });
+  const saveInstructions = async () => {
+    if (instructions === settings.customInstructions) return;
+    clearTimeout(instructionsTimerRef.current);
+    setInstructionsSave("saving");
+    const ok = await save({ customInstructions: instructions });
+    setInstructionsSave(ok ? "saved" : "failed");
+    // Transient like the permissions card's confirmation; the failed state
+    // stays until the next attempt because the draft it describes is still
+    // sitting unsaved in the textarea.
+    if (ok) instructionsTimerRef.current = setTimeout(() => setInstructionsSave("idle"), 4000);
   };
 
   const deleteAllChats = async () => {
@@ -628,7 +642,7 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
           description="What you are on, what you have spent, and the ceiling that stops it."
         >
           {/* Usage dashboard */}
-          <Tile eyebrow="Usage" i={0} span>
+          <Tile eyebrow="Usage" i={0}>
             <div className="grid grid-cols-1 overflow-hidden rounded-card border border-border/70 lg:grid-cols-[15rem_1fr]">
               {/* Plan info (Left) — `bg-secondary`, opaque, exactly one rung
                   apart from the `bg-card` panel beside it. `bg-muted/35`
@@ -638,7 +652,10 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
               <div className="flex flex-col justify-between border-b border-border/70 bg-secondary p-5 lg:border-b-0 lg:border-r">
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-base font-semibold tracking-[-0.01em]">
+                    {/* No hand tracking: its counterpart — the euro figure in
+                        the pane beside it — is the same text-base font-semibold
+                        without it, and the two head the two halves of one card. */}
+                    <span className="text-base font-semibold">
                       {plan.name} Plan
                     </span>
                     {/* A green liveness pip only where the account can actually
@@ -681,8 +698,11 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
                       one that keeps the fill is the one that comes with the
                       sentence explaining why you would press it; this one is
                       the shortcut beside the price. */}
+                  {/* Plain size="sm" — the h-7 override sat below the button
+                      ladder's smallest rung and silently fought the coarse:h-10
+                      touch-target bump the primitive exists to guarantee. */}
                   {quota.plan === "FREE" && features.billing && (
-                    <Button asChild variant="outline" size="sm" className="h-7 px-3 text-xs">
+                    <Button asChild variant="outline" size="sm">
                       <Link href="/upgrade">Upgrade</Link>
                     </Button>
                   )}
@@ -720,7 +740,7 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
                       Free is a browse-only tier. Upgrade to Pro to start using models.
                     </p>
                     {features.billing && (
-                      <Button asChild size="sm" className="h-7 px-3 text-xs">
+                      <Button asChild size="sm">
                         <Link href="/upgrade">Upgrade</Link>
                       </Button>
                     )}
@@ -775,7 +795,7 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
             description="How Juno looks on this device, and the language its own chrome speaks."
           >
           {/* Appearance */}
-          <Tile eyebrow="Appearance" i={1} span>
+          <Tile eyebrow="Appearance" i={1}>
             <div className="grid gap-6 sm:grid-cols-2">
               <div>
                 <Label className="mb-2 block text-xs text-muted-foreground">Theme</Label>
@@ -859,9 +879,8 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
             title="Chat defaults"
             description="The starting point for every new conversation. Anything here can still be overridden per message."
           >
-          {/* Default model — spans so the two language selects below pair off
-              in the 2-column grid instead of leaving a half-empty row. */}
-          <Tile eyebrow="Default model" i={3} span>
+          {/* Default model */}
+          <Tile eyebrow="Default model" i={3}>
             <p className="mb-3 text-sm text-muted-foreground">
               Used for new conversations. Choose Auto to route each prompt to the cheapest capable model.
             </p>
@@ -913,7 +932,7 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
           </Tile>
 
           {/* Response style */}
-          <Tile eyebrow="Response style" i={5} span>
+          <Tile eyebrow="Response style" i={5}>
             <p className="mb-3 text-sm text-muted-foreground">
               How Juno writes. Your custom instructions below still take priority.
             </p>
@@ -948,6 +967,35 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
             </div>
           </Tile>
 
+          {/* Custom instructions — directly under the style presets on purpose:
+              the presets' copy points at "your custom instructions below", and
+              the two are one system (a named tone, then your own words on top),
+              which is only legible when they sit together. */}
+          <Tile
+            eyebrow="Custom instructions"
+            i={6}
+            aside={<TileSaveStatus state={instructionsSave} failedMessage="Couldn't save. Your draft is still here." />}
+          >
+            <p className="mb-3 text-sm text-muted-foreground">
+              Juno keeps these in mind in every conversation. No character cap — long system prompts and curricula are fine; the model context window is the only real limit.
+            </p>
+            <div className="relative">
+              <Textarea
+                value={instructions}
+                onChange={(e) => setInstructions(e.target.value)}
+                onBlur={() => void saveInstructions()}
+                placeholder="E.g. I'm a product manager. Keep answers concise and use bullet points."
+                // min-h-28, not 110px: the 4pt grid's nearest rung, and the only
+                // height on this page that was off it.
+                className="min-h-28 pb-8"
+              />
+              {/* On the type scale and at full muted ink: it was 10px at half the ramp. */}
+              <span className="absolute bottom-2.5 right-3 select-none font-mono text-caption text-muted-foreground">
+                {instructions.length.toLocaleString()} chars
+              </span>
+            </div>
+          </Tile>
+
           {/* Read-aloud voice — every clause here removes a way this could be a
               control that looks alive and does nothing:
                 serverTts   — else the browser fallback speaks in the OS voice and
@@ -958,7 +1006,7 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
                 plan.voice  — /api/voice/tts 403s without it, so on Free every
                               preview button would fail silently. */}
           {features.serverTts && features.ttsProvider === "openai" && plan.voice && (
-            <Tile eyebrow="Read-aloud voice" i={6} span>
+            <Tile eyebrow="Read-aloud voice" i={7}>
               <p className="mb-3 text-sm text-muted-foreground">
                 The voice Juno reads answers aloud in. Press play to hear one.
               </p>
@@ -1036,26 +1084,6 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
             </Tile>
           )}
 
-          <Tile eyebrow="Custom instructions" i={7} span>
-            <p className="mb-3 text-sm text-muted-foreground">
-              Juno keeps these in mind in every conversation. No character cap — long system prompts and curricula are fine; the model context window is the only real limit.
-            </p>
-            <div className="relative">
-              <Textarea
-                value={instructions}
-                onChange={(e) => setInstructions(e.target.value)}
-                onBlur={saveInstructions}
-                placeholder="E.g. I'm a product manager. Keep answers concise and use bullet points."
-                className="min-h-[110px] pb-8"
-              />
-              {/* On the type scale and at full muted ink: this is the only
-                  feedback the textarea gives, and it was 10px at half the ramp. */}
-              <span className="absolute bottom-2.5 right-3 select-none font-mono text-caption text-muted-foreground">
-                {instructions.length.toLocaleString()} chars
-              </span>
-            </div>
-          </Tile>
-
           </SettingsGroup>
 
           <SettingsGroup
@@ -1063,9 +1091,7 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
             title="Memory"
             description="What Juno is allowed to remember about you between conversations."
           >
-          {/* Memory — pairs with Account below; both tiles stretch to the same
-              height (grid stretch + Tile's flex-col), buttons pinned to the
-              bottom edge with mt-auto so the pair reads as one system. */}
+          {/* Memory */}
           <Tile eyebrow="Memory" i={8}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -1165,7 +1191,7 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
           </Tile>
 
           {/* Email notifications */}
-          <Tile eyebrow="Email notifications" i={10} span>
+          <Tile eyebrow="Email notifications" i={10}>
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/60">
                 <div>
@@ -1222,7 +1248,7 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
               bottom hairline — and destructive at 20% over pure black is
               invisible, which made the override dead code. The one edge that
               actually exists now reads. */}
-          <Tile eyebrow="Danger zone" i={12} span className="border-b-destructive/40">
+          <Tile eyebrow="Danger zone" i={12} className="border-b-destructive/40">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/60">
                 <div>

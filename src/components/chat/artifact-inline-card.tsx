@@ -26,7 +26,7 @@ const ICONS: Record<ArtifactType, typeof Code2> = {
 
 /**
  * The console readout for an inline artifact. It used to be a private palette —
- * a `#0b0b0e` shell with `white/40` labels and a `white/5` divider — which put
+ * an off-theme shell with `white/40` labels and a `white/5` divider — which put
  * the labels under 4:1 on their own fill, made the divider invisible, and set a
  * cool blue-black against the hue-48 neutral ladder the rest of the transcript
  * runs on. Everything here is now a theme token, so it tracks both themes and
@@ -37,7 +37,10 @@ function ConsolePreview({ entries }: { entries: ConsoleEntry[] }) {
     <div className="flex h-full flex-col bg-card text-card-foreground">
       <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
         <Terminal className="size-3.5 text-muted-foreground" aria-hidden />
-        <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-muted-foreground">Console</span>
+        {/* text-micro carries its own 0.02em tracking — the hand-written 0.08em
+            it replaces was above the rung's documented ceiling, where mono caps
+            stop grouping into a word. */}
+        <span className="font-mono text-micro uppercase text-muted-foreground">Console</span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs leading-relaxed">
         {entries.length === 0 ? (
@@ -94,6 +97,11 @@ function RuntimePreview({
   }
 
   return (
+    // No className: the frame's ground belongs to SandboxFrame, whose default
+    // is paired with the srcdoc palette it also authors — the fixed dark
+    // terminal shell for console runs, the white browser canvas otherwise.
+    // Neither is a theme surface, and restating the pairing here is how the
+    // same off-theme value ended up hardcoded in two files.
     <SandboxFrame
       type={type}
       content={content}
@@ -102,7 +110,6 @@ function RuntimePreview({
       mode={mode}
       onConsole={onConsole}
       onStatus={onStatus}
-      className={cn("h-full w-full border-0", mode === "console" ? "bg-[#0b0b0e]" : "bg-white")}
     />
   );
 }
@@ -178,7 +185,7 @@ export function ArtifactInlineCard({
             value: "console" as const,
             label: "Console",
             icon: (
-              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 font-mono text-[9px] tabular-nums text-muted-foreground">
+              <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 font-mono text-micro tabular-nums text-muted-foreground">
                 {consoleEntries.length}
               </span>
             ),
@@ -212,7 +219,9 @@ export function ArtifactInlineCard({
           // `bg-secondary` is the rung above --card, which is what this tile is
           // meant to be. `bg-muted/50` over the card resolved to ~8% against a
           // 6.5% card — a step and a half, i.e. a tile with no edge but its own.
-          "flex size-8 shrink-0 items-center justify-center rounded-control border border-border/60 bg-secondary",
+          // `rounded-field`, not `control`: field is the ladder's icon-tile
+          // rung, and control is scoped to buttons and rows.
+          "flex size-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary",
           "transition-colors duration-base ease-out-soft",
           streaming ? "text-primary" : "text-muted-foreground",
           onOpen && "group-hover/art:border-primary/25 group-hover/art:text-primary"
@@ -222,7 +231,7 @@ export function ArtifactInlineCard({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium leading-5">{title || "Untitled artifact"}</span>
-        <span className="flex min-w-0 items-center gap-1.5 pt-0.5 font-mono text-[10px] text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-1.5 pt-0.5 font-mono text-micro text-muted-foreground">
           <span className="truncate">{rt.label}</span>
           {!streaming && version != null && version > 1 && (
             <>
@@ -258,8 +267,8 @@ export function ArtifactInlineCard({
       aria-busy={streaming || undefined}
       className={cn(
         // `bg-card`, not `bg-card/40`. The card sits directly on the transcript
-        // ground, which is now #000, so 40% of a 6.5% fill resolved to ~2.6% —
-        // an artifact card that was, in dark, a border around the page.
+        // ground — true black in dark — so 40% of a 6.5% fill resolved to
+        // ~2.6%: an artifact card that was, in dark, a border around the page.
         "group/art my-5 w-full overflow-hidden rounded-card border border-border/60 bg-card",
         "transition-colors duration-base ease-out-soft hover:border-border",
         "motion-safe:animate-rise-in [animation-fill-mode:backwards]"
@@ -330,8 +339,8 @@ export function ArtifactInlineCard({
         // card never jumps, the content quietly trades places.
         <div key={view} className="h-[min(44vh,360px)] min-h-[240px] overflow-hidden motion-safe:animate-fade-in">
           {showPreview ? (
-            // The sandbox document still needs a light canvas — it ships
-            // `color:#111` and most artifacts never set a background — but a
+            // The sandbox document still needs a light canvas — it ships its
+            // own near-black ink and most artifacts never set a background — but a
             // raw full-bleed white 360px block flashing inside a pure-black
             // transcript is the brightest event on the page. Insetting it turns
             // that bleed into a framed sheet: the transcript's own ground runs

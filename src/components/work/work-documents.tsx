@@ -126,10 +126,10 @@ export function WorkDocuments({
               >
                 <KindBadge extension={ARTIFACT_EXTENSION[artifact.kind]} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-foreground">
+                  <span className="block truncate text-ui font-medium text-foreground">
                     {artifact.title}
                   </span>
-                  <span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">
+                  <span className="mt-0.5 block font-mono text-micro text-muted-foreground">
                     {artifact.version === null ? "written" : `v${artifact.version}`} ·{" "}
                     {workTimeAgo(artifact.updatedAt)}
                   </span>
@@ -144,7 +144,7 @@ export function WorkDocuments({
 
   if ((artifacts ?? []).length === 0) {
     return (
-      <p className="text-[13px] leading-relaxed text-muted-foreground">
+      <p className="text-ui leading-relaxed text-muted-foreground">
         No documents yet. Anything Juno produces — a workbook, a report, a deck — is listed here as
         it is written, with the file itself behind it.
       </p>
@@ -154,7 +154,7 @@ export function WorkDocuments({
   return (
     <div className="space-y-2">
       {failed && (
-        <p className="text-[12px] leading-relaxed text-warning-foreground">
+        <p className="text-caption leading-relaxed text-warning-foreground">
           This list could not be refreshed just now, so a document written in the last few seconds
           may be missing from it.
         </p>
@@ -176,7 +176,7 @@ function KindBadge({ extension }: { extension: string }) {
     // none here — the parity that file's comment claims was only ever applied to
     // its own side. 9px was also the smallest type anywhere in Work, two rungs
     // under `caption`, for three letters lifted off a filename.
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary font-mono text-[10px] uppercase text-muted-foreground">
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary font-mono text-micro uppercase text-muted-foreground">
       {extension}
     </span>
   );
@@ -227,10 +227,10 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
           aria-expanded={open}
           // The row's disclosure had no focus ring at all, so a keyboard reader
           // tabbing down the document list had no idea which row they were on.
-          className="group min-w-0 flex-1 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="group min-w-0 flex-1 rounded-xs text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <span className="flex items-center gap-1.5">
-            <span className="min-w-0 truncate text-[13px] font-medium text-foreground">
+            <span className="min-w-0 truncate text-ui font-medium text-foreground">
               {artifact.title}
             </span>
             <ChevronRight
@@ -241,7 +241,7 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
               aria-hidden="true"
             />
           </span>
-          <span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">
+          <span className="mt-0.5 block font-mono text-micro text-muted-foreground">
             v{artifact.currentVersion} · {workTimeAgo(artifact.updatedAt)}
             {artifact.validatedAt === null && " · not re-opened"}
           </span>
@@ -265,12 +265,12 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
       {open && (
         <div className="border-t border-border/60 px-3 py-2.5 motion-safe:animate-fade-in-up">
           {loading ? (
-            <p className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+            <p className="flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Reading its history…
             </p>
           ) : failed ? (
             <div className="flex flex-wrap items-center gap-2">
-              <p className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-muted-foreground">
+              <p className="min-w-0 flex-1 text-ui leading-relaxed text-muted-foreground">
                 Couldn’t read this document’s history. The download above is unaffected.
               </p>
               <Button variant="outline" size="sm" onClick={() => void load()} className="h-7 gap-1.5">
@@ -280,7 +280,7 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
           ) : detail === null ? null : (
             <div className="space-y-2.5">
               {detail.warning !== null && (
-                <p className="flex items-start gap-1.5 text-[12px] leading-relaxed text-warning-foreground">
+                <p className="flex items-start gap-1.5 text-caption leading-relaxed text-warning-foreground">
                   <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" aria-hidden="true" />
                   {detail.warning}
                 </p>
@@ -291,11 +291,11 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
                     <div className="flex items-baseline gap-2">
                       <a
                         href={workArtifactDownloadUrl(artifact.id, version.version)}
-                        className="shrink-0 font-mono text-[10px] text-foreground underline-offset-2 hover:underline"
+                        className="shrink-0 font-mono text-micro text-foreground underline-offset-2 hover:underline"
                       >
                         v{version.version}
                       </a>
-                      <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
+                      <span className="min-w-0 flex-1 truncate font-mono text-micro text-muted-foreground">
                         {formatBytes(version.byteSize)} · {version.origin}
                         {/* The absence of a pass is stated, never the presence
                             of a failure: a version written by a build whose
@@ -303,7 +303,7 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
                             "broken". */}
                         {!version.validated && " · not confirmed to open"}
                       </span>
-                      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                      <span className="shrink-0 font-mono text-micro text-muted-foreground">
                         {workTimeAgo(version.createdAt)}
                       </span>
                     </div>
@@ -312,7 +312,7 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
                         {version.provenance.map((entry, index) => (
                           <li
                             key={`${entry.kind}-${index}`}
-                            className="flex items-start gap-1.5 text-[11.5px] leading-relaxed text-muted-foreground"
+                            className="flex items-start gap-1.5 text-caption leading-relaxed text-muted-foreground"
                           >
                             {entry.url === null ? (
                               <span

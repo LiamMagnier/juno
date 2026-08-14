@@ -706,6 +706,7 @@ private struct DesktopProjectCard<MenuContent: View>: View {
 
     @State private var isHovering = false
     @State private var hasAppeared = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: open) {
@@ -718,17 +719,17 @@ private struct DesktopProjectCard<MenuContent: View>: View {
         .overlay(alignment: .topTrailing) { actionsMenu }
         .contextMenu { menu() }
         .onHover { isHovering = $0 }
-        .offset(y: isHovering ? -2 : 0)
-        .shadow(
-            color: .junoCardShadow,
-            radius: isHovering ? 14 : 0,
-            y: isHovering ? 6 : 0
-        )
+        // Tint tier: the hover wash inside `card` is a fill crossfading in
+        // place, so it keeps its animation under Reduce Motion.
         .animation(JunoMotion.fast, value: isHovering)
         .opacity(hasAppeared ? 1 : 0)
-        .offset(y: hasAppeared ? 0 : 6)
+        .offset(y: hasAppeared || reduceMotion ? 0 : 6)
+        // The 6pt rise is spatial travel, so under Reduce Motion the entrance
+        // collapses to the flat cross-fade — and the stagger goes with it: a
+        // scheduled delay is dead air once the motion it was pacing is gone.
         .animation(
-            JunoMotion.standard.delay(Double(min(index, 12)) * 0.04),
+            JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)?
+                .delay(reduceMotion ? 0 : Double(min(index, 12)) * 0.04),
             value: hasAppeared
         )
         .onAppear { hasAppeared = true }
@@ -759,6 +760,18 @@ private struct DesktopProjectCard<MenuContent: View>: View {
         }
         .frame(minHeight: DesktopProjectMetrics.cardHeight, alignment: .top)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // The pointer-over state is a fill, not a lift. The card used to rise
+        // 2pt and grow a 14pt shadow under the pointer — the web's hover idiom,
+        // which no Mac surface speaks: Things and Craft answer hover the way a
+        // list row does, with a quiet wash on the surface. `junoRowHover` is
+        // that wash. An overlay rather than a background so it covers the
+        // footer's opaque canvas band too, and at 4.5% alpha it washes rather
+        // than dims the type it crosses.
+        .overlay(
+            Color.junoRowHover
+                .opacity(isHovering ? 1 : 0)
+                .allowsHitTesting(false)
+        )
         // Clipped before the card fill is applied, so the footer's wash stops at
         // the corner curve instead of squaring it off.
         .clipShape(
@@ -1169,14 +1182,16 @@ private struct DesktopProjectDetail: View {
     }
 
     private var sectionPicker: some View {
-        Picker("Project section", selection: $tab) {
-            ForEach(DesktopProjectTab.allCases) { tab in
-                Text(tab.label).tag(tab)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(width: 240)
+        // `DesktopSegmented`, not `Picker(.segmented)`: the AppKit control is
+        // for window toolbars, and inside content it draws its pre-Tahoe
+        // chrome in the app accent. The glass-knob switcher is the in-content
+        // rule everywhere else, and it sizes itself — the 240pt frame the
+        // picker needed goes with it.
+        DesktopSegmented(
+            options: DesktopProjectTab.allCases.map { .init($0, $0.label) },
+            selection: $tab,
+            accessibilityLabel: "Project section"
+        )
         .accessibilityIdentifier("Project section")
     }
 

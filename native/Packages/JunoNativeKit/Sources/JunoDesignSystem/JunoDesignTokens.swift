@@ -392,6 +392,22 @@ public extension AnyTransition {
     }
 }
 
+// MARK: - Accessibility
+
+/// The three system accessibility switches Juno's *hand-drawn* chrome must
+/// answer, carried as one testable value.
+///
+/// System controls answer these switches on their own — Liquid Glass
+/// substitutes itself under Reduce Transparency, `List` selection strengthens
+/// under Increase Contrast — which is a large part of why the desktop
+/// vocabulary keeps handing surfaces to the system. But Juno also draws by
+/// hand: a hover fill, a translucent pane tint over a presentation's material,
+/// a segmented track, an ambient aura. The system cannot reach into those, so
+/// they must consult the switches themselves, and this type is the policy they
+/// consult. It is a plain value rather than a view so the policy can be
+/// unit-tested without a render pass; in a view, read it through
+/// ``SwiftUI/EnvironmentValues/junoAccessibility`` so a custom fill answers
+/// the same switches, live, that the platform's own controls do.
 public struct JunoAccessibilityPreferences: Equatable, Sendable {
     public var reduceMotion: Bool
     public var reduceTransparency: Bool
@@ -407,11 +423,40 @@ public struct JunoAccessibilityPreferences: Equatable, Sendable {
         self.increaseContrast = increaseContrast
     }
 
+    /// A *scheduling* duration under Reduce Motion: a `Task.sleep` before a
+    /// reveal, a timed phase. Zero rather than merely shorter, because a
+    /// scheduled delay is dead air once the motion it was pacing is gone.
+    /// `Animation` values never come through here — they go through
+    /// ``JunoMotion/reduced(_:when:tier:)``, whose travel tier deliberately
+    /// keeps a short cross-fade so a state change is still announced.
     public func animationDuration(_ proposed: TimeInterval) -> TimeInterval {
         reduceMotion ? 0 : max(0, proposed)
     }
 
+    /// Whether a hand-drawn transient surface — a hover fill, a pane tint laid
+    /// over a popover's material — should abandon its translucency and paint at
+    /// full alpha. Reduce Transparency swaps system materials to opaque backers
+    /// by itself, but it cannot see a custom `opacity(…)` fill; this is the
+    /// question such a fill asks instead.
     public var usesOpaqueTransientSurfaces: Bool {
         reduceTransparency
+    }
+}
+
+public extension EnvironmentValues {
+    /// The current ``JunoAccessibilityPreferences``, assembled from the three
+    /// system switches.
+    ///
+    /// A computed key path over the live environment rather than a stored
+    /// custom key, so `@Environment(\.junoAccessibility)` tracks the system
+    /// values themselves — there is no injection step to forget, and a switch
+    /// the user flips mid-session propagates exactly as the underlying
+    /// environment values do.
+    var junoAccessibility: JunoAccessibilityPreferences {
+        JunoAccessibilityPreferences(
+            reduceMotion: accessibilityReduceMotion,
+            reduceTransparency: accessibilityReduceTransparency,
+            increaseContrast: colorSchemeContrast == .increased
+        )
     }
 }

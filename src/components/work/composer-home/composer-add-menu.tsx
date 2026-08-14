@@ -205,7 +205,7 @@ function SkillsSubmenu({ section }: { section: ComposerSkillsSection }) {
                   <Sparkles className={cn(active ? "text-primary" : "text-muted-foreground")} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{skill.name}</span>
-                    <span className="block truncate font-mono text-[10px] text-muted-foreground">
+                    <span className="block truncate font-mono text-micro text-muted-foreground">
                       /{skill.slug}
                     </span>
                   </span>
@@ -219,12 +219,12 @@ function SkillsSubmenu({ section }: { section: ComposerSkillsSection }) {
             reader is about to watch text appear in their own textarea, and a
             menu that did that without warning would read as a bug. */}
         <div className="shrink-0 space-y-1 border-t border-border/60 px-3 py-2">
-          <p className="text-[12px] leading-relaxed text-muted-foreground">
+          <p className="text-caption leading-relaxed text-muted-foreground">
             Picking one writes its name at the front of the task, where you can edit or delete it.
           </p>
           <Link
             href="/work/skills"
-            className="inline-block text-[12px] underline underline-offset-2 hover:text-foreground"
+            className="inline-block text-caption underline underline-offset-2 hover:text-foreground"
           >
             Manage skills
           </Link>

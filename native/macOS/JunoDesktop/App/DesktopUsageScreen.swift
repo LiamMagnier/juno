@@ -111,14 +111,15 @@ struct DesktopUsageScreen: View {
                 }
             }
 
-            Picker("Range", selection: $range) {
-                ForEach(DesktopUsageRange.allCases) { value in
-                    Text(value.label).tag(value)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: DesktopUsageMetrics.rangePickerWidth, alignment: .leading)
+            // `DesktopSegmented`, not `Picker(.segmented)`: the AppKit control
+            // is the app's toolbar segmented; a switcher sitting *inside*
+            // content gets the quiet track with the one glass knob, which also
+            // sizes itself — the fixed 280pt the picker needed goes with it.
+            DesktopSegmented(
+                options: DesktopUsageRange.allCases.map { .init($0, $0.label) },
+                selection: $range,
+                accessibilityLabel: "Range"
+            )
             .accessibilityIdentifier("juno.desktop.usage.range")
         }
     }
@@ -196,7 +197,6 @@ private enum DesktopUsageMetrics {
     /// Wider than the 720pt reading measure the settings panes use: this page is
     /// a dashboard of side-by-side cards, not a column of prose.
     static let readingWidth: CGFloat = 960
-    static let rangePickerWidth: CGFloat = 280
     /// One day in the activity grid, and the gap between two.
     static let activityCell: CGFloat = 11
     static let activityGap: CGFloat = 3
@@ -318,7 +318,10 @@ private struct DesktopUsageActivityCard: View {
             ForEach(Array(weeks.enumerated()), id: \.offset) { index, week in
                 let label = monthLabel(startingWeek: week, at: index)
                 Text(label ?? " ")
-                    .font(.system(size: 9))
+                    // 9pt is load-bearing — the ruler has to fit over an 11pt
+                    // week column — so it goes through `junoFont`, which keeps
+                    // an exact size moving with Dynamic Type.
+                    .junoFont(size: 9, relativeTo: .caption2)
                     .junoSecondaryInk()
                     .frame(width: DesktopUsageMetrics.activityCell, alignment: .leading)
                     .fixedSize()
@@ -403,9 +406,12 @@ private struct DesktopUsageSurfacesCard: View {
                         Text(row.displayName)
                             .junoRowLabel()
                         Spacer(minLength: JunoSpace.snug)
+                        // `junoCodeSmall`, the rung every other card's value
+                        // column uses. This one stacked `junoMono` under a
+                        // caption font that never won, so the Surfaces card
+                        // printed its values a size up from its siblings.
                         Text(DesktopUsageFormat.tokens(row.totalTokens))
-                            .junoMono()
-                            .font(.caption.monospaced())
+                            .junoCodeSmall()
                             .junoSecondaryInk()
                     }
                     DesktopUsageBar(fraction: Double(row.totalTokens) / Double(maximum))

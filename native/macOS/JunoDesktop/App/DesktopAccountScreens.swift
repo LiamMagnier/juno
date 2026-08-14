@@ -248,7 +248,11 @@ struct DesktopMemoryScreen: View {
             if let back {
                 Button(action: back) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 13, weight: .semibold))
+                        // Scaled with body text, not frozen at 13pt: the glyph
+                        // sits beside the page heading and should grow with the
+                        // page under Dynamic Type. The 24pt frame is the hit
+                        // target, not the glyph, and stays fixed.
+                        .junoFont(size: 13, relativeTo: .body, weight: .semibold)
                         .frame(width: 24, height: 24)
                         .contentShape(.rect)
                 }

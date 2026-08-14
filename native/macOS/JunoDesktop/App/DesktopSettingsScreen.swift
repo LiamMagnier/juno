@@ -842,7 +842,10 @@ private struct DesktopSettingsAction: View {
         Button(action: action) {
             HStack(alignment: .center, spacing: JunoSpace.cozy) {
                 Image(systemName: symbol)
-                    .font(.system(size: 15))
+                    // Scaled with the row label it leads, so the glyph and the
+                    // title grow together under Dynamic Type instead of the
+                    // glyph staying frozen at 15pt beside growing text.
+                    .junoFont(size: 15, relativeTo: .callout)
                     .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 22)
                     .accessibilityHidden(true)
@@ -850,7 +853,7 @@ private struct DesktopSettingsAction: View {
                     Text(title)
                         .junoRowLabel()
                         .fontWeight(.medium)
-                        .foregroundStyle(.primary)
+                        .junoInk()
                     Text(detail)
                         .junoCaption()
                         .fixedSize(horizontal: false, vertical: true)
@@ -1008,7 +1011,9 @@ private struct DesktopSettingsAppearanceTile: View {
                         isEnabled: !disabled,
                         trailing: {
                             Image(systemName: theme.symbol)
-                                .font(.system(size: 13))
+                                // Scaled with the card title beside it, not
+                                // frozen at 13pt.
+                                .junoFont(size: 13, relativeTo: .callout)
                                 .junoSecondaryInk()
                         },
                         select: { update(NativeSettingsPatch(theme: theme.value)) }
@@ -1060,6 +1065,14 @@ private struct DesktopAccentSwatch: View {
 
     @State private var isHovering = false
 
+    /// One ring, three strengths: full for the chosen accent, faint under the
+    /// pointer, absent at rest. Hover previews the exact shape selection will
+    /// take instead of inventing a second affordance.
+    private var ringStrength: Double {
+        if isSelected { return 0.85 }
+        return isHovering && isEnabled ? 0.3 : 0
+    }
+
     var body: some View {
         Button(action: select) {
             Circle()
@@ -1074,23 +1087,30 @@ private struct DesktopAccentSwatch: View {
                         // accents fail contrast under a white checkmark, which
                         // is the whole reason `onAccent` exists.
                         Image(systemName: "checkmark")
-                            .font(.system(size: 12, weight: .bold))
+                            .junoFont(size: 12, relativeTo: .caption, weight: .bold)
                             .foregroundStyle(accent.onAccent)
                     }
                 }
                 // A ring outside the swatch rather than a border on it, so the
                 // colour a reader is judging is never thinned by its own
-                // selection indicator.
+                // selection indicator. Hover is the same ring at a whisper —
+                // Mac hover states are fills, not motion, and the swatch used
+                // to grow 8% under the pointer, which is web idiom and also
+                // resized the very colour being compared. A faint ring
+                // previews exactly the shape selection will take, and because
+                // nothing moves it survives Reduce Motion as ordinary
+                // feedback rather than needing a special case.
                 .overlay {
                     Circle()
-                        .strokeBorder(Color.primary.opacity(isSelected ? 0.85 : 0), lineWidth: 2)
+                        .strokeBorder(Color.primary.opacity(ringStrength), lineWidth: 2)
                         .padding(-3)
                 }
-                .scaleEffect(isHovering && isEnabled ? 1.08 : 1)
                 .animation(JunoMotion.fast, value: isHovering)
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        // `.junoPress` rather than `.plain`: with the hover growth gone, the
+        // press dip is what answers the pointer on this hand-drawn control.
+        .buttonStyle(.junoPress)
         .disabled(!isEnabled)
         .onHover { isHovering = $0 }
         .help(accent.displayName)
@@ -1158,7 +1178,7 @@ private struct DesktopSettingsModelTile: View {
                     Text(selected?.displayName ?? junoDisplayModelName(settings.defaultModel))
                         .junoRowLabel()
                         .fontWeight(.medium)
-                        .foregroundStyle(.primary)
+                        .junoInk()
                     Text(selected?.providerName ?? "Not in this account's catalog")
                         .junoCaption()
                 }

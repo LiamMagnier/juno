@@ -16,11 +16,15 @@ import {
 } from "@/lib/background-provider-policy";
 import {
   DEFAULT_MEMORY_TOKEN_BUDGET,
+  memoryUpdateActivity,
   planFactIngestion,
   selectMemoriesForContext,
   type LifecycleEntry,
+  type MemoryUpdateActivity,
   type RetrievalResult,
+  type SemanticEvidence,
 } from "@/lib/memory-lifecycle";
+import { configuredEmbeddingModels, embedQuery, embedTexts } from "@/lib/knowledge/embed";
 
 /*
  * Incremental memory architecture
@@ -310,7 +314,90 @@ const LIFECYCLE_SELECT = {
   status: true,
   expiresAt: true,
   createdAt: true,
+  // The vector space marker only — never the vector itself, which is thousands
+  // of floats a duplicate check has no use for. Rows lacking one are the
+  // organic backfill queue: refreshing such a row re-embeds it below.
+  embeddingModel: true,
 } as const;
+
+// ---------------------------------------------------------------------------
+// Embedding at write time
+// ---------------------------------------------------------------------------
+
+/** Test seam matching knowledge/embed's batch call. */
+export type MemoryEmbedder = typeof embedTexts;
+
+/**
+ * Writes are user-visible round-trips (a chat turn's tail, a memory-page
+ * save), so a hung embeddings endpoint gets this long and then the rows stay
+ * lexical-only — well under embed.ts's own 30s per-request ceiling.
+ */
+const WRITE_EMBED_TIMEOUT_MS = 8_000;
+
+/**
+ * Attach vectors to freshly written facts, best effort.
+ *
+ * Same background-provider contract as the knowledge index: the policy decides
+ * where content may be sent, denial and provider failure both degrade to
+ * lexical-only retrieval for these rows, and nothing here can ever fail the
+ * write that called it. The account's existing vector space is preferred so a
+ * fact written today stays comparable with the facts written last month —
+ * mixing spaces would make the stored vectors mutually meaningless.
+ */
+export async function embedMemoryEntries(opts: {
+  userId: string;
+  rows: readonly { id: string; content: string }[];
+  policy?: BackgroundProviderPolicy;
+  conversationProvider?: string | null;
+  embed?: MemoryEmbedder;
+}): Promise<void> {
+  if (opts.rows.length === 0) return;
+  // Cheap pre-check only on the real provider path; an injected embedder is
+  // the test's business.
+  if (!opts.embed && configuredEmbeddingModels().length === 0) return;
+  try {
+    const [policy, conversationProvider, pinned] = await Promise.all([
+      opts.policy ? Promise.resolve(opts.policy) : loadBackgroundProviderPolicy(opts.userId),
+      opts.conversationProvider !== undefined
+        ? Promise.resolve(opts.conversationProvider)
+        : accountBackgroundProvider(opts.userId),
+      prisma.memoryEntry.findFirst({
+        where: { userId: opts.userId, embeddingModel: { not: null } },
+        orderBy: { updatedAt: "desc" },
+        select: { embeddingModel: true },
+      }),
+    ]);
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), WRITE_EMBED_TIMEOUT_MS);
+    let outcome: Awaited<ReturnType<MemoryEmbedder>>;
+    try {
+      outcome = await (opts.embed ?? embedTexts)({
+        texts: opts.rows.map((row) => row.content),
+        policy,
+        conversationProvider,
+        preferModelId: pinned?.embeddingModel ?? null,
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!outcome.ok) return;
+
+    await prisma.$transaction(
+      opts.rows.map((row, i) =>
+        prisma.memoryEntry.updateMany({
+          where: { id: row.id, userId: opts.userId },
+          data: { embedding: outcome.vectors[i], embeddingModel: outcome.model.id },
+        })
+      )
+    );
+  } catch (error) {
+    // A missing vector costs one row its semantic leg; a thrown error here
+    // would cost the user the fact itself.
+    console.error("[memory] embedding failed:", error instanceof Error ? error.message : error);
+  }
+}
 
 export interface SaveCandidatesResult {
   /** New rows written. */
@@ -337,7 +424,22 @@ export async function saveCandidates(
   userId: string,
   facts: string[],
   sourceRef?: string,
-  opts: { projectId?: string | null; sourceMessageId?: string | null; source?: "AUTO" | "MANUAL" } = {}
+  opts: {
+    projectId?: string | null;
+    sourceMessageId?: string | null;
+    source?: "AUTO" | "MANUAL";
+    /** Where embedding this content may be sent; loaded from the account when omitted. */
+    policy?: BackgroundProviderPolicy;
+    conversationProvider?: string | null;
+    embed?: MemoryEmbedder;
+    /**
+     * Receives the "Memory updated" receipt when this batch created a fact —
+     * shaped for the chat activity timeline, so the caller can forward it to
+     * `sendActivity` unchanged. Never called for a batch that only refreshed
+     * or rejected: an announcement with nothing new behind it is noise.
+     */
+    onActivity?: (event: MemoryUpdateActivity) => void;
+  } = {}
 ): Promise<SaveCandidatesResult> {
   const result: SaveCandidatesResult = { created: 0, refreshed: 0, superseded: 0, rejected: 0 };
   if (facts.length === 0) return result;
@@ -348,6 +450,11 @@ export async function saveCandidates(
   const now = new Date();
   const source = opts.source ?? "AUTO";
   const projectId = opts.projectId ?? null;
+  // Rows owed a vector after this batch: everything created, plus refreshed
+  // rows written before embedding existed — restating an old fact is the one
+  // moment it is naturally back in hand, so the backfill rides along for free.
+  const toEmbed: { id: string; content: string }[] = [];
+  const createdContents: string[] = [];
 
   for (const fact of facts) {
     const plan = planFactIngestion({ content: fact, source, projectId }, { entries, suppressions, now });
@@ -368,6 +475,7 @@ export async function saveCandidates(
       });
       const known = entries.find((e) => e.id === plan.entryId);
       if (known && plan.revive) known.status = "active";
+      if (known && !known.embeddingModel) toEmbed.push({ id: known.id, content: known.content });
       result.refreshed++;
       continue;
     }
@@ -392,8 +500,13 @@ export async function saveCandidates(
       select: LIFECYCLE_SELECT,
     });
     entries.push(created);
-    if (plan.status === "active") result.created++;
-    else result.rejected++;
+    if (plan.status === "active") {
+      result.created++;
+      createdContents.push(plan.content);
+    } else {
+      result.rejected++;
+    }
+    toEmbed.push({ id: created.id, content: plan.content });
 
     if (plan.supersedes) {
       await prisma.memoryEntry.updateMany({
@@ -404,6 +517,19 @@ export async function saveCandidates(
       if (older) older.status = "superseded";
       result.superseded++;
     }
+  }
+
+  await embedMemoryEntries({
+    userId,
+    rows: toEmbed,
+    policy: opts.policy,
+    conversationProvider: opts.conversationProvider,
+    embed: opts.embed,
+  });
+
+  if (opts.onActivity) {
+    const activity = memoryUpdateActivity(result, createdContents);
+    if (activity) opts.onActivity(activity);
   }
   return result;
 }
@@ -416,7 +542,13 @@ export async function saveAutoMemories(
   userId: string,
   facts: string[],
   sourceRef?: string,
-  opts: { projectId?: string | null; sourceMessageId?: string | null } = {}
+  opts: {
+    projectId?: string | null;
+    sourceMessageId?: string | null;
+    conversationProvider?: string | null;
+    /** Forwarded to saveCandidates — the chat route's `sendActivity` fits it. */
+    onActivity?: (event: MemoryUpdateActivity) => void;
+  } = {}
 ): Promise<number> {
   return (await saveCandidates(userId, facts, sourceRef, opts)).created;
 }
@@ -607,6 +739,11 @@ Return ONLY JSON: {"facts":["<short third-person fact>", ...],"digest":"<one lin
       // the conversation id remains the authoritative provenance, and this
       // optional anchor gives the UI a useful place to reopen the source.
       sourceMessageId: chunk.at(-1)?.id ?? null,
+      // Embedding the new facts is background work on the same content the
+      // extraction just processed, so it answers to the same policy and the
+      // same conversation provider rather than resolving its own.
+      policy,
+      conversationProvider,
     });
     created += createdInChunk;
     const isLastChunkOverall = processed + 1 === chunks.length;
@@ -692,6 +829,85 @@ export interface MemoryProfile {
 }
 
 /**
+ * The chat turn cannot wait long on an embeddings endpoint that is having a
+ * bad minute: past this, selection proceeds lexically and the reply starts.
+ * Deliberately tighter than the write-side ceiling — a slow write embed costs
+ * nothing visible, a slow read embed delays the first token.
+ */
+const QUERY_EMBED_TIMEOUT_MS = 4_000;
+
+/**
+ * Embed the user's message into the space the stored facts live in, or explain
+ * (by returning null) why selection will be lexical this turn. Fail-closed at
+ * every step, exactly like RAG's degraded honesty: no vectors stored, policy
+ * denial, provider failure and timeout all land in the same place — a working
+ * lexical selection rather than a dead turn.
+ */
+async function semanticEvidenceFor(opts: {
+  userId: string;
+  query: string;
+  candidates: readonly { id: string; embeddingModel: string | null }[];
+  conversationProvider?: string | null;
+  embed?: typeof embedQuery;
+}): Promise<SemanticEvidence | null> {
+  if (!opts.embed && configuredEmbeddingModels().length === 0) return null;
+
+  // Pin the query to the space most stored facts already occupy. No stored
+  // vector at all means there is nothing to compare against — skip the
+  // provider call rather than paying for a vector with no counterpart.
+  const spaces = new Map<string, number>();
+  for (const row of opts.candidates) {
+    if (row.embeddingModel) spaces.set(row.embeddingModel, (spaces.get(row.embeddingModel) ?? 0) + 1);
+  }
+  const preferModelId = [...spaces.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0]?.[0];
+  if (!preferModelId) return null;
+
+  try {
+    const [policy, conversationProvider] = await Promise.all([
+      loadBackgroundProviderPolicy(opts.userId),
+      opts.conversationProvider !== undefined
+        ? Promise.resolve(opts.conversationProvider)
+        : accountBackgroundProvider(opts.userId),
+    ]);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), QUERY_EMBED_TIMEOUT_MS);
+    let embedded: Awaited<ReturnType<typeof embedQuery>>;
+    try {
+      embedded = await (opts.embed ?? embedQuery)({
+        text: opts.query,
+        policy,
+        conversationProvider,
+        preferModelId,
+        signal: ctrl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!embedded.ok) return null;
+
+    // The vectors ride a second, filtered query rather than the candidate load:
+    // they are thousands of floats per row, and only rows in the answering
+    // model's space can be compared at all.
+    const withVectors = await prisma.memoryEntry.findMany({
+      where: {
+        userId: opts.userId,
+        id: { in: opts.candidates.map((c) => c.id) },
+        embeddingModel: embedded.model.id,
+      },
+      select: { id: true, embedding: true },
+    });
+    if (withVectors.length === 0) return null;
+    return {
+      queryVector: embedded.vector,
+      vectors: new Map(withVectors.map((row) => [row.id, row.embedding])),
+    };
+  } catch (error) {
+    console.error("[memory] query embedding failed:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+/**
  * What to inject into the model context, and a receipt for it.
  *
  * The summary carries the account's settled, globally-scoped memory. On top of
@@ -701,13 +917,22 @@ export interface MemoryProfile {
  * gatherMemorySources), because a summary is account-wide and project memory
  * must not be.
  *
- * Selection is ranked against the current message and bounded by a token
- * budget, so memory competes for context on relevance rather than by being
- * recent enough to make a `take: 15`.
+ * Selection is ranked against the current message — semantically when vectors
+ * exist for both sides, lexically otherwise — and bounded by a token budget,
+ * so memory competes for context on relevance rather than by being recent
+ * enough to make a `take: 15`.
  */
 export async function getMemoryProfile(
   userId: string,
-  opts: { projectId?: string | null; query?: string; budgetTokens?: number } = {}
+  opts: {
+    projectId?: string | null;
+    query?: string;
+    budgetTokens?: number;
+    /** Provider of this turn's model, for `same_provider` policies. */
+    conversationProvider?: string | null;
+    /** Test seam: the query-embedding call. */
+    embed?: typeof embedQuery;
+  } = {}
 ): Promise<MemoryProfile> {
   const projectId = opts.projectId ?? null;
   const now = new Date();
@@ -737,11 +962,24 @@ export async function getMemoryProfile(
     (row) => row.projectId !== null || !summary || row.createdAt > summary.updatedAt
   );
 
+  const query = opts.query?.trim();
+  const semantic =
+    query && candidates.length > 0
+      ? await semanticEvidenceFor({
+          userId,
+          query,
+          candidates,
+          conversationProvider: opts.conversationProvider,
+          embed: opts.embed,
+        })
+      : null;
+
   const result = selectMemoriesForContext(candidates, {
     query: opts.query,
     projectId,
     now,
     budgetTokens: opts.budgetTokens ?? DEFAULT_MEMORY_TOKEN_BUDGET,
+    ...(semantic ? { semantic } : {}),
   });
 
   // "Used" has to mean used. Without this the memory page can show what Juno

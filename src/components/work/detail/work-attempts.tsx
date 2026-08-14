@@ -117,7 +117,7 @@ export function WorkAttempts({
          * Promising them "soon" would be this panel making a commitment on
          * somebody else's behalf.
          */}
-        <p className="pt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+        <p className="pt-1 text-ui leading-relaxed text-muted-foreground">
           {attempt === 2
             ? "One earlier attempt ran before this one."
             : `${attempt - 1} earlier attempts ran before this one.`}{" "}
@@ -164,12 +164,12 @@ function AttemptRow({ run, isCurrent }: { run: ClientWorkRun; isCurrent: boolean
     >
       <div className="flex items-baseline gap-2">
         <WorkStatusDot status={run.status} />
-        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+        <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground">
           #{run.attempt}
         </span>
         <span
           className={cn(
-            "min-w-0 flex-1 truncate text-[13px] leading-relaxed",
+            "min-w-0 flex-1 truncate text-ui leading-relaxed",
             isCurrent ? "text-foreground" : "text-muted-foreground"
           )}
         >
@@ -180,13 +180,13 @@ function AttemptRow({ run, isCurrent }: { run: ClientWorkRun; isCurrent: boolean
           {run.terminalDetail ?? statusSentence(run.status)}
         </span>
         {isCurrent && (
-          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">this one</span>
+          <span className="shrink-0 font-mono text-micro text-muted-foreground">this one</span>
         )}
       </div>
       {/* The three numbers a comparison is actually made on. Omitted individually
           rather than shown as zero: a run that never started has no duration,
           and printing "0s" would say it ran instantly. */}
-      <p className="mt-0.5 flex flex-wrap items-baseline gap-x-3 pl-[18px] font-mono text-[10px] tabular-nums text-muted-foreground">
+      <p className="mt-0.5 flex flex-wrap items-baseline gap-x-3 pl-[18px] font-mono text-micro tabular-nums text-muted-foreground">
         {ran !== null && <span>{formatDuration(ran)}</span>}
         {run.usage.costMicroUsd > 0 && <span>{formatMicroUsd(run.usage.costMicroUsd)}</span>}
         {run.effectiveModel !== null && (

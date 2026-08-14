@@ -98,7 +98,7 @@ export function WorkThreadAddPanel({
       <ScrollFade className="min-h-0 flex-1" viewportClassName="space-y-4 p-3">
         {context.reachUnreadable && (
           <div className="space-y-2 rounded-field border border-border/70 px-2.5 py-2">
-            <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+            <p className="text-ui leading-relaxed text-muted-foreground">
               Juno couldn’t read what this task is already working with, so it can’t safely add to
               it. Nothing has changed.
             </p>
@@ -109,7 +109,7 @@ export function WorkThreadAddPanel({
         )}
 
         {!context.reachKnown && !context.reachUnreadable && (
-          <p className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
+          <p className="flex items-center gap-2 font-mono text-caption text-muted-foreground">
             <Loader2 className="size-3 animate-spin" aria-hidden="true" />
             Reading what this task is working with…
           </p>
@@ -161,7 +161,7 @@ function FilesSection({
     // drawn, because each is conditional on what the account actually has.
     <div className="border-t border-border/60 pt-4 first:border-t-0 first:pt-0">
       <p className="mb-1.5 font-mono text-label text-muted-foreground">Files</p>
-      <p className="mb-2 text-[12.5px] leading-relaxed text-muted-foreground">
+      <p className="mb-2 text-ui leading-relaxed text-muted-foreground">
         A run is handed its files when it starts, so anything added now is for the next attempt.
       </p>
 
@@ -255,7 +255,7 @@ function AppsSection({ context }: { context: WorkThreadContextState }) {
       <p className="mb-1.5 font-mono text-label text-muted-foreground">Apps</p>
       {failed ? (
         <div className="space-y-2">
-          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          <p className="text-ui leading-relaxed text-muted-foreground">
             Couldn’t read your connected apps, so there is nothing to switch here.
           </p>
           <Button variant="outline" size="sm" onClick={() => void load()} className="gap-1.5">
@@ -288,7 +288,7 @@ function AppsSection({ context }: { context: WorkThreadContextState }) {
                     )}
                     aria-hidden="true"
                   />
-                  <span className="min-w-0 flex-1 truncate text-[12.5px]">{connector.label}</span>
+                  <span className="min-w-0 flex-1 truncate text-ui">{connector.label}</span>
                   <Switch checked={active} tabIndex={-1} aria-hidden className="pointer-events-none" />
                 </Pressable>
               </li>
@@ -296,7 +296,7 @@ function AppsSection({ context }: { context: WorkThreadContextState }) {
           })}
         </ul>
       )}
-      <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+      <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
         Off means this task cannot reach it. Your connections are unchanged —{" "}
         <Link href="/connections" className="underline underline-offset-2 hover:text-foreground">
           manage them
@@ -331,7 +331,7 @@ function SkillSection({ context }: { context: WorkThreadContextState }) {
       <p className="mb-1.5 font-mono text-label text-muted-foreground">Skill</p>
       {failed ? (
         <div className="space-y-2">
-          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          <p className="text-ui leading-relaxed text-muted-foreground">
             Couldn’t read your skills. This is empty because the request failed, not because you
             have none.
           </p>
@@ -363,8 +363,8 @@ function SkillSection({ context }: { context: WorkThreadContextState }) {
                     aria-hidden="true"
                   />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12.5px]">{skill.name}</span>
-                    <span className="block truncate font-mono text-[10px] text-muted-foreground">
+                    <span className="block truncate text-ui">{skill.name}</span>
+                    <span className="block truncate font-mono text-micro text-muted-foreground">
                       /{skill.slug}
                     </span>
                   </span>
@@ -375,7 +375,7 @@ function SkillSection({ context }: { context: WorkThreadContextState }) {
           })}
         </ul>
       )}
-      <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+      <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
         The attempt now running keeps the skill it started with.{" "}
         <Link href="/work/skills" className="underline underline-offset-2 hover:text-foreground">
           Manage skills

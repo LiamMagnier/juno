@@ -35,6 +35,9 @@ const pad = (n: number) => String(n).padStart(2, "0");
 // Mon–Sun for the weekly picker (stored as 0=Sun … 6=Sat).
 const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
+/** Local "YYYY-MM-DD" for the date input — toISOString would shift the day. */
+const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
 export function TaskDialog({
   open,
   onOpenChange,
@@ -66,6 +69,7 @@ export function TaskDialog({
   const [time, setTime] = React.useState("08:00");
   const [weekday, setWeekday] = React.useState(1);
   const [monthday, setMonthday] = React.useState(1);
+  const [onDate, setOnDate] = React.useState("");
   const [timezone, setTimezone] = React.useState(DEFAULT_TASK_TIMEZONE);
   const [timezoneOpen, setTimezoneOpen] = React.useState(false);
   const [webSearch, setWebSearch] = React.useState(true);
@@ -85,6 +89,9 @@ export function TaskDialog({
     setTime(task ? `${pad(task.hour)}:${pad(task.minute)}` : "08:00");
     setWeekday(task?.weekday ?? 1);
     setMonthday(task?.monthday ?? 1);
+    // A fresh one-off defaults to tomorrow: today at the default 08:00 is
+    // usually already in the past and would bounce off the API's future check.
+    setOnDate(task?.onDate ?? localDate(new Date(Date.now() + 24 * 60 * 60 * 1000)));
     setTimezone(task?.timezone ?? DEFAULT_TASK_TIMEZONE);
     setTimezoneOpen((task?.timezone ?? DEFAULT_TASK_TIMEZONE) !== DEFAULT_TASK_TIMEZONE);
     setWebSearch(task?.webSearch ?? true);
@@ -97,6 +104,7 @@ export function TaskDialog({
   const submit = async () => {
     const [hour, minute] = time.split(":").map(Number);
     if (!name.trim() || !prompt.trim() || !model || !Number.isFinite(hour) || !Number.isFinite(minute)) return;
+    if (cadence === "ONCE" && !onDate) return;
     setSaving(true);
     try {
       const body = {
@@ -108,6 +116,7 @@ export function TaskDialog({
         minute,
         weekday: cadence === "WEEKLY" ? weekday : null,
         monthday: cadence === "MONTHLY" ? monthday : null,
+        onDate: cadence === "ONCE" ? onDate : null,
         timezone: timezone.trim() || DEFAULT_TASK_TIMEZONE,
         webSearch,
       };
@@ -198,6 +207,16 @@ export function TaskDialog({
               optionClassName="text-xs font-medium"
             />
             <div className="flex items-center gap-2">
+              {cadence === "ONCE" && (
+                <Input
+                  type="date"
+                  value={onDate}
+                  onChange={(e) => setOnDate(e.target.value)}
+                  min={localDate(new Date())}
+                  className="w-36"
+                  aria-label="Date"
+                />
+              )}
               {cadence === "WEEKLY" && (
                 <Select value={String(weekday)} onValueChange={(v) => setWeekday(Number(v))}>
                   <SelectTrigger className="w-32" aria-label="Weekday">
@@ -265,7 +284,10 @@ export function TaskDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={submit} disabled={saving || !name.trim() || !prompt.trim() || !model}>
+          <Button
+            onClick={submit}
+            disabled={saving || !name.trim() || !prompt.trim() || !model || (cadence === "ONCE" && !onDate)}
+          >
             {saving ? "Saving…" : task ? "Save changes" : "Create task"}
           </Button>
         </DialogFooter>

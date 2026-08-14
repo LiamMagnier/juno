@@ -43,7 +43,7 @@ export function WorkContextSection({
 }) {
   return (
     <RailSection name="context" title="Context" defaultOpen={defaultOpen}>
-      <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+      <p className="text-ui leading-relaxed text-muted-foreground">
         What this task could see and reach — the pages it read, and the skills and apps it was
         given.
       </p>
@@ -94,13 +94,13 @@ function SourceCard({ reference }: { reference: WorkReference }) {
             href={reference.url}
             target="_blank"
             rel="noreferrer noopener"
-            className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm text-[13px] leading-snug text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-xs text-ui leading-snug text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span className="min-w-0 truncate">{reference.label}</span>
             <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
           </a>
         ) : (
-          <span className="block truncate text-[13px] leading-snug text-foreground">
+          <span className="block truncate text-ui leading-snug text-foreground">
             {reference.label}
           </span>
         )}
@@ -108,7 +108,7 @@ function SourceCard({ reference }: { reference: WorkReference }) {
           // The passage actually relied on, where there is one. It is what makes
           // a citation checkable rather than decorative, so it is clamped to two
           // lines rather than truncated to one.
-          <span className="mt-0.5 block overflow-hidden text-[11.5px] leading-relaxed text-muted-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
+          <span className="mt-0.5 block overflow-hidden text-caption leading-relaxed text-muted-foreground [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
             {reference.detail}
           </span>
         )}

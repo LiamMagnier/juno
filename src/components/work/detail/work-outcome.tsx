@@ -87,7 +87,7 @@ export function WorkOutcomeDigest({
   return (
     <ul className="space-y-1.5">
       {lines.map((line) => (
-        <li key={line} className="flex items-start gap-2 text-[13px] leading-relaxed">
+        <li key={line} className="flex items-start gap-2 text-ui leading-relaxed">
           <span
             className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-muted-foreground/70"
             aria-hidden="true"

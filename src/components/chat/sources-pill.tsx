@@ -45,9 +45,12 @@ function SourceAudit({ audit, index }: { audit: CitationAudit; index: number }) 
         aria-expanded={open}
         aria-controls={panelId}
         className={cn(
+          // Focus is the global :focus-visible outline (globals.css) — the
+          // local ring this carried was a per-site fork of it, the exact
+          // pattern block-shell.tsx documents removing.
           "inline-flex min-h-11 items-center gap-1.5 rounded-control px-1.5 font-mono text-caption text-muted-foreground",
           "transition-colors duration-fast ease-out-soft motion-reduce:transition-none",
-          "hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "hover:text-foreground",
           source.duplicateOfIndex != null && "text-warning-foreground"
         )}
       >

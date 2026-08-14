@@ -232,7 +232,10 @@ export function ModelParamsPanel({
         align="end"
         sideOffset={8}
         collisionPadding={12}
-        className="flex max-h-[min(34rem,var(--radix-popover-content-available-height))] w-80 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg p-0"
+        // No radius override: PopoverContent's rounded-menu is the whole popper
+        // tier's corner, and the rounded-lg this carried was the one floating
+        // panel in the composer cluster off that ladder.
+        className="flex max-h-[min(34rem,var(--radix-popover-content-available-height))] w-80 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0"
       >
         {/* Header — stays pinned while the body scrolls on short viewports. */}
         <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 pb-2.5 pt-3">
@@ -255,7 +258,7 @@ export function ModelParamsPanel({
 
         {/* Scrollable body so the panel never exceeds the space above the trigger. */}
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        {/* Parameter rows — outer rounded-lg (24px), section p-3 (12px) → inner rounded-md */}
+        {/* Parameter rows — outer rounded-menu, section p-3 → inner rounded-md */}
         <div className="flex flex-col gap-1.5 p-3">
           <ParamRow
             label="Temperature"

@@ -470,7 +470,10 @@ private struct DesktopChatSidebar: View {
                         .accessibilityIdentifier("juno.desktop.attention.\(item.id)")
                     }
                 } header: {
-                    Text("Attention Required")
+                    // Sentence case, like every sibling header in this column
+                    // ("Previous 7 days", "Yesterday") — one section must not
+                    // announce itself in Title Case while the rest speak.
+                    Text("Attention required")
                         .junoSidebarSection()
                 }
             }
@@ -543,7 +546,12 @@ private struct DesktopChatSidebar: View {
             }
         }
         .foregroundStyle(ink)
-        .animation(.easeOut(duration: 0.22), value: selected)
+        // A selection changing is `standard`'s documented brief; the inline
+        // 0.22 it replaces was the base rung's own duration living off the
+        // ladder. The lift is a colour crossfade in place — tint-tier motion,
+        // which Reduce Motion leaves alone — so it is deliberately not gated
+        // behind the preference.
+        .animation(JunoMotion.standard, value: selected)
         .tag(DesktopSidebarItem.destination(item))
     }
 
@@ -1300,21 +1308,26 @@ private struct DesktopTranscript: View {
                 noteMessages(from: previous.count, to: current.count)
                 // Animated only when a turn actually arrived. The other two cases
                 // are the transcript being drawn for the first time and a reply
-                // growing token by token — travelling 180ms from a position the
-                // reader never saw reads as the page moving on its own, and a
-                // 180ms scroll restarted several times a second never arrives
-                // anywhere. The same reasoning as the voice branch below.
+                // growing token by token — travelling from a position the reader
+                // never saw reads as the page moving on its own, and an animated
+                // scroll restarted several times a second never arrives anywhere.
+                // The same reasoning as the voice branch below.
                 guard current.count != previous.count else {
                     proxy.scrollTo("transcript-bottom", anchor: .bottom)
                     return
                 }
-                withAnimation(.easeOut(duration: 0.18)) {
+                // `standard`, replacing a freehand 0.18: a small spatial move to
+                // the new turn is the base rung's exact brief, and 0.18 sitting
+                // between `exit` 0.16 and `base` 0.22 is the near-miss drift the
+                // ladder's audit calls out by name. Spatial travel, so it
+                // collapses to the flat fallback under Reduce Motion.
+                withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
                     proxy.scrollTo("transcript-bottom", anchor: .bottom)
                 }
             }
             // Unanimated, unlike a sent message: a partial transcript lands
-            // several times a second, and a 180ms scroll restarted that often
-            // never arrives anywhere.
+            // several times a second, and an animated scroll restarted that
+            // often never arrives anywhere.
             .onChange(of: voiceMessages) { _, _ in
                 proxy.scrollTo("transcript-bottom", anchor: .bottom)
             }
@@ -1619,7 +1632,7 @@ private struct DesktopMessageRow: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: promptExpanded ? "chevron.up" : "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                    .junoFont(size: 9, relativeTo: .caption, weight: .semibold)
                 Text(
                     promptExpanded
                         ? "Show less"
@@ -1678,8 +1691,13 @@ private struct DesktopMessageRow: View {
                     // working…" — a system control saying nothing of Juno's, next
                     // to a sentence that named the app rather than the work.
                     HStack(spacing: 10) {
+                        // No ink stated here, deliberately. The matrix draws
+                        // itself in absolute `junoForeground` at the web's own
+                        // per-dot alphas, so the diluted
+                        // `junoMutedForeground.opacity(0.65)` this used to
+                        // carry never reached a single dot — and the ramp has
+                        // no diluted rung to restate it with anyway.
                         JunoThinkingMatrix()
-                            .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
                         JunoAIcssThinkingLabel("Thinking about your request", size: 15)
                     }
                     .frame(minHeight: 22)
@@ -2437,10 +2455,15 @@ struct DesktopComposer: View {
         // Real Liquid Glass, and nothing drawn on top of it. The previous
         // treatment stroked a hairline border over the glass, which flattened
         // the rim's light scatter — the thing that makes glass read as having
-        // thickness — back into a translucent rounded rectangle.
-        .junoFloatingChrome(cornerRadius: JunoRadius.composer, isFocused: focused)
-        .scaleEffect(focused ? 1.003 : 1.0)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: focused)
+        // thickness — back into a translucent rounded rectangle. Focus adds
+        // nothing here either: an accent stroke, an accent shadow and a 1.003
+        // scale on an off-ladder spring shipped briefly and were removed with
+        // the ornamented `junoFloatingChrome` build, whose contract names them
+        // as exactly the decoration that flattens the material. Focus already
+        // has honest voices — the field's own caret, and the aura warming
+        // behind the greeting while the composer holds it — so the chrome
+        // stays still.
+        .junoFloatingChrome(cornerRadius: JunoRadius.composer)
         .padding(.horizontal, DesktopChatMeasure.gutter)
         .padding(.bottom, JunoSpace.tight)
         .fileImporter(
@@ -2887,7 +2910,24 @@ struct DesktopComposer: View {
             Image(systemName: "mic.fill")
                 .font(.callout.weight(.medium))
                 .frame(width: 36, height: 36)
-                .foregroundStyle(dictating ? Color.junoOnAccent : Color.primary.opacity(0.85))
+                // On-accent over the armed tint, primary ink otherwise — the
+                // ramp's own rungs. `Color.primary.opacity(0.85)` was a fourth,
+                // diluted ink the three-rung ramp deliberately does not have.
+                .foregroundStyle(dictating ? Color.junoOnAccent : Color.junoForeground)
+                // Hover on the Mac is a fill, the same `junoRowHover` wash the
+                // model and thinking chips beside this button answer with. The
+                // scale-and-shadow treatment this replaces was the web's hover
+                // idiom, and it hand-painted a black shadow onto glass — the
+                // decoration the floating-chrome contract exists to forbid.
+                // Drawn inside the label so it sits between the material and
+                // the glyph, and skipped while dictating, when the full-alpha
+                // accent tint already owns the button's whole ground.
+                .background(
+                    Circle().fill(
+                        isHoveringDictate && !dictating
+                            ? Color.junoRowHover : Color.clear
+                    )
+                )
                 .contentShape(.circle)
         }
         .junoGlass(
@@ -2895,13 +2935,12 @@ struct DesktopComposer: View {
             tint: dictating ? Color.junoAccent : nil,
             interactive: true
         )
-        .shadow(
-            color: isHoveringDictate ? Color.black.opacity(0.25) : Color.black.opacity(0.12),
-            radius: isHoveringDictate ? 8 : 4,
-            y: 2
+        // A fill crossfading in place is tint-tier motion: it keeps `fast`'s
+        // character under Reduce Motion, exactly as its two sibling chips do.
+        .animation(
+            JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
+            value: isHoveringDictate
         )
-        .scaleEffect(isHoveringDictate ? 1.06 : 1.0)
-        .animation(.easeOut(duration: 0.15), value: isHoveringDictate)
         .onHover { isHoveringDictate = $0 }
         .buttonStyle(.junoPress)
         .help("Dictate")
@@ -3315,7 +3354,7 @@ struct DesktopLibraryPicker: View {
             }
             .overlay(alignment: .topTrailing) {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 16))
+                    .junoFont(size: 16, relativeTo: .body)
                     .symbolRenderingMode(.palette)
                     .foregroundStyle(
                         selected ? Color.junoOnAccent : Color.white,
@@ -3347,13 +3386,20 @@ struct DesktopLibraryPicker: View {
                         .junoSecondaryInk()
                 }
                 Spacer()
-                Picker("Filter", selection: $model.filter) {
-                    ForEach(NativeLibraryModel.Filter.allCases) { filter in
-                        Text(filter.title).tag(filter)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 220)
+                // The glass-knob switcher, not `Picker(.segmented)`. This
+                // header is content inside a sheet, and `NSSegmentedControl`
+                // draws its pre-Tahoe slab there — hard dividers, a knob whose
+                // radius does not match its track — which is exactly the weight
+                // ``DesktopSegmented`` exists to replace everywhere else in the
+                // app. The control sizes itself to its labels, so the fixed
+                // 220pt frame the picker needed goes with it.
+                DesktopSegmented(
+                    options: NativeLibraryModel.Filter.allCases.map {
+                        .init($0, $0.title)
+                    },
+                    selection: $model.filter,
+                    accessibilityLabel: "Filter"
+                )
             }
             .padding(18)
             .background(.bar)
@@ -3973,7 +4019,7 @@ private struct JunoAddMenuRow: View {
             // cut dropped into the middle of a spring that is continuous either
             // side of it, and the two glyphs are not even the same width.
             Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .bold))
+                .junoFont(size: 9, relativeTo: .caption, weight: .bold)
                 .junoSecondaryInk()
                 .rotationEffect(.degrees(open ? 90 : 0))
                 .animation(
@@ -4014,7 +4060,10 @@ private struct DesktopAddMenuMark: View {
 
     var body: some View {
         Image(systemName: "plus")
-            .font(.system(size: 13, weight: .semibold))
+            // Scales with Dynamic Type like the mic and send glyphs beside it,
+            // whose `.callout` faces already move — a frozen 13pt here would
+            // make this the one control in the bar that ignores the setting.
+            .junoFont(size: 13, relativeTo: .body, weight: .semibold)
             .junoInk()
             .rotationEffect(.degrees(isOpen ? 45 : 0))
             .frame(width: 30, height: 30)

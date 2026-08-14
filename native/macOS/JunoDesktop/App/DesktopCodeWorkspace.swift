@@ -110,6 +110,10 @@ struct DesktopCodeWorkspace: View {
     @State private var planReadAt: Date?
     @FocusState private var sidebarSearchFocused: Bool
     @Environment(\.openWindow) private var openWindow
+    /// The docks' enter/exit animations are spatial travel, so they go through
+    /// ``JunoMotion/reduced(_:when:tier:)`` and collapse to a cross-fade when
+    /// the reader has asked for less motion.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// How long a plan read stays fresh. Several runs finishing within a few
     /// seconds of each other would otherwise be several identical requests.
@@ -332,7 +336,14 @@ struct DesktopCodeWorkspace: View {
                   target.workspaceRootPath == controller?.context?.access.rootURL.path,
                   previewTarget == nil
             else { return }
-            withAnimation(JunoMotion.fast) {
+            // The docks' insertion transition is the canvas-slide keyframe, so
+            // it runs on the beat that keyframe was designed for: the pane
+            // *arrives* on `canvasEnter`, exactly as Chat's artifact canvas
+            // does. `JunoMotion.fast` here truncated a 16pt slide into a
+            // 120ms tap-feedback blink.
+            withAnimation(
+                JunoMotion.reduced(DesktopChatMotion.canvasEnter, when: reduceMotion)
+            ) {
                 simulatorHost.closePane()
                 previewTarget = target
             }
@@ -425,7 +436,15 @@ struct DesktopCodeWorkspace: View {
                 DesktopSimulatorDock(
                     model: simulatorHost.isOpen ? simulatorHost.model : nil,
                     close: {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        // The exit half of the canvas choreography Chat's
+                        // artifact canvas already runs: a pane you asked to
+                        // close should be gone before you have looked away
+                        // from the button. The ad-hoc 0.4s spring this
+                        // replaces sat on no rung of the motion ladder and
+                        // made closing the pane slower than opening it.
+                        withAnimation(
+                            JunoMotion.reduced(DesktopChatMotion.canvasExit, when: reduceMotion)
+                        ) {
                             simulatorHost.closePane()
                         }
                     }
@@ -1097,7 +1116,12 @@ struct DesktopCodeWorkspace: View {
 
             if let repository = targetRepository {
                 Button {
-                    withAnimation(JunoMotion.fast) {
+                    // Same beat as the preview dock opening: the pane's
+                    // insertion is the canvas-slide keyframe, and that
+                    // keyframe belongs on `canvasEnter`.
+                    withAnimation(
+                        JunoMotion.reduced(DesktopChatMotion.canvasEnter, when: reduceMotion)
+                    ) {
                         closePreview()
                         simulatorHost.open(
                             workspaceKey: repository.id.value,
@@ -1833,7 +1857,10 @@ private struct DesktopCodeRemoteCanvas: View {
         let status = CodeRunStatus(summary)
         return HStack(alignment: .top, spacing: JunoSpace.snug) {
             Image(systemName: "laptopcomputer")
-                .font(.system(size: 15, weight: .semibold))
+                // Scaled against the callout title it marks, so the pair grows
+                // together under Dynamic Type instead of the glyph staying a
+                // fixed 15pt beside enlarged text.
+                .junoFont(size: 15, relativeTo: .callout, weight: .semibold)
                 .foregroundStyle(Color.junoAccent)
                 .frame(width: 28, height: 28)
                 .background(Color.junoAccent.opacity(0.12), in: Circle())
@@ -1882,7 +1909,10 @@ private struct DesktopCodeRemoteCanvas: View {
         .padding(.horizontal, JunoSpace.region)
         .padding(.vertical, JunoSpace.snug)
         .background(Color.primary.opacity(0.035))
-        .overlay(alignment: .bottom) { Divider().opacity(0.55) }
+        // The palette's own separator, as the context strip above the canvas
+        // already draws it — not a hand-faded system divider, which was a
+        // second, slightly different hairline in the same window.
+        .overlay(alignment: .bottom) { Divider().overlay(Color.junoSeparator) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "\(summary.title), \(summary.workspaceName ?? "remote workspace"), \(status.label)"
@@ -1979,7 +2009,9 @@ private struct DesktopCodeRemoteCanvas: View {
         let presentation = DesktopRemoteEventPresentation.make(event)
         return HStack(alignment: .top, spacing: JunoSpace.snug) {
             Image(systemName: presentation.symbol)
-                .font(.system(size: 13, weight: .semibold))
+                // Scaled against the callout row title it marks, for the same
+                // reason as the session header's laptop glyph above.
+                .junoFont(size: 13, relativeTo: .callout, weight: .semibold)
                 .foregroundStyle(presentation.tint)
                 .frame(width: 24, height: 24)
                 .background(presentation.tint.opacity(0.12), in: Circle())
@@ -2060,8 +2092,13 @@ private struct DesktopCodeContextStrip: View {
     var body: some View {
         HStack(alignment: .center, spacing: JunoSpace.cozy) {
             VStack(alignment: .leading, spacing: 2) {
+                // Caption-class, not the fixed 9pt it shipped at: 9pt is below
+                // the scale's caption floor, and a frozen `.system(size:)`
+                // never moves with Dynamic Type. The tracked overline reads
+                // the same at the rung's size — quiet is done with ink and
+                // tracking here, not with sub-legible type.
                 Text("JUNO CODE")
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .font(.system(.caption2, design: .rounded, weight: .semibold))
                     .tracking(1.1)
                     .foregroundStyle(Color.junoMutedForeground)
 

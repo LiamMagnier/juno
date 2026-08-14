@@ -132,8 +132,8 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
               isOpen
                 // Takes the whole row so the sentence has width to wrap into,
                 // instead of unfurling inside a 20rem column. A stadium radius
-                // on a multi-line box bows the sides into an ellipse; 2xl (16px
-                // — this scale is non-monotonic) keeps the corners honest.
+                // on a multi-line box bows the sides into an ellipse; the card
+                // rung keeps the corners honest.
                 ? "w-full items-start rounded-card"
                 : "max-w-[min(20rem,100%)] shrink-0 items-center rounded-full"
             )}
@@ -145,8 +145,12 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
               // so a title would be announced again as the description — the
               // same text twice. Truncation is cosmetic; clicking sends the
               // full suggestion either way.
+              // Focus is the global :focus-visible outline (globals.css); the
+              // local ring both controls in this pill used to draw suppressed
+              // it and substituted an accent ring — on a surface where coral is
+              // reserved for chosen things, not focused ones.
               className={cn(
-                "flex min-w-0 flex-1 gap-1.5 rounded-full text-left transition-[color] duration-base ease-out-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] motion-reduce:transition-none",
+                "flex min-w-0 flex-1 gap-1.5 rounded-full text-left transition-[color] duration-base ease-out-strong active:scale-[0.98] motion-reduce:transition-none",
                 isOpen ? "items-start" : "items-center"
               )}
             >
@@ -191,7 +195,7 @@ export function FollowUpSuggestions({ conversationId, onPick, visible }: FollowU
                   // chevron, and --border at 40% over --accent computes to a
                   // 1.2-point step — the chevron's own hover was invisible
                   // because it only ever fires on top of the pill's.
-                  "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-[color,background-color] duration-base ease-out-strong hover:bg-border hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background coarse:h-8 coarse:w-8 motion-reduce:transition-none",
+                  "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-[color,background-color] duration-base ease-out-strong hover:bg-border hover:text-foreground coarse:h-8 coarse:w-8 motion-reduce:transition-none",
                   // Rides the first line when the pill is a tall wrapped block.
                   isOpen ? "self-start" : "self-center"
                 )}

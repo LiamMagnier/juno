@@ -808,7 +808,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
         {/* Composer ⇄ Dictation share one grid cell and cross-fade. */}
         <div
           className={cn(
-            "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-spring motion-reduce:transition-none",
+            "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-out-strong motion-reduce:transition-none",
             dictating ? "min-h-[170px]" : "min-h-[68px]",
           )}
         >
@@ -821,7 +821,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
             // transcript's jump-to-latest button had.
             inert={!dictating}
             className={cn(
-              "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+              "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
               dictating ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-1 scale-95 opacity-0",
             )}
           >
@@ -865,7 +865,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
             inert={dictating}
             className={cn(
               "col-start-1 row-start-1 relative w-full origin-center",
-              "transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+              "transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
               dictating ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0" : "translate-y-0 scale-100 opacity-100",
             )}
           >
@@ -995,7 +995,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                             <Plus
                               aria-hidden="true"
                               strokeWidth={1.75}
-                              className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                              className="composer-add-icon size-4 transition-transform duration-base ease-out-strong group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
                             />
                           </Button>
                         </DropdownMenuTrigger>
@@ -1090,7 +1090,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                                   : "Send to your Mac"
                           }
                           className={cn(
-                            "composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
+                            "composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong",
                             // ring-primary/30, not /15: the halo that says "this
                             // is now a stop button" was ~2% lightness against
                             // the black ground and did not read at all.

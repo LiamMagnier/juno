@@ -283,14 +283,112 @@ const REHYPE_PLUGINS: Options["rehypePlugins"] = [
   [rehypeKatex, { throwOnError: false, output: "htmlAndMathml" }],
 ];
 
+/*
+ * ---- Streaming word entrance ------------------------------------------------
+ * Each word of the still-growing final block mounts inside a span that plays
+ * one short blur/fade on the token vocabulary (--dur-base sits inside the
+ * 150–300ms band where this reads as text arriving rather than as the UI
+ * lagging). It composes with the stream-tail mask and the caret in globals.css
+ * instead of replacing them: the mask dims the unsettled LINE, this fades the
+ * arriving WORD, and neither needs to know the other exists.
+ *
+ * WHY THIS DOES NOT STROBE, even though the tail block is re-parsed on every
+ * delta: words are wrapped from the block's first character and are never
+ * unwrapped mid-stream, so the rendered child list only ever APPENDS.
+ * hast-util-to-jsx-runtime keys siblings per tag-name position ("span-3"), and
+ * an append-only list never shifts those positions — so React updates every
+ * existing span in place, and a CSS animation restarts only when its element
+ * actually re-enters the DOM. Each word animates exactly once, on arrival; the
+ * still-growing last word keeps updating its text inside its original span and
+ * keeps its timeline. (Unwrapping settled words early would slide every later
+ * span down a slot and replay its entrance — THAT, not the wrapping, is what
+ * would strobe.)
+ *
+ * Zero residue: everything is gated on `animateTail`, true only for the final
+ * block of a streaming message, so completion re-renders the message with no
+ * spans, no classes and no <style> — the DOM of a finished message is
+ * identical to one that never streamed.
+ */
+
+/* The rule lives here rather than in globals.css because it should exist for
+ * exactly as long as its spans do: mounted with the stream, gone with it.
+ * Reduced motion drops it entirely — same ambient tier as .stream-tail: the
+ * words simply appear, already settled. */
+const STREAM_WORD_CSS = `
+.stream-word{animation:stream-word-in var(--dur-base) var(--ease-out-soft);}
+@keyframes stream-word-in{from{opacity:0;filter:blur(3px);}to{opacity:1;filter:blur(0);}}
+@media (prefers-reduced-motion: reduce){.stream-word{animation:none;}}
+`;
+
+/** hast doesn't ship types here either — same structural shape as MdNode. */
+type HastNode = {
+  type: string;
+  tagName?: string;
+  value?: string;
+  properties?: { className?: unknown };
+  children?: HastNode[];
+};
+
+/** Subtrees where wrapping words would be wrong, not just useless: a fence's
+ *  text is data (CodeBlock re-reads it verbatim), and KaTeX's spans are layout
+ *  boxes whose children must stay exactly as it emitted them. */
+function isStreamWordExempt(node: HastNode): boolean {
+  if (node.type !== "element") return false;
+  if (node.tagName === "code" || node.tagName === "pre") return true;
+  const cls = node.properties?.className;
+  const classes = Array.isArray(cls) ? cls.join(" ") : typeof cls === "string" ? cls : "";
+  return classes.includes("katex");
+}
+
+function rehypeStreamWords() {
+  const wrap = (node: HastNode) => {
+    if (isStreamWordExempt(node)) return;
+    const children = node.children;
+    if (!children) return;
+    const out: HastNode[] = [];
+    let changed = false;
+    for (const child of children) {
+      if (child.type !== "text" || !child.value || child.value.trim() === "") {
+        wrap(child);
+        out.push(child);
+        continue;
+      }
+      changed = true;
+      // Whitespace stays in bare text nodes between the spans, so line
+      // breaking happens exactly where it did before wrapping.
+      for (const piece of child.value.split(/(\s+)/)) {
+        if (!piece) continue;
+        out.push(
+          piece.trim() === ""
+            ? { type: "text", value: piece }
+            : {
+                type: "element",
+                tagName: "span",
+                properties: { className: ["stream-word"] },
+                children: [{ type: "text", value: piece }],
+              },
+        );
+      }
+    }
+    if (changed) node.children = out;
+  };
+  return function transformer(tree: HastNode) {
+    wrap(tree);
+  };
+}
+
 /** One parsed block. Memoized so streamed chunks only re-render the final block. */
 const MarkdownBlock = React.memo(function MarkdownBlock({
   content,
   streaming,
+  animateTail,
   sources,
 }: {
   content: string;
   streaming?: boolean;
+  /** True only for the final, still-growing block of a streaming message —
+   *  the one block whose words get the entrance treatment. */
+  animateTail?: boolean;
   sources?: ClientSource[];
 }) {
   // Positional [n] resolution is licensed ONLY by the numbered-corpus contract,
@@ -301,6 +399,12 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
   const remarkPlugins = React.useMemo<Options["remarkPlugins"]>(
     () => (sourceCount > 0 ? [...REMARK_PLUGINS, remarkCitations(sourceCount)] : REMARK_PLUGINS),
     [sourceCount],
+  );
+  // Appended last so it walks the tree AFTER highlight and KaTeX have claimed
+  // their subtrees — the exemption test needs their classes in place.
+  const rehypePlugins = React.useMemo<Options["rehypePlugins"]>(
+    () => (animateTail ? [...(REHYPE_PLUGINS ?? []), rehypeStreamWords] : REHYPE_PLUGINS),
+    [animateTail],
   );
   const components = React.useMemo<Components>(
     () => ({
@@ -329,7 +433,7 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
     [streaming, sources],
   );
   return (
-    <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={REHYPE_PLUGINS} components={components}>
+    <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
       {content}
     </ReactMarkdown>
   );
@@ -349,15 +453,24 @@ export const Markdown = React.memo(function Markdown({
 }) {
   const blocks = React.useMemo(() => splitIntoBlocks(normalizeMathDelimiters(content)), [content]);
   return (
-    <div className={cn("prose-juno", className)} data-streaming={streaming ? "true" : undefined} data-no-auto-translate>
-      {blocks.map((block, i) => (
-        <MarkdownBlock
-          key={i}
-          content={streaming && i === blocks.length - 1 ? closeDangling(block) : block}
-          streaming={streaming}
-          sources={sources}
-        />
-      ))}
-    </div>
+    <>
+      <div className={cn("prose-juno", className)} data-streaming={streaming ? "true" : undefined} data-no-auto-translate>
+        {blocks.map((block, i) => (
+          <MarkdownBlock
+            key={i}
+            content={streaming && i === blocks.length - 1 ? closeDangling(block) : block}
+            streaming={streaming}
+            animateTail={streaming && i === blocks.length - 1}
+            sources={sources}
+          />
+        ))}
+      </div>
+      {/* A SIBLING of the prose div, after it — never inside it, where it would
+          steal `p:last-child` from the caret's selector or trip the
+          `.prose-juno > * + *` spacing; never before it, where wrappers'
+          space-y utilities would count it and shove the prose down. A
+          display:none element generates no box, so trailing it is inert. */}
+      {streaming ? <style>{STREAM_WORD_CSS}</style> : null}
+    </>
   );
 });

@@ -157,7 +157,7 @@ export function WorkConversation({
           turn.role === "you" ? (
             <div key={turn.id} className="flex flex-col items-end">
               {turn.unprompted && (
-                <p className="mb-1 pr-1 font-mono text-[10px] text-muted-foreground">
+                <p className="mb-1 pr-1 font-mono text-micro text-muted-foreground">
                   You added this
                 </p>
               )}

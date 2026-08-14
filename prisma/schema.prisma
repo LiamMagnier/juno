@@ -58,6 +58,7 @@ model User {
   folders                     Folder[]
   conversations               Conversation[]
   memories                    MemoryEntry[]
+  memoryEdits                 MemoryEdit[]
   memorySummary               MemorySummary?
   conversationMemories        ConversationMemory[]
   attachments                 Attachment[]
@@ -766,6 +767,15 @@ model MemoryEntry {
   // Comparable form used for duplicate and contradiction detection, so that
   // matching does not depend on how the sentence happened to be phrased.
   normalized      String?      @db.Text
+  // Semantic retrieval. Stored as float[] like KnowledgeChunk and for the same
+  // reason: no pgvector required, and one account's facts are small enough for
+  // an in-process cosine. Empty means the write path could not embed the row —
+  // retrieval reads that as "lexical only for this fact", never as an error.
+  embedding       Float[]      @default([])
+  // Which model's vector space `embedding` lives in. Cosine across two models'
+  // vectors is a number with no meaning, so the query vector is only compared
+  // against rows carrying the same model id.
+  embeddingModel  String?
   // Stable source identity for idempotent Juno memory imports.
   importSourceId  String?
   createdAt       DateTime     @default(now())
@@ -779,7 +789,43 @@ model MemoryEntry {
   @@index([userId, status, category])
   @@index([userId, projectId, status])
   @@index([userId, expiresAt])
+  @@index([userId, embeddingModel])
   @@unique([userId, importSourceId])
+}
+
+// The natural-language edit ledger: every instruction the user gave the memory
+// editor, the operations it drafted, and (once applied) the inverse that undoes
+// it. Server rows rather than the browser's localStorage, where this used to
+// live — a review queue kept per device silently diverged the moment the memory
+// page was opened on a second machine, and an Undo whose inverse exists only on
+// the laptop that applied it is not an Undo.
+model MemoryEdit {
+  id          String   @id @default(cuid())
+  userId      String
+  // Client-generated identity, unique per account. The page (and the one-time
+  // localStorage import) may retry a create, and a retried create must resolve
+  // to the same row rather than a duplicate.
+  clientId    String
+  // The user's instruction, verbatim — the ledger answers "what did I ask?".
+  instruction String   @db.Text
+  // One-line description of the change, written by the model.
+  summary     String?
+  // Why the instruction was refused (model refusal, suppression, stale facts).
+  note        String?
+  // pending | applied | rejected. TEXT so future states stay rollback-safe.
+  status      String   @default("pending")
+  // The reviewable operations and, once applied, the operations that undo
+  // them. Shape is validated at the route boundary — see
+  // src/components/memory/memory-model.ts for the one client/server contract.
+  operations  Json     @default("[]")
+  inverse     Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientId])
+  @@index([userId, createdAt])
 }
 
 // Per-conversation extraction state: messages up to `processedAt` have been
@@ -1439,6 +1485,7 @@ enum TaskCadence {
   WEEKDAYS
   WEEKLY
   MONTHLY
+  ONCE
 }
 
 model ScheduledTask {
@@ -1452,6 +1499,7 @@ model ScheduledTask {
   minute         Int         @default(0)
   weekday        Int? // 0 (Sun) – 6 (Sat), WEEKLY only
   monthday       Int? // 1–28, MONTHLY only
+  onDate         String? // "YYYY-MM-DD" calendar date local to timezone, ONCE only
   timezone       String      @default("Europe/Paris")
   webSearch      Boolean     @default(true)
   enabled        Boolean     @default(true)

@@ -46,8 +46,15 @@ export function PrivateChatToggle({
             // Was `transition-all`, which swept the disabled opacity fade and the
             // hover lift into one unbounded property list with no reduced-motion
             // escape anywhere on the button or on the nested SVG transforms.
-            "group inline-flex h-9 w-9 items-center justify-center rounded-full text-foreground/75 transition-[color,transform] duration-base ease-out-soft hover:-translate-y-0.5 hover:text-foreground active:translate-y-0 active:scale-95 disabled:pointer-events-none disabled:opacity-50 coarse:h-11 coarse:w-11",
-            "motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100",
+            //
+            // Hover is the accent FILL, not a lift: this button is one of three
+            // 36px peers in the chat root's cluster (Share, model params), and
+            // both neighbours answer hover with bg-accent — a control that
+            // levitated instead read as a different species. The levitation
+            // wasn't lost; it belongs to the mascot, and the SVG below already
+            // floats on group-hover. Press dips at .97, same as `.pressable`.
+            "group inline-flex h-9 w-9 items-center justify-center rounded-full text-foreground/75 transition-[color,background-color,transform] duration-base ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 coarse:h-11 coarse:w-11",
+            "motion-reduce:transition-none motion-reduce:active:scale-100",
             active && "text-primary"
           )}
         >

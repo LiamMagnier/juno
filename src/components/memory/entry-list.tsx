@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronDown, EyeOff, FolderLock, Loader2, MessageSquare, Pencil, Sparkles, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -325,31 +324,32 @@ export function EntryList({ memories, busyIds, paused, onEdit, onForget, onDelet
             <span>What Juno stopped believing</span>
             <span className="font-mono text-caption">{retired.length}</span>
           </button>
-          <AnimatePresence initial={false}>
-            {showRetired && (
-              <motion.div
-                id="memory-retired-list"
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                className="overflow-hidden"
-              >
-                <ul className="divide-y divide-border/50 border-t border-border/50">
-                  {retired.map((memory) => (
-                    <EntryRow
-                      key={memory.id}
-                      memory={memory}
-                      busy={busyIds.has(memory.id)}
-                      onEdit={onEdit}
-                      onForget={onForget}
-                      onDelete={onDelete}
-                    />
-                  ))}
-                </ul>
-              </motion.div>
+          {/* Grid-rows collapse, the same disclosure every other panel uses:
+              height animates through grid-template-rows so the list needs no
+              measured height, and the rows stay mounted — `inert` is what keeps
+              a closed list out of the tab order and the accessibility tree. */}
+          <div
+            id="memory-retired-list"
+            className={cn(
+              "grid transition-[grid-template-rows,opacity] duration-base ease-out-soft motion-reduce:transition-none",
+              showRetired ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
             )}
-          </AnimatePresence>
+          >
+            <div className="min-h-0 overflow-hidden" inert={!showRetired}>
+              <ul className="divide-y divide-border/50 border-t border-border/50">
+                {retired.map((memory) => (
+                  <EntryRow
+                    key={memory.id}
+                    memory={memory}
+                    busy={busyIds.has(memory.id)}
+                    onEdit={onEdit}
+                    onForget={onForget}
+                    onDelete={onDelete}
+                  />
+                ))}
+              </ul>
+            </div>
+          </div>
         </div>
       )}
     </section>

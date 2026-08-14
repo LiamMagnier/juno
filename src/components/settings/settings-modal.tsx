@@ -48,7 +48,11 @@ export function SettingsModal() {
          */}
         <aside className="w-full shrink-0 border-b border-border/70 bg-secondary p-3 md:w-56 md:border-b-0 md:border-r">
           <div className="flex items-center justify-between px-2 py-2 md:mb-2 md:px-3">
-            <h2 className="text-lg font-semibold tracking-tight text-foreground">Settings</h2>
+            {/* `font-serif text-heading` — the voice every dialog title and
+                section heading in the product speaks, and the rung the old
+                `text-lg font-semibold tracking-tight` was approximating by
+                hand off the scale. */}
+            <h2 className="font-serif text-heading text-foreground">Settings</h2>
           </div>
           <nav aria-label="Settings sections" className="flex gap-1 overflow-x-auto pb-0.5 md:flex-col md:overflow-visible md:pb-0">
             <TabButton

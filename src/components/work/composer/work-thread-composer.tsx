@@ -355,7 +355,7 @@ export function WorkThreadComposer({
                   clipped one would be worse than none. */}
               <p
                 className={cn(
-                  "px-3 pt-2.5 font-mono text-[10px] leading-relaxed text-muted-foreground sm:px-3.5",
+                  "px-3 pt-2.5 font-mono text-micro leading-relaxed text-muted-foreground sm:px-3.5",
                   mode.kind === "answer" && "truncate"
                 )}
               >

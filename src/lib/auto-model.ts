@@ -65,16 +65,140 @@ const MIN_INTEL: Record<PromptComplexity, number> = {
   expert: 9,
 };
 
+// ---------------------------------------------------------------------------
+// Complexity signals
+// ---------------------------------------------------------------------------
+//
+// Keyword families are grouped by WHAT they signal, not by language: each
+// carries patterns for the locales Juno actually serves — English, French (the
+// home market), the Spanish/Portuguese/Italian/German majors, Japanese,
+// Chinese, Korean and Russian — so « refactorise » weighs exactly what
+// "refactor" does. English-only wordlists routed every non-English expert
+// prompt to the cheapest tier.
+//
+// Patterns are matched as substrings on purpose: \b is ASCII-only in JS
+// regexes, so it would silently break on « démontrer » or 「証明」, and a
+// false positive merely spends a little more — it never degrades the answer.
+// Languages with no wordlist here are caught by the structural signals in
+// classifyPromptComplexity (length, fences, list shape, question count),
+// which read shape rather than words — unknown locales degrade toward a
+// STRONGER model, never a weaker one. Everything stays precompiled regex:
+// no model call, no locale-detection pass, no per-request allocation.
+const family = (parts: string[]) => new RegExp(parts.join("|"), "iu");
+
+const DEEP_TECHNICAL = family([
+  "\\b(architect|refactor|migrate|distributed|concurrency|race condition|security audit|prove|theorem|formal|compiler|kernel|cryptograph)",
+  // fr
+  "architectur|refactoris|refonte|migrer|distribué|concurren[ct]|condition de course|audit de sécurité|démontr|théorème|formel|compilateur|noyau|cryptograph",
+  // es / pt / it
+  "arquitectur|arquitetur|architettur|refactoriz|refatora|rifattorizz|concurrencia|concorrênc|concorrenz|condición de carrera|auditoría de seguridad|auditoria de segurança|demostr|demonstr|dimostr|teorema|compilador|compilatore|criptograf|crittograf",
+  // de
+  "architektur|refaktor|migrier|verteilte|nebenläufig|sicherheitsaudit|beweis|kryptograph",
+  // ja
+  "アーキテクチャ|リファクタリング|分散システム|並行処理|競合状態|セキュリティ監査|証明|定理|コンパイラ|カーネル|暗号",
+  // zh
+  "架构|重构|分布式|并发|竞态|安全审计|定理|形式化|编译器|内核|密码学",
+  // ko
+  "아키텍처|리팩터링|분산 시스템|동시성|경쟁 상태|보안 감사|증명|컴파일러|커널|암호",
+  // ru
+  "архитектур|рефактор|миграци|распредел[её]нн|конкурентн|состояние гонки|аудит безопасности|доказательств|теорем|формальн|компилятор|криптограф",
+]);
+
+const MULTI_STEP_ANALYSIS = family([
+  "\\b(step by step|multi-?step|plan then|break down|compare (and|&) contrast|trade-?offs?|pros and cons|research|investigate|debug|root cause|why does|how would you design)",
+  // fr
+  "étape par étape|pas à pas|en plusieurs étapes|décompose|compar(e|er|aison)|avantages et inconvénients|le pour et le contre|compromis|recherche approfondie|analyse en profondeur|débog|débug|cause racine|cause profonde|pourquoi|comment concevoir",
+  // es / pt / it
+  "paso a paso|passo a passo|passo dopo passo|ventajas y desventajas|prós e contras|pro e contro|pros y contras|investig|indaga|depura|causa raíz|causa raiz|por qué|por que|perché|cómo diseñar|como projetar|come progettare",
+  // de
+  "schritt für schritt|zerlege|vergleiche|vor- und nachteile|abwäg|untersuch|recherchier|debugge|grundursache|warum|wie würdest du",
+  // ja
+  "ステップバイステップ|段階的に|手順を追って|比較して|長所と短所|メリットとデメリット|トレードオフ|調査して|デバッグ|根本原因|なぜ|設計して",
+  // zh
+  "一步一步|逐步|分步骤|优缺点|利弊|权衡|调查|调试|根本原因|为什么|如何设计",
+  // ko
+  "단계별로|차근차근|비교해|장단점|트레이드오프|조사해|디버깅|근본 원인|어떻게 설계",
+  // ru
+  "шаг за шагом|поэтапно|сравни|плюсы и минусы|компромисс|исследуй|отлад|первопричин|почему|как бы ты спроектировал",
+]);
+
+const BUILD_FROM_SCRATCH = family([
+  "\\b(implement|build|write a|create a|full (app|stack)|end-to-end|production-ready|from scratch)\\b",
+  // fr
+  "implément|développe|construis|écris (un|une)|crée (un|une)|application complète|de bout en bout|prêt pour la production|à partir de zéro|depuis zéro",
+  // es / pt / it
+  "implementa|desarrolla|desenvolv|sviluppa|construye|constru(a|ir)|costruisci|escribe (un|una)|escreva (um|uma)|scrivi (un|una)|crea (un|una)|crie (um|uma)|aplicación completa|de extremo a extremo|listo para producción|desde cero|do zero|da zero",
+  // de
+  "implementier|entwickle|entwickel|schreibe (ein|eine)|erstelle (ein|eine)|komplette (app|anwendung)|produktionsreif|von grund auf",
+  // ja
+  "実装|開発して|構築して|作成して|作って|ゼロから|本番環境|エンドツーエンド",
+  // zh
+  "实现一个|开发一个|构建|编写一个|写一个|创建一个|从零开始|从头开始|生产环境|端到端",
+  // ko
+  "구현|개발해|구축해|만들어|처음부터|프로덕션",
+  // ru
+  "реализуй|разработай|построй|напиши|создай|с нуля|продакшен",
+]);
+
+const AGENTIC_TOOLING = family([
+  "\\b(agent|tool use|function call|orchestrat|workflow|pipeline)\\b",
+  // fr
+  "appel de fonction|appel d'outil|orchestrat|flux de travail",
+  // es / pt / it
+  "agente|llamada a función|chamada de função|orquesta|flujo de trabajo|fluxo de trabalho|flusso di lavoro",
+  // de
+  "agenten|funktionsaufruf|orchestrier|arbeitsablauf",
+  // ja
+  "エージェント|ツール使用|関数呼び出し|オーケストレーション|ワークフロー|パイプライン",
+  // zh
+  "智能体|工具调用|函数调用|编排|工作流|流水线",
+  // ko
+  "에이전트|도구 사용|함수 호출|오케스트레이션|워크플로|파이프라인",
+  // ru
+  "агент|вызов функции|оркестрац|конвейер",
+]);
+
+const REASONING_WORDS = family([
+  "\\b(reason|think carefully|chain of thought|prove|rigorous|exhaustive|edge cases?)\\b",
+  // fr
+  "raisonne|réfléchis (bien|attentivement)|chaîne de pensée|démontre|rigoureu|exhausti|cas limites|cas particuliers",
+  // es / pt / it
+  "razona|raciocin|ragiona|piensa (bien|con cuidado)|pense (bem|com cuidado)|rigoros|riguros|exhaustiv|exaustiv|esaustiv|casos límite|casos extremos|casi limite",
+  // de
+  "begründe|denk (gut|sorgfältig) nach|beweise|rigoros|erschöpfend|randfälle|grenzfälle",
+  // ja
+  "推論|よく考えて|慎重に考えて|厳密に|網羅的に|エッジケース",
+  // zh
+  "推理|仔细思考|认真思考|严谨|详尽|穷举|边界情况|极端情况",
+  // ko
+  "추론|신중하게 생각|엄밀하게|철저하게|엣지 케이스",
+  // ru
+  "рассуждай|подумай (хорошо|внимательно|тщательно)|строго|исчерпывающе|докажи|граничны[ех] случа",
+]);
+
+// Han / kana / hangul: scripts that pack a clause into a handful of glyphs.
+const CJK_CHARS = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7a3]/g;
+
+// Bullets and numbered items across scripts (･①/一、included) — a
+// requirements list reads as a spec in any language.
+const LIST_LINES = /^[ \t]*(?:[-*•‣]\s|\d{1,2}[.)、．]\s?|[①-⑳])/gm;
+
 /**
  * Score how hard the user prompt is. Tuned to push obvious trivial asks to
- * cheap tiers and multi-step / code / architecture work to flagship tiers.
+ * cheap tiers and multi-step / code / architecture work to flagship tiers,
+ * in every locale the product serves — see the signal families above.
  */
 export function classifyPromptComplexity(message: string): PromptComplexityResult {
   const text = message.trim();
   const reasons: string[] = [];
   let score = 0;
 
-  const len = text.length;
+  // CJK carries roughly 2–3× the information per character of spaced Latin
+  // text, so a 500-character Japanese spec IS a long prompt. Weighting the
+  // characters into an effective length keeps one set of thresholds honest
+  // across scripts instead of forking them per locale.
+  const cjkCount = (text.match(CJK_CHARS) ?? []).length;
+  const len = text.length + cjkCount * 2;
   if (len > 12_000) {
     score += 4;
     reasons.push("very long prompt");
@@ -97,32 +221,56 @@ export function classifyPromptComplexity(message: string): PromptComplexityResul
     reasons.push("inline code");
   }
 
-  if (
-    /\b(architect|refactor|migrate|distributed|concurrency|race condition|security audit|prove|theorem|formal|compiler|kernel|cryptograph)/i.test(
-      text
-    )
-  ) {
+  let keywordHit = false;
+  if (DEEP_TECHNICAL.test(text)) {
+    keywordHit = true;
     score += 3;
     reasons.push("deep technical language");
   }
 
-  if (
-    /\b(step by step|multi-?step|plan then|break down|compare (and|&) contrast|trade-?offs?|pros and cons|research|investigate|debug|root cause|why does|how would you design)/i.test(
-      text
-    )
-  ) {
+  if (MULTI_STEP_ANALYSIS.test(text)) {
+    keywordHit = true;
     score += 2;
     reasons.push("multi-step / analysis framing");
   }
 
-  if (/\b(implement|build|write a|create a|full (app|stack)|end-to-end|production-ready|from scratch)\b/i.test(text)) {
+  if (BUILD_FROM_SCRATCH.test(text)) {
+    keywordHit = true;
     score += 2;
     reasons.push("build-from-scratch request");
   }
 
-  if (/\b(agent|tool use|function call|orchestrat|workflow|pipeline)\b/i.test(text)) {
+  if (AGENTIC_TOOLING.test(text)) {
+    keywordHit = true;
     score += 2;
     reasons.push("agentic / tooling request");
+  }
+
+  // Language-agnostic structure — what carries a locale the wordlists miss.
+  // Several distinct questions mean several answers to plan (fullwidth ？,
+  // inverted ¿ and Arabic ؟ included).
+  const questionCount = (text.match(/[?？؟¿]/g) ?? []).length;
+  if (questionCount >= 3) {
+    score += questionCount >= 5 ? 2 : 1;
+    reasons.push("multiple questions");
+  }
+
+  const listCount = (text.match(LIST_LINES) ?? []).length;
+  if (listCount >= 3) {
+    score += listCount >= 6 ? 2 : 1;
+    reasons.push("list of requirements");
+  }
+
+  // A substantial prompt in a script none of the wordlists cover: trust its
+  // shape over its vocabulary and lean UP a tier. The failure mode to avoid
+  // is an expert ask in an uncovered language reading as "no keywords → route
+  // to the cheapest model".
+  if (!keywordHit && len > 280) {
+    const nonAscii = (text.match(/[\u0080-\uffff]/g) ?? []).length;
+    if (nonAscii / text.length > 0.25) {
+      score += 1;
+      reasons.push("uncovered language — structural signals only");
+    }
   }
 
   // Structured system-style curricula and long role prompts need a stronger model.
@@ -131,9 +279,7 @@ export function classifyPromptComplexity(message: string): PromptComplexityResul
     reasons.push("structured / system-style prompt");
   }
 
-  const hardReasoning =
-    /\b(reason|think carefully|chain of thought|prove|rigorous|exhaustive|edge cases?)\b/i.test(text) ||
-    score >= 6;
+  const hardReasoning = REASONING_WORDS.test(text) || score >= 6;
   if (hardReasoning && !reasons.includes("deep technical language")) {
     score += 1;
     reasons.push("reasoning-heavy wording");

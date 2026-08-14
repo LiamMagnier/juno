@@ -407,8 +407,12 @@ function ClaimRow({ claim, sources }: { claim: CitationAuditClaim; sources: Cita
 // The strip
 // ---------------------------------------------------------------------------
 
-function headline(audit: CitationAudit): string {
-  const s = audit.summary;
+/**
+ * One honest sentence about a checked report. Takes the summary alone (not the
+ * full audit) because the /research reader holds only the run-level counts —
+ * the same numbers, and they must be phrased the same way in both places.
+ */
+export function auditHeadline(s: CitationAudit["summary"]): string {
   const problems = s.unsupported + s.partiallySupported + s.contradicted;
   if (s.claims === 0) return AUDIT_COPY.nothingToCheck;
   if (problems === 0 && s.unverified === 0) return AUDIT_COPY.allSupported;
@@ -492,7 +496,7 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
           className={cn("size-2 shrink-0 rounded-full", trouble > 0 ? "bg-warning" : "bg-success")}
         />
         <span className="truncate font-mono text-label text-muted-foreground transition-colors duration-fast group-hover/audit:text-foreground motion-reduce:transition-none">
-          {headline(audit)}
+          {auditHeadline(audit.summary)}
         </span>
         <ChevronDown
           aria-hidden="true"
@@ -505,7 +509,7 @@ export function CitationAuditPanel({ state, className }: { state: AuditState; cl
       {/* The summary is announced once when it arrives, so a screen reader is
           told the answer's citations were checked without having to open this. */}
       <span aria-live="polite" className="sr-only">
-        {headline(audit)}
+        {auditHeadline(audit.summary)}
       </span>
 
       <div

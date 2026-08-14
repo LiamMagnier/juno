@@ -4,9 +4,9 @@ import SwiftUI
 /// searchable catalog · model spec sheet.
 ///
 /// One implementation, driven by ``JunoModelDescriptor``, so Chat and Code
-/// cannot drift. It used to live in the app target as `DesktopModelSelector`,
-/// which meant Juno Code — a package that cannot import the app — was stuck with
-/// a plain `Menu` listing display names.
+/// cannot drift. It used to live in the app target, which meant Juno Code — a
+/// package that cannot import the app — was stuck with a plain `Menu` listing
+/// display names.
 ///
 /// The fixed size is intentional. AppKit cannot safely negotiate an
 /// unconstrained popover whose detail column changes with hover; the resulting
@@ -17,7 +17,13 @@ public struct JunoModelSelector: View {
     private let metrics: JunoModelSelectorMetrics
     private let select: (JunoModelDescriptor) -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // One read for all three switches. The selector draws its fills and
+    // hairlines by hand — a hover fill, a pane tint over the popover's
+    // material — and the system substitutions (opaque backers under Reduce
+    // Transparency, stronger borders under Increase Contrast) cannot reach a
+    // hand-drawn `opacity(…)`, so the fills below consult the preferences
+    // themselves.
+    @Environment(\.junoAccessibility) private var accessibility
 
     @State private var query = ""
     @State private var providerID: String?
@@ -114,7 +120,7 @@ public struct JunoModelSelector: View {
             // cross-fade under Reduce Motion. This site read the preference
             // through neither `reduced(_:when:)` nor the environment before —
             // it was one of the four in the package that never asked at all.
-            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: accessibility.reduceMotion)) {
                 providerID = id
             }
         } label: {
@@ -134,8 +140,15 @@ public struct JunoModelSelector: View {
             }
             .overlay {
                 if active {
+                    // Diluted at rest because the 0.12 fill beneath already
+                    // carries the state; full-alpha under Increase Contrast,
+                    // where a one-third accent is exactly the kind of soft
+                    // boundary the preference asks to harden.
                     RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                        .strokeBorder(Color.junoAccent.opacity(0.36), lineWidth: 1)
+                        .strokeBorder(
+                            Color.junoAccent.opacity(accessibility.increaseContrast ? 1 : 0.36),
+                            lineWidth: 1
+                        )
                 }
             }
             .contentShape(.rect)
@@ -159,7 +172,11 @@ public struct JunoModelSelector: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
+                    // `regular`, not a literal 14: two points off the token is
+                    // the near-miss drift the spacing scale exists to prevent,
+                    // and section-to-section separation is this scale's
+                    // "standard content" rung.
+                    LazyVStack(alignment: .leading, spacing: JunoSpace.regular) {
                         ForEach(sections) { section in
                             sectionView(section)
                         }
@@ -188,12 +205,14 @@ public struct JunoModelSelector: View {
                 DisclosureGroup(
                     isExpanded: legacyExpansion(section.id)
                 ) {
-                    VStack(spacing: 7) {
+                    // `snug`, not a literal 7 — the same row gap the rest of
+                    // the catalog uses, one point off which it had drifted.
+                    VStack(spacing: JunoSpace.snug) {
                         ForEach(section.legacy) { model in
                             modelRow(model)
                         }
                     }
-                    .padding(.top, 7)
+                    .padding(.top, JunoSpace.snug)
                 } label: {
                     Text("Older models · \(section.legacy.count)")
                         .junoFont(size: 11.5, relativeTo: .footnote, weight: .medium)
@@ -280,20 +299,33 @@ public struct JunoModelSelector: View {
             }
             .padding(JunoSpace.cozy)
             .background {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                // `JunoRadius.well` — this was a literal 11, one point off the
+                // token, which is precisely the near-miss drift the radius
+                // ladder exists to prevent. The resting fill is translucent so
+                // the popover's material shows through between rows, but a
+                // hand-drawn `opacity` fill is invisible to Reduce
+                // Transparency's material substitution, so it asks the
+                // preference itself and paints at full alpha when told to.
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .fill(
                         selected
                             ? Color.junoAccent.opacity(0.075)
-                            : (previewed ? Color.junoRowHover : Color.junoSurface.opacity(0.72))
+                            : (previewed ? Color.junoRowHover : restingRowFill)
                     )
             }
             .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                // Under Increase Contrast the diluted accent goes full-alpha
+                // and the resting hairline steps up to the same 1pt
+                // `junoForeground`-based border `JunoThinkingControl` uses —
+                // one treatment for strengthened borders across the package.
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
                     .strokeBorder(
                         selected
-                            ? Color.junoAccent.opacity(0.55)
-                            : Color.junoHairline,
-                        lineWidth: selected ? 1 : 0.5
+                            ? Color.junoAccent.opacity(accessibility.increaseContrast ? 1 : 0.55)
+                            : (accessibility.increaseContrast
+                                ? Color.junoForeground.opacity(0.4)
+                                : Color.junoHairline),
+                        lineWidth: selected || accessibility.increaseContrast ? 1 : 0.5
                     )
             }
             .contentShape(.rect)
@@ -337,8 +369,24 @@ public struct JunoModelSelector: View {
         // Lightened from 0.85: with the opaque canvas gone from the root, this
         // pane was the last thing wide enough to read as a solid slab. At this
         // weight it still separates the spec sheet from the catalog beside it
-        // while the material carries through.
-        .background(Color.junoSurface.opacity(0.5))
+        // while the material carries through — except under Reduce
+        // Transparency, where "the material carries through" is exactly what
+        // the user has asked to stop: the system makes the popover's backing
+        // opaque, and this hand-drawn tint goes full-alpha with it.
+        .background(
+            accessibility.usesOpaqueTransientSurfaces
+                ? Color.junoSurface
+                : Color.junoSurface.opacity(0.5)
+        )
+    }
+
+    /// The catalog row's resting fill. Translucent so the presentation's
+    /// material reads between rows; opaque under Reduce Transparency, because
+    /// the system's own material substitution cannot reach a hand-drawn fill.
+    private var restingRowFill: Color {
+        accessibility.usesOpaqueTransientSurfaces
+            ? Color.junoSurface
+            : Color.junoSurface.opacity(0.72)
     }
 
     private func legacyExpansion(_ id: String) -> Binding<Bool> {
@@ -558,6 +606,7 @@ public struct JunoModelSelectorButton: View {
 struct JunoModelSearchField: View {
     @Binding var query: String
     @FocusState private var focused: Bool
+    @Environment(\.junoAccessibility) private var accessibility
 
     var body: some View {
         HStack(spacing: JunoSpace.snug) {
@@ -580,12 +629,22 @@ struct JunoModelSearchField: View {
                 .accessibilityLabel("Clear search")
             }
         }
-        .padding(.horizontal, 11)
+        // `cozy` inset and the `well` radius — both were one-point-off
+        // literals (11), the near-miss drift the token scales exist to
+        // prevent. The glass background substitutes itself under Reduce
+        // Transparency; the hairline is hand-drawn, so it strengthens itself
+        // under Increase Contrast the same way the catalog rows do.
+        .padding(.horizontal, JunoSpace.cozy)
         .frame(height: 34)
-        .background(JunoGlassBackground(cornerRadius: 11))
+        .background(JunoGlassBackground(cornerRadius: JunoRadius.well))
         .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(Color.junoHairline, lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                .strokeBorder(
+                    accessibility.increaseContrast
+                        ? Color.junoForeground.opacity(0.4)
+                        : Color.junoHairline,
+                    lineWidth: accessibility.increaseContrast ? 1 : 0.5
+                )
         }
         .onAppear { focused = true }
     }

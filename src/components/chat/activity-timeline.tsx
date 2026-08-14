@@ -183,6 +183,19 @@ export function ActivityTimeline({
   const active = run.phases.find((p) => p.active);
   // The THINK span, not the whole run — see liveCopy.
   const live = liveCopy(active?.label, latest, run.phases.find((p) => p.key === "think")?.ms ?? null);
+  // One reading, two consumers: the live count below and WebSearchBlock's
+  // settled flag further down describe the same moment of the run.
+  const researchActive = run.phases.some((phase) => phase.key === "research" && phase.active);
+  // The running count beside the verb, while the run is visibly reading. The
+  // verbs alone can't carry progress — "Reading nature.com" looks identical at
+  // source 2 and source 20 — and the count lands in the exact noun the resting
+  // row will keep ("9 sources"), so settling rewrites tense, not layout. It is
+  // deliberately NOT part of copyKey: a count tick must not restart the shine
+  // the way a phase change does.
+  const liveSources =
+    streaming && researchActive && run.sourceCount
+      ? `${run.sourceCount} ${run.sourceCount === 1 ? "source" : "sources"}`
+      : null;
   // Tool calls join the resting nouns for the same reason sources did: a run
   // that used connectors and searched nothing had NO noun at all, so its strip
   // read "See how this response was made" — the generic invitation — over the
@@ -280,6 +293,7 @@ export function ActivityTimeline({
             ) : (
               <ThinkingState key={copyKey} aria-hidden="true" className="min-w-0 truncate text-body-lg leading-6">
                 {live.message}
+                {liveSources && <span className="whitespace-nowrap tabular-nums"> · {liveSources}</span>}
                 {run.elapsedMs !== null && (
                   <span className="whitespace-nowrap tabular-nums"> · {formatSpan(run.elapsedMs, { live: true })}</span>
                 )}
@@ -297,7 +311,9 @@ export function ActivityTimeline({
                   thought process invites the reader to open a panel that has
                   nothing in it — and quietly implies the model reasoned when it
                   did not. `hasReasoning` is already computed above. */}
-              <span className="block font-serif text-[0.8125rem] font-medium leading-4 tracking-[0.01em] text-muted-foreground">
+              {/* `ui`'s size with the serif face — the 0.8125rem here was the
+                  rung spelled out longhand before the rung had a name. */}
+              <span className="block font-serif text-ui font-medium leading-4 tracking-[0.01em] text-muted-foreground">
                 {hasReasoning ? "Thought process" : "Run"}
               </span>
               <span className="block truncate text-body leading-5 text-foreground/80">
@@ -336,7 +352,7 @@ export function ActivityTimeline({
               // Settled once the run has moved past research: the query stops
               // shimmering the moment the phase it describes is over, not when
               // the whole answer lands.
-              settled={!run.phases.some((phase) => phase.key === "research" && phase.active)}
+              settled={!researchActive}
             />
           )}
           {reasoningLines.length > 0 && (

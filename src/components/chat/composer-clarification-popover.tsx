@@ -220,7 +220,10 @@ export function ComposerClarificationPopover({
       <header className="relative flex items-start gap-3 px-3.5 pb-0 pt-3.5 sm:gap-3.5 sm:px-5 sm:pt-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-            <span className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+            {/* text-micro is the mono eyebrow floor; its 0.02em tracking replaces
+                the hand-tuned 0.16em, which sat above the 0.10em ceiling the type
+                scale documents for caps. */}
+            <span className="font-mono text-micro font-medium uppercase text-muted-foreground">
               {multi ? `Question ${index + 1} of ${questions.length}` : "One quick question"}
             </span>
             {pending.result.title ? (
@@ -228,14 +231,14 @@ export function ComposerClarificationPopover({
                 <span aria-hidden className="text-border">
                   ·
                 </span>
-                <span className="truncate text-[13px] font-medium tracking-[-0.01em] text-foreground/85">
+                <span className="truncate text-ui font-medium tracking-[-0.01em] text-foreground/85">
                   {pending.result.title}
                 </span>
               </>
             ) : null}
           </div>
           {pending.result.description ? (
-            <p className="mt-1 max-w-prose text-[13px] leading-relaxed text-muted-foreground">
+            <p className="mt-1 max-w-prose text-ui leading-relaxed text-muted-foreground">
               {pending.result.description}
             </p>
           ) : null}
@@ -292,9 +295,13 @@ export function ComposerClarificationPopover({
         key={`${pending.id}-${active.id}-${stepKey}`}
         className="relative flex flex-col gap-3.5 px-3.5 py-3.5 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-1 motion-safe:duration-base motion-safe:ease-out-soft motion-reduce:animate-none sm:gap-4 sm:px-5 sm:py-4"
       >
+        {/* text-heading is the exact 1.125rem this hand-wrote; the sm-only bump
+            to an off-ladder 1.25rem is dropped — one size keeps the question the
+            clear focal point at every width without inventing a rung. Weight and
+            leading are overridden because this is the serif voice, not a UI head. */}
         <h3
           id="clarification-question"
-          className="font-serif text-[1.125rem] font-medium leading-snug tracking-[-0.02em] text-foreground sm:text-[1.25rem] sm:leading-snug"
+          className="font-serif text-heading font-medium leading-snug tracking-[-0.02em] text-foreground"
         >
           {active.question}
         </h3>
@@ -317,7 +324,7 @@ export function ComposerClarificationPopover({
                     onClick={() => selectOption(option)}
                     className={cn(
                       "group/opt flex min-h-11 w-full items-start gap-3 rounded-menu border px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow,transform,color] duration-base ease-out-soft",
-                      "sm:min-h-12 sm:items-center sm:rounded-menu sm:px-3.5 sm:py-3",
+                      "sm:min-h-12 sm:items-center sm:px-3.5 sm:py-3",
                       "active:scale-[0.99] motion-reduce:active:scale-100",
                       // No hand-rolled ring. `ring-offset-card` paints a solid
                       // CARD-coloured gap, and this component renders in two
@@ -346,7 +353,7 @@ export function ComposerClarificationPopover({
                   >
                     <span
                       className={cn(
-                        "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-[11px] font-medium tabular-nums transition-[background-color,border-color,color,transform] duration-base ease-out-soft sm:mt-0 sm:size-7",
+                        "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-caption font-medium tabular-nums transition-[background-color,border-color,color,transform] duration-base ease-out-soft sm:mt-0 sm:size-7",
                         selected
                           ? "border-foreground bg-foreground text-background scale-100"
                           : "border-border/70 bg-card text-muted-foreground group-hover/opt:border-foreground/25"
@@ -361,7 +368,7 @@ export function ComposerClarificationPopover({
                     </span>
                     <span
                       className={cn(
-                        "min-w-0 flex-1 text-[0.9375rem] leading-snug tracking-[-0.01em] transition-colors duration-fast",
+                        "min-w-0 flex-1 text-body leading-snug tracking-[-0.01em] transition-colors duration-fast",
                         selected ? "font-medium text-foreground" : "text-foreground/90"
                       )}
                     >
@@ -377,13 +384,14 @@ export function ComposerClarificationPopover({
         {active.allowElse ? (
           <label
             className={cn(
-              "flex flex-col gap-2 rounded-menu border px-3 py-2.5 transition-[border-color,background-color] duration-base ease-out-soft sm:rounded-menu sm:px-3.5 sm:py-3",
+              "flex flex-col gap-2 rounded-menu border px-3 py-2.5 transition-[border-color,background-color] duration-base ease-out-soft sm:px-3.5 sm:py-3",
               currentAnswer?.source === "else"
                 ? "border-foreground/20 bg-foreground/[0.03]"
                 : "border-dashed border-border/70 bg-transparent focus-within:border-border focus-within:bg-muted/20"
             )}
           >
-            <span className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            {/* Same eyebrow voice as the header's — text-micro, one tracking. */}
+            <span className="font-mono text-micro font-medium uppercase text-muted-foreground">
               {active.elseLabel || "Or write your own"}
             </span>
             {customIsLong ? (
@@ -395,7 +403,7 @@ export function ComposerClarificationPopover({
                 placeholder={active.elsePlaceholder || "Type your answer…"}
                 maxLength={1000}
                 rows={3}
-                className="min-h-[4.5rem] resize-none border-0 bg-transparent p-0 text-[0.9375rem] shadow-none focus-visible:ring-0"
+                className="min-h-[4.5rem] resize-none border-0 bg-transparent p-0 text-body shadow-none focus-visible:ring-0"
               />
             ) : (
               <Input
@@ -405,7 +413,7 @@ export function ComposerClarificationPopover({
                 disabled={disabled}
                 placeholder={active.elsePlaceholder || "Type your answer…"}
                 maxLength={1000}
-                className="h-auto border-0 bg-transparent p-0 text-[0.9375rem] shadow-none focus-visible:ring-0"
+                className="h-auto border-0 bg-transparent p-0 text-body shadow-none focus-visible:ring-0"
               />
             )}
           </label>
@@ -421,7 +429,7 @@ export function ComposerClarificationPopover({
           // `rounded-lg` is 16px — the SURFACE rung, on a bare text button one
           // line tall, so the focus outline bowed out at the corners. `control`
           // is the rung the ghost buttons beside it already sit on.
-          className="order-2 self-start rounded-control px-1 py-1.5 text-left text-[13px] text-muted-foreground transition-colors duration-fast hover:text-foreground disabled:opacity-50 sm:order-1"
+          className="order-2 self-start rounded-control px-1 py-1.5 text-left text-ui text-muted-foreground transition-colors duration-fast hover:text-foreground disabled:opacity-50 sm:order-1"
         >
           Use your judgment
         </button>

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { ArrowUp, Loader2, Maximize2, Pencil, RefreshCw, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -12,10 +11,6 @@ import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { cn } from "@/lib/utils";
 import { parseSummarySections, type SummaryData, type SummarySection } from "./memory-model";
-
-// Shared-element morph between the pencil FAB and the composer bar. Both carry
-// the same layoutId, so framer-motion animates one into the other on swap.
-const MORPH_TRANSITION = { duration: 0.32, ease: [0.16, 1, 0.3, 1] as const };
 
 function SummarySections({ sections, className }: { sections: SummarySection[]; className?: string }) {
   return (
@@ -148,19 +143,16 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
         )}
       </div>
 
-      {/* Pencil ⇄ composer morph, floating over the bottom-left of the card. */}
+      {/* Pencil ⇄ composer swap, floating over the bottom-left of the card.
+          The bar pops in from the pencil's corner (origin-bottom-left, the
+          shared overlay entrance) rather than shared-element morphing — this
+          was the last framer-motion surface in the product, and the CSS
+          vocabulary covers what the swap actually communicates: something
+          grew out of the control you pressed. The return trip is instant on
+          purpose; the pencil is the resting state, not an arrival. */}
       <div className="pointer-events-none absolute inset-x-4 bottom-4 sm:inset-x-5 sm:bottom-5">
         {composing ? (
-          <motion.form
-            layoutId="memory-composer"
-            transition={MORPH_TRANSITION}
-            // Both ends of this morph are CAPSULES — the bar is 48px tall and the
-            // pencil is 44px square, so the old literal 24 was simply half of each.
-            // Written as a capsule it renders identically and stops being a magic
-            // number off the radius ladder. It has to live in `style` rather than a
-            // className: framer-motion only corrects radius distortion during a
-            // layout projection for radii it can read off the style object.
-            style={{ borderRadius: 9999 }}
+          <form
             onSubmit={submit}
             /* Two things here.
              *
@@ -168,21 +160,16 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
              * affordance back, so tabbing into the memory composer drew nothing at
              * all — the only writable control on this card had no focus state.
              * focus-within on the shell is how the chat and /compare composers do
-             * it, and the ring follows the capsule radius set in `style`.
+             * it, and the ring follows the capsule radius.
              *
              * And `shadow-glass`, not `.glass-raised`: Tailwind's ring compiles to
              * `box-shadow: <offset>, <ring>, var(--tw-shadow)`, so it REPLACES a
              * components-layer box-shadow outright — the bar would have gone flat
              * at the exact moment it gained a ring. The utility writes the same
              * --shadow-glass value into --tw-shadow, so lift and ring compose. */
-            className="pointer-events-auto flex w-full items-center gap-1.5 border border-border/70 bg-popover/95 py-1.5 pl-5 pr-1.5 shadow-glass backdrop-blur-xl transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25 motion-reduce:transition-none"
+            className="pointer-events-auto flex w-full origin-bottom-left items-center gap-1.5 rounded-full border border-border/70 bg-popover/95 py-1.5 pl-5 pr-1.5 shadow-glass backdrop-blur-xl transition-[border-color,box-shadow] duration-fast ease-out-soft focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25 motion-safe:animate-pop-in motion-reduce:transition-none"
           >
-            <motion.div
-              layout="position"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1, transition: { delay: 0.12 } }}
-              className="flex min-w-0 flex-1 items-center"
-            >
+            <div className="flex min-w-0 flex-1 items-center">
               {drafting ? (
                 <span role="status" className="flex h-9 min-w-0 flex-1 items-center gap-2.5 text-sm text-muted-foreground">
                   <ThinkingDots />
@@ -205,13 +192,8 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
                   className="h-9 w-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
                 />
               )}
-            </motion.div>
-            <motion.div
-              layout="position"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1, transition: { delay: 0.12 } }}
-              className="flex shrink-0 items-center gap-1"
-            >
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
               {!drafting && (
                 <Button
                   type="button"
@@ -233,14 +215,10 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
               >
                 {drafting ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
               </Button>
-            </motion.div>
-          </motion.form>
+            </div>
+          </form>
         ) : (
-          <motion.button
-            layoutId="memory-composer"
-            transition={MORPH_TRANSITION}
-            // Same capsule as the composer it morphs into — see the note above.
-            style={{ borderRadius: 9999 }}
+          <button
             ref={fabRef}
             type="button"
             onClick={() => {
@@ -249,10 +227,10 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
               else setComposing(true);
             }}
             aria-disabled={paused}
-            whileTap={paused ? undefined : { scale: 0.95 }}
             className={cn(
-              "pointer-events-auto flex size-11 items-center justify-center bg-primary text-primary-foreground btn-glossy halo-primary transition-[filter] duration-fast ease-out-soft hover:brightness-[1.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none coarse:size-12",
-              paused && "opacity-50"
+              "pointer-events-auto flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground btn-glossy halo-primary transition-[filter,transform] duration-fast ease-out-soft hover:brightness-[1.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none coarse:size-12",
+              // Press feedback only while pressing does something.
+              paused ? "opacity-50" : "active:scale-95 motion-reduce:active:scale-100"
             )}
             aria-label={
               paused
@@ -260,12 +238,8 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
                 : "Edit memory — tell Juno what to remember, update, or forget"
             }
           >
-            {/* initial={false}: the icon must be visible in server-rendered HTML,
-                not fade in after hydration. */}
-            <motion.span layout="position" initial={false}>
-              <Pencil className="size-4" />
-            </motion.span>
-          </motion.button>
+            <Pencil className="size-4" />
+          </button>
         )}
       </div>
 

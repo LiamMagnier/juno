@@ -159,7 +159,12 @@ export function SettingsGroup({
           <p className="mt-1 max-w-prose text-sm text-muted-foreground">{description}</p>
         ) : null}
       </div>
-      <div className="grid grid-cols-1 gap-0">{children}</div>
+      {/* A plain stack, on purpose. This was `grid grid-cols-1 gap-0` — a
+          grid that laid out exactly like block flow while implying a second
+          column existed somewhere. It is why Tile carried a `span` prop that
+          controlled nothing; settings is one calm column, and the markup now
+          says so. */}
+      <div>{children}</div>
     </section>
   );
 }

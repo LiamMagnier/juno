@@ -249,7 +249,7 @@ export function WorkStatusPill({ status, className }: { status: WorkStatus; clas
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] leading-none",
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-micro leading-none",
         PILL_CLASS[meta.tone],
         className
       )}
@@ -298,12 +298,12 @@ export function WorkTargetLabel({
   // run because it needs their Mac.
   if (target === null) {
     return (
-      <span className={cn("font-mono text-[10px] text-muted-foreground", className)}>Not placed yet</span>
+      <span className={cn("font-mono text-micro text-muted-foreground", className)}>Not placed yet</span>
     );
   }
   const Icon = target === "cloud" ? Cloud : Laptop;
   return (
-    <span className={cn("inline-flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground", className)}>
+    <span className={cn("inline-flex items-center gap-1.5 font-mono text-micro text-muted-foreground", className)}>
       <Icon className="h-3 w-3" aria-hidden="true" />
       {target === "cloud" ? "Cloud" : hostUnknown ? "a Mac" : (hostName ?? "Your Mac")}
     </span>
@@ -332,7 +332,7 @@ export function CapabilityChip({
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] leading-none",
+        "inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-micro leading-none",
         available
           ? "border-border/70 bg-secondary text-muted-foreground"
           : "border-warning/35 bg-warning/10 text-warning-foreground line-through decoration-warning/60"
@@ -434,7 +434,7 @@ export function RiskPill({ risk }: { risk: WorkRiskLevel }) {
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] leading-none",
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-micro leading-none",
         severe
           ? "border-destructive/35 bg-destructive/10 text-destructive"
           : "border-border/70 bg-secondary text-muted-foreground"
@@ -497,7 +497,7 @@ export function WorkStateNote({
     <div
       role={tone === "error" || tone === "blocked" ? "alert" : undefined}
       className={cn(
-        "flex flex-wrap items-start gap-x-3 gap-y-2 rounded-field border px-3.5 py-2.5 text-[13px] leading-relaxed",
+        "flex flex-wrap items-start gap-x-3 gap-y-2 rounded-field border px-3.5 py-2.5 text-ui leading-relaxed",
         NOTE_CLASS[tone],
         className
       )}
@@ -527,7 +527,7 @@ export function DegradationNotes({
   return (
     <ul className={cn("space-y-1.5", className)}>
       {degradation.map((entry, index) => (
-        <li key={`${entry.kind}-${entry.subject ?? index}`} className="flex items-start gap-2 text-[13px] leading-relaxed text-warning-foreground">
+        <li key={`${entry.kind}-${entry.subject ?? index}`} className="flex items-start gap-2 text-ui leading-relaxed text-warning-foreground">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
           <span className="min-w-0">{entry.explanation}</span>
         </li>

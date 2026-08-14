@@ -211,7 +211,16 @@ test("the fallback is a model the runtime can actually drive", () => {
  */
 
 test("a plan with no entitlement gets no model at all, rather than the first one in the catalog", () => {
-  assert.equal(cheapestWorkModel(MODEL_LIST, "FREE"), null);
+  // Since the FREE trial, a FREE account is entitled to the catalog's
+  // FREE-priced tier — its floor must come from inside that tier…
+  const free = cheapestWorkModel(MODEL_LIST, "FREE");
+  if (free) assert.ok(canUseModel("FREE", free.id), "the FREE fallback must be inside the trial tier");
+  // …and an account whose eligible pool is genuinely empty still gets null,
+  // never the first model in the catalog.
+  assert.equal(
+    cheapestWorkModel(MODEL_LIST.filter((model) => model.minPlan !== "FREE"), "FREE"),
+    null
+  );
 });
 
 test("the floor is the cheapest thing the account may actually use, and it can be driven", () => {

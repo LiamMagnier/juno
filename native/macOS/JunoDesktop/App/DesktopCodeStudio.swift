@@ -477,7 +477,12 @@ private struct DesktopCodeAddProjectLabel: View {
             ZStack(alignment: .bottomTrailing) {
                 JunoIconView(.projects, size: 15)
                 Image(systemName: "plus")
-                    .font(.system(size: 7, weight: .bold))
+                    // Caption-class, not the 7pt it shipped at: 7pt is below
+                    // the scale's floor — illegible rather than merely small —
+                    // and a frozen `.system(size:)` stayed 7pt at every
+                    // accessibility setting. `.caption2` is the smallest rung
+                    // the scale allows, and it moves with Dynamic Type.
+                    .font(.caption2.weight(.bold))
                     .padding(1)
                     .background(Color.junoSidebar)
                     .clipShape(Circle())
@@ -1592,7 +1597,11 @@ struct DesktopCodeDraftDetail: View {
                 VStack(spacing: JunoSpace.cozy) {
                     VStack(alignment: .leading, spacing: JunoSpace.tight) {
                         Text(record == nil ? "What would you like to explore?" : "What are we working on?")
-                            .font(.system(size: 27, weight: .semibold, design: .rounded))
+                            // The draft's one display moment; 27pt is
+                            // load-bearing, so it goes through `junoFont` to
+                            // keep moving with Dynamic Type. `.largeTitle` is
+                            // the role: this is the screen's primary title.
+                            .junoFont(size: 27, relativeTo: .largeTitle, weight: .semibold, design: .rounded)
                             .junoInk()
                         Text(
                             record == nil
@@ -1657,7 +1666,10 @@ struct DesktopCodeDraftDetail: View {
                 } label: {
                     HStack(spacing: JunoSpace.snug) {
                         Image(systemName: intent.icon)
-                            .font(.system(size: 13, weight: .medium))
+                            // Scaled against the callout row title it marks,
+                            // so glyph and title grow together under Dynamic
+                            // Type.
+                            .junoFont(size: 13, relativeTo: .callout, weight: .medium)
                             .foregroundStyle(Color.junoAccent)
                             .frame(width: 26, height: 26)
                             .background(Color.junoAccent.opacity(0.10), in: Circle())
@@ -1695,7 +1707,10 @@ struct DesktopCodeDraftDetail: View {
         .background(Color.junoRaised, in: RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
-                .stroke(Color.junoSeparator.opacity(0.65), lineWidth: 1)
+                // `junoBorder` is the token whose documented job is outlining
+                // a panel. The hand-diluted separator this replaces was a
+                // third hairline strength no other surface used.
+                .stroke(Color.junoBorder, lineWidth: 1)
         }
     }
 
@@ -1829,7 +1844,7 @@ struct DesktopCodeDraftDetail: View {
                 ])
             } label: {
                 Image(systemName: "arrow.up.right.square")
-                    .font(.system(size: 14, weight: .medium))
+                    .junoFont(size: 14, relativeTo: .body, weight: .medium)
                     .junoSecondaryInk()
                     .frame(width: 28, height: 28)
             }
@@ -1944,7 +1959,12 @@ struct DesktopCodeDraftDetail: View {
                         cornerRadius: JunoRadius.composer,
                         style: .continuous
                     ),
-                    tint: isDropTargeted ? Color.junoAccent.opacity(0.24) : nil
+                    // Full-alpha or nothing: `Glass.tint(_:)` honours alpha,
+                    // so a diluted accent stops establishing a predictable
+                    // luminance and reads as whatever is behind the window —
+                    // the exact defect `accentGlassAction` documents. A drop
+                    // hover is the composer's one moment of full emphasis.
+                    tint: isDropTargeted ? Color.junoAccent : nil
                 )
             }
             .padding(.horizontal, JunoSpace.roomy)
@@ -2076,7 +2096,9 @@ struct DesktopCodeDraftDetail: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .bold))
+                    // The scale's floor. A fixed 9pt chevron sat below the
+                    // caption rung and never moved with Dynamic Type.
+                    .font(.caption2.weight(.bold))
                     .junoSecondaryInk()
             }
             .padding(.vertical, JunoSpace.hairline)
@@ -2110,10 +2132,14 @@ struct DesktopCodeDraftDetail: View {
         } label: {
             HStack(spacing: JunoSpace.hairline) {
                 Image(systemName: target.symbol)
-                    .font(.system(size: 13, weight: .medium))
+                    // Scaled against the caption row it leads, one size up so
+                    // the mark reads as the row's anchor.
+                    .junoFont(size: 13, relativeTo: .caption, weight: .medium)
                 Text(target.label)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
+                    // The scale's floor — the fixed 8pt this replaces was
+                    // below the caption rung and frozen against Dynamic Type.
+                    .font(.caption2.weight(.bold))
             }
             .font(.caption)
             .junoSecondaryInk()
@@ -2196,7 +2222,8 @@ struct DesktopCodeDraftDetail: View {
         } label: {
             HStack(spacing: JunoSpace.hairline) {
                 Image(systemName: contractSymbol)
-                    .font(.system(size: 13, weight: .medium))
+                    // Same treatment as the target menu's mark beside it.
+                    .junoFont(size: 13, relativeTo: .caption, weight: .medium)
                 Text(contractTitle)
             }
             .font(.caption)
@@ -2368,7 +2395,7 @@ struct DesktopCodeDraftDetail: View {
             }
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: 16, weight: .medium))
+                .junoFont(size: 16, relativeTo: .body, weight: .medium)
                 .frame(width: 24, height: 24)
                 .contentShape(.circle)
                 .overlay(alignment: .topTrailing) {
@@ -2450,7 +2477,7 @@ struct DesktopCodeDraftDetail: View {
     private func fileReferenceChip(_ path: WorkspacePath) -> some View {
         HStack(spacing: JunoSpace.tight) {
             Image(systemName: "doc.text")
-                .font(.system(size: 15, weight: .medium))
+                .junoFont(size: 15, relativeTo: .body, weight: .medium)
                 .junoSecondaryInk()
 
             VStack(alignment: .leading, spacing: 1) {
@@ -2478,9 +2505,16 @@ struct DesktopCodeDraftDetail: View {
         }
         .padding(.horizontal, JunoSpace.snug)
         .frame(minHeight: 44)
-        .junoGlass(
-            in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous),
-            tint: Color.primary.opacity(0.05)
+        // A flat quiet fill, not glass: this chip lives *inside* the composer's
+        // glass, and a second pane of glass inside a glass surface flattens
+        // both back into translucent rounded rectangles — the same reason the
+        // workspace's Stop button is plain inside its pill. `junoMuted` is the
+        // resting-chip fill by definition; the diluted `primary.opacity(0.05)`
+        // glass tint this replaces was also the one thing `Glass.tint(_:)`
+        // must never be given.
+        .background(
+            Color.junoMuted,
+            in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
         )
         .help("Attached file (path.value)")
         .accessibilityElement(children: .contain)
@@ -2494,7 +2528,10 @@ struct DesktopCodeDraftDetail: View {
         } label: {
             Image(systemName: "mic")
                 .font(.body)
-                .foregroundStyle(Color.primary.opacity(0.76))
+                // The ramp has three rungs and no in-betweens: a hand-mixed
+                // `primary.opacity(0.76)` was a fourth ink no other control
+                // used. Secondary is the rung for a quiet neutral control.
+                .junoSecondaryInk()
                 .frame(width: 34, height: 34)
                 .contentShape(.circle)
         }
@@ -2519,17 +2556,24 @@ struct DesktopCodeDraftDetail: View {
                 beginVoice(modelID)
             } label: {
                 Image(systemName: "waveform")
-                    .font(.system(size: 16, weight: .semibold))
+                    .junoFont(size: 16, relativeTo: .body, weight: .semibold)
                     .frame(width: 30, height: 30)
-                    .junoInk()
+                    // `junoOnAccent` on the active tint, exactly as the chrome
+                    // contract asks — the accent is an account setting and
+                    // on-accent is the token that keeps contrast on all five
+                    // palettes.
+                    .foregroundStyle(
+                        modelID.isEmpty ? Color.junoMutedForeground : Color.junoOnAccent
+                    )
                     .contentShape(.circle)
             }
-            .buttonStyle(.plain)
-            .junoGlass(
-                in: Circle(),
-                tint: Color.primary.opacity(modelID.isEmpty ? 0.04 : 0.14),
-                interactive: true
-            )
+            // The chrome's own circular action, as Chat's voice slot draws it.
+            // The hand-rolled version this replaces tinted the glass with a
+            // diluted neutral (`primary` at 4%/14%) — a faded tint is the one
+            // thing `Glass.tint(_:)` must never be given, and the binary
+            // full-accent/untinted pair is the sanctioned reading of
+            // available/unavailable.
+            .accentGlassAction(active: !modelID.isEmpty)
             .disabled(modelID.isEmpty)
             .help("Start a voice conversation")
             .accessibilityLabel("Start voice mode")
@@ -2542,20 +2586,22 @@ struct DesktopCodeDraftDetail: View {
                             .controlSize(.small)
                     } else {
                         Image(systemName: "arrow.up")
-                            .font(.system(size: 12, weight: .bold))
+                            // The named rung Chat's send arrow uses — callout
+                            // bold is the same 12pt at the default setting,
+                            // and it moves with Dynamic Type.
+                            .font(.callout.weight(.bold))
                     }
                 }
                 .frame(width: 30, height: 30)
-                .foregroundStyle(canSend ? Color.junoForeground : Color.junoMutedForeground)
+                // On-accent, not `junoForeground`: the glyph sits on the
+                // accent-tinted glass, and canvas ink there is the contrast
+                // failure the on-accent token exists to prevent. This used to
+                // say `junoForeground` while a second, losing `foregroundStyle`
+                // outside the button said on-accent; one statement now wins.
+                .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
                 .contentShape(.circle)
             }
-            .buttonStyle(.plain)
-            .junoGlass(
-                in: Circle(),
-                tint: canSend ? Color.junoAccent : nil,
-                interactive: true
-            )
-            .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
+            .accentGlassAction(active: canSend)
             .disabled(!canSend)
             .help("Start this task (Return)")
             .accessibilityLabel("Start task")

@@ -109,12 +109,12 @@ export function WorkQuestionCard({
     // holding the question the run has STOPPED for sat lower than an ordinary
     // card beside it. The alpha was tuned against the old 9%-lightness page.
     <div className="rounded-field border border-warning/40 bg-warning/10 px-3.5 py-3">
-      <p className="font-mono text-[10px] text-warning-foreground">
+      <p className="font-mono text-micro text-warning-foreground">
         Waiting on you · asked {workTimeAgo(question.askedAt)}
       </p>
       <p className="mt-1.5 text-sm leading-relaxed text-foreground">{question.question}</p>
       {question.why !== null && (
-        <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{question.why}</p>
+        <p className="mt-1 text-ui leading-relaxed text-muted-foreground">{question.why}</p>
       )}
       {question.options.length > 0 && (
         <div className="mt-2.5 flex flex-wrap gap-1.5">
@@ -294,7 +294,7 @@ export function WorkApprovals({
 
   if (approvals.length === 0) {
     return (
-      <p className="text-[13px] leading-relaxed text-muted-foreground">
+      <p className="text-ui leading-relaxed text-muted-foreground">
         Nothing has needed your approval. Juno always asks before anything it cannot undo — a
         permanent delete, a message sent, a purchase, a security setting.
       </p>
@@ -393,7 +393,7 @@ function ApprovalCard({
       <p
         className={cn(
           "mt-2 leading-relaxed text-foreground",
-          answerable ? "text-[15px] font-medium" : "text-sm"
+          answerable ? "text-body font-medium" : "text-sm"
         )}
       >
         {approval.summary}
@@ -431,7 +431,7 @@ function ApprovalCard({
           )}
         >
           {detailRows.map(([key, value]) => (
-            <div key={key} className="flex gap-2 font-mono text-[10px] leading-relaxed">
+            <div key={key} className="flex gap-2 font-mono text-micro leading-relaxed">
               <dt className="w-20 shrink-0 text-muted-foreground">{key}</dt>
               <dd className="min-w-0 break-all text-foreground">{String(value)}</dd>
             </div>
@@ -440,7 +440,7 @@ function ApprovalCard({
       )}
 
       {answerable && (
-        <p className="mt-2.5 text-[12.5px] leading-relaxed text-warning-foreground">
+        <p className="mt-2.5 text-ui leading-relaxed text-warning-foreground">
           {RISK_CONSEQUENCE[approval.risk]}
         </p>
       )}
@@ -450,7 +450,7 @@ function ApprovalCard({
         // being authorised, so this browser has no way to answer it that the
         // server would accept. Saying where it CAN be answered is the only
         // useful thing left; a greyed-out button would not say even that.
-        <p className="mt-2.5 text-[12.5px] leading-relaxed text-warning-foreground">
+        <p className="mt-2.5 text-ui leading-relaxed text-warning-foreground">
           This request did not arrive with the signature Juno needs to accept an answer from the
           web. Decide it in the Juno app on the Mac that raised it.
         </p>
@@ -491,20 +491,20 @@ function ApprovalCard({
               onClick={() => onDecide(approval, "allowed_always")}
               // Underlined at rest, not only on hover: this is the one control
               // here that has to look pressable before the pointer reaches it.
-              className="mt-2 h-auto p-0 text-[12px] font-normal text-muted-foreground underline hover:text-foreground"
+              className="mt-2 h-auto p-0 text-caption font-normal text-muted-foreground underline hover:text-foreground"
             >
               Allow this and stop asking
             </Button>
           )}
           {approval.expiresAt !== null && (
-            <p className="mt-2 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+            <p className="mt-2 flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
               <Clock className="h-3 w-3" aria-hidden="true" />
               Unanswered, this expires and Juno stops rather than acting on it.
             </p>
           )}
         </>
       ) : (
-        <p className="mt-2.5 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+        <p className="mt-2.5 flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
           <Clock className="h-3 w-3" aria-hidden="true" />
           {describeDecision(approval, expired)}
         </p>

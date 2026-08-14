@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { MotionConfig } from "framer-motion";
 import { toast } from "sonner";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,10 +15,15 @@ import { EntryList } from "@/components/memory/entry-list";
 import { PrivacyStrip } from "@/components/memory/privacy-strip";
 import { AppPageHeader } from "@/components/app/app-page-header";
 import {
-  loadEdits,
+  MEMORY_EDIT_LEDGER_CAP,
+  createEdits,
+  deleteEditRecord,
+  fetchEdits,
+  migrateLegacyEdits,
   newEditId,
-  saveEdits,
+  updateEdit,
   type Memory,
+  type MemoryEditDraft,
   type MemoryEditRecord,
   type Operation,
   type SummaryData,
@@ -40,7 +44,8 @@ function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
   // screen with the way out until the next attempt clears it.
   const [policyNotice, setPolicyNotice] = React.useState<string | null>(null);
 
-  // Drafted natural-language edits (review queue) — persisted locally per user.
+  // Drafted natural-language edits (review queue) — server-synced, so the
+  // queue and every Undo follow the account rather than the device.
   const [edits, setEdits] = React.useState<MemoryEditRecord[]>([]);
   const [editsOpen, setEditsOpen] = React.useState(false);
   // Per-edit busy tracking — accept/undo on different edits can overlap.
@@ -52,14 +57,63 @@ function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
       else next.delete(id);
       return next;
     });
-  const ledgerReady = React.useRef(false);
   React.useEffect(() => {
-    setEdits(loadEdits(user.id));
-    ledgerReady.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        // Any localStorage-era ledger rides up first (idempotent), so a user's
+        // old queue appears on every device instead of staying stranded here.
+        await migrateLegacyEdits(user.id);
+      } catch {
+        // The local copy is kept for the next visit — see migrateLegacyEdits.
+      }
+      try {
+        const list = await fetchEdits();
+        if (!cancelled) setEdits(list);
+      } catch {
+        // The ledger is a convenience; the page works without it until reload.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [user.id]);
-  React.useEffect(() => {
-    if (ledgerReady.current) saveEdits(user.id, edits);
-  }, [edits, user.id]);
+
+  // Server truth when the sync succeeds; a local echo when it does not, so the
+  // user's action is never silently dropped — the next load reconciles.
+  const recordNewEdit = async (draft: MemoryEditDraft) => {
+    try {
+      setEdits(await createEdits([draft]));
+    } catch {
+      setEdits((prev) =>
+        [
+          {
+            id: draft.clientId,
+            instruction: draft.instruction,
+            ...(draft.summary ? { summary: draft.summary } : {}),
+            ...(draft.note ? { note: draft.note } : {}),
+            operations: draft.operations,
+            ...(draft.inverse ? { inverse: draft.inverse } : {}),
+            status: draft.status,
+            createdAt: new Date().toISOString(),
+          },
+          ...prev,
+        ].slice(0, MEMORY_EDIT_LEDGER_CAP)
+      );
+    }
+  };
+
+  const recordEditPatch = async (
+    id: string,
+    patch: Parameters<typeof updateEdit>[1],
+    fallback: (edit: MemoryEditRecord) => MemoryEditRecord
+  ) => {
+    try {
+      setEdits(await updateEdit(id, patch));
+    } catch {
+      setEdits((prev) => prev.map((edit) => (edit.id === id ? fallback(edit) : edit)));
+    }
+  };
 
   const [resetting, setResetting] = React.useState(false);
 
@@ -194,43 +248,39 @@ function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
       setPolicyNotice(null);
 
       if ("refusal" in data) {
-        setEdits((prev) => [
-          {
-            id: newEditId(),
-            instruction,
-            status: "rejected",
-            note: data.refusal,
-            operations: [],
-            createdAt: new Date().toISOString(),
-          },
-          ...prev,
-        ]);
+        await recordNewEdit({
+          clientId: newEditId(),
+          instruction,
+          status: "rejected",
+          note: data.refusal,
+          operations: [],
+        });
         setEditsOpen(true);
         toast.info("Juno declined that instruction — see Manage edits.");
         return true;
       }
 
       // Auto-apply: the edits list is history + Undo, not an approval gate.
-      const base: Omit<MemoryEditRecord, "status"> = {
-        id: newEditId(),
+      const base: Omit<MemoryEditDraft, "status"> = {
+        clientId: newEditId(),
         instruction,
         summary: data.proposal.summary,
         operations: data.proposal.operations,
-        createdAt: new Date().toISOString(),
       };
       try {
         const inverse = await applyOperations(data.proposal.operations);
-        setEdits((prev) => [{ ...base, status: "applied", inverse }, ...prev]);
+        await recordNewEdit({ ...base, status: "applied", inverse });
         toast.success("Memory updated — undo it under Manage edits if needed.");
       } catch (e) {
         // A suppressed write is a decision, not an outage: retrying it will be
         // refused for exactly the same reason forever, so it is recorded as
         // rejected with the explanation rather than parked as pending.
         const suppressed = (e as { code?: string }).code === "suppressed";
-        setEdits((prev) => [
-          { ...base, status: suppressed ? "rejected" : "pending", ...(suppressed ? { note: (e as Error).message } : {}) },
-          ...prev,
-        ]);
+        await recordNewEdit({
+          ...base,
+          status: suppressed ? "rejected" : "pending",
+          ...(suppressed ? { note: (e as Error).message } : {}),
+        });
         setEditsOpen(true);
         toast.error(e instanceof Error ? e.message : "Couldn’t apply the change — it’s pending under Manage edits.");
       }
@@ -265,13 +315,12 @@ function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
     markBusy(edit.id, true);
     try {
       const inverse = await applyOperations(edit.operations);
-      setEdits((prev) => prev.map((e) => (e.id === edit.id ? { ...e, status: "applied", inverse } : e)));
+      await recordEditPatch(edit.id, { status: "applied", inverse }, (x) => ({ ...x, status: "applied", inverse }));
       toast.success("Edit applied — summary updated.");
     } catch (e) {
       if ((e as { status?: number }).status === 409) {
-        setEdits((prev) =>
-          prev.map((x) => (x.id === edit.id ? { ...x, status: "rejected", note: (e as Error).message } : x))
-        );
+        const note = (e as Error).message;
+        await recordEditPatch(edit.id, { status: "rejected", note }, (x) => ({ ...x, status: "rejected", note }));
       }
       toast.error(e instanceof Error ? e.message : "Couldn’t apply that edit — nothing was changed.");
     } finally {
@@ -285,15 +334,17 @@ function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
     try {
       // Undoing returns its own inverse: the redo operations, with fresh fact ids.
       const redo = await applyOperations(edit.inverse);
-      setEdits((prev) =>
-        prev.map((x) => (x.id === edit.id ? { ...x, status: "pending", operations: redo, inverse: undefined } : x))
-      );
+      await recordEditPatch(edit.id, { status: "pending", operations: redo, inverse: null }, (x) => ({
+        ...x,
+        status: "pending",
+        operations: redo,
+        inverse: undefined,
+      }));
       toast.success("Edit undone — it’s back to pending.");
     } catch (e) {
       if ((e as { status?: number }).status === 409) {
-        setEdits((prev) =>
-          prev.map((x) => (x.id === edit.id ? { ...x, status: "rejected", note: (e as Error).message } : x))
-        );
+        const note = (e as Error).message;
+        await recordEditPatch(edit.id, { status: "rejected", note }, (x) => ({ ...x, status: "rejected", note }));
       }
       toast.error(e instanceof Error ? e.message : "Couldn’t undo that edit.");
     } finally {
@@ -301,8 +352,15 @@ function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
     }
   };
 
-  const deleteEdit = (id: string) => {
+  const deleteEdit = async (id: string) => {
+    // Optimistic — the row leaves the screen at once; the server list, when it
+    // answers, is the reconciliation.
     setEdits((prev) => prev.filter((e) => e.id !== id));
+    try {
+      setEdits(await deleteEditRecord(id));
+    } catch {
+      // Kept removed locally; the next load resyncs from the server.
+    }
   };
 
   // ---- Single-entry controls ------------------------------------------------
@@ -446,76 +504,74 @@ function MemoryContent({ hideHeader }: { hideHeader?: boolean }) {
             <Skeleton style={stagger(3)} className="h-16 w-full rounded-card" />
           </div>
         ) : (
-          <MotionConfig reducedMotion="user">
-            <div className="space-y-3">
-              <SummaryCard
-                summary={summary}
-                paused={paused}
-                consolidating={consolidating}
-                onRegenerate={() => void regenerate()}
-                onInstruction={submitInstruction}
-              />
-              {policyNotice && (
-                // aria-live so the explanation reaches a screen reader when it
-                // appears after a button press, not only on a fresh render.
-                <div
-                  role="status"
-                  aria-live="polite"
-                  // bg-card, not bg-muted/30: 30% of a 9.5% token over the page's
-                  // black ground composites to 2.8% lightness, so this notice sat
-                  // between two full --card panels with effectively no fill of its
-                  // own. It is a panel-level message; it gets the panel's rung.
-                  className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-card border border-border/60 bg-card px-4 py-3 text-sm"
-                >
-                  <AlertCircle className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <p className="min-w-0 flex-1 text-muted-foreground">{policyNotice}</p>
-                  <Button variant="outline" size="sm" onClick={() => router.push("/settings")}>
-                    Open settings
-                  </Button>
-                </div>
-              )}
-              {backfillRemaining !== null && (
-                <p role="status" className="flex items-center gap-2.5 px-1.5 text-caption text-muted-foreground">
-                  <ThinkingDots />
-                  <span>
-                    Distilling your past chats into memory — {backfillRemaining}{" "}
-                    {backfillRemaining === 1 ? "chat" : "chats"} to go…
-                  </span>
-                </p>
-              )}
-              {/* The comment at the top of this component has said the facts are
-                  "listed by EntryList below" since the component landed — but the
-                  render tree never mounted it, so the rows, the retired-fact
-                  disclosure and every one of editMemory/forgetMemory/deleteMemory
-                  were dead code and a user who spotted a wrong fact still had
-                  nothing to point at. */}
-              <EntryList
-                memories={memories}
-                busyIds={busyMemoryIds}
-                paused={paused}
-                onEdit={editMemory}
-                onForget={forgetMemory}
-                onDelete={deleteMemory}
-              />
-              <EditsPanel
-                edits={edits}
-                open={editsOpen}
-                onOpenChange={setEditsOpen}
-                busyIds={busyEditIds}
-                onAccept={acceptEdit}
-                onUndo={undoEdit}
-                onDelete={deleteEdit}
-              />
-              <PrivacyStrip
-                paused={paused}
-                onPausedChange={setPaused}
-                onExport={exportMemory}
-                onReset={resetMemory}
-                resetting={resetting}
-                empty={memories.length === 0 && !summary}
-              />
-            </div>
-          </MotionConfig>
+          <div className="space-y-3">
+            <SummaryCard
+              summary={summary}
+              paused={paused}
+              consolidating={consolidating}
+              onRegenerate={() => void regenerate()}
+              onInstruction={submitInstruction}
+            />
+            {policyNotice && (
+              // aria-live so the explanation reaches a screen reader when it
+              // appears after a button press, not only on a fresh render.
+              <div
+                role="status"
+                aria-live="polite"
+                // bg-card, not bg-muted/30: 30% of a 9.5% token over the page's
+                // black ground composites to 2.8% lightness, so this notice sat
+                // between two full --card panels with effectively no fill of its
+                // own. It is a panel-level message; it gets the panel's rung.
+                className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-card border border-border/60 bg-card px-4 py-3 text-sm"
+              >
+                <AlertCircle className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <p className="min-w-0 flex-1 text-muted-foreground">{policyNotice}</p>
+                <Button variant="outline" size="sm" onClick={() => router.push("/settings")}>
+                  Open settings
+                </Button>
+              </div>
+            )}
+            {backfillRemaining !== null && (
+              <p role="status" className="flex items-center gap-2.5 px-1.5 text-caption text-muted-foreground">
+                <ThinkingDots />
+                <span>
+                  Distilling your past chats into memory — {backfillRemaining}{" "}
+                  {backfillRemaining === 1 ? "chat" : "chats"} to go…
+                </span>
+              </p>
+            )}
+            {/* The comment at the top of this component has said the facts are
+                "listed by EntryList below" since the component landed — but the
+                render tree never mounted it, so the rows, the retired-fact
+                disclosure and every one of editMemory/forgetMemory/deleteMemory
+                were dead code and a user who spotted a wrong fact still had
+                nothing to point at. */}
+            <EntryList
+              memories={memories}
+              busyIds={busyMemoryIds}
+              paused={paused}
+              onEdit={editMemory}
+              onForget={forgetMemory}
+              onDelete={deleteMemory}
+            />
+            <EditsPanel
+              edits={edits}
+              open={editsOpen}
+              onOpenChange={setEditsOpen}
+              busyIds={busyEditIds}
+              onAccept={acceptEdit}
+              onUndo={undoEdit}
+              onDelete={deleteEdit}
+            />
+            <PrivacyStrip
+              paused={paused}
+              onPausedChange={setPaused}
+              onExport={exportMemory}
+              onReset={resetMemory}
+              resetting={resetting}
+              empty={memories.length === 0 && !summary}
+            />
+          </div>
         )}
       </div>
     </div>

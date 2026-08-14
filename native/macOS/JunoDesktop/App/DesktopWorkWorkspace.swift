@@ -1507,13 +1507,9 @@ private struct DesktopWorkHomeComposer: View {
 
     @State private var target = JunoWorkTarget.automatic
     @State private var preferredHostID: String?
-    @State private var showingModelSelector = false
-    @State private var showingThinking = false
     @State private var showingFileImporter = false
     @State private var showingLibrary = false
     @State private var importError: String?
-    @State private var isHoveringModel = false
-    @State private var isHoveringThinking = false
 
     private var trimmed: String {
         draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1590,7 +1586,7 @@ private struct DesktopWorkHomeComposer: View {
                 Spacer(minLength: JunoSpace.snug)
                 Button(action: start) {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 13, weight: .semibold))
+                        .junoFont(size: 13, relativeTo: .body, weight: .semibold)
                         .foregroundStyle(canStart ? Color.junoOnAccent : Color.junoMutedForeground)
                         .frame(width: 28, height: 28)
                 }
@@ -1608,9 +1604,10 @@ private struct DesktopWorkHomeComposer: View {
         .onChange(of: modelOptions) { _, _ in configureModelSelection() }
         .onChange(of: defaultModelID) { _, _ in configureModelSelection() }
         .onChange(of: selectedModelID) { _, _ in configureReasoning() }
+        // The model and Thinking popovers reset themselves — the shared
+        // buttons carry their own `.onDisappear` teardown guards — so only the
+        // presentations this view still owns are reset here.
         .onDisappear {
-            showingModelSelector = false
-            showingThinking = false
             showingFileImporter = false
             showingLibrary = false
         }
@@ -1717,107 +1714,45 @@ private struct DesktopWorkHomeComposer: View {
         }
     }
 
-    /// The same manifest-backed chooser Chat uses, kept compact in the Work
-    /// composer. Work's model is part of the run contract, so it must be
-    /// visible before Start rather than only appearing later in the run facts.
+    /// The same manifest-backed chooser Chat uses — through the same *trigger*
+    /// Code uses, the shared ``JunoModelSelectorButton``. Work's model is part
+    /// of the run contract, so it must be visible before Start rather than only
+    /// appearing later in the run facts.
+    ///
+    /// This replaced a hand-built chip — a stale app-target copy of the
+    /// selector that painted opaque canvas over the popover's glass — behind a
+    /// capsule of its own with a 1.015 hover scale. Growing under the pointer
+    /// is web idiom — a Mac control answers hover with a fill, not by moving —
+    /// and the shared button additionally carries the popover-teardown guard
+    /// the chip lacked. Nothing behavioural is lost: the composer already
+    /// watches `selectedModelID` and re-runs `configureReasoning()` on change.
     private var modelControl: some View {
-        Button {
-            showingModelSelector = true
-        } label: {
-            HStack(spacing: 5) {
-                JunoProviderMark(
-                    providerID: selectedModel?.providerID ?? "juno",
-                    providerName: selectedModel?.providerName ?? "Juno",
-                    size: 14
-                )
-                Text(selectedModel?.displayName ?? "Choose model")
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(maxWidth: 150, alignment: .leading)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .junoSecondaryInk()
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(
-                Capsule().fill(
-                    isHoveringModel ? Color.junoRowSelected : Color.junoRowHover
-                )
-            )
-            .scaleEffect(isHoveringModel ? 1.015 : 1)
-            .animation(JunoMotion.fast, value: isHoveringModel)
-            .onHover { isHoveringModel = $0 }
-        }
-        .buttonStyle(.junoPress)
-        .fixedSize(horizontal: true, vertical: false)
-        .help("Choose the model for this task")
-        .accessibilityLabel("Task model")
-        .accessibilityValue(selectedModel?.displayName ?? "Not selected")
-        .accessibilityIdentifier("juno.work.composer.model")
-        .popover(
-            isPresented: $showingModelSelector,
-            attachmentAnchor: .rect(.bounds),
-            arrowEdge: .bottom
-        ) {
-            DesktopModelSelector(
-                models: modelOptions,
-                selectedModelID: selectedModelID,
-                select: { option in
-                    selectedModelID = option.id
-                    showingModelSelector = false
-                    configureReasoning()
-                }
-            )
-        }
+        JunoModelSelectorButton(
+            models: modelOptions.map(\.junoDescriptor),
+            selectedModelID: $selectedModelID,
+            accessibilityID: "juno.work.composer.model"
+        )
     }
 
+    /// The shared Thinking trigger, on the same stop-id projection Code uses.
+    /// The `isAutomatic` gate keeps Work's existing shape: a router that picks
+    /// its own depth gets no chip at all rather than an inert "Auto" label
+    /// beside the model button (see Chat's composer for why that chip is worse
+    /// than an absent one). The shared control also sizes its popover from the
+    /// ladder, where the hand-built chip pinned it at the captioned height even
+    /// for ladders with no caption.
     @ViewBuilder
     private func thinkingControl(_ scale: NativeThinkingScale) -> some View {
         if !scale.isAutomatic {
-            Button {
-                showingThinking = true
-            } label: {
-                Label(currentThinkingLabel(in: scale), systemImage: "gauge.with.dots.needle.33percent")
-                    .font(.system(size: 12, weight: .medium))
-                    .labelStyle(.titleAndIcon)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule().fill(
-                            isHoveringThinking ? Color.junoRowSelected : Color.junoRowHover
-                        )
-                    )
-                    .scaleEffect(isHoveringThinking ? 1.015 : 1)
-                    .animation(JunoMotion.fast, value: isHoveringThinking)
-                    .onHover { isHoveringThinking = $0 }
-            }
-            .buttonStyle(.junoPress)
-            .fixedSize(horizontal: true, vertical: false)
-            .help("Choose how deeply the model thinks")
-            .accessibilityLabel("Thinking")
-            .accessibilityValue(currentThinkingLabel(in: scale))
-            .accessibilityIdentifier("juno.work.composer.thinking")
-            .popover(
-                isPresented: $showingThinking,
-                attachmentAnchor: .rect(.bounds),
-                arrowEdge: .bottom
-            ) {
-                let popover = JunoThinkingPopover(
-                    scale: scale,
-                    effort: $reasoningEffort,
-                    width: 268
-                )
-                popover.frame(width: 268, height: 118)
-            }
+            JunoThinkingButton(
+                ladder: scale.junoLadder,
+                stopID: Binding(
+                    get: { scale.stopID(for: reasoningEffort) },
+                    set: { reasoningEffort = scale.effort(forStopID: $0) }
+                ),
+                accessibilityID: "juno.work.composer.thinking"
+            )
         }
-    }
-
-    private func currentThinkingLabel(in scale: NativeThinkingScale) -> String {
-        scale.stops.first { $0.effort == reasoningEffort }?.label
-            ?? scale.defaultStop?.label
-            ?? "Instant"
     }
 
     private func configureModelSelection() {
@@ -2189,8 +2124,11 @@ private struct DesktopWorkHomeRow: View {
         .animation(JunoMotion.fast, value: isHovering)
         // The web's `work-breathing`: a slow pulse along the edge for as long as
         // the task is executing, and the row's only mark for "running right now".
-        // Under Reduce Motion it is held at the middle of the breath rather than
-        // switched off, because removing it would remove the fact.
+        // 2.6s autoreversed is the web's 5.2s cycle — CSS runs 0% → 50% → 100%
+        // through one keyframe pass where this runs there-and-back — so the two
+        // breathe in the same period. Under Reduce Motion the loop stops (the
+        // ambient tier) and `border` below holds the ring at the middle of the
+        // breath instead, because removing it would remove the fact.
         .onAppear { breathing = isExecuting && !reduceMotion }
         .onChange(of: isExecuting) { _, executing in breathing = executing && !reduceMotion }
         .animation(
@@ -2207,6 +2145,13 @@ private struct DesktopWorkHomeRow: View {
     private var border: Color {
         if wantsYou { return Color.junoCaution.opacity(isHovering ? 0.55 : 0.35) }
         if isExecuting {
+            // 0.08 ↔ 0.28 is the web ring's 0.05 ↔ 0.22, re-weighed for the
+            // warmer native border. Under Reduce Motion the breath is stopped,
+            // so the ring holds at the middle of that range — the web pins
+            // 0.16 the same way — rather than at the faint end, where the
+            // comment above the animation promised a held breath and the code
+            // delivered an invisible one.
+            if reduceMotion { return Color.junoAccent.opacity(0.18) }
             return Color.junoAccent.opacity(breathing ? 0.28 : 0.08)
         }
         return isHovering ? Color.junoBorder : Color.junoBorder.opacity(0.6)
@@ -2366,7 +2311,7 @@ struct DesktopWorkStartPath: View {
     private var heading: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             Image(systemName: "laptopcomputer.and.arrow.down")
-                .font(.system(size: 24, weight: .regular))
+                .junoFont(size: 24, relativeTo: .title2)
                 .foregroundStyle(Color.junoAccent)
                 .accessibilityHidden(true)
             Text("Set up Juno Work on this Mac")
@@ -3191,7 +3136,7 @@ private struct DesktopWorkThread: View {
                         // is a directory listing; this section is meant to read
                         // as the things Juno made for you.
                         Image(systemName: DesktopWorkVocabulary.artifactSymbol(artifact.kind))
-                            .font(.system(size: 15))
+                            .junoFont(size: 15, relativeTo: .body)
                             .foregroundStyle(Color.junoAccent)
                             .frame(width: 22, alignment: .center)
                         VStack(alignment: .leading, spacing: 1) {
@@ -3364,7 +3309,7 @@ private struct DesktopWorkThread: View {
     private func contextFact(_ label: String, value: String, symbol: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .medium))
+                .junoFont(size: 12, relativeTo: .callout, weight: .medium)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18, alignment: .center)
                 .accessibilityHidden(true)
@@ -3407,7 +3352,7 @@ private struct DesktopWorkThread: View {
                     ForEach(entries) { entry in
                         HStack(alignment: .top, spacing: JunoSpace.cozy) {
                             Image(systemName: entry.symbol)
-                                .font(.system(size: 12))
+                                .junoFont(size: 12, relativeTo: .callout)
                                 .foregroundStyle(entry.tint)
                                 .frame(width: 16, height: 16, alignment: .center)
                                 // Sits on the title's cap height rather than
@@ -3455,7 +3400,7 @@ private struct DesktopWorkArtifactRow: View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
             HStack(alignment: .top, spacing: JunoSpace.cozy) {
                 Image(systemName: DesktopWorkVocabulary.artifactSymbol(artifact.kind))
-                    .font(.system(size: 15))
+                    .junoFont(size: 15, relativeTo: .body)
                     .foregroundStyle(Color.junoAccent)
                     .frame(width: 22, alignment: .center)
                 VStack(alignment: .leading, spacing: 2) {
@@ -3792,14 +3737,19 @@ private struct DesktopWorkContextEditor: View {
         }
         .buttonStyle(.junoPress)
         .popover(isPresented: $showingModelSelector, arrowEdge: .bottom) {
-            DesktopModelSelector(
-                models: modelOptions,
+            // The shared selector Chat and Settings present, not the stale
+            // app-target copy — that one painted opaque `junoCanvas` over the
+            // one surface the system was already rendering as glass. It sizes
+            // itself, and the descriptor id *is* the manifest row id, so the
+            // context edit round-trips exactly what the old selector saved.
+            JunoModelSelector(
+                models: modelOptions.map(\.junoDescriptor),
                 selectedModelID: selectedModelID,
-                select: { option in
-                    selectedModelID = option.id
+                select: { descriptor in
+                    selectedModelID = descriptor.id
                     showingModelSelector = false
                     configureReasoning()
-                    save(WorkSessionContextEdit(model: option.id))
+                    save(WorkSessionContextEdit(model: descriptor.id))
                 }
             )
         }
@@ -3984,7 +3934,7 @@ private struct DesktopWorkContextEditor: View {
     ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .medium))
+                .junoFont(size: 12, relativeTo: .callout, weight: .medium)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18, alignment: .center)
                 .accessibilityHidden(true)
@@ -4001,7 +3951,7 @@ private struct DesktopWorkContextEditor: View {
     private func contextFact(_ label: String, value: String, symbol: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .medium))
+                .junoFont(size: 12, relativeTo: .callout, weight: .medium)
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(width: 18, alignment: .center)
                 .accessibilityHidden(true)
@@ -4389,7 +4339,7 @@ private struct DesktopWorkThreadComposer: View {
                     )
                 Button(action: send) {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 13, weight: .semibold))
+                        .junoFont(size: 13, relativeTo: .body, weight: .semibold)
                         .foregroundStyle(canSend ? Color.junoOnAccent : Color.junoMutedForeground)
                         .frame(width: 28, height: 28)
                 }

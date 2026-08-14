@@ -64,15 +64,18 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
   const detail = stageDetail(modality, stage);
 
   /*
-   * The one number kept, and it is not a clock: video renders genuinely can run
-   * past a minute, and a reader who is not told that will assume a stall and
-   * leave. It appears only once the wait is already long enough to doubt, so it
-   * reads as reassurance rather than as a warning printed in advance.
+   * The one number kept, and it is not a clock: renders genuinely can run past
+   * a minute, and a reader who is not told that will assume a stall and leave.
+   * It appears only once the wait is already long enough to doubt, so it reads
+   * as reassurance rather than as a warning printed in advance. Per-modality
+   * thresholds because the doubt arrives at different times: a video is
+   * expected to take a while, an image is not — but slow image providers do
+   * crawl past 20s, and that placeholder used to just sit there shimmering
+   * with nothing to say for itself.
    */
   const [longWait, setLongWait] = React.useState(false);
   React.useEffect(() => {
-    if (!isVideo) return;
-    const timer = window.setTimeout(() => setLongWait(true), 15_000);
+    const timer = window.setTimeout(() => setLongWait(true), isVideo ? 15_000 : 20_000);
     return () => window.clearTimeout(timer);
   }, [isVideo]);
 
@@ -107,7 +110,9 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
         </ThinkingState>
         {longWait && (
           <span className="text-body text-muted-foreground motion-safe:animate-fade-in">
-            Longer clips can take a couple of minutes.
+            {isVideo
+              ? "Longer clips can take a couple of minutes."
+              : "Still working — detailed images can take a minute."}
           </span>
         )}
       </div>

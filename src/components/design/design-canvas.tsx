@@ -902,7 +902,7 @@ export function DesignCanvas({
               <rect
                 {...rectProps(boxes.get(hoverId)!)}
                 fill="none"
-                stroke="var(--juno-canvas-hover, #526ef0)"
+                stroke="hsl(var(--canvas-selection))"
                 strokeWidth={strokeWidth}
                 opacity={0.6}
               />
@@ -911,19 +911,19 @@ export function DesignCanvas({
             {(highlightedIds ?? []).map((id) => {
               const box = boxes.get(id);
               return box ? (
-                <rect key={`hl-${id}`} {...rectProps(box)} fill="none" stroke="#f59e0b" strokeWidth={strokeWidth * 2} strokeDasharray={`${6 * strokeWidth} ${4 * strokeWidth}`} />
+                <rect key={`hl-${id}`} {...rectProps(box)} fill="none" stroke="hsl(var(--canvas-measure))" strokeWidth={strokeWidth * 2} strokeDasharray={`${6 * strokeWidth} ${4 * strokeWidth}`} />
               ) : null;
             })}
 
             {(ghost ?? selectionBoxes).map(({ id, box }) => (
-              <rect key={`sel-${id}`} {...rectProps(box)} fill="none" stroke="#526ef0" strokeWidth={strokeWidth * 1.5} />
+              <rect key={`sel-${id}`} {...rectProps(box)} fill="none" stroke="hsl(var(--canvas-selection))" strokeWidth={strokeWidth * 1.5} />
             ))}
 
             {drag?.guides.vertical.map((x, i) => (
-              <line key={`gv${i}`} x1={x} y1={viewport.y} x2={x} y2={viewport.y + size.height / viewport.zoom} stroke="#ef4444" strokeWidth={strokeWidth} />
+              <line key={`gv${i}`} x1={x} y1={viewport.y} x2={x} y2={viewport.y + size.height / viewport.zoom} stroke="hsl(var(--canvas-handle))" strokeWidth={strokeWidth} />
             ))}
             {drag?.guides.horizontal.map((y, i) => (
-              <line key={`gh${i}`} x1={viewport.x} y1={y} x2={viewport.x + size.width / viewport.zoom} y2={y} stroke="#ef4444" strokeWidth={strokeWidth} />
+              <line key={`gh${i}`} x1={viewport.x} y1={y} x2={viewport.x + size.width / viewport.zoom} y2={y} stroke="hsl(var(--canvas-handle))" strokeWidth={strokeWidth} />
             ))}
 
             {drag?.kind === "marquee" && (
@@ -932,8 +932,8 @@ export function DesignCanvas({
                 y={Math.min(drag.originScene.y, drag.current.y)}
                 width={Math.abs(drag.current.x - drag.originScene.x)}
                 height={Math.abs(drag.current.y - drag.originScene.y)}
-                fill="rgba(82,110,240,0.12)"
-                stroke="#526ef0"
+                fill="hsl(var(--canvas-selection) / 0.12)"
+                stroke="hsl(var(--canvas-selection))"
                 strokeWidth={strokeWidth}
               />
             )}
@@ -942,7 +942,13 @@ export function DesignCanvas({
           {/* Handles are interactive, so they sit outside the pointerEvents:none group. */}
           {!readOnly && bounds && !drag && (
             <g>
-              <rect {...rectProps(bounds)} fill="none" stroke="#526ef0" strokeWidth={strokeWidth * 1.5} />
+              <rect {...rectProps(bounds)} fill="none" stroke="hsl(var(--canvas-selection))" strokeWidth={strokeWidth * 1.5} />
+              {/* The chip fill is literal white in both themes, on purpose: it is
+                  not a theme surface but part of the trained handle glyph — a
+                  white chip rimmed in selection blue — and it has to hold over
+                  artwork of any colour, where a theme token would retint it. The
+                  rim does the separating; see the canvas-chrome note in
+                  globals.css. */}
               {(["nw", "n", "ne", "e", "se", "s", "sw", "w"] as Handle[]).map((handle) => {
                 const point = handlePoint(bounds, handle);
                 const s = 8 / viewport.zoom;
@@ -953,8 +959,8 @@ export function DesignCanvas({
                     y={point.y - s / 2}
                     width={s}
                     height={s}
-                    fill="#fff"
-                    stroke="#526ef0"
+                    fill="white"
+                    stroke="hsl(var(--canvas-selection))"
                     strokeWidth={strokeWidth}
                     style={{ cursor: `${handle}-resize` }}
                     onPointerDown={(event) => {
@@ -968,8 +974,8 @@ export function DesignCanvas({
                 cx={bounds.x + bounds.width / 2}
                 cy={bounds.y - 24 / viewport.zoom}
                 r={5 / viewport.zoom}
-                fill="#fff"
-                stroke="#526ef0"
+                fill="white"
+                stroke="hsl(var(--canvas-selection))"
                 strokeWidth={strokeWidth}
                 style={{ cursor: "grab" }}
                 onPointerDown={(event) => {
@@ -1516,7 +1522,7 @@ function CanvasZoomControls({
   hasSelection: boolean;
 }) {
   const button =
-    "pressable rounded-md px-2 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-9 coarse:px-2.5";
+    "pressable rounded-md px-2 py-1 font-mono text-micro text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-9 coarse:px-2.5";
   return (
     <div className="absolute bottom-3 left-3 flex items-center gap-0.5 rounded-field border border-border/60 bg-popover/90 p-1 backdrop-blur-md">
       <button type="button" className={button} onClick={() => onZoomBy(1 / 1.25)} aria-label="Zoom out">

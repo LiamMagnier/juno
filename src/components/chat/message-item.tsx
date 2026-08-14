@@ -172,7 +172,10 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
           type="button"
           onClick={onEdit}
           aria-label={`Edit ${attachment.fileName}`}
-          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-label text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-[transform,opacity,color] duration-base ease-out-soft hover:text-foreground active:scale-95 group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
+          // `caption`, matching the video card's "Open" pill — the same
+          // media-overlay action role. `label` is the uppercase-eyebrow rung;
+          // its 0.10em tracking has no business on a mixed-case verb.
+          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-caption text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-[transform,opacity,color] duration-base ease-out-soft hover:text-foreground active:scale-95 group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           <SquareDashed className="h-3.5 w-3.5" aria-hidden="true" /> Edit
         </button>
@@ -349,18 +352,31 @@ function VersionPager({
   // toolbar. They used to be 24px, 8px-radius, hover-by-ink-only controls next
   // to 32px, 10px-radius controls that light up — two idioms, one row. Both are
   // bare glyph affordances, so both are `kind="icon"`; `sm` keeps the pager
-  // visually subordinate to the actions without inventing a rung.
+  // visually subordinate to the actions without inventing a rung. Tooltips
+  // because every glyph in this row names itself on hover — the pager was the
+  // one pair that stayed mute. (A disabled arrow shows none; Radix cannot hover
+  // a pointer-events-none target, and a control that cannot act needs no name.)
   return (
     <div className="mr-1 flex items-center font-mono text-caption text-muted-foreground">
-      <Pressable kind="icon" size="sm" onClick={() => onStep(-1)} disabled={loading || index === 0} aria-label="Previous version">
-        <ChevronLeft className="h-3.5 w-3.5" />
-      </Pressable>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Pressable kind="icon" size="sm" onClick={() => onStep(-1)} disabled={loading || index === 0} aria-label="Previous version">
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </Pressable>
+        </TooltipTrigger>
+        <TooltipContent>Previous version</TooltipContent>
+      </Tooltip>
       <span className="min-w-[3ch] text-center tabular-nums" aria-live="polite">
         {index + 1}/{total}
       </span>
-      <Pressable kind="icon" size="sm" onClick={() => onStep(1)} disabled={loading || index === total - 1} aria-label="Next version">
-        <ChevronRight className="h-3.5 w-3.5" />
-      </Pressable>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Pressable kind="icon" size="sm" onClick={() => onStep(1)} disabled={loading || index === total - 1} aria-label="Next version">
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Pressable>
+        </TooltipTrigger>
+        <TooltipContent>Next version</TooltipContent>
+      </Tooltip>
     </div>
   );
 }
@@ -609,8 +625,13 @@ export function MessageItem({
   const copy = async () => {
     await navigator.clipboard.writeText(view.content).catch(() => {});
     setCopied(true);
-    toast.success("Copied to clipboard");
-    setTimeout(() => setCopied(false), 1500);
+    // The button is its own receipt — the glyph swaps to a check and the
+    // tooltip reads "Copied" — so no toast: a corner notification for an act
+    // completed under the cursor is a second voice saying the same thing.
+    // Two seconds of dwell: long enough to be seen after the eye has moved
+    // back to the text, short enough that the control is itself again before
+    // anyone wants it twice.
+    setTimeout(() => setCopied(false), 2000);
   };
 
   if (isUser) {
@@ -669,7 +690,9 @@ export function MessageItem({
                 <button
                   type="button"
                   onClick={toggleExpanded}
-                  className="mt-1 font-mono text-label text-muted-foreground transition-colors duration-fast hover:text-foreground"
+                  // `caption` — the mono metadata voice this row shares with
+                  // the version pager and the model/cost line below it.
+                  className="mt-1 font-mono text-caption text-muted-foreground transition-colors duration-fast hover:text-foreground"
                 >
                   {expanded ? "Show less" : `Show more · ${lineCount} lines`}
                 </button>
@@ -683,8 +706,8 @@ export function MessageItem({
               <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
             )}
             <div className="flex opacity-0 transition-opacity duration-base group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
-              <IconAction label="Copy" onClick={copy}>
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              <IconAction label={copied ? "Copied" : "Copy"} onClick={copy}>
+                {copied ? <Check className="h-4 w-4 motion-safe:animate-pop-in" /> : <Copy className="h-4 w-4" />}
               </IconAction>
               {onEdit && !busy && !privateMode && (
                 // Prefill from the DISPLAYED version, so paging back and editing
@@ -780,7 +803,9 @@ export function MessageItem({
           // out: destructive at 5% over a #000 ground computes to ~2.5%
           // lightness, so on dark the error block had no fill at all — it was a
           // red border around the page. 5% is still right against 97% paper.
-          <div className="space-y-2.5 rounded-field border border-destructive/40 bg-destructive/5 px-3.5 py-3 text-sm text-destructive dark:bg-destructive/[0.14]">
+          // `text-ui` is shared with the finish-note box for the same sibling
+          // reason: one slot, one register (they sat at 14 and 12 before).
+          <div className="space-y-2.5 rounded-field border border-destructive/40 bg-destructive/5 px-3.5 py-3 text-ui text-destructive dark:bg-destructive/[0.14]">
             <p>{message.content}</p>
             {onRegenerate && isLast && !busy && (
               <Button
@@ -861,11 +886,12 @@ export function MessageItem({
                 redundant now: the tail fade already says "still writing", and
                 the composer is showing its stop button throughout. */}
             {(view.errorMessage || finishNote || canContinue) && (
-              // Same rung and same fill logic as the error notice above — these
-              // two are siblings in the same slot and were disagreeing about
-              // both. `bg-muted/45` over black resolved to ~4.3%, between the
-              // page and --card and equal to neither.
-              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-field border border-border/70 bg-muted px-3.5 py-2.5 text-xs text-muted-foreground">
+              // Same rung, same fill logic and same `text-ui` register as the
+              // error notice above — these two are siblings in the same slot
+              // and were disagreeing about all three. `bg-muted/45` over black
+              // resolved to ~4.3%, between the page and --card and equal to
+              // neither.
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-field border border-border/70 bg-muted px-3.5 py-2.5 text-ui text-muted-foreground">
                 <span className="min-w-0 flex-1">{view.errorMessage ?? finishNote}</span>
                 {canContinue && (
                   <Button type="button" variant="outline" size="sm" onClick={onContinue} className="h-7 gap-1.5">
@@ -913,8 +939,11 @@ export function MessageItem({
             )}
             <div className="flex items-center opacity-0 transition-opacity duration-base group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
               {hasTextContent && (
-                <IconAction label="Copy" onClick={copy}>
-                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                // The check POPS in (one-shot, on the motion ladder) rather
+                // than swapping silently — the confirmation is the entire
+                // feedback now that copying no longer raises a toast.
+                <IconAction label={copied ? "Copied" : "Copy"} onClick={copy}>
+                  {copied ? <Check className="h-4 w-4 motion-safe:animate-pop-in" /> : <Copy className="h-4 w-4" />}
                 </IconAction>
               )}
               {!isMediaOnly && onRegenerate && isLast && !busy && !privateMode && (

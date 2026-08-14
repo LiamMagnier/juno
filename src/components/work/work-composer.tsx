@@ -1188,7 +1188,7 @@ export function WorkComposer({
                                 alt={upload.fileName}
                                 width={32}
                                 height={32}
-                                className="h-8 w-8 rounded-sm object-cover"
+                                className="h-8 w-8 rounded-field object-cover"
                               />
                             ) : (
                               <FileText className="h-5 w-5 text-muted-foreground" />
@@ -1341,7 +1341,7 @@ export function WorkComposer({
                                 changed the corner radius of one chip in the row
                                 and resized the row under the reader's pointer. */}
                             <span
-                              className="inline-flex h-8 w-[4.75rem] shrink-0 items-center justify-center gap-1 rounded-composer-control px-2 font-mono text-[12px] text-muted-foreground coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]"
+                              className="inline-flex h-8 w-[4.75rem] shrink-0 items-center justify-center gap-1 rounded-composer-control px-2 font-mono text-ui text-muted-foreground coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem]"
                               aria-label="Thinking effort: Auto — chosen with the model"
                             >
                               <span className="truncate">Auto</span>
@@ -1406,7 +1406,7 @@ export function WorkComposer({
                                         // beside them painted focus in the same
                                         // fill as hover and as open, leaving the
                                         // three states indistinguishable.
-                                        "composer-chip group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-composer-control px-2 font-mono text-[12px] tracking-tight focus-visible:ring-offset-card coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
+                                        "composer-chip group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-composer-control px-2 font-mono text-ui tracking-tight focus-visible:ring-offset-card coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem]",
                                         // Full strength, matching the model name
                                         // beside it. `/80` put one of the two most
                                         // consequential values on the row below
@@ -1774,13 +1774,13 @@ export function WorkComposer({
               >
                 Confirm and start
               </Button>
-              <span className="text-[12px] text-muted-foreground">
+              <span className="text-caption text-muted-foreground">
                 Estimate: ${(blocked.confirmation.estimatedCostMicroUsd / 1_000_000).toFixed(2)}
               </span>
             </div>
           )}
           {draftLink !== null && (
-            <p className="mt-2 text-[12.5px]">
+            <p className="mt-2 text-ui">
               Nothing was queued. The task is saved as a draft. {draftLink}
             </p>
           )}
@@ -1814,7 +1814,7 @@ export function WorkComposer({
               only its answer, and the idempotency key is what makes the next
               press safe rather than any claim this line could make. */}
           {draftLink !== null && (
-            <p className="mt-2 text-[12.5px]">The task is saved as a draft. {draftLink}</p>
+            <p className="mt-2 text-ui">The task is saved as a draft. {draftLink}</p>
           )}
         </WorkStateNote>
       )}

@@ -232,28 +232,56 @@ public extension View {
         glassEffect(.regular.tint(tint).interactive(interactive), in: shape)
     }
 
-    /// The floating-chrome treatment: glass in the floating radius.
+    /// The floating-chrome treatment: glass in the floating radius, and
+    /// *nothing else*.
     ///
-    /// Real Liquid Glass with edge light scatter, ambient drop shadow, and dynamic focus glow.
+    /// This deliberately draws no border, no shadow and no glow. Real glass
+    /// carries its own edge — a light scatter at the rim that reads as
+    /// thickness. Stroking a hairline over it flattens that back into a
+    /// translucent rounded rectangle, and a painted drop shadow restates a
+    /// separation the material already earns by refracting the content behind
+    /// it. The call sites — both composers among them — quote this contract
+    /// verbatim as the reason they add no decoration of their own, so the
+    /// contract is load-bearing far beyond this one function.
+    ///
+    /// **An ornamented build of this modifier shipped briefly and was removed.**
+    /// It stacked three decorations over the glass: a `Color.white.opacity(0.12)`
+    /// strokeBorder (a white rim even in light mode), a black-30% radius-18
+    /// shadow (four times the alpha and three times the blur of the one
+    /// sanctioned elevation, ``SwiftUI/Color/junoCardShadow`` under
+    /// `junoCard`), and a hand-rolled accent "focus glow". Each contradicted
+    /// the contract above while the call sites were still citing it, and
+    /// together they flattened every floating surface in the app back into the
+    /// translucent box the contract exists to forbid. Focus was never this
+    /// modifier's job either: a focused control inside the chrome gets the
+    /// system focus ring, and the one sanctioned emphasis on the material is a
+    /// full-alpha tint through ``junoGlass(in:tint:interactive:)`` — never a
+    /// diluted stroke or a coloured shadow.
     func junoFloatingChrome(
-        cornerRadius: CGFloat = JunoRadius.floating,
-        isFocused: Bool = false
+        cornerRadius: CGFloat = JunoRadius.floating
     ) -> some View {
         junoGlass(
             in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(
-                    isFocused ? Color.junoAccent.opacity(0.4) : Color.white.opacity(0.12),
-                    lineWidth: isFocused ? 1.0 : 0.5
-                )
-        )
-        .shadow(
-            color: isFocused ? Color.junoAccent.opacity(0.15) : Color.black.opacity(0.3),
-            radius: isFocused ? 24 : 18,
-            y: isFocused ? 8 : 6
-        )
+    }
+
+    /// Source-compatibility shim for the removed "focus glow" parameter.
+    ///
+    /// The ornamented build expressed focus as an accent stroke plus an accent
+    /// shadow; both are gone — see ``junoFloatingChrome(cornerRadius:)`` for
+    /// why. `isFocused` is accepted and ignored so the composer call sites that
+    /// still pass it keep compiling while they migrate. Express focus through
+    /// the system focus ring on the control inside the chrome, not on the
+    /// chrome itself.
+    @available(
+        *, deprecated,
+        message: "Focus belongs to the system focus ring, not to the chrome. Use junoFloatingChrome(cornerRadius:) and drop the argument."
+    )
+    func junoFloatingChrome(
+        cornerRadius: CGFloat = JunoRadius.floating,
+        isFocused: Bool
+    ) -> some View {
+        junoFloatingChrome(cornerRadius: cornerRadius)
     }
 }
 

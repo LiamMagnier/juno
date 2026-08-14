@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { consolidateWithFallback, getMemorySummary } from "@/lib/memory";
+import { consolidateWithFallback, embedMemoryEntries, getMemorySummary } from "@/lib/memory";
 import { guardedMemoryWrite, type MemoryWriteRefusal } from "@/lib/memory-suppression";
 import { factFields } from "@/lib/memory-lifecycle";
 import { MEMORY_ENTRY_SELECT, serializeMemoryEntry } from "@/lib/memory-view";
@@ -58,6 +58,8 @@ export async function POST(req: Request) {
   }
 
   const inverse: Operation[] = [];
+  // Facts this edit wrote or rewrote, owed a vector once the transaction holds.
+  const touched: { id: string; content: string }[] = [];
   // A refused write aborts the whole edit rather than applying the rest of it:
   // these operations are one intent ("swap my job for the new one"), and a
   // half-applied intent is worse than a rejected one. The throw rolls the
@@ -111,6 +113,8 @@ export async function POST(req: Request) {
             refusal = outcome;
             throw new SuppressedWrite();
           }
+          // Suppressions are matched by their normalized text, never by vector.
+          if (!op.suppress) touched.push({ id: outcome.value.id, content: outcome.content });
           inverse.push({ op: "remove", id: outcome.value.id, before: op.content });
         } else if (op.op === "update") {
           const row = byId.get(op.id)!;
@@ -133,6 +137,11 @@ export async function POST(req: Request) {
                   status: "active",
                   reason: null,
                   supersededById: null,
+                  // The old vector describes the old sentence — cleared with
+                  // the rewrite, so a failed re-embed leaves the row honestly
+                  // lexical rather than semantically wrong.
+                  embedding: [],
+                  embeddingModel: null,
                   lastVerifiedAt: new Date(),
                 },
               });
@@ -142,6 +151,7 @@ export async function POST(req: Request) {
             refusal = outcome;
             throw new SuppressedWrite();
           }
+          if (row.kind === "FACT") touched.push({ id: op.id, content: outcome.content });
           inverse.push({ op: "update", id: op.id, before: op.content, content: row.content });
         } else {
           const row = byId.get(op.id)!;
@@ -170,6 +180,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }
   inverse.reverse();
+
+  // Vectors for what the edit wrote — after the transaction holds, so a
+  // rolled-back edit never leaves embeddings pointing at rows that were never
+  // committed. Best effort: failure leaves the rows lexical, never unapplied.
+  await embedMemoryEntries({ userId: user.id, rows: touched });
 
   // Re-consolidate so the summary reflects the change. Best effort and bounded —
   // this blocks the user's Accept/Undo click, so don't walk the whole provider

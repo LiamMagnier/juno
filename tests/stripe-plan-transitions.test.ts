@@ -14,8 +14,11 @@ import { PLANS } from "@/lib/plans";
  * of the product while Stripe kept charging them.
  */
 
-test("FREE really does grant zero messages (the premise of the unknown-price guard)", () => {
-  assert.equal(PLANS.FREE.monthlyMessages, 0);
+test("FREE is a trial, not a paid tier (the premise of the unknown-price guard)", () => {
+  // FREE now carries a small trial allowance, but a paying customer dropped
+  // to it would still lose the product they pay for — the guard below is as
+  // load-bearing as when the allowance was zero.
+  assert.ok(PLANS.FREE.monthlyMessages != null && PLANS.FREE.monthlyMessages <= 15);
 });
 
 test("a recognised price id sets that plan", () => {

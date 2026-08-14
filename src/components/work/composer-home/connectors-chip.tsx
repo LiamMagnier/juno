@@ -160,7 +160,7 @@ export function WorkConnectorsChip({
             own, and the second is what stops a reader reading this as a switch
             that disconnects things. */}
         <div className="shrink-0 border-t border-border/60 px-3 py-2">
-          <p className="text-[12px] leading-relaxed text-muted-foreground">
+          <p className="text-caption leading-relaxed text-muted-foreground">
             Off means this task cannot reach it. Your connections are unchanged —{" "}
             <Link href="/connections" className="underline underline-offset-2 hover:text-foreground">
               manage them

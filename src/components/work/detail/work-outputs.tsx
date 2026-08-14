@@ -99,7 +99,7 @@ export function WorkOutputsSection({
        * a blank space is leaving them to wonder whether the panel is broken.
        */}
       {count === 0 && !showDocuments && settled && (
-        <p className="text-[13px] leading-relaxed text-muted-foreground">
+        <p className="text-ui leading-relaxed text-muted-foreground">
           {phase === "done"
             ? "This task finished without producing a file."
             : "It stopped before producing a file."}
@@ -144,9 +144,9 @@ function OutputRow({ label, detail }: { label: string; detail: string | null }) 
     <li className="group flex items-center gap-2.5 rounded-control px-1.5 py-1.5 transition-colors duration-fast ease-out-soft hover:bg-accent">
       <FileMark name={label} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] leading-snug text-foreground">{label}</span>
+        <span className="block truncate text-ui leading-snug text-foreground">{label}</span>
         {detail !== null && (
-          <span className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
+          <span className="mt-0.5 block truncate font-mono text-micro text-muted-foreground">
             {detail}
           </span>
         )}
@@ -174,7 +174,7 @@ function FileMark({ name }: { name: string }) {
       // of thing. `rounded-lg` is 24px in this config, not a small rung.
       // 10px, not 9px — 9px was the smallest type anywhere in Work, two rungs
       // under caption, for a three-letter extension.
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary font-mono text-[10px] uppercase text-muted-foreground"
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-field border border-border/60 bg-secondary font-mono text-micro uppercase text-muted-foreground"
       aria-hidden="true"
     >
       {extension ?? <FileText className="h-3.5 w-3.5" />}

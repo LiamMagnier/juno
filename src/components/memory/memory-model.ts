@@ -1,10 +1,12 @@
 /*
- * Client-side model for the memory page: shared types, the local "edits ledger"
- * (drafted natural-language edits awaiting review), and the summary parser.
+ * Client-side model for the memory page: shared types, the client for the
+ * server-synced edits ledger, and the summary parser.
  *
- * Facts and the consolidated summary live server-side (Prisma). Drafted edits
- * are review-state only, so they live in localStorage per user — applying one
- * goes through /api/memory/edit/apply, which is the real write.
+ * Facts and the consolidated summary live server-side (Prisma), and since
+ * Memory v3 so does the edits ledger (/api/memory/edits) — it began life in
+ * localStorage, which meant the review queue silently diverged across devices
+ * and an applied edit's Undo existed only on the machine that applied it.
+ * What remains local is a one-time migration of any stranded ledger.
  */
 
 export interface Memory {
@@ -66,38 +68,119 @@ export interface MemoryEditRecord {
 }
 
 // ---------------------------------------------------------------------------
-// Edits ledger (localStorage)
+// Edits ledger (server-synced)
 // ---------------------------------------------------------------------------
 
-const LEDGER_CAP = 20;
-const ledgerKey = (userId: string) => `juno.memory.edits.${userId}`;
+/** One cap, shared with the API routes, so client and server cannot disagree
+ *  about how much history the ledger keeps. */
+export const MEMORY_EDIT_LEDGER_CAP = 20;
 
-export function loadEdits(userId: string): MemoryEditRecord[] {
-  try {
-    const raw = localStorage.getItem(ledgerKey(userId));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (e): e is MemoryEditRecord =>
-          !!e &&
-          typeof e.id === "string" &&
-          typeof e.instruction === "string" &&
-          ["pending", "applied", "rejected"].includes(e.status) &&
-          Array.isArray(e.operations)
-      )
-      .slice(0, LEDGER_CAP);
-  } catch {
-    return [];
-  }
+/** A record about to be created — `clientId` is the idempotency key, so a
+ *  retried create resolves to the same server row rather than a duplicate. */
+export interface MemoryEditDraft {
+  clientId: string;
+  instruction: string;
+  summary?: string;
+  note?: string;
+  status: EditStatus;
+  operations: Operation[];
+  inverse?: Operation[];
+  /** Preserved on the one-time localStorage import; omitted for live edits. */
+  createdAt?: string;
 }
 
-export function saveEdits(userId: string, edits: MemoryEditRecord[]): void {
+/** Every ledger call answers with the canonical capped list, newest first —
+ *  one source of truth, no client-side merge to get wrong. */
+async function ledgerRequest(input: RequestInfo, init?: RequestInit): Promise<MemoryEditRecord[]> {
+  const res = await fetch(input, init);
+  if (!res.ok) throw new Error("The edit history couldn’t be synced.");
+  const data = await res.json().catch(() => ({}));
+  return Array.isArray(data.edits) ? data.edits : [];
+}
+
+export function fetchEdits(): Promise<MemoryEditRecord[]> {
+  return ledgerRequest("/api/memory/edits");
+}
+
+export function createEdits(drafts: MemoryEditDraft[]): Promise<MemoryEditRecord[]> {
+  return ledgerRequest("/api/memory/edits", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ edits: drafts }),
+  });
+}
+
+export function updateEdit(
+  id: string,
+  patch: { status?: EditStatus; note?: string; operations?: Operation[]; inverse?: Operation[] | null }
+): Promise<MemoryEditRecord[]> {
+  return ledgerRequest(`/api/memory/edits/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+}
+
+export function deleteEditRecord(id: string): Promise<MemoryEditRecord[]> {
+  return ledgerRequest(`/api/memory/edits/${id}`, { method: "DELETE" });
+}
+
+const legacyLedgerKey = (userId: string) => `juno.memory.edits.${userId}`;
+
+/**
+ * One-time migration of the localStorage-era ledger: push any stranded records
+ * to the server, then clear the key. The key is only removed after the POST
+ * succeeded — a failed sync keeps the local copy for the next visit, and the
+ * server's (userId, clientId) uniqueness makes the retry idempotent.
+ */
+export async function migrateLegacyEdits(userId: string): Promise<void> {
+  let raw: string | null = null;
   try {
-    localStorage.setItem(ledgerKey(userId), JSON.stringify(edits.slice(0, LEDGER_CAP)));
+    raw = localStorage.getItem(legacyLedgerKey(userId));
   } catch {
-    // Storage full/unavailable — the ledger is a convenience, never critical.
+    return; // storage unavailable — nothing to migrate
+  }
+  if (!raw) return;
+
+  let stranded: MemoryEditRecord[] = [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      stranded = parsed
+        .filter(
+          (e): e is MemoryEditRecord =>
+            !!e &&
+            typeof e.id === "string" &&
+            typeof e.instruction === "string" &&
+            ["pending", "applied", "rejected"].includes(e.status) &&
+            Array.isArray(e.operations)
+        )
+        .slice(0, MEMORY_EDIT_LEDGER_CAP);
+    }
+  } catch {
+    // Unreadable ledger — clear it below rather than re-parsing it forever.
+  }
+
+  if (stranded.length > 0) {
+    await createEdits(
+      stranded.map((edit) => ({
+        // The old local id becomes the idempotency key, so importing from two
+        // tabs (or after a mid-import crash) cannot duplicate a record.
+        clientId: edit.id,
+        instruction: edit.instruction,
+        summary: edit.summary,
+        note: edit.note,
+        status: edit.status,
+        operations: edit.operations,
+        inverse: edit.inverse,
+        createdAt: edit.createdAt,
+      }))
+    );
+  }
+  try {
+    localStorage.removeItem(legacyLedgerKey(userId));
+  } catch {
+    // Best effort — a surviving key just re-runs the idempotent import.
   }
 }
 

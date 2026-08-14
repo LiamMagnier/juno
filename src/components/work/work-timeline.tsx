@@ -222,7 +222,7 @@ const UNREPORTED_NOTE = "never finished";
 export function WorkPlan({ steps }: { steps: readonly PlanStep[] }) {
   if (steps.length === 0) {
     return (
-      <p className="text-[13px] leading-relaxed text-muted-foreground">
+      <p className="text-ui leading-relaxed text-muted-foreground">
         Juno hasn’t written a plan for this yet. One appears here as soon as it has decided how to
         approach the task.
       </p>
@@ -233,7 +233,7 @@ export function WorkPlan({ steps }: { steps: readonly PlanStep[] }) {
       {steps.map((step) => {
         const Icon = STEP_ICON[step.state];
         return (
-          <li key={step.id} className="flex items-start gap-2.5 text-[13px] leading-relaxed">
+          <li key={step.id} className="flex items-start gap-2.5 text-ui leading-relaxed">
             <Icon
               className={cn(
                 "mt-[3px] h-3.5 w-3.5 shrink-0",
@@ -256,7 +256,7 @@ export function WorkPlan({ steps }: { steps: readonly PlanStep[] }) {
                 // Said in words as well as in colour. The icon alone changes a
                 // spinner into a dashed circle, which is a difference nobody
                 // reads as "this never happened".
-                <span className="ml-1.5 font-mono text-[11px] text-warning-foreground">
+                <span className="ml-1.5 font-mono text-caption text-warning-foreground">
                   {UNREPORTED_NOTE}
                 </span>
               )}
@@ -377,10 +377,10 @@ export function WorkCurrentAction({ action }: { action: CurrentAction | null }) 
             times a minute, and a screen reader that interrupts on each one makes
             the page unusable for exactly the person who most needs telling what
             is happening. */}
-        <p className="truncate text-[13px] font-medium text-foreground" aria-live="polite">
+        <p className="truncate text-ui font-medium text-foreground" aria-live="polite">
           {action.title}
         </p>
-        <p className="mt-0.5 flex items-baseline gap-1.5 font-mono text-[10px] text-muted-foreground">
+        <p className="mt-0.5 flex items-baseline gap-1.5 font-mono text-micro text-muted-foreground">
           {action.detail !== null && <span className="min-w-0 truncate">{action.detail}</span>}
           <LiveDuration since={action.since} className="shrink-0 tabular-nums" />
         </p>
@@ -778,7 +778,7 @@ export function WorkActivity({
 }) {
   if (entries.length === 0) {
     return (
-      <p className="text-[13px] leading-relaxed text-muted-foreground">
+      <p className="text-ui leading-relaxed text-muted-foreground">
         {phase === "not-started"
           ? "Nothing has run yet. Once you start this, every step Juno takes appears here as it takes it."
           : phase === "settled"
@@ -982,7 +982,7 @@ function ActivityBatch({
         // pressing it does as well as what it is about — a control announced
         // only as "Ran 63 commands" is one nobody knows is a control.
         aria-label={`${open ? "Hide" : "Show"} these ${entries.length} steps: ${summary.line}`}
-        className="group flex w-full items-baseline gap-2 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="group flex w-full items-baseline gap-2 rounded-xs text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ChevronRight
           className={cn(
@@ -993,7 +993,7 @@ function ActivityBatch({
         />
         <span
           className={cn(
-            "min-w-0 flex-1 text-[13px] leading-relaxed transition-colors duration-base ease-out-soft",
+            "min-w-0 flex-1 text-ui leading-relaxed transition-colors duration-base ease-out-soft",
             tone,
             // Only the quiet line brightens on hover. A fold that is open
             // because something failed is already carrying its tone's colour,
@@ -1009,7 +1009,7 @@ function ActivityBatch({
             than the clock did. It is left as a bare number for that reason,
             with no verb claiming it is an elapsed span. */}
         {summary.durationMs !== null && (
-          <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+          <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground">
             {formatDuration(summary.durationMs)}
           </span>
         )}
@@ -1053,13 +1053,13 @@ function ActivityRow({ entry, phase }: { entry: ActivityEntry; phase: ActivityPh
       <div className="flex items-baseline gap-2">
         <p
           className={cn(
-            "min-w-0 flex-1 text-[13px] leading-relaxed",
+            "min-w-0 flex-1 text-ui leading-relaxed",
             running ? "font-medium text-foreground" : TONE_CLASS[entry.tone]
           )}
         >
           {entry.title}
         </p>
-        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+        <span className="shrink-0 font-mono text-micro tabular-nums text-muted-foreground">
           {running ? (
             <LiveDuration since={entry.at} />
           ) : entry.durationMs === null ? null : (
@@ -1069,19 +1069,19 @@ function ActivityRow({ entry, phase }: { entry: ActivityEntry; phase: ActivityPh
       </div>
 
       {entry.detail !== null && (
-        <p className="mt-0.5 break-words font-mono text-[10px] leading-relaxed text-muted-foreground">
+        <p className="mt-0.5 break-words font-mono text-micro leading-relaxed text-muted-foreground">
           {entry.detail}
         </p>
       )}
 
       {stranded && (
-        <p className="mt-0.5 text-[12px] leading-relaxed text-warning-foreground">
+        <p className="mt-0.5 text-caption leading-relaxed text-warning-foreground">
           Started, and never reported back. Whether it finished is not recorded.
         </p>
       )}
 
       {entry.warning !== null && (
-        <p className="mt-1 flex items-start gap-1.5 text-[12px] leading-relaxed text-warning-foreground">
+        <p className="mt-1 flex items-start gap-1.5 text-caption leading-relaxed text-warning-foreground">
           <ShieldAlert className="mt-[3px] h-3 w-3 shrink-0" aria-hidden="true" />
           <span className="min-w-0">{entry.warning}</span>
         </p>
@@ -1097,7 +1097,7 @@ function ActivityRow({ entry, phase }: { entry: ActivityEntry; phase: ActivityPh
             onClick={() => setOpen((current) => !current)}
             aria-expanded={open}
             aria-label={open ? `Hide detail: ${entry.title}` : `Show detail: ${entry.title}`}
-            className="mt-1 inline-flex items-center gap-1 rounded-sm font-mono text-[10px] text-muted-foreground transition-colors duration-base hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="mt-1 inline-flex items-center gap-1 rounded-xs font-mono text-micro text-muted-foreground transition-colors duration-base hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ChevronRight
               className={cn(
@@ -1113,7 +1113,7 @@ function ActivityRow({ entry, phase }: { entry: ActivityEntry; phase: ActivityPh
               {entry.facts.map((fact) => (
                 <div
                   key={`${fact.label}-${fact.value}`}
-                  className="flex gap-2 font-mono text-[10px]"
+                  className="flex gap-2 font-mono text-micro"
                 >
                   <dt className="shrink-0 text-muted-foreground">{fact.label}</dt>
                   <dd className="min-w-0 break-all text-muted-foreground">{fact.value}</dd>

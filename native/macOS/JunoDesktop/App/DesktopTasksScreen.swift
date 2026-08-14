@@ -47,8 +47,10 @@ final class DesktopTasksSurface {
 /// The canvas itself is painted once, on the detail column
 /// (`DesktopChatWorkspace`), and deliberately not repainted here.
 ///
-/// Nothing on this page is glass. A table of runs is a reading surface and an
-/// inspector is a column; glass is reserved for chrome that floats.
+/// No surface on this page is glass. A table of runs is a reading surface and
+/// an inspector is a column; glass is reserved for chrome that floats — which
+/// is exactly what the editor sheet's cadence switcher spends it on, one
+/// travelling ``DesktopSegmented`` knob and nothing else.
 ///
 /// Everything here is wired to ``NativeScheduledTaskModel``. There is
 /// deliberately **no Run-now**: `/api/tasks` publishes GET/POST and
@@ -828,13 +830,20 @@ private struct DesktopTaskEditor: View {
                 }
 
                 Section("When it runs") {
-                    Picker("Repeats", selection: $draft.cadence) {
-                        ForEach(NativeTaskCadence.allCases) { cadence in
-                            Text(cadence.label)
-                                .tag(cadence)
-                        }
+                    // `DesktopSegmented`, not `Picker(.segmented)`: the AppKit
+                    // control is for window toolbars; a switcher inside content
+                    // gets the quiet track with the one glass knob.
+                    // `LabeledContent` keeps the form's label column, which the
+                    // picker used to provide for free.
+                    LabeledContent("Repeats") {
+                        DesktopSegmented(
+                            options: NativeTaskCadence.allCases.map {
+                                .init($0, $0.label)
+                            },
+                            selection: $draft.cadence,
+                            accessibilityLabel: "Repeats"
+                        )
                     }
-                    .pickerStyle(.segmented)
 
                     if draft.cadence.needsWeekday {
                         Picker("Day of week", selection: weekdayBinding) {

@@ -55,6 +55,10 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["MemoryEntry", "userId"],
   ["MemorySummary", "userId"],
   ["ConversationMemory", "userId"],
+  // The edit ledger records what a user asked memory to change, so an unscoped
+  // read is a leak of instructions, not just rows. Every call site (routes +
+  // src/app/api/memory/edits/ledger.ts) already filters on userId.
+  ["MemoryEdit", "userId"],
   ["Attachment", "userId"],
   ["Usage", "userId"],
   // Reservations gate a paid quota, so an unscoped read here is a cross-account

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { getMemorySummary, getSuppressions, sweepExpiredMemories } from "@/lib/memory";
+import { embedMemoryEntries, getMemorySummary, getSuppressions, sweepExpiredMemories } from "@/lib/memory";
 import { guardedMemoryWrite } from "@/lib/memory-suppression";
 import { MEMORY_CATEGORIES } from "@/lib/memory-categories";
 import { factFields } from "@/lib/memory-lifecycle";
@@ -49,6 +49,10 @@ export async function DELETE() {
   await prisma.$transaction([
     prisma.memoryEntry.deleteMany({ where: { userId: user.id } }),
     prisma.memorySummary.deleteMany({ where: { userId: user.id } }),
+    // The edit ledger goes with the facts it edited: a "start fresh" that keeps
+    // a queue of Undo-able operations against deleted rows keeps nothing useful
+    // and re-surfaces content the user just erased.
+    prisma.memoryEdit.deleteMany({ where: { userId: user.id } }),
     prisma.conversationMemory.updateMany({
       where: { userId: user.id },
       data: { processedAt: now, factCount: 0, digest: null },
@@ -126,6 +130,11 @@ export async function POST(req: Request) {
       { status: 409 }
     );
   }
+
+  // Awaited, not fired-and-forgotten: a serverless process may freeze the
+  // moment the response is returned. Failure inside is already swallowed —
+  // the fact simply retrieves lexically until it is next restated.
+  await embedMemoryEntries({ userId: user.id, rows: [{ id: outcome.value.id, content: outcome.content }] });
 
   return NextResponse.json({ memory: serializeMemoryEntry(outcome.value) }, { status: 201 });
 }

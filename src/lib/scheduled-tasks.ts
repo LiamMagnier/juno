@@ -1,4 +1,5 @@
 import { Prisma, type Plan, type ScheduledTask, type ScheduledTaskRun } from "@prisma/client";
+import { computeNextRunAt } from "@/lib/scheduled-task-cadence";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS, canUseModel } from "@/lib/plans";
@@ -47,87 +48,17 @@ export function taskLimitForPlan(plan: Plan): number {
 }
 
 // ---------------------------------------------------------------------------
-// Cadence math (pure — no database access)
+// Cadence math (pure — lives in scheduled-task-cadence.ts, re-exported here so
+// routes and the worker keep a single import site for the whole feature)
 // ---------------------------------------------------------------------------
 
-/** The schedule columns computeNextRunAt needs; satisfied by a ScheduledTask row. */
-export type TaskScheduleInput = Pick<
-  ScheduledTask,
-  "cadence" | "hour" | "minute" | "weekday" | "monthday" | "timezone"
->;
-
-export const DEFAULT_TASK_TIMEZONE = "Europe/Paris";
-
-/** True when Intl accepts the string as an IANA timezone. */
-export function isValidTimezone(tz: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Wall-clock parts of a UTC instant in a timezone (Intl only — no deps). */
-function wallClock(instant: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hourCycle: "h23", // never "24" for midnight
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(instant);
-  const v: Record<string, number> = {};
-  for (const p of parts) if (p.type !== "literal") v[p.type] = Number(p.value);
-  return { year: v.year, month: v.month, day: v.day, hour: v.hour, minute: v.minute, second: v.second };
-}
-
-/**
- * UTC instant for a wall-clock time in a timezone. Guess-and-correct: treat the
- * wall time as UTC, see what it renders as in the zone, shift by the error —
- * converges in ≤2 rounds for every real offset. A nonexistent local time (DST
- * spring-forward) lands on the adjacent valid instant, which is what a
- * schedule wants.
- */
-function zonedTimeToUtc(year: number, month: number, day: number, hour: number, minute: number, timeZone: string): Date {
-  const target = Date.UTC(year, month - 1, day, hour, minute, 0);
-  let utc = target;
-  for (let i = 0; i < 3; i++) {
-    const w = wallClock(new Date(utc), timeZone);
-    const asUtc = Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute, w.second);
-    if (asUtc === target) break;
-    utc += target - asUtc;
-  }
-  return new Date(utc);
-}
-
-/**
- * The next instant STRICTLY AFTER `from` when the task should run: the first
- * calendar day (in the task's timezone) that satisfies the cadence and whose
- * hour:minute hasn't already passed. monthday is capped at 28 by the API, so
- * MONTHLY always lands inside every month.
- */
-export function computeNextRunAt(task: TaskScheduleInput, from: Date = new Date()): Date {
-  const tz = isValidTimezone(task.timezone) ? task.timezone : DEFAULT_TASK_TIMEZONE;
-  const start = wallClock(from, tz);
-  // Walk calendar days from `from`'s local date. 62 covers the worst MONTHLY
-  // gap (just missed this month's slot) with margin.
-  for (let offset = 0; offset <= 62; offset++) {
-    // Calendar arithmetic on the pure date at UTC noon — immune to DST edges.
-    const d = new Date(Date.UTC(start.year, start.month - 1, start.day + offset, 12));
-    const weekday = d.getUTCDay(); // weekday of a calendar date is timezone-free
-    if (task.cadence === "WEEKDAYS" && (weekday === 0 || weekday === 6)) continue;
-    if (task.cadence === "WEEKLY" && weekday !== (task.weekday ?? 1)) continue;
-    if (task.cadence === "MONTHLY" && d.getUTCDate() !== (task.monthday ?? 1)) continue;
-    const at = zonedTimeToUtc(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), task.hour, task.minute, tz);
-    if (at.getTime() > from.getTime()) return at;
-  }
-  // Unreachable for valid inputs — every cadence recurs within 62 days.
-  return new Date(from.getTime() + 24 * 60 * 60 * 1000);
-}
+export {
+  DEFAULT_TASK_TIMEZONE,
+  computeNextRunAt,
+  isValidTimezone,
+  onceRunInstant,
+} from "@/lib/scheduled-task-cadence";
+export type { TaskScheduleInput } from "@/lib/scheduled-task-cadence";
 
 // ---------------------------------------------------------------------------
 // API serialization (shared by /api/tasks and /api/tasks/[id])
@@ -148,6 +79,7 @@ export function serializeTask(task: TaskWithLatestRun) {
     minute: task.minute,
     weekday: task.weekday,
     monthday: task.monthday,
+    onDate: task.onDate,
     timezone: task.timezone,
     webSearch: task.webSearch,
     enabled: task.enabled,
@@ -220,7 +152,15 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
   const advance = (conversationId?: string) =>
     prisma.scheduledTask.update({
       where: { id: task.id, userId: task.userId },
-      data: { lastRunAt: now, nextRunAt, ...(conversationId ? { conversationId } : {}) },
+      data: {
+        lastRunAt: now,
+        nextRunAt,
+        // A one-off completes on its first attempt — success, provider error,
+        // or budget skip alike — mirroring the recurring policy that a broken
+        // run advances rather than loops. The run row says how it went.
+        ...(task.cadence === "ONCE" ? { enabled: false } : {}),
+        ...(conversationId ? { conversationId } : {}),
+      },
     });
   const failRun = async (runId: string | null, error: string, status: "error" | "budget" = "error") => {
     if (runId) {

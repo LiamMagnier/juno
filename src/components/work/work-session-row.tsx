@@ -264,13 +264,13 @@ export function WorkSessionRow({
               className={cn(statusChanged && "work-status-shift")}
             />
           </span>
-          <span className="mt-1 block truncate text-[13px] leading-relaxed text-muted-foreground">
+          <span className="mt-1 block truncate text-ui leading-relaxed text-muted-foreground">
             {session.goal}
           </span>
           {explain && (
             <span
               className={cn(
-                "mt-1.5 block text-[12.5px] leading-relaxed",
+                "mt-1.5 block text-ui leading-relaxed",
                 // The warning ink is spent only on the rows that are actually
                 // holding a decision. A running task explained in the same
                 // colour as a task that has stopped and cannot move would make
@@ -287,7 +287,7 @@ export function WorkSessionRow({
               black it measured about 4.1:1 — under the AA floor. `tabular-nums`
               because this line re-renders on every poll and a proportional "12m
               ago" shifts the separator and the file count sideways as it ticks. */}
-          <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] tabular-nums text-muted-foreground">
+          <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-micro tabular-nums text-muted-foreground">
             <span>{workTimeAgo(session.lastActivityAt)}</span>
             {outputCount !== undefined && outputCount > 0 && (
               <>
@@ -479,7 +479,7 @@ export function WorkSection({
       <div className="mb-2.5 flex flex-wrap items-end justify-between gap-2">
         <div className="min-w-0">
           <h2 className="font-mono text-label text-muted-foreground">{title}</h2>
-          {hint && <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{hint}</p>}
+          {hint && <p className="mt-1 text-ui leading-relaxed text-muted-foreground">{hint}</p>}
         </div>
         {action != null && <div className="shrink-0">{action}</div>}
       </div>

@@ -32,6 +32,9 @@ interface MessageListProps {
    *  <h1>: /chat/[id] had no heading at all once a conversation had messages,
    *  so there was nothing for a screen reader to navigate to. */
   conversationTitle?: string;
+  /** Merged onto the root. Exists for the first-message handoff (chat-view),
+   *  which fades the transcript region in under the travelling composer. */
+  className?: string;
 }
 
 const SCROLL_FADE_STYLE: React.CSSProperties = {
@@ -72,6 +75,7 @@ export function MessageList(props: MessageListProps) {
   const { messages, artifacts } = props;
   const bottomRef = React.useRef<HTMLDivElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const contentRef = React.useRef<HTMLDivElement>(null);
   const [atBottom, setAtBottom] = React.useState(true);
 
   // Only animate messages that arrive after the initial mount, so opening an
@@ -139,6 +143,33 @@ export function MessageList(props: MessageListProps) {
     remember(el);
   }, [messages.length, lastContent, remember]);
 
+  // The follow also has to survive reflows that are not message deltas: an
+  // image decoding, a code block's highlight landing, the composer growing a
+  // line and shrinking this viewport, the window resizing. All of those change
+  // the geometry without touching `messages`, so the layout effect above never
+  // runs and a reader pinned to the bottom quietly drifted off it. Same one
+  // rule as everywhere else — re-pin only if the PREVIOUS geometry said the
+  // reader was at the bottom, so someone who scrolled away is never yanked —
+  // and re-measure `atBottom`, so the jump-to-latest pill stays truthful
+  // through a resize the reader didn't cause. Writing scrollTop resizes
+  // nothing, so this can't feed back into its own observer.
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      const prev = prevRef.current;
+      const wasAtBottom = prev.scrollHeight - prev.scrollTop - prev.clientHeight < ATTACH_SLOP_PX;
+      if (wasAtBottom) el.scrollTop = el.scrollHeight - el.clientHeight;
+      remember(el);
+      setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < ATTACH_SLOP_PX);
+    });
+    // Both boxes matter: the scroller's own box catches viewport/composer
+    // changes, the content's box catches the transcript growing or settling.
+    observer.observe(el);
+    if (contentRef.current) observer.observe(contentRef.current);
+    return () => observer.disconnect();
+  }, [remember]);
+
   // Announce that a reply finished, once, instead of streaming every token to
   // the screen reader as it arrives. `content` is deliberately NOT a dependency:
   // the announcement fires on the streaming edge, not on each delta.
@@ -172,7 +203,7 @@ export function MessageList(props: MessageListProps) {
   };
 
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className={cn("relative min-h-0 flex-1", props.className)}>
       {/*
         The single speaking element for stream completion. Outside the transcript
         so it is not also inside role="log", and data-no-auto-translate so the
@@ -209,6 +240,7 @@ export function MessageList(props: MessageListProps) {
           orient, and there was nothing here to land on. */}
       <h1 className="sr-only">{props.conversationTitle || "Conversation"}</h1>
       <div
+        ref={contentRef}
         role="log"
         aria-label="Conversation transcript"
         aria-live="off"

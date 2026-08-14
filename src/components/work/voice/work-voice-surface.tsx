@@ -195,14 +195,14 @@ export function WorkVoiceSurface({
             {lines.map((line) =>
               line.role === "user" ? (
                 <div key={line.id} className="flex justify-end">
-                  <p className="max-w-[85%] whitespace-pre-wrap rounded-card bg-secondary px-3 py-2 text-[13px] leading-relaxed text-secondary-foreground">
+                  <p className="max-w-[85%] whitespace-pre-wrap rounded-card bg-secondary px-3 py-2 text-ui leading-relaxed text-secondary-foreground">
                     {line.text}
                   </p>
                 </div>
               ) : (
                 <p
                   key={line.id}
-                  className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground"
+                  className="whitespace-pre-wrap text-ui leading-relaxed text-foreground"
                 >
                   {line.text}
                 </p>
@@ -225,7 +225,7 @@ export function WorkVoiceSurface({
             <p className="font-mono text-label text-muted-foreground">
               {intentSentence(send.intent)}
             </p>
-            <p className="text-[13px] leading-relaxed text-foreground">{sendable.text}</p>
+            <p className="text-ui leading-relaxed text-foreground">{sendable.text}</p>
             <p className="text-caption text-muted-foreground">{landingSentence(send.intent)}</p>
             {sendFailed && (
               <p role="alert" className="text-caption text-destructive">

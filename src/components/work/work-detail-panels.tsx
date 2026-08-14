@@ -169,7 +169,7 @@ export function WorkReferences({ references }: { references: readonly WorkRefere
 
   if (references.length === 0) {
     return (
-      <p className="text-[13px] leading-relaxed text-muted-foreground">
+      <p className="text-ui leading-relaxed text-muted-foreground">
         Nothing has been read or written yet. Every page Juno cites and every file it changes is
         listed here as it goes.
       </p>
@@ -211,7 +211,7 @@ function ReferenceGroup({
                   href={reference.url}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="inline-flex min-w-0 max-w-full items-center gap-1 text-[13px] leading-relaxed text-foreground underline-offset-2 hover:underline"
+                  className="inline-flex min-w-0 max-w-full items-center gap-1 text-ui leading-relaxed text-foreground underline-offset-2 hover:underline"
                 >
                   <span className="min-w-0 truncate">{reference.label}</span>
                   <ExternalLink
@@ -220,12 +220,12 @@ function ReferenceGroup({
                   />
                 </a>
               ) : (
-                <span className="block truncate text-[13px] leading-relaxed text-foreground">
+                <span className="block truncate text-ui leading-relaxed text-foreground">
                   {reference.label}
                 </span>
               )}
               {reference.detail !== null && (
-                <span className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
+                <span className="mt-0.5 block truncate font-mono text-micro text-muted-foreground">
                   {reference.detail}
                 </span>
               )}
@@ -317,7 +317,7 @@ export function WorkRunSettings({
           />
         </SettingRow>
         <SettingRow label="Model">
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="font-mono text-micro text-muted-foreground">
             {/* The model that was asked for and the model that ran are two facts,
                 and a substitution the user is not told about is a substitution
                 they will discover in the output instead. */}
@@ -334,19 +334,19 @@ export function WorkRunSettings({
             on a run that never enforced it is worse than no row. */}
         {run.approvalMode !== null && (
           <SettingRow label="Asks">
-            <span className="font-mono text-[10px] text-muted-foreground">
+            <span className="font-mono text-micro text-muted-foreground">
               {WORK_APPROVAL_MODE_LABEL[run.approvalMode]}
             </span>
           </SettingRow>
         )}
         <SettingRow label="Attempt">
-          <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+          <span className="font-mono text-micro tabular-nums text-muted-foreground">
             #{run.attempt} · {run.origin}
           </span>
         </SettingRow>
         {run.startedAt !== null && (
           <SettingRow label="Started">
-            <span className="font-mono text-[10px] text-muted-foreground">
+            <span className="font-mono text-micro text-muted-foreground">
               {workTimeAgo(run.startedAt)}
             </span>
           </SettingRow>
@@ -369,7 +369,7 @@ export function WorkRunSettings({
        * for one mode would have a reader wondering which one the run got.
        */}
       {run.approvalMode !== null && (
-        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+        <p className="text-ui leading-relaxed text-muted-foreground">
           {run.approvalModeNarrowedByHost
             ? `${host?.displayName ?? "That Mac"} is set to ${WORK_APPROVAL_MODE_LABEL[run.approvalMode]}, and a task cannot ask less often than the Mac it runs on — so this attempt ran in ${WORK_APPROVAL_MODE_LABEL[run.approvalMode]} rather than the mode it was started with.`
             : WORK_APPROVAL_MODE_SUMMARY[run.approvalMode]}
@@ -439,7 +439,7 @@ export function WorkPlannedSettings({
       <dl className="space-y-1.5">
         <SettingRow label="Will run">
           {session.requestedTarget === "automatic" ? (
-            <span className="font-mono text-[10px] text-muted-foreground">
+            <span className="font-mono text-micro text-muted-foreground">
               wherever it fits
             </span>
           ) : (
@@ -451,7 +451,7 @@ export function WorkPlannedSettings({
           )}
         </SettingRow>
         <SettingRow label="Model">
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="font-mono text-micro text-muted-foreground">
             {/* A draft may carry the Auto sentinel, which is a promise to choose
                 rather than a choice. Printing it verbatim is honest; resolving
                 it here would be this bundle guessing at a decision the dispatch
@@ -460,19 +460,19 @@ export function WorkPlannedSettings({
           </span>
         </SettingRow>
         <SettingRow label="Asks">
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="font-mono text-micro text-muted-foreground">
             {WORK_APPROVAL_MODE_LABEL[session.permissionPolicy]}
           </span>
         </SettingRow>
       </dl>
 
-      <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+      <p className="text-ui leading-relaxed text-muted-foreground">
         {WORK_APPROVAL_MODE_SUMMARY[session.permissionPolicy]}
       </p>
 
       {/* Said once, here, rather than as an empty state on every panel a draft
           has nothing to fill. */}
-      <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+      <p className="text-ui leading-relaxed text-muted-foreground">
         Nothing has been spent and nothing has been touched. A Mac may ask more often than this —
         it cannot ask less.
       </p>
@@ -483,7 +483,7 @@ export function WorkPlannedSettings({
 function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <dt className="shrink-0 text-[12.5px] text-muted-foreground">{label}</dt>
+      <dt className="shrink-0 text-ui text-muted-foreground">{label}</dt>
       <dd className="min-w-0 truncate text-right">{children}</dd>
     </div>
   );
@@ -560,12 +560,12 @@ function WorkBudget({ run }: { run: ClientWorkRun }) {
       {unlimited && (
         // Zero is "no explicit ceiling", not "zero allowed" — see NO_BUDGET in
         // domain.ts. Rendering it as a full bar would say the opposite.
-        <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+        <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
           No ceiling was set for this run, so the plan’s own default applies.
         </p>
       )}
       {ceiling.exceeded && (
-        <p className="mt-1.5 text-[12px] leading-relaxed text-warning-foreground">{ceiling.detail}</p>
+        <p className="mt-1.5 text-caption leading-relaxed text-warning-foreground">{ceiling.detail}</p>
       )}
     </div>
   );
@@ -589,7 +589,7 @@ export function WorkLiveMeter({ run }: { run: ClientWorkRun }) {
   const elapsedMs = useElapsedMs(run);
   const tokens = run.usage.inputTokens + run.usage.outputTokens;
   return (
-    <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] tabular-nums text-muted-foreground">
+    <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-micro tabular-nums text-muted-foreground">
       <Meter icon={Timer} label="Elapsed" value={formatDuration(elapsedMs)} />
       <Meter icon={Coins} label="Cost" value={formatMicroUsd(run.usage.costMicroUsd)} />
       <Meter icon={Sigma} label="Tokens" value={formatTokens(tokens)} />
@@ -631,7 +631,7 @@ function BudgetBar({
   const near = fraction !== null && filled >= 0.8;
   return (
     <div>
-      <div className="flex items-baseline justify-between gap-2 font-mono text-[10px] tabular-nums">
+      <div className="flex items-baseline justify-between gap-2 font-mono text-micro tabular-nums">
         <span className="text-muted-foreground">{label}</span>
         <span className={cn(near ? "text-warning-foreground" : "text-muted-foreground")}>
           {used}
@@ -665,7 +665,7 @@ export function WorkActionsPerformed({ performed }: { performed: PerformedAction
 
   if (actions.length === 0) {
     return (
-      <p className="text-[13px] leading-relaxed text-muted-foreground">
+      <p className="text-ui leading-relaxed text-muted-foreground">
         {unclassified === 0
           ? "Juno hasn’t changed anything yet. Every action that touches the world — a file written, a message sent, a batch applied — is listed here after it happens."
           : // Not "nothing was changed", which this panel is in no position to
@@ -681,7 +681,7 @@ export function WorkActionsPerformed({ performed }: { performed: PerformedAction
   return (
     <ul className="space-y-1.5">
       {actions.map((action) => (
-        <li key={action.id} className="flex items-start gap-2 text-[13px] leading-relaxed">
+        <li key={action.id} className="flex items-start gap-2 text-ui leading-relaxed">
           {action.approved ? (
             <ShieldCheck className="mt-[3px] h-3.5 w-3.5 shrink-0 text-success-ink" aria-hidden="true" />
           ) : (
@@ -691,7 +691,7 @@ export function WorkActionsPerformed({ performed }: { performed: PerformedAction
             />
           )}
           <span className="min-w-0 flex-1 text-foreground">{action.summary}</span>
-          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+          <span className="shrink-0 font-mono text-micro text-muted-foreground">
             {workTimeAgo(action.at)}
           </span>
         </li>

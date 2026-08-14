@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { getSuppressions } from "@/lib/memory";
+import { embedMemoryEntries, getSuppressions } from "@/lib/memory";
 import { screenMemoryWrite } from "@/lib/memory-suppression";
 import { MEMORY_CATEGORIES } from "@/lib/memory-categories";
 import { factFields } from "@/lib/memory-lifecycle";
@@ -119,12 +119,18 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             status: "active",
             reason: null,
             supersededById: null,
+            // The old vector describes the old sentence. Cleared in the same
+            // write, so if re-embedding below fails the row is honestly
+            // lexical rather than semantically wrong.
+            embedding: [],
+            embeddingModel: null,
             ...(body.category === undefined ? { category: fields.category } : {}),
           }
         : {}),
       lastVerifiedAt: new Date(),
     },
   });
+  if (rewritten) await embedMemoryEntries({ userId: user.id, rows: [{ id, content: body.content! }] });
   return NextResponse.json({ ok: true });
 }
 

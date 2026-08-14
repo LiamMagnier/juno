@@ -61,6 +61,49 @@ describe("auto-model", () => {
     assert.ok(r.level === "medium" || r.level === "hard" || r.level === "expert", r.level);
   });
 
+  it("classifies French multi-step technical work like its English twin", () => {
+    // The regression this pins: English-only wordlists scored this "simple"
+    // and routed a refactoring brief to the cheapest model.
+    const fr = classifyPromptComplexity(
+      "Refactorise ce service distribué étape par étape : analyse les conditions de course, " +
+        "propose une architecture cible, puis implémente la migration de bout en bout."
+    );
+    assert.ok(fr.level === "hard" || fr.level === "expert", fr.level);
+    assert.ok(fr.minIntelligence >= 8);
+  });
+
+  it("classifies Japanese architecture work well above simple", () => {
+    const ja = classifyPromptComplexity(
+      "分散システムのアーキテクチャを設計してください。並行処理の競合状態を分析し、" +
+        "段階的に移行計画を立てて、本番環境向けに実装してください。"
+    );
+    assert.notEqual(ja.level, "simple");
+    assert.ok(ja.minIntelligence >= 6);
+  });
+
+  it("keeps short non-English chit-chat simple", () => {
+    assert.equal(classifyPromptComplexity("Bonjour, ça va ?").level, "simple");
+    assert.equal(classifyPromptComplexity("こんにちは！元気ですか？").level, "simple");
+  });
+
+  it("routes uncovered languages up on structure, never down on vocabulary", () => {
+    // Finnish has no wordlist here: the question count, the requirements list
+    // and the length must carry it off the cheapest tier on their own.
+    const r = classifyPromptComplexity(
+      [
+        "Selitä yksityiskohtaisesti seuraavat asiat hajautetuista järjestelmistä:",
+        "- Miten järjestelmä pysyy yhtenäisenä vikatilanteissa?",
+        "- Mitkä ovat eri konsensusalgoritmien keskeiset erot käytännössä?",
+        "- Miten suunnittelisit varmuuskopioinnin ja palautumisen?",
+        "1. Vertaile vaihtoehtoja huolellisesti",
+        "2. Perustele jokainen valintasi esimerkein",
+        "3. Anna lopuksi suositus perusteluineen",
+      ].join("\n")
+    );
+    assert.notEqual(r.level, "simple");
+    assert.ok(r.minIntelligence >= 6, `intelligence floor ${r.minIntelligence}`);
+  });
+
   it("picks Instant thinking for simple prompts on models that can disable", () => {
     const complexity = classifyPromptComplexity("hi");
     const effort = pickAutoReasoningEffort(fakeModel({ providerModel: "gpt-5.4-mini" }), complexity);

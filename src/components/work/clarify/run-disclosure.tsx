@@ -113,7 +113,7 @@ export function WorkRunTarget({
       // changes under them as the host list lands.
       aria-live="polite"
       className={cn(
-        "inline-flex h-7 min-w-0 items-center gap-1.5 px-1.5 font-mono text-[11.5px] font-medium min-[480px]:text-[12px]",
+        "inline-flex h-7 min-w-0 items-center gap-1.5 px-1.5 font-mono text-caption font-medium",
         target === null && !loading ? "text-warning-foreground" : "text-muted-foreground"
       )}
     >

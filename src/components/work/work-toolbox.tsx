@@ -96,11 +96,11 @@ export function WorkToolbox() {
       <div>
         <p className="mb-1.5 font-mono text-label text-muted-foreground">Skills</p>
         {skills === null ? (
-          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          <p className="text-ui leading-relaxed text-muted-foreground">
             Your skills couldn’t be read just now.
           </p>
         ) : automatic.length === 0 && named.length === 0 ? (
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
+          <p className="text-ui leading-relaxed text-muted-foreground">
             No skills yet. A skill is a set of instructions with a name, so you can hand Juno a way
             of working instead of describing it again.{" "}
             <Link href="/work/skills" className="underline underline-offset-2 hover:text-foreground">
@@ -143,11 +143,11 @@ export function WorkToolbox() {
       <div>
         <p className="mb-1.5 font-mono text-label text-muted-foreground">Apps</p>
         {connectors === null ? (
-          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+          <p className="text-ui leading-relaxed text-muted-foreground">
             Your connections couldn’t be read just now.
           </p>
         ) : linked.length === 0 ? (
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
+          <p className="text-ui leading-relaxed text-muted-foreground">
             Nothing is linked, so this task reaches nothing outside Juno.{" "}
             <Link href="/connections" className="underline underline-offset-2 hover:text-foreground">
               Connect an app
@@ -171,7 +171,7 @@ export function WorkToolbox() {
                 it. Saying only the first would read as a promise that every app
                 here is available to this task, which is exactly what the
                 composer's switches decide. */}
-            <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+            <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
               A task can only reach an app that is linked here, and only the ones it was given when
               it was written. Anything else is simply not available to it.
             </p>
@@ -184,7 +184,7 @@ export function WorkToolbox() {
           variant="ghost"
           size="sm"
           onClick={() => void load()}
-          className="h-7 gap-1.5 px-2 font-mono text-[10px] text-muted-foreground"
+          className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
         >
           <RefreshCw className="h-3 w-3" aria-hidden="true" /> Try again
         </Button>
@@ -212,8 +212,8 @@ function ToolboxRow({
       <Pressable kind="row" size="sm" asChild>
         <Link href={href}>
           <span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
-          <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">{label}</span>
-          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{note}</span>
+          <span className="min-w-0 flex-1 truncate text-ui text-foreground">{label}</span>
+          <span className="shrink-0 font-mono text-micro text-muted-foreground">{note}</span>
         </Link>
       </Pressable>
     </li>

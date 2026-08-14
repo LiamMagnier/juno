@@ -29,15 +29,23 @@ const DOT_COUNT = 36;
 /** Voice band sampled from the analyser (Hz) — speech energy lives here. */
 const VOICE_BAND_HZ: [number, number] = [85, 4000];
 const NOISE_FLOOR = 9; // 0-255 — ignore ambient hiss so silence is truly still
-const EXIT_MS = 150;
+// duration-exit on the motion ladder. The shell's closing transition runs the
+// same token, so the unmount lands exactly when the fade does — the old pairing
+// (120ms fade, 150ms timer) parked a fully-faded capsule in the tree for 30ms
+// every close, and neither number was on the ladder.
+const EXIT_MS = 160;
 
 /**
- * The capsule's inner circles are concentric with its shell, not on the icon
- * ladder: 64px shell / radius 32 − 12px padding = a 20px inner radius, i.e. a
- * 40px circle. `size="lg"` (36px) is the nearest rung and would break that, so
- * the base size is overridden while the coarse-pointer rung is left alone.
+ * The capsule wears the composer's own radius family, because it IS the
+ * composer for the duration of a dictation — the two cross-fade in one grid
+ * cell, and a pill morphing into a 26px shell made that swap read as two
+ * different objects. Concentric by the same arithmetic the shell documents:
+ * `rounded-composer` (26px) − 12px padding = 14px = `rounded-composer-action`,
+ * the exact rung the composer's own primary action sits on. `size="lg"` (36px)
+ * is the nearest ladder rung and would break the 40px fit, so the base size is
+ * overridden while the coarse-pointer rung is left alone.
  */
-const CAPSULE_CIRCLE = "size-10 shrink-0 coarse:size-11";
+const CAPSULE_CIRCLE = "size-10 shrink-0 rounded-composer-action coarse:size-11";
 
 type Phase = "active" | "stopping" | "cancelling" | "sending";
 
@@ -193,6 +201,14 @@ export function ComposerDictation({
       const lo = Math.max(1, Math.floor(VOICE_BAND_HZ[0] / hzPerBin));
       const hi = Math.min(analyser.frequencyBinCount - 1, Math.ceil(VOICE_BAND_HZ[1] / hzPerBin));
       const levels = levelsRef.current;
+      // The meter follows the tier policy in globals.css even though it is
+      // driven from JS, where no CSS clamp can reach it: the opacity response
+      // is Tier A state feedback (proof the mic is hearing you) and stays; the
+      // scaleY dance is Tier B travel and collapses to identity. A live
+      // MediaQueryList, read per frame, so flipping the OS setting mid-take
+      // applies without restarting the capture pipeline.
+      const reduceMotion =
+        typeof window.matchMedia === "function" ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
 
       const frame = () => {
         analyser.getByteFrequencyData(bins);
@@ -210,7 +226,7 @@ export function ComposerDictation({
           const dot = dotRefs.current[i];
           if (dot) {
             const s = 1 + levels[i] * 5;
-            dot.style.transform = `scaleY(${s.toFixed(3)})`;
+            dot.style.transform = reduceMotion?.matches ? "" : `scaleY(${s.toFixed(3)})`;
             dot.style.opacity = (0.35 + levels[i] * 0.65).toFixed(3);
           }
         }
@@ -348,7 +364,9 @@ export function ComposerDictation({
         // The one rise-in on the chat surface that was unprefixed: composer.tsx,
         // message-item.tsx and message-list.tsx all gate theirs behind
         // motion-safe, so reduced-motion users got the slide here anyway.
-        "relative z-30 flex items-center justify-center w-full px-3 transition-[opacity,transform] duration-fast ease-out-soft motion-reduce:transition-none",
+        // duration-exit = EXIT_MS, so the fade completes exactly when the
+        // unmount timer fires instead of freezing a frame early.
+        "relative z-30 flex items-center justify-center w-full px-3 transition-[opacity,transform] duration-exit ease-out-soft motion-reduce:transition-none",
         closing ? "translate-y-1.5 scale-[0.98] opacity-0" : "motion-safe:animate-rise-in"
       )}
     >
@@ -391,7 +409,7 @@ export function ComposerDictation({
 
         {showFallback ? (
           /* Graceful fallback: no Web Speech support, or mic denied. */
-          <div className="flex h-16 items-center justify-between gap-3 rounded-full border border-border bg-card px-3 pl-5 shadow-float">
+          <div className="flex h-16 items-center justify-between gap-3 rounded-composer border border-border/80 bg-card px-3 pl-5 shadow-float">
             <span className="flex min-w-0 items-center gap-2.5 text-sm text-muted-foreground">
               <MicOff className="h-4 w-4 shrink-0 text-muted-foreground/60" />
               <span className="truncate">
@@ -405,12 +423,13 @@ export function ComposerDictation({
             </Pressable>
           </div>
         ) : (
-          /* Capsule: 32px shell − 12px padding = 20px-radius inner circles (concentric). */
+          /* Shell radius + concentric inner rung: see CAPSULE_CIRCLE. */
           // `bg-card`, opaque and unblurred. This capsule stands in for the
           // composer, which IS `bg-card`, so 90% of that fill behind a blur was
           // a near-match that let the transcript show through the one control
-          // the user is speaking into.
-          <div className="flex h-16 items-center gap-3 rounded-full border border-border bg-card px-3 shadow-float">
+          // the user is speaking into. `border-border/80` for the same reason —
+          // it is the composer's own hairline, not a floating panel's.
+          <div className="flex h-16 items-center gap-3 rounded-composer border border-border/80 bg-card px-3 shadow-float">
             <Pressable kind="icon" size="lg" onClick={cancel} aria-label="Cancel dictation" className={cn(CAPSULE_CIRCLE, "border border-border")}>
               <X className="h-4 w-4" />
             </Pressable>
@@ -445,7 +464,8 @@ export function ComposerDictation({
                 `rounded-full bg-primary` circle, which meant the product's
                 signature primary treatment (sheen sweep, gloss, coloured halo)
                 vanished the moment you started dictating and came back when you
-                stopped. */}
+                stopped. CAPSULE_CIRCLE now carries the radius too — the same
+                `rounded-composer-action` rung Send wears in the composer. */}
             <Button
               size="icon"
               onClick={send}
@@ -453,7 +473,7 @@ export function ComposerDictation({
               // unsupported), so gate on the recorder rather than the preview.
               disabled={transcribing || (!transcript && !serverStt)}
               aria-label="Send dictation"
-              className={cn(CAPSULE_CIRCLE, "rounded-full")}
+              className={CAPSULE_CIRCLE}
             >
               {transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-[18px] w-[18px]" />}
             </Button>

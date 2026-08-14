@@ -8,6 +8,7 @@ import { resolveModel } from "@/lib/models";
 import {
   computeNextRunAt,
   isValidTimezone,
+  onceRunInstant,
   serializeTask,
   taskLimitForPlan,
   DEFAULT_TASK_TIMEZONE,
@@ -35,12 +36,14 @@ const createSchema = z
     name: z.string().trim().min(1).max(80),
     prompt: z.string().trim().min(1).max(4000),
     model: z.string().trim().min(1).max(120),
-    cadence: z.enum(["DAILY", "WEEKDAYS", "WEEKLY", "MONTHLY"]),
+    cadence: z.enum(["DAILY", "WEEKDAYS", "WEEKLY", "MONTHLY", "ONCE"]),
     hour: z.number().int().min(0).max(23),
     minute: z.number().int().min(0).max(59),
     weekday: z.number().int().min(0).max(6).nullish(),
     // 1–28 so MONTHLY lands inside every month (no Feb 30 dead schedule).
     monthday: z.number().int().min(1).max(28).nullish(),
+    // "YYYY-MM-DD" local to `timezone`, ONCE only; real-date check in the route.
+    onDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
     timezone: z.string().trim().min(1).max(64).default(DEFAULT_TASK_TIMEZONE),
     webSearch: z.boolean().default(true),
   })
@@ -49,6 +52,8 @@ const createSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["weekday"], message: "Weekly tasks need a weekday." });
     if (v.cadence === "MONTHLY" && v.monthday == null)
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["monthday"], message: "Monthly tasks need a day of the month." });
+    if (v.cadence === "ONCE" && v.onDate == null)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["onDate"], message: "One-off tasks need a date." });
   });
 
 export async function POST(req: Request) {
@@ -92,8 +97,20 @@ export async function POST(req: Request) {
     minute: input.minute,
     weekday: input.weekday ?? null,
     monthday: input.monthday ?? null,
+    onDate: input.onDate ?? null,
     timezone: input.timezone,
   };
+  // A one-off names exactly one instant, so it must exist and lie ahead —
+  // recurring cadences always have a next slot and need neither check.
+  if (schedule.cadence === "ONCE") {
+    const at = onceRunInstant(schedule);
+    if (!at) {
+      return NextResponse.json({ error: "That date doesn't exist — pick a real calendar day." }, { status: 400 });
+    }
+    if (at.getTime() <= Date.now()) {
+      return NextResponse.json({ error: "That time has already passed — pick a moment in the future." }, { status: 400 });
+    }
+  }
   const task = await prisma.scheduledTask.create({
     data: {
       userId: user.id,

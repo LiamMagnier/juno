@@ -1,4 +1,5 @@
 import { findSuppression } from "@/lib/memory-suppression";
+import { cosineSimilarity } from "@/lib/knowledge/rank";
 import {
   DEFAULT_MEMORY_CATEGORY,
   MEMORY_CATEGORY_WEIGHT,
@@ -266,6 +267,8 @@ export interface LifecycleEntry {
   status: string;
   expiresAt: Date | null;
   createdAt: Date;
+  /** Vector-space marker (never the vector). Absent on pre-semantic rows. */
+  embeddingModel?: string | null;
 }
 
 export interface FactCandidate {
@@ -561,6 +564,66 @@ export const DEFAULT_MEMORY_TOKEN_BUDGET = 600;
 /** Recency half-life. A year-old fact is worth a quarter of a fresh one. */
 const RECENCY_HALF_LIFE_DAYS = 90;
 
+/**
+ * The vectors retrieval may blend in, when the caller managed to embed the
+ * query. Optional end to end: retrieval without it is exactly the lexical
+ * behaviour that shipped first, which is the fallback the embedding stack's
+ * fail-closed policy degrades to — same contract as RAG's "lexical only".
+ */
+export interface SemanticEvidence {
+  /** The current message, embedded in the same space as `vectors`. */
+  queryVector: readonly number[];
+  /** Entry id → stored vector. Only entries in that one space belong here. */
+  vectors: ReadonlyMap<string, readonly number[]>;
+}
+
+/**
+ * Rank-fusion constant for blending the lexical and semantic evidence.
+ *
+ * Rank fusion rather than a weighted sum of the two scores, for the reason
+ * knowledge/rank.ts states: token overlap and cosine are not commensurable
+ * numbers, and any weighting of them is a constant tuned once against one
+ * corpus. Ranks compare cleanly. The constant is far below rank.ts's k = 60
+ * on purpose — that value damps the top of a 120-candidate list, while a
+ * memory selection is choosing perhaps ten facts from a few dozen, and with
+ * k = 60 the fused relevance between rank 1 and rank 10 differs by less than a
+ * single category weight, so the query would stop mattering at all.
+ */
+const MEMORY_RRF_K = 12;
+
+/**
+ * Fused relevance per entry id, normalized to 0..1 (1 = first on both legs).
+ *
+ * The lexical leg only ranks entries that share a token with the query — no
+ * shared token is no lexical evidence, not "last place". The semantic leg only
+ * ranks entries whose similarity is positive; an orthogonal vector says
+ * nothing. Ties break on id so the same inputs always rank the same way.
+ */
+function fuseRelevance(
+  weighed: readonly { id: string; lexical: number; cosine: number | null; createdAt: Date }[]
+): Map<string, number> {
+  const contrib = (rank: number) => 1 / (MEMORY_RRF_K + rank);
+  const ceiling = 2 * contrib(1);
+
+  const lexicalLeg = weighed
+    .filter((w) => w.lexical > 0)
+    .sort(
+      (a, b) =>
+        b.lexical - a.lexical ||
+        b.createdAt.getTime() - a.createdAt.getTime() ||
+        (a.id < b.id ? -1 : 1)
+    );
+  const semanticLeg = weighed
+    .filter((w) => (w.cosine ?? 0) > 0)
+    .sort((a, b) => b.cosine! - a.cosine! || (a.id < b.id ? -1 : 1));
+
+  const fused = new Map<string, number>();
+  lexicalLeg.forEach((w, i) => fused.set(w.id, (fused.get(w.id) ?? 0) + contrib(i + 1)));
+  semanticLeg.forEach((w, i) => fused.set(w.id, (fused.get(w.id) ?? 0) + contrib(i + 1)));
+  for (const [id, score] of fused) fused.set(id, score / ceiling);
+  return fused;
+}
+
 export interface SelectedMemory {
   id: string;
   content: string;
@@ -614,6 +677,13 @@ export function selectMemoriesForContext(
     budgetTokens?: number;
     /** Hard cap on entries regardless of budget, so a prompt stays readable. */
     limit?: number;
+    /**
+     * Embedded query + stored vectors, when the caller has them. Absent — the
+     * provider failed, the policy refused, or nothing is embedded yet — the
+     * ranking is exactly the pre-semantic behaviour, so degradation is a
+     * quality change and never a shape change.
+     */
+    semantic?: SemanticEvidence;
   } = {}
 ): RetrievalResult {
   const now = opts.now ?? new Date();
@@ -623,7 +693,14 @@ export function selectMemoriesForContext(
   const queryTokens = new Set(opts.query ? significantTokens(opts.query) : []);
 
   const excluded = { inactive: 0, expired: 0, outOfScope: 0 };
-  const eligible: { entry: LifecycleEntry; score: number; tokens: number }[] = [];
+  const weighed: {
+    entry: LifecycleEntry;
+    tokens: number;
+    id: string;
+    lexical: number;
+    cosine: number | null;
+    createdAt: Date;
+  }[] = [];
 
   for (const entry of entries) {
     // Suppressions are a block-list, never context.
@@ -644,18 +721,40 @@ export function selectMemoriesForContext(
     const entryTokens = new Set(significantTokens(entry.content));
     let overlap = 0;
     for (const token of queryTokens) if (entryTokens.has(token)) overlap++;
-    const relevance = queryTokens.size > 0 ? overlap / queryTokens.size : 0;
+    const lexical = queryTokens.size > 0 ? overlap / queryTokens.size : 0;
 
-    const ageDays = Math.max(0, (now.getTime() - entry.createdAt.getTime()) / 86_400_000);
+    const vector = opts.semantic?.vectors.get(entry.id);
+    const cosine = vector ? cosineSimilarity(opts.semantic!.queryVector, vector) : null;
+
+    weighed.push({
+      entry,
+      tokens: estimateMemoryTokens(entry.content),
+      id: entry.id,
+      lexical,
+      cosine,
+      createdAt: entry.createdAt,
+    });
+  }
+
+  // Relevance: fused ranks when semantic evidence exists, plain token overlap
+  // when it does not. The fallback is checked against the EVIDENCE rather than
+  // the option — a query vector that matched no stored vector is the lexical
+  // case, whatever the caller hoped.
+  const hasSemantic = weighed.some((w) => (w.cosine ?? 0) > 0);
+  const fused = hasSemantic ? fuseRelevance(weighed) : null;
+
+  const eligible = weighed.map((w) => {
+    const relevance = fused ? fused.get(w.id) ?? 0 : w.lexical;
+    const ageDays = Math.max(0, (now.getTime() - w.entry.createdAt.getTime()) / 86_400_000);
     const recency = Math.pow(0.5, ageDays / RECENCY_HALF_LIFE_DAYS);
-    const categoryWeight = isMemoryCategory(entry.category) ? MEMORY_CATEGORY_WEIGHT[entry.category] : 0.04;
+    const categoryWeight = isMemoryCategory(w.entry.category) ? MEMORY_CATEGORY_WEIGHT[w.entry.category] : 0.04;
     // A fact scoped to the project you are working in is on-topic by
     // definition, which no amount of word overlap would otherwise show.
-    const scopeBoost = entry.projectId !== null && entry.projectId === projectId ? 0.15 : 0;
+    const scopeBoost = w.entry.projectId !== null && w.entry.projectId === projectId ? 0.15 : 0;
 
-    const score = 0.55 * relevance + 0.25 * recency + 0.2 * entry.confidence + categoryWeight + scopeBoost;
-    eligible.push({ entry, score, tokens: estimateMemoryTokens(entry.content) });
-  }
+    const score = 0.55 * relevance + 0.25 * recency + 0.2 * w.entry.confidence + categoryWeight + scopeBoost;
+    return { entry: w.entry, score, tokens: w.tokens };
+  });
 
   eligible.sort((a, b) => b.score - a.score || b.entry.createdAt.getTime() - a.entry.createdAt.getTime());
 
@@ -715,4 +814,54 @@ export function memoryReceiptDetail(result: Pick<RetrievalResult, "selected" | "
   const hidden = result.selected.length - shown.length + result.droppedForBudget;
   if (hidden > 0) shown.push(`+${hidden} more`);
   return shown.join(" · ");
+}
+
+/**
+ * The activity row for a fact captured mid-conversation. Shaped exactly as the
+ * chat activity timeline already renders (Omit<ClientActivityEvent, "id" |
+ * "createdAt">), so the ingestion path can hand it straight to `sendActivity`.
+ */
+export interface MemoryUpdateActivity {
+  kind: "context";
+  title: string;
+  detail?: string;
+  /** Deep link to the memory page, where the new fact can be corrected. */
+  url: string;
+}
+
+/**
+ * The "Memory updated" receipt for the chat timeline, or null when the batch
+ * changed nothing worth announcing.
+ *
+ * The reading-a-memory receipt names what was used; this is its write-side
+ * twin. It exists because capture used to be a pill that faded after four
+ * seconds — a user who looked away for a moment had no way to discover that
+ * Juno had just learned something, let alone which something, and "what did
+ * you just save about me?" deserves an answer that survives the turn. Same
+ * principle as the read receipt: name the fact, don't count it.
+ */
+export function memoryUpdateActivity(
+  outcome: { created: number; superseded: number },
+  newFacts: readonly string[]
+): MemoryUpdateActivity | null {
+  if (outcome.created <= 0) return null;
+  const parts: string[] = [];
+  const first = newFacts[0];
+  if (first) {
+    parts.push(
+      first.length > RECEIPT_MAX_CHARS_PER_ENTRY
+        ? `${first.slice(0, RECEIPT_MAX_CHARS_PER_ENTRY - 1).trimEnd()}…`
+        : first
+    );
+  }
+  if (outcome.created > 1) parts.push(`+${outcome.created - 1} more`);
+  if (outcome.superseded > 0) {
+    parts.push(`replaced ${outcome.superseded} older ${outcome.superseded === 1 ? "belief" : "beliefs"}`);
+  }
+  return {
+    kind: "context",
+    title: "Memory updated",
+    detail: parts.length ? parts.join(" · ") : undefined,
+    url: "/memory",
+  };
 }

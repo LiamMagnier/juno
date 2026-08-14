@@ -6,6 +6,7 @@ import {
   RESEARCH_STATE_MESSAGE,
   isResearchState,
   parsePlan,
+  type ResearchBlockedState,
   type ResearchEventDTO,
 } from "@/lib/research/domain";
 import { createPrismaResearchStore, gatheringOnlyEngine } from "@/lib/research/run";
@@ -63,7 +64,6 @@ export interface ResearchCorpusPage {
 export interface DeepResearchResult {
   /** false = nothing usable came back; the caller answers as plain chat. */
   ok: boolean;
-  state?: string;
   /** System-prompt section: report instructions + the numbered source corpus. */
   context: string;
   /** Numbered sources, in citation order — emit as the stream's sources chunk. */
@@ -108,6 +108,25 @@ const CHAT_RUN_BUDGET_MICRO_USD = BigInt(600_000);
 
 /** How often the live activity feed drains the run's event log while it works. */
 const EVENT_POLL_MS = 700;
+
+/**
+ * The state the engine parks a run in while its plan waits for a person.
+ *
+ * Typed against the domain union so the compiler, not production, notices a
+ * misnamed state. `ResearchRun.state` is TEXT end to end, so a Prisma filter
+ * on a state the engine never writes throws nothing and matches nothing — and
+ * every run it was meant to find keeps a live-run slot forever.
+ */
+const PLAN_GATE = "awaiting_plan_confirmation" satisfies ResearchBlockedState;
+
+/*
+ * How a reply to a waiting plan is read. Anchored AND word-bounded: without
+ * the boundary, "no" swallows "north sea oil output" and cancels a run the
+ * user still wants, while "ok" swallows "okinawa" and confirms a plan they
+ * never looked at. Anything matching neither is treated as a new question.
+ */
+const CONFIRM_REPLY = /^(yes|yep|yeah|sure|ok(ay)?|approved?|proceed|go ahead|do it|looks good)\b/;
+const REJECT_REPLY = /^(no|nope|nah|cancel|stop|abort|reject)\b/;
 
 /**
  * One research event, as a line in the existing chat activity timeline.
@@ -195,44 +214,63 @@ export async function runDeepResearch(opts: {
 
   let runId: string | null = null;
   try {
-    const pendingRun = opts.conversationId ? await prisma.researchRun.findFirst({
-      where: {
-        userId: opts.userId,
-        conversationId: opts.conversationId,
-        state: "awaiting_plan",
-      },
-      orderBy: { createdAt: "desc" },
-    }) : null;
+    /*
+     * Every run parked at the plan gate holds a slot of the account's
+     * live-run cap until a person decides it, and chat is a surface with no
+     * plan-approval prompt to decide it from. Only the newest parked run in
+     * this conversation can still be what the user is replying to; anything
+     * older will never be confirmed by anyone, so it is cancelled here rather
+     * than left to silt up the cap.
+     */
+    const parked = opts.conversationId
+      ? await prisma.researchRun.findMany({
+          where: {
+            userId: opts.userId,
+            conversationId: opts.conversationId,
+            state: PLAN_GATE,
+          },
+          orderBy: { createdAt: "desc" },
+        })
+      : [];
+    const [pendingRun, ...stranded] = parked;
+    for (const orphan of stranded) {
+      // Housekeeping: a slot that cannot be freed must not fail the turn.
+      await engine
+        .decidePlan({ runId: orphan.id, userId: opts.userId, decision: "cancel" })
+        .catch(() => undefined);
+    }
 
-    if (pendingRun) {
-      const lower = prompt.toLowerCase();
-      if (/^(yes|approve|proceed|go ahead|looks good|do it|sure|ok|yep|yeah)/.test(lower)) {
-        await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "confirm" });
-        runId = pendingRun.id;
-      } else if (/^(no|cancel|stop|abort|reject|nah)/.test(lower)) {
-        await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "cancel" });
-        return EMPTY;
-      } else {
-        // Just cancel and start a new one based on the new prompt
-        await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "cancel" });
-        const run = await engine.start({
-          userId: opts.userId,
-          goal: prompt,
-          conversationId: opts.conversationId ?? null,
-          budgetMicroUsd: CHAT_RUN_BUDGET_MICRO_USD,
-          confirmation: "required",
-        });
-        runId = run.id;
-      }
-    } else {
+    const startPreConfirmedRun = async (): Promise<string> => {
       const run = await engine.start({
         userId: opts.userId,
         goal: prompt,
         conversationId: opts.conversationId ?? null,
         budgetMicroUsd: CHAT_RUN_BUDGET_MICRO_USD,
-        confirmation: "required",
+        // The per-send research toggle IS this user's confirmation (see
+        // `ResearchPlan.confirmation`): the run must flow planning → searching
+        // on its own, because a run that parks at the plan gate waits forever
+        // and the turn degrades to plain chat while still holding a slot.
+        confirmation: "auto",
       });
-      runId = run.id;
+      return run.id;
+    };
+
+    if (pendingRun) {
+      const reply = prompt.toLowerCase();
+      if (CONFIRM_REPLY.test(reply)) {
+        await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "confirm" });
+        runId = pendingRun.id;
+      } else if (REJECT_REPLY.test(reply)) {
+        await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "cancel" });
+        return EMPTY;
+      } else {
+        // Not a decision on the waiting plan but a new question: end the
+        // parked run and research what was actually asked.
+        await engine.decidePlan({ runId: pendingRun.id, userId: opts.userId, decision: "cancel" });
+        runId = await startPreConfirmedRun();
+      }
+    } else {
+      runId = await startPreConfirmedRun();
     }
   } catch (e) {
     console.error("[deep-research] could not start a run", e);
@@ -299,11 +337,7 @@ export async function runDeepResearch(opts: {
     .filter((source) => source.snapshot)
     .slice(0, MAX_SOURCES);
   const costUsd = finished ? Number(finished.costMicroUsd) / 1_000_000 : 0;
-  
-  if (finished?.state === "awaiting_plan") {
-    return { ok: true, state: "awaiting_plan", context: "", sources: [], costUsd, runId, corpus: [] };
-  }
-  
+
   if (sources.length === 0) return { ...EMPTY, runId, costUsd };
 
   const plan = parsePlan(finished?.plan);

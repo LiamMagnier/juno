@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { Check, ChevronDown, Loader2, PenLine, Trash2, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -96,14 +95,11 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
         </span>
         <span className="flex items-center gap-2">
           {pendingCount > 0 ? (
-            <motion.span
-              key={pendingCount}
-              initial={{ scale: 0.6 }}
-              animate={{ scale: 1 }}
-              transition={{ type: "spring", stiffness: 500, damping: 22 }}
-            >
+            // Keyed on the count so a change re-mounts the chip and it pops —
+            // the same "this number just moved" cue the spring used to carry.
+            <span key={pendingCount} className="motion-safe:animate-pop-in">
               <Badge variant="soft">{pendingCount} pending</Badge>
-            </motion.span>
+            </span>
           ) : edits.length > 0 ? (
             <span className="font-mono text-caption tabular-nums text-muted-foreground">{edits.length}</span>
           ) : null}
@@ -117,103 +113,94 @@ export function EditsPanel({ edits, open, onOpenChange, busyIds, onAccept, onUnd
         </span>
       </button>
 
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            id="memory-edits-panel"
-            key="panel"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.26, ease: [0.33, 1, 0.68, 1] }}
-            className="overflow-hidden"
-          >
-            {edits.length === 0 ? (
-              <p className="px-4 pb-1 pt-3 text-sm text-muted-foreground">
-                No edits yet. Use the pencil on the summary to tell Juno what to remember, update, or forget —
-                changes apply right away and show up here, with Undo if you change your mind.
-              </p>
-            ) : (
-              <ul className="space-y-2 pt-2">
-                <AnimatePresence initial={false}>
-                  {edits.map((edit) => {
-                    const busy = busyIds.has(edit.id);
-                    return (
-                      <motion.li
-                        key={edit.id}
-                        layout
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.98 }}
-                        transition={{ duration: 0.22, ease: [0.33, 1, 0.68, 1] }}
-                        className="rounded-card border border-border/60 bg-card p-4 shadow-soft"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="font-serif text-sm italic text-foreground/90">“{edit.instruction}”</p>
-                          {/* role=status so pending → applied/rejected flips are announced. */}
-                          <span role="status" className="shrink-0">
-                            <Badge variant="outline" className={STATUS_CHIP[edit.status].className}>
-                              {STATUS_CHIP[edit.status].label}
-                            </Badge>
-                          </span>
-                        </div>
-                        {(edit.summary || edit.note) && (
-                          <p className="mt-1.5 text-caption text-muted-foreground">{edit.note ?? edit.summary}</p>
-                        )}
-                        <OperationDiff operations={edit.operations} />
-                        <div className="mt-3 flex items-center justify-between gap-2">
-                          <span className="font-mono text-caption text-muted-foreground/70">{timeAgo(edit.createdAt)}</span>
-                          <div className="flex items-center gap-1.5">
-                            {edit.status === "pending" && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  onClick={() => deleteAndRefocus(edit.id)}
-                                  disabled={busy}
-                                  aria-label="Delete this edit"
-                                >
-                                  <Trash2 className="size-4" />
-                                </Button>
-                                <Button size="sm" className="gap-1.5" onClick={() => onAccept(edit)} disabled={busy}>
-                                  {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-                                  {busy ? "Applying…" : "Accept"}
-                                </Button>
-                              </>
-                            )}
-                            {edit.status === "applied" && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-1.5"
-                                onClick={() => onUndo(edit)}
-                                disabled={busy}
-                              >
-                                {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Undo2 className="size-3.5" />}
-                                {busy ? "Undoing…" : "Undo"}
-                              </Button>
-                            )}
-                            {edit.status === "rejected" && (
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                onClick={() => deleteAndRefocus(edit.id)}
-                                aria-label="Delete this edit"
-                              >
-                                <Trash2 className="size-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      </motion.li>
-                    );
-                  })}
-                </AnimatePresence>
-              </ul>
-            )}
-          </motion.div>
+      {/* Grid-rows collapse, like every other disclosure — the panel stays
+          mounted and `inert` keeps it unreachable while closed. */}
+      <div
+        id="memory-edits-panel"
+        className={cn(
+          "grid transition-[grid-template-rows,opacity] duration-base ease-out-soft motion-reduce:transition-none",
+          open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
         )}
-      </AnimatePresence>
+      >
+        <div className="min-h-0 overflow-hidden" inert={!open}>
+          {edits.length === 0 ? (
+            <p className="px-4 pb-1 pt-3 text-sm text-muted-foreground">
+              No edits yet. Use the pencil on the summary to tell Juno what to remember, update, or forget —
+              changes apply right away and show up here, with Undo if you change your mind.
+            </p>
+          ) : (
+            <ul className="space-y-2 pt-2">
+              {edits.map((edit) => {
+                const busy = busyIds.has(edit.id);
+                return (
+                  <li
+                    key={edit.id}
+                    className="rounded-card border border-border/60 bg-card p-4 shadow-soft motion-safe:animate-rise-in"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-serif text-sm italic text-foreground/90">“{edit.instruction}”</p>
+                      {/* role=status so pending → applied/rejected flips are announced. */}
+                      <span role="status" className="shrink-0">
+                        <Badge variant="outline" className={STATUS_CHIP[edit.status].className}>
+                          {STATUS_CHIP[edit.status].label}
+                        </Badge>
+                      </span>
+                    </div>
+                    {(edit.summary || edit.note) && (
+                      <p className="mt-1.5 text-caption text-muted-foreground">{edit.note ?? edit.summary}</p>
+                    )}
+                    <OperationDiff operations={edit.operations} />
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                      <span className="font-mono text-caption text-muted-foreground/70">{timeAgo(edit.createdAt)}</span>
+                      <div className="flex items-center gap-1.5">
+                        {edit.status === "pending" && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => deleteAndRefocus(edit.id)}
+                              disabled={busy}
+                              aria-label="Delete this edit"
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                            <Button size="sm" className="gap-1.5" onClick={() => onAccept(edit)} disabled={busy}>
+                              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                              {busy ? "Applying…" : "Accept"}
+                            </Button>
+                          </>
+                        )}
+                        {edit.status === "applied" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            onClick={() => onUndo(edit)}
+                            disabled={busy}
+                          >
+                            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Undo2 className="size-3.5" />}
+                            {busy ? "Undoing…" : "Undo"}
+                          </Button>
+                        )}
+                        {edit.status === "rejected" && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => deleteAndRefocus(edit.id)}
+                            aria-label="Delete this edit"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

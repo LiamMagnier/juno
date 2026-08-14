@@ -200,9 +200,14 @@ const filterRows = (rows: SlashCommand[], query: string) =>
 // Selection is carried by the neutral accent fill + a coral hairline, never a
 // coral wash: the mouse moves the cursor here, so a filled coral row would read
 // as a hover colour rather than as "this is what Enter picks".
+//
+// `rounded-xs`, by the same arithmetic DropdownMenuItem documents: the palette
+// shell is a 12px `rounded-menu` with p-1.5, so 12 − 6 leaves 6px for the rows.
+// At rounded-md these were drawn 2px too round for their shell — and 2px rounder
+// than the + menu's rows one trigger to the left, which are the same object.
 const paletteRowClass = (selected: boolean) =>
   cn(
-    "flex w-full cursor-pointer select-none items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-[background-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none",
+    "flex w-full cursor-pointer select-none items-center gap-2.5 rounded-xs px-2 py-1.5 text-left transition-[background-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none",
     selected ? "bg-accent ring-1 ring-inset ring-primary/20" : "hover:bg-accent/50"
   );
 
@@ -587,6 +592,10 @@ export function Composer({
   // voice-conversation launcher; the moment there's sendable content it morphs
   // back into Send.
   const showVoiceButton = !isBusy && !canSend && !!onOpenVoiceMode;
+  // The primary button's four faces, derived once so the stacked glyphs, the
+  // tooltip and the busy ring cannot disagree about which state is showing.
+  const primaryFace: "checking" | "stop" | "voice" | "send" =
+    status === "checking" ? "checking" : isBusy ? "stop" : showVoiceButton ? "voice" : "send";
   // Never split() multi-MB drafts just to count lines — sample the head only.
   const longText = text.trim().length > COMPOSER_LONG_TEXT_CHARS || sampleLineCount(text) > 30;
   const hugeDraft = text.length > COMPOSER_INLINE_SOFT_CHARS;
@@ -1443,7 +1452,7 @@ export function Composer({
       className="mx-auto w-full max-w-[calc(100vw-1.5rem)] px-0 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:max-w-[48rem] sm:px-4"
     >
       {quotaReached && (
-        <div role="status" className="mb-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-center text-sm text-foreground">
+        <div role="status" className="mb-2 rounded-card border border-primary/30 bg-primary/5 px-3 py-2 text-center text-sm text-foreground">
           {planIncludesNoMessages ? (
             <>
               The Free plan doesn&apos;t include any messages.{" "}
@@ -1616,18 +1625,23 @@ export function Composer({
                       // the composer, and its `shadow-soft` (black ink) had nothing
                       // to cast onto. `bg-secondary` is the rung above card, which
                       // is what "raised chip" actually means here.
-                      "group relative flex items-center gap-2 rounded-md border bg-secondary px-2.5 py-2 text-xs",
+                      // `rounded-field` — the small-container rung. rounded-md was
+                      // off the ladder, and 2px sharper than the quote card below,
+                      // which is the same species of object in the same slot.
+                      "group relative flex items-center gap-2 rounded-field border bg-secondary px-2.5 py-2",
                       removingIds.includes(u.localId) ? "pointer-events-none motion-safe:animate-pop-out" : "motion-safe:animate-rise-in"
                     )}
                   >
                     {u.attachment?.kind === "IMAGE" ? (
-                      <Image src={u.attachment.url} unoptimized={requiresViewerCredentials(u.attachment.url)} alt={u.fileName} width={32} height={32} className="h-8 w-8 rounded-sm object-cover" />
+                      <Image src={u.attachment.url} unoptimized={requiresViewerCredentials(u.attachment.url)} alt={u.fileName} width={32} height={32} className="h-8 w-8 rounded-xs object-cover" />
                     ) : (
                       <FileText className="h-5 w-5 text-muted-foreground" />
                     )}
                     <div className="max-w-[140px]">
-                      <p className="truncate font-medium">{u.fileName}</p>
-                      <p className="text-muted-foreground">
+                      <p className="truncate text-ui font-medium">{u.fileName}</p>
+                      {/* Size / progress is metadata, so it takes the mono voice —
+                          the quote card's location line beside it already does. */}
+                      <p className="font-mono text-caption tabular-nums text-muted-foreground">
                         {u.status === "uploading" ? `${u.progress}%` : u.status === "error" ? "Failed" : formatBytes(u.size)}
                       </p>
                     </div>
@@ -1650,13 +1664,16 @@ export function Composer({
         {quote && (
           <div
             className={cn(
-              "mx-3 mt-3 flex items-start gap-2.5 rounded-md border border-primary/25 bg-primary/5 px-3 py-2 shadow-soft",
+              // `rounded-field`, like the collapsed-draft card that shares this
+              // slot — the two attachment cards were on two radii for no reason.
+              "mx-3 mt-3 flex items-start gap-2.5 rounded-field border border-primary/25 bg-primary/5 px-3 py-2 shadow-soft",
               quoteRemoving ? "pointer-events-none motion-safe:animate-pop-out" : "motion-safe:animate-rise-in"
             )}
           >
+            {/* Same size-6 tile as PaletteIcon, so the same rounded-xs corner. */}
             <span
               aria-hidden
-              className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-primary/25 bg-primary/10 text-primary"
+              className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-xs border border-primary/25 bg-primary/10 text-primary"
             >
               {quote.kind === "element" ? (
                 <SquareDashedMousePointer className="h-3.5 w-3.5" />
@@ -1788,6 +1805,7 @@ export function Composer({
                 Switch, which is itself a button. */}
             <div
               ref={paletteListRef}
+              id="composer-palette-listbox"
               role="listbox"
               aria-label={slash.kind === "model" ? "Switch model" : slash.kind === "mention" ? "Tools and connectors" : "Commands"}
               // Measured, not `max-h-72`: the cap is whatever fits above the anchor.
@@ -1899,17 +1917,25 @@ export function Composer({
             rows={1}
             placeholder={placeholder}
             // The palette is driven from here — focus never moves to it — so the
-            // textarea has to name the row the arrow keys are sitting on.
+            // textarea has to name the row the arrow keys are sitting on, and
+            // aria-controls ties that row's listbox back to this field while it
+            // is showing (activedescendant alone leaves AT to guess which list).
+            aria-controls={slashOpen ? "composer-palette-listbox" : undefined}
             aria-activedescendant={
               slashOpen && slash ? `composer-palette-${Math.min(slashIndex, slash.items.length - 1)}` : undefined
             }
             className={cn(
               "w-full resize-none bg-transparent px-4 pb-3 pt-4 leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]",
+              // `text-base` (16px) at rest is load-bearing, not stylistic: iOS
+              // Safari zooms the whole page into any focused field below 16px.
+              // The clarification / huge-draft states step down to the body rung;
+              // under a clarification the leading tightens too, so the capped
+              // 72px window shows three lines instead of two and a bit.
               clarificationOpen
-                ? "max-h-[72px] min-h-[40px] text-[0.9375rem] leading-snug placeholder:text-muted-foreground/70"
+                ? "max-h-[72px] min-h-[40px] text-body leading-snug"
                 : hugeDraft
-                  ? "max-h-[min(60vh,28rem)] min-h-[120px] text-[0.9375rem]"
-                  : "max-h-[200px] min-h-[64px] text-[1rem]"
+                  ? "max-h-[min(60vh,28rem)] min-h-[120px] text-body"
+                  : "max-h-[200px] min-h-[64px] text-base"
             )}
           />
         )}
@@ -1918,34 +1944,47 @@ export function Composer({
           {/* Left: + menu and model selector */}
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={armedSummary ? `Add — ${armedSummary}` : "Add"}
-                  disabled={controlsLocked}
-                  className={cn(
-                    "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11",
-                    plusOpen && "bg-accent"
-                  )}
-                >
-                  <Plus
-                    aria-hidden="true"
-                    strokeWidth={1.75}
-                    // `ease-out-soft`, not Tailwind's stock `ease-out`: the stock
-                    // curve is not on the project's ease ladder, and this was the
-                    // only control in the chat surface running one.
-                    className="composer-add-icon size-4 transition-transform duration-base ease-out-soft group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
-                  />
-                  {activeToolCount > 0 && (
-                    <span
-                      aria-hidden
-                      className="absolute right-0 top-0 flex size-2 items-center justify-center rounded-full bg-primary ring-2 ring-card motion-safe:animate-fade-in"
-                    />
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
+              {/* Every other control on this row explains itself on hover; the one
+                  that opens the whole capability menu was the only silent one. */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={armedSummary ? `Add — ${armedSummary}` : "Add"}
+                      disabled={controlsLocked}
+                      className={cn(
+                        "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11",
+                        plusOpen && "bg-accent"
+                      )}
+                    >
+                      <Plus
+                        aria-hidden="true"
+                        // No strokeWidth override: Mic, ArrowUp and every menu
+                        // glyph on this row run lucide's stock 2, so a 1.75 here
+                        // made the most-pressed icon in the strip the one
+                        // light-weight glyph.
+                        // `ease-out-soft`, not Tailwind's stock `ease-out`: the
+                        // stock curve is not on the project's ease ladder, and
+                        // this was the only control in the chat surface running
+                        // one.
+                        className="composer-add-icon size-4 transition-transform duration-base ease-out-soft group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                      />
+                      {activeToolCount > 0 && (
+                        <span
+                          aria-hidden
+                          className="absolute right-0 top-0 flex size-2 items-center justify-center rounded-full bg-primary ring-2 ring-card motion-safe:animate-fade-in"
+                        />
+                      )}
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                {/* The armed summary rides along so the coral dot is explained at
+                    the point of hover, not only in the accessible name. */}
+                <TooltipContent>{armedSummary ? `Add — ${armedSummary}` : "Add files and tools"}</TooltipContent>
+              </Tooltip>
               {/* The voice menu only earns its narrower width when the research
                   row (label + switch) isn't in it. */}
               <DropdownMenuContent
@@ -2128,8 +2167,11 @@ export function Composer({
                               // stays for screen readers, which cannot see a skeleton.
                               <div role="status" className="flex flex-col gap-1 p-0.5">
                                 <span className="sr-only">Loading connected apps…</span>
+                                {/* h-10 + rounded-xs = the min-h-10 rounded-xs rows
+                                    these resolve into; at h-8 the menu still grew
+                                    6px when the real list arrived. */}
                                 {[0, 1, 2].map((row) => (
-                                  <span key={row} aria-hidden className="skeleton h-8 rounded-control" />
+                                  <span key={row} aria-hidden className="skeleton h-10 rounded-xs" />
                                 ))}
                               </div>
                             ) : connectors.length === 0 ? (
@@ -2139,7 +2181,9 @@ export function Composer({
                                 <span className="text-caption text-muted-foreground">set up</span>
                               </DropdownMenuItem>
                             ) : visibleConnectors.length === 0 ? (
-                              <div className="px-2 py-5 text-center text-xs text-muted-foreground">
+                              // text-caption, matching the projects submenu's own
+                              // empty sentence one trigger up.
+                              <div className="px-2 py-5 text-center text-caption text-muted-foreground">
                                 No connected apps match “{connectorQuery.trim()}”.
                               </div>
                             ) : (
@@ -2253,7 +2297,13 @@ export function Composer({
             <span className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block" aria-hidden="true" />
 
             <div
-              className={cn("min-w-0 flex-1 sm:flex-none", controlsLocked && "pointer-events-none opacity-60")}
+              // The dim rides a transition so locking for a generation reads as
+              // the row stepping back rather than blinking — this wrapper covers
+              // the widest control in the strip, so its snap was the visible one.
+              className={cn(
+                "min-w-0 flex-1 transition-opacity duration-base ease-out-soft motion-reduce:transition-none sm:flex-none",
+                controlsLocked && "pointer-events-none opacity-60"
+              )}
               aria-disabled={controlsLocked}
             >
               <ModelSelector value={model} onChange={changeModel} reasoningEffort={reasoningEffort} onReasoningChange={onReasoningChange} />
@@ -2279,7 +2329,10 @@ export function Composer({
                       size="sm"
                       aria-disabled
                       aria-label="Thinking effort: Auto — chosen automatically with the model"
-                      className="h-8 w-[4.75rem] shrink-0 cursor-default justify-center gap-1 rounded-composer-control px-2 font-mono text-[12px] tracking-tight text-muted-foreground opacity-70 hover:bg-transparent hover:text-muted-foreground active:scale-100 coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]"
+                      // text-label → text-ui is the ladder spelling of the old
+                      // 12→13px step (tracking-tight overrides label's eyebrow
+                      // letter-spacing — this is a control value, not a caption).
+                      className="h-8 w-[4.75rem] shrink-0 cursor-default justify-center gap-1 rounded-composer-control px-2 font-mono text-label tracking-tight text-muted-foreground opacity-70 hover:bg-transparent hover:text-muted-foreground active:scale-100 coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-ui"
                     >
                       <span className="min-w-0 truncate">Auto</span>
                     </Button>
@@ -2337,7 +2390,11 @@ export function Composer({
                               // Button deliberately ships no focus override so
                               // the global :focus-visible rule stays
                               // authoritative (button.tsx:7).
-                              "composer-chip group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-composer-control px-2 font-mono text-[12px] tracking-tight coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
+                              // text-label → text-ui is the ladder spelling of
+                              // the old 12→13px step (tracking-tight overrides
+                              // label's eyebrow letter-spacing — this is a
+                              // control value, not a caption).
+                              "composer-chip group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-composer-control px-2 font-mono text-label tracking-tight coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-ui",
                               // Full strength, matching the model name. `/80` put
                               // the two most consequential values on the row below
                               // the ink of everything around them.
@@ -2425,24 +2482,69 @@ export function Composer({
                         : "Send message"
                   }
                   className={cn(
-                    "composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong",
-                    isBusy && status !== "checking" ? "w-11 rounded-composer-control ring-2 ring-primary/15" : "rounded-composer-action"
+                    // One footprint for every face. The busy state used to widen
+                    // to 44px and re-radius, which shoved the mic sideways at the
+                    // exact moment the pointer was travelling toward Stop; the
+                    // ring now carries "this is Stop" and the glyphs cross-fade
+                    // in place below. `opacity` rides the transition list so the
+                    // disabled → enabled flip fades instead of snapping, and
+                    // nothing in the list touches layout.
+                    "composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 transition-[color,background-color,border-color,box-shadow,transform,opacity] duration-base ease-out-strong",
+                    isBusy && status !== "checking" && "ring-2 ring-primary/15"
                   )}
                 >
-                  {status === "checking" ? (
-                    <Loader2 key="checking" className="h-4 w-4 animate-spin motion-safe:animate-fade-in" />
-                  ) : isBusy ? (
-                    <Square key="stop" className="composer-stop-icon h-3.5 w-3.5 fill-current motion-safe:animate-fade-in" />
-                  ) : showVoiceButton ? (
-                    <span key="voice" className="composer-voice-wave motion-safe:animate-fade-in" aria-hidden="true">
+                  {/*
+                   * All four glyphs stay mounted in one grid cell and trade
+                   * opacity on duration-exit — a conditional render can only
+                   * fade IN, so send → stop used to pop. The retiring glyph
+                   * shrinks as it goes (motion-safe; Tier B collapses the
+                   * scale and keeps the fade). aria-hidden: the button's
+                   * aria-label is the accessible state, not the artwork.
+                   */}
+                  <span aria-hidden="true" className="grid place-items-center">
+                    <Loader2
+                      className={cn(
+                        "col-start-1 row-start-1 h-4 w-4 transition-[opacity,transform] duration-exit ease-out-soft",
+                        primaryFace === "checking" ? "scale-100 animate-spin opacity-100" : "scale-75 opacity-0 motion-reduce:scale-100"
+                      )}
+                    />
+                    {/* The hover keyframes (composer-send / composer-stop,
+                        globals.css) ride only the ACTIVE face: composer-send
+                        animates opacity with fill-mode both, so on a retired
+                        glyph it would hold the hidden arrow at full opacity
+                        over the stop square for as long as the hover lasts. */}
+                    <Square
+                      className={cn(
+                        "col-start-1 row-start-1 h-3.5 w-3.5 fill-current transition-[opacity,transform] duration-exit ease-out-soft",
+                        primaryFace === "stop"
+                          ? "composer-stop-icon scale-100 opacity-100"
+                          : "scale-75 opacity-0 motion-reduce:scale-100"
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        "composer-voice-wave col-start-1 row-start-1 transition-[opacity,transform] duration-exit ease-out-soft",
+                        primaryFace === "voice" ? "scale-100 opacity-100" : "scale-75 opacity-0 motion-reduce:scale-100"
+                      )}
+                    >
                       <span /><span /><span /><span /><span />
                     </span>
-                  ) : (
-                    <ArrowUp key="send" className="composer-send-icon h-4 w-4 motion-safe:animate-fade-in" />
-                  )}
+                    <ArrowUp
+                      className={cn(
+                        "col-start-1 row-start-1 h-4 w-4 transition-[opacity,transform] duration-exit ease-out-soft",
+                        primaryFace === "send"
+                          ? "composer-send-icon scale-100 opacity-100"
+                          : "scale-75 opacity-0 motion-reduce:scale-100"
+                      )}
+                    />
+                  </span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>{showVoiceButton && !isBusy ? "Voice conversation" : "Send"}</TooltipContent>
+              {/* The tooltip tracks the face — it used to say "Send" while the
+                  button was Stop for the whole generation. */}
+              <TooltipContent>
+                {primaryFace === "stop" ? "Stop" : primaryFace === "voice" ? "Voice conversation" : "Send"}
+              </TooltipContent>
             </Tooltip>
           </div>
         </div>
@@ -2484,9 +2586,10 @@ export function Composer({
       </div>
       {/* Full-opacity token: /45 computed to ~2:1, and this is the line that
           tells people the model can be wrong — the one disclaimer that has to
-          be readable. */}
+          be readable. text-micro is the legibility floor the 10px it replaces
+          sat just under. */}
       {!hideDisclaimer && (
-        <p className="mt-2 text-center text-[10px] leading-4 text-muted-foreground">
+        <p className="mt-2 text-center text-micro text-muted-foreground">
           {privateMode ? "Incognito chats are not saved or added to memory." : "Juno can be wrong — worth a second look on anything that matters."}
         </p>
       )}

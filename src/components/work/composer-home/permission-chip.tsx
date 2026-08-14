@@ -102,10 +102,10 @@ export function WorkPermissionChip({
                     {WORK_APPROVAL_MODE_LABEL[policy]}
                   </span>
                   {policy === DEFAULT_WORK_PERMISSION_POLICY && (
-                    <span className="font-mono text-[10px] text-muted-foreground">default</span>
+                    <span className="font-mono text-micro text-muted-foreground">default</span>
                   )}
                 </span>
-                <span className="mt-0.5 block whitespace-normal text-[12px] leading-relaxed text-muted-foreground">
+                <span className="mt-0.5 block whitespace-normal text-caption leading-relaxed text-muted-foreground">
                   {WORK_APPROVAL_MODE_SUMMARY[policy]}
                 </span>
               </span>

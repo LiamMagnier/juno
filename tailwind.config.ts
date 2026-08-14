@@ -5,9 +5,10 @@ import animate from "tailwindcss-animate";
 /*
  * Juno design tokens (Slice 0 — Foundation)
  * -----------------------------------------
- * Type scale ............ text-{display,title,heading,body,body-lg,label,caption} (+ legacy `hero`)
- *                         serif = human moments · sans = UI body · mono = labels/metadata
- * Motion ................ ease-{spring,out-soft,out-expo,breathe} · duration-{fast,base,slow,emphasis}
+ * Type scale ............ text-{display,page-title,title,heading,body-lg,body,ui,label,caption,micro}
+ *                         (+ legacy `hero`) · serif = human moments · sans = UI body · mono = labels/metadata
+ * Motion ................ ease-{out-soft,out-strong,out-expo,in,in-out,breathe,out-back} ·
+ *                         duration-{press,fast,exit,base,slow,emphasis}
  *                         (mirrored as --ease-* / --dur-* in globals.css, where the
  *                          reasoning behind each value lives — read it before adding a fifth)
  * Overlays .............. animate-{pop-in,pop-out} (floating layers) · animate-{overlay-in,overlay-out}
@@ -97,6 +98,17 @@ const config: Config = {
         // The one dim value every modal backdrop shares. Four different scrim
         // treatments existed before this.
         scrim: "hsl(var(--scrim))",
+        // Design-canvas selection chrome (canvas-selection / canvas-handle /
+        // canvas-measure). The values live per-theme in globals.css, where the
+        // note explains why selection keeps the editing-canvas blue convention
+        // while the guide red and measure amber sit on the palette's own
+        // destructive/warning hues. Chrome, not content: nothing outside the
+        // design canvas should reach for these.
+        canvas: {
+          selection: "hsl(var(--canvas-selection) / <alpha-value>)",
+          handle: "hsl(var(--canvas-handle) / <alpha-value>)",
+          measure: "hsl(var(--canvas-measure) / <alpha-value>)",
+        },
       },
       borderRadius: {
         // The generic large step follows the product surface radius.
@@ -204,9 +216,6 @@ const config: Config = {
         // ease-out makes them look like they arrive from off-screen.
         in: "cubic-bezier(0.4, 0, 1, 1)",
         "in-out": "cubic-bezier(0.65, 0, 0.35, 1)",
-        // Deprecated alias of out-strong, kept so the 39 existing `ease-spring`
-        // sites keep compiling. Delete after migration.
-        spring: "cubic-bezier(0.32, 0.72, 0, 1)",
         // The only symmetric curve here, and the only one meant for a LOOP:
         // loops have a seam that an ease-out visibly pulses at. Already inlined
         // verbatim in the pulse-ring / status-glow / gen-sweep keyframes below;
@@ -277,6 +286,23 @@ const config: Config = {
         heading: ["1.125rem", { lineHeight: "1.3", letterSpacing: "-0.006em", fontWeight: "600" }],
         "body-lg": ["1.0625rem", { lineHeight: "1.6" }],
         body: ["0.9375rem", { lineHeight: "1.6" }],
+        /*
+         * The dense-UI rung — list rows, chips, option text, table cells:
+         * interface furniture read at a glance, not prose read in flow. It was
+         * the widest hole in the scale: 116 call sites were hand-writing it as
+         * text-[13px] (80) or text-[12.5px] (36), the half pixel being a
+         * difference nobody chose and one no 1x display can honour anyway.
+         *
+         * Plain rem, not a clamp — and that is the same WCAG 1.4.4 reasoning
+         * the fluid rungs above document, seen from the other side. The rem
+         * intercept exists up there so user text size can still move a
+         * vw-driven value; a size with no vw term is already fully in the
+         * user's hands, and any viewport term on a 13px rung would SHRINK
+         * dense rows precisely on the small screens where they are hardest to
+         * read. 1.5, not body's 1.6: rows and chips are usually one line tall,
+         * and their rhythm comes from the row grid, not from leading.
+         */
+        ui: ["0.8125rem", { lineHeight: "1.5" }],
         // Eyebrow/metadata — sizing only; pair with `font-mono` + `uppercase`.
         // 0.10em is the editorial maximum for caps: above ~0.12em uppercase
         // micro-labels stop grouping into words and read as decoration. It is also
@@ -285,6 +311,21 @@ const config: Config = {
         // 0.12em — that is a logotype, not a label.
         label: ["0.75rem", { lineHeight: "1.4", letterSpacing: "0.10em", fontWeight: "500" }],
         caption: ["0.6875rem", { lineHeight: "1.45", letterSpacing: "0.02em" }],
+        /*
+         * The mono metadata floor — token counts, model ids, timestamps, the
+         * smallest eyebrow chips. Pair with `font-mono` (and often
+         * `uppercase`), like `label` two rungs up. 10.5px, deliberately ABOVE
+         * the 10px (139 sites) and 9px (20 sites) it replaces: below ~10.5px
+         * the mono face's hairline strokes start losing whole pixels to
+         * antialiasing on 1x displays, and most of these sites are
+         * muted-foreground on top of that — the floor is where the smallest
+         * voice in the product stays legible rather than decorative. (The half
+         * pixel rounds per-DPR at 1x and renders true at 2x.) Tracking stays
+         * at caption's 0.02em, far under label's 0.10em: mono's fixed advance
+         * already separates glyphs, and at this size added air reads as gaps
+         * between letters, not as an eyebrow.
+         */
+        micro: ["0.65625rem", { lineHeight: "1.45", letterSpacing: "0.02em" }],
       },
       /*
        * Text colour is NOT the same ramp as fill colour.

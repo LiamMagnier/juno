@@ -122,7 +122,7 @@ function CodeGreeting() {
             <JunoMark
               className={cn(
                 "block h-[1.6rem] w-[1.6rem] sm:h-[2.2rem] sm:w-[2.2rem]",
-                "transition-transform duration-base ease-spring motion-reduce:transition-none",
+                "transition-transform duration-base ease-out-strong motion-reduce:transition-none",
                 !popping && "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
               )}
             />
@@ -612,13 +612,13 @@ export default function NewCodeSessionPage() {
               )}
               <div
                 className={cn(
-                  "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-spring motion-reduce:transition-none",
+                  "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-out-strong motion-reduce:transition-none",
                   dictating ? "min-h-[170px]" : "min-h-[68px]",
                 )}
               >
                 <div
                   className={cn(
-                    "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+                    "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
                     dictating
                       ? "translate-y-0 scale-100 opacity-100"
                       : "pointer-events-none translate-y-1 scale-95 opacity-0",
@@ -664,7 +664,7 @@ export default function NewCodeSessionPage() {
                   }}
                   className={cn(
                     "col-start-1 row-start-1 relative w-full origin-center",
-                    "transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+                    "transition-[opacity,transform] duration-base ease-out-strong motion-reduce:transition-none",
                     dictating
                       ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0"
                       : "translate-y-0 scale-100 opacity-100",
@@ -801,7 +801,7 @@ export default function NewCodeSessionPage() {
                                   <Plus
                                     aria-hidden="true"
                                     strokeWidth={1.75}
-                                    className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                                    className="composer-add-icon size-4 transition-transform duration-base ease-out-strong group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
                                   />
                                 </Button>
                               </DropdownMenuTrigger>
@@ -884,7 +884,7 @@ export default function NewCodeSessionPage() {
                                         ? "Start a cloud run"
                                         : "Start the session"
                                 }
-                                className="composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-spring"
+                                className="composer-primary-action h-9 w-9 rounded-composer-action coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-out-strong"
                               >
                                 {submitting ? (
                                   <Loader2 key="starting" className="h-4 w-4 animate-spin motion-safe:animate-fade-in" aria-hidden="true" />

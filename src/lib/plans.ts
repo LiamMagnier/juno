@@ -4,7 +4,12 @@ import { getModel, type ModelId } from "@/lib/models";
 export interface PlanConfig {
   id: Plan;
   name: string;
-  /** Display price in USD per month. */
+  /**
+   * Display price in EUR per month, sold HT — every surface that renders it
+   * (upgrade, settings) prints "€", and the Stripe prices are EUR. The model
+   * budgets in spend.ts are also EUR-defined; API_COST_EUR_PER_USD is the one
+   * place the two currencies meet.
+   */
   price: number;
   tagline: string;
   /** Monthly message allowance. null = effectively unlimited. */
@@ -30,22 +35,29 @@ export const PLANS: Record<Plan, PlanConfig> = {
     id: "FREE",
     name: "Free",
     price: 0,
-    tagline: "Create an account and look around.",
-    monthlyMessages: 0,
+    tagline: "Try Juno with 15 messages a month.",
+    // Trial allowance, not a free tier: enough to feel the product think
+    // before paying, small enough to cost cents. The count is enforced by the
+    // usual message quota; BUDGET_EUR.FREE in spend.ts is the matching hard
+    // spend ceiling, so a trial can never outrun what these 15 messages were
+    // sized for. Pricing is ultimately the owner's call — to end the trial,
+    // set this back to 0 and BUDGET_EUR.FREE back to 0 (and revert the
+    // effectiveMinPlan floor below).
+    monthlyMessages: 15,
     maxUploadMb: 5,
     maxOutputTokens: 8192,
     voice: false,
     canvas: true,
     webSearch: false,
-    // Free grants no messages, so anything that needs a model reply is not a
-    // Free feature. This list previously promised "Canvas & artifacts" and
-    // "File & image uploads" — both reachable only by sending a message, which
-    // Free cannot do. Leading with the constraint, because settings renders
-    // only the first three entries.
+    // Leading with the allowance, because settings renders only the first
+    // three entries. "Everyday models" = the chat models the catalog itself
+    // prices at minPlan FREE (Sonnet, Haiku, GPT Mini, Gemini Flash…) — the
+    // set effectiveMinPlan below actually unlocks; flagships stay paid.
     features: [
-      "No messages included — chatting needs a paid plan",
+      "15 messages a month to try Juno, free",
+      "Everyday models (Claude Sonnet, GPT Mini, Gemini Flash…)",
+      "Canvas, artifacts & file uploads",
       "Import your ChatGPT or Claude history",
-      "Browse the app and read your conversations",
       "Export everything you own, any time",
     ],
   },
@@ -144,14 +156,21 @@ export function planRank(plan: Plan): number {
 }
 
 /**
- * Policy: every model is locked behind a paid plan — the effective minimum is
- * never below Pro, even for models whose own minPlan is Free.
+ * Policy: the catalog's own minPlan is enforced as-is. Models the catalog
+ * prices at FREE are the trial tier — what PLANS.FREE.monthlyMessages and
+ * BUDGET_EUR.FREE (spend.ts) let a signed-up user actually try — while
+ * flagships keep their paid minimum. While FREE granted zero messages this
+ * floored everything at Pro; to end the trial, restore
+ * `planRank(minPlan) < planRank("PRO") ? "PRO" : minPlan`.
+ *
+ * Kept as a function although it is now the identity: it is the single seam
+ * every lock badge, picker and API gate reads the policy through.
  */
 export function effectiveMinPlan(minPlan: Plan): Plan {
-  return planRank(minPlan) < planRank("PRO") ? "PRO" : minPlan;
+  return minPlan;
 }
 
-/** A model is usable if the user's plan meets the model's (Pro-floored) minimum. */
+/** A model is usable if the user's plan meets the model's effective minimum. */
 export function canUseModel(plan: Plan, modelId: ModelId): boolean {
   // Auto is always selectable; the router only returns models the plan can call.
   if (modelId === "juno:auto" || modelId === "auto") return true;

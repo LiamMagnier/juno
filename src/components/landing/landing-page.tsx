@@ -19,10 +19,15 @@ import { Pricing } from "@/components/landing/pricing";
  * is the hero's "Create account".
  */
 
+// English labels over the French route slugs on purpose: the slugs are the
+// legal pages' canonical URLs (operated from France, and linked from documents
+// that cannot move), while every other word on this page is English — three
+// French labels in an English footer read as a localization bug, not as
+// jurisdiction.
 const LEGAL_LINKS = [
-  { href: "/legal/confidentialite", label: "Confidentialité" },
-  { href: "/legal/cgu", label: "CGU" },
-  { href: "/legal/mentions-legales", label: "Mentions légales" },
+  { href: "/legal/confidentialite", label: "Privacy" },
+  { href: "/legal/cgu", label: "Terms" },
+  { href: "/legal/mentions-legales", label: "Legal notice" },
 ];
 
 const PRODUCT_LINKS: { href: string; label: string; file?: boolean }[] = [

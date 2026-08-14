@@ -64,7 +64,17 @@ struct JunoDesktopWorkspaceView: View {
             // surface, and scaling one reads as the window resizing.
             .blur(radius: (1 - settle) * 7)
             .opacity(0.55 + 0.45 * settle)
-            .allowsHitTesting(settle > 0.6)
+            // Input comes back almost immediately, not when the resolve ends.
+            // The blur exists to mask the split-view swap, and the swap is
+            // over on the first frame; while the workspace resolves, nothing
+            // underneath moves — blur and opacity only — so a click during
+            // the resolve lands exactly where it would land sharp. The gate
+            // used to wait for `settle > 0.6`, which ate every click for
+            // ~150ms after each mode change. `outSoft`'s fast start crosses
+            // 0.15 within the first frames, so the veil now swallows only
+            // input aimed while the arriving tree is still too blurred to
+            // read as anything.
+            .allowsHitTesting(settle > 0.15)
             .onChange(of: product) { _, _ in
                 guard !reduceMotion else { return }
                 // Two phases, and they cannot be one. Setting `settle` and
@@ -73,10 +83,16 @@ struct JunoDesktopWorkspaceView: View {
                 // from the one written and overwritten in the same transaction.
                 // Yielding lets the defocused frame render first, so there is
                 // something for the resolve to resolve from.
+                //
+                // `outSoft` at the slow rung: an arriving surface is an
+                // entrance, entrances decelerate, and a whole region changing
+                // is what the 360ms rung is for. This was a free-hand
+                // `easeOut(0.3)` sitting one rung's width from `slow` 0.36 —
+                // exactly the near-miss the motion ladder exists to prevent.
                 settle = 0
                 Task { @MainActor in
                     await Task.yield()
-                    withAnimation(.easeOut(duration: 0.3)) { settle = 1 }
+                    withAnimation(JunoMotion.outSoft()) { settle = 1 }
                 }
             }
     }

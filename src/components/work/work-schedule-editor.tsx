@@ -363,7 +363,7 @@ export function WorkScheduleEditor({
             disabled={saving}
             className="mt-1"
           />
-          <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p className="mt-1 text-caption leading-relaxed text-muted-foreground">
             Every run starts from this text and nothing else, so it has to stand on its own — nobody
             is there to answer a follow-up at seven in the morning.
           </p>
@@ -388,7 +388,7 @@ export function WorkScheduleEditor({
             disabled={saving}
             className="mt-1 max-w-xs"
           />
-          <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p className="mt-1 text-caption leading-relaxed text-muted-foreground">
             An IANA name. Every time above is read in this zone, which is what makes 09:00 stay 09:00
             across a daylight-saving change.
           </p>
@@ -406,7 +406,7 @@ export function WorkScheduleEditor({
             { value: "local", label: "One of my Macs" },
           ]}
           ariaLabel="Where this schedule runs"
-          optionClassName="px-3 py-1 text-[12.5px]"
+          optionClassName="px-3 py-1 text-ui"
           className="max-w-md"
         />
         {draft.target !== "cloud" && (
@@ -437,19 +437,19 @@ export function WorkScheduleEditor({
               ))}
             </select>
             {missingHost && (
-              <p className="mt-1 text-[12px] leading-relaxed text-warning-foreground">
+              <p className="mt-1 text-caption leading-relaxed text-warning-foreground">
                 A schedule pinned to a Mac has to say which one. Left open, a 07:00 fire would land
                 on whichever machine happened to be awake.
               </p>
             )}
             {named !== null && !hostIsReachable(named) && (
-              <p className="mt-1 text-[12px] leading-relaxed text-warning-foreground">
+              <p className="mt-1 text-caption leading-relaxed text-warning-foreground">
                 {named.displayName} is not reachable right now. The schedule can still be saved —
                 what happens at the next fire is the offline policy below.
               </p>
             )}
             {hosts !== null && reachable.length === 0 && draft.target === "local" && (
-              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+              <p className="mt-1 text-caption leading-relaxed text-muted-foreground">
                 None of your Macs are checking in at the moment.
               </p>
             )}
@@ -487,7 +487,7 @@ export function WorkScheduleEditor({
           disabled={saving}
           onChange={(value) => set("notifyPolicy", value)}
         />
-        <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+        <p className="text-caption leading-relaxed text-muted-foreground">
           These arrive by email, at the address on your account, once per thing worth saying — a run
           that finishes while a retry is still in flight does not write twice.
         </p>
@@ -563,8 +563,8 @@ function PolicyGroup<T extends string>({
               className="mt-1 h-3.5 w-3.5 shrink-0 accent-primary"
             />
             <span className="min-w-0">
-              <span className="block text-[13px] font-medium text-foreground">{option.label}</span>
-              <span className="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+              <span className="block text-ui font-medium text-foreground">{option.label}</span>
+              <span className="mt-0.5 block text-caption leading-relaxed text-muted-foreground">
                 {option.hint}
               </span>
             </span>

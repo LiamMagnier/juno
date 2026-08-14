@@ -1190,6 +1190,100 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   }, [realtimeVoice.speechInterim, realtimeVoice.transcript]);
   const displayMessages = React.useMemo(() => [...chat.messages, ...voiceMessages], [chat.messages, voiceMessages]);
   const hasMessages = displayMessages.length > 0 || voiceOpen;
+
+  /* ─── First-message handoff ────────────────────────────────────────────────
+   * The centered empty-state composer and the transcript's bottom dock are two
+   * different subtrees, so React swaps them in one commit and the composer
+   * teleported. document.startViewTransition cannot make this a shared-element
+   * move cheaply: the swap is committed from inside useChat's own state updates
+   * — the optimistic append, sometimes seconds after Send while the clarify
+   * preflight runs — so there is no single DOM-mutation callback to hand the
+   * API without freezing a page snapshot across a network wait. The swap is
+   * choreographed by hand on the token ladder instead:
+   *
+   *   "leaving"  — the empty branch stays mounted for one exit beat
+   *                (--dur-exit) while the greeting plays title-out: up and out.
+   *   "entering" — the branches swap; the dock composer plays a measured
+   *                translate from where the centered composer stood
+   *                (--dur-slow / --ease-out-expo: long travel, no overshoot)
+   *                while the transcript fades in beneath it.
+   *
+   * Armed only by a send from the empty composer. `hasMessages` also flips when
+   * messages arrive by other routes — voice opening, a fork seeding, the
+   * preserved App Router instance switching conversations — and replaying a
+   * "first message" ceremony there would be motion narrating nothing. Reduced
+   * motion never arms: this is travel, Tier B collapses it to the plain swap.
+   */
+  const [handoff, setHandoff] = React.useState<"leaving" | "entering" | null>(null);
+  const [handoffSeen, setHandoffSeen] = React.useState(hasMessages);
+  const handoffArmedAtRef = React.useRef(0);
+  const handoffFromTopRef = React.useRef<number | null>(null);
+  const emptyComposerRef = React.useRef<HTMLDivElement>(null);
+  const dockComposerRef = React.useRef<HTMLDivElement>(null);
+  if (hasMessages !== handoffSeen) {
+    // Render-phase adjustment (the documented React pattern), so the exit beat
+    // is in place in the SAME commit that would otherwise unmount the greeting.
+    setHandoffSeen(hasMessages);
+    if (
+      hasMessages &&
+      handoffArmedAtRef.current !== 0 &&
+      // Generous on purpose: the clarify preflight can hold the optimistic
+      // append for ~3.5s before the transcript exists.
+      Date.now() - handoffArmedAtRef.current < 8000 &&
+      typeof window !== "undefined" &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      setHandoff("leaving");
+    }
+  }
+
+  React.useEffect(() => {
+    if (handoff === null) return;
+    if (!hasMessages) {
+      // The transcript went away mid-ceremony (new chat, reset) — stand down.
+      setHandoff(null);
+      return;
+    }
+    if (handoff !== "leaving") return;
+    handoffArmedAtRef.current = 0;
+    // Measured now, not at send: the empty branch is still on screen during
+    // the exit beat, and this is the composer's final resting place.
+    handoffFromTopRef.current = emptyComposerRef.current?.getBoundingClientRect().top ?? null;
+    const root = getComputedStyle(document.documentElement);
+    const exitMs = parseFloat(root.getPropertyValue("--dur-exit")) || 160;
+    const t = window.setTimeout(() => setHandoff("entering"), exitMs);
+    return () => window.clearTimeout(t);
+  }, [handoff, hasMessages]);
+
+  // Layout effect so the travel's first painted frame already shows the dock
+  // composer back at the centered position — an effect would flash it docked.
+  React.useLayoutEffect(() => {
+    if (handoff !== "entering") return;
+    const el = dockComposerRef.current;
+    const from = handoffFromTopRef.current;
+    handoffFromTopRef.current = null;
+    let travel: Animation | undefined;
+    if (el && from != null && typeof el.animate === "function") {
+      const dy = from - el.getBoundingClientRect().top;
+      // Only when there is real distance to close — a sub-pixel "move" would
+      // still cost a compositor layer and say nothing.
+      if (Math.abs(dy) > 12) {
+        const root = getComputedStyle(document.documentElement);
+        travel = el.animate([{ transform: `translateY(${dy}px)` }, { transform: "translateY(0)" }], {
+          duration: parseFloat(root.getPropertyValue("--dur-slow")) || 360,
+          easing: root.getPropertyValue("--ease-out-expo").trim() || "ease-out",
+        });
+      }
+    }
+    // Not a motion duration — just the moment the flag (and the transcript's
+    // one-shot entrance class) can be dropped, safely past the longest strand.
+    const t = window.setTimeout(() => setHandoff(null), 600);
+    return () => {
+      window.clearTimeout(t);
+      travel?.cancel();
+    };
+  }, [handoff]);
+
   // NB: `quota.limit != null` is load-bearing and must not be "tidied" into a
   // truthiness check — Free's limit is 0, and `0 != null` is what keeps the
   // gate on for that plan at all.
@@ -1309,6 +1403,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       // Past the guards that can still refuse the turn, so the aura only swells
       // for a send that is actually going out.
       setAuraSending(true);
+      // Arm the first-message handoff (see the choreography block above). The
+      // send can still be refused downstream, in which case the transcript
+      // never appears and the arm simply expires.
+      if (!hasMessages) handoffArmedAtRef.current = Date.now();
       if (!voiceOpen) return chat.send(text, attachments, options);
       if (voiceTurnSendingRef.current) return { accepted: false };
       if (realtimeVoice.status !== "live") {
@@ -1339,7 +1437,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         setVoiceTurnSending(false);
       }
     },
-    [chat, realtimeVoice, voiceOpen, voiceSaveError]
+    [chat, hasMessages, realtimeVoice, voiceOpen, voiceSaveError]
   );
 
   const openVoice = React.useCallback(() => {
@@ -1794,13 +1892,16 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               : "m-0 rounded-none border border-transparent bg-transparent shadow-none"
           )}
         >
-          {hasMessages ? (
+          {/* `handoff === "leaving"` holds the empty branch through its one exit
+              beat after the first message lands — see the handoff block above. */}
+          {hasMessages && handoff !== "leaving" ? (
             // Message view
             <div className="flex min-h-0 flex-1 flex-col relative h-full">
               {findOpen && (
                 <ConversationFind messages={displayMessages} onClose={() => setFindOpen(false)} />
               )}
               <MessageList
+                className={handoff === "entering" ? "motion-safe:animate-fade-in" : undefined}
                 messages={displayMessages}
                 busy={chat.isBusy}
                 status={chat.status}
@@ -1836,6 +1937,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 </div>
               )}
               <div
+                ref={dockComposerRef}
                 className={cn(
                   // `isolate` matters: the aura sits on z-index -1, and without a
                   // stacking context here it would escape this wrapper and paint
@@ -1896,7 +1998,17 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 */}
                 <div className="relative isolate flex w-full flex-col items-center justify-center">
                   {/* Headers cross-fade — opacity only; scale was causing a jump. */}
-                  <div className="mb-4 grid w-full grid-cols-1 grid-rows-1 justify-items-center sm:mb-5">
+                  <div
+                    className={cn(
+                      "mb-4 grid w-full grid-cols-1 grid-rows-1 justify-items-center sm:mb-5",
+                      // The greeting's exit beat: up and out on title-out while
+                      // the composer below holds still for its travel. Forwards
+                      // fill, or the final frame would snap back before the swap
+                      // — same pattern as the memory pill above.
+                      handoff === "leaving" &&
+                        "motion-safe:animate-title-out motion-safe:[animation-fill-mode:forwards]"
+                    )}
+                  >
                     <div
                       className={cn(
                         "col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity duration-slow ease-out-soft",
@@ -1920,6 +2032,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   </div>
 
                   <div
+                    ref={emptyComposerRef}
                     className={cn(
                       // NO z-index here, deliberately. A z-index would make this
                       // a stacking context and flatten everything inside it into

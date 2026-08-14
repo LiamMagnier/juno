@@ -111,7 +111,7 @@ export function WorkProgressChecklist({ steps }: { steps: readonly PlanStep[] })
   return (
     <ol className="space-y-2">
       {steps.map((step) => (
-        <li key={step.id} className="flex items-start gap-2.5 text-[13px] leading-relaxed">
+        <li key={step.id} className="flex items-start gap-2.5 text-ui leading-relaxed">
           <StepMark state={step.state} />
           <span
             className={cn(
@@ -132,7 +132,7 @@ export function WorkProgressChecklist({ steps }: { steps: readonly PlanStep[] })
               // Said in words as well as in colour. The ring alone changes a
               // spinner into a dashed circle, which is a difference nobody reads
               // as "this never happened".
-              <span className="ml-1.5 font-mono text-[11px] text-warning">{UNREPORTED_NOTE}</span>
+              <span className="ml-1.5 font-mono text-caption text-warning">{UNREPORTED_NOTE}</span>
             )}
           </span>
         </li>

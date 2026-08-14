@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn, formatUsd } from "@/lib/utils";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
-import { describeSchedule, type TaskItem } from "@/components/tasks/task-model";
+import { describeSchedule, isCompletedOnce, type TaskItem } from "@/components/tasks/task-model";
 
 /** "Mon, Jul 13 · 08:00" — when a task will (first) fire. */
 function nextRunLabel(iso: string): string {
@@ -28,7 +28,9 @@ function nextRunLabel(iso: string): string {
 /** One line summing up where the task stands (last run, or the first one ahead). */
 function StatusLine({ task }: { task: TaskItem }) {
   const run = task.latestRun;
-  if (!task.enabled && (!run || run.status !== "running")) {
+  // A fired one-off is disabled by the runner but is not "Paused" — fall
+  // through so the line reports its run (Ran / Failed / Skipped) instead.
+  if (!task.enabled && !isCompletedOnce(task) && (!run || run.status !== "running")) {
     return <span className="text-xs text-muted-foreground">Paused</span>;
   }
   if (!run) {
@@ -91,11 +93,16 @@ export function TaskCard({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <Switch
-            checked={task.enabled}
-            onCheckedChange={onToggle}
-            aria-label={task.enabled ? `Pause ${task.name}` : `Resume ${task.name}`}
-          />
+          {/* No resume switch on a fired one-off: there is no future instant to
+              resume to — rescheduling it goes through Edit, which asks for a
+              new date. */}
+          {!isCompletedOnce(task) && (
+            <Switch
+              checked={task.enabled}
+              onCheckedChange={onToggle}
+              aria-label={task.enabled ? `Pause ${task.name}` : `Resume ${task.name}`}
+            />
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon-sm" className="size-7 text-muted-foreground hover:text-foreground" aria-label="Task options">

@@ -158,10 +158,10 @@ function ToggleRow({
       )}
     >
       <span className="min-w-0">
-        <span className="block text-[13px] font-medium text-foreground">{label}</span>
+        <span className="block text-ui font-medium text-foreground">{label}</span>
         <span
           className={cn(
-            "mt-0.5 block text-[11.5px] leading-relaxed",
+            "mt-0.5 block text-caption leading-relaxed",
             unofferedButOn ? "text-warning-foreground" : "text-muted-foreground"
           )}
         >
@@ -347,19 +347,19 @@ export function WorkHostSettings({
                   POLICY_RANK[policy] > POLICY_RANK[advertisedPolicy]),
             }))}
             ariaLabel="How often Juno asks before acting on this Mac"
-            optionClassName="px-3 py-1 text-[12.5px]"
+            optionClassName="px-3 py-1 text-ui"
             className="max-w-md"
           />
-          <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
             {POLICY_DETAIL[host.approvalPolicy]}
           </p>
-          <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
             Anything Juno cannot take back — a permanent delete, a message sent, a purchase, a
             change to a security setting — is asked about under every one of these. There is no
             setting that turns that off.
           </p>
           {advertisedPolicy !== null && POLICY_RANK[advertisedPolicy] < 2 && (
-            <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
+            <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
               This Mac asked for “{POLICY_LABEL[advertisedPolicy]}”, so that is as relaxed as it
               goes from here. Loosen it in Juno on the Mac itself.
             </p>
@@ -389,7 +389,7 @@ export function WorkHostSettings({
                 />
               ))}
             </div>
-            <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
+            <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
               What this Mac told Juno it can do. A struck-through one is offered by the Mac and
               switched off above. This list is the Mac’s to report and cannot be edited from a
               browser.
@@ -427,13 +427,13 @@ export function WorkHostSettings({
                     className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card px-3.5 py-2.5"
                   >
                     <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+                    <span className="min-w-0 flex-1 truncate text-ui text-foreground">
                       {grant.displayName}
                     </span>
-                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                    <span className="shrink-0 font-mono text-micro text-muted-foreground">
                       {ACCESS_LABEL[grant.accessMode]}
                     </span>
-                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                    <span className="shrink-0 font-mono text-micro text-muted-foreground">
                       {grant.lastUsedAt === null ? "never used" : `used ${workTimeAgo(grant.lastUsedAt)}`}
                     </span>
                   </li>
@@ -444,7 +444,7 @@ export function WorkHostSettings({
                 serialiser drops `localPath` and `resolvedRealPath` by
                 construction, and this sentence is what stops the absence
                 reading as a bug in the list. */}
-            <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
+            <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
               Named, never located. Juno does not send the path of a folder on your Mac to a
               browser — a path is a path in a screenshot, in a support ticket, and in the next
               thing that asks an agent to read what sits next to it.
@@ -475,7 +475,7 @@ export function WorkHostSettings({
             empty="No site list, so the browser switch above is the whole answer."
           />
         </div>
-        <p className="mt-2 text-[11.5px] leading-relaxed text-muted-foreground">
+        <p className="mt-2 text-caption leading-relaxed text-muted-foreground">
           These three are set in Juno on the Mac and are shown here as they stand. The browser
           cannot change them.
         </p>
@@ -498,18 +498,18 @@ function NameList({
 }) {
   return (
     <div className="rounded-field border border-border/50 px-3.5 py-2.5">
-      <p className="flex items-center gap-2 text-[13px] font-medium text-foreground">
+      <p className="flex items-center gap-2 text-ui font-medium text-foreground">
         <span className="shrink-0 text-muted-foreground">{icon}</span>
         {title}
       </p>
       {names.length === 0 ? (
-        <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">{empty}</p>
+        <p className="mt-1 text-caption leading-relaxed text-muted-foreground">{empty}</p>
       ) : (
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {names.map((name) => (
             <span
               key={name}
-              className="inline-flex items-center rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground"
+              className="inline-flex items-center rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-micro leading-none text-muted-foreground"
             >
               {name}
             </span>

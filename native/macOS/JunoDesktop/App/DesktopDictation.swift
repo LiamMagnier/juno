@@ -14,6 +14,11 @@ struct DesktopDictation: View {
     @State private var startFailure: String?
     @State private var finishing = false
 
+    /// For the one hand-drawn translucent pane here: Reduce Transparency swaps
+    /// the capsule's glass for an opaque backer on its own, but the transcript
+    /// preview's custom `opacity(…)` fill it cannot see.
+    @Environment(\.junoAccessibility) private var accessibility
+
     private var transcript: String { speech.transcript }
 
     var body: some View {
@@ -32,7 +37,10 @@ struct DesktopDictation: View {
     private var transcriptPreview: some View {
         ScrollView {
             Text(previewText)
-                .font(.system(size: 14))
+                // One point above body, deliberately: this is the sentence the
+                // reader is dictating right now, and it should sit a shade
+                // larger than the composer text it will land in.
+                .junoFont(size: 14, relativeTo: .body)
                 .lineSpacing(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 14)
@@ -41,7 +49,12 @@ struct DesktopDictation: View {
         .frame(maxHeight: 112)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.junoPopover.opacity(0.94))
+                // A whisper of the surface behind the preview — and none at
+                // all under Reduce Transparency, the switch the system cannot
+                // apply to a hand-drawn fill.
+                .fill(Color.junoPopover.opacity(
+                    accessibility.usesOpaqueTransientSurfaces ? 1 : 0.94
+                ))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -54,7 +67,11 @@ struct DesktopDictation: View {
     private var previewText: AttributedString {
         guard !transcript.isEmpty else {
             var listening = AttributedString("Listening…")
-            listening.foregroundColor = Color.junoMutedForeground.opacity(0.65)
+            // Secondary ink at full alpha — the token is already the ramp's
+            // floor, so the `opacity(0.65)` this replaces was below AA, not
+            // quieter. The placeholder reads as provisional by sharing the
+            // hypothesis text's ink below, not by fading past it.
+            listening.foregroundColor = Color.junoMutedForeground
             return listening
         }
         var result = AttributedString(speech.finalizedText)
@@ -123,7 +140,7 @@ struct DesktopDictation: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: glyphSize, weight: .semibold))
+                .junoFont(size: glyphSize, relativeTo: .body, weight: .semibold)
                 .foregroundStyle(style == .accent ? Color.junoOnAccent : Color.junoForeground)
                 .frame(width: 38, height: 38)
                 .background {
@@ -146,10 +163,13 @@ struct DesktopDictation: View {
     private func unavailable(_ message: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "mic.slash")
-                .font(.system(size: 15))
+                .junoFont(size: 15, relativeTo: .body)
                 .foregroundStyle(Color.junoMutedForeground)
             Text(message)
-                .font(.system(size: 13))
+                // 13pt is exactly the body rung on the Mac, so the named rung
+                // fits — a sentence read in full deserves body treatment, not
+                // a bespoke size.
+                .junoBody()
                 .foregroundStyle(Color.junoMutedForeground)
                 .frame(maxWidth: .infinity, alignment: .leading)
             circleButton(

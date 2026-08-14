@@ -334,7 +334,7 @@ export function TriggerListEditor({
               {triggerLabel(trigger.kind)}
             </span>
             <label className="flex shrink-0 items-center gap-2">
-              <span className="font-mono text-[10px] text-muted-foreground">
+              <span className="font-mono text-micro text-muted-foreground">
                 {trigger.enabled ? "On" : "Off"}
               </span>
               <Switch
@@ -372,7 +372,7 @@ export function TriggerListEditor({
             </Button>
           </div>
 
-          <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+          <p className="mt-1 font-mono text-micro text-muted-foreground">
             {describeTrigger(trigger)}
           </p>
 
@@ -413,8 +413,8 @@ function AddTriggerMenu({
         <DropdownMenuLabel className="font-mono text-label">On a clock</DropdownMenuLabel>
         {TIME_TRIGGER_KINDS.map((kind) => (
           <DropdownMenuItem key={kind} onSelect={() => onAdd(kind)} className="flex-col items-start gap-0.5">
-            <span className="text-[13px]">{TRIGGER_META[kind].label}</span>
-            <span className="text-[11.5px] leading-relaxed text-muted-foreground">
+            <span className="text-ui">{TRIGGER_META[kind].label}</span>
+            <span className="text-caption leading-relaxed text-muted-foreground">
               {TRIGGER_META[kind].hint}
             </span>
           </DropdownMenuItem>
@@ -435,8 +435,8 @@ function AddTriggerMenu({
               onSelect={() => onAdd(kind)}
               className="flex-col items-start gap-0.5"
             >
-              <span className="text-[13px]">{TRIGGER_META[kind].label}</span>
-              <span className="text-[11.5px] leading-relaxed text-muted-foreground">
+              <span className="text-ui">{TRIGGER_META[kind].label}</span>
+              <span className="text-caption leading-relaxed text-muted-foreground">
                 {limit ?? TRIGGER_META[kind].hint}
               </span>
             </DropdownMenuItem>
@@ -494,7 +494,7 @@ function Field({
           : children}
       </div>
       {hint !== undefined && (
-        <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">{hint}</p>
+        <p className="mt-1 text-caption leading-relaxed text-muted-foreground">{hint}</p>
       )}
     </div>
   );
@@ -634,7 +634,7 @@ function SwitchField({
     // work-host-settings.tsx uses. One object — a bordered row with a label and
     // a Switch — was drawn at two gutters and two heights in two Work forms.
     <label className="flex items-center justify-between gap-3 rounded-field border border-border/50 px-3.5 py-2.5">
-      <span className="min-w-0 text-[13px] leading-relaxed text-foreground">{label}</span>
+      <span className="min-w-0 text-ui leading-relaxed text-foreground">{label}</span>
       <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} />
     </label>
   );
@@ -675,10 +675,10 @@ function UnservableOption({
       {/* `text-label` — this stands where a `Field`'s label would, and that is
           the register `Field` and `Label` both use. */}
       <p className="font-mono text-label text-muted-foreground">{label}</p>
-      <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">{message}</p>
+      <p className="mt-1 text-caption leading-relaxed text-muted-foreground">{message}</p>
       {asked && (
         <>
-          <p className="mt-1.5 text-[11.5px] leading-relaxed text-warning-foreground">
+          <p className="mt-1.5 text-caption leading-relaxed text-warning-foreground">
             This trigger still asks for it, so it will not start a run until the condition is
             removed.
           </p>
@@ -730,8 +730,8 @@ function TriggerConfigFields({
   if (limit) {
     return (
       <div className="rounded-field border border-warning/40 bg-warning/10 px-3.5 py-2.5">
-        <p className="text-[12.5px] leading-relaxed text-warning-foreground">{limit}</p>
-        <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
+        <p className="text-ui leading-relaxed text-warning-foreground">{limit}</p>
+        <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
           The schedule cannot be saved while this trigger is on it. Remove it, and everything else
           you have set up here is kept.
         </p>
@@ -742,7 +742,7 @@ function TriggerConfigFields({
   switch (trigger.kind) {
     case "manual":
       return (
-        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+        <p className="text-ui leading-relaxed text-muted-foreground">
           Nothing to configure. This schedule sits still until you press Run now.
         </p>
       );
@@ -1135,11 +1135,11 @@ function TriggerConfigFields({
             hint="Folders are granted on the Mac itself, in the Juno app. This list is what that Mac has given Juno access to."
           >
             {grants === null ? (
-              <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+              <p className="text-ui leading-relaxed text-muted-foreground">
                 Pick the Mac this schedule runs on, above, and its granted folders appear here.
               </p>
             ) : grants.length === 0 ? (
-              <p className="text-[12.5px] leading-relaxed text-warning-foreground">
+              <p className="text-ui leading-relaxed text-warning-foreground">
                 That Mac has not given Juno access to any folder yet, so there is nothing for this
                 trigger to watch. Grant one in the Juno app on that Mac.
               </p>
@@ -1191,7 +1191,7 @@ function TriggerConfigFields({
       // rather than offered up to a form that would rewrite it into something
       // this build understands and the scheduler does not.
       return (
-        <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+        <p className="text-ui leading-relaxed text-muted-foreground">
           This trigger was set up by a newer version of Juno. It is left untouched, and saving does
           not change it.
         </p>

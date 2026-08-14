@@ -195,7 +195,7 @@ export function WorkThreadControlsNote({
   return (
     <p
       aria-live="polite"
-      className="px-1.5 pt-1.5 font-mono text-[10px] leading-relaxed text-muted-foreground"
+      className="px-1.5 pt-1.5 font-mono text-micro leading-relaxed text-muted-foreground"
     >
       {line}
     </p>

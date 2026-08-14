@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { FlatCompat } from "@eslint/eslintrc";
 
 import designSystem from "./eslint-rules/design-system.mjs";
+import noArbitraryText from "./eslint-rules/no-arbitrary-text.js";
 
 const compat = new FlatCompat({
   baseDirectory: dirname(fileURLToPath(import.meta.url)),
@@ -91,7 +92,14 @@ const config = [
     // whole point is that it fails CI, because the previous state of this rule
     // was a comment in tailwind.config.ts asking nicely.
     files: ["src/**/*.{ts,tsx}"],
-    plugins: { "design-system": designSystem },
+    plugins: {
+      // The text rule ships as its own CJS module (see its header for why), so
+      // it is folded into the one plugin namespace here rather than growing a
+      // second `plugins` key per rule file.
+      "design-system": {
+        rules: { ...designSystem.rules, "no-arbitrary-text": noArbitraryText },
+      },
+    },
     rules: {
       "design-system/no-arbitrary-radius": [
         "error",
@@ -103,6 +111,12 @@ const config = [
         },
       ],
       "design-system/no-ad-hoc-stacking": "error",
+      // Warn, not error, and the difference is a ratchet, not a softer
+      // opinion: 457 text-[Npx] sites predate the `ui`/`micro` rungs and are
+      // being migrated in batches. An error today would only teach people to
+      // sprinkle disables; promote it alongside the other two once the count
+      // reaches zero.
+      "design-system/no-arbitrary-text": "warn",
     },
   },
   {

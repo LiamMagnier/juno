@@ -326,7 +326,7 @@ export function RailSection({
           aria-expanded={open}
           aria-controls={contentId}
           onClick={toggle}
-          className="group flex w-full items-baseline gap-2 rounded-sm border-b border-border/60 pb-2 text-left transition-colors duration-base ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="group flex w-full items-baseline gap-2 rounded-xs border-b border-border/60 pb-2 text-left transition-colors duration-base ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight
             className={cn(
@@ -395,7 +395,7 @@ export function RailDisclosure({
           aria-expanded={open}
           aria-controls={contentId}
           onClick={toggle}
-          className="group flex w-full items-baseline gap-2 rounded-sm py-0.5 text-left transition-colors duration-base ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="group flex w-full items-baseline gap-2 rounded-xs py-0.5 text-left transition-colors duration-base ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight
             className={cn(

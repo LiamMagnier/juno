@@ -198,10 +198,18 @@ struct DesktopSidebarProductHeader: View {
 
                 Spacer(minLength: JunoSpace.snug)
 
-                Text("WORKSPACE")
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
-                    .tracking(1.1)
-                    .foregroundStyle(Color.junoMutedForeground)
+                // The mono eyebrow voice — `junoCodeSmall` + secondary ink +
+                // upper-casing — the same treatment every settings tile's
+                // eyebrow wears. It replaces a frozen 9pt rounded face that
+                // Dynamic Type could not move and that needed hand tracking to
+                // read as caps; the monospaced caption rung scales with the
+                // rest of the type ramp and carries its own letterspacing.
+                // Upper-cased by `textCase` rather than in the literal, so the
+                // string stays a word and the caps stay a style.
+                Text("Workspace")
+                    .junoCodeSmall()
+                    .junoSecondaryInk()
+                    .textCase(.uppercase)
             }
 
             DesktopProductSwitcher(selection: $product)

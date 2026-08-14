@@ -6,18 +6,29 @@ import { JunoMark } from "@/components/brand/logo";
 import { cn } from "@/lib/utils";
 
 // Time-of-day greeting buckets. Each hour range has a few phrases so the welcome
-// feels fresh — including playful late-night ones (e.g. "Moonlight chat" at 3am).
+// feels fresh — and every phrase has to survive two readings: alone, and with
+// ", <name>" appended in italic serif. Nothing that overclaims the hour (no
+// "bright and early" at 11:40) and nothing saccharine; the 0–5 bucket is the one
+// allowed real personality, because nobody is at a 3am composer by accident.
 const TIME_GREETINGS: { from: number; to: number; phrases: string[] }[] = [
-  { from: 0, to: 5, phrases: ["Still going"] },
-  { from: 5, to: 12, phrases: ["Good morning"] },
-  { from: 12, to: 18, phrases: ["Good afternoon"] },
-  { from: 18, to: 24, phrases: ["Good evening"] },
+  { from: 0, to: 5, phrases: ["Still going", "Moonlight chat", "Up late", "The small hours"] },
+  { from: 5, to: 12, phrases: ["Good morning", "Morning", "A fresh page", "Back at it"] },
+  { from: 12, to: 18, phrases: ["Good afternoon", "Afternoon", "What's next", "Onward"] },
+  { from: 18, to: 24, phrases: ["Good evening", "Evening", "Settling in", "Winding down"] },
 ];
 
 function pickGreeting(): string {
-  const h = new Date().getHours();
+  const now = new Date();
+  const h = now.getHours();
   const bucket = TIME_GREETINGS.find((b) => h >= b.from && h < b.to) ?? TIME_GREETINGS[2];
-  return bucket.phrases[0];
+  // A clock-keyed rotation, not Math.random(). Random would re-roll on every
+  // mount — each new chat a slot machine — and would guarantee a visible text
+  // swap at hydration, since the server's roll can never match the client's.
+  // Keyed to (day + hour) the pick walks the pool as the day moves and shifts
+  // by one at the same hour tomorrow, so it is fresh across sittings and still
+  // deterministic within one.
+  const day = now.getFullYear() * 372 + now.getMonth() * 31 + now.getDate();
+  return bucket.phrases[(day + h) % bucket.phrases.length];
 }
 
 /** The serif greeting + signature mark — sits above the centered composer.
@@ -31,12 +42,11 @@ function pickGreeting(): string {
 export function EmptyGreeting() {
   const { user } = useApp();
   const firstName = user.name?.split(" ")[0];
-  // One phrase per bucket, so this is deterministic in both passes. The effect
-  // still runs because the SERVER picks its bucket from UTC and the client from
-  // the visitor's clock: without the re-read, anyone in a timezone that has
-  // crossed a bucket boundary is greeted with the wrong time of day until they
-  // navigate. (The comment here used to describe a random pick; the phrase lists
-  // were collapsed to one entry each and this was left behind.)
+  // The pick is deterministic per clock (see pickGreeting), so both passes
+  // agree whenever server and visitor read the same hour and date. The effect
+  // still runs because the SERVER reads UTC and the client the visitor's own
+  // clock: anyone whose timezone has crossed a bucket (or date) boundary would
+  // otherwise be greeted with the wrong time of day until they navigate.
   const [phrase, setPhrase] = React.useState(() => pickGreeting());
   React.useEffect(() => setPhrase(pickGreeting()), []);
 

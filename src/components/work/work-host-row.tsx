@@ -72,7 +72,7 @@ export function WorkHostStatePill({
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] leading-none",
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-micro leading-none",
         revoked ? "border-destructive/35 bg-destructive/10 text-destructive" : STATE_PILL[host.state],
         className
       )}
@@ -143,17 +143,17 @@ export function WorkHostRow({ host, index = 0 }: { host: ClientWorkHost; index?:
               already switched off by the DELETE handler, and two chips saying
               the same thing would make the second one look like a second fact. */}
           {!revoked && !host.enabled && (
-            <span className="shrink-0 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
+            <span className="shrink-0 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-micro leading-none text-muted-foreground">
               Work off
             </span>
           )}
         </span>
-        <span className="mt-1 block truncate text-[13px] leading-relaxed text-muted-foreground">
+        <span className="mt-1 block truncate text-ui leading-relaxed text-muted-foreground">
           {revokedAt !== null
             ? `Revoked ${workTimeAgo(revokedAt)}. It cannot claim anything.`
             : (workload ?? "Nothing running on it right now.")}
         </span>
-        <span className="mt-1.5 block truncate font-mono text-[10px] tabular-nums text-muted-foreground">
+        <span className="mt-1.5 block truncate font-mono text-micro tabular-nums text-muted-foreground">
           {host.platform} · Juno {host.appVersion} · last seen {workTimeAgo(host.lastSeenAt)}
         </span>
       </span>

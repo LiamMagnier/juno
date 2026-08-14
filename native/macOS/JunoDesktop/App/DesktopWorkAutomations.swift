@@ -22,6 +22,7 @@ struct DesktopWorkAutomationsView: View {
     @State private var isEditorPresented = false
     @State private var deleteCandidate: NativeWorkSchedule?
     @State private var showingDeleteConfirmation = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var selectedSchedule: NativeWorkSchedule? {
         guard let selectedScheduleID else { return nil }
@@ -117,11 +118,12 @@ struct DesktopWorkAutomationsView: View {
                         .padding(.top, JunoSpace.tight)
                 }
                 .padding(JunoSpace.regular)
-                .junoGlass(
-                    in: RoundedRectangle(cornerRadius: CGFloat(JunoRadius.card), style: .continuous),
-                    tint: Color.junoAccent.opacity(0.06),
-                    interactive: false
-                )
+                // A card, not glass: this box is static content sitting in the
+                // index pane, and the material is reserved for chrome that
+                // floats. It was also carrying a diluted accent tint, which
+                // the full-alpha tint rule forbids — glass honours the alpha,
+                // so what was behind the window leaked into the wash.
+                .junoCard(cornerRadius: JunoRadius.card)
                 .padding(.horizontal, JunoSpace.regular)
                 .padding(.top, JunoSpace.tight)
             } else {
@@ -157,7 +159,14 @@ struct DesktopWorkAutomationsView: View {
 
     private func automationRow(_ schedule: NativeWorkSchedule) -> some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.18)) { selectedScheduleID = schedule.id }
+            // Selection rides the ladder's standard rung. The inline 0.18 it
+            // replaces sat between `fast` (0.12) and `base` (0.22) — exactly
+            // the near-miss the ladder exists to prevent — and never consulted
+            // Reduce Motion, which the detail pane's swap is travel enough to
+            // owe.
+            withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                selectedScheduleID = schedule.id
+            }
             Task { await model.loadRuns(for: schedule.id) }
         } label: {
             HStack(alignment: .top, spacing: JunoSpace.snug) {
@@ -227,7 +236,10 @@ struct DesktopWorkAutomationsView: View {
         } else {
             VStack(spacing: JunoSpace.snug) {
                 Image(systemName: "clock.badge.checkmark")
-                    .font(.system(size: 34, weight: .light))
+                    // Through `junoFont` rather than a frozen `.system(size:)`,
+                    // so the glyph scales with the text below it at
+                    // accessibility sizes — nothing here pins it in a plate.
+                    .junoFont(size: 34, relativeTo: .largeTitle, weight: .light)
                     .foregroundStyle(Color.junoAccent)
                 Text("Choose an automation")
                     .font(.title3.weight(.semibold))
@@ -319,11 +331,12 @@ private struct DesktopWorkAutomationDetail: View {
                             .accessibilityLabel("Dismiss message")
                         }
                         .padding(JunoSpace.snug)
-                        .junoGlass(
-                            in: RoundedRectangle(cornerRadius: CGFloat(JunoRadius.card), style: .continuous),
-                            tint: Color.junoSuccess.opacity(0.08),
-                            interactive: false
-                        )
+                        // A card, not glass: an inline confirmation is content
+                        // in the page's own flow, not chrome floating over it.
+                        // The success colour stays on the checkmark, where it
+                        // is full-alpha, rather than as the diluted tint the
+                        // glass carried.
+                        .junoCard(cornerRadius: JunoRadius.card)
                     }
                     triggerSection
                     contractSection
@@ -347,8 +360,12 @@ private struct DesktopWorkAutomationDetail: View {
                         .font(.caption.weight(.semibold))
                         .tracking(1.1)
                         .foregroundStyle(Color.junoAccent)
+                    // The editorial serif, as every other user-named page title
+                    // — a project's name, a Work task's heading — is set. SF
+                    // Rounded was a third face the two-face type scale does not
+                    // have, pinned at 30pt where Dynamic Type could not move it.
                     Text(schedule.name)
-                        .font(.system(size: 30, weight: .semibold, design: .rounded))
+                        .junoPageHeading()
                     Text(schedule.instructions)
                         .junoBody()
                         .fixedSize(horizontal: false, vertical: true)
@@ -574,11 +591,14 @@ private struct DesktopWorkAutomationSection<Content: View>: View {
             content()
         }
         .padding(JunoSpace.regular)
-        .junoGlass(
-            in: RoundedRectangle(cornerRadius: CGFloat(JunoRadius.card), style: .continuous),
-            tint: Color.junoSurface.opacity(0.35),
-            interactive: false
-        )
+        // A card, not glass. These sections *are* the reading content of the
+        // page — the contract, the run history — and the desktop vocabulary
+        // reserves the material for chrome floating over content, never under
+        // it: long-form text on a translucent ground loses contrast with
+        // whatever is behind the window. The diluted `junoSurface` tint the
+        // glass carried was this fill trying to exist; `junoCard` is that
+        // fill said properly, at full alpha, with the web's hairline and throw.
+        .junoCard(cornerRadius: JunoRadius.card)
     }
 }
 
@@ -651,13 +671,15 @@ private struct DesktopWorkAutomationEditor: View {
                 .textFieldStyle(.roundedBorder)
             TextEditor(text: $draft.instructions)
                 .font(.body)
+                .scrollContentBackground(.hidden)
                 .frame(minHeight: 100)
                 .padding(6)
-                .junoGlass(
-                    in: RoundedRectangle(cornerRadius: CGFloat(JunoRadius.well), style: .continuous),
-                    tint: Color.junoSurface.opacity(0.35),
-                    interactive: true
-                )
+                // A solid input well, never glass: this is a text surface, and
+                // glass under editable text is the exact thing the vocabulary
+                // forbids. `junoPanel` is the same treatment every other sheet
+                // gives its editor, and `scrollContentBackground(.hidden)` is
+                // what lets the panel show through the editor's own backing.
+                .junoPanel()
                 .overlay(alignment: .topLeading) {
                     if draft.instructions.isEmpty {
                         Text("Describe the work in enough detail that it can run without you.")
@@ -705,12 +727,18 @@ private struct DesktopWorkAutomationEditor: View {
         VStack(alignment: .leading, spacing: JunoSpace.regular) {
             Text("Where it runs")
                 .font(.headline)
-            Picker("Target", selection: $draft.target) {
-                Text("Juno chooses").tag(JunoWorkTarget.automatic)
-                Text("Cloud").tag(JunoWorkTarget.cloud)
-                Text("This Mac").tag(JunoWorkTarget.local)
-            }
-            .pickerStyle(.segmented)
+            // `DesktopSegmented`, not `Picker(.segmented)`: the AppKit control
+            // is for window toolbars; a switcher inside content gets the quiet
+            // track with the one glass knob.
+            DesktopSegmented(
+                options: [
+                    .init(JunoWorkTarget.automatic, "Juno chooses"),
+                    .init(JunoWorkTarget.cloud, "Cloud"),
+                    .init(JunoWorkTarget.local, "This Mac"),
+                ],
+                selection: $draft.target,
+                accessibilityLabel: "Target"
+            )
             if draft.target == .local {
                 Picker("Mac", selection: Binding(
                     get: { draft.hostID ?? "" },
@@ -819,24 +847,25 @@ private struct DesktopWorkTriggerEditor: View {
             triggerConfiguration
             DisclosureGroup("Advanced configuration", isExpanded: $showingAdvanced) {
                 TextEditor(text: jsonBinding)
-                    .font(.system(.caption, design: .monospaced))
+                    // The scanned-monospace rung, spelled by name.
+                    .junoCodeSmall()
+                    .scrollContentBackground(.hidden)
                     .frame(minHeight: 70)
                     .padding(6)
-                    .junoGlass(
-                        in: RoundedRectangle(cornerRadius: CGFloat(JunoRadius.well), style: .continuous),
-                        tint: Color.junoSurface.opacity(0.35),
-                        interactive: true
-                    )
+                    // A solid input well, never glass — same contract as the
+                    // instructions editor above: no material under editable
+                    // text, and a nested fill inside an already-raised card
+                    // is exactly what `junoPanel` exists for.
+                    .junoPanel()
                 Text("Use a JSON object. Juno preserves trigger fields it does not interpret on this screen.")
                     .junoCaption()
             }
         }
         .padding(JunoSpace.regular)
-        .junoGlass(
-            in: RoundedRectangle(cornerRadius: CGFloat(JunoRadius.card), style: .continuous),
-            tint: Color.junoSurface.opacity(0.35),
-            interactive: false
-        )
+        // A card, not glass: a trigger's editor is content on the sheet's
+        // canvas, and the material belongs only to chrome that floats over
+        // content — see the section container above for the full reasoning.
+        .junoCard(cornerRadius: JunoRadius.card)
     }
 
     @ViewBuilder

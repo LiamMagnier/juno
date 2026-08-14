@@ -17,4 +17,4 @@
  * every native attribute through a layer that exists only to hold a string.
  */
 export const COMPOSER_CHIP_CLASS =
-  "group inline-flex h-7 min-w-0 max-w-[13rem] items-center gap-1.5 rounded-control px-1.5 font-mono text-[11.5px] font-medium text-muted-foreground transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[480px]:text-[12px] coarse:h-9";
+  "group inline-flex h-7 min-w-0 max-w-[13rem] items-center gap-1.5 rounded-control px-1.5 font-mono text-caption font-medium text-muted-foreground transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=open]:bg-accent data-[state=open]:text-foreground coarse:h-9";

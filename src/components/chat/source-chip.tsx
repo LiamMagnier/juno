@@ -73,14 +73,18 @@ function iconUrlOf(url: string): string | null {
  * glyph size with it so the monogram fallback stays proportional.
  *
  * `inline` is em-based on purpose: the citation chip has to track whatever type
- * scale the surrounding prose is set at.
+ * scale the surrounding prose is set at. The fixed-box variants put their
+ * monogram on `micro` — the scale's mono floor, and the size below which the
+ * mono face sheds pixels to antialiasing anyway. The glyph span's own
+ * `leading-none` still wins the line-height (fontSize compiles before
+ * lineHeight), so the letter stays optically centred in its box.
  */
 const VARIANTS = {
   inline: { box: "size-[1.05em] rounded-[0.25em]", glyph: "text-[0.62em]", icon: "size-[0.75em]" },
   // Pill cluster avatar — circular, per the stacked-avatar convention.
-  cluster: { box: "size-5 rounded-full", glyph: "text-[9px]", icon: "size-2.5" },
+  cluster: { box: "size-5 rounded-full", glyph: "text-micro", icon: "size-2.5" },
   // Expanded list row. 6px = the row's 14px radius minus its 8px padding.
-  list: { box: "size-[22px] rounded-xs", glyph: "text-[10px]", icon: "size-3" },
+  list: { box: "size-[22px] rounded-xs", glyph: "text-micro", icon: "size-3" },
 } as const;
 
 export function SourceFavicon({
@@ -154,6 +158,11 @@ export function SourceFavicon({
 export function SourceChip({ source, index }: { source: ClientSource; index: number }) {
   const host = hostOf(source.url);
   const title = titleOf(source);
+  // The passage the search step matched — hover answers "what does this source
+  // actually say?" without a click. Search-backed sources (Tavily) always carry
+  // one; provider-grounding citations can arrive with an empty string, and a
+  // tooltip must not grow a blank third line for them.
+  const snippet = source.snippet?.trim();
   // A source whose scheme is not http(s) still gets shown — hiding it would
   // silently drop a citation the answer leaned on, and the reader has a right
   // to know it was used — but it is rendered as inert text, not as something
@@ -177,6 +186,12 @@ export function SourceChip({ source, index }: { source: ClientSource; index: num
         <TooltipContent className="max-w-[20rem]">
           <span className="block truncate font-medium">{title}</span>
           <span className="block text-[0.9em] opacity-65">Juno did not link this: it is not a web address.</span>
+          {snippet && (
+            // Clamped: a snippet is a scent of the page, not the page. It
+            // matters MOST on this unlinkable chip — hovering is the only way
+            // to see what the answer leaned on.
+            <span className="mt-1 line-clamp-3 text-[0.9em] leading-snug opacity-80">{snippet}</span>
+          )}
         </TooltipContent>
       </Tooltip>
     );
@@ -210,6 +225,10 @@ export function SourceChip({ source, index }: { source: ClientSource; index: num
       <TooltipContent className="max-w-[20rem]">
         <span className="block truncate font-medium">{title}</span>
         <span className="block truncate font-mono text-[0.9em] opacity-65">{host}</span>
+        {snippet && (
+          // Clamped: a snippet is a scent of the page, not the page.
+          <span className="mt-1 line-clamp-3 text-[0.9em] leading-snug opacity-80">{snippet}</span>
+        )}
       </TooltipContent>
     </Tooltip>
   );

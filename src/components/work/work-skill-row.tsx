@@ -49,24 +49,24 @@ export function WorkSkillRow({ skill, index = 0 }: { skill: ClientWorkSkill; ind
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="min-w-0 truncate text-sm font-medium text-foreground">{skill.name}</span>
-          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">/{skill.slug}</span>
+          <span className="shrink-0 font-mono text-micro text-muted-foreground">/{skill.slug}</span>
           {!skill.enabled && (
-            <span className="shrink-0 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
+            <span className="shrink-0 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-micro leading-none text-muted-foreground">
               Off
             </span>
           )}
           {auto && (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-secondary px-2 py-0.5 font-mono text-micro leading-none text-muted-foreground">
               <Sparkles className="h-2.5 w-2.5" aria-hidden="true" /> Chosen for you
             </span>
           )}
         </span>
         {skill.description.length > 0 && (
-          <span className="mt-1 block truncate text-[13px] leading-relaxed text-muted-foreground">
+          <span className="mt-1 block truncate text-ui leading-relaxed text-muted-foreground">
             {skill.description}
           </span>
         )}
-        <span className="mt-1.5 block font-mono text-[10px] tabular-nums text-muted-foreground">
+        <span className="mt-1.5 block font-mono text-micro tabular-nums text-muted-foreground">
           v{skill.currentVersion} · {trustLabel(skill.trust)} · {workTimeAgo(skill.updatedAt)}
         </span>
       </span>

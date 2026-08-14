@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { BlockShell, CaptionLine, Reveal, TextToggle, LessonKicker, Microcap } from "@/components/chat/learning/block-shell";
+import { BlockShell, BlockTitle, CaptionLine, Reveal, TextToggle, LessonKicker, Microcap } from "@/components/chat/learning/block-shell";
 import { QuizInteraction } from "@/components/chat/learning/quiz-block";
 import { cn } from "@/lib/utils";
 import type { StepLab, StepLabStep } from "@/lib/step-lab";
@@ -173,6 +173,12 @@ const showSpaces = (text: string) => text.replace(/ /g, "␣");
  * (foreground + coral) plus sanctioned semantic hues, one CaptionLine readout
  * whose empty state is the visual's action prompt, and motion ONLY as an A→B
  * response to the learner (or a one-shot self-drawing of the data encoding).
+ *
+ * Type sits on the semantic scale, three mono registers deep: `ui` for token
+ * text the learner presses, `caption` for readouts and quiet mono controls,
+ * `micro` for axis marks — with serif prose on `body`/`body-lg`. Six visuals
+ * each picking a px is how the same role ended up 10/11/12/13px in
+ * neighbouring figures.
  */
 
 /** Tokenization as typesetting: the same text re-set with visible boundaries. */
@@ -199,8 +205,8 @@ function TokenizationVisual({ step }: { step: StepLabStep }) {
     // indicator than the one the rest of the product uses, forked twelve ways in
     // one component. The global rule draws it.
     <div className="flex flex-col gap-2.5">
-      <p className="font-serif text-[15px] leading-6 text-muted-foreground">&ldquo;{input}&rdquo;</p>
-      <div className="flex flex-wrap items-center gap-y-1 font-mono text-[13px] leading-8" role="group" aria-label="Tokens" onKeyDown={onKeyDown}>
+      <p className="font-serif text-body leading-6 text-muted-foreground">&ldquo;{input}&rdquo;</p>
+      <div className="flex flex-wrap items-center gap-y-1 font-mono text-ui leading-8" role="group" aria-label="Tokens" onKeyDown={onKeyDown}>
         {tokens.map((token, index) => (
           <button
             key={index}
@@ -258,7 +264,7 @@ function EmbeddingVisual({ step, compact }: { step: StepLabStep; compact?: boole
               setDim(null);
             }}
             className={cn(
-              "group/tok relative py-1 font-mono text-[13px] transition-colors duration-base ease-out-soft",
+              "group/tok relative py-1 font-mono text-ui transition-colors duration-base ease-out-soft",
               "coarse:min-h-11",
               selected === index ? "text-primary" : "text-muted-foreground hover:text-foreground"
             )}
@@ -280,9 +286,9 @@ function EmbeddingVisual({ step, compact }: { step: StepLabStep; compact?: boole
         <div className="rounded-control bg-card p-3">
           <div className={cn("relative", compact ? "h-28" : "h-32")}>
             <span aria-hidden className="absolute left-0 right-0 top-1/2 border-t border-dashed border-border/70" />
-            <span aria-hidden className="absolute right-0 top-0 font-mono text-[10px] text-muted-foreground">+1</span>
-            <span aria-hidden className="absolute right-0 top-1/2 -translate-y-full font-mono text-[10px] text-muted-foreground">0</span>
-            <span aria-hidden className="absolute bottom-0 right-0 font-mono text-[10px] text-muted-foreground">−1</span>
+            <span aria-hidden className="absolute right-0 top-0 font-mono text-micro text-muted-foreground">+1</span>
+            <span aria-hidden className="absolute right-0 top-1/2 -translate-y-full font-mono text-micro text-muted-foreground">0</span>
+            <span aria-hidden className="absolute bottom-0 right-0 font-mono text-micro text-muted-foreground">−1</span>
             {active.vector.map((value, index) => {
               const clamped = Math.max(-1, Math.min(1, value));
               const positive = clamped >= 0;
@@ -321,7 +327,7 @@ function EmbeddingVisual({ step, compact }: { step: StepLabStep; compact?: boole
           </div>
           <div className="flex pt-1" aria-hidden>
             {active.vector.map((_, index) => (
-              <span key={index} className="flex-1 text-center font-mono text-[10px] text-muted-foreground">
+              <span key={index} className="flex-1 text-center font-mono text-micro text-muted-foreground">
                 d{index}
               </span>
             ))}
@@ -393,7 +399,10 @@ function AttentionVisual({ step, compact }: { step: StepLabStep; compact?: boole
               setCell(null);
             }}
             className={cn(
-              "group/q relative min-w-0 flex-1 truncate px-0.5 py-1 text-center font-mono text-[12px]",
+              // `ui`, like the embedding visual's token buttons — the same
+              // control one figure over was a px larger for no reason anyone
+              // chose. Truncation already absorbs the crowding here.
+              "group/q relative min-w-0 flex-1 truncate px-0.5 py-1 text-center font-mono text-ui",
               "transition-colors duration-base ease-out-soft coarse:min-h-11",
               index === query ? "text-primary" : "text-muted-foreground hover:text-foreground"
             )}
@@ -419,14 +428,14 @@ function AttentionVisual({ step, compact }: { step: StepLabStep; compact?: boole
           const isStrongest = target === strongest;
           return (
             <div key={target} className="grid grid-cols-[minmax(3rem,auto)_minmax(0,1fr)_2.5rem] items-center gap-3">
-              <span className={cn("truncate font-mono text-[11px]", isStrongest ? "text-foreground" : "text-muted-foreground")}>{token}</span>
+              <span className={cn("truncate font-mono text-caption", isStrongest ? "text-foreground" : "text-muted-foreground")}>{token}</span>
               <span className="h-[3px] overflow-hidden rounded-full bg-muted/60">
                 <span
                   className={cn("block h-full rounded-full transition-[width] duration-base ease-out-soft", isStrongest ? "bg-primary" : "bg-primary/30")}
                   style={{ width: entered ? `${pct}%` : "0%" }}
                 />
               </span>
-              <span className={cn("text-right font-mono text-[11px] tabular-nums", isStrongest ? "font-semibold text-primary" : "text-muted-foreground")}>
+              <span className={cn("text-right font-mono text-caption tabular-nums", isStrongest ? "font-semibold text-primary" : "text-muted-foreground")}>
                 {pct}%
               </span>
             </div>
@@ -453,13 +462,13 @@ function AttentionVisual({ step, compact }: { step: StepLabStep; compact?: boole
           <div className="grid gap-0.5" style={{ gridTemplateColumns: `minmax(2.5rem,auto) repeat(${tokens.length}, minmax(1.25rem, 1fr))` }}>
             <span />
             {tokens.map((token, colIndex) => (
-              <span key={colIndex} className="truncate text-center font-mono text-[10px] text-muted-foreground">
+              <span key={colIndex} className="truncate text-center font-mono text-micro text-muted-foreground">
                 {token}
               </span>
             ))}
             {tokens.map((rowToken, rowIndex) => (
               <React.Fragment key={rowIndex}>
-                <span className={cn("truncate pr-1.5 text-right font-mono text-[10px] leading-6", rowIndex === query ? "text-primary" : "text-muted-foreground")}>
+                <span className={cn("truncate pr-1.5 text-right font-mono text-micro leading-6", rowIndex === query ? "text-primary" : "text-muted-foreground")}>
                   {rowToken}
                 </span>
                 {tokens.map((_, colIndex) => {
@@ -523,7 +532,7 @@ function TransformerVisual({ step }: { step: StepLabStep }) {
 
   return (
     <div className="flex flex-col gap-2.5">
-      <p className="font-mono text-[11px] text-muted-foreground">
+      <p className="font-mono text-caption text-muted-foreground">
         {tokens.map((token, index) => (
           <React.Fragment key={index}>
             {index > 0 && <span className="px-1.5 text-muted-foreground/50">·</span>}
@@ -557,18 +566,18 @@ function TransformerVisual({ step }: { step: StepLabStep }) {
               )}
             >
               <span className="font-serif text-sm font-medium text-foreground">{item.name}</span>
-              <span className="font-mono text-[10px] text-muted-foreground">{item.role}</span>
+              <span className="font-mono text-micro text-muted-foreground">{item.role}</span>
             </button>
           ))}
         </div>
         <div aria-hidden className="hidden shrink-0 flex-col items-center justify-center gap-1 sm:flex">
           <span className="h-6 w-px bg-border/60" />
-          <span className="font-mono text-[11px] text-muted-foreground">×{layers}</span>
+          <span className="font-mono text-caption text-muted-foreground">×{layers}</span>
           <span className="h-6 w-px bg-border/60" />
         </div>
       </div>
 
-      <p className="font-mono text-[10px] text-muted-foreground">enriched representations ↓</p>
+      <p className="font-mono text-micro text-muted-foreground">enriched representations ↓</p>
       <p key={stage} className="text-sm leading-6 text-muted-foreground motion-safe:animate-fade-in">
         {TRANSFORMER_STAGES[stage].copy}
       </p>
@@ -640,9 +649,9 @@ function ProbabilityVisual({ step }: { step: StepLabStep }) {
                 sweep === index ? "bg-accent/50" : isDrawn ? "border-l-primary/70 bg-primary/[0.04]" : "border-l-transparent"
               )}
             >
-              <span className="text-center font-mono text-[11px] text-muted-foreground">{index + 1}</span>
+              <span className="text-center font-mono text-caption text-muted-foreground">{index + 1}</span>
               <span className="flex min-w-0 flex-col gap-1">
-                <span className="truncate font-mono text-[13px] font-medium text-foreground">&ldquo;{item.token}&rdquo;</span>
+                <span className="truncate font-mono text-ui font-medium text-foreground">&ldquo;{item.token}&rdquo;</span>
                 <span className="h-[3px] w-full overflow-hidden rounded-full">
                   <span
                     className={cn(
@@ -655,7 +664,9 @@ function ProbabilityVisual({ step }: { step: StepLabStep }) {
               </span>
               <span
                 className={cn(
-                  "text-right font-mono text-[12px] tabular-nums",
+                  // `caption`, like the attention visual's percentage column —
+                  // the same readout role, previously disagreeing by a pixel.
+                  "text-right font-mono text-caption tabular-nums",
                   isDrawn ? "font-semibold text-primary" : isTop ? "font-semibold text-primary" : "text-muted-foreground"
                 )}
               >
@@ -687,7 +698,7 @@ function ProbabilityVisual({ step }: { step: StepLabStep }) {
           // a hover state — this button did not respond to the pointer at all,
           // while its sibling "Replay" did. The colour slot is spent, so the
           // hover has to be a ground. duration-base matches the rest of the file.
-          className="shrink-0 rounded-control px-2 py-1 font-mono text-[11px] font-semibold text-primary transition-colors duration-base hover:bg-primary/10 coarse:min-h-11"
+          className="shrink-0 rounded-control px-2 py-1 font-mono text-caption font-semibold text-primary transition-colors duration-base hover:bg-primary/10 coarse:min-h-11"
         >
           Sample
         </button>
@@ -710,7 +721,7 @@ function NextTokenSelectionVisual({ step }: { step: StepLabStep }) {
           the stylesheet and silently resets them at equal specificity. The token
           is hidden-at-rest only under motion-safe, so reduced-motion users see
           it statically. */}
-      <p className="font-serif text-[16px] leading-8 text-foreground">
+      <p className="font-serif text-body-lg leading-8 text-foreground">
         {prompt}{" "}
         <span
           aria-hidden
@@ -751,7 +762,7 @@ function NextTokenSelectionVisual({ step }: { step: StepLabStep }) {
       <button
         type="button"
         onClick={() => setRun((value) => value + 1)}
-        className="self-start rounded-control px-2 py-1 font-mono text-[11px] font-semibold text-muted-foreground transition-colors duration-base hover:text-foreground coarse:min-h-11"
+        className="self-start rounded-control px-2 py-1 font-mono text-caption font-semibold text-muted-foreground transition-colors duration-base hover:text-foreground coarse:min-h-11"
       >
         Replay
       </button>
@@ -783,7 +794,7 @@ function GenericProcessVisual({ step }: { step: StepLabStep }) {
       {stations.map((station, index) => (
         <React.Fragment key={index}>
           {index > 0 && (
-            <span aria-hidden className="relative hidden self-center px-1 font-mono text-[13px] text-muted-foreground/50 sm:block">
+            <span aria-hidden className="relative hidden self-center px-1 font-mono text-ui text-muted-foreground/50 sm:block">
               →
               <span
                 className={cn(
@@ -794,8 +805,8 @@ function GenericProcessVisual({ step }: { step: StepLabStep }) {
             </span>
           )}
           <div className={cn("flex flex-col gap-1", "border-l border-border/50 pl-4 sm:border-l-0 sm:pl-0")}>
-            <Microcap className={cn("text-[10px]", station.capTone)}>{station.cap}</Microcap>
-            <p className="font-serif text-[15px] leading-6 text-foreground">{station.value}</p>
+            <Microcap className={cn("text-micro", station.capTone)}>{station.cap}</Microcap>
+            <p className="font-serif text-body leading-6 text-foreground">{station.value}</p>
           </div>
         </React.Fragment>
       ))}
@@ -893,7 +904,9 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
                     aria-current={isActive ? "step" : undefined}
                     aria-label={`Step ${index + 1}: ${step.title}`}
                     className={cn(
-                      "group/rail relative px-1.5 py-1 font-mono text-[12px] tabular-nums",
+                      // `caption` — the register mono tabular navigation keeps
+                      // across the chat surface (message-item's version pager).
+                      "group/rail relative px-1.5 py-1 font-mono text-caption tabular-nums",
                       "transition-colors duration-base ease-out-soft",
                       "after:absolute after:-inset-1 after:content-[''] coarse:after:-inset-2",
                       completed
@@ -920,8 +933,10 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
             </span>
           )}
         </div>
-        <h4 className="font-serif text-[21px] font-medium leading-tight tracking-[-0.01em]">{lab.title}</h4>
-        {lab.description && !compact && <p className="text-[15px] leading-7 text-muted-foreground">{lab.description}</p>}
+        {/* BlockTitle — the one rank every learning block's title shares. This
+            was the transcript's only 21px, one off from the shared 20. */}
+        <BlockTitle>{lab.title}</BlockTitle>
+        {lab.description && !compact && <p className="text-body leading-7 text-muted-foreground">{lab.description}</p>}
       </header>
 
       {/* Stage — keyed remount slides in from the travel direction. Reserved
@@ -937,14 +952,17 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
         style={{ "--stage-dx": dirRef.current > 0 ? "12px" : "-12px" } as React.CSSProperties}
       >
         <div className="flex flex-col gap-1">
-          <h5 className="font-serif text-[18px] font-medium leading-tight">{selected.title}</h5>
-          <p className="text-[15px] leading-7 text-foreground/80">{selected.summary}</p>
+          {/* The heading rung at serif weight 500 — font-medium outranks the
+              rung's built-in 600 (fontWeight utilities compile after fontSize),
+              keeping the step title a rank below the lab's BlockTitle. */}
+          <h5 className="font-serif text-heading font-medium leading-tight">{selected.title}</h5>
+          <p className="text-body leading-7 text-foreground/80">{selected.summary}</p>
         </div>
 
         <StepLabVisual step={selected} compact={compact} />
 
         {selected.notice && (
-          <p className="flex gap-2 text-[14px] leading-6">
+          <p className="flex gap-2 text-sm leading-6">
             <Microcap className="shrink-0 pt-0.5 text-primary">Notice</Microcap>
             <span className="min-w-0 font-serif italic text-foreground/75">{selected.notice}</span>
           </p>
@@ -980,12 +998,12 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
 
         {completed && onLast && (
           <div className="flex flex-col gap-2">
-            <p className="flex items-baseline gap-2 font-serif text-[15px] italic leading-6 text-foreground/85">
+            <p className="flex items-baseline gap-2 font-serif text-body italic leading-6 text-foreground/85">
               <span aria-hidden className="font-mono not-italic text-success motion-safe:animate-pop-in">✓</span>
               Lab complete
             </p>
             {lab.takeaway && (
-              <p className="border-l-2 border-primary/70 pl-4 font-serif text-[16px] italic leading-7 text-foreground/85 motion-safe:animate-fade-in-up">
+              <p className="border-l-2 border-primary/70 pl-4 font-serif text-body-lg italic leading-7 text-foreground/85 motion-safe:animate-fade-in-up">
                 {lab.takeaway}
               </p>
             )}
@@ -1001,7 +1019,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
             aria-disabled={active === 0}
             onClick={() => go(active - 1)}
             className={cn(
-              "rounded-control px-2 py-1 font-mono text-[11px] font-semibold text-muted-foreground",
+              "rounded-control px-2 py-1 font-mono text-caption font-semibold text-muted-foreground",
               "transition-colors duration-base hover:text-foreground coarse:min-h-11",
               active === 0 && "pointer-events-none opacity-40"
             )}
@@ -1011,13 +1029,13 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
           <span aria-live="polite" className="sr-only">
             Step {active + 1} of {steps.length} — {selected.title}
           </span>
-          {error && <Microcap className="text-[10px] text-muted-foreground normal-case">approximate</Microcap>}
+          {error && <Microcap className="text-micro text-muted-foreground normal-case">approximate</Microcap>}
           <button
             type="button"
             aria-disabled={onLast}
             onClick={() => go(active + 1)}
             className={cn(
-              "rounded-control px-2 py-1 font-mono text-[11px] font-semibold",
+              "rounded-control px-2 py-1 font-mono text-caption font-semibold",
               "transition-colors duration-base coarse:min-h-11",
               // As with "Sample": hover:text-primary over text-primary is a
               // no-op, so Next sat inert while "‹ Previous" beside it lit up.

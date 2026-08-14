@@ -185,7 +185,7 @@ struct DesktopLibraryScreen: View {
                 if !selection.isEmpty {
                     separatorDot
                     Text("\(selection.count) selected")
-                        .foregroundStyle(.primary)
+                        .junoInk()
                     Button("Clear") { clearSelection() }
                         .buttonStyle(.link)
                         .accessibilityIdentifier("juno.desktop.library-clear-selection")
@@ -323,6 +323,22 @@ struct DesktopLibraryScreen: View {
                     await model.accessFile(id: item.id)
                 }
             }
+            // Hover is a fill, not a lift. The web rises this tile two points
+            // (`group-hover/card:-translate-y-0.5`), but hover motion is web
+            // idiom — a Mac hover state is a fill, the same quiet wash a list
+            // row gets, and a Things or Craft row never moves under the
+            // pointer. The wash says "this is the thing you can act on"
+            // without the tile ever leaving its slot, and because it is
+            // colour rather than travel it reads the same under Reduce
+            // Motion. Under the stroke and the badge, so both stay crisp
+            // over it; hit-testing off, so it can never sit between the
+            // pointer and the card's own click handling.
+            .overlay {
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                    .fill(Color.junoRowHover)
+                    .opacity(hoveredID == item.id ? 1 : 0)
+                    .allowsHitTesting(false)
+            }
             .overlay {
                 // A stroke, never a filled tile — a saturated fill behind a file
                 // name would be unreadable — and a *greyscale* stroke, because
@@ -341,14 +357,12 @@ struct DesktopLibraryScreen: View {
                     .padding(JunoSpace.snug)
                     .opacity(isSelected || hoveredID == item.id ? 1 : 0)
             }
-            // The web's `group-hover/card:-translate-y-0.5` — the tile rises a
-            // couple of points under the pointer while the name below it stays
-            // put, which is what tells a reader the picture is the thing they can
-            // act on. `.offset` and not a frame change, so the lift cannot move
-            // the hover region out from under the pointer and flicker.
-            .offset(y: hoveredID == item.id ? -2 : 0)
+            // `fast` is the rung for a property changing on the element
+            // already under the pointer, and `.tint` because the hover is now
+            // colour only — Reduce Motion asks for less movement, not less
+            // feedback, so the wash keeps its fade.
             .animation(
-                JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
+                JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
                 value: hoveredID == item.id
             )
     }

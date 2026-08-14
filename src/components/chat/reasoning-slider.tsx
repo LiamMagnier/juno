@@ -141,6 +141,38 @@ const FLIGHT_MS = 210;
 const ULTRA = "hsl(var(--ultra))";
 
 /**
+ * Plain-language cost/benefit for each stop. The tier label says how hard the
+ * model thinks; this says what that buys and what it costs, so the slider can
+ * be read without knowing what "xhigh" means. Keyed by tier value — except the
+ * on/off "Thinking" stop, which reuses high's VALUE on the wire (see
+ * reasoningOptions), so it is told apart by its label.
+ *
+ * Written to fit two lines at the narrowest surface that renders this control
+ * (the 264px composer popover): a third line would change the popover's height
+ * between stops, and a control that resizes while being dragged reads as
+ * broken.
+ */
+function tradeoffLine(option: ReasoningOption): string {
+  if (option.label === "Thinking") return "Thinks before answering — slower, more reliable";
+  switch (option.value) {
+    case null:
+      return "Answers right away — fastest and cheapest";
+    case "minimal":
+      return "A quick once-over — nearly as fast";
+    case "low":
+      return "Thinks briefly — a small pause, fewer slips";
+    case "medium":
+      return "Balanced depth — right for most work";
+    case "high":
+      return "Works the problem — slower, stronger answers";
+    case "xhigh":
+      return "Reasons at length — much slower, for hard problems";
+    case "max":
+      return "Everything it has — slowest, priciest, deepest";
+  }
+}
+
+/**
  * Fixed scatter — deterministic so SSR and client agree (no Math.random).
  *
  * `dx/dy` give each spark its own slow drift and `peak` its own ceiling, so the
@@ -251,9 +283,9 @@ export function ReasoningSlider({
   return (
     <div className={cn("select-none", className)}>
       <div className="mb-2 flex min-h-7 items-center gap-2">
-        <span className="mr-auto font-mono text-[10px] text-muted-foreground">Thinking</span>
+        <span className="mr-auto font-mono text-micro uppercase text-muted-foreground">Thinking</span>
         <span
-          className="font-mono text-[11px] font-medium tracking-tight transition-colors duration-base ease-out-soft"
+          className="font-mono text-caption font-medium transition-colors duration-base ease-out-soft"
           style={isTop ? { color: ULTRA } : undefined}
           aria-hidden="true"
         >
@@ -528,10 +560,25 @@ export function ReasoningSlider({
             if (next) onChange(next.value);
           }}
           aria-label="Thinking effort"
-          aria-valuetext={current.label}
+          // The tradeoff rides along so assistive tech hears what a stop costs,
+          // not just its name — the sighted user gets the same sentence below.
+          aria-valuetext={`${current.label}. ${tradeoffLine(current)}`}
           className="absolute inset-0 h-full w-full cursor-pointer appearance-none rounded-full bg-transparent opacity-0 disabled:cursor-not-allowed"
         />
       </div>
+
+      {/* min-h-8 reserves the two lines the longest copy wraps to at 264px, so
+          stepping between stops never resizes the popover mid-drag. Keyed per
+          stop: the swap cross-fades instead of teleporting. aria-hidden because
+          the range's aria-valuetext already speaks this exact sentence — leaving
+          it visible to AT would announce every stop twice. */}
+      <p
+        key={index}
+        aria-hidden="true"
+        className="mt-2 min-h-8 text-caption leading-snug text-muted-foreground motion-safe:animate-fade-in"
+      >
+        {tradeoffLine(current)}
+      </p>
     </div>
   );
 }

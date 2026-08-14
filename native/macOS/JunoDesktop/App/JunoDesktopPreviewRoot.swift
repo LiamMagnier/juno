@@ -19,7 +19,7 @@ struct JunoDesktopPreviewRoot: View {
             initialScenario: JunoPreviewEnvironment.initialScenario
         ) { world in
             if CommandLine.arguments.contains("--juno-preview-model-selector") {
-                JunoDesktopModelSelectorPreview(world: world)
+                JunoModelSelectorPreview(world: world)
             } else {
                 JunoDesktopPreviewWorkspace(world: world)
             }
@@ -32,7 +32,7 @@ struct JunoDesktopPreviewRoot: View {
 /// rebuilt; the preview world activates several observable models at launch,
 /// which makes tapping through the composer a race rather than a useful test of
 /// the selector itself.
-private struct JunoDesktopModelSelectorPreview: View {
+private struct JunoModelSelectorPreview: View {
     let world: PreviewWorld
 
     var body: some View {
