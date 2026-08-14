@@ -6,7 +6,7 @@
  * The same two files the Swift projection reads. Regenerate with `npm run tokens`;
  * `npm run tokens:check` fails CI when this file no longer matches its sources.
  *
- * tokens-digest: f9ab6827dd70924c
+ * tokens-digest: 5c89f4af6e181e6f
  */
 
 /* ---- Registered custom properties -------------------------------------- */
@@ -36,21 +36,21 @@
 
 /* ---- Light — warm paper ------------------------------------------------- */
 :root {
-  --background: 54 18% 97%;
-  --foreground: 48 3% 12%;
-  --card: 54 44% 99%;
-  --card-foreground: 48 3% 12%;
-  --popover: 54 44% 99%;
-  --popover-foreground: 48 3% 12%;
+  --background: 0 0% 100%;
+  --foreground: 240 10% 4%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 4%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 4%;
   --primary: 15 54% 46%;
   --primary-foreground: 0 0% 100%;
   --primary-ink: 15 54% 44%;
-  --secondary: 50 23% 95%;
-  --secondary-foreground: 48 3% 18%;
-  --muted: 50 23% 95%;
-  --muted-foreground: 48 4% 40%;
-  --accent: 48 28% 92%;
-  --accent-foreground: 48 3% 18%;
+  --secondary: 240 5% 96%;
+  --secondary-foreground: 240 6% 10%;
+  --muted: 240 5% 96%;
+  --muted-foreground: 240 4% 46%;
+  --accent: 240 5% 93%;
+  --accent-foreground: 240 6% 10%;
   --destructive: 11 51% 48%;
   --destructive-foreground: 0 0% 100%;
   --destructive-ink: 11 55% 41%;
@@ -65,13 +65,13 @@
   --ultra: 258 90% 66%;
   --ultra-from: 252 100% 68%;
   --ultra-to: 271 91% 65%;
-  --border: 48 23% 88%;
-  --input: 48 12% 53%;
-  --ring: 15 54% 46%;
-  --sidebar: 50 23% 95%;
-  --sidebar-foreground: 48 4% 30%;
-  --sidebar-border: 48 23% 88%;
-  --sidebar-accent: 48 28% 91%;
+  --border: 240 6% 90%;
+  --input: 240 6% 90%;
+  --ring: 240 5% 65%;
+  --sidebar: 240 5% 98%;
+  --sidebar-foreground: 240 5% 26%;
+  --sidebar-border: 240 6% 92%;
+  --sidebar-accent: 240 5% 94%;
   --radius: 16px;
   --ease-out-soft: cubic-bezier(0.33, 1, 0.68, 1);
   --ease-out-strong: cubic-bezier(0.32, 0.72, 0, 1);
@@ -80,7 +80,6 @@
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-breathe: cubic-bezier(0.45, 0, 0.55, 1);
   --ease-out-back: cubic-bezier(0.34, 1.32, 0.64, 1);
-  --ease-spring: var(--ease-out-strong);
   --dur-press: 70ms;
   --dur-fast: 120ms;
   --dur-exit: 160ms;
@@ -105,6 +104,9 @@
   --z-modal: 50;
   --z-toolbar: 60;
   --z-toast: 70;
+  --canvas-selection: 229 78% 60%;
+  --canvas-handle: 11 72% 50%;
+  --canvas-measure: 40 85% 45%;
 
   /* Radius ladder — from tailwind.config.ts, where the web declares it. */
   --radius-lg: var(--radius);
@@ -148,6 +150,8 @@
   --text-body-lg-leading: 1.6;
   --text-body: 0.9375rem;
   --text-body-leading: 1.6;
+  --text-ui: 0.8125rem;
+  --text-ui-leading: 1.5;
   --text-label: 0.75rem;
   --text-label-leading: 1.4;
   --text-label-tracking: 0.10em;
@@ -155,6 +159,9 @@
   --text-caption: 0.6875rem;
   --text-caption-leading: 1.45;
   --text-caption-tracking: 0.02em;
+  --text-micro: 0.65625rem;
+  --text-micro-leading: 1.45;
+  --text-micro-tracking: 0.02em;
 
   /* Animation shorthands. Each one still reads --dur-* / --ease-* by name, so a
      reduced-motion override of a curve reaches every animation built on it. */
@@ -194,21 +201,21 @@
 
 /* ---- Dark — true black -------------------------------------------------- */
 .dark {
-  --background: 0 0% 0%;
-  --foreground: 45 14% 94%;
-  --card: 48 5% 6.5%;
-  --card-foreground: 45 14% 94%;
-  --popover: 48 5% 13%;
-  --popover-foreground: 45 14% 94%;
+  --background: 0 0% 4%;
+  --foreground: 0 0% 98%;
+  --card: 0 0% 7.5%;
+  --card-foreground: 0 0% 98%;
+  --popover: 0 0% 9%;
+  --popover-foreground: 0 0% 98%;
   --primary: 15 54% 46%;
   --primary-foreground: 0 0% 100%;
   --primary-ink: 15 62% 66%;
-  --secondary: 48 5% 9.5%;
-  --secondary-foreground: 45 13% 91%;
-  --muted: 48 5% 9.5%;
-  --muted-foreground: 45 6% 62%;
-  --accent: 48 5% 17%;
-  --accent-foreground: 45 13% 91%;
+  --secondary: 0 0% 12%;
+  --secondary-foreground: 0 0% 92%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 240 4% 65%;
+  --accent: 0 0% 15%;
+  --accent-foreground: 0 0% 98%;
   --destructive: 11 51% 49.5%;
   --destructive-foreground: 0 0% 100%;
   --destructive-ink: 11 51% 56%;
@@ -223,13 +230,13 @@
   --ultra: 258 92% 74%;
   --ultra-from: 252 100% 76%;
   --ultra-to: 271 93% 73%;
-  --border: 48 5% 16%;
-  --input: 48 5% 32%;
-  --ring: 15 54% 46%;
-  --sidebar: 0 0% 0%;
-  --sidebar-foreground: 45 6% 68%;
-  --sidebar-border: 48 5% 14%;
-  --sidebar-accent: 48 5% 11%;
+  --border: 0 0% 14%;
+  --input: 0 0% 20%;
+  --ring: 0 0% 80%;
+  --sidebar: 0 0% 5%;
+  --sidebar-foreground: 240 5% 68%;
+  --sidebar-border: 0 0% 12%;
+  --sidebar-accent: 0 0% 10%;
   --shadow-ink: 0 0% 0%;
   --shadow-soft: 0 1px 2px hsl(0 0% 0% / 0.28);
   --shadow-float: 0 2px 8px hsl(0 0% 0% / 0.3), 0 20px 46px -28px hsl(0 0% 0% / 0.72), inset 0 1px 0 hsl(var(--sheen));
@@ -242,21 +249,24 @@
   --glow-primary: 0 1px 2px hsl(var(--primary) / 0.2);
   --well-inset: inset 0 1px 2px hsl(0 0% 0% / 0.38);
   --scrim: 0 0% 0% / 0.66;
+  --canvas-selection: 229 86% 68%;
+  --canvas-handle: 11 78% 60%;
+  --canvas-measure: 40 88% 55%;
 }
 
 /* ---- Accents — override --primary / --ring / their foreground and ink ---- */
-:root[data-accent="coral"] { --primary: 15 54% 46%; --ring: 15 54% 46%; --primary-foreground: 0 0% 100%; --primary-ink: 15 54% 44%; }
-.dark[data-accent="coral"] { --primary: 15 54% 46%; --ring: 15 54% 46%; --primary-foreground: 0 0% 100%; --primary-ink: 15 62% 66%; }
-:root[data-accent="juniper"] { --primary: 152 44% 31%; --ring: 152 44% 31%; --primary-foreground: 0 0% 100%; --primary-ink: 152 44% 31%; }
-.dark[data-accent="juniper"] { --primary: 152 42% 54%; --ring: 152 42% 54%; --primary-foreground: 150 30% 9%; --primary-ink: 152 42% 54%; }
-:root[data-accent="teal"] { --primary: 180 63% 31.5%; --ring: 180 63% 31.5%; --primary-foreground: 0 0% 100%; --primary-ink: 180 63% 30.5%; }
-.dark[data-accent="teal"] { --primary: 187 58% 49%; --ring: 187 58% 49%; --primary-foreground: 40 6% 10%; --primary-ink: 187 58% 49%; }
-:root[data-accent="violet"] { --primary: 249 59% 60%; --ring: 249 59% 60%; --primary-foreground: 0 0% 100%; --primary-ink: 249 59% 60%; }
-.dark[data-accent="violet"] { --primary: 249 66% 71%; --ring: 249 66% 71%; --primary-foreground: 40 6% 10%; --primary-ink: 249 66% 71%; }
-:root[data-accent="amber"] { --primary: 39 67% 55%; --ring: 39 67% 44%; --primary-foreground: 30 40% 12%; --primary-ink: 39 67% 35%; }
-.dark[data-accent="amber"] { --primary: 38 73% 63%; --ring: 38 73% 63%; --primary-foreground: 30 40% 10%; --primary-ink: 38 73% 63%; }
-:root[data-accent="sage"] { --primary: 120 18% 42.5%; --ring: 120 18% 42.5%; --primary-foreground: 0 0% 100%; --primary-ink: 120 18% 41%; }
-.dark[data-accent="sage"] { --primary: 120 23% 61%; --ring: 120 23% 61%; --primary-foreground: 40 6% 10%; --primary-ink: 120 23% 61%; }
+:root[data-accent="coral"] { --primary: 15 54% 46%; --ring: 48 6% 35%; --primary-foreground: 0 0% 100%; --primary-ink: 15 54% 44%; }
+.dark[data-accent="coral"] { --primary: 15 54% 46%; --ring: 45 10% 80%; --primary-foreground: 0 0% 100%; --primary-ink: 15 62% 66%; }
+:root[data-accent="juniper"] { --primary: 152 44% 31%; --ring: 48 6% 35%; --primary-foreground: 0 0% 100%; --primary-ink: 152 44% 31%; }
+.dark[data-accent="juniper"] { --primary: 152 42% 54%; --ring: 45 10% 80%; --primary-foreground: 150 30% 9%; --primary-ink: 152 42% 54%; }
+:root[data-accent="teal"] { --primary: 180 63% 31.5%; --ring: 48 6% 35%; --primary-foreground: 0 0% 100%; --primary-ink: 180 63% 30.5%; }
+.dark[data-accent="teal"] { --primary: 187 58% 49%; --ring: 45 10% 80%; --primary-foreground: 40 6% 10%; --primary-ink: 187 58% 49%; }
+:root[data-accent="violet"] { --primary: 249 59% 60%; --ring: 48 6% 35%; --primary-foreground: 0 0% 100%; --primary-ink: 249 59% 60%; }
+.dark[data-accent="violet"] { --primary: 249 66% 71%; --ring: 45 10% 80%; --primary-foreground: 40 6% 10%; --primary-ink: 249 66% 71%; }
+:root[data-accent="amber"] { --primary: 39 67% 55%; --ring: 48 6% 35%; --primary-foreground: 30 40% 12%; --primary-ink: 39 67% 35%; }
+.dark[data-accent="amber"] { --primary: 38 73% 63%; --ring: 45 10% 80%; --primary-foreground: 30 40% 10%; --primary-ink: 38 73% 63%; }
+:root[data-accent="sage"] { --primary: 120 18% 42.5%; --ring: 48 6% 35%; --primary-foreground: 0 0% 100%; --primary-ink: 120 18% 41%; }
+.dark[data-accent="sage"] { --primary: 120 23% 61%; --ring: 45 10% 80%; --primary-foreground: 40 6% 10%; --primary-ink: 120 23% 61%; }
 
 /* ---- Reduced motion, Tier B -------------------------------------------- */
 /* Travel and overshoot collapse to identity; opacity and colour keep their
