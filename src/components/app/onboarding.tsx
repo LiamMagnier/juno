@@ -88,7 +88,7 @@ function ModelField({
         >
           <span className="flex min-w-0 items-center gap-2">
             {current && <ProviderLogo provider={current.provider} className="h-4 w-4 rounded-micro" />}
-            <span className="truncate font-mono text-[13px]">{current?.name ?? "Select a model"}</span>
+            <span className="truncate font-mono text-ui">{current?.name ?? "Select a model"}</span>
           </span>
           <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft", open && "rotate-180")} />
         </button>
@@ -110,7 +110,7 @@ function ModelField({
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search models…"
             autoFocus
-            className="h-8 w-full bg-transparent pl-9 pr-2 text-[13px] outline-none placeholder:text-muted-foreground"
+            className="h-8 w-full bg-transparent pl-9 pr-2 text-ui outline-none placeholder:text-muted-foreground"
           />
         </div>
         <div className="max-h-56 overflow-y-auto p-1.5">
@@ -138,7 +138,7 @@ function ModelField({
                     className="pressable flex w-full items-center gap-2 rounded-xs px-2.5 py-2 text-left hover:bg-secondary"
                   >
                     <ProviderLogo provider={m.provider} className="h-4 w-4 rounded-micro" />
-                    <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{m.name}</span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-label">{m.name}</span>
                     {m.id === valueId && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
                   </button>
                 ))}
@@ -714,7 +714,7 @@ export function Onboarding() {
                   // `:focus-visible` outline off, leaving a keyboard user with a
                   // hairline border tint as the sole indication of where they
                   // were — on the field the step exists to fill in.
-                  className="w-full resize-none rounded-card border bg-transparent p-3 text-[13px] leading-relaxed transition-colors duration-fast ease-out-soft placeholder:text-muted-foreground focus:border-primary/50"
+                  className="w-full resize-none rounded-card border bg-transparent p-3 text-ui leading-relaxed transition-colors duration-fast ease-out-soft placeholder:text-muted-foreground focus:border-primary/50"
                 />
                 <div className="mt-2 flex items-center justify-between">
                   <span className="text-caption text-muted-foreground">

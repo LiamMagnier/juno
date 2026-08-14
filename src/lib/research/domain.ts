@@ -674,9 +674,9 @@ export const EMPTY_PLAN: ResearchPlan = {
 };
 
 /** Bounds, applied on every write so a stored plan can never be unbounded. */
-export const MAX_PLAN_QUERIES = 8;
-export const MAX_PLAN_CONSTRAINTS = 12;
-export const MAX_PINNED_SOURCES = 12;
+export const MAX_PLAN_QUERIES = 20;
+export const MAX_PLAN_CONSTRAINTS = 16;
+export const MAX_PINNED_SOURCES = 24;
 export const MAX_QUERY_CHARS = 400;
 export const MAX_CONSTRAINT_CHARS = 300;
 

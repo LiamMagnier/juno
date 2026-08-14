@@ -30,13 +30,13 @@ export function LearningCardBlock({ card }: { card: LearningCardData }) {
         <div className={cn("flex flex-col gap-1.5 border-l-2 pl-4", tone.rule)}>
           <BlockTitle className="leading-snug">
             {card.icon && (
-              <span aria-hidden className="pr-2 text-[17px] leading-none">
+              <span aria-hidden className="pr-2 text-body leading-none">
                 {card.icon}
               </span>
             )}
             {card.title}
           </BlockTitle>
-          <p className="whitespace-pre-line text-[15px] leading-7 text-foreground/80">{card.content}</p>
+          <p className="whitespace-pre-line text-body leading-7 text-foreground/80">{card.content}</p>
         </div>
       </div>
     </BlockShell>

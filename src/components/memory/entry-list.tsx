@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Check, ChevronDown, EyeOff, FolderLock, Loader2, MessageSquare, Pencil, Sparkles, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, EyeOff, FolderLock, Loader2, MessageSquare, Pencil, Trash2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -283,7 +283,7 @@ export function EntryList({ memories, busyIds, paused, onEdit, onForget, onDelet
         <div className="border-t border-border/50">
           <EmptyState
             size="panel"
-            icon={Sparkles}
+            icon={MessageSquare}
             title="Nothing specific yet"
             description="Facts appear here as you chat."
           />

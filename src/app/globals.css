@@ -92,28 +92,27 @@
 
 @layer base {
   :root {
-    /* Juno warm paper: a quiet editorial ground for native glass chrome. */
-    --background: 54 18% 97%;
-    --foreground: 48 3% 12%;
+    --background: 0 0% 100%;
+    --foreground: 240 10% 4%;
 
-    --card: 54 44% 99%;
-    --card-foreground: 48 3% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 4%;
 
-    --popover: 54 44% 99%;
-    --popover-foreground: 48 3% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 4%;
 
     --primary: 15 54% 46%;
     --primary-foreground: 0 0% 100%;
     --primary-ink: 15 54% 44%;
 
-    --secondary: 50 23% 95%;
-    --secondary-foreground: 48 3% 18%;
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 6% 10%;
 
-    --muted: 50 23% 95%;
-    --muted-foreground: 48 4% 40%;
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
 
-    --accent: 48 28% 92%;
-    --accent-foreground: 48 3% 18%;
+    --accent: 240 5% 93%;
+    --accent-foreground: 240 6% 10%;
 
     --destructive: 11 51% 48%;
     --destructive-foreground: 0 0% 100%;
@@ -121,43 +120,25 @@
 
     --success: 140 33% 46%;
     --success-foreground: 0 0% 100%;
-    /* Like --warning-foreground: -ink is the AA text ramp on --background
-       (the fill tones only reach ~3:1 as small light-mode text). */
     --success-ink: 140 38% 33%;
 
-    /* 45%, not 51%: --warning is a graphical state indicator (dots, chips), so
-       its bar is 3:1, and the old value only reached 2.44:1 against the paper. */
     --warning: 40 57% 45%;
-    /* --warning is a FILL (dots, borders, tinted chips). As text on --background
-       it only reaches 2.4:1, so warning *text* uses this darker value instead:
-       5.2:1 on --background and 4.8:1 on a bg-warning/10 chip. */
     --warning-foreground: 40 57% 33%;
     --source: 187 62% 34%;
-    /* Syntax tokens for the highlight.js block at the foot of this file. They
-       are not --success / --warning: those two carry meaning (a run passed, a
-       run is degraded) and a string literal is neither, so tying code colour to
-       a state colour means a theme change to one silently repaints the other.
-       They exist as tokens at all because the alternative — and what was here —
-       was four raw HSL literals no theme could reach, in the same file that
-       spends twenty lines explaining why every AIcss literal had to become a
-       token. Values are unchanged from those literals. */
     --code-string: 152 56% 42%;
     --code-number: 32 80% 46%;
-    /* Deepest-thinking ("Max") accent — the one place violet is allowed, to mark
-       the tier that is materially slower and pricier. Kept as tokens so the
-       accent-swapping in app-provider can't be bypassed by a hardcoded hex. */
     --ultra: 258 90% 66%;
     --ultra-from: 252 100% 68%;
     --ultra-to: 271 91% 65%;
 
-    --border: 48 23% 88%;
-    --input: 48 12% 53%;
-    --ring: 15 54% 46%;
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 240 5% 65%;
 
-    --sidebar: 50 23% 95%;
-    --sidebar-foreground: 48 4% 30%;
-    --sidebar-border: 48 23% 88%;
-    --sidebar-accent: 48 28% 91%;
+    --sidebar: 240 5% 98%;
+    --sidebar-foreground: 240 5% 26%;
+    --sidebar-border: 240 6% 92%;
+    --sidebar-accent: 240 5% 94%;
 
     --radius: 16px;
 
@@ -370,57 +351,27 @@
      * the greys sit in the same family as the light theme's paper and the coral
      * accent has something to belong to, not enough to name a colour.
      */
-    --background: 0 0% 0%;
-    /* Off-white, not white. Pure #fff on pure #000 is a 21:1 glare that makes
-       long prose vibrate; 94% lands at 18.4:1 with the edge taken off. The warm
-       cast is halved from the charcoal era for the same reason the surfaces
-       thinned out — cream type over black reads as a colour cast, not warmth. */
-    --foreground: 45 14% 94%;
+    --background: 0 0% 4%;
+    --foreground: 0 0% 98%;
 
-    --card: 48 5% 6.5%;
-    --card-foreground: 45 14% 94%;
+    --card: 0 0% 7.5%;
+    --card-foreground: 0 0% 98%;
 
-    /* Floating layers lift furthest, because on black they have nothing else to
-       separate them: the shadow under a popover is invisible here, so the panel
-       has to be visibly lighter than whatever it covers. */
-    --popover: 48 5% 13%;
-    --popover-foreground: 45 14% 94%;
+    --popover: 0 0% 9%;
+    --popover-foreground: 0 0% 98%;
 
     --primary: 15 54% 46%;
     --primary-foreground: 0 0% 100%;
     --primary-ink: 15 62% 66%;
 
-    --secondary: 48 5% 9.5%;
-    --secondary-foreground: 45 13% 91%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 92%;
 
-    --muted: 48 5% 9.5%;
-    --muted-foreground: 45 6% 62%;
+    --muted: 0 0% 12%;
+    --muted-foreground: 240 4% 65%;
 
-    /*
-     * ONE RUNG ABOVE --popover, not equal to it.
-     *
-     * These two were both 13% when the ladder was re-based, which looked
-     * harmless — they are adjacent rungs and the old charcoal theme had them a
-     * hair apart. It is not harmless, because the two tokens are used AGAINST
-     * each other: a menu, popover, select or dialog paints itself `bg-popover`
-     * and paints the row under the cursor `hover:bg-accent`. Identical values
-     * mean the hover state of every row in every floating layer in the product
-     * rendered as no change at all.
-     *
-     * The worst case was the command palette, where the sliding selection bar is
-     * the ONLY thing telling you which row Enter will open — painted in exactly
-     * the colour of the panel behind it. The same collision silently removed the
-     * pressed state of its filter chips and every `hover:bg-accent` in
-     * onboarding.
-     *
-     * 17% clears --popover by four points, which is the smallest step that reads
-     * as a state change on an OLED panel without turning a hover into a
-     * selection. It also stays correct on the other grounds `--accent` lands on:
-     * +10.5 over a card, +17 over the page. The sidebar is unaffected either way
-     * — it has its own --sidebar-accent rung for exactly this reason.
-     */
-    --accent: 48 5% 17%;
-    --accent-foreground: 45 13% 91%;
+    --accent: 0 0% 15%;
+    --accent-foreground: 0 0% 98%;
 
     --destructive: 11 51% 49.5%;
     --destructive-foreground: 0 0% 100%;
@@ -428,41 +379,25 @@
 
     --success: 140 33% 53%;
     --success-foreground: 28 9% 9%;
-    /* Dark fills already pass as text (see --warning-foreground note). */
     --success-ink: 140 33% 53%;
 
     --warning: 40 60% 58%;
-    /* On the near-black background the fill value is already 8.2:1 as text
-       (6.9:1 on a bg-warning/10 chip), so dark needs no separate ramp — the
-       token exists per theme so call sites never have to know which is which. */
     --warning-foreground: 40 60% 58%;
     --source: 187 58% 49%;
-    /* Lifted against the black ground, as every code colour has to be. */
     --code-string: 152 50% 56%;
     --code-number: 38 90% 60%;
-    /* Lifted a touch on dark so violet keeps contrast against the near-black. */
     --ultra: 258 92% 74%;
     --ultra-from: 252 100% 76%;
     --ultra-to: 271 93% 73%;
 
-    /* Down from 21%, and it is not a taste change. A border is read as a
-       DIFFERENCE from the surface behind it, and that surface just dropped nine
-       points to zero, so holding the border still would have widened every
-       hairline in the product by the same nine points. 16% keeps the contrast
-       the border always had against the ground it sits on. */
-    --border: 48 5% 16%;
-    --input: 48 5% 32%;
-    --ring: 15 54% 46%;
+    --border: 0 0% 14%;
+    --input: 0 0% 20%;
+    --ring: 0 0% 80%;
 
-    /* The sidebar used to be DARKER than the page, which is how it separated.
-       Nothing is darker than black, so it is flush with the ground now and the
-       separation moves entirely to --sidebar-border. This is the better read
-       anyway on OLED: one uninterrupted black field, divided by a hairline,
-       instead of two nearly-identical greys meeting at an invisible seam. */
-    --sidebar: 0 0% 0%;
-    --sidebar-foreground: 45 6% 68%;
-    --sidebar-border: 48 5% 14%;
-    --sidebar-accent: 48 5% 11%;
+    --sidebar: 0 0% 5%;
+    --sidebar-foreground: 240 5% 68%;
+    --sidebar-border: 0 0% 12%;
+    --sidebar-accent: 0 0% 10%;
 
     /*
      * Elevation (dark) — and the rule that changes on a black ground.
@@ -518,45 +453,36 @@
     --canvas-measure: 40 88% 55%;
   }
 
-  /* ---- Accent overrides (coral is the default; drive --primary + --ring) ----
-     The light fills are set so white-on-fill clears 4.5:1 — four of the five
-     accents failed with their own button label, sage worst at 3.20:1. Hue and
-     saturation are held on every one; only lightness moves.
+  /*
+   * Palette accents — swappable at runtime via [data-accent] on <html>.
+   *
+   * The accent drives --primary and --ring. All other tokens (card, popover,
+   * border, input, muted, foreground) stay on their neutral ramps so text and
+   * surfaces do not shift tint when the user picks a different colour.
+   *
+   * Contrast targets:
+   *   Light mode: ≥ 4.5:1 against --background (54 18% 97%) for body text,
+   *               ≥ 3.0:1 for large text/icons.
+   *   Dark mode:  ≥ 4.5:1 against --background (48 7% 9%) for body text,
+   *               ≥ 3.0:1 for large text/icons.
+   */
+  :root[data-accent="coral"]   { --primary: 15 54% 46%;   --ring: 48 6% 35%;   --primary-foreground: 0 0% 100%;  --primary-ink: 15 54% 44%; }
+  .dark[data-accent="coral"]   { --primary: 15 54% 46%;   --ring: 45 10% 80%;   --primary-foreground: 0 0% 100%;  --primary-ink: 15 62% 66%; }
 
-     Amber is the exception in both directions. Its fill already passes at 7.13:1
-     because its --primary-foreground is dark ink, so the fill is left alone — but
-     its RING is decoupled, because `39 67% 55%` measures 2.14:1 against the page
-     and a focus indicator nobody can see is an SC 1.4.11 failure for everyone
-     using that accent.
+  :root[data-accent="juniper"] { --primary: 152 44% 31%;  --ring: 48 6% 35%;  --primary-foreground: 0 0% 100%;  --primary-ink: 152 44% 31%; }
+  .dark[data-accent="juniper"] { --primary: 152 42% 54%;  --ring: 45 10% 80%;  --primary-foreground: 150 30% 9%; --primary-ink: 152 42% 54%; }
 
-     --primary-ink is the text ramp, one per accent, mirroring --success-ink.
-     In DARK the ink equals the fill for every accent except coral: measured
-     against the 9%-lightness ground, teal/violet/amber/sage/juniper all land
-     between 5.7:1 and 9.3:1 as text, while coral's fill reaches only 3.66:1 and
-     has to be lifted to 66% for 6.93:1. Without these six declarations the dark
-     blocks inherited the base coral ink, so a teal or sage dark theme rendered
-     every prose link and text-primary in coral. */
-  :root[data-accent="coral"]   { --primary: 15 54% 46%;   --ring: 15 54% 46%;   --primary-foreground: 0 0% 100%;  --primary-ink: 15 54% 44%; }
-  .dark[data-accent="coral"]   { --primary: 15 54% 46%;   --ring: 15 54% 46%;   --primary-foreground: 0 0% 100%;  --primary-ink: 15 62% 66%; }
+  :root[data-accent="teal"]    { --primary: 180 63% 31.5%; --ring: 48 6% 35%; --primary-foreground: 0 0% 100%; --primary-ink: 180 63% 30.5%; }
+  .dark[data-accent="teal"]    { --primary: 187 58% 49%;  --ring: 45 10% 80%;  --primary-foreground: 40 6% 10%;  --primary-ink: 187 58% 49%; }
 
-  /* Juniper is ADDED, not substituted: nobody loses the accent they chose and no
-     data migration is needed. It is the one hue that clears every neighbour —
-     141° from --destructive, 35° from --source, 32° from sage — and passes AA in
-     both directions from a single value. */
-  :root[data-accent="juniper"] { --primary: 152 44% 31%;  --ring: 152 44% 31%;  --primary-foreground: 0 0% 100%;  --primary-ink: 152 44% 31%; }
-  .dark[data-accent="juniper"] { --primary: 152 42% 54%;  --ring: 152 42% 54%;  --primary-foreground: 150 30% 9%; --primary-ink: 152 42% 54%; }
+  :root[data-accent="violet"]  { --primary: 249 59% 60%;  --ring: 48 6% 35%;  --primary-foreground: 0 0% 100%;  --primary-ink: 249 59% 60%; }
+  .dark[data-accent="violet"]  { --primary: 249 66% 71%;  --ring: 45 10% 80%;  --primary-foreground: 40 6% 10%;  --primary-ink: 249 66% 71%; }
 
-  :root[data-accent="teal"]    { --primary: 180 63% 31.5%; --ring: 180 63% 31.5%; --primary-foreground: 0 0% 100%; --primary-ink: 180 63% 30.5%; }
-  .dark[data-accent="teal"]    { --primary: 187 58% 49%;  --ring: 187 58% 49%;  --primary-foreground: 40 6% 10%;  --primary-ink: 187 58% 49%; }
+  :root[data-accent="amber"]   { --primary: 39 67% 55%;   --ring: 48 6% 35%;   --primary-foreground: 30 40% 12%; --primary-ink: 39 67% 35%; }
+  .dark[data-accent="amber"]   { --primary: 38 73% 63%;   --ring: 45 10% 80%;   --primary-foreground: 30 40% 10%; --primary-ink: 38 73% 63%; }
 
-  :root[data-accent="violet"]  { --primary: 249 59% 60%;  --ring: 249 59% 60%;  --primary-foreground: 0 0% 100%;  --primary-ink: 249 59% 60%; }
-  .dark[data-accent="violet"]  { --primary: 249 66% 71%;  --ring: 249 66% 71%;  --primary-foreground: 40 6% 10%;  --primary-ink: 249 66% 71%; }
-
-  :root[data-accent="amber"]   { --primary: 39 67% 55%;   --ring: 39 67% 44%;   --primary-foreground: 30 40% 12%; --primary-ink: 39 67% 35%; }
-  .dark[data-accent="amber"]   { --primary: 38 73% 63%;   --ring: 38 73% 63%;   --primary-foreground: 30 40% 10%; --primary-ink: 38 73% 63%; }
-
-  :root[data-accent="sage"]    { --primary: 120 18% 42.5%; --ring: 120 18% 42.5%; --primary-foreground: 0 0% 100%; --primary-ink: 120 18% 41%; }
-  .dark[data-accent="sage"]    { --primary: 120 23% 61%;  --ring: 120 23% 61%;  --primary-foreground: 40 6% 10%;  --primary-ink: 120 23% 61%; }
+  :root[data-accent="sage"]    { --primary: 120 18% 42.5%; --ring: 48 6% 35%; --primary-foreground: 0 0% 100%; --primary-ink: 120 18% 41%; }
+  .dark[data-accent="sage"]    { --primary: 120 23% 61%;  --ring: 45 10% 80%;  --primary-foreground: 40 6% 10%;  --primary-ink: 120 23% 61%; }
 
   * {
     border-color: hsl(var(--border));
@@ -688,9 +614,7 @@
 
   /* Focus visibility for keyboard users */
   :focus-visible {
-    /* Focus stays unmistakable without turning every keyboard target into a
-       second brand CTA. The accent is reserved for actions and status. */
-    outline: 2px solid hsl(var(--foreground) / 0.55);
+    outline: 1.5px solid hsl(var(--foreground) / 0.32);
     outline-offset: 2px;
   }
 

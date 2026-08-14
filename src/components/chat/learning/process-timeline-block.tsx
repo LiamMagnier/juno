@@ -65,7 +65,7 @@ export function ProcessTimelineBlock({ timeline }: { timeline: ProcessTimelineDa
                   <span
                     aria-hidden
                     className={cn(
-                      "font-serif text-[24px] font-medium leading-none tabular-nums transition-colors duration-base ease-out-soft",
+                      "font-serif text-body font-medium leading-none tabular-nums transition-colors duration-base ease-out-soft",
                       isActive ? "text-primary" : isPast ? "text-foreground" : "text-muted-foreground/80"
                     )}
                   >
@@ -75,7 +75,7 @@ export function ProcessTimelineBlock({ timeline }: { timeline: ProcessTimelineDa
                 <span className="flex flex-col gap-1 py-3">
                   <span
                     className={cn(
-                      "font-serif text-[15px] font-semibold leading-6 transition-colors duration-base ease-out-soft",
+                      "font-serif text-body font-semibold leading-6 transition-colors duration-base ease-out-soft",
                       isActive ? "text-primary" : "text-foreground"
                     )}
                   >

@@ -17,6 +17,7 @@ export type SidebarMotionIconKind =
   | "code"
   | "design"
   | "library"
+  | "research"
   | "artifacts"
   | "connections"
   | "projects"
@@ -50,6 +51,7 @@ const ICONS: Record<SidebarMotionIconKind, LucideIcon> = {
   code: AppIcons.code,
   design: AppIcons.design,
   library: AppIcons.library,
+  research: AppIcons.research,
   artifacts: AppIcons.artifacts,
   connections: AppIcons.connections,
   projects: AppIcons.projects,

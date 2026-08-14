@@ -78,6 +78,10 @@ export const AppIcons = {
    *  becomes real, and the brush reads as illustration. */
   design: PenTool,
   library: Library,
+  /** The Research surface (`/research`). The SAME telescope the composer's
+   *  Deep research tool draws (`ComposerIcons.research`) — the destination is
+   *  where that tool's runs live, so two drawings would read as two features. */
+  research: Telescope,
   artifacts: Layers3,
   projects: Folder,
   tasks: CalendarClock,

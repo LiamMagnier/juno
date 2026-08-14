@@ -342,7 +342,7 @@ export default function WorkSkillPage() {
               disabled={busy}
               className="mt-1"
             />
-            <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+            <p className="mt-1 text-caption leading-relaxed text-muted-foreground">
               The slash name stays /{skill.slug}. It is what older tasks already refer to, so it is
               chosen once and never rewritten.
             </p>
@@ -368,8 +368,8 @@ export default function WorkSkillPage() {
           <h2 className="font-mono text-label text-muted-foreground">How Juno may use it</h2>
           <label className="flex items-center justify-between gap-3 rounded-field border border-border/50 px-3.5 py-2.5">
             <span className="min-w-0">
-              <span className="block text-[13px] font-medium text-foreground">Available</span>
-              <span className="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+              <span className="block text-ui font-medium text-foreground">Available</span>
+              <span className="mt-0.5 block text-caption leading-relaxed text-muted-foreground">
                 Switched off, it cannot be used at all — not by name, not by Juno.
               </span>
             </span>
@@ -385,10 +385,10 @@ export default function WorkSkillPage() {
 
           <label className="flex items-center justify-between gap-3 rounded-field border border-border/50 px-3.5 py-2.5">
             <span className="min-w-0">
-              <span className="block text-[13px] font-medium text-foreground">
+              <span className="block text-ui font-medium text-foreground">
                 Juno may reach for it unasked
               </span>
-              <span className="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+              <span className="mt-0.5 block text-caption leading-relaxed text-muted-foreground">
                 {trusted
                   ? "The planner may pick this up when a task looks like it fits, without you naming it."
                   : "Only a trusted skill can be chosen for you. Trust it below first."}
@@ -405,7 +405,7 @@ export default function WorkSkillPage() {
           </label>
 
           <div className="rounded-field border border-border/50 px-3.5 py-2.5">
-            <p className="text-[13px] font-medium text-foreground">Trust</p>
+            <p className="text-ui font-medium text-foreground">Trust</p>
             {settableTrust !== null ? (
               <>
                 <SegmentedControl
@@ -418,17 +418,17 @@ export default function WorkSkillPage() {
                     { value: "user_authored", label: "I trust this" },
                   ]}
                   ariaLabel="How far this skill is trusted"
-                  optionClassName="px-3 py-1 text-[12.5px]"
+                  optionClassName="px-3 py-1 text-label"
                   className="mt-2 max-w-sm"
                 />
-                <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
+                <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
                   Withdrawing trust also switches off automatic selection, in the same change — the
                   two are one decision, and a skill that was trusted enough to be chosen for you is
                   not trusted enough afterwards.
                 </p>
               </>
             ) : (
-              <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+              <p className="mt-1 text-caption leading-relaxed text-muted-foreground">
                 Juno reviewed this skill. That is a claim only Juno can make, so it is not something
                 this page can set or take away.
               </p>
@@ -444,18 +444,18 @@ export default function WorkSkillPage() {
                 line-height and stood ~4px taller than every other pill in Work,
                 on a page that shows two of them a scroll apart. */}
             <span
-              className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 font-mono text-[10px] leading-none ${securityClassName(securityStatus)}`}
+              className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 font-mono text-micro leading-none ${securityClassName(securityStatus)}`}
             >
               {securityLabel(securityStatus)}
             </span>
           </div>
-          <p className="text-[11.5px] leading-relaxed text-muted-foreground">
+          <p className="text-caption leading-relaxed text-muted-foreground">
             Every version is scanned when it is saved. Blocked versions cannot run; a version that
             asks for more permissions waits for your approval.
           </p>
           {version?.requiresConsent ? (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-field border border-warning/40 bg-warning/10 px-3.5 py-3">
-              <p className="text-[12px] leading-relaxed text-foreground">
+              <p className="text-label leading-relaxed text-foreground">
                 This version widens the permissions requested by the previous version.
               </p>
               <Button
@@ -470,8 +470,8 @@ export default function WorkSkillPage() {
           {securityFindings.length > 0 ? (
             <ul className="space-y-1 rounded-field border border-border/60 px-3.5 py-2.5">
               {securityFindings.map((finding) => (
-                <li key={`${finding.code}-${finding.message}`} className="text-[11.5px] leading-relaxed text-muted-foreground">
-                  <span className="mr-1 font-mono text-[10px] uppercase text-foreground">
+                <li key={`${finding.code}-${finding.message}`} className="text-caption leading-relaxed text-muted-foreground">
+                  <span className="mr-1 font-mono text-micro uppercase text-foreground">
                     {finding.severity}
                   </span>
                   {finding.message}
@@ -484,7 +484,7 @@ export default function WorkSkillPage() {
         <section>
           <div className="mb-2.5 flex flex-wrap items-end justify-between gap-2">
             <h2 className="font-mono text-label text-muted-foreground">Instructions</h2>
-            <span className="font-mono text-[10px] text-muted-foreground">
+            <span className="font-mono text-micro text-muted-foreground">
               v{skill.currentVersion}
               {version !== null && ` · saved ${workTimeAgo(version.createdAt)}`}
             </span>
@@ -501,7 +501,7 @@ export default function WorkSkillPage() {
             rows={14}
             disabled={busy}
             aria-label="Skill instructions"
-            className="font-mono text-[13px]"
+            className="font-mono text-ui"
           />
           <div className="mt-2.5 flex flex-wrap items-center gap-2">
             <Button
@@ -546,13 +546,13 @@ export default function WorkSkillPage() {
                   className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card px-3.5 py-2.5"
                 >
                   <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  <span className="shrink-0 font-mono text-[10px] text-foreground">
+                  <span className="shrink-0 font-mono text-micro text-foreground">
                     v{entry.version}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-muted-foreground">
+                  <span className="min-w-0 flex-1 truncate text-label text-muted-foreground">
                     {entry.instructions.slice(0, 120)}
                   </span>
-                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                  <span className="shrink-0 font-mono text-micro text-muted-foreground">
                     {workTimeAgo(entry.createdAt)}
                   </span>
                   {entry.version !== skill.currentVersion && (
@@ -561,7 +561,7 @@ export default function WorkSkillPage() {
                       size="sm"
                       disabled={busy}
                       onClick={() => void restore(entry.version)}
-                      className="h-7 shrink-0 gap-1.5 px-2 font-mono text-[10px] text-muted-foreground"
+                      className="h-7 shrink-0 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
                     >
                       <RotateCcw className="h-3 w-3" aria-hidden="true" /> Restore
                     </Button>

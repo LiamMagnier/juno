@@ -49,7 +49,7 @@ export function BlockShell({ className, children, ...props }: React.ComponentPro
 /** Mono micro-label — "Process", "Quick check", … */
 export function Microcap({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <span className={cn("font-mono text-[11px] font-semibold text-muted-foreground", className)}>
+    <span className={cn("font-mono text-caption font-semibold text-muted-foreground", className)}>
       {children}
     </span>
   );
@@ -83,7 +83,7 @@ export function LessonKicker({
  */
 export function BlockTitle({ className, children, ...props }: React.ComponentPropsWithoutRef<"h4">) {
   return (
-    <h4 className={cn("font-serif text-[20px] font-medium leading-tight tracking-[-0.01em]", className)} {...props}>
+    <h4 className={cn("font-serif text-body font-medium leading-tight tracking-[-0.01em]", className)} {...props}>
       {children}
     </h4>
   );
@@ -98,7 +98,7 @@ export function BlockTitle({ className, children, ...props }: React.ComponentPro
  */
 export function BlockLead({ className, children, ...props }: React.ComponentPropsWithoutRef<"p">) {
   return (
-    <p className={cn("font-serif text-[17px] font-medium leading-snug tracking-[-0.01em]", className)} {...props}>
+    <p className={cn("font-serif text-body font-medium leading-snug tracking-[-0.01em]", className)} {...props}>
       {children}
     </p>
   );
@@ -132,7 +132,7 @@ export function BlockHeader({
         {meta}
       </div>
       {title && <BlockTitle>{title}</BlockTitle>}
-      {description && <p className="text-[15px] leading-7 text-muted-foreground">{description}</p>}
+      {description && <p className="text-body leading-7 text-muted-foreground">{description}</p>}
     </header>
   );
 }
@@ -162,7 +162,7 @@ export function CaptionLine({
     <p
       aria-live="polite"
       className={cn(
-        "min-h-5 font-mono text-[11px] leading-5 tabular-nums text-muted-foreground",
+        "min-h-5 font-mono text-caption leading-5 tabular-nums text-muted-foreground",
         className
       )}
     >
@@ -196,7 +196,7 @@ export function TextToggle({
       aria-controls={controls}
       onClick={onToggle}
       className={cn(
-        "group/toggle inline-flex items-center gap-1.5 self-start rounded-control py-1 pr-1.5 font-mono text-[11px] font-semibold text-muted-foreground",
+        "group/toggle inline-flex items-center gap-1.5 self-start rounded-control py-1 pr-1.5 font-mono text-caption font-semibold text-muted-foreground",
         "transition-colors duration-fast hover:text-foreground",
         "coarse:min-h-11",
         className
@@ -206,7 +206,7 @@ export function TextToggle({
       <span
         aria-hidden
         className={cn(
-          "inline-block font-mono text-[13px] leading-none transition-transform duration-base ease-out-strong",
+          "inline-block font-mono text-ui leading-none transition-transform duration-base ease-out-strong",
           open && "rotate-45"
         )}
       >

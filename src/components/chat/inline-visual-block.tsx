@@ -231,11 +231,11 @@ function Header({ block }: { block: VisualBlock }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-xs border bg-muted px-2 py-1 font-mono text-[10px] text-muted-foreground">
+            <span className="rounded-xs border bg-muted px-2 py-1 font-mono text-micro text-muted-foreground">
               {typeLabel(block.type)}
             </span>
             {count > 0 && (
-              <span className="font-mono text-[10px] text-muted-foreground">
+              <span className="font-mono text-micro text-muted-foreground">
                 {count} {count === 1 ? "part" : "parts"}
               </span>
             )}
@@ -270,7 +270,7 @@ function CardsBlock({ block }: { block: VisualBlock }) {
                 isActive && "border-primary/55 bg-primary/10 shadow-soft"
               )}
             >
-              <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-xs border bg-card font-mono text-[11px] font-semibold transition-colors duration-base ease-out-soft", isActive && "border-primary/40 text-primary")}>
+              <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-xs border bg-card font-mono text-caption font-semibold transition-colors duration-base ease-out-soft", isActive && "border-primary/40 text-primary")}>
                 {item.label ?? index + 1}
               </span>
               <span className="min-w-0">
@@ -283,7 +283,7 @@ function CardsBlock({ block }: { block: VisualBlock }) {
       </div>
       {/* Keyed so the focus panel animates on each selection. */}
       <div key={active} className="rounded-field border bg-secondary p-4 motion-safe:animate-fade-in">
-        <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-2 font-mono text-micro text-muted-foreground">
           <Maximize2 className="h-3.5 w-3.5" /> Focus
         </div>
         <h4 className="mt-3 text-base font-semibold leading-6">{itemTitle(selected, "Selected card")}</h4>
@@ -339,7 +339,7 @@ function FlowBlock({ block }: { block: VisualBlock }) {
       </div>
       {/* Keyed so the detail panel animates on each selection. */}
       <div key={active} className="rounded-field border bg-secondary p-4 motion-safe:animate-fade-in">
-        <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-2 font-mono text-micro text-muted-foreground">
           <CornerDownRight className="h-3.5 w-3.5 text-primary" /> Selected node
         </div>
         <h4 className="mt-3 text-lg font-semibold leading-tight">{itemTitle(selected, `Node ${active + 1}`)}</h4>
@@ -348,7 +348,7 @@ function FlowBlock({ block }: { block: VisualBlock }) {
       {block.edges && block.edges.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {block.edges.map((edge, index) => (
-            <span key={index} className="rounded-xs border bg-muted px-2 py-1 font-mono text-[10px] text-muted-foreground">
+            <span key={index} className="rounded-xs border bg-muted px-2 py-1 font-mono text-micro text-muted-foreground">
               {[edge.from, edge.label, edge.to].filter(Boolean).join(" -> ")}
             </span>
           ))}
@@ -381,7 +381,7 @@ function ComparisonBlock({ block }: { block: VisualBlock }) {
         className="grid gap-2"
         style={{ gridTemplateColumns: `minmax(7rem, 0.8fr) repeat(${columns.length}, minmax(9rem, 1fr))` }}
       >
-        <div className="rounded-field border bg-secondary px-3 py-2 font-mono text-[10px] text-muted-foreground">
+        <div className="rounded-field border bg-secondary px-3 py-2 font-mono text-micro text-muted-foreground">
           Focus
         </div>
         {columns.map((col) => (
@@ -418,7 +418,7 @@ function QuizBlock({ block }: { block: VisualBlock }) {
   return (
     <div className="space-y-3 p-4">
       <div>
-        <p className="font-mono text-[10px] text-muted-foreground">Quick check</p>
+        <p className="font-mono text-micro text-muted-foreground">Quick check</p>
         <h4 className="mt-1 text-base font-semibold leading-snug">{block.question ?? block.title ?? "Which option fits best?"}</h4>
       </div>
       <div className="grid gap-2">
@@ -439,7 +439,7 @@ function QuizBlock({ block }: { block: VisualBlock }) {
                 active && answered && !correct && "border-destructive/50 bg-destructive/10 shadow-soft"
               )}
             >
-              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-xs border bg-card font-mono text-[10px] font-semibold">
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-xs border bg-card font-mono text-micro font-semibold">
                 {active && correct ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : active ? <XCircle className="h-3.5 w-3.5 text-destructive" /> : index + 1}
               </span>
               <span className="min-w-0">
@@ -502,7 +502,7 @@ function TimelineBlock({ block }: { block: VisualBlock }) {
           className="grid grid-cols-[5rem_1fr] gap-3 border-l border-border pb-4 pl-3 last:pb-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
           style={staggerDelay(index)}
         >
-          <span className="-ml-[1.35rem] flex h-6 w-16 items-center justify-center rounded-full border bg-card font-mono text-[10px] text-muted-foreground shadow-soft">
+          <span className="-ml-[1.35rem] flex h-6 w-16 items-center justify-center rounded-full border bg-card font-mono text-micro text-muted-foreground shadow-soft">
             {item.label ?? index + 1}
           </span>
           <div>

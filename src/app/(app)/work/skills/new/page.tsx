@@ -91,7 +91,7 @@ export default function NewWorkSkillPage() {
             disabled={saving}
             className="mt-1"
           />
-          <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+          <p className="mt-1 font-mono text-micro text-muted-foreground">
             {slug === null
               ? "Type a name with at least one letter or number in it."
               : `Typed as /${slug}`}
@@ -108,7 +108,7 @@ export default function NewWorkSkillPage() {
             disabled={saving}
             className="mt-1"
           />
-          <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p className="mt-1 text-caption leading-relaxed text-muted-foreground">
             One line. This is what Juno reads when deciding whether a skill fits the task in front
             of it.
           </p>
@@ -123,7 +123,7 @@ export default function NewWorkSkillPage() {
             placeholder="Write it the way you would for a person doing it for the first time: the steps, the edge cases, and what to do when something does not fit."
             rows={12}
             disabled={saving}
-            className="mt-1 font-mono text-[13px]"
+            className="mt-1 font-mono text-ui"
           />
         </div>
 
@@ -137,10 +137,10 @@ export default function NewWorkSkillPage() {
               { value: "imported", label: "From somewhere else" },
             ]}
             ariaLabel="Where this skill came from"
-            optionClassName="px-3 py-1 text-[12.5px]"
+            optionClassName="px-3 py-1 text-label"
             className="mt-1 max-w-sm"
           />
-          <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p className="mt-1.5 text-caption leading-relaxed text-muted-foreground">
             {origin === "authored"
               ? "Starts as trusted, because you wrote it. Juno may reach for it on its own once you switch that on."
               : "Starts untrusted. Juno will not reach for it on its own until you have read it and said it is fine — which is the point of the distinction."}

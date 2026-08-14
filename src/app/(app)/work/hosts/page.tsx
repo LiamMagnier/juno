@@ -101,7 +101,7 @@ export default function WorkHostsPage() {
             variant="ghost"
             size="sm"
             onClick={() => void load()}
-            className="h-7 gap-1.5 px-2 font-mono text-[10px] text-muted-foreground"
+            className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
           >
             <RefreshCw className="h-3 w-3" aria-hidden="true" /> Refresh
           </Button>

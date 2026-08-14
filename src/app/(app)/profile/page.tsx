@@ -6,11 +6,11 @@ import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
 import { toast } from "sonner";
-import { Camera, ChevronDown, Download, Loader2, Lock, MessageSquare, TriangleAlert } from "lucide-react";
+import { Camera, Download, Loader2, MessageSquare, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Pressable } from "@/components/ui/pressable";
+import { AppPageHeader } from "@/components/app/app-page-header";
 import {
   Dialog,
   DialogContent,
@@ -21,15 +21,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AppPageHeader } from "@/components/app/app-page-header";
-import { DotIdenticon } from "@/components/signature/dot-matrix";
 import { ImportHistoryCard } from "@/components/settings/import-history";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { SharedLinksCard } from "@/components/share/shared-links-card";
 import { useApp } from "@/components/app/app-provider";
-import { PLANS, effectiveMinPlan, planRank } from "@/lib/plans";
-import { MODELS_BY_PROVIDER, resolveModel, type ModelInfo } from "@/lib/models";
-import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
+import { PLANS } from "@/lib/plans";
+import { resolveModel } from "@/lib/models";
 import { providerAccent } from "@/lib/provider-colors";
 import { cn, formatUsd } from "@/lib/utils";
 
@@ -168,163 +165,7 @@ function TokenHeatmap({ daily }: { daily: Stats["daily"] }) {
   );
 }
 
-function AvailabilityBars({ ratio, color, dots = 24 }: { ratio: number; color: string; dots?: number }) {
-  const filled = Math.round(Math.max(0, Math.min(1, ratio)) * dots);
-  return (
-    // 24 fixed-width dots ≈ 284px — wider than a phone row. Decorative
-    // (aria-hidden), so it yields below sm instead of overflowing the card.
-    <div className="hidden min-w-[150px] justify-end gap-1 sm:flex" aria-hidden>
-      {Array.from({ length: dots }).map((_, i) => (
-        <span
-          key={i}
-          className="h-8 w-2 rounded-full bg-muted ring-1 ring-inset ring-foreground/10 transition-colors duration-base ease-out-soft motion-reduce:transition-none"
-          style={i < filled ? { backgroundColor: color } : undefined}
-        />
-      ))}
-    </div>
-  );
-}
 
-function shortProviderLabel(provider: Provider) {
-  return PROVIDERS[provider].label.split(" · ")[0];
-}
-
-function ProviderLogoWell({ provider }: { provider: Provider }) {
-  return (
-    // Up the ladder, not down. This was `bg-background` + `shadow-pop` inside a
-    // `bg-card` row: on `--background: 0 0% 0%` the well became pure black
-    // punched into a 6.5% card, and its only separation was black ink on black.
-    // A hairline plus one rung of lift replaces both.
-    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-card border border-border/60 bg-secondary">
-      <ProviderLogo provider={provider} className="h-8 w-8" />
-    </div>
-  );
-}
-
-function ModelRow({ info, planLevel, count }: { info: ModelInfo; planLevel: number; count: number }) {
-  const lockPlan = effectiveMinPlan(info.minPlan);
-  const locked = planLevel < planRank(lockPlan);
-  return (
-    // flex-wrap: with released date + status + plan badges all shrink-0, the
-    // worst case outgrows a 360px row — let badges wrap under the name instead.
-    <li className="flex flex-wrap items-center gap-x-2.5 gap-y-1 py-1.5">
-      <ProviderLogo provider={info.provider} className="h-5 w-5 shrink-0" />
-      <span className="min-w-0 truncate text-sm">{info.name}</span>
-      <span className="shrink-0 font-mono text-caption text-muted-foreground">{info.released ?? "—"}</span>
-      {info.status === "deprecated" && (
-        <span className="shrink-0 rounded-full border border-destructive/30 bg-destructive/10 px-1.5 py-px font-mono text-caption text-destructive">
-          Retiring
-        </span>
-      )}
-      {info.status === "legacy" && (
-        <span className="shrink-0 rounded-full border border-border/60 px-1.5 py-px font-mono text-caption text-muted-foreground">
-          Legacy
-        </span>
-      )}
-      {locked && (
-        <span className="flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-muted/50 px-1.5 py-px font-mono text-caption text-muted-foreground">
-          <Lock className="h-2.5 w-2.5" /> {PLANS[lockPlan].name}
-        </span>
-      )}
-      {count > 0 && (
-        <span className="ml-auto shrink-0 pl-2 font-mono text-caption text-muted-foreground">{count.toLocaleString()} msgs</span>
-      )}
-    </li>
-  );
-}
-
-function ProviderRow({
-  provider,
-  configured,
-  usageCount,
-  modelsUsed,
-  share,
-  planLevel,
-  modelUsage,
-  open,
-  onToggle,
-}: {
-  provider: Provider;
-  configured: boolean;
-  usageCount: number;
-  modelsUsed: number;
-  share: number;
-  planLevel: number;
-  modelUsage: Map<string, number>;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  if (!configured) {
-    // Blanket container opacity is not a disabled treatment: at 45% the muted
-    // "Not configured" line measured near 2:1 against the card, well under AA.
-    // The recession is carried by the logo and the muted ink instead, and the
-    // status becomes the same bordered mono pill ModelRow uses for Legacy.
-    return (
-      <div className="flex items-center gap-4 rounded-card border border-border/60 p-4">
-        <span className="opacity-50">
-          <ProviderLogoWell provider={provider} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-base font-semibold text-muted-foreground">
-            {shortProviderLabel(provider)}
-          </p>
-        </div>
-        <span className="shrink-0 rounded-full border border-border/60 px-1.5 py-px font-mono text-caption text-muted-foreground">
-          Not configured
-        </span>
-      </div>
-    );
-  }
-  const models = MODELS_BY_PROVIDER.get(provider) ?? [];
-  return (
-    <div className="surface-raised overflow-hidden rounded-card border border-border/70">
-      {/* `<Pressable kind="row">` is the primitive for a full-width thing you
-          open. This was a raw button with `hover:bg-primary/5` — a hover fill
-          that appears nowhere else in the product — no press feedback, and no
-          open-state visual beyond the chevron. */}
-      <Pressable
-        kind="row"
-        size="lg"
-        selected={open}
-        aria-expanded={open}
-        onClick={onToggle}
-        className="gap-4 rounded-none p-4"
-      >
-        <ProviderLogoWell provider={provider} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-base font-semibold">{shortProviderLabel(provider)}</p>
-          <p className="truncate text-sm text-muted-foreground">
-            {usageCount.toLocaleString()} messages · {modelsUsed} models used
-          </p>
-        </div>
-        <AvailabilityBars ratio={share} color={providerAccent(provider)} />
-        <ChevronDown
-          className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform duration-base ease-in-out motion-reduce:transition-none",
-            open && "rotate-180"
-          )}
-        />
-      </Pressable>
-      <div
-        aria-hidden={!open}
-        className={cn(
-          // ease-in-out: both endpoints are visible, so an ease-out reads as the
-          // panel arriving from off-screen rather than opening in place.
-          "grid transition-[grid-template-rows] duration-base ease-in-out motion-reduce:transition-none",
-          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-        )}
-      >
-        <div className="overflow-hidden">
-          <ul key={open ? "open" : "closed"} className={cn("space-y-0.5 px-4 pb-4 pt-1", open && "motion-safe:animate-rise-in")}>
-            {models.map((info) => (
-              <ModelRow key={info.id} info={info} planLevel={planLevel} count={modelUsage.get(info.id) ?? 0} />
-            ))}
-          </ul>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function AccountCard({ email }: { email: string }) {
   const [open, setOpen] = React.useState(false);
@@ -461,13 +302,12 @@ function AccountCard({ email }: { email: string }) {
 
 function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
   const router = useRouter();
-  const { user, quota, features } = useApp();
+  const { user, quota } = useApp();
   const plan = PLANS[quota.plan];
   const [stats, setStats] = React.useState<Stats | null>(null);
   const [error, setError] = React.useState(false);
   const [avatar, setAvatar] = React.useState<string | null>(user.image ?? null);
   const [uploading, setUploading] = React.useState(false);
-  const [openProvider, setOpenProvider] = React.useState<Provider | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
   // A callback, not an inline effect body: the fetch had no retry at all, so one
@@ -505,89 +345,35 @@ function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
     }
   };
 
-  const modelUsage = React.useMemo(() => {
-    const map = new Map<string, number>();
-    for (const item of stats?.models ?? []) {
-      const key = resolveModel(item.model)?.id ?? item.model;
-      map.set(key, (map.get(key) ?? 0) + item.count);
-    }
-    return map;
-  }, [stats?.models]);
-
-  const providerUsage = React.useMemo(() => {
-    const map = new Map<Provider, { count: number; models: Set<string> }>();
-    for (const item of stats?.models ?? []) {
-      const info = resolveModel(item.model);
-      if (!info) continue;
-      const current = map.get(info.provider) ?? { count: 0, models: new Set<string>() };
-      current.count += item.count;
-      current.models.add(info.id);
-      map.set(info.provider, current);
-    }
-    return map;
-  }, [stats?.models]);
-
-  const totalUsed = React.useMemo(() => {
-    let total = 0;
-    for (const usage of providerUsage.values()) total += usage.count;
-    return total;
-  }, [providerUsage]);
-
-  const orderedProviders = React.useMemo(() => {
-    const configured = new Set(features.providers);
-    return [...PROVIDER_LIST].sort((a, b) => Number(configured.has(b)) - Number(configured.has(a)));
-  }, [features.providers]);
-
-  const planLevel = planRank(quota.plan);
-
   return (
     <div className={cn(!hideHeader && "app-page-scroll")}>
-      <div className={cn("mx-auto w-full max-w-4xl", hideHeader ? "px-0 py-0" : "app-page-content")}>
+      <div className={cn("mx-auto w-full max-w-3xl", hideHeader ? "px-0 py-0" : "app-page-content")}>
         {!hideHeader && <AppPageHeader eyebrow="Profile" heading={user.name ?? "You"} />}
 
-        {/* Identity */}
-        <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
+        {/* Identity Header */}
+        <div className="flex items-center gap-4 rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
           <div className="group relative">
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              // While this was never disabled, a second file could be picked with
-              // the first POST still in flight — whichever response landed last
-              // won, so the avatar could end up as the picture you did not choose.
               disabled={uploading}
-              className="relative block h-20 w-20 overflow-hidden rounded-full border bg-card shadow-soft disabled:cursor-default"
+              className="relative flex size-16 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted text-xl font-bold text-foreground shadow-md disabled:cursor-default"
               aria-label="Change profile picture"
             >
               {avatar ? (
-                <Image src={avatar} unoptimized={requiresViewerCredentials(avatar)} alt="" width={80} height={80} className="h-full w-full object-cover" />
+                <Image src={avatar} unoptimized={requiresViewerCredentials(avatar)} alt="" width={64} height={64} className="h-full w-full object-cover" />
               ) : (
-                <DotIdenticon seed={user.id} className="h-full w-full p-2" />
+                <span>{(user.name || user.email || "U").slice(0, 2).toUpperCase()}</span>
               )}
-              {/* Forced visible while uploading. The spinner lived behind
-                  group-hover, so on touch it never showed at all and on desktop
-                  moving the pointer away mid-upload hid every trace of it.
-                  group-focus-within added for the same reason in the keyboard
-                  case: the veil is the only confirmation that the focused thing
-                  is a control. */}
               <span
                 className={cn(
-                  "absolute inset-0 flex items-center justify-center bg-foreground/40 text-background opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:transition-none",
+                  "absolute inset-0 flex items-center justify-center bg-black/60 text-white opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100",
                   uploading && "opacity-100"
                 )}
               >
-                {uploading ? <Loader2 className="size-5 animate-spin" /> : <Camera className="size-5" />}
+                {uploading ? <Loader2 className="size-4 animate-spin" /> : <Camera className="size-4" />}
               </span>
             </button>
-            {/* A permanent badge, because hover is not an affordance on touch:
-                the camera glyph above lives behind group-hover, so on a phone
-                the avatar gave no sign it could be changed at all. Pointer-
-                events off — the button underneath owns the whole target. */}
-            <span
-              aria-hidden
-              className="pointer-events-none absolute bottom-0 right-0 grid size-6 place-items-center rounded-full border border-border/60 bg-card text-muted-foreground shadow-soft"
-            >
-              <Camera className="size-3" />
-            </span>
             <input
               ref={fileRef}
               type="file"
@@ -600,25 +386,26 @@ function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
               }}
             />
           </div>
-          {/* The name is the page's h1 now, in AppPageHeader above — this used
-              to be a second, smaller heading saying the same thing. */}
-          <div className="min-w-0">
-            <p className="text-sm text-muted-foreground">{user.email}</p>
-            <p className="mt-1 font-mono text-caption text-muted-foreground">
-              {plan.name} plan
-              {stats?.memberSince ? ` · since ${new Date(stats.memberSince).toLocaleDateString(undefined, { month: "short", year: "numeric" })}` : ""}
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="truncate text-base font-semibold text-foreground">{user.name || "User"}</h3>
+              <span className="inline-flex items-center rounded-full border border-border/60 bg-secondary px-2 py-0.5 font-mono text-micro font-semibold uppercase text-secondary-foreground">
+                {plan.name}
+              </span>
+            </div>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">{user.email}</p>
+            <p className="mt-1 font-mono text-caption text-muted-foreground/80">
+              Member since {stats?.memberSince ? new Date(stats.memberSince).toLocaleDateString(undefined, { month: "short", year: "numeric" }) : "Aug 2026"}
             </p>
           </div>
         </div>
 
         {error ? (
-          // A failed load rendered as one grey sentence — the same treatment as
-          // "No chats yet" further down, so failure and emptiness looked
-          // identical, and there was no way back from it short of a reload.
           <EmptyState
             tone="error"
             size="panel"
-            className="mt-8"
+            className="mt-5"
             icon={TriangleAlert}
             title="Couldn't load your stats"
             description="Your activity, model mix and lifetime ledger all come from one request, and it didn't come back."
@@ -629,35 +416,35 @@ function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
             }
           />
         ) : !stats ? (
-          <div className="mt-8 space-y-4">
-            <div className="skeleton h-32 rounded-surface" />
+          <div className="mt-5 space-y-4">
+            <div className="skeleton h-32 rounded-2xl" />
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="skeleton h-40 rounded-surface" />
-              <div className="skeleton h-40 rounded-surface" />
+              <div className="skeleton h-40 rounded-2xl" />
+              <div className="skeleton h-40 rounded-2xl" />
             </div>
           </div>
         ) : (
-          <div className="mt-8 space-y-4">
+          <div className="mt-5 space-y-4">
             {/* Activity heatmap — last ~53 weeks */}
-            <Card className="rounded-surface p-5">
+            <Card className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
               <div className="mb-4 flex items-end justify-between gap-3">
                 <div>
                   <CardEyebrow>Activity</CardEyebrow>
-                  <p className="mt-1 text-sm text-muted-foreground">Last 53 weeks of billable generations.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Last 53 weeks of generations.</p>
                 </div>
-                <p className="shrink-0 text-sm text-muted-foreground">
-                  <span className="font-mono text-foreground">
+                <p className="shrink-0 font-mono text-caption text-muted-foreground">
+                  <span className="text-foreground font-medium">
                     {compactNumber(stats.yearTokens ?? stats.totalTokens)}
                   </span>{" "}
                   tokens ·{" "}
-                  <span className="font-mono text-foreground">
+                  <span className="text-foreground font-medium">
                     {(stats.yearMessages ?? stats.totalMessages).toLocaleString()}
                   </span>{" "}
                   replies
                 </p>
               </div>
               <TokenHeatmap daily={stats.daily} />
-              <div className="mt-3 flex items-center justify-end gap-1.5 font-mono text-caption text-muted-foreground">
+              <div className="mt-3 flex items-center justify-end gap-1.5 font-mono text-micro text-muted-foreground">
                 Less
                 {LEVEL_BG.map((bg, i) => (
                   <span key={i} className={cn("h-[11px] w-[11px] rounded-micro", bg)} />
@@ -666,48 +453,14 @@ function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
               </div>
             </Card>
 
-            <Card className="rounded-surface p-5">
-              <div className="mb-4 flex items-end justify-between gap-3">
-                <div>
-                  <CardEyebrow>Provider availability</CardEyebrow>
-                  <p className="mt-1 text-sm text-muted-foreground">How your messages split across configured labs.</p>
-                </div>
-                <p className="shrink-0 font-mono text-caption text-muted-foreground">
-                  {features.providers.length} of {PROVIDER_LIST.length} configured
-                </p>
-              </div>
-              <div className="grid gap-3">
-                {orderedProviders.map((provider) => {
-                  const usage = providerUsage.get(provider);
-                  return (
-                    <ProviderRow
-                      key={provider}
-                      provider={provider}
-                      configured={features.providers.includes(provider)}
-                      usageCount={usage?.count ?? 0}
-                      modelsUsed={usage?.models.size ?? 0}
-                      share={totalUsed > 0 ? (usage?.count ?? 0) / totalUsed : 0}
-                      planLevel={planLevel}
-                      modelUsage={modelUsage}
-                      open={openProvider === provider}
-                      onToggle={() => setOpenProvider((prev) => (prev === provider ? null : provider))}
-                    />
-                  );
-                })}
-              </div>
-            </Card>
-
             <div className="grid gap-4 sm:grid-cols-2">
               {/* Most-used models — year window mix */}
-              <Card className="rounded-surface p-5">
+              <Card className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
                 <div className="mb-3">
                   <CardEyebrow>Most-used models</CardEyebrow>
-                  <p className="mt-1 text-sm text-muted-foreground">Your mix over the last year.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Your mix across active providers.</p>
                 </div>
                 {stats.models.length === 0 ? (
-                  // The shared primitive, so "you have not used this yet" looks
-                  // the same here as it does everywhere else — it was one grey
-                  // sentence, identical in weight to the failure state above.
                   <EmptyState
                     tone="empty"
                     size="panel"
@@ -725,10 +478,10 @@ function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
                           {info && <ProviderLogo provider={info.provider} className="h-5 w-5" />}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-2">
-                              <span className="truncate text-sm">{info?.name ?? m.model}</span>
-                              <span className="shrink-0 font-mono text-caption text-muted-foreground">{m.count}</span>
+                              <span className="truncate text-xs font-medium text-foreground">{info?.name ?? m.model}</span>
+                              <span className="shrink-0 font-mono text-caption text-muted-foreground">{m.count} msgs</span>
                             </div>
-                            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
+                            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
                               <div
                                 className="h-full rounded-full"
                                 style={{
@@ -747,14 +500,35 @@ function ProfileContent({ hideHeader }: { hideHeader?: boolean }) {
 
               <LifetimeCard stats={stats} planName={plan.name} />
             </div>
+
+            {/* Account & Security */}
+            <div className="rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Security & Session</h4>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-foreground">Sign-in & Credentials</p>
+                  <p className="text-xs text-muted-foreground">Manage active sessions across devices.</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full text-xs"
+                  onClick={() => signOutToSignIn()}
+                >
+                  Log out
+                </Button>
+              </div>
+            </div>
           </div>
         )}
 
-        <div className="mt-4 space-y-4">
-          <SharedLinksCard />
-          <ImportHistoryCard />
-          <AccountCard email={user.email ?? ""} />
-        </div>
+        {!hideHeader && (
+          <div className="mt-4 space-y-4">
+            <SharedLinksCard />
+            <ImportHistoryCard />
+            <AccountCard email={user.email ?? ""} />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -44,7 +44,6 @@ import { cn, formatBytes } from "@/lib/utils";
 import { staggerDelay } from "@/lib/motion";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AppPageHeader } from "@/components/app/app-page-header";
-import { Pressable } from "@/components/ui/pressable";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 
 interface LibItem {
@@ -812,17 +811,24 @@ export default function LibraryPage() {
                 {TABS.map((filter) => {
                   const active = tab === filter.key;
                   return (
-                    <Pressable
+                    <button
                       key={filter.key}
-                      kind="chip"
-                      selected={active}
+                      type="button"
                       role="radio"
                       aria-checked={active}
                       onClick={() => setTab(filter.key)}
+                      className={cn(
+                        "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-all duration-base ease-out-soft active:scale-95",
+                        active
+                          ? "border-foreground/40 bg-foreground text-background shadow-xs"
+                          : "border-border/70 bg-secondary/80 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      )}
                     >
-                      {filter.label}
-                      <span className="tabular-nums opacity-60">{countFor(libraryItems, filter.key)}</span>
-                    </Pressable>
+                      <span>{filter.label}</span>
+                      <span className={cn("font-mono text-micro tabular-nums", active ? "text-background/80" : "text-muted-foreground/80")}>
+                        {countFor(libraryItems, filter.key)}
+                      </span>
+                    </button>
                   );
                 })}
               </div>

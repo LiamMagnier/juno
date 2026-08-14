@@ -67,90 +67,22 @@ const COMPOSER_DIVIDER = "mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380p
 /** Cloud task-dispatch failures surfaced inline under the composer (503/502). */
 type CloudStartError = "not_configured" | "dispatch_failed" | null;
 
-// Code-flavoured greetings — deterministic index during SSR (stable hydration),
-// then a random pick once mounted so it varies per visit (same idiom as the chat
-// EmptyGreeting).
-const CODE_GREETINGS = [
-  "What are we building",
-  "What's the task",
-  "What's next",
-  "Where do we start",
-  "What should Juno Code do",
-  "Ready when you are",
-];
-
 function CodeGreeting() {
   const { user } = useApp();
   const firstName = user.name?.split(" ")[0];
-  const [idx, setIdx] = React.useState(0);
-  React.useEffect(() => setIdx(Math.floor(Math.random() * CODE_GREETINGS.length)), []);
-  const [popping, setPopping] = React.useState(false);
-  const phrase = CODE_GREETINGS[idx];
 
   return (
     <div className="flex w-full flex-col items-center text-center">
-      {/* `text-label` — the eyebrow token, which carries the 0.10em tracking an
-          eyebrow is meant to have. Every other mono eyebrow on these surfaces
-          (the PR list's section headings, the composer's Add menu, the voice
-          panel's notes) already uses it; this one was a bare 11px. */}
-      <p className="mb-3 font-mono text-label text-muted-foreground [animation-fill-mode:backwards] motion-safe:animate-fade-in">
-        Juno Code
-      </p>
-      {/* 1fr | text | 1fr — text stays screen-centered; mark flanks left. */}
-      <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center">
-        <div className="flex items-center justify-end pr-[0.38em]">
-          <button
-            type="button"
-            aria-label="Juno"
-            onClick={() => setPopping(true)}
-            onAnimationEnd={() => setPopping(false)}
-            className={cn(
-              // The glyph is under the 24x24 WCAG 2.2 (2.5.8) target minimum, so
-              // grid + place-items grows the hit area around it without moving
-              // it, exactly as the chat greeting's mark does. `outline-none` is
-              // gone with it: it removed the global :focus-visible outline and
-              // put nothing back, so this control had no keyboard focus at all.
-              //
-              // Both sizes stepped up with the heading: the h1 moved off two
-              // pinned rem values onto `text-display`, whose clamp tops out at
-              // 48px rather than the old 37.6px, and a mark that did not follow
-              // would have shrunk optically against it at every wide viewport.
-              "grid size-7 shrink-0 place-items-center [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in sm:size-10",
-              popping && "juno-mark-popping",
-            )}
-          >
-            <JunoMark
-              className={cn(
-                "block h-[1.6rem] w-[1.6rem] sm:h-[2.2rem] sm:w-[2.2rem]",
-                "transition-transform duration-base ease-out-strong motion-reduce:transition-none",
-                !popping && "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
-              )}
-            />
-          </button>
-        </div>
-        {/* `text-display`, the token the identical role in code-session-view
-            uses. This was two arbitrary sizes pinned behind a breakpoint, which
-            is the exact thing the display clamp exists to replace — and the
-            breakpoint made small viewports SMALLER than the scale intends. */}
-        <h1
-          className="text-center font-serif text-display font-normal tracking-tight"
-          suppressHydrationWarning
-        >
-          <span className="inline-block [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
-            {phrase}
-            {firstName ? "," : "?"}
-          </span>
-          {firstName ? (
-            <>
-              {" "}
-              <span className="inline-block font-medium italic text-primary [animation-delay:180ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
-                {firstName}?
-              </span>
-            </>
-          ) : null}
-        </h1>
-        <div aria-hidden="true" />
+      <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-border/80 bg-secondary/80 px-3 py-1 font-mono text-micro uppercase tracking-wider text-muted-foreground shadow-xs">
+        <JunoMark className="size-3.5" />
+        <span>Juno Code</span>
       </div>
+      <h1 className="text-center font-serif text-3xl font-normal tracking-tight text-foreground sm:text-4xl">
+        What are we building today{firstName ? `, ${firstName}` : ""}?
+      </h1>
+      <p className="mt-2 max-w-lg text-sm text-muted-foreground">
+        Autonomous agent for your local workspace, repositories, and pull requests.
+      </p>
     </div>
   );
 }

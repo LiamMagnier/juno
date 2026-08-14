@@ -74,7 +74,7 @@ export function ChatWorkSwitcher({ className }: { className?: string }) {
         // panel behind it, so it earns its size from the two words in it rather
         // than from a column width it has to fill.
         className="w-auto"
-        optionClassName="gap-1.5 px-4 py-1.5 text-[13px] font-medium"
+        optionClassName="gap-1.5 px-4 py-1.5 text-ui font-medium"
         options={[
           { value: "chat", label: "Chat", icon: <AppIcons.home className="h-3.5 w-3.5" /> },
           { value: "work", label: "Work", icon: <AppIcons.work className="h-3.5 w-3.5" /> },

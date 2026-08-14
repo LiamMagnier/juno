@@ -274,13 +274,13 @@ export default function WorkHostPage() {
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
           <WorkHostStatePill host={host} />
-          <span className="text-[13px] text-muted-foreground">
+          <span className="text-ui text-muted-foreground">
             {revokedAt !== null
               ? `Revoked ${workTimeAgo(revokedAt)}.`
               : (workload ?? "Nothing running on it right now.")}
           </span>
           {revokedAt === null && pendingCommands > 0 && (
-            <span className="font-mono text-[10px] text-muted-foreground">
+            <span className="font-mono text-micro text-muted-foreground">
               {pendingCommands === 1
                 ? "1 instruction waiting to be picked up"
                 : `${pendingCommands} instructions waiting to be picked up`}

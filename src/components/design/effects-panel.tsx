@@ -383,7 +383,7 @@ function PaintListSection({
               />
             )}
             {expanded === index && gradient === null && paint.type === "image" && (
-              <p className="text-[10px] leading-snug text-muted-foreground">
+              <p className="text-micro leading-snug text-muted-foreground">
                 An image fill is placed from the canvas; its asset is not editable here.
               </p>
             )}
@@ -676,7 +676,7 @@ function AxisPad({
 
   return (
     <label className="block">
-      <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">Direction</span>
+      <span className="block pb-0.5 font-mono text-micro text-muted-foreground">Direction</span>
       <div ref={padRef} className="relative h-24 w-full rounded-md border border-border/60 bg-muted/40">
         <svg className="pointer-events-none absolute inset-0 size-full" viewBox="0 0 1 1" preserveAspectRatio="none">
           <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="hsl(var(--primary))" strokeWidth="0.012" vectorEffect="non-scaling-stroke" />
@@ -704,7 +704,7 @@ function RadialPad({
 
   return (
     <label className="block">
-      <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">Centre &amp; radius</span>
+      <span className="block pb-0.5 font-mono text-micro text-muted-foreground">Centre &amp; radius</span>
       <div ref={padRef} className="relative h-24 w-full rounded-md border border-border/60 bg-muted/40">
         <svg className="pointer-events-none absolute inset-0 size-full" viewBox="0 0 1 1" preserveAspectRatio="none">
           <circle cx={center.x} cy={center.y} r={radius} fill="none" stroke="hsl(var(--primary))" strokeWidth="0.012" vectorEffect="non-scaling-stroke" />
@@ -890,7 +890,7 @@ export function EffectsSection({
         />
       ))}
       {hasBackdrop && (
-        <p className="text-[10px] leading-snug text-muted-foreground">
+        <p className="text-micro leading-snug text-muted-foreground">
           A backdrop effect samples what is behind this layer, so it is drawn beneath it wherever it sits in the list. Give the
           layer a low-alpha fill, or none, so there is something to see through.
         </p>
@@ -941,7 +941,7 @@ function AddEffectMenu({ disabled, onAdd }: { disabled?: boolean; onAdd: (type: 
               className="pressable block w-full rounded-xs px-2 py-1 text-left transition-colors hover:bg-accent"
             >
               <span className="block text-xs text-foreground">{item.label}</span>
-              <span className="block text-[10px] leading-snug text-muted-foreground">{item.hint}</span>
+              <span className="block text-micro leading-snug text-muted-foreground">{item.hint}</span>
             </button>
           ))}
         </div>
@@ -974,7 +974,7 @@ function EffectRow({
   return (
     <div className={cn("space-y-1.5 rounded-control border border-border/60 p-2", hidden && "opacity-50")}>
       <div className="flex items-center gap-1.5">
-        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">{title}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-micro text-muted-foreground">{title}</span>
         <div className="flex shrink-0 items-center gap-0.5">
           <IconButton
             label={hidden ? `Show ${label}` : `Hide ${label}`}
@@ -1289,7 +1289,7 @@ const clampSeed = (value: number) => Math.max(0, Math.min(65_535, Math.round(val
 /** What a list section shows when it is empty. Not nothing: an empty section
  *  with no row at all reads as a section that failed to load. */
 function EmptyRow({ children }: { children: React.ReactNode }) {
-  return <p className="rounded-md border border-dashed border-border/60 px-2 py-1 text-[11px] text-muted-foreground">{children}</p>;
+  return <p className="rounded-md border border-dashed border-border/60 px-2 py-1 text-caption text-muted-foreground">{children}</p>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1300,7 +1300,7 @@ export function Section({ title, action, children }: { title: string; action?: R
   return (
     <section className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="truncate font-mono text-[10px] text-muted-foreground">{title}</h3>
+        <h3 className="truncate font-mono text-micro text-muted-foreground">{title}</h3>
         {action}
       </div>
       {children}
@@ -1314,7 +1314,7 @@ export const fieldClass =
 /** "Mixed" as a badge rather than a value, because the section below it shows
  *  the first layer's state and a badge is the only honest way to say so. */
 function MixedBadge() {
-  return <span className="shrink-0 rounded-sm bg-muted px-1 font-mono text-[9px] text-muted-foreground">Mixed</span>;
+  return <span className="shrink-0 rounded-sm bg-muted px-1 font-mono text-micro text-muted-foreground">Mixed</span>;
 }
 
 function MiniButton({ children, disabled, onClick }: { children: React.ReactNode; disabled?: boolean; onClick: () => void }) {
@@ -1351,7 +1351,7 @@ function IconButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "pressable rounded-xs px-1 font-mono text-[11px] text-muted-foreground transition-colors disabled:opacity-30 coarse:min-h-8 coarse:min-w-8",
+        "pressable rounded-xs px-1 font-mono text-caption text-muted-foreground transition-colors disabled:opacity-30 coarse:min-h-8 coarse:min-w-8",
         destructive ? "hover:text-destructive" : "hover:text-foreground"
       )}
     >
@@ -1383,7 +1383,7 @@ function Segmented({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            "pressable flex-1 rounded-xs px-1 py-1 text-[11px] transition-colors disabled:opacity-50 coarse:min-h-8",
+            "pressable flex-1 rounded-xs px-1 py-1 text-caption transition-colors disabled:opacity-50 coarse:min-h-8",
             value === option.value ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
           )}
         >
@@ -1512,7 +1512,7 @@ export function NumberField({
 
   return (
     <label className="block">
-      <span className="block truncate pb-0.5 font-mono text-[9px] text-muted-foreground">
+      <span className="block truncate pb-0.5 font-mono text-micro text-muted-foreground">
         {label}
         {suffix ? ` (${suffix})` : ""}
       </span>
@@ -1597,7 +1597,7 @@ export function TextField({
   };
   return (
     <label className="block">
-      <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">{label}</span>
+      <span className="block pb-0.5 font-mono text-micro text-muted-foreground">{label}</span>
       {multiline ? <textarea rows={3} {...shared} className={cn(fieldClass, "resize-y")} /> : <input type="text" {...shared} />}
     </label>
   );
@@ -1624,7 +1624,7 @@ export function SelectField({
 }) {
   return (
     <label className="block min-w-0 flex-1">
-      <span className="block truncate pb-0.5 font-mono text-[9px] text-muted-foreground">{label}</span>
+      <span className="block truncate pb-0.5 font-mono text-micro text-muted-foreground">{label}</span>
       <select
         className={fieldClass}
         value={mixed ? MIXED_OPTION : value}
@@ -1678,7 +1678,7 @@ export function ColorField({
   const shown = draft ?? (mixed ? "" : value);
   return (
     <label className="block">
-      <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">{label}</span>
+      <span className="block pb-0.5 font-mono text-micro text-muted-foreground">{label}</span>
       <div className="flex items-center gap-1.5">
         <input
           type="color"
@@ -1718,7 +1718,7 @@ export function ColorField({
             disabled={disabled}
             onClick={onClear}
             aria-label={`Remove ${label.toLowerCase()}`}
-            className="pressable shrink-0 rounded-sm px-1 font-mono text-[10px] text-muted-foreground hover:text-destructive"
+            className="pressable shrink-0 rounded-sm px-1 font-mono text-micro text-muted-foreground hover:text-destructive"
           >
             ×
           </button>

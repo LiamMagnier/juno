@@ -301,7 +301,7 @@ export function CodeTargetPicker({
                 : "Runs in the cloud. No repository picked yet — pick one"
           }
           className={cn(
-            "group inline-flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-control px-2 font-mono text-[12px] font-medium tracking-tight text-foreground/80",
+            "group inline-flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-control px-2 font-mono text-label font-medium tracking-tight text-foreground/80",
             "transition-[background-color,color,transform] duration-fast ease-out-soft",
             "hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground",
             // Focus fills, exactly as the thinking button beside it does, and
@@ -311,7 +311,7 @@ export function CodeTargetPicker({
             // keyboard user and an invisible focus.
             "focus-visible:bg-accent focus-visible:text-foreground",
             "disabled:pointer-events-none disabled:opacity-50 motion-reduce:transition-none motion-reduce:active:scale-100",
-            "min-[480px]:text-[13px] coarse:h-11",
+            "min-[480px]:text-ui coarse:h-11",
             className,
           )}
         >
@@ -757,7 +757,7 @@ function CloudList({
               }
             }}
             placeholder={`${selected.defaultBranch} (default)`}
-            className="h-8 rounded-control font-mono text-[13px] coarse:h-11"
+            className="h-8 rounded-control font-mono text-ui coarse:h-11"
           />
         </div>
       )}
@@ -891,7 +891,7 @@ function PickerSearch({
         placeholder={placeholder}
         aria-label={placeholder}
         disabled={disabled}
-        className="h-8 rounded-control pl-8 text-[13px] coarse:h-11"
+        className="h-8 rounded-control pl-8 text-ui coarse:h-11"
       />
     </div>
   );
@@ -974,7 +974,7 @@ function PickerNote({
     >
       <span className={isError ? "text-destructive" : "text-muted-foreground"}>{icon}</span>
       <p className={cn("text-sm font-medium", isError ? "text-destructive" : "text-foreground")}>{title}</p>
-      <p className="max-w-[22rem] text-[13px] leading-relaxed text-muted-foreground">{body}</p>
+      <p className="max-w-[22rem] text-ui leading-relaxed text-muted-foreground">{body}</p>
       {action && <div className="pt-1">{action}</div>}
     </div>
   );

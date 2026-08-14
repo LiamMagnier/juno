@@ -610,7 +610,7 @@ export function DesignEditor({
             Ask Juno
           </Button>
         )}
-        {state.saving && <span className="px-2 font-mono text-[10px] text-muted-foreground">Saving…</span>}
+        {state.saving && <span className="px-2 font-mono text-micro text-muted-foreground">Saving…</span>}
       </div>
 
       {/* Body: layers · canvas · inspector */}
@@ -624,7 +624,7 @@ export function DesignEditor({
                 onClick={() => setPanel(value)}
                 aria-pressed={panel === value}
                 className={cn(
-                  "flex flex-1 items-center justify-center gap-1 py-1.5 font-mono text-[10px] transition-colors coarse:min-h-9",
+                  "flex flex-1 items-center justify-center gap-1 py-1.5 font-mono text-micro transition-colors coarse:min-h-9",
                   panel === value ? "text-primary" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -714,7 +714,7 @@ export function DesignEditor({
                 onClick={() => setRightPanel(value)}
                 aria-pressed={rightPanel === value}
                 className={cn(
-                  "flex flex-1 items-center justify-center gap-1 py-1.5 font-mono text-[10px] transition-colors coarse:min-h-9",
+                  "flex flex-1 items-center justify-center gap-1 py-1.5 font-mono text-micro transition-colors coarse:min-h-9",
                   rightPanel === value ? "text-primary" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -749,12 +749,12 @@ function ProposalReview({ state, onResolved }: { state: DesignEditorState; onRes
           <p className="text-sm font-medium">{pending.transaction.summary}</p>
           <ul className="max-h-24 overflow-y-auto pt-1">
             {pending.changes.map((line, index) => (
-              <li key={index} className="truncate font-mono text-[10px] text-muted-foreground">
+              <li key={index} className="truncate font-mono text-micro text-muted-foreground">
                 {line}
               </li>
             ))}
           </ul>
-          <p className="pt-1 font-mono text-[10px] text-muted-foreground">
+          <p className="pt-1 font-mono text-micro text-muted-foreground">
             Previewing on the canvas · {pending.result.touchedNodeIds.length} layer
             {pending.result.touchedNodeIds.length === 1 ? "" : "s"} affected
           </p>
@@ -802,7 +802,7 @@ function HistoryList({ state, onSelect }: { state: DesignEditorState; onSelect: 
           <span className="flex items-baseline gap-1.5">
             <span className={cn("truncate text-xs", entry.author === "juno" ? "text-primary" : "text-foreground")}>{entry.summary}</span>
           </span>
-          <span className="block font-mono text-[9px] text-muted-foreground">
+          <span className="block font-mono text-micro text-muted-foreground">
             {entry.author === "juno" ? "Juno" : "You"} · {entry.touched.length} layer{entry.touched.length === 1 ? "" : "s"}
           </span>
         </button>

@@ -73,7 +73,7 @@ function Section({ title, note, children }: { title: string; note?: string; chil
 }
 
 function Caption({ children }: { children: React.ReactNode }) {
-  return <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground/60">{children}</p>;
+  return <p className="font-mono text-micro uppercase tracking-wide text-muted-foreground/60">{children}</p>;
 }
 
 export function AicssGallery() {

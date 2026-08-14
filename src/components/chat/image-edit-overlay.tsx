@@ -298,10 +298,10 @@ export function ImageEditOverlay({
                 <ImageIcon className="size-4" aria-hidden="true" />
               </span>
               <div className="min-w-0">
-                <p className="truncate text-[13px] font-medium text-foreground">{attachment.fileName}</p>
-                <p className="text-[11px] text-muted-foreground">Edit canvas</p>
+                <p className="truncate text-ui font-medium text-foreground">{attachment.fileName}</p>
+                <p className="text-caption text-muted-foreground">Edit canvas</p>
               </div>
-              <span className="ml-auto hidden shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-accent px-2.5 py-1 text-[11px] text-muted-foreground shadow-soft sm:inline-flex">
+              <span className="ml-auto hidden shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-accent px-2.5 py-1 text-caption text-muted-foreground shadow-soft sm:inline-flex">
                 {region ? <Crop className="size-3" aria-hidden="true" /> : <ImageIcon className="size-3" aria-hidden="true" />}
                 {region ? "Selected area" : "Whole image"}
               </span>
@@ -420,7 +420,7 @@ export function ImageEditOverlay({
                     ))}
                     <span
                       className={cn(
-                        "absolute left-0 whitespace-nowrap rounded-xs border border-white/20 bg-black/75 px-2 py-1 font-mono text-[10px] tabular-nums text-white shadow-soft backdrop-blur-sm",
+                        "absolute left-0 whitespace-nowrap rounded-xs border border-white/20 bg-black/75 px-2 py-1 font-mono text-micro tabular-nums text-white shadow-soft backdrop-blur-sm",
                         captionBelow ? "-bottom-2 translate-y-full" : "-top-2 -translate-y-full"
                       )}
                     >
@@ -431,7 +431,7 @@ export function ImageEditOverlay({
               </div>
             </div>
 
-            <div className="flex min-h-11 shrink-0 items-center justify-between gap-3 border-t border-border/50 px-4 text-[11px] text-muted-foreground sm:px-5">
+            <div className="flex min-h-11 shrink-0 items-center justify-between gap-3 border-t border-border/50 px-4 text-caption text-muted-foreground sm:px-5">
               <p id={selectionHelpId} className="flex min-w-0 items-center gap-2">
                 <MousePointer2 className="size-3.5 shrink-0" aria-hidden="true" />
                 <span className="truncate">Drag to select. Keyboard: Enter, arrows, Shift + arrows, Escape.</span>
@@ -458,15 +458,15 @@ export function ImageEditOverlay({
           <aside className="min-h-0 overflow-y-auto" aria-label="Image edit controls">
             <form onSubmit={handleSubmit} className="flex min-h-full flex-col p-5 pt-6 sm:p-6 md:p-7">
               <div className="pr-9">
-                <p className="font-mono text-[10px] font-semibold text-muted-foreground">Image editor</p>
+                <p className="font-mono text-micro font-semibold text-muted-foreground">Image editor</p>
                 <DialogTitle className="mt-2 text-xl text-foreground">Edit image</DialogTitle>
-                <DialogDescription className="mt-2 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
+                <DialogDescription className="mt-2 max-w-sm text-ui leading-relaxed text-muted-foreground">
                   Describe the change and optionally target a precise area.
                 </DialogDescription>
               </div>
 
               <fieldset className="mt-6">
-                <legend className="mb-2 font-mono text-[10px] font-semibold text-muted-foreground">Edit area</legend>
+                <legend className="mb-2 font-mono text-micro font-semibold text-muted-foreground">Edit area</legend>
                 {/* The track lifts and the thumb lifts further. It used to be a
                     `bg-muted/40` groove with a `bg-background` thumb, which on
                     black is a fill that resolves to the sheet's own colour
@@ -484,7 +484,7 @@ export function ImageEditOverlay({
                     }}
                     className={cn(
                       // `xs` (6px), concentric with the `field` (10px) track minus its 4px pad.
-                      "flex h-9 items-center justify-center gap-2 rounded-xs px-3 text-[12px] font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
+                      "flex h-9 items-center justify-center gap-2 rounded-xs px-3 text-label font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
                       region == null ? "bg-accent text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -497,7 +497,7 @@ export function ImageEditOverlay({
                     onClick={() => frameRef.current?.focus({ preventScroll: true })}
                     className={cn(
                       // `xs` (6px), concentric with the `field` (10px) track minus its 4px pad.
-                      "flex h-9 items-center justify-center gap-2 rounded-xs px-3 text-[12px] font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
+                      "flex h-9 items-center justify-center gap-2 rounded-xs px-3 text-label font-medium transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100",
                       region != null ? "bg-accent text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -505,7 +505,7 @@ export function ImageEditOverlay({
                     {region ? "Selected area" : "Select area"}
                   </button>
                 </div>
-                <p className="mt-2 min-h-4 text-[11px] leading-relaxed text-muted-foreground">
+                <p className="mt-2 min-h-4 text-caption leading-relaxed text-muted-foreground">
                   {region
                     ? `Selection: ${Math.round(region.w * 100)}% × ${Math.round(region.h * 100)}%.`
                     : "Applies to the whole image."}
@@ -516,7 +516,7 @@ export function ImageEditOverlay({
               </fieldset>
 
               {support === "none" && (
-                <div role="status" className="mt-4 flex items-start gap-2.5 rounded-field border border-destructive/25 bg-destructive/[0.045] px-3.5 py-3 text-[12px] leading-relaxed text-destructive dark:bg-destructive/[0.14]">
+                <div role="status" className="mt-4 flex items-start gap-2.5 rounded-field border border-destructive/25 bg-destructive/[0.045] px-3.5 py-3 text-label leading-relaxed text-destructive dark:bg-destructive/[0.14]">
                   <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
                   <span>
                     {editModel
@@ -527,14 +527,14 @@ export function ImageEditOverlay({
               )}
 
               {support === "prompt" && editModel && (
-                <div className="mt-4 flex items-start gap-2.5 rounded-field border border-border/60 bg-secondary px-3.5 py-3 text-[11px] leading-relaxed text-muted-foreground">
+                <div className="mt-4 flex items-start gap-2.5 rounded-field border border-border/60 bg-secondary px-3.5 py-3 text-caption leading-relaxed text-muted-foreground">
                   <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
                   <span>{editModel.name} uses the selected area as guidance, so nearby details may also adjust.</span>
                 </div>
               )}
 
               <div className="mt-5">
-                <label htmlFor={`${selectionHelpId}-prompt`} className="font-mono text-[10px] font-semibold text-muted-foreground">
+                <label htmlFor={`${selectionHelpId}-prompt`} className="font-mono text-micro font-semibold text-muted-foreground">
                   Instructions
                 </label>
                 {/* The inset was drawn from --foreground (a white top-lip on a black
@@ -550,9 +550,9 @@ export function ImageEditOverlay({
                     placeholder={region ? "Describe what should change inside the selection…" : "Describe how the image should change…"}
                     aria-label="Describe changes"
                     disabled={support === "none"}
-                    className="h-28 w-full resize-none bg-transparent px-3.5 py-3 text-[13px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/60 disabled:cursor-not-allowed disabled:opacity-50 md:h-32"
+                    className="h-28 w-full resize-none bg-transparent px-3.5 py-3 text-ui leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/60 disabled:cursor-not-allowed disabled:opacity-50 md:h-32"
                   />
-                  <div className="flex min-h-9 items-center justify-between gap-3 border-t border-border/50 px-3 text-[10px] text-muted-foreground">
+                  <div className="flex min-h-9 items-center justify-between gap-3 border-t border-border/50 px-3 text-micro text-muted-foreground">
                     <span className="truncate">{region ? "Editing selected area" : "Editing whole image"}</span>
                     {editModel && <span className="shrink-0 font-mono">{editModel.name}</span>}
                   </div>
@@ -563,7 +563,7 @@ export function ImageEditOverlay({
                 <DialogClose asChild>
                   <button
                     type="button"
-                    className="h-10 rounded-full px-4 text-[13px] font-medium text-muted-foreground transition-[color,background-color,transform] duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100"
+                    className="h-10 rounded-full px-4 text-ui font-medium text-muted-foreground transition-[color,background-color,transform] duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-[0.98] motion-reduce:transition-none motion-reduce:active:scale-100"
                   >
                     Cancel
                   </button>
@@ -571,7 +571,7 @@ export function ImageEditOverlay({
                 <button
                   type="submit"
                   disabled={!canSubmit}
-                  className="group/apply inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-full bg-foreground px-5 text-[13px] font-semibold text-background transition-[opacity,transform] duration-fast ease-out-soft hover:opacity-90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-35 motion-reduce:transition-none motion-reduce:active:scale-100"
+                  className="group/apply inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-full bg-foreground px-5 text-ui font-semibold text-background transition-[opacity,transform] duration-fast ease-out-soft hover:opacity-90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-35 motion-reduce:transition-none motion-reduce:active:scale-100"
                 >
                   <Wand2 className="size-3.5 transition-transform duration-base ease-out-soft group-hover/apply:-translate-y-0.5 group-hover/apply:rotate-[-8deg] motion-reduce:transition-none motion-reduce:group-hover/apply:translate-y-0 motion-reduce:group-hover/apply:rotate-0" aria-hidden="true" />
                   <span>Generate edit</span>

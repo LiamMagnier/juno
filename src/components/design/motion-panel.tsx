@@ -360,7 +360,7 @@ export function MotionPanel({
         >
           <SkipBack className="size-3.5" aria-hidden />
         </button>
-        <span className="w-16 shrink-0 text-right font-mono text-[10px] tabular-nums text-muted-foreground">{Math.round(timeMs)} ms</span>
+        <span className="w-16 shrink-0 text-right font-mono text-micro tabular-nums text-muted-foreground">{Math.round(timeMs)} ms</span>
 
         <span aria-hidden className="mx-1 h-4 w-px bg-border/60" />
 
@@ -414,7 +414,7 @@ export function MotionPanel({
           type="button"
           disabled={readOnly}
           onClick={addAnimation}
-          className="pressable flex items-center gap-1 rounded-md px-1.5 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+          className="pressable flex items-center gap-1 rounded-md px-1.5 py-1 font-mono text-micro text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
         >
           <Plus className="size-3" aria-hidden /> New
         </button>
@@ -444,7 +444,7 @@ export function MotionPanel({
               setPlaying(false);
               setEngaged(false);
             }}
-            className="pressable rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-primary transition-colors hover:bg-primary/15"
+            className="pressable rounded-md border border-primary/40 bg-primary/10 px-2 py-0.5 font-mono text-micro text-primary transition-colors hover:bg-primary/15"
           >
             Previewing · back to the design
           </button>
@@ -481,7 +481,7 @@ export function MotionPanel({
                 value={activeProperty}
                 onChange={(event) => setNewProperty(event.target.value as AnimatableProperty)}
                 disabled={readOnly}
-                className={cn(fieldClass, "h-5 min-w-0 flex-1 py-0 text-[10px]")}
+                className={cn(fieldClass, "h-5 min-w-0 flex-1 py-0 text-micro")}
               >
                 {selectableProperties.map((info) => (
                   <option key={info.property} value={info.property}>
@@ -519,20 +519,20 @@ export function MotionPanel({
                     <button
                       type="button"
                       onClick={() => node && onSelect([track.nodeId])}
-                      className="min-w-0 flex-1 truncate text-left text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                      className="min-w-0 flex-1 truncate text-left text-caption outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
                     >
                       <span className={cn("truncate", selection.includes(track.nodeId) ? "text-primary" : "text-foreground")}>
                         {node?.name ?? "Missing layer"}
                       </span>
-                      <span className="pl-1 font-mono text-[9px] text-muted-foreground">{info.label}</span>
+                      <span className="pl-1 font-mono text-micro text-muted-foreground">{info.label}</span>
                     </button>
                     {!info.previewed && (
-                      <span title="Authored here, drawn in the HTML prototype — the SVG canvas does not draw blur." className="shrink-0 font-mono text-[9px] text-muted-foreground">
+                      <span title="Authored here, drawn in the HTML prototype — the SVG canvas does not draw blur." className="shrink-0 font-mono text-micro text-muted-foreground">
                         ○
                       </span>
                     )}
                     {node && !applies && (
-                      <span title={`This layer has no ${info.requires === "text" ? "text" : info.requires} to animate.`} className="shrink-0 font-mono text-[9px] text-warning-foreground">
+                      <span title={`This layer has no ${info.requires === "text" ? "text" : info.requires} to animate.`} className="shrink-0 font-mono text-micro text-warning-foreground">
                         !
                       </span>
                     )}
@@ -594,7 +594,7 @@ export function MotionPanel({
               {rulerTicks(span).map((tick) => (
                 <span
                   key={tick}
-                  className="pointer-events-none absolute top-0 h-full border-l border-border/50 pl-1 font-mono text-[9px] text-muted-foreground"
+                  className="pointer-events-none absolute top-0 h-full border-l border-border/50 pl-1 font-mono text-micro text-muted-foreground"
                   style={{ left: offsetFor(tick), lineHeight: `${ROW_HEIGHT}px` }}
                 >
                   {tick}
@@ -719,7 +719,7 @@ export function MotionPanel({
             />
           ) : (
             <label className="block">
-              <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">Value</span>
+              <span className="block pb-0.5 font-mono text-micro text-muted-foreground">Value</span>
               <input
                 type="color"
                 aria-label="Keyframe colour"
@@ -744,7 +744,7 @@ export function MotionPanel({
             type="button"
             disabled={readOnly}
             onClick={() => deleteKeyframe(selected.track, selected.index)}
-            className="pressable rounded-md px-1.5 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
+            className="pressable rounded-md px-1.5 py-1 font-mono text-micro text-muted-foreground transition-colors hover:text-destructive disabled:opacity-40"
           >
             Delete keyframe
           </button>
@@ -833,7 +833,7 @@ export function InlineNumber({
   const [draft, setDraft] = React.useState<string | null>(null);
   return (
     <label className="block">
-      <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">
+      <span className="block pb-0.5 font-mono text-micro text-muted-foreground">
         {label}
         {suffix ? ` (${suffix})` : ""}
       </span>
@@ -883,7 +883,7 @@ export function SmallSelect({
 }) {
   return (
     <label className="block">
-      <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">{label}</span>
+      <span className="block pb-0.5 font-mono text-micro text-muted-foreground">{label}</span>
       <select
         className={cn(fieldClass, "h-6 py-0", className)}
         value={value}

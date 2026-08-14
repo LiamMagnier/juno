@@ -15,7 +15,7 @@ import {
   NotebookPen,
   Search,
   Settings,
-  Sparkles,
+  Zap,
   Sun,
   X,
 } from "lucide-react";
@@ -87,7 +87,7 @@ function Marked({ text, marks }: { text: string; marks: readonly SearchMark[] })
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-xs border border-border/70 bg-muted/80 px-1 font-mono text-[10px] leading-none text-muted-foreground shadow-[0_1px_0_hsl(var(--border)/0.7)]">
+    <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-xs border border-border/70 bg-muted/80 px-1 font-mono text-micro leading-none text-muted-foreground shadow-[0_1px_0_hsl(var(--border)/0.7)]">
       {children}
     </kbd>
   );
@@ -254,7 +254,7 @@ function PaletteShell({
             onChange={(e) => onQueryChange(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder={placeholder}
-            className="w-full bg-transparent py-4 text-[15px] outline-none placeholder:text-muted-foreground"
+            className="w-full bg-transparent py-4 text-body outline-none placeholder:text-muted-foreground"
             aria-label={placeholder}
             role="combobox"
             aria-expanded="true"
@@ -397,7 +397,7 @@ function PaletteShell({
                           <Marked text={c.label} marks={c.labelMarks ?? []} />
                         </span>
                         {c.snippet && (
-                          <span className="block truncate text-[12px] leading-[1.45] text-muted-foreground">
+                          <span className="block truncate text-label leading-[1.45] text-muted-foreground">
                             <Marked text={c.snippet.text} marks={c.snippet.marks} />
                           </span>
                         )}
@@ -1016,7 +1016,7 @@ function CommandMenu() {
       { id: "memory", group: "Actions", label: "Memory", icon: NotebookPen, keywords: "remember facts", run: () => go("/memory") },
       { id: "settings", group: "Actions", label: "Settings", icon: Settings, keywords: "preferences account theme", run: () => go("/settings") },
       { id: "roadmap", group: "Actions", label: "Roadmap & feature requests", icon: MapIcon, keywords: "feedback vote ideas", run: () => go("/roadmap") },
-      { id: "upgrade", group: "Actions", label: "Plans & upgrade", icon: Sparkles, keywords: "billing pro max pricing", run: () => go("/upgrade") },
+      { id: "upgrade", group: "Actions", label: "Plans & upgrade", icon: Zap, keywords: "billing pro max pricing", run: () => go("/upgrade") },
       {
         id: "theme",
         group: "Actions",

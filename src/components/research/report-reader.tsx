@@ -1,9 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { PanelRightClose, PanelRightOpen } from "lucide-react";
+import { Check, Copy, Download, PanelRightClose, PanelRightOpen, Printer, Share2 } from "lucide-react";
+import { toast } from "sonner";
 import { Markdown } from "@/components/chat/markdown";
 import { SourceFavicon, hostOf, isRenderableSourceUrl, titleOf } from "@/components/chat/source-chip";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
 import type { ResearchSourceView } from "@/components/research/use-research-run";
@@ -173,8 +176,115 @@ export function ReportReader({
     </ol>
   );
 
+  const [copied, setCopied] = React.useState(false);
+
+  const wordCount = React.useMemo(() => {
+    return report.trim().split(/\s+/).filter(Boolean).length;
+  }, [report]);
+
+  const readingTimeMin = Math.max(1, Math.ceil(wordCount / 220));
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(report);
+      setCopied(true);
+      toast.success("Report copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Failed to copy report");
+    }
+  };
+
+  const handleDownload = () => {
+    try {
+      const blob = new Blob([report], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `juno-deep-research-${new Date().toISOString().slice(0, 10)}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Downloaded report as Markdown");
+    } catch {
+      toast.error("Failed to download report");
+    }
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleShare = async () => {
+    if (typeof window !== "undefined") {
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        toast.success("Research URL copied to clipboard");
+      } catch {
+        toast.error("Failed to copy link");
+      }
+    }
+  };
+
   return (
-    <div className={className}>
+    <div className={cn("space-y-6", className)}>
+      {/* Top Action & Metadata Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-border/60 bg-card p-3 shadow-xs">
+        <div className="flex flex-wrap items-center gap-2 font-mono text-micro text-muted-foreground">
+          <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-primary">
+            Deep Research Report
+          </span>
+          <span>·</span>
+          <span>{wordCount.toLocaleString()} words</span>
+          <span>·</span>
+          <span>~{readingTimeMin} min read</span>
+          <span>·</span>
+          <span>{sources.length} sources</span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" onClick={handleCopy} className="h-8 gap-1.5 px-2.5 text-xs">
+                {copied ? <Check className="size-3.5 text-primary" /> : <Copy className="size-3.5" />}
+                <span>{copied ? "Copied" : "Copy"}</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Copy markdown report</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" onClick={handleDownload} className="h-8 gap-1.5 px-2.5 text-xs">
+                <Download className="size-3.5" />
+                <span>Export .md</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Download as Markdown</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" onClick={handlePrint} className="h-8 gap-1.5 px-2.5 text-xs">
+                <Printer className="size-3.5" />
+                <span>Print</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Print or save as PDF</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" onClick={handleShare} className="h-8 gap-1.5 px-2.5 text-xs">
+                <Share2 className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Share research link</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+
       <div className="flex items-start gap-8">
         {toc.length >= 2 && (
           <nav

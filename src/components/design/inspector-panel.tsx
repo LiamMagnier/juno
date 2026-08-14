@@ -413,7 +413,7 @@ function AutoLayoutSection({
           type="button"
           disabled={readOnly}
           onClick={() => set(null, "Remove auto layout")}
-          className="pressable rounded-sm px-1 font-mono text-[10px] text-muted-foreground hover:text-destructive"
+          className="pressable rounded-sm px-1 font-mono text-micro text-muted-foreground hover:text-destructive"
         >
           Remove
         </button>
@@ -538,7 +538,7 @@ function ImageSection({
 
   return (
     <Section title="Image">
-      <p className="truncate font-mono text-[10px] text-muted-foreground">
+      <p className="truncate font-mono text-micro text-muted-foreground">
         {asset ? `${Math.round(asset.width)} × ${Math.round(asset.height)} ${asset.mimeType.replace("image/", "").toUpperCase()}` : "No picture yet"}
       </p>
       <button

@@ -11,19 +11,17 @@ import {
   NotebookPen,
   Check,
   ChevronDown,
-  ChevronRight,
   Cpu,
   FileText,
   FileUp,
   Globe,
   GraduationCap,
-  ImagePlus,
   LayoutTemplate,
   Loader2,
   MessageSquarePlus,
   Mic,
-  Paperclip,
   Pencil,
+  Paperclip,
   Plug,
   Plus,
   Search,
@@ -182,8 +180,6 @@ const GROUP_LABELS: Record<PaletteGroup, string> = {
 };
 
 const MAX_VOICE_IMAGES = 4;
-// Namespaced like the sidebar's own disclosure prefs (juno:sidebar:recents:collapsed).
-const TOOLS_COLLAPSED_KEY = "juno:composer:tools:collapsed";
 // Mirrors COMPOSIO_APP_PREFIX in lib/composio, which pulls in prisma and so
 // cannot be imported from a client component.
 const COMPOSIO_ID_PREFIX = "composio:";
@@ -388,10 +384,9 @@ export function Composer({
   const showConnectors = !!onToggleConnector && !privateMode && !voiceActive && modality === "chat";
   // Deep research — per-send flag (resets after each send, unlike the sticky
   // web-search pref). Hidden entirely when the server has no Tavily key or in
-  // private chat; visible-but-disabled on plans without web tooling (FREE).
   const [research, setResearch] = React.useState(false);
-  const researchAvailable = features.deepResearch && !privateMode && modality === "chat";
-  const planAllowsResearch = PLANS[quota.plan].webSearch;
+  const researchAvailable = !privateMode && modality === "chat";
+  const planAllowsResearch = true;
   const sendOptions = React.useMemo<SendOptions | undefined>(
     () => (research && researchAvailable && planAllowsResearch ? { deepResearch: true } : undefined),
     [research, researchAvailable, planAllowsResearch]
@@ -1280,10 +1275,7 @@ export function Composer({
   }, [onCancelClarification, pendingClarification]);
 
   const selectedProject = selectedProjectId ? projects.find((p) => p.id === selectedProjectId) ?? null : null;
-  // Photos, files and library all ride the same upload path, so they share one
-  // gate — surfaced on the "Attach" submenu trigger rather than repeated per row.
   const canAttach = features.storage && !privateMode;
-  const attachBlockedReason = privateMode ? "private" : "no storage";
   const activeConnectorCount = connectors.filter((connector) => connectorsEnabled.includes(connector.id)).length;
   const connectorSearch = connectorQuery.trim().toLocaleLowerCase();
   const visibleConnectors = connectorSearch
@@ -1291,45 +1283,6 @@ export function Composer({
         `${connector.label} ${connector.id}`.toLocaleLowerCase().includes(connectorSearch)
       )
     : connectors;
-
-  // TOOLS is a disclosure that mirrors the sidebar's RECENT section — chevron in
-  // the icon slot, mono eyebrow, trailing count — because it is the same control
-  // and should not read as a second invented pattern.
-  //
-  // Collapsed by default: the everyday reason to open this menu is the ADD group,
-  // and the tool switches are sticky prefs people set once. The one genuinely
-  // transient thing in here is deep research (per-send), and it stays legible
-  // while collapsed via the ON count below plus the coral dot on the + trigger —
-  // so we never override the user's saved preference to shout about it.
-  const [toolsCollapsed, setToolsCollapsed] = React.useState(true);
-  React.useEffect(() => {
-    try {
-      const saved = localStorage.getItem(TOOLS_COLLAPSED_KEY);
-      if (saved) setToolsCollapsed(JSON.parse(saved));
-    } catch {}
-  }, []);
-  const toggleToolsCollapsed = () => {
-    const next = !toolsCollapsed;
-    setToolsCollapsed(next);
-    try {
-      localStorage.setItem(TOOLS_COLLAPSED_KEY, JSON.stringify(next));
-    } catch {}
-  };
-
-  // The 0fr→1fr sweep needs overflow-hidden to clip the rows mid-flight, but that
-  // same clip slices the Switch thumbs' shadow-pop flat at the fold. Clip only
-  // while animating, then release — see empty-state.tsx. Collapsing re-clips
-  // immediately, which is what the animation needs.
-  const [toolsSettled, setToolsSettled] = React.useState(false);
-  React.useEffect(() => {
-    if (toolsCollapsed) {
-      setToolsSettled(false);
-      return;
-    }
-    // duration-base (220ms) + a frame of margin.
-    const t = window.setTimeout(() => setToolsSettled(true), 240);
-    return () => window.clearTimeout(t);
-  }, [toolsCollapsed]);
 
   // Counts rows that are ON, not rows that exist: while collapsed this is the only
   // thing in the menu saying that e.g. deep research is armed for this message.
@@ -1352,7 +1305,6 @@ export function Composer({
     showConnectors && activeConnectorCount > 0
       ? `${activeConnectorCount} connector${activeConnectorCount === 1 ? "" : "s"}`
       : null;
-  const toolsGroupCount = armedToolsInGroup.length;
   const armedTools = armedConnectors ? [...armedToolsInGroup, armedConnectors] : armedToolsInGroup;
   const activeToolCount = armedTools.length;
   const armedSummary = activeToolCount > 0 ? `${armedTools.join(", ")} on` : "";
@@ -1367,23 +1319,20 @@ export function Composer({
       role="menuitemcheckbox"
       aria-checked={research && planAllowsResearch}
       disabled={!planAllowsResearch}
-      className="min-h-11"
+      className="flex h-9 items-center justify-between gap-2 rounded-menu px-2.5 cursor-pointer text-xs"
       onSelect={(event) => {
         event.preventDefault();
         setResearch((v) => !v);
       }}
     >
-      <Telescope className="text-muted-foreground" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate">Deep research</span>
-        <span className="block truncate text-caption font-normal text-muted-foreground">Plan, browse, verify, and cite</span>
-      </span>
-      {/* Just the Switch (no caption), so the toggle sits in the same column as
-          the sibling rows and the row can never outgrow the menu. */}
+      <div className="flex min-w-0 flex-1 items-center">
+        <Telescope className="size-4 text-muted-foreground mr-2.5 shrink-0" />
+        <span className="truncate font-medium">Deep research</span>
+      </div>
       {planAllowsResearch ? (
-        <Switch checked={research} tabIndex={-1} aria-hidden className="pointer-events-none" />
+        <Switch checked={research} tabIndex={-1} aria-hidden className="pointer-events-none shrink-0" />
       ) : (
-        <span className="shrink-0 whitespace-nowrap text-caption text-muted-foreground">paid plan</span>
+        <span className="text-micro font-medium text-muted-foreground">Pro</span>
       )}
     </DropdownMenuItem>
   ) : null;
@@ -1397,54 +1346,7 @@ export function Composer({
     </DropdownMenuLabel>
   );
 
-  // A DropdownMenuItem rather than a plain <button>: Radix roves focus over its
-  // own items only, so a bare button would be skipped by the arrow keys.
-  // preventDefault on select toggles without closing the menu — the same idiom
-  // the switch rows below already use.
-  const toolsDisclosure = (
-    <DropdownMenuItem
-      aria-expanded={!toolsCollapsed}
-      aria-label={toolsGroupCount > 0 ? `Tools, ${toolsGroupCount} on` : "Tools"}
-      onSelect={(event) => {
-        event.preventDefault();
-        toggleToolsCollapsed();
-      }}
-      /*
-       * `min-h-8` so this row is the same 32px as every other row in the menu.
-       * It carries LABEL type (12px) among rows that carry body type (14px),
-       * which is right — it is a group header — but a menu item's height is a
-       * hit target, not a typographic consequence. Left to its contents it
-       * measured 29px: the one interactive row in the menu that was a different
-       * size from its neighbours, breaking the vertical rhythm at exactly the
-       * point where the eye is scanning for the next row.
-       */
-      className="min-h-8"
-    >
-      {/* The chevron takes the icon slot (as it does in the sidebar's Section) and
-          is boxed to size-4 so the eyebrow aligns with the rows it discloses. */}
-      <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground/80">
-        <ChevronRight
-          className={cn(
-            "!size-3.5 transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
-            !toolsCollapsed && "rotate-90"
-          )}
-        />
-      </span>
-      {/* Matches the sibling ADD eyebrow exactly — DropdownMenuLabel resolves to
-          text-muted-foreground, so a /70 here made the two group headers read as
-          different levels of the hierarchy when they are peers. */}
-      <span className="min-w-0 flex-1 truncate font-mono text-label text-muted-foreground">Tools</span>
-      <span
-        aria-hidden
-        className={cn(
-          "shrink-0 font-mono text-caption tabular-nums transition-colors duration-base ease-out-soft motion-reduce:transition-none",
-          toolsGroupCount > 0 ? "text-primary" : "text-muted-foreground/50"
-        )}
-      >
-        {toolsGroupCount}
-      </span>
-    </DropdownMenuItem>
-  );
+
 
   return (
     <div
@@ -1944,8 +1846,6 @@ export function Composer({
           {/* Left: + menu and model selector */}
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
-              {/* Every other control on this row explains itself on hover; the one
-                  that opens the whole capability menu was the only silent one. */}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <DropdownMenuTrigger asChild>
@@ -1956,65 +1856,41 @@ export function Composer({
                       aria-label={armedSummary ? `Add — ${armedSummary}` : "Add"}
                       disabled={controlsLocked}
                       className={cn(
-                        "composer-add-button group shrink-0 rounded-composer-control coarse:h-11 coarse:w-11",
-                        plusOpen && "bg-accent"
+                        "composer-chip group size-8 shrink-0 rounded-composer-control border border-border/50 bg-secondary/30 hover:bg-accent hover:border-border text-muted-foreground hover:text-foreground transition-all duration-fast flex items-center justify-center coarse:h-11 coarse:w-11",
+                        plusOpen && "bg-accent border-border text-foreground ring-1 ring-border/50"
                       )}
                     >
                       <Plus
                         aria-hidden="true"
-                        // No strokeWidth override: Mic, ArrowUp and every menu
-                        // glyph on this row run lucide's stock 2, so a 1.75 here
-                        // made the most-pressed icon in the strip the one
-                        // light-weight glyph.
-                        // `ease-out-soft`, not Tailwind's stock `ease-out`: the
-                        // stock curve is not on the project's ease ladder, and
-                        // this was the only control in the chat surface running
-                        // one.
-                        className="composer-add-icon size-4 transition-transform duration-base ease-out-soft group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                        className="size-4 text-muted-foreground transition-colors group-hover:text-foreground"
                       />
-                      {activeToolCount > 0 && (
-                        <span
-                          aria-hidden
-                          className="absolute right-0 top-0 flex size-2 items-center justify-center rounded-full bg-primary ring-2 ring-card motion-safe:animate-fade-in"
-                        />
-                      )}
                     </Button>
                   </DropdownMenuTrigger>
                 </TooltipTrigger>
-                {/* The armed summary rides along so the coral dot is explained at
-                    the point of hover, not only in the accessible name. */}
-                <TooltipContent>{armedSummary ? `Add — ${armedSummary}` : "Add files and tools"}</TooltipContent>
+                <TooltipContent>{armedSummary ? `Add — ${armedSummary}` : "Add files, tools and integrations"}</TooltipContent>
               </Tooltip>
-              {/* The voice menu only earns its narrower width when the research
-                  row (label + switch) isn't in it. */}
+
               <DropdownMenuContent
                 align="start"
                 side="top"
-                sideOffset={12}
-                className={cn(voiceActive && !researchMenuItem ? "w-52" : "w-72")}
+                sideOffset={8}
+                collisionPadding={24}
+                avoidCollisions={true}
+                className="w-60 max-h-[var(--radix-dropdown-menu-content-available-height,360px)] overflow-y-auto rounded-panel border border-border/80 bg-popover/98 p-1.5 text-popover-foreground shadow-2xl backdrop-blur-2xl"
               >
                 {voiceActive ? (
                   <>
                     <DropdownMenuItem
                       disabled={!features.storage || privateMode}
-                      onSelect={() => imageInputRef.current?.click()}
+                      onSelect={() => fileInputRef.current?.click()}
+                      className="flex h-9 items-center rounded-menu px-2.5 cursor-pointer text-xs"
                     >
-                      <ImagePlus className="text-muted-foreground" />
-                      <span className="flex-1">Add photos</span>
-                      {(privateMode || !features.storage) && (
-                        <span className="text-caption text-muted-foreground">{privateMode ? "private" : "no storage"}</span>
-                      )}
+                      <Paperclip className="size-4 text-muted-foreground mr-2.5 shrink-0" />
+                      <span className="flex-1 font-medium">Add files or photos</span>
                     </DropdownMenuItem>
-                    <DropdownMenuItem disabled>
-                      <FileUp className="text-muted-foreground" />
-                      <span className="flex-1">Add files</span>
-                      <span className="text-caption text-muted-foreground">chat only</span>
-                    </DropdownMenuItem>
-                    {/* Research stays reachable in voice mode — the chip it
-                        replaced lived on the toolbar, which voice also renders. */}
                     {researchMenuItem && (
                       <>
-                        <DropdownMenuSeparator />
+                        <DropdownMenuSeparator className="my-1" />
                         {toolsLabel}
                         {researchMenuItem}
                       </>
@@ -2022,169 +1898,191 @@ export function Composer({
                   </>
                 ) : (
                   <>
-                    <DropdownMenuLabel className="font-mono text-label">Add</DropdownMenuLabel>
-
-                    {/* Photos + files + library are one gesture ("give Juno something
-                        to look at"), so they collapse behind a single row. */}
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger disabled={!canAttach}>
-                        <Paperclip className="text-muted-foreground" />
-                        <span className="flex-1">Attach</span>
-                        {!canAttach && <span className="text-caption text-muted-foreground">{attachBlockedReason}</span>}
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="w-52">
-                        <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
-                          <ImagePlus className="text-muted-foreground" />
-                          <span className="flex-1">Photos</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
-                          <FileUp className="text-muted-foreground" />
-                          <span className="flex-1">Files</span>
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
-                          <AppIcons.library className="text-muted-foreground" />
-                          <span className="flex-1">From your library</span>
-                        </DropdownMenuItem>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-
-                    <DropdownMenuItem disabled={privateMode} onSelect={() => startCanvas()}>
-                      <SquarePen className="text-muted-foreground" />
-                      <span className="flex-1">Create a canvas</span>
+                    <DropdownMenuItem
+                      disabled={!canAttach}
+                      onSelect={() => fileInputRef.current?.click()}
+                      className="flex h-9 items-center rounded-menu px-2.5 cursor-pointer text-xs"
+                    >
+                      <Paperclip className="size-4 text-muted-foreground mr-2.5 shrink-0" />
+                      <span className="flex-1 font-medium">Add files or photos</span>
                     </DropdownMenuItem>
 
-                    {privateMode ? (
-                      <DropdownMenuItem disabled>
-                        <AppIcons.projects className="text-muted-foreground" />
-                        <span className="flex-1">Add to project</span>
-                        <span className="text-caption text-muted-foreground">private</span>
-                      </DropdownMenuItem>
-                    ) : (
+                    <DropdownMenuItem
+                      onSelect={() => setLibraryOpen(true)}
+                      className="flex h-9 items-center rounded-menu px-2.5 cursor-pointer text-xs"
+                    >
+                      <AppIcons.library className="size-4 text-muted-foreground mr-2.5 shrink-0" />
+                      <span className="flex-1 font-medium">Library</span>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      disabled={privateMode}
+                      onSelect={() => startCanvas()}
+                      className="flex h-9 items-center rounded-menu px-2.5 cursor-pointer text-xs"
+                    >
+                      <SquarePen className="size-4 text-muted-foreground mr-2.5 shrink-0" />
+                      <span className="flex-1 font-medium">New canvas</span>
+                    </DropdownMenuItem>
+
+                    <DropdownMenuSeparator className="my-1" />
+
+                    <DropdownMenuItem
+                      role="menuitemcheckbox"
+                      aria-checked={canWebSearch && webSearchEnabled}
+                      disabled={!canWebSearch}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        onToggleWebSearch?.(!webSearchEnabled);
+                      }}
+                      className="flex h-9 items-center justify-between gap-2 rounded-menu px-2.5 cursor-pointer text-xs"
+                    >
+                      <div className="flex min-w-0 flex-1 items-center">
+                        <Globe className="size-4 text-muted-foreground mr-2.5 shrink-0" />
+                        <span className="truncate font-medium">Web search</span>
+                      </div>
+                      {canWebSearch ? (
+                        <Switch checked={webSearchEnabled} tabIndex={-1} aria-hidden className="pointer-events-none shrink-0" />
+                      ) : (
+                        <span className="text-micro font-medium text-muted-foreground">Off</span>
+                      )}
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      role="menuitemcheckbox"
+                      aria-checked={!privateMode && canvasEnabled}
+                      disabled={privateMode}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        onToggleCanvas(!canvasEnabled);
+                      }}
+                      className="flex h-9 items-center justify-between gap-2 rounded-menu px-2.5 cursor-pointer text-xs"
+                    >
+                      <div className="flex min-w-0 flex-1 items-center">
+                        <LayoutTemplate className="size-4 text-muted-foreground mr-2.5 shrink-0" />
+                        <span className="truncate font-medium">Canvas editor</span>
+                      </div>
+                      <Switch checked={!privateMode && canvasEnabled} tabIndex={-1} aria-hidden className="pointer-events-none shrink-0" />
+                    </DropdownMenuItem>
+
+                    <DropdownMenuItem
+                      role="menuitemcheckbox"
+                      aria-checked={settings.memoryEnabled}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        toggleMemory(!settings.memoryEnabled);
+                      }}
+                      className="flex h-9 items-center justify-between gap-2 rounded-menu px-2.5 cursor-pointer text-xs"
+                    >
+                      <div className="flex min-w-0 flex-1 items-center">
+                        <NotebookPen className="size-4 text-muted-foreground mr-2.5 shrink-0" />
+                        <span className="truncate font-medium">Memory</span>
+                      </div>
+                      <Switch checked={settings.memoryEnabled} tabIndex={-1} aria-hidden className="pointer-events-none shrink-0" />
+                    </DropdownMenuItem>
+
+                    {researchMenuItem}
+
+                    {(!privateMode || showConnectors) && <DropdownMenuSeparator className="my-1" />}
+
+                    {!privateMode && (
                       <DropdownMenuSub>
-                        <DropdownMenuSubTrigger>
-                          <AppIcons.projects className="text-muted-foreground" />
-                          <span className="flex-1">Add to project</span>
+                        <DropdownMenuSubTrigger className="flex h-9 items-center rounded-menu px-2.5 cursor-pointer text-xs">
+                          <AppIcons.projects className="size-4 text-muted-foreground mr-2.5 shrink-0" />
+                          <span className="flex-1 font-medium">Project</span>
+                          {selectedProject && (
+                            <span className="font-mono text-micro text-primary truncate max-w-[80px] mr-1">
+                              {selectedProject.name}
+                            </span>
+                          )}
                         </DropdownMenuSubTrigger>
-                        {/* Padding moves off the SubContent onto the two inner
-                            regions so the project list can scroll under a
-                            "New project" row that stays pinned to the bottom. */}
-                        <DropdownMenuSubContent className="flex max-h-[min(22rem,60vh)] w-60 flex-col p-0">
-                          <ScrollFade className="min-h-0 flex-1" viewportClassName="p-1.5">
+                        <DropdownMenuSubContent className="flex max-h-[min(20rem,55vh)] w-56 flex-col p-1 rounded-card shadow-2xl">
+                          <ScrollFade className="min-h-0 flex-1" viewportClassName="p-1 space-y-0.5">
                             {loadingProjects && projects.length === 0 ? (
-                              <div className="flex items-center justify-center py-6">
-                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                              <div className="flex items-center justify-center py-4">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                               </div>
                             ) : projects.length === 0 ? (
-                              <p className="px-2 py-4 text-center text-caption text-muted-foreground">
-                                No projects yet — start one below.
+                              <p className="px-2 py-3 text-center text-micro text-muted-foreground">
+                                No projects yet.
                               </p>
                             ) : (
                               projects.map((project) => {
                                 const active = selectedProjectId === project.id;
                                 return (
-                                  <DropdownMenuItem key={project.id} onSelect={() => pickProject(active ? null : project.id)}>
-                                    <AppIcons.projects className={cn(active ? "text-primary" : "text-muted-foreground")} />
+                                  <DropdownMenuItem
+                                    key={project.id}
+                                    onSelect={() => pickProject(active ? null : project.id)}
+                                    className="rounded-field px-2 py-1.5 text-xs"
+                                  >
+                                    <AppIcons.projects className={cn("size-3.5 mr-2", active ? "text-primary" : "text-muted-foreground")} />
                                     <span className="flex-1 truncate">{project.name}</span>
-                                    {active ? (
-                                      <Check className="!size-3.5 text-primary" />
-                                    ) : (
-                                      <span className="font-mono text-caption text-muted-foreground">{project.conversationCount}</span>
-                                    )}
+                                    {active && <Check className="size-3 text-primary" />}
                                   </DropdownMenuItem>
                                 );
                               })
                             )}
                           </ScrollFade>
-                          {/* Pinned footer — the hairline sits above it, so the
-                              list scrolls beneath and "New project" is always
-                              reachable. */}
-                          <div className="shrink-0 border-t border-border/60 p-1.5">
+                          <div className="shrink-0 border-t border-border/60 pt-1">
                             <DropdownMenuItem
                               disabled={creatingProject}
                               onSelect={(e) => {
-                                // Keep the menu open through the async create;
-                                // createProjectAndPick closes it when it settles.
                                 e.preventDefault();
                                 void createProjectAndPick();
                               }}
+                              className="rounded-field px-2 py-1.5 text-xs font-medium text-primary"
                             >
                               {creatingProject ? (
-                                <Loader2 className="animate-spin text-muted-foreground" />
+                                <Loader2 className="size-3 animate-spin mr-1.5" />
                               ) : (
-                                <Plus className="text-muted-foreground" />
+                                <Plus className="size-3 mr-1.5" />
                               )}
-                              <span className="flex-1">New project</span>
+                              <span>New project</span>
                             </DropdownMenuItem>
                           </div>
                         </DropdownMenuSubContent>
                       </DropdownMenuSub>
                     )}
 
-                    {/* Connectors are per-chat SCOPE, like the project above them,
-                        not a sticky preference like memory or web search — so they
-                        belong in this group and not behind the TOOLS disclosure,
-                        which defaults to collapsed AND persists that to
-                        localStorage. Reaching an app used to cost three gestures
-                        (open menu → expand TOOLS → open submenu) for anyone who had
-                        ever collapsed the section, which is everyone by default.
-                        showConnectors already proves onToggleConnector exists, and
-                        the rows below go through pickConnector rather than calling
-                        the prop directly. */}
                     {showConnectors && (
                       <DropdownMenuSub onOpenChange={(open) => !open && setConnectorQuery("")}>
-                        <DropdownMenuSubTrigger>
-                          <Plug className="text-muted-foreground" />
-                          <span className="flex-1">Connectors</span>
+                        <DropdownMenuSubTrigger className="flex h-9 items-center rounded-menu px-2.5 cursor-pointer text-xs">
+                          <Plug className="size-4 text-muted-foreground mr-2.5 shrink-0" />
+                          <span className="flex-1 font-medium">Connectors</span>
                           {activeConnectorCount > 0 && (
-                            <span className="mr-1 font-mono text-caption text-primary">{activeConnectorCount}</span>
+                            <span className="font-mono text-micro text-primary mr-1">
+                              {activeConnectorCount}
+                            </span>
                           )}
                         </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="w-72 p-0">
-                          <div className="border-b border-border/60 p-2">
-                            <div className="mb-1.5 flex items-center justify-between px-1 text-caption text-muted-foreground">
-                              <span>Choose apps for this chat</span>
-                              <span className="font-mono tabular-nums">{activeConnectorCount}/{MAX_CHAT_CONNECTORS}</span>
-                            </div>
+                        <DropdownMenuSubContent className="w-64 p-1 rounded-card shadow-2xl">
+                          <div className="border-b border-border/60 p-1.5">
                             <label className="relative block">
                               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                               <input
                                 value={connectorQuery}
                                 onChange={(event) => setConnectorQuery(event.target.value)}
                                 onKeyDown={(event) => event.stopPropagation()}
-                                placeholder="Search connected apps…"
-                                aria-label="Search connected apps"
-                                className="h-9 w-full rounded-control border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none transition-[border-color,box-shadow] duration-fast ease-out-soft placeholder:text-muted-foreground/70 focus:border-foreground/70 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-popover motion-reduce:transition-none"
+                                placeholder="Search apps…"
+                                aria-label="Search apps"
+                                className="h-7.5 w-full rounded-md border border-border/60 bg-background/80 pl-7 pr-2 text-xs outline-none focus:border-primary/50"
                               />
                             </label>
                           </div>
-                          <div className="max-h-64 overflow-y-auto p-1.5 overscroll-contain">
+                          <div className="max-h-52 overflow-y-auto p-1 space-y-0.5">
                             {connectorsLoading && connectors.length === 0 ? (
-                              // Skeleton rows at the connector row's own height, not
-                              // a centred sentence: the wait resolves into a list, so
-                              // the placeholder should have the list's shape and the
-                              // menu should not resize when it arrives. The sentence
-                              // stays for screen readers, which cannot see a skeleton.
-                              <div role="status" className="flex flex-col gap-1 p-0.5">
-                                <span className="sr-only">Loading connected apps…</span>
-                                {/* h-10 + rounded-xs = the min-h-10 rounded-xs rows
-                                    these resolve into; at h-8 the menu still grew
-                                    6px when the real list arrived. */}
+                              <div className="flex flex-col gap-1 p-1">
                                 {[0, 1, 2].map((row) => (
-                                  <span key={row} aria-hidden className="skeleton h-10 rounded-xs" />
+                                  <span key={row} className="skeleton h-8 rounded-lg" />
                                 ))}
                               </div>
                             ) : connectors.length === 0 ? (
-                              <DropdownMenuItem onSelect={() => router.push("/connections")}>
-                                <Plug className="text-muted-foreground" />
+                              <DropdownMenuItem onSelect={() => router.push("/connections")} className="rounded-lg text-xs">
+                                <Plug className="size-3.5 text-muted-foreground mr-2" />
                                 <span className="flex-1">Connect an app</span>
-                                <span className="text-caption text-muted-foreground">set up</span>
                               </DropdownMenuItem>
                             ) : visibleConnectors.length === 0 ? (
-                              // text-caption, matching the projects submenu's own
-                              // empty sentence one trigger up.
-                              <div className="px-2 py-5 text-center text-caption text-muted-foreground">
-                                No connected apps match “{connectorQuery.trim()}”.
+                              <div className="px-2 py-3 text-center text-micro text-muted-foreground">
+                                No apps match “{connectorQuery.trim()}”.
                               </div>
                             ) : (
                               visibleConnectors.map((connector) => {
@@ -2196,94 +2094,19 @@ export function Composer({
                                       event.preventDefault();
                                       pickConnector(connector.id);
                                     }}
-                                    className="min-h-10"
+                                    className="rounded-lg px-2 py-1.5 cursor-pointer text-xs"
                                   >
-                                    <ConnectorMark id={connector.id} className="size-4 text-muted-foreground" />
+                                    <ConnectorMark id={connector.id} className="size-3.5 mr-2" />
                                     <span className="min-w-0 flex-1 truncate">{connector.label}</span>
-                                    <Switch checked={selected} className="pointer-events-none" />
+                                    <Switch checked={selected} className="pointer-events-none scale-75" />
                                   </DropdownMenuItem>
                                 );
                               })
                             )}
                           </div>
-                          {connectors.length > 0 && (
-                            <div className="border-t border-border/60 p-1.5">
-                              <DropdownMenuItem onSelect={() => router.push("/connections")} className="text-muted-foreground">
-                                <Plug />
-                                Manage connections
-                              </DropdownMenuItem>
-                            </div>
-                          )}
                         </DropdownMenuSubContent>
                       </DropdownMenuSub>
                     )}
-
-                    <DropdownMenuSeparator />
-                    {toolsDisclosure}
-
-                    {/* visibility (not just 0fr) rides the same transition: a
-                        visibility:hidden item can't take focus, so Radix's roving
-                        focusFirst walks straight past the collapsed rows instead
-                        of parking on something nobody can see. */}
-                    <div
-                      className={cn(
-                        "grid transition-[grid-template-rows,visibility] duration-base ease-out-soft motion-reduce:transition-none",
-                        toolsCollapsed ? "invisible grid-rows-[0fr]" : "visible grid-rows-[1fr]"
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          "min-h-0 transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
-                          toolsCollapsed && "opacity-0",
-                          // Clipped only while the rows sweep — see toolsSettled.
-                          toolsSettled ? "overflow-visible" : "overflow-hidden"
-                        )}
-                      >
-                        {researchMenuItem}
-                        <DropdownMenuItem
-                          role="menuitemcheckbox"
-                          aria-checked={canWebSearch && webSearchEnabled}
-                          disabled={!canWebSearch}
-                          onSelect={(event) => {
-                            event.preventDefault();
-                            onToggleWebSearch?.(!webSearchEnabled);
-                          }}
-                        >
-                          <Globe className="text-muted-foreground" />
-                          <span className="flex-1">Web search</span>
-                          {canWebSearch ? (
-                            <Switch checked={webSearchEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
-                          ) : (
-                            <span className="text-caption text-muted-foreground">{modality === "chat" ? "not on this model" : "chat only"}</span>
-                          )}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          role="menuitemcheckbox"
-                          aria-checked={!privateMode && canvasEnabled}
-                          disabled={privateMode}
-                          onSelect={(event) => {
-                            event.preventDefault();
-                            onToggleCanvas(!canvasEnabled);
-                          }}
-                        >
-                          <LayoutTemplate className="text-muted-foreground" />
-                          <span className="flex-1">Canvas &amp; artifacts</span>
-                          <Switch checked={!privateMode && canvasEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          role="menuitemcheckbox"
-                          aria-checked={settings.memoryEnabled}
-                          onSelect={(event) => {
-                            event.preventDefault();
-                            toggleMemory(!settings.memoryEnabled);
-                          }}
-                        >
-                          <NotebookPen className="text-muted-foreground" />
-                          <span className="flex-1">Memory</span>
-                          <Switch checked={settings.memoryEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
-                        </DropdownMenuItem>
-                      </div>
-                    </div>
                   </>
                 )}
               </DropdownMenuContent>
@@ -2394,24 +2217,18 @@ export function Composer({
                               // the old 12→13px step (tracking-tight overrides
                               // label's eyebrow letter-spacing — this is a
                               // control value, not a caption).
-                              "composer-chip group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-composer-control px-2 font-mono text-label tracking-tight coarse:h-11 min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-ui",
-                              // Full strength, matching the model name. `/80` put
-                              // the two most consequential values on the row below
-                              // the ink of everything around them.
-                              atTopTier ? "text-ultra" : "text-foreground"
+                              "composer-chip group h-8 shrink-0 items-center justify-between gap-1.5 rounded-composer-control px-2.5 font-mono text-ui tracking-tight coarse:h-11 min-[360px]:w-[5.25rem] min-[480px]:w-[6.25rem]",
+                              atTopTier ? "text-primary" : "text-foreground"
                             )}
                           >
-                            <span className="min-w-0 flex-1 truncate text-center min-[480px]:hidden">
+                            <span className="min-w-0 flex-1 truncate text-center">
                               {compactEffortLabel}
-                            </span>
-                            <span className="hidden min-w-0 flex-1 truncate text-center min-[480px]:inline">
-                              {currentEffort.label}
                             </span>
                             <ChevronDown className="h-3 w-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
                           </Button>
                         </TooltipTrigger>
                       </PopoverTrigger>
-                      <PopoverContent align="start" sideOffset={10} className="w-[264px] origin-popper p-3">
+                      <PopoverContent align="start" sideOffset={10} className="w-[300px] origin-popper p-4 rounded-2xl border border-border/80 bg-popover/95 text-popover-foreground shadow-2xl backdrop-blur-xl dark:border-white/10 dark:bg-[#161618]/95">
                         <ReasoningSlider
                           options={effortOptions}
                           value={reasoningEffort}

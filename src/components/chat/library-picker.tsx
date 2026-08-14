@@ -137,7 +137,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
               onClick={() => setTab(t.key)}
               aria-pressed={tab === t.key}
               className={cn(
-                "pressable rounded-full px-3.5 py-1.5 font-mono text-[10px] coarse:py-2.5",
+                "pressable rounded-full px-3.5 py-1.5 font-mono text-micro coarse:py-2.5",
                 tab === t.key ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground"
               )}
             >

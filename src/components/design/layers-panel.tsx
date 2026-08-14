@@ -217,7 +217,7 @@ export function LayersPanel({
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b border-border/60 px-3 py-2">
         <div className="flex items-center justify-between pb-1">
-          <p className="font-mono text-[10px] text-muted-foreground">Pages</p>
+          <p className="font-mono text-micro text-muted-foreground">Pages</p>
           <button
             type="button"
             disabled={readOnly}
@@ -283,7 +283,7 @@ export function LayersPanel({
         </div>
       </div>
 
-      <p className="px-3 pb-1 pt-2 font-mono text-[10px] text-muted-foreground">Layers</p>
+      <p className="px-3 pb-1 pt-2 font-mono text-micro text-muted-foreground">Layers</p>
       <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2" role="tree" aria-label="Layers">
         {rows.length === 0 && <p className="px-3 py-6 text-center text-caption text-muted-foreground">Nothing on this page yet.</p>}
         {rows.map(({ id, depth }) => {
@@ -342,7 +342,7 @@ export function LayersPanel({
                   !node.visible && "opacity-40"
                 )}
               >
-                <span aria-hidden className="w-3 shrink-0 text-center font-mono text-[10px] text-muted-foreground">
+                <span aria-hidden className="w-3 shrink-0 text-center font-mono text-micro text-muted-foreground">
                   {TYPE_GLYPH[node.type] ?? "▪"}
                 </span>
                 <span className={cn("truncate text-xs", selected ? "text-primary" : "text-foreground")}>{node.name}</span>

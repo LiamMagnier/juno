@@ -167,7 +167,7 @@ export function DesignWorkspace({ artifactId, title, version, content, conversat
 
         <NameField value={name} onCommit={rename} />
 
-        <span className="shrink-0 font-mono text-[10px] text-muted-foreground tabular-nums">v{currentVersion}</span>
+        <span className="shrink-0 font-mono text-micro text-muted-foreground tabular-nums">v{currentVersion}</span>
 
         <div className="flex-1" />
 
@@ -269,7 +269,7 @@ function ZoomControls({
   hasSelection: boolean;
 }) {
   const button =
-    "pressable rounded-md px-2 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-9 coarse:px-2.5";
+    "pressable rounded-md px-2 py-1 font-mono text-micro text-muted-foreground transition-colors hover:bg-accent hover:text-foreground coarse:min-h-9 coarse:px-2.5";
   return (
     <div className="flex items-center gap-0.5" role="group" aria-label="Zoom">
       <button type="button" className={button} onClick={() => viewport.current?.zoomBy(1 / 1.25)} aria-label="Zoom out">

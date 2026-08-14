@@ -803,7 +803,7 @@ export default function WorkThreadPage() {
               </h1>
               <div className="mt-1.5 flex flex-wrap items-center gap-2">
                 <WorkStatusPill status={session.status} />
-                <span className="text-[13px] text-muted-foreground">
+                <span className="text-ui text-muted-foreground">
                   {statusSentence(session.status)}
                 </span>
               </div>
@@ -1066,7 +1066,7 @@ function JumpLink({ href, children }: { href: string; children: React.ReactNode 
   return (
     <a
       href={href}
-      className="inline-flex rounded-sm font-mono text-[10px] text-muted-foreground underline underline-offset-4 transition-colors duration-base ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="inline-flex rounded-sm font-mono text-micro text-muted-foreground underline underline-offset-4 transition-colors duration-base ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {children}
     </a>

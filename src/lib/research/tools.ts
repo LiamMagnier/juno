@@ -22,20 +22,22 @@ import type { ResearchPlan } from "@/lib/research/domain";
  * afterwards.
  */
 
-const PLAN_TIMEOUT_MS = 20_000;
-const SEARCH_TIMEOUT_MS = 25_000;
-const FETCH_TIMEOUT_MS = 20_000;
-const RESULTS_PER_QUERY = 5;
-const PAGE_CONTENT_CHARS = 8_000;
-/** What one Tavily basic search costs us, for the pre-spend estimate. */
-const TAVILY_SEARCH_MICRO_USD = 8_000;
-const TAVILY_EXTRACT_MICRO_USD = 2_000;
-const REVISION_REPORT_CHARS = 32_000;
+const PLAN_TIMEOUT_MS = 25_000;
+const SEARCH_TIMEOUT_MS = 30_000;
+const FETCH_TIMEOUT_MS = 25_000;
+const RESULTS_PER_QUERY = 8;
+const PAGE_CONTENT_CHARS = 16_000;
+const REVISION_REPORT_CHARS = 48_000;
 
-const PLANNER_SYSTEM = `You are a research planner. Break the user's request into focused web-search sub-questions.
+const PLANNER_SYSTEM = `You are an expert autonomous deep-research planner. Break the user's request into comprehensive, multi-angle web search queries:
+1. Foundational concepts, official documentation, specifications, and primary sources
+2. Empirical evidence, statistics, benchmarks, case studies, and quantitative data
+3. Counter-arguments, conflicting perspectives, trade-offs, and critical debates
+4. Most recent developments, latest news, releases, and current status
+
 Reply with ONLY the sub-questions, one per line — no numbering, no bullets, no commentary.
-Each line must be a self-contained web search query (repeat names, dates, and context from the request; a query must make sense on its own).
-Use 3 to 5 lines: complex requests deserve 5, simple ones 3.`;
+Each line must be a self-contained, high-intent web search query (repeat names, dates, and context; a query must make sense on its own).
+Generate 4 to 8 focused queries.`;
 
 /** A signal that aborts with its parent OR after `ms`, whichever comes first. */
 function timeboxSignal(
@@ -153,85 +155,42 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
     completionChars: out.length,
   });
   return {
-    queries: parsePlanLines(out, 5),
+    queries: parsePlanLines(out, 8),
     costMicroUsd: Math.round(billed.costUsd * 1_000_000),
   };
 };
 
-/** True when the deployment has a search backend at all. */
+import { executeMultiEngineSearch, extractUrlContent, isSearchEngineAvailable } from "@/lib/search/search-engine";
+
+/** True when a search engine is available. */
 export function researchSearchConfigured(): boolean {
-  return !!process.env.TAVILY_API_KEY?.trim();
+  return isSearchEngineAvailable();
 }
 
 /**
- * SEARCH — Tavily, with the page body in the same call.
- *
- * `include_raw_content` is what stops the READ stage paying to fetch a page the
- * search already returned; the engine stores that body as the snapshot on the
- * spot. No scraper of our own, which is the same decision the in-request
- * pipeline made and for the same reason: a fetch-and-strip loop over arbitrary
- * URLs is a server-side request forgery surface, and this one is driven by
- * whatever a search engine decided to return.
+ * SEARCH — Multi-engine search pipeline (Brave, Serper, Exa, DuckDuckGo).
  */
 export const searchTheWeb: ResearchDeps["search"] = async ({ query, signal }) => {
-  const key = process.env.TAVILY_API_KEY?.trim();
-  if (!key || !query.trim()) return { hits: [], costMicroUsd: 0 };
+  if (!query.trim()) return { hits: [], costMicroUsd: 0 };
   const box = timeboxSignal(signal, SEARCH_TIMEOUT_MS);
   try {
-    const res = await fetch("https://api.tavily.com/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: key,
-        query: query.slice(0, 400),
-        max_results: RESULTS_PER_QUERY,
-        search_depth: "basic",
-        include_raw_content: true,
-      }),
+    const rawHits = await executeMultiEngineSearch({
+      query: query.slice(0, 400),
+      count: RESULTS_PER_QUERY,
       signal: box.signal,
     });
-    if (!res.ok) {
-      console.error("[research] tavily search", res.status);
-      // A refused request costs nothing; a rate-limited one already did. Bill
-      // the estimate either way rather than let a run retry a failing backend
-      // for free until it hits the step limit.
-      return { hits: [], costMicroUsd: res.status === 429 ? TAVILY_SEARCH_MICRO_USD : 0 };
-    }
-    const data = (await res.json()) as {
-      results?: Array<{
-        url?: string;
-        title?: string;
-        content?: string;
-        raw_content?: string | null;
-        published_date?: string | null;
-      }>;
-    };
-    const hits: ResearchHit[] = (data.results ?? [])
-      .filter((r): r is {
-        url: string;
-        title: string;
-        content?: string;
-        raw_content?: string | null;
-        published_date?: string | null;
-      } =>
-        !!r.url && !!r.title
-      )
-      .slice(0, RESULTS_PER_QUERY)
-      .map((r) => ({
-        url: r.url,
-        title: r.title,
-        snippet: (r.content ?? "").slice(0, 600),
-        rawContent:
-          typeof r.raw_content === "string" && r.raw_content.trim()
-            ? r.raw_content.slice(0, PAGE_CONTENT_CHARS)
-            : undefined,
-        ...(r.published_date && Number.isFinite(Date.parse(r.published_date))
-          ? { publishedAt: new Date(r.published_date) }
-          : {}),
-      }));
-    return { hits, costMicroUsd: TAVILY_SEARCH_MICRO_USD };
+
+    const hits: ResearchHit[] = rawHits.map((r) => ({
+      url: r.url,
+      title: r.title,
+      snippet: r.snippet.slice(0, 800),
+      rawContent: r.rawContent ? r.rawContent.slice(0, PAGE_CONTENT_CHARS) : undefined,
+      publishedAt: r.publishedAt,
+    }));
+
+    return { hits, costMicroUsd: 1000 };
   } catch (e) {
-    if (!box.signal.aborted) console.error("[research] tavily search", e);
+    if (!box.signal.aborted) console.error("[research] multi-engine search error", e);
     return { hits: [], costMicroUsd: 0 };
   } finally {
     box.release();
@@ -239,41 +198,21 @@ export const searchTheWeb: ResearchDeps["search"] = async ({ query, signal }) =>
 };
 
 /**
- * FETCH — Tavily's extract endpoint, for a URL no search returned text for.
- *
- * This is the only path that reaches a user-supplied URL (a pinned source), and
- * it deliberately goes through Tavily rather than fetching directly: the
- * request leaves Tavily's network, not ours, so a pinned `http://169.254.…`
- * reaches a third party's fetcher instead of our metadata endpoint.
+ * FETCH — Universal direct extractor with fallback to multi-engine extractors.
  */
 export const fetchResearchPage: ResearchDeps["fetchPage"] = async ({ url, signal }) => {
-  const key = process.env.TAVILY_API_KEY?.trim();
-  if (!key) return null;
+  if (!url) return null;
   const box = timeboxSignal(signal, FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch("https://api.tavily.com/extract", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: key, urls: [url] }),
-      signal: box.signal,
-    });
-    if (!res.ok) {
-      console.error("[research] tavily extract", res.status);
-      return null;
-    }
-    const data = (await res.json()) as {
-      results?: Array<{ url?: string; raw_content?: string | null; title?: string }>;
-    };
-    const first = data.results?.[0];
-    const text = typeof first?.raw_content === "string" ? first.raw_content.trim() : "";
-    if (!text) return null;
+    const extracted = await extractUrlContent(url, box.signal);
+    if (!extracted || !extracted.text) return null;
     return {
-      title: (first?.title ?? url).slice(0, 300),
-      text: text.slice(0, PAGE_CONTENT_CHARS),
-      costMicroUsd: TAVILY_EXTRACT_MICRO_USD,
+      title: (extracted.title || url).slice(0, 300),
+      text: extracted.text.slice(0, PAGE_CONTENT_CHARS),
+      costMicroUsd: 500,
     };
   } catch (e) {
-    if (!box.signal.aborted) console.error("[research] tavily extract", e);
+    if (!box.signal.aborted) console.error("[research] fetch page extract error", e);
     return null;
   } finally {
     box.release();
@@ -314,25 +253,27 @@ export function buildResearchCorpus(
         .map((c) => `- ${c}`)
         .join("\n")}\n`
     : "";
-  return `# Deep research mode
-The user asked for research on: "${truncate(goal, 300)}". You are writing a research REPORT, not a chat reply, grounded in the numbered source material below (gathered by a research run, with each source's fetched text stored alongside a hash of it).
+  return `# Autonomous Deep Research Mode
+The user requested an exhaustive, authoritative research investigation on: "${truncate(goal, 300)}".
+You are writing a comprehensive, publication-grade research REPORT, grounded strictly in the numbered source material below.
 
-Structure the report as markdown:
-- Start with a single "# " title naming the subject.
-- Organize the body into "## " findings sections that together answer the request.
-- End with a "## Sources" section listing every source you cited as "[n] Title — URL", one per line.
+# Report Structure:
+1. "# Title": Clear, professional title naming the topic.
+2. "## Executive Summary": High-level synthesis highlighting key findings, core thesis, and high-impact takeaways.
+3. "## Key Findings & Core Analysis": Detailed thematic sections (using "### Subheadings") breaking down the subject with quantitative data, benchmark comparisons, timelines, and technical details. Use Markdown comparison tables where appropriate.
+4. "## Nuances, Contradictions & Trade-Offs": Explicitly analyze conflicting claims or divergent evidence between sources.
+5. "## Limitations & Open Questions": What remains uncertain or unverifiable from current evidence.
+6. "## Sources": Numbered list matching cited references as "[n] Title — URL".
 
-Rules:
-- Cite every load-bearing claim inline with bracketed source numbers like [1] or [2][3] that map EXACTLY to the numbered sources below. Dense citation is expected.
-- When sources disagree, say so explicitly and attribute each position to its source.
-- Two sources with the same text are one source: never present them as independent corroboration.
-- Distinguish when a source was published from when the event it describes happened.
-- If something relevant could not be verified in these sources, say plainly that it is unverified — never fill gaps with guesses.
-- Never invent sources or cite numbers outside the list.
+# Citation & Accuracy Rules:
+- Cite EVERY factual assertion, statistic, quote, and claim inline with bracketed numbers (e.g. [1], [2][4]) mapping directly to the numbered source list below.
+- Strict factual grounding: Do NOT fabricate details or cite numbers outside the numbered list.
+- When sources disagree or have different methodologies, explain the disagreement and cite each source.
+- Two sources repeating the same press release or mirror text are not independent corroboration.
 ${constraints}
 ${UNTRUSTED_CONTENT_RULE}
 
-# Source material
+# Numbered Source Material:
 ${corpus}`;
 }
 
@@ -379,7 +320,7 @@ Rewrite the draft below into a complete replacement report for the original requ
       model,
       system,
       history: [{ role: "USER", content: historyContent, attachments: [] }],
-      maxTokens: 8_192,
+      maxTokens: 16_384,
       signal,
     })) {
       if (ev.type === "text") out += ev.text;

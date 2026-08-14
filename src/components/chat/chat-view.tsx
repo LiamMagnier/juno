@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { GitFork, GripVertical, Loader2, RefreshCw, Share, Trash2, TriangleAlert, X } from "lucide-react";
@@ -310,6 +311,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const [privateMode, setPrivateMode] = React.useState(false);
   React.useEffect(() => {
     window.dispatchEvent(new CustomEvent("juno:incognito", { detail: privateMode }));
+    if (privateMode) {
+      document.documentElement.setAttribute("data-private-mode", "true");
+    } else {
+      document.documentElement.removeAttribute("data-private-mode");
+    }
+    return () => {
+      document.documentElement.removeAttribute("data-private-mode");
+    };
   }, [privateMode]);
   // Set when this view is an unsaved branch forked from another conversation.
   const [forkedFrom, setForkedFrom] = React.useState<{ title: string; count: number } | null>(null);
@@ -614,21 +623,41 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setActiveConversationId]);
 
+  const exitPrivateMode = React.useCallback(() => {
+    setPrivateMode(false);
+    setForkedFrom(null);
+    chat.reset();
+    setActiveConversationId(null);
+    createdIdRef.current = null;
+    forkPayloadRef.current = null;
+    setOpenArtifactId(null);
+    setComposerQuote(null);
+    setFullscreen(false);
+    document.documentElement.removeAttribute("data-private-mode");
+    router.push("/chat");
+    window.dispatchEvent(new CustomEvent("juno:new-chat"));
+  }, [chat, router, setActiveConversationId]);
+
   const togglePrivateMode = React.useCallback(() => {
     if (chat.isBusy || voiceOpen || voiceSaving || voiceSaveError || voiceTurnSending) return;
-    const next = !privateMode;
+    if (privateMode) {
+      exitPrivateMode();
+      return;
+    }
+    const next = true;
     createdIdRef.current = null;
     forkPayloadRef.current = null;
     setPrivateMode(next);
     setForkedFrom(null);
     chat.reset();
+    setActiveConversationId(null);
     setOpenArtifactId(null);
     setComposerQuote(null);
     setFullscreen(false);
     // Connectors reach third-party servers, so never carry them into incognito.
-    if (next) setEnabledConnectors([]);
-    if (next && conversationId) router.push("/chat");
-  }, [chat, conversationId, privateMode, router, voiceOpen, voiceSaveError, voiceSaving, voiceTurnSending]);
+    setEnabledConnectors([]);
+    if (conversationId) router.push("/chat");
+  }, [chat, conversationId, exitPrivateMode, privateMode, router, setActiveConversationId, voiceOpen, voiceSaveError, voiceSaving, voiceTurnSending]);
 
   // Pick (or clear) the project for this chat. Existing chat → PATCH immediately;
   // brand-new chat → remember it so the first message is created in that project.
@@ -1332,6 +1361,64 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       "--aura-think": think,
     } as React.CSSProperties;
   }, [resolvedModelInfo, reasoningEffort, model]);
+
+  const thinkingGlow = React.useMemo(() => {
+    switch (reasoningEffort) {
+      case "max":
+        return {
+          opacity: 0.52,
+          width: "min(750px, 94%)",
+          height: "270px",
+          blur: "115px",
+          // Exclusive deep bloom transition from accent color to violet and purple
+          gradient: "radial-gradient(ellipse at center, hsl(var(--primary)) 0%, #8b5cf6 36%, #a855f7 64%, transparent 78%)",
+        };
+      case "xhigh":
+        return {
+          opacity: 0.44,
+          width: "min(690px, 90%)",
+          height: "245px",
+          blur: "100px",
+          // Pure rich accent color
+          gradient: "radial-gradient(ellipse at center, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.7) 45%, hsl(var(--primary) / 0.25) 68%, transparent 78%)",
+        };
+      case "high":
+        return {
+          opacity: 0.36,
+          width: "min(630px, 86%)",
+          height: "220px",
+          blur: "90px",
+          gradient: "radial-gradient(ellipse at center, hsl(var(--primary)) 0%, hsl(var(--primary) / 0.6) 45%, transparent 75%)",
+        };
+      case "medium":
+        return {
+          opacity: 0.28,
+          width: "min(570px, 82%)",
+          height: "200px",
+          blur: "85px",
+          gradient: "radial-gradient(ellipse at center, hsl(var(--primary) / 0.85) 0%, hsl(var(--primary) / 0.45) 45%, transparent 72%)",
+        };
+      case "low":
+        return {
+          opacity: 0.22,
+          width: "min(520px, 78%)",
+          height: "180px",
+          blur: "80px",
+          gradient: "radial-gradient(ellipse at center, hsl(var(--primary) / 0.7) 0%, hsl(var(--primary) / 0.35) 45%, transparent 70%)",
+        };
+      case "minimal":
+      default:
+        // Instant / none / minimal: clearly visible, soft accent baseline glow
+        return {
+          opacity: 0.16,
+          width: "min(470px, 74%)",
+          height: "160px",
+          blur: "75px",
+          gradient: "radial-gradient(ellipse at center, hsl(var(--primary) / 0.55) 0%, hsl(var(--primary) / 0.22) 45%, transparent 68%)",
+        };
+    }
+  }, [reasoningEffort]);
+
   // Send swells the bloom once. Cleared on a timer rather than animationend:
   // under prefers-reduced-motion the keyframes are switched off, so that event
   // would never arrive and the class would stick for the rest of the session.
@@ -1683,58 +1770,62 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   return (
     <ThoughtPanelProvider value={thoughtPanel}>
     <div ref={layoutRef} data-juno-chat-root className="relative flex h-full min-h-0 w-full overflow-hidden">
-      {/* Model parameters + incognito ghost, top-right in normal mode.
-          Below `lg` the canvas and the thought dock replace the chat column
-          entirely (it goes `display:none`, so nothing inside it is focusable).
-          This cluster and PrivateChatToggle live on the chat ROOT, not in that
-          column, so without this guard they stay tabbable and floating over a
-          panel that has taken the whole screen. Same guard, same breakpoint, no
-          ARIA gymnastics. */}
-      <div
-        className={cn(
-          "absolute left-1/2 -translate-x-1/2 top-2 z-20 flex items-center gap-2 transition-[opacity,transform] duration-slow ease-out-soft md:top-3",
-          privateMode ? "pointer-events-none translate-y-1 opacity-0" : "translate-y-0 opacity-100",
-          (openArtifact || thoughtOpenId) && "hidden lg:flex"
-        )}
-      >
-        {/* Share — saved, non-private chats with at least one message. */}
-        {!privateMode && currentConversationId && hasMessages && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {/* The only icon button on this page without `.pressable`, so the
-                  only one with no active-scale press feedback — it hand-rolled
-                  `active:scale-95` and a hover lift instead. `size="lg"` is the
-                  same 36/44 it already was. */}
-              <Pressable
-                kind="icon"
-                size="lg"
-                aria-label="Share chat"
-                onClick={() => setShareOpen(true)}
-                className="text-foreground/75"
-              >
-                <Share className="h-[18px] w-[18px]" />
-              </Pressable>
-            </TooltipTrigger>
-            <TooltipContent>Share chat</TooltipContent>
-          </Tooltip>
-        )}
-        {paramsIsChat && (
-          <ModelParamsPanel
-            model={resolvedModelInfo}
-            reasoningEffort={reasoningEffort}
-            canvasEnabled={canvasEnabled}
-            webSearchEnabled={webSearchEnabled}
-            canWebSearch={paramsCanWebSearch}
-            privateMode={privateMode}
-            disabled={chat.isBusy}
-          />
-        )}
-        <PrivateChatToggle
-          active={privateMode}
-          disabled={chat.isBusy || voiceOpen || voiceSaving || !!voiceSaveError || voiceTurnSending}
-          onToggle={togglePrivateMode}
-        />
-      </div>
+      {/* Model parameters + incognito ghost + share cluster: positioned in the top header on the same Y grid as Chat/Work */}
+      {(() => {
+        const actionsContent = (
+          <div
+            className={cn(
+              "flex items-center gap-1.5 transition-[opacity,transform] duration-base ease-out-soft",
+              privateMode ? "pointer-events-none opacity-0" : "opacity-100",
+              (openArtifact || thoughtOpenId) && "hidden lg:flex"
+            )}
+          >
+            {/* Share — saved, non-private chats with at least one message. */}
+            {!privateMode && currentConversationId && hasMessages && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Pressable
+                    kind="icon"
+                    size="lg"
+                    aria-label="Share chat"
+                    onClick={() => setShareOpen(true)}
+                    className="text-foreground/75"
+                  >
+                    <Share className="h-[18px] w-[18px]" />
+                  </Pressable>
+                </TooltipTrigger>
+                <TooltipContent>Share chat</TooltipContent>
+              </Tooltip>
+            )}
+            {paramsIsChat && (
+              <ModelParamsPanel
+                model={resolvedModelInfo}
+                reasoningEffort={reasoningEffort}
+                canvasEnabled={canvasEnabled}
+                webSearchEnabled={webSearchEnabled}
+                canWebSearch={paramsCanWebSearch}
+                privateMode={privateMode}
+                disabled={chat.isBusy}
+              />
+            )}
+            <PrivateChatToggle
+              active={privateMode}
+              disabled={chat.isBusy || voiceOpen || voiceSaving || !!voiceSaveError || voiceTurnSending}
+              onToggle={togglePrivateMode}
+            />
+          </div>
+        );
+
+        if (typeof document !== "undefined" && document.getElementById("juno-top-actions-slot")) {
+          return createPortal(actionsContent, document.getElementById("juno-top-actions-slot")!);
+        }
+
+        return (
+          <div className="absolute right-3 top-2.5 z-20 hidden items-center gap-1.5 md:flex">
+            {actionsContent}
+          </div>
+        );
+      })()}
 
       {/* Chat column */}
       {/* Below lg the canvas replaces the chat entirely — a split there leaves the
@@ -1742,7 +1833,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           precedent for the same reason, rather than inventing a second story. */}
       <div
         className={cn(
-          "relative flex h-full min-h-0 min-w-0 flex-1 flex-col",
+          "relative flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
           (openArtifact || thoughtOpenId) && "hidden lg:flex"
         )}
       >
@@ -1863,15 +1954,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   Incognito chat
                 </div>
               )}
-              <Pressable
-                kind="icon"
-                size="md"
-                onClick={togglePrivateMode}
-                disabled={chat.isBusy || voiceOpen || voiceSaving || !!voiceSaveError || voiceTurnSending}
+              <button
+                type="button"
+                onClick={exitPrivateMode}
+                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-foreground/75 hover:bg-white/10 hover:text-foreground active:scale-95 transition-all duration-fast z-30 pointer-events-auto"
                 aria-label={forkedFrom ? "Discard branch" : "Leave private chat"}
               >
-                <X className="h-4 w-4" />
-              </Pressable>
+                <X className="size-4" />
+              </button>
             </div>
           </div>
         </div>
@@ -1951,9 +2041,19 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 )}
                 style={auraStyle}
               >
-                {/* Same bloom, dialled down: there are messages above it here. */}
+                {/* Dynamic Ambient Accent Glow behind Docked Composer */}
                 {!privateMode && !voiceOpen && (
-                  <div aria-hidden className="composer-aura composer-aura--docked" />
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute bottom-1/2 left-1/2 -translate-x-1/2 translate-y-1/2 -z-10 rounded-full transition-all duration-700 ease-out"
+                    style={{
+                      opacity: thinkingGlow.opacity,
+                      width: thinkingGlow.width,
+                      height: thinkingGlow.height,
+                      filter: `blur(${thinkingGlow.blur})`,
+                      background: thinkingGlow.gradient,
+                    }}
+                  />
                 )}
                 {/* The voice field replaces that bloom while a call is live, and
                     is mounted HERE rather than inside the dock: it has to be a
@@ -2049,10 +2149,19 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     )}
                     style={auraStyle}
                   >
-                    {/* Accent bloom behind the composer. Hidden in incognito —
-                        that mode is deliberately colourless. */}
+                    {/* Dynamic Ambient Accent Glow behind Centered Composer */}
                     {!privateMode && !voiceOpen && (
-                      <div aria-hidden className="composer-aura" />
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 -z-10 rounded-full transition-all duration-700 ease-out"
+                        style={{
+                          opacity: thinkingGlow.opacity,
+                          width: thinkingGlow.width,
+                          height: thinkingGlow.height,
+                          filter: `blur(${thinkingGlow.blur})`,
+                          background: thinkingGlow.gradient,
+                        }}
+                      />
                     )}
                     {voiceOpen && !privateMode && (
                       <VoiceAura status={voiceAuraStatus(realtimeVoice)} levelRef={realtimeVoice.levelRef} />

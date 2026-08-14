@@ -231,7 +231,7 @@ export default function WorkSchedulePage() {
             variant="ghost"
             size="sm"
             onClick={() => void loadRuns()}
-            className="h-7 gap-1.5 px-2 font-mono text-[10px] text-muted-foreground"
+            className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
           >
             <RefreshCw className="h-3 w-3" aria-hidden="true" /> Refresh
           </Button>
@@ -261,10 +261,10 @@ export default function WorkSchedulePage() {
                   className="flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-field border border-border/60 bg-card px-3.5 py-2.5 transition-colors duration-base ease-out-soft hover:border-border hover:bg-secondary"
                 >
                   <WorkStatusPill status={run.status} />
-                  <span className="min-w-0 flex-1 truncate text-[13px] text-foreground">
+                  <span className="min-w-0 flex-1 truncate text-ui text-foreground">
                     {run.terminalDetail ?? `Attempt ${run.attempt}`}
                   </span>
-                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                  <span className="shrink-0 font-mono text-micro text-muted-foreground">
                     {run.origin} · {workTimeAgo(run.createdAt)}
                   </span>
                 </Link>

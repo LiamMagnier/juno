@@ -379,7 +379,7 @@ export default function WorkHomePage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => setShowAllFinished(true)}
-                            className="h-7 gap-1.5 px-2 font-mono text-[10px] text-muted-foreground"
+                            className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
                           >
                             <ChevronDown className="h-3 w-3" aria-hidden="true" />
                             Show all {groups.finished.length}
@@ -412,14 +412,14 @@ export default function WorkHomePage() {
                   a bare Refresh button next to a heading never did.
                 */}
                 {loadedAt !== null && (
-                  <div className="mt-5 flex items-center justify-center gap-1.5 font-mono text-[10px] tabular-nums text-muted-foreground">
+                  <div className="mt-5 flex items-center justify-center gap-1.5 font-mono text-micro tabular-nums text-muted-foreground">
                     <span>Updated {workTimeAgo(loadedAt)}</span>
                     <span aria-hidden="true">·</span>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => void loadSessions()}
-                      className="h-6 gap-1.5 px-1.5 font-mono text-[10px] text-muted-foreground"
+                      className="h-6 gap-1.5 px-1.5 font-mono text-micro text-muted-foreground"
                     >
                       <RefreshCw className="h-3 w-3" aria-hidden="true" /> Refresh
                     </Button>
@@ -465,7 +465,7 @@ function FirstRun() {
           cannot undo.
         </p>
         <p className="mt-6 font-mono text-label text-muted-foreground">Tasks that work well</p>
-        <ul className="mx-auto mt-2.5 max-w-md space-y-1.5 text-[13px] leading-relaxed text-muted-foreground">
+        <ul className="mx-auto mt-2.5 max-w-md space-y-1.5 text-ui leading-relaxed text-muted-foreground">
           {[
             "Tidy my Downloads folder into folders by month.",
             "Reconcile last month’s expenses against the bank export.",

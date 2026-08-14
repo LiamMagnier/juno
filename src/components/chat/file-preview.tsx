@@ -128,7 +128,7 @@ export function FilePreview({
           aria-hidden="true"
           className={cn(
             "pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2.5 pt-2.5",
-            "font-mono text-[8px] leading-[1.55] text-foreground/60",
+            "font-mono text-micro leading-[1.55] text-foreground/60",
             // The excerpt is a fragment of a longer file, so it dissolves rather
             // than stopping — a hard bottom edge reads as "this is the whole
             // file", which for anything worth previewing it is not.
@@ -147,7 +147,7 @@ export function FilePreview({
       {/* The extension stays legible over an excerpt: it is how you tell a .ts
           from a .py at a glance, and both look like grey lines from a metre. */}
       {text && (
-        <span className="absolute bottom-1.5 right-1.5 rounded-xs bg-secondary px-1.5 py-0.5 font-mono text-[8px] font-medium tracking-[0.06em] text-muted-foreground">
+        <span className="absolute bottom-1.5 right-1.5 rounded-xs bg-secondary px-1.5 py-0.5 font-mono text-micro font-medium tracking-[0.06em] text-muted-foreground">
           {/* `bg-secondary`, opaque, at the `xs` rung. The chip was
               `bg-background/85` — the page colour — which lands within a point
               of the --card tile it sits on in BOTH themes, so the one mark that

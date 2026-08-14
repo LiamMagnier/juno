@@ -107,7 +107,7 @@ export interface DesignContextMenuProps {
  *  binds, so the menu cannot teach a shortcut that does not exist. */
 function Hint({ keys }: { keys: string }) {
   return (
-    <span aria-hidden className="ml-auto pl-6 font-mono text-[10px] text-muted-foreground">
+    <span aria-hidden className="ml-auto pl-6 font-mono text-micro text-muted-foreground">
       {keys}
     </span>
   );

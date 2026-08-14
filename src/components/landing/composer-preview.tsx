@@ -64,7 +64,7 @@ export function ComposerPreview({ model }: { model: ModelInfo }) {
               the one nested object a visitor is meant to recognise once they are
               inside. No competing `bg-*`/`border-*` utility here: those are
               emitted after the components layer and would silently win. */}
-          <span className="composer-chip inline-flex h-8 items-center gap-1.5 rounded-composer-control px-2 text-[12px] font-medium text-foreground/80 sm:text-[13px]">
+          <span className="composer-chip inline-flex h-8 items-center gap-1.5 rounded-composer-control px-2 text-label font-medium text-foreground/80 sm:text-ui">
             <ProviderLogo provider={model.provider} className="size-4 shrink-0" />
             <span className="font-mono">{model.name}</span>
             <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden />

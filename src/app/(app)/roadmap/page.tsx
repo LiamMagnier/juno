@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { AlertTriangle, Inbox, PartyPopper, Plus, Search, Sparkles } from "lucide-react";
+import { AlertTriangle, Inbox, PartyPopper, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DottedDivider } from "@/components/signature/dotted-divider";
@@ -226,7 +226,7 @@ export default function RoadmapPage() {
         ) : empty ? (
           <EmptyState
             className="mt-8"
-            icon={Sparkles}
+            icon={Inbox}
             title="The board is open."
             description="Be the first to shape where Juno goes next."
             action={

@@ -111,14 +111,14 @@ export function QuizInteraction({
               <li key={i} className="grid grid-cols-[1.25rem_minmax(0,1fr)] items-baseline gap-2.5 py-2.5">
                 <span
                   aria-hidden
-                  className={cn("text-center font-mono text-[13px] font-semibold", right ? "text-success-ink" : "text-destructive-ink")}
+                  className={cn("text-center font-mono text-ui font-semibold", right ? "text-success-ink" : "text-destructive-ink")}
                 >
                   {right ? "✓" : "✕"}
                 </span>
                 <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="font-serif text-[15px] leading-6 text-foreground/90">{question.question}</span>
+                  <span className="font-serif text-body leading-6 text-foreground/90">{question.question}</span>
                   {!right && correctLabel && (
-                    <span className="text-[13px] leading-5 text-muted-foreground">
+                    <span className="text-ui leading-5 text-muted-foreground">
                       Answer: <span className="text-foreground/80">{correctLabel}</span>
                     </span>
                   )}
@@ -130,7 +130,7 @@ export function QuizInteraction({
         <button
           type="button"
           onClick={reset}
-          className="self-start rounded-control py-1 font-mono text-[11px] font-semibold text-muted-foreground transition-colors duration-fast hover:text-foreground coarse:min-h-11"
+          className="self-start rounded-control py-1 font-mono text-caption font-semibold text-muted-foreground transition-colors duration-fast hover:text-foreground coarse:min-h-11"
         >
           Start over
         </button>
@@ -195,7 +195,7 @@ export function QuizInteraction({
             >
               <span
                 className={cn(
-                  "relative text-center font-mono text-[12px] font-semibold transition-colors duration-base ease-out-soft",
+                  "relative text-center font-mono text-label font-semibold transition-colors duration-base ease-out-soft",
                   state === "correct" || state === "reveal"
                     ? "text-success"
                     : state === "wrong"
@@ -217,7 +217,7 @@ export function QuizInteraction({
                   LETTERS[index] ?? index + 1
                 )}
               </span>
-              <span className="min-w-0 font-serif text-[15px] leading-6 text-foreground">{option.label}</span>
+              <span className="min-w-0 font-serif text-body leading-6 text-foreground">{option.label}</span>
             </button>
           );
         })}
@@ -227,7 +227,7 @@ export function QuizInteraction({
         <div className="flex flex-col">
           <TextToggle open={hintOpen} onToggle={() => setHintOpen((value) => !value)} label="Hint" controls={hintId} />
           <Reveal open={hintOpen} id={hintId}>
-            <p className="px-2 pb-1 pt-1 font-serif text-[14px] italic leading-6 text-muted-foreground">{q.hint}</p>
+            <p className="px-2 pb-1 pt-1 font-serif text-body italic leading-6 text-muted-foreground">{q.hint}</p>
           </Reveal>
         </div>
       )}
@@ -238,7 +238,7 @@ export function QuizInteraction({
         {answered && (
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2 border-t border-border/50 pt-3">
             <p className="min-w-0 flex-1 basis-64 text-sm leading-6 text-muted-foreground">
-              <span className={cn("font-serif text-[15px] font-medium italic", isCorrect ? "text-success-ink" : "text-destructive-ink")}>
+              <span className={cn("font-serif text-body font-medium italic", isCorrect ? "text-success-ink" : "text-destructive-ink")}>
                 {isCorrect ? "Correct —" : "Not quite —"}
               </span>{" "}
               {explanation ?? (isCorrect ? "well spotted." : `the answer is ${LETTERS[correctIndex] ?? correctIndex + 1}.`)}
@@ -247,7 +247,7 @@ export function QuizInteraction({
               <button
                 type="button"
                 onClick={advance}
-                className="shrink-0 rounded-control py-1 font-mono text-[11px] font-semibold text-primary transition-colors duration-fast hover:text-primary/80 coarse:min-h-11"
+                className="shrink-0 rounded-control py-1 font-mono text-caption font-semibold text-primary transition-colors duration-fast hover:text-primary/80 coarse:min-h-11"
               >
                 {isLast ? "See results →" : "Next question →"}
               </button>
@@ -255,7 +255,7 @@ export function QuizInteraction({
               <button
                 type="button"
                 onClick={reset}
-                className="shrink-0 rounded-control py-1 font-mono text-[11px] font-semibold text-muted-foreground transition-colors duration-fast hover:text-foreground coarse:min-h-11"
+                className="shrink-0 rounded-control py-1 font-mono text-caption font-semibold text-muted-foreground transition-colors duration-fast hover:text-foreground coarse:min-h-11"
               >
                 Try again
               </button>

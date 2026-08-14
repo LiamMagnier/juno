@@ -44,7 +44,7 @@ export function ComparisonBlock({ comparison }: { comparison: ComparisonData }) 
                   cellTone(colIndex)
                 )}
               >
-                <span className="block truncate text-[13px] font-semibold text-foreground">{column}</span>
+                <span className="block truncate text-ui font-semibold text-foreground">{column}</span>
                 <span
                   aria-hidden
                   className={cn(
@@ -92,7 +92,7 @@ export function ComparisonBlock({ comparison }: { comparison: ComparisonData }) 
                 const value = row.values[colIndex];
                 return (
                   <div key={colIndex} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-3">
-                    <dt className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
+                    <dt className="min-w-0 truncate font-mono text-caption text-muted-foreground">
                       {column}
                     </dt>
                     <dd className={cn("min-w-0 break-words text-sm leading-5", value ? "text-foreground/80" : "text-muted-foreground/40")}>
@@ -109,7 +109,7 @@ export function ComparisonBlock({ comparison }: { comparison: ComparisonData }) 
       {comparison.verdict && (
         <footer className="mt-3 flex flex-col gap-1.5 border-t border-border/50 pt-3">
           <Microcap className="text-primary">Verdict</Microcap>
-          <p className="border-l-2 border-primary/70 pl-4 font-serif text-[15px] italic leading-7 text-foreground/85">
+          <p className="border-l-2 border-primary/70 pl-4 font-serif text-body italic leading-7 text-foreground/85">
             {comparison.verdict}
           </p>
         </footer>

@@ -72,14 +72,14 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
     // nor lift to separate it from the page.
     <div className="my-4 overflow-hidden rounded-popover border border-border/70 bg-card shadow-pop">
       <div className="flex items-center justify-between border-b border-border/60 bg-[linear-gradient(180deg,hsl(var(--sheen)),transparent)] px-3 py-2 backdrop-blur-md">
-        <span className="font-mono text-[10px] font-semibold text-muted-foreground">
+        <span className="font-mono text-micro font-semibold text-muted-foreground">
           Diagram · Mermaid
         </span>
         <button
           type="button"
           onClick={copy}
           aria-label={copied ? "Copied" : "Copy diagram source"}
-          className="pressable inline-flex items-center gap-1.5 rounded-control border border-transparent px-2 py-1 font-mono text-[11px] text-muted-foreground hover:border-border/60 hover:bg-accent hover:text-foreground coarse:px-2.5 coarse:py-1.5"
+          className="pressable inline-flex items-center gap-1.5 rounded-control border border-transparent px-2 py-1 font-mono text-caption text-muted-foreground hover:border-border/60 hover:bg-accent hover:text-foreground coarse:px-2.5 coarse:py-1.5"
         >
           {copied ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
           <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>

@@ -404,7 +404,7 @@ export function createPrismaResearchStore(): ResearchStore {
       if (kind === "search" && microUsd > 0) {
         await recordSpend({
           userId,
-          model: "tavily-search",
+          model: "deep-search",
           kind: "research",
           source: "web",
           costUsd: microUsd / 1_000_000,

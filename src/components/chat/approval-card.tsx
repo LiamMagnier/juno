@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronRight, Clock, ShieldAlert, Sparkles } from "lucide-react";
+import { ChevronRight, Clock, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type {
@@ -408,7 +408,7 @@ export function ApprovalCard({
           {risk.label}
         </span>
         {answerable && remaining !== null && (
-          <span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 font-mono text-micro text-muted-foreground">
             <Clock className="size-3" aria-hidden="true" />
             {/* The numerals tick every second, so they are kept out of the
                 accessibility tree — announced once per second they would bury
@@ -426,22 +426,22 @@ export function ApprovalCard({
         )}
       </header>
 
-      <p className={cn("mt-2 leading-relaxed text-foreground", answerable ? "text-[15px] font-medium" : "text-sm")}>
+      <p className={cn("mt-2 leading-relaxed text-foreground", answerable ? "text-body font-medium" : "text-sm")}>
         {current.preview}
       </p>
-      <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+      <p className="mt-1 font-mono text-micro text-muted-foreground">
         {current.connectorLabel} · {current.toolName}
       </p>
       {/* 13px here, 12px on the secondary rank below. Those used to be 13 and
           12.5 — the only fractional type size in the product, a half-pixel that
           lands off the device grid and reads as a rendering artefact rather than
           a rank. A 1px step is the smallest one anybody can actually see. */}
-      <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{risk.detail}</p>
+      <p className="mt-2 text-ui leading-relaxed text-muted-foreground">{risk.detail}</p>
 
       {current.derivedFromUntrusted && (
         <div className="mt-2.5 flex gap-2 rounded-field border border-warning/40 bg-warning/10 px-3 py-2.5">
-          <Sparkles className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
-          <p className="text-[12px] leading-relaxed text-warning-foreground">
+          <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
+          <p className="text-label leading-relaxed text-warning-foreground">
             The model wrote these arguments from content it read — a web page, a file, or output from
             another connector. That content can contain text written to steer what gets sent. Check the
             values below are what you meant before you allow it.
@@ -464,7 +464,7 @@ export function ApprovalCard({
             // (globals.css) is authoritative, and a ring here would need
             // outline-none first, which trades a working focus ring for a
             // hand-rolled one.
-            "flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-field px-3 text-[12px] font-medium text-foreground",
+            "flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-field px-3 text-label font-medium text-foreground",
             // Full accent. This summary sits on the `bg-secondary` details shell,
           // and accent at 40% over secondary is a 1.4-point step — the control
           // that decides whether anyone reads the arguments had no hover.
@@ -480,15 +480,15 @@ export function ApprovalCard({
         </summary>
         <div className="border-t border-border/50 px-3 py-2.5">
           {detailRows.length === 0 ? (
-            <p className="text-[12px] leading-relaxed text-muted-foreground">
+            <p className="text-label leading-relaxed text-muted-foreground">
               This call sends no arguments.
             </p>
           ) : (
             <dl className="space-y-1.5">
               {detailRows.map(([key, value]) => (
                 <div key={key} className="flex flex-col gap-0.5 sm:flex-row sm:gap-2">
-                  <dt className="shrink-0 font-mono text-[10px] text-muted-foreground/80 sm:w-28">{key}</dt>
-                  <dd className="min-w-0 whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-foreground">
+                  <dt className="shrink-0 font-mono text-micro text-muted-foreground/80 sm:w-28">{key}</dt>
+                  <dd className="min-w-0 whitespace-pre-wrap break-words font-mono text-micro leading-relaxed text-foreground">
                     {formatDetailValue(value)}
                   </dd>
                 </div>
@@ -536,7 +536,7 @@ export function ApprovalCard({
         role="status"
         aria-live="polite"
         className={cn(
-          "flex items-start gap-1.5 text-[12px] leading-relaxed",
+          "flex items-start gap-1.5 text-label leading-relaxed",
           resultText ? "mt-2.5" : "sr-only",
           outcome.kind === "refused" ? "text-warning-foreground" : "text-muted-foreground"
         )}
@@ -545,7 +545,7 @@ export function ApprovalCard({
       </p>
 
       {answerable && !sending && untouched && (
-        <p className="mt-2 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+        <p className="mt-2 flex items-center gap-1.5 font-mono text-micro text-muted-foreground">
           <Clock className="size-3" aria-hidden="true" />
           Unanswered, this expires and Juno stops rather than acting on it.
         </p>

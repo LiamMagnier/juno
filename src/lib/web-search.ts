@@ -1,4 +1,5 @@
 import "server-only";
+import { executeMultiEngineSearch, isSearchEngineAvailable } from "@/lib/search/search-engine";
 
 export interface WebSource {
   title: string;
@@ -6,40 +7,22 @@ export interface WebSource {
   snippet: string;
 }
 
-/** Web search is available when a Tavily key is set (free tier works fine). */
+/** Web search is always available with multi-engine capability. */
 export function isWebSearchConfigured(): boolean {
-  return Boolean(process.env.TAVILY_API_KEY?.trim());
+  return isSearchEngineAvailable();
 }
 
-export async function webSearch(query: string, maxResults = 5): Promise<WebSource[]> {
-  const key = process.env.TAVILY_API_KEY?.trim();
-  if (!key || !query.trim()) return [];
+export async function webSearch(query: string, maxResults = 6): Promise<WebSource[]> {
+  if (!query.trim()) return [];
   try {
-    const res = await fetch("https://api.tavily.com/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        api_key: key,
-        query: query.slice(0, 400),
-        max_results: maxResults,
-        search_depth: "basic",
-      }),
-    });
-    if (!res.ok) {
-      console.error("[web-search] tavily", res.status);
-      return [];
-    }
-    const data = await res.json();
-    return (data.results ?? [])
-      .filter((r: { url?: string; title?: string }) => r.url && r.title)
-      .slice(0, maxResults)
-      .map((r: { title: string; url: string; content?: string }) => ({
-        title: r.title,
-        url: r.url,
-        snippet: (r.content ?? "").slice(0, 600),
-      }));
+    const hits = await executeMultiEngineSearch({ query, count: maxResults });
+    return hits.map((h) => ({
+      title: h.title,
+      url: h.url,
+      snippet: h.snippet,
+    }));
   } catch (e) {
-    console.error("[web-search]", e);
+    console.error("[web-search] multi-engine search error:", e);
     return [];
   }
 }
@@ -50,7 +33,7 @@ export function buildSearchContext(query: string, sources: WebSource[]): string 
     .map((s, i) => `[${i + 1}] ${s.title}\n${s.url}\n${s.snippet}`)
     .join("\n\n");
   return `# Web search results
-The user enabled web search. Below are current results for: "${query}". Use them to answer with up-to-date information, and cite the sources you rely on inline using bracketed numbers like [1] or [2] that map to the list. Don't invent sources or numbers beyond this list. If the results don't cover the question, say so.
+The user enabled web search. Below are current verified results for: "${query}". Use them to answer with up-to-date facts, and cite the sources you rely on inline using bracketed numbers like [1] or [2] that map directly to the list. Don't invent sources or numbers beyond this list. If the results don't cover the question, state so plainly.
 
 ${list}`;
 }

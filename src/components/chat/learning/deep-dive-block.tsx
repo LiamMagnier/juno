@@ -33,11 +33,11 @@ export function DeepDiveBlock({ deepDive }: { deepDive: DeepDiveData }) {
           <LessonKicker accent="bg-source" className="text-source">
             Deep dive
           </LessonKicker>
-          <span className="font-serif text-[16px] font-medium leading-6 text-foreground">{deepDive.title}</span>
+          <span className="font-serif text-body font-medium leading-6 text-foreground">{deepDive.title}</span>
           {showSummary && (
             <span
               className={cn(
-                "truncate text-[13px] leading-5 text-muted-foreground transition-opacity duration-fast",
+                "truncate text-ui leading-5 text-muted-foreground transition-opacity duration-fast",
                 open && "opacity-0"
               )}
               aria-hidden={open}
@@ -49,7 +49,7 @@ export function DeepDiveBlock({ deepDive }: { deepDive: DeepDiveData }) {
         <span
           aria-hidden
           className={cn(
-            "pr-1 font-mono text-[16px] leading-none text-muted-foreground transition-transform duration-base ease-out-strong",
+            "pr-1 font-mono text-body leading-none text-muted-foreground transition-transform duration-base ease-out-strong",
             open && "rotate-45"
           )}
         >
@@ -58,7 +58,7 @@ export function DeepDiveBlock({ deepDive }: { deepDive: DeepDiveData }) {
       </button>
       <Reveal open={open} id={contentId} className="duration-slow ease-out-expo">
         <div className="pt-3">
-          <p className="whitespace-pre-line border-l border-source/40 pl-4 text-[15px] leading-7 text-foreground/85">
+          <p className="whitespace-pre-line border-l border-source/40 pl-4 text-body leading-7 text-foreground/85">
             {deepDive.content}
           </p>
         </div>

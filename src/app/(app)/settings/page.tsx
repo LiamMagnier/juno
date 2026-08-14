@@ -345,7 +345,7 @@ function SpendCeiling({
   );
 }
 
-function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
+function SettingsContent({ hideHeader, filterGroup }: { hideHeader?: boolean; filterGroup?: string }) {
   const router = useRouter();
   const { user, settings, setSettings, quota, spend, features, models } = useApp();
   const { setTheme } = useTheme();
@@ -636,11 +636,12 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
           )}
 
           <div className="min-w-0">
-        <SettingsGroup
-          id="usage"
-          title="Plan & usage"
-          description="What you are on, what you have spent, and the ceiling that stops it."
-        >
+        {(!filterGroup || filterGroup === "usage") && (
+          <SettingsGroup
+            id="usage"
+            title="Plan & usage"
+            description="What you are on, what you have spent, and the ceiling that stops it."
+          >
           {/* Usage dashboard */}
           <Tile eyebrow="Usage" i={0}>
             <div className="grid grid-cols-1 overflow-hidden rounded-card border border-border/70 lg:grid-cols-[15rem_1fr]">
@@ -788,7 +789,9 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
           </Tile>
 
           </SettingsGroup>
+        )}
 
+        {(!filterGroup || filterGroup === "appearance") && (
           <SettingsGroup
             id="appearance"
             title="Appearance"
@@ -873,7 +876,9 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
           </Tile>
 
           </SettingsGroup>
+        )}
 
+        {(!filterGroup || filterGroup === "chat") && (
           <SettingsGroup
             id="chat"
             title="Chat defaults"
@@ -1083,9 +1088,10 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
               </div>
             </Tile>
           )}
-
           </SettingsGroup>
+        )}
 
+        {(!filterGroup || filterGroup === "data" || filterGroup === "memory") && (
           <SettingsGroup
             id="data"
             title="Memory"
@@ -1146,7 +1152,9 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
           </Tile>
 
           </SettingsGroup>
+        )}
 
+        {(!filterGroup || filterGroup === "account") && (
           <SettingsGroup
             id="account"
             title="Account & access"
@@ -1234,7 +1242,9 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
           <PermissionsSection index={11} />
 
           </SettingsGroup>
+        )}
 
+        {(!filterGroup || filterGroup === "danger") && (
           <SettingsGroup
             id="danger"
             title="Danger zone"
@@ -1285,6 +1295,7 @@ function SettingsContent({ hideHeader }: { hideHeader?: boolean }) {
             </div>
           </Tile>
           </SettingsGroup>
+        )}
         </div>
         </div>
       </div>

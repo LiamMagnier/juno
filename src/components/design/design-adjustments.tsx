@@ -50,7 +50,7 @@ export function DesignAdjustments({ adjustments, editor, onDismiss }: Props) {
   return (
     <div className="pointer-events-auto mx-auto w-full max-w-2xl rounded-card border border-border/70 bg-popover/95 p-3 shadow-soft backdrop-blur-xl motion-safe:animate-rise-in">
       <div className="flex items-center justify-between pb-2">
-        <h2 className="font-mono text-[10px] text-muted-foreground">Tune Juno’s change</h2>
+        <h2 className="font-mono text-micro text-muted-foreground">Tune Juno’s change</h2>
         <Button variant="ghost" size="icon-sm" onClick={onDismiss} aria-label="Hide these controls" className="text-muted-foreground hover:text-foreground">
           <X className="size-3.5" aria-hidden />
         </Button>
@@ -80,7 +80,7 @@ function SliderRow({ adjustment, onCommit }: { adjustment: SliderAdjustment; onC
     <label className="block">
       <span className="flex items-baseline justify-between pb-1">
         <span className="truncate text-xs">{adjustment.label}</span>
-        <span className="shrink-0 font-mono text-[10px] text-muted-foreground tabular-nums">{round(value)}</span>
+        <span className="shrink-0 font-mono text-micro text-muted-foreground tabular-nums">{round(value)}</span>
       </span>
       <input
         type="range"
@@ -108,7 +108,7 @@ function ColorRow({ adjustment, onCommit }: { adjustment: ColorAdjustment; onCom
   return (
     <label className="flex items-center gap-2">
       <span className="min-w-0 flex-1 truncate text-xs">{adjustment.label}</span>
-      <span className="shrink-0 font-mono text-[10px] uppercase text-muted-foreground">{value}</span>
+      <span className="shrink-0 font-mono text-micro uppercase text-muted-foreground">{value}</span>
       <input
         type="color"
         value={value}

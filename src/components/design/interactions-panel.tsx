@@ -137,7 +137,7 @@ export function InteractionsPanel({
   return (
     <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
       <div className="flex items-center justify-between">
-        <h3 className="truncate font-mono text-[10px] text-muted-foreground">{node.name}</h3>
+        <h3 className="truncate font-mono text-micro text-muted-foreground">{node.name}</h3>
         <button
           type="button"
           disabled={readOnly}
@@ -168,7 +168,7 @@ export function InteractionsPanel({
         />
       ))}
 
-      <p className="border-t border-border/60 pt-2 font-mono text-[9px] leading-relaxed text-muted-foreground">
+      <p className="border-t border-border/60 pt-2 font-mono text-micro leading-relaxed text-muted-foreground">
         The editor does not play prototypes. Triggers reach the HTML export and the handoff bundle; an animation an
         interaction plays can be watched in the timeline below the canvas.
       </p>
@@ -318,7 +318,7 @@ function InteractionCard({
               patch({ action: { type: "open-url", url } }, "Set link");
             }}
           />
-          <span className="block pt-0.5 font-mono text-[9px] text-muted-foreground">
+          <span className="block pt-0.5 font-mono text-micro text-muted-foreground">
             Nothing is saved until this is a whole http:// or https:// link.
           </span>
         </div>
@@ -453,7 +453,7 @@ function ActionFields({
             validate={isHttpUrl}
             onCommit={(url) => onChange({ type: "open-url", url }, "Set link")}
           />
-          <span className="block pt-0.5 font-mono text-[9px] text-muted-foreground">http:// or https:// only</span>
+          <span className="block pt-0.5 font-mono text-micro text-muted-foreground">http:// or https:// only</span>
         </div>
       );
 
@@ -588,7 +588,7 @@ function VariableValueField({
     case "color":
       return (
         <label className="block">
-          <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">Value</span>
+          <span className="block pb-0.5 font-mono text-micro text-muted-foreground">Value</span>
           <input
             type="color"
             aria-label="Variable colour"
@@ -673,7 +673,7 @@ function DraftText({
   };
   return (
     <label className="block">
-      <span className="block pb-0.5 font-mono text-[9px] text-muted-foreground">{label}</span>
+      <span className="block pb-0.5 font-mono text-micro text-muted-foreground">{label}</span>
       <input
         type="text"
         className={cn(fieldClass, "h-6 py-0")}
