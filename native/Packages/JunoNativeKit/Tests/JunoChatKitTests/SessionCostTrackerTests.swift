@@ -158,15 +158,15 @@ final class SessionCostTrackerTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(message(prompt: 100, cacheRead: 25).cacheHitRate), 0.25, accuracy: 1e-9)
     }
 
-    @MainActor
-    func testTrackerResetClearsTheLedgerOnConversationSwitch() {
-        let tracker = SessionCostTracker()
-        tracker.record(turn("a", prompt: 100, completion: 10, cost: 0.01))
-        tracker.isExpanded = true
-        XCTAssertEqual(tracker.totals.turns, 1)
+    /// Switching conversations must not carry spend across. The ledgers are held
+    /// per conversation by `NativeConversationModel`, so this pins the primitive
+    /// that guarantee rests on.
+    func testResetClearsTheLedger() {
+        var ledger = SessionCostLedger()
+        ledger.record(turn("a", prompt: 100, completion: 10, cost: 0.01))
+        XCTAssertEqual(ledger.totals.turns, 1)
 
-        tracker.reset()
-        XCTAssertEqual(tracker.totals, .empty)
-        XCTAssertFalse(tracker.isExpanded)
+        ledger.reset()
+        XCTAssertEqual(ledger.totals, .empty)
     }
 }

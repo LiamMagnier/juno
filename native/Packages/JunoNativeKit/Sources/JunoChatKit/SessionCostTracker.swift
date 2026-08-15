@@ -274,38 +274,11 @@ public struct SessionCostLedger: Equatable, Sendable {
     }
 }
 
-/// The observable shell the conversation header reads.
-///
-/// Main-actor bound because it exists to drive a view; all the arithmetic lives
-/// in ``SessionCostLedger`` so none of it needs the main thread to be tested.
-@Observable
-@MainActor
-public final class SessionCostTracker {
-    public private(set) var ledger: SessionCostLedger
-
-    /// Whether the reader has expanded the badge. Kept here rather than in the
-    /// view so the disclosure survives the header being rebuilt mid-stream.
-    public var isExpanded: Bool = false
-
-    public init(ledger: SessionCostLedger = SessionCostLedger()) {
-        self.ledger = ledger
-    }
-
-    public var totals: NativeSessionCostTotals { ledger.totals }
-
-    public func record(message: NativeCompletedChatMessage) {
-        ledger.record(message: message)
-    }
-
-    public func record(_ turn: NativeTurnUsage) {
-        ledger.record(turn)
-    }
-
-    /// Clears the ledger when the reader switches conversations. The badge is
-    /// per-session, so carrying totals across a switch would bill the new
-    /// conversation for the old one.
-    public func reset() {
-        ledger.reset()
-        isExpanded = false
-    }
-}
+// An `@Observable SessionCostTracker` shell used to live here, wrapping the
+// ledger for SwiftUI. It is gone: `NativeConversationModel` is already
+// `@Observable`, already owns per-conversation state, and already sees the
+// `done` frame, so it holds the ledgers directly (`sessionCost(for:)`,
+// `selectedSessionCost`). A second observable object holding the same numbers
+// would have been one more thing to keep in step with the conversation the
+// reader is actually looking at — and the bug that produces is a receipt
+// showing the previous chat's spend.
