@@ -1,13 +1,23 @@
 import "server-only";
+import { isDisallowedHost } from "./url-safety";
+import { fuseRankedLists, type EngineSpec, type SearchResult } from "./fusion";
 
-export interface SearchResult {
-  title: string;
-  url: string;
-  snippet: string;
-  rawContent?: string;
-  publishedAt?: Date;
-  author?: string;
-  engine: string;
+/*
+ * `SearchResult`, `EngineSpec`, the RRF constant and the merge itself used to be
+ * declared here AND, byte for byte, in fusion.ts/url-safety.ts — which existed
+ * only so the parts with judgement in them could be reached from `tsx --test`,
+ * this module being `server-only`. Two copies of an SSRF guard is the kind of
+ * duplication that drifts, and it had already drifted: the copy in url-safety.ts
+ * rejects non-http(s) schemes and the copy here did not, so a `data:` URI
+ * reached `extractUrlContent` — which a user-supplied pinned source can steer.
+ * The sibling modules are now the only definition and this file imports them.
+ */
+export type { SearchResult } from "./fusion";
+
+/** One outbound link kept from a fetched page, for the bounded hop stage. */
+export interface PageLink {
+  href: string;
+  text: string;
 }
 
 export interface ExtractResult {
@@ -15,73 +25,145 @@ export interface ExtractResult {
   text: string;
   author?: string;
   publishedAt?: Date;
+  /** Resolved, SSRF-filtered, de-duplicated — in the order the page listed them. */
+  links: PageLink[];
 }
 
 /**
- * SSRF & Private IP Protection: blocks internal network probes.
+ * Why a fetch produced no document.
+ *
+ * `extractUrlContent` returned a bare null for all of these, which meant the
+ * research engine's READ loop could only `continue` — and a PDF, exactly the
+ * primary-source class the planner is prompted to go looking for, vanished from
+ * a run with nothing anywhere saying it had been seen and skipped.
  */
-function isDisallowedHost(urlStr: string): boolean {
-  try {
-    const parsed = new URL(urlStr);
-    const host = parsed.hostname.toLowerCase();
-    if (
-      host === "localhost" ||
-      host === "127.0.0.1" ||
-      host === "::1" ||
-      host === "0.0.0.0" ||
-      host.endsWith(".internal") ||
-      host.endsWith(".local")
-    ) {
-      return true;
-    }
-    // Block AWS/GCP/Azure instance metadata
-    if (host === "169.254.169.254" || host.startsWith("169.254.")) {
-      return true;
-    }
-    // Block RFC 1918 private subnets
-    if (
-      host.startsWith("10.") ||
-      host.startsWith("192.168.") ||
-      /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)
-    ) {
-      return true;
-    }
-    return false;
-  } catch {
-    return true;
+export type ExtractFailure =
+  | { reason: "blocked_host" }
+  | { reason: "http_error"; httpStatus: number }
+  | { reason: "unsupported_content_type"; contentType: string }
+  | { reason: "empty_document" }
+  | { reason: "fetch_failed"; detail: string };
+
+export type ExtractOutcome = { ok: true; page: ExtractResult } | { ok: false; failure: ExtractFailure };
+
+/**
+ * Page chrome, removed before anything else looks at the body.
+ *
+ * The extractor stripped only script/style/iframe/svg/noscript, so a cookie
+ * banner, a mega-menu and a footer sitemap all survived into the text — and
+ * since the text is then truncated to a fixed budget, the chrome ate the FRONT
+ * of it. A source whose stored snapshot is a navigation menu is a source the
+ * coverage matrix scores as irrelevant and the report cannot cite.
+ *
+ * Non-greedy, so a nested `<nav>` inside a `<nav>` leaves a stray close tag
+ * behind; that is harmless here because every remaining tag is dropped later,
+ * and the alternative is an HTML parser this repo deliberately does not carry.
+ */
+const CHROME_TAGS = ["nav", "header", "footer", "aside", "form", "dialog"];
+
+function stripChrome(html: string): string {
+  let out = html;
+  for (const tag of CHROME_TAGS) {
+    out = out.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`, "gi"), " ");
   }
+  return out;
+}
+
+/** Roughly how much visible text a `<main>`/`<article>` must hold to be believed. */
+const MAIN_REGION_MIN_CHARS = 600;
+
+function visibleLength(html: string): number {
+  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().length;
+}
+
+/**
+ * The part of the document that is the document.
+ *
+ * Deliberately conservative: a `<main>` or `<article>` is trusted only when it
+ * holds enough visible text to plausibly BE the page. Plenty of sites emit an
+ * empty `<main>` and render into it client-side, and preferring that region
+ * would turn a readable page into an empty one — strictly worse than the chrome
+ * this is trying to avoid.
+ */
+function mainRegion(html: string): string {
+  for (const tag of ["article", "main"]) {
+    const match = html.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`, "i"));
+    if (match && visibleLength(match[1]) >= MAIN_REGION_MIN_CHARS) return match[1];
+  }
+  return html;
+}
+
+/** Links kept per page. Beyond this the tail is site navigation, not citations. */
+const MAX_PAGE_LINKS = 120;
+
+function collectLinks(html: string, baseUrl?: string): PageLink[] {
+  if (!baseUrl) return [];
+  const out: PageLink[] = [];
+  const seen = new Set<string>();
+  for (const match of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    let resolved: string;
+    try {
+      resolved = new URL(match[1], baseUrl).toString();
+    } catch {
+      continue;
+    }
+    // The same guard the fan-out applies to search results. A page is an
+    // untrusted party handing us URLs, and this is the one that reaches fetch().
+    if (isDisallowedHost(resolved)) continue;
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    const text = match[2]
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 200);
+    out.push({ href: resolved, text });
+    if (out.length >= MAX_PAGE_LINKS) break;
+  }
+  return out;
 }
 
 /**
  * Clean and convert raw HTML into readable structured markdown text.
+ *
+ * `baseUrl` is what turns the page's relative hrefs into followable links; omit
+ * it and `links` comes back empty rather than full of unusable fragments.
  */
-export function htmlToCleanText(html: string): { title?: string; text: string; author?: string; publishedAt?: Date } {
+export function htmlToCleanText(
+  html: string,
+  baseUrl?: string
+): { title?: string; text: string; author?: string; publishedAt?: Date; links: PageLink[] } {
   try {
     // Strip scripts, styles, iframes, and svg tags
-    let clean = html
+    const stripped = html
       .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
       .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "")
       .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, "")
       .replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, "")
       .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, "");
 
-    // Extract title
-    const titleMatch = clean.match(/<title[^>]*>([^<]+)<\/title>/i);
+    // Title and meta come from the WHOLE document: <title> and <meta> live in
+    // <head>, which the main-content pick below is about to throw away.
+    const titleMatch = stripped.match(/<title[^>]*>([^<]+)<\/title>/i);
     const title = titleMatch ? titleMatch[1].trim().replace(/\s+/g, " ") : undefined;
 
-    // Extract meta published date
-    const dateMatch = clean.match(/<meta[^>]+(?:article:published_time|date|pubdate)[^>]+content=["']([^"']+)["']/i);
+    const dateMatch = stripped.match(/<meta[^>]+(?:article:published_time|date|pubdate)[^>]+content=["']([^"']+)["']/i);
     let publishedAt: Date | undefined;
     if (dateMatch && dateMatch[1] && Number.isFinite(Date.parse(dateMatch[1]))) {
       publishedAt = new Date(dateMatch[1]);
     }
 
-    // Extract author
-    const authorMatch = clean.match(/<meta[^>]+(?:author|article:author)[^>]+content=["']([^"']+)["']/i);
+    const authorMatch = stripped.match(/<meta[^>]+(?:author|article:author)[^>]+content=["']([^"']+)["']/i);
     const author = authorMatch ? authorMatch[1].trim() : undefined;
 
+    const body = mainRegion(stripChrome(stripped));
+    // Links are read from the body region, not the raw document, for the same
+    // reason the text is: a footer sitemap would otherwise be the top 100 links
+    // on every page of the site and crowd out the ones the article cited.
+    const links = collectLinks(body, baseUrl);
+
     // Convert standard tags to text equivalents
-    clean = clean
+    let clean = body
       .replace(/<h[1-3][^>]*>(.*?)<\/h[1-3]>/gi, "\n\n## $1\n\n")
       .replace(/<h[4-6][^>]*>(.*?)<\/h[4-6]>/gi, "\n\n### $1\n\n")
       .replace(/<p[^>]*>/gi, "\n\n")
@@ -119,17 +201,24 @@ export function htmlToCleanText(html: string): { title?: string; text: string; a
       .replace(/\n{3,}/g, "\n\n")
       .trim();
 
-    return { title, text: clean, author, publishedAt };
+    return { title, text: clean, author, publishedAt, links };
   } catch {
-    return { text: html.replace(/<[^>]+>/g, " ").trim() };
+    return { text: html.replace(/<[^>]+>/g, " ").trim(), links: [] };
   }
 }
 
+/** How much of one page is kept. The research engine truncates again, tighter. */
+const EXTRACT_CHARS = 16_000;
+
 /**
- * Universal Page Extractor with SSIR security protection and clean markdown synthesis.
+ * Universal page extractor with SSRF protection and clean markdown synthesis.
+ *
+ * Returns the REASON on failure rather than a bare null, so a caller can tell a
+ * user "that was a PDF and this build cannot read one" instead of quietly
+ * producing a report that looks like it considered a document it never opened.
  */
-export async function extractUrlContent(url: string, signal?: AbortSignal): Promise<ExtractResult | null> {
-  if (!url || isDisallowedHost(url)) return null;
+export async function extractUrlDocument(url: string, signal?: AbortSignal): Promise<ExtractOutcome> {
+  if (!url || isDisallowedHost(url)) return { ok: false, failure: { reason: "blocked_host" } };
 
   try {
     const res = await fetch(url, {
@@ -143,28 +232,86 @@ export async function extractUrlContent(url: string, signal?: AbortSignal): Prom
       redirect: "follow",
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) return { ok: false, failure: { reason: "http_error", httpStatus: res.status } };
     const contentType = res.headers.get("content-type") ?? "";
     if (contentType && !contentType.includes("text/") && !contentType.includes("json") && !contentType.includes("xml")) {
-      return null;
+      // PDFs land here. Extracting their text needs a parser this repo does not
+      // carry, so the honest move is to name what was skipped and move on.
+      return { ok: false, failure: { reason: "unsupported_content_type", contentType: contentType.split(";")[0].trim() } };
     }
 
     const html = await res.text();
-    const parsed = htmlToCleanText(html);
-    if (!parsed.text || parsed.text.length < 50) return null;
+    // The response URL, not the requested one: redirects are followed, and
+    // resolving a page's relative links against the pre-redirect address points
+    // the hop stage at URLs that do not exist.
+    const parsed = htmlToCleanText(html, res.url || url);
+    if (!parsed.text || parsed.text.length < 50) return { ok: false, failure: { reason: "empty_document" } };
 
     return {
-      title: parsed.title ?? url,
-      text: parsed.text.slice(0, 16_000),
-      author: parsed.author,
-      publishedAt: parsed.publishedAt,
+      ok: true,
+      page: {
+        title: parsed.title ?? url,
+        text: parsed.text.slice(0, EXTRACT_CHARS),
+        author: parsed.author,
+        publishedAt: parsed.publishedAt,
+        links: parsed.links,
+      },
     };
   } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e);
     if (!signal?.aborted) {
-      console.warn("[search-engine] fetch extraction failed for:", url, e instanceof Error ? e.message : e);
+      console.warn("[search-engine] fetch extraction failed for:", url, detail);
     }
-    return null;
+    return { ok: false, failure: { reason: "fetch_failed", detail } };
   }
+}
+
+/** The null-returning shape, for callers that only care whether a page arrived. */
+export async function extractUrlContent(url: string, signal?: AbortSignal): Promise<ExtractResult | null> {
+  const outcome = await extractUrlDocument(url, signal);
+  return outcome.ok ? outcome.page : null;
+}
+
+/**
+ * A provider answered, but not with results.
+ *
+ * Every keyed provider used to `return []` on a non-2xx. Mechanically that
+ * degrades fine — the rank fusion just gets one fewer voter — but a user whose
+ * Brave free tier ran out, or whose key was revoked, got a thin report with
+ * nothing anywhere saying why. Carrying the status out means the run can say
+ * "brave: quota exceeded" instead of silently becoming a worse run.
+ */
+class EngineHttpError extends Error {
+  constructor(
+    readonly engine: string,
+    readonly status: number
+  ) {
+    super(`${engine} responded ${status}`);
+    this.name = "EngineHttpError";
+  }
+}
+
+export type EngineStatus =
+  | "ok"
+  | "empty"
+  | "bad_key"
+  | "rate_limited"
+  | "provider_error"
+  | "timeout"
+  | "failed";
+
+/** What one engine did for one query, for the run's timeline. */
+export interface EngineReport {
+  name: string;
+  results: number;
+  status: EngineStatus;
+  httpStatus?: number;
+}
+
+function statusForHttp(status: number): EngineStatus {
+  if (status === 401 || status === 403) return "bad_key";
+  if (status === 429) return "rate_limited";
+  return "provider_error";
 }
 
 /**
@@ -176,6 +323,8 @@ async function searchBrave(query: string, maxResults: number, signal?: AbortSign
 
   const url = new URL("https://api.search.brave.com/res/v1/web/search");
   url.searchParams.set("q", query);
+  // Brave's own documented ceiling, unlike the 20 the other providers were
+  // being held to for no reason. Asking for more is a 422, not more results.
   url.searchParams.set("count", String(Math.min(20, maxResults)));
   url.searchParams.set("result_filter", "web");
 
@@ -187,7 +336,7 @@ async function searchBrave(query: string, maxResults: number, signal?: AbortSign
     signal,
   });
 
-  if (!res.ok) return [];
+  if (!res.ok) throw new EngineHttpError("brave", res.status);
   const data = await res.json();
   const results = data.web?.results ?? [];
 
@@ -217,7 +366,7 @@ async function searchSerper(query: string, maxResults: number, signal?: AbortSig
     signal,
   });
 
-  if (!res.ok) return [];
+  if (!res.ok) throw new EngineHttpError("serper", res.status);
   const data = await res.json();
   const organic = data.organic ?? [];
 
@@ -251,7 +400,7 @@ async function searchExa(query: string, maxResults: number, signal?: AbortSignal
     signal,
   });
 
-  if (!res.ok) return [];
+  if (!res.ok) throw new EngineHttpError("exa", res.status);
   const data = await res.json();
   const results = data.results ?? [];
 
@@ -286,7 +435,7 @@ async function searchTavily(query: string, maxResults: number, signal?: AbortSig
     signal,
   });
 
-  if (!res.ok) return [];
+  if (!res.ok) throw new EngineHttpError("tavily", res.status);
   const data = await res.json();
   const results = data.results ?? [];
 
@@ -436,7 +585,10 @@ async function searchDuckDuckGo(query: string, maxResults: number, signal?: Abor
       signal,
     });
 
-    if (!res.ok) return [];
+    // Not silent, unlike every other keyless path: DuckDuckGo's HTML endpoint
+    // answers 202/403 when it decides a caller is a bot, and that is a real
+    // degradation a keyless deployment should be able to see in the logs.
+    if (!res.ok) throw new EngineHttpError("duckduckgo", res.status);
     const html = await res.text();
     const results: SearchResult[] = [];
 
@@ -482,26 +634,12 @@ async function searchDuckDuckGo(query: string, maxResults: number, signal?: Abor
 
     return results;
   } catch (e) {
+    if (e instanceof EngineHttpError) throw e;
     if (!signal?.aborted) {
       console.warn("[search-engine] duckduckgo search failed:", e instanceof Error ? e.message : e);
     }
     return [];
   }
-}
-
-/**
- * One search backend, as the fan-out sees it.
- *
- * `weight` is how much this engine's ranking is trusted when engines disagree —
- * it multiplies the reciprocal-rank score below, so a keyed commercial index
- * outvotes a scraped one without ever silencing it. Nothing is a "fallback"
- * any more: every available engine runs, and the merge decides.
- */
-interface EngineSpec {
-  name: string;
-  weight: number;
-  available(): boolean;
-  run(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResult[]>;
 }
 
 const ENGINES: EngineSpec[] = [
@@ -519,6 +657,14 @@ const ENGINES: EngineSpec[] = [
   { name: "wikipedia", weight: 0.35, available: () => true, run: searchWikipedia },
 ];
 
+export interface SearchProviderStatus {
+  keyed: string[];
+  keyless: string[];
+  selfHostedSearxng: boolean;
+  hasKeyedProvider: boolean;
+  hasGoodIndex: boolean;
+}
+
 /**
  * What this deployment can actually reach.
  *
@@ -529,13 +675,7 @@ const ENGINES: EngineSpec[] = [
  * deployment with neither is running on scraped endpoints and should say so
  * rather than quietly returning eight results.
  */
-export function searchProviderStatus(): {
-  keyed: string[];
-  keyless: string[];
-  selfHostedSearxng: boolean;
-  hasKeyedProvider: boolean;
-  hasGoodIndex: boolean;
-} {
+export function searchProviderStatus(): SearchProviderStatus {
   const keyedNames = ["tavily", "serper", "brave", "exa"];
   const keyed = ENGINES.filter((e) => keyedNames.includes(e.name) && e.available()).map((e) => e.name);
   const keyless = ENGINES.filter((e) => !keyedNames.includes(e.name)).map((e) => e.name);
@@ -560,57 +700,95 @@ export function isSearchEngineAvailable(): boolean {
   return true;
 }
 
+/** One engine is allowed this long before the merge proceeds without it. */
+const ENGINE_TIMEOUT_MS = 12_000;
+/** A 429 is a "come back in a moment", not a failure. One retry, inside the deadline. */
+const RATE_LIMIT_BACKOFF_MS = 1_200;
+
+const sleep = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => {
+      clearTimeout(timer);
+      resolve();
+    }, { once: true });
+  });
+
 /**
- * The dedupe key for a result.
+ * Runs one engine under its own deadline and reports how it went.
  *
- * Two engines almost never return the same URL byte-for-byte — one keeps the
- * tracking parameters, one resolves the redirect, one adds the trailing slash —
- * so deduping on the raw string leaves the corpus full of the same page three
- * times, which then reads to the synthesis model as three independent sources
- * corroborating each other. That is the specific failure this prevents.
+ * The deadline is per ENGINE, not per attempt, so the 429 retry cannot push a
+ * slow provider past the point where the merge would have proceeded without it.
  */
-function canonicalUrl(raw: string): string {
-  try {
-    const u = new URL(raw);
-    u.hash = "";
-    u.hostname = u.hostname.toLowerCase().replace(/^www\./, "");
-    for (const key of [...u.searchParams.keys()]) {
-      if (/^(utm_|fbclid|gclid|mc_[ce]id|ref|source|_hs)/i.test(key)) u.searchParams.delete(key);
+async function runEngine(
+  engine: EngineSpec,
+  query: string,
+  perEngine: number,
+  parent?: AbortSignal
+): Promise<{ hits: SearchResult[]; report: EngineReport }> {
+  const startedAt = Date.now();
+  for (let attempt = 0; ; attempt += 1) {
+    const remaining = ENGINE_TIMEOUT_MS - (Date.now() - startedAt);
+    if (remaining <= 0) return { hits: [], report: { name: engine.name, results: 0, status: "timeout" } };
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), remaining);
+    const onAbort = () => ctrl.abort();
+    if (parent?.aborted) ctrl.abort();
+    else parent?.addEventListener("abort", onAbort, { once: true });
+
+    try {
+      const hits = await engine.run(query, perEngine, ctrl.signal);
+      return {
+        hits,
+        report: { name: engine.name, results: hits.length, status: hits.length > 0 ? "ok" : "empty" },
+      };
+    } catch (error) {
+      if (error instanceof EngineHttpError) {
+        if (error.status === 429 && attempt === 0) {
+          console.warn(`[search-engine] ${engine.name} rate-limited (429); retrying once`);
+          await sleep(RATE_LIMIT_BACKOFF_MS, ctrl.signal);
+          continue;
+        }
+        const status = statusForHttp(error.status);
+        console.warn(
+          `[search-engine] ${engine.name} returned ${error.status}` +
+            (status === "bad_key"
+              ? " — the API key is missing, wrong or revoked"
+              : status === "rate_limited"
+                ? " — quota or rate limit exhausted"
+                : "")
+        );
+        return { hits: [], report: { name: engine.name, results: 0, status, httpStatus: error.status } };
+      }
+      const timedOut = ctrl.signal.aborted && !parent?.aborted;
+      if (!timedOut && !parent?.aborted) {
+        console.warn(`[search-engine] ${engine.name} failed:`, error instanceof Error ? error.message : error);
+      }
+      return { hits: [], report: { name: engine.name, results: 0, status: timedOut ? "timeout" : "failed" } };
+    } finally {
+      clearTimeout(timer);
+      parent?.removeEventListener("abort", onAbort);
     }
-    const path = u.pathname.replace(/\/+$/, "") || "/";
-    const qs = u.searchParams.toString();
-    return `${u.protocol}//${u.hostname}${path}${qs ? `?${qs}` : ""}`;
-  } catch {
-    return raw.trim().toLowerCase();
   }
 }
 
-/** Aborts with the parent OR after `ms`, so one hung engine cannot stall the fan-out. */
-function withDeadline<T>(work: (signal: AbortSignal) => Promise<T>, ms: number, parent?: AbortSignal): Promise<T> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), ms);
-  const onAbort = () => ctrl.abort();
-  if (parent?.aborted) ctrl.abort();
-  else parent?.addEventListener("abort", onAbort, { once: true });
-  return work(ctrl.signal).finally(() => {
-    clearTimeout(timer);
-    parent?.removeEventListener("abort", onAbort);
-  });
+/**
+ * How many results to ask ONE engine for, given what the caller wants merged.
+ *
+ * This was `Math.min(20, …)`, which capped every provider at a page of results
+ * even when the caller asked for 50 — and only Brave actually has that limit.
+ * The multiplier is there because the merge DEDUPES: asking each engine for
+ * exactly `count` leaves the union short of `count` the moment two engines
+ * agree on anything, which is the case the fusion is for.
+ */
+function perEngineCount(count: number): number {
+  return Math.max(10, Math.min(50, Math.ceil(count * 1.5)));
 }
 
-/** One engine is allowed this long before the merge proceeds without it. */
-const ENGINE_TIMEOUT_MS = 12_000;
-
 /**
- * The constant in reciprocal-rank fusion. 60 is the value from the original
- * Cormack et al. paper and the one every IR implementation uses; it flattens
- * the head of each list enough that a result ranked #1 by one engine does not
- * automatically beat a result ranked #2 by three engines.
- */
-const RRF_K = 60;
-
-/**
- * Multi-engine web search: every available backend, in parallel, merged.
+ * Multi-engine web search: every available backend, in parallel, merged, with a
+ * per-engine account of what happened.
  *
  * This was a cascade — it returned the first engine that answered and never
  * asked the others. That made the result set as narrow as whichever backend
@@ -622,9 +800,11 @@ const RRF_K = 60;
  * Now every engine runs concurrently and the lists are merged by reciprocal-rank
  * fusion, so breadth is the union rather than the best single source, and a page
  * several engines agree on outranks one that only the cheapest engine found.
- * Engines that fail or time out simply do not vote.
+ * Engines that fail or time out simply do not vote — but they DO report, which
+ * is how a run can tell a user its Brave quota ran out rather than just handing
+ * back a thinner report.
  */
-export async function executeMultiEngineSearch({
+export async function searchWithEngineReport({
   query,
   count = 6,
   signal,
@@ -632,53 +812,28 @@ export async function executeMultiEngineSearch({
   query: string;
   count?: number;
   signal?: AbortSignal;
-}): Promise<SearchResult[]> {
-  if (!query.trim()) return [];
+}): Promise<{ results: SearchResult[]; engines: EngineReport[]; providers: SearchProviderStatus }> {
+  const providers = searchProviderStatus();
+  if (!query.trim()) return { results: [], engines: [], providers };
 
   const active = ENGINES.filter((engine) => engine.available());
-  if (active.length === 0) return [];
+  if (active.length === 0) return { results: [], engines: [], providers };
 
-  // Ask each engine for more than the caller wants: the merge discards
-  // duplicates, and asking for exactly `count` per engine would leave the union
-  // short of `count` as soon as two engines agree on anything.
-  const perEngine = Math.min(20, Math.max(10, count));
+  const perEngine = perEngineCount(count);
+  const settled = await Promise.all(active.map((engine) => runEngine(engine, query, perEngine, signal)));
 
-  const settled = await Promise.all(
-    active.map(async (engine) => {
-      try {
-        const hits = await withDeadline((s) => engine.run(query, perEngine, s), ENGINE_TIMEOUT_MS, signal);
-        return { engine, hits };
-      } catch {
-        return { engine, hits: [] as SearchResult[] };
-      }
-    })
+  const results = fuseRankedLists(
+    settled.map(({ hits }, i) => ({ engine: active[i], hits })),
+    count
   );
+  return { results, engines: settled.map(({ report }) => report), providers };
+}
 
-  const scored = new Map<string, { result: SearchResult; score: number; engines: Set<string> }>();
-  for (const { engine, hits } of settled) {
-    hits.forEach((hit, rank) => {
-      if (!hit.url || !hit.url.startsWith("http") || isDisallowedHost(hit.url)) return;
-      const key = canonicalUrl(hit.url);
-      const contribution = engine.weight / (RRF_K + rank + 1);
-      const existing = scored.get(key);
-      if (!existing) {
-        scored.set(key, { result: { ...hit, engine: engine.name }, score: contribution, engines: new Set([engine.name]) });
-        return;
-      }
-      existing.score += contribution;
-      existing.engines.add(engine.name);
-      // Keep the richest copy: a snippet beats nothing, a fetched body beats a
-      // snippet, and a date from any engine beats no date at all.
-      if (!existing.result.rawContent && hit.rawContent) existing.result.rawContent = hit.rawContent;
-      if (!existing.result.publishedAt && hit.publishedAt) existing.result.publishedAt = hit.publishedAt;
-      if (!existing.result.author && hit.author) existing.result.author = hit.author;
-      if (hit.snippet.length > existing.result.snippet.length) existing.result.snippet = hit.snippet;
-      if (!existing.result.title && hit.title) existing.result.title = hit.title;
-    });
-  }
-
-  return [...scored.values()]
-    .sort((a, b) => b.score - a.score || a.result.title.localeCompare(b.result.title))
-    .slice(0, count)
-    .map(({ result, engines }) => ({ ...result, engine: [...engines].sort().join("+") }));
+/** The result-only shape, for callers with nowhere to put the engine roster. */
+export async function executeMultiEngineSearch(input: {
+  query: string;
+  count?: number;
+  signal?: AbortSignal;
+}): Promise<SearchResult[]> {
+  return (await searchWithEngineReport(input)).results;
 }

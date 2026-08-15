@@ -265,24 +265,15 @@ public extension View {
         )
     }
 
-    /// Source-compatibility shim for the removed "focus glow" parameter.
-    ///
-    /// The ornamented build expressed focus as an accent stroke plus an accent
-    /// shadow; both are gone — see ``junoFloatingChrome(cornerRadius:)`` for
-    /// why. `isFocused` is accepted and ignored so the composer call sites that
-    /// still pass it keep compiling while they migrate. Express focus through
-    /// the system focus ring on the control inside the chrome, not on the
-    /// chrome itself.
-    @available(
-        *, deprecated,
-        message: "Focus belongs to the system focus ring, not to the chrome. Use junoFloatingChrome(cornerRadius:) and drop the argument."
-    )
-    func junoFloatingChrome(
-        cornerRadius: CGFloat = JunoRadius.floating,
-        isFocused: Bool
-    ) -> some View {
-        junoFloatingChrome(cornerRadius: cornerRadius)
-    }
+    // **The `isFocused:` shim that used to sit here is gone, deliberately.** It
+    // accepted and ignored the parameter so the composers left over from the
+    // ornamented build kept compiling while they migrated; the migration is
+    // finished — the Work home composer was the last caller — and a deprecated
+    // overload with no callers is an attractive nuisance the deprecation
+    // warning can no longer police, because nothing trips it. Anything reaching
+    // for it again should read the contract above instead: focus is the system
+    // focus ring on the control inside the chrome, never a treatment on the
+    // material.
 }
 
 @available(macOS 26.0, *)

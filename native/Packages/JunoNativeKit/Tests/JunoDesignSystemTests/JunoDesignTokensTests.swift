@@ -23,29 +23,45 @@ final class JunoDesignTokensTests: XCTestCase {
         XCTAssertEqual(JunoRadius.row, 8)
 
         XCTAssertEqual(JunoRadius.well, JunoGeneratedRadius.field)
-        XCTAssertEqual(JunoRadius.well, 12)
+        XCTAssertEqual(JunoRadius.well, 10)
 
         XCTAssertEqual(JunoRadius.card, JunoGeneratedRadius.card)
-        XCTAssertEqual(JunoRadius.card, 16)
+        XCTAssertEqual(JunoRadius.card, 14)
 
         XCTAssertEqual(JunoRadius.message, JunoGeneratedRadius.popover)
         XCTAssertEqual(JunoRadius.floating, JunoGeneratedRadius.popover)
-        XCTAssertEqual(JunoRadius.message, 18)
+        XCTAssertEqual(JunoRadius.message, 14)
 
-        // 22, not 24. The old value claimed to match the web composer and
-        // matched `--radius` instead — see the note on JunoRadius.composer.
+        // **Four of these numbers moved: well 12 → 10, card 16 → 14, message
+        // 18 → 14, composer 22 → 26.** That is this assertion doing its job,
+        // not failing at it. tailwind.config.ts was retuned deliberately —
+        // its own header now reads "fields 10 · cards 14", and the composer
+        // was pushed to 26 to stop the one box the user aims at reading as
+        // another section well. Every paired token reference above kept
+        // passing throughout, which is what proves the Swift ladder tracked
+        // the retune and only these literals were behind.
+        //
+        // 26 by way of the web's `rounded-composer`, never by way of
+        // `--radius`: the rung once hardcoded 24 while claiming composer
+        // parity, and `--radius` merely happened to sit nearby. See the note
+        // on JunoRadius.composer.
         XCTAssertEqual(JunoRadius.composer, JunoGeneratedRadius.composer)
-        XCTAssertEqual(JunoRadius.composer, 22)
+        XCTAssertEqual(JunoRadius.composer, 26)
     }
 
     /// The three names that used to mean different sizes on the two platforms.
     ///
     /// `control` and `panel` were renamed precisely because the web owns those
-    /// words at 10px and 28px. If either is ever reintroduced here at the old
-    /// value, this says why it must not be.
+    /// words, and owned them at 10px and 28px when the Swift rungs sitting on
+    /// those names meant 6px and 12px. The web has since retuned both — they
+    /// are 9px and 18px now — which is exactly why this is written as an
+    /// inequality against the generated token rather than against the numbers
+    /// of the day: the point was never the specific gap, it was that these two
+    /// words already mean something else. If either name is ever reclaimed
+    /// here, this says why it must not be.
     func testRenamedRungsDoNotReclaimTheWebsMeaning() {
-        XCTAssertNotEqual(JunoRadius.chip, JunoGeneratedRadius.control, "web `control` is 10, this rung is 6")
-        XCTAssertNotEqual(JunoRadius.well, JunoGeneratedRadius.panel, "web `panel` is 28, this rung is 12")
+        XCTAssertNotEqual(JunoRadius.chip, JunoGeneratedRadius.control, "web `control` is 9, this rung is 6")
+        XCTAssertNotEqual(JunoRadius.well, JunoGeneratedRadius.panel, "web `panel` is 18, this rung is 10")
     }
 
     func testColorTokensRejectOutOfRangeComponents() {

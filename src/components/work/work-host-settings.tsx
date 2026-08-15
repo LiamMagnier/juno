@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { FileText, Folder, Link2, Plug } from "lucide-react";
+import { Folder, Link2, Plug } from "lucide-react";
+import { CodeIcons } from "@/lib/app-icons";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
@@ -244,11 +245,13 @@ const ACCESS_LABEL: Record<WorkAccessMode, string> = {
   read_write: "Read, change and remove",
 };
 
+// `Folder` stays raw: a granted directory on somebody's disk, not
+// `AppIcons.projects` — that mark is the Projects destination in the shell.
 const GRANT_ICON: Record<WorkGrantKind, typeof Folder> = {
   local_folder: Folder,
-  local_file: FileText,
+  local_file: CodeIcons.file,
   cloud_folder: Folder,
-  cloud_file: FileText,
+  cloud_file: CodeIcons.file,
   connector_scope: Plug,
 };
 

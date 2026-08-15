@@ -1598,8 +1598,15 @@ private struct DesktopWorkHomeComposer: View {
             }
         }
         .padding(JunoSpace.regular)
-        .junoFloatingChrome(cornerRadius: CGFloat(JunoRadius.composer), isFocused: focused)
-        .animation(JunoMotion.fast, value: focused)
+        // No `isFocused:` and no focus animation beside it. The chrome's
+        // contract is that focus belongs to the system focus ring on the
+        // control inside the glass, never to the material — the accent stroke
+        // and accent shadow that used to express it here flattened the rim's
+        // light scatter, which is the whole reason the ornamented build was
+        // removed. With the chrome ignoring focus, this view has no other
+        // focus-driven visual, so an `.animation(_:value: focused)` would be a
+        // timer attached to nothing.
+        .junoFloatingChrome(cornerRadius: CGFloat(JunoRadius.composer))
         .onAppear { configureModelSelection() }
         .onChange(of: modelOptions) { _, _ in configureModelSelection() }
         .onChange(of: defaultModelID) { _, _ in configureModelSelection() }

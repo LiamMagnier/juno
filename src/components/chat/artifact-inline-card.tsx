@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, PenTool, Terminal } from "lucide-react";
-import { StatusIcons } from "@/lib/app-icons";
+import { Code2, FileCode2, GitBranch, Globe, Image as ImageIcon, PanelRightOpen, Terminal } from "lucide-react";
+import { AppIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Markdown } from "@/components/chat/markdown";
 import { CodeSurface } from "@/components/canvas/code-surface";
 import { SandboxFrame, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
@@ -15,14 +15,20 @@ import type { ArtifactType } from "@/lib/message-content";
 
 type ArtifactView = "code" | "console" | "preview";
 
+// Three of these stay raw on purpose: they are drawings of an artifact's
+// RUNTIME, and the registry's nearest entries mean something else. `Globe` here
+// is a web page, not `ComposerIcons.web` (the web-search tool); `GitBranch` is
+// the node graph a Mermaid chart draws, not `CodeIcons.branch` (a repository
+// ref); and `Code2` pairs with the `FileCode2` below it rather than pointing at
+// the Juno Code destination.
 const ICONS: Record<ArtifactType, typeof Code2> = {
   HTML: Globe,
   REACT: Code2,
   CODE: FileCode2,
   SVG: ImageIcon,
-  MARKDOWN: FileText,
+  MARKDOWN: CodeIcons.file,
   MERMAID: GitBranch,
-  DESIGN: PenTool,
+  DESIGN: AppIcons.design,
 };
 
 /**

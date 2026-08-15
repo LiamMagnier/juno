@@ -332,7 +332,23 @@ export async function runDeepResearch(opts: {
     // `until: "synthesizing"` is the hand-off. The run stays live and the route
     // writes the report; the panel shows it as still working until the turn
     // completes, which is exactly what is happening.
-    await engine.drive({ runId, userId: opts.userId, signal: opts.signal, until: "synthesizing" });
+    //
+    // The `workerId` is not optional in practice, though the signature allows it.
+    // Driving without one skips `claimRun` entirely (engine.ts: the claim and its
+    // heartbeat are both guarded on `store.claimRun && workerId`), so this path
+    // took no lease at all — and an unleased run is one scripts/research-worker.ts
+    // is free to adopt. Both drivers then advance the same state machine, issue
+    // the same queries and bill them twice. Identifying by runId rather than pid
+    // is deliberate: this driver lives and dies with one turn, so a per-turn
+    // identity is what makes the lease releasable and the ownership legible in
+    // the `worker_lease_acquired` event.
+    await engine.drive({
+      runId,
+      userId: opts.userId,
+      signal: opts.signal,
+      until: "synthesizing",
+      workerId: `research-chat:${runId}:${Date.now()}`,
+    });
   } catch (e) {
     console.error("[deep-research] drive failed", { runId, error: e });
   } finally {

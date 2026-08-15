@@ -157,11 +157,34 @@ function radiusAttrs(radius: CornerRadius): string {
   return r > 0 ? ` rx="${num(r)}" ry="${num(r)}"` : "";
 }
 
-/** Per-corner radii, top-left clockwise. */
-function cornerValues(radius: CornerRadius): [number, number, number, number] {
+/**
+ * Per-corner radii, top-left clockwise.
+ *
+ * Exported because the inspector needs the identical reading: it used to show
+ * `cornerRadius[0]` and write a scalar back, so opening a card with only its top
+ * corners rounded and touching the radius field flattened the other three —
+ * against a renderer that had been drawing them correctly since this function
+ * was written. One reading, one place.
+ */
+export function cornerValues(radius: CornerRadius): [number, number, number, number] {
   return typeof radius === "number"
     ? [radius, radius, radius, radius]
     : [radius[0], radius[1], radius[2], radius[3]];
+}
+
+/**
+ * Four corners back to the narrowest shape that says the same thing.
+ *
+ * A uniform tuple and a scalar draw identically (`boxMarkup` even picks a
+ * `<rect>` over a path for the scalar), so an inspector that always wrote the
+ * tuple would turn every document into the more expensive form the first time
+ * anyone touched a radius. Negatives are clamped here rather than in the caller
+ * because the schema's floor is 0 and a rejected transaction is a worse answer
+ * to "I typed -4" than the 0 the shape would have drawn anyway.
+ */
+export function collapseCornerRadius(corners: [number, number, number, number]): CornerRadius {
+  const [tl, tr, br, bl] = corners.map((value) => Math.max(0, value)) as [number, number, number, number];
+  return tl === tr && tr === br && br === bl ? tl : [tl, tr, br, bl];
 }
 
 const uniformRadius = (radius: CornerRadius): boolean => {

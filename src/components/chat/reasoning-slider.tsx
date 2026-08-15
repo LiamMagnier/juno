@@ -168,6 +168,10 @@ export function ReasoningSlider({
           </span>
         </div>
 
+        {/* Both bolts below stay raw. `AppIcons.work` is the Juno Work
+            destination; these two are the Flash/Pro effort chips, where the mark
+            means speed. A destination glyph on an effort toggle would be a link
+            to somewhere the button does not go. */}
         <div className="flex items-center gap-1.5">
           {onFastModeChange && (
             <Tooltip>

@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: cb0f31b53b3285b3
+// tokens-digest: c17fa36c080de5ec
 //
 
 import CoreGraphics
@@ -36,30 +36,30 @@ public struct JunoGeneratedAccentPalette: Hashable, Sendable {
 public enum JunoGeneratedColors {
     /// `--accent`
     public static let accent = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.9265, 0.9265, 0.9335),
-        dark: JunoColorToken(unchecked: 0.15, 0.15, 0.15)
+        light: JunoColorToken(unchecked: 0.9424, 0.9334, 0.8976),
+        dark: JunoColorToken(unchecked: 0.1575, 0.1545, 0.1425)
     )
 
     /// `--accent-foreground`
     public static let accentForeground = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.094, 0.094, 0.106),
-        dark: JunoColorToken(unchecked: 0.98, 0.98, 0.98)
+        light: JunoColorToken(unchecked: 0.1854, 0.1832, 0.1746),
+        dark: JunoColorToken(unchecked: 0.9824, 0.9812, 0.9776)
     )
 
     /// `--background`
     public static let background = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 1.0, 1.0, 1.0),
-        dark: JunoColorToken(unchecked: 0.04, 0.04, 0.04)
+        light: JunoColorToken(unchecked: 0.9754, 0.9743, 0.9646),
+        dark: JunoColorToken(unchecked: 0.042, 0.0412, 0.038)
     )
 
     /// `--border`
     public static let border = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.894, 0.894, 0.906),
-        dark: JunoColorToken(unchecked: 0.14, 0.14, 0.14)
+        light: JunoColorToken(unchecked: 0.9076, 0.8966, 0.8524),
+        dark: JunoColorToken(unchecked: 0.147, 0.1442, 0.133)
     )
 
-    /// `--canvas-handle`
-    public static let canvasHandle = JunoGeneratedPair(
+    /// `--canvas-guide`
+    public static let canvasGuide = JunoGeneratedPair(
         light: JunoColorToken(unchecked: 0.86, 0.272, 0.14),
         dark: JunoColorToken(unchecked: 0.912, 0.4024, 0.288)
     )
@@ -78,14 +78,14 @@ public enum JunoGeneratedColors {
 
     /// `--card`
     public static let card = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 1.0, 1.0, 1.0),
-        dark: JunoColorToken(unchecked: 0.075, 0.075, 0.075)
+        light: JunoColorToken(unchecked: 0.9944, 0.9935, 0.9856),
+        dark: JunoColorToken(unchecked: 0.0788, 0.0773, 0.0712)
     )
 
     /// `--card-foreground`
     public static let cardForeground = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.036, 0.036, 0.044),
-        dark: JunoColorToken(unchecked: 0.98, 0.98, 0.98)
+        light: JunoColorToken(unchecked: 0.1236, 0.1222, 0.1164),
+        dark: JunoColorToken(unchecked: 0.9824, 0.9812, 0.9776)
     )
 
     /// `--code-number`
@@ -120,8 +120,8 @@ public enum JunoGeneratedColors {
 
     /// `--foreground`
     public static let foreground = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.036, 0.036, 0.044),
-        dark: JunoColorToken(unchecked: 0.98, 0.98, 0.98)
+        light: JunoColorToken(unchecked: 0.1236, 0.1222, 0.1164),
+        dark: JunoColorToken(unchecked: 0.9824, 0.9812, 0.9776)
     )
 
     /// `--hairline`
@@ -132,32 +132,32 @@ public enum JunoGeneratedColors {
 
     /// `--input`
     public static let input = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.894, 0.894, 0.906),
-        dark: JunoColorToken(unchecked: 0.2, 0.2, 0.2)
+        light: JunoColorToken(unchecked: 0.5864, 0.5638, 0.4736),
+        dark: JunoColorToken(unchecked: 0.21, 0.206, 0.19)
     )
 
     /// `--muted`
     public static let muted = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.958, 0.958, 0.962),
-        dark: JunoColorToken(unchecked: 0.12, 0.12, 0.12)
+        light: JunoColorToken(unchecked: 0.9615, 0.9577, 0.9385),
+        dark: JunoColorToken(unchecked: 0.126, 0.1236, 0.114)
     )
 
     /// `--muted-foreground`
     public static let mutedForeground = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.4416, 0.4416, 0.4784),
-        dark: JunoColorToken(unchecked: 0.636, 0.636, 0.664)
+        light: JunoColorToken(unchecked: 0.416, 0.4096, 0.384),
+        dark: JunoColorToken(unchecked: 0.671, 0.6605, 0.629)
     )
 
     /// `--popover`
     public static let popover = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 1.0, 1.0, 1.0),
-        dark: JunoColorToken(unchecked: 0.09, 0.09, 0.09)
+        light: JunoColorToken(unchecked: 0.9944, 0.9935, 0.9856),
+        dark: JunoColorToken(unchecked: 0.0945, 0.0927, 0.0855)
     )
 
     /// `--popover-foreground`
     public static let popoverForeground = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.036, 0.036, 0.044),
-        dark: JunoColorToken(unchecked: 0.98, 0.98, 0.98)
+        light: JunoColorToken(unchecked: 0.1236, 0.1222, 0.1164),
+        dark: JunoColorToken(unchecked: 0.9824, 0.9812, 0.9776)
     )
 
     /// `--primary`
@@ -180,8 +180,8 @@ public enum JunoGeneratedColors {
 
     /// `--ring`
     public static let ring = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.6325, 0.6325, 0.6675),
-        dark: JunoColorToken(unchecked: 0.8, 0.8, 0.8)
+        light: JunoColorToken(unchecked: 0.7084, 0.3358, 0.2116),
+        dark: JunoColorToken(unchecked: 0.812, 0.806, 0.788)
     )
 
     /// `--scrim`
@@ -192,14 +192,14 @@ public enum JunoGeneratedColors {
 
     /// `--secondary`
     public static let secondary = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.958, 0.958, 0.962),
-        dark: JunoColorToken(unchecked: 0.12, 0.12, 0.12)
+        light: JunoColorToken(unchecked: 0.9615, 0.9577, 0.9385),
+        dark: JunoColorToken(unchecked: 0.126, 0.1236, 0.114)
     )
 
     /// `--secondary-foreground`
     public static let secondaryForeground = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.094, 0.094, 0.106),
-        dark: JunoColorToken(unchecked: 0.92, 0.92, 0.92)
+        light: JunoColorToken(unchecked: 0.1854, 0.1832, 0.1746),
+        dark: JunoColorToken(unchecked: 0.928, 0.924, 0.912)
     )
 
     /// `--shadow-ink`
@@ -222,26 +222,26 @@ public enum JunoGeneratedColors {
 
     /// `--sidebar`
     public static let sidebar = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.979, 0.979, 0.981),
-        dark: JunoColorToken(unchecked: 0.05, 0.05, 0.05)
+        light: JunoColorToken(unchecked: 0.9615, 0.9577, 0.9385),
+        dark: JunoColorToken(unchecked: 0.053, 0.0518, 0.047)
     )
 
     /// `--sidebar-accent`
     public static let sidebarAccent = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.937, 0.937, 0.943),
-        dark: JunoColorToken(unchecked: 0.1, 0.1, 0.1)
+        light: JunoColorToken(unchecked: 0.9352, 0.9251, 0.8848),
+        dark: JunoColorToken(unchecked: 0.105, 0.103, 0.095)
     )
 
     /// `--sidebar-border`
     public static let sidebarBorder = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.9152, 0.9152, 0.9248),
-        dark: JunoColorToken(unchecked: 0.12, 0.12, 0.12)
+        light: JunoColorToken(unchecked: 0.9076, 0.8966, 0.8524),
+        dark: JunoColorToken(unchecked: 0.126, 0.1236, 0.114)
     )
 
     /// `--sidebar-foreground`
     public static let sidebarForeground = JunoGeneratedPair(
-        light: JunoColorToken(unchecked: 0.247, 0.247, 0.273),
-        dark: JunoColorToken(unchecked: 0.664, 0.664, 0.696)
+        light: JunoColorToken(unchecked: 0.312, 0.3072, 0.288),
+        dark: JunoColorToken(unchecked: 0.6992, 0.6896, 0.6608)
     )
 
     /// `--source`

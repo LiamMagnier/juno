@@ -5,8 +5,8 @@ import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, FileText, GitBranch, GitFork, ImageOff, Image as ImageIcon, Loader2, Square, SquareDashed, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "lucide-react";
-import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { ChevronLeft, ChevronRight, GitBranch, GitFork, ImageOff, Image as ImageIcon, Loader2, Square, SquareDashed, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "lucide-react";
+import { ActionIcons, CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
 import { Textarea } from "@/components/ui/textarea";
@@ -321,7 +321,7 @@ function AttachmentList({ attachments }: { attachments: ClientAttachment[] }) {
             // so a file visibly turned into a stadium the instant it was sent.
             className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-xs transition-colors duration-fast hover:bg-accent"
           >
-            <FileText className="size-4 text-muted-foreground" />
+            <CodeIcons.file className="size-4 text-muted-foreground" />
             <span className="max-w-[180px] truncate font-medium">{a.fileName}</span>
             <span className="text-muted-foreground">{formatBytes(a.size)}</span>
             <ActionIcons.download className="size-3.5 text-muted-foreground" />
@@ -958,6 +958,9 @@ export function MessageItem({
                 // and no dimming, so a slow fork looked like a click that never
                 // landed and only an invisible guard stopped a second one.
                 <IconAction label="Branch from here" onClick={branch} busy={branching}>
+                  {/* Raw `GitBranch`, not `CodeIcons.branch`: that mark names a
+                      repository ref in Juno Code. This forks a CONVERSATION,
+                      and it pairs with the GitFork beside it. */}
                   <GitBranch className="size-4" />
                 </IconAction>
               )}

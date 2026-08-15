@@ -27,10 +27,12 @@
  * `validate.ts` re-opens the finished zip and scans every page for exactly
  * those violations, so the guarantee is checked against the bytes that were
  * produced rather than asserted about the code that produced them. And the
- * previewer that eventually renders these bundles still belongs in an
- * opaque-origin iframe with no `allow-same-origin`, the way
- * `src/components/canvas/sandbox-frame.tsx` already does it: this file removes
- * the reason to trust the content, not the reason to isolate it.
+ * previewer that renders these bundles — `src/components/work/work-site-preview.tsx`
+ * — still puts them in an opaque-origin iframe with no `allow-same-origin`, the
+ * way `src/components/canvas/sandbox-frame.tsx` does: this file removes the
+ * reason to trust the content, not the reason to isolate it. That previewer goes
+ * one further than an iframe and serves the page under a nonce CSP, so a
+ * `<script>` that both guarantees above failed to prevent would still not run.
  */
 
 import JSZip from "jszip";

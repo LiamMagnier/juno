@@ -38,7 +38,7 @@ function pad(value: string, width: number): string {
 async function main() {
   // Imported lazily and through the react-server condition, because the module
   // is `server-only` and throws the moment a plain Node process loads it.
-  const { executeMultiEngineSearch, searchProviderStatus } = await import("../src/lib/search/search-engine");
+  const { searchWithEngineReport, searchProviderStatus } = await import("../src/lib/search/search-engine");
 
   const status = searchProviderStatus();
 
@@ -66,8 +66,38 @@ async function main() {
 
   console.log("\nRunning the real fan-out…\n");
   const started = Date.now();
-  const results = await executeMultiEngineSearch({ query: QUERY, count: 20 });
+  const { results, engines } = await searchWithEngineReport({ query: QUERY, count: 20 });
   const elapsed = Date.now() - started;
+
+  /*
+   * The per-engine verdict, which is the whole reason to run this.
+   *
+   * "configured" above only means an env var is set. `bad_key` is a key that is
+   * present and wrong — the single most common thing this command is run to
+   * find out, and previously indistinguishable from an engine that simply had
+   * nothing to say, because every provider swallowed its non-2xx into an empty
+   * array.
+   */
+  const EXPLAIN: Record<string, string> = {
+    ok: "",
+    empty: "answered, but returned nothing for this query",
+    bad_key: "KEY REJECTED — missing, wrong, or revoked",
+    rate_limited: "QUOTA/RATE LIMIT exhausted, even after one retry",
+    provider_error: "the provider errored",
+    timeout: "did not answer within the per-engine deadline",
+    failed: "the request failed before a response",
+  };
+  console.log(pad("ENGINE", 12) + pad("RESULT", 16) + "DETAIL");
+  console.log("─".repeat(72));
+  for (const engine of engines) {
+    console.log(
+      pad(engine.name, 12) +
+        pad(engine.status === "ok" ? `${engine.results} hits` : engine.status, 16) +
+        (EXPLAIN[engine.status] ?? "") +
+        (engine.httpStatus ? `  (HTTP ${engine.httpStatus})` : "")
+    );
+  }
+  console.log();
 
   if (results.length === 0) {
     console.log("No results at all. Every backend either failed, timed out, or is blocked.");

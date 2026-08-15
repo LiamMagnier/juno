@@ -25,22 +25,61 @@
 import * as React from "react";
 import { toast } from "sonner";
 import {
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignHorizontalDistributeCenter,
+  AlignStartHorizontal,
+  AlignStartVertical,
+  AlignVerticalDistributeCenter,
+  Link2,
+  Link2Off,
+} from "lucide-react";
+import {
+  CheckboxField,
   EffectsSection,
   FillControl,
+  IconButton,
   StrokeControl,
   NumberField,
+  OptionalNumberField,
   Section,
   SelectField,
   TextField,
 } from "@/components/design/effects-panel";
 import { readImageAsset } from "@/components/design/use-design-document";
-import { isContainer, type AutoLayout, type DesignDocument, type DesignNode, type ImageNode, type NodeId } from "@/lib/design/types";
+import { collapseCornerRadius, cornerValues } from "@/lib/design/render";
+import {
+  isContainer,
+  type AutoLayout,
+  type BlendMode,
+  type DesignDocument,
+  type DesignNode,
+  type ImageNode,
+  type LayoutChild,
+  type NodeId,
+  type SizeLimits,
+  type TextNode,
+  type Typography,
+} from "@/lib/design/types";
 import type { DesignOperation, NodePatch } from "@/lib/design/operations";
+
+/** The eight things `align` can do. Named exactly as the editor's `align`
+ *  takes them so there is no translation table between the button and the
+ *  gesture. */
+export type AlignAxis = "left" | "center-x" | "right" | "distribute-x" | "top" | "center-y" | "bottom" | "distribute-y";
 
 interface Props {
   document: DesignDocument;
   selection: NodeId[];
+  /** The page the canvas is showing. Only read with nothing selected, where the
+   *  panel describes the page instead of a layer. */
+  pageId?: string;
   onApply: (operations: DesignOperation[], summary: string) => void;
+  /** Alignment is computed from laid-out boxes, which is the editor's job — the
+   *  inspector only offers the gesture. Absent in hosts that do not lay out. */
+  onAlign?: (axis: AlignAxis) => void;
   readOnly?: boolean;
 }
 
@@ -50,21 +89,17 @@ interface Shared<T> {
   mixed: boolean;
 }
 
-function shared<T>(nodes: DesignNode[], read: (node: DesignNode) => T): Shared<T> {
+function shared<N extends DesignNode, T>(nodes: N[], read: (node: N) => T): Shared<T> {
   const value = read(nodes[0]);
   const first = JSON.stringify(value ?? null);
   return { value, mixed: nodes.some((node) => JSON.stringify(read(node) ?? null) !== first) };
 }
 
-export function InspectorPanel({ document: doc, selection, onApply, readOnly }: Props) {
+export function InspectorPanel({ document: doc, selection, pageId, onApply, onAlign, readOnly }: Props) {
   const nodes = selection.map((id) => doc.nodes[id]).filter((n): n is DesignNode => !!n);
 
   if (nodes.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center px-4 text-center">
-        <p className="text-caption text-muted-foreground">Select a layer to edit its properties.</p>
-      </div>
-    );
+    return <DocumentSection document={doc} pageId={pageId} onApply={onApply} readOnly={readOnly} />;
   }
 
   // A locked layer is left out of every write; it still counts for what the
@@ -76,6 +111,21 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
   const patchAll = (patch: NodePatch, summary: string) =>
     onApply(
       editable.map((n) => ({ op: "updateNode" as const, nodeId: n.id, patch })),
+      summary
+    );
+
+  /**
+   * The same write, built per layer from that layer's own state.
+   *
+   * `updateNode` replaces `cornerRadius`, `limits` and `layoutChild` wholesale
+   * rather than merging them, so "set the top-left corner to 8" and "turn on
+   * grow" are both edits to an object the other layers each have their own copy
+   * of. Assembling one patch and sending it everywhere is precisely how the
+   * first layer's stroke colour used to land on the rest.
+   */
+  const patchEach = (build: (node: DesignNode) => NodePatch, summary: string) =>
+    onApply(
+      editable.map((n) => ({ op: "updateNode" as const, nodeId: n.id, patch: build(n) })),
       summary
     );
 
@@ -93,7 +143,22 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
   const heightMode = shared(nodes, (n) => n.heightMode);
   const horizontal = shared(nodes, (n) => n.constraints.horizontal);
   const vertical = shared(nodes, (n) => n.constraints.vertical);
-  const radius = shared(nodes, (n) => (typeof n.cornerRadius === "number" ? n.cornerRadius : n.cornerRadius[0]));
+  const blendMode = shared(nodes, (n) => n.blendMode);
+
+  // A group carries `clipsContent` in the model and the renderer ignores it
+  // (render.ts only clips a non-group container), so the control is offered
+  // where it does something and nowhere else.
+  const containers = nodes.filter(isContainer);
+  const clippable = containers.length === nodes.length && containers.every((n) => n.type !== "group");
+  const clips = clippable ? shared(containers, (n) => n.clipsContent) : null;
+
+  // Grow, align-self and absolute only mean anything inside a parent that lays
+  // its children out — a child of a plain frame is already positioned by its own
+  // x/y, which is what `absolute` asks for.
+  const inFlow = nodes.every((n) => {
+    const parent = n.parentId ? doc.nodes[n.parentId] : null;
+    return !!parent && isContainer(parent) && !!parent.layout;
+  });
 
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
@@ -107,6 +172,8 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
           />
         )}
       </Section>
+
+      {onAlign && <AlignSection count={nodes.length} onAlign={onAlign} disabled={readOnly || editable.length < 2} />}
 
       <Section title="Position & size">
         <div className="grid grid-cols-2 gap-1.5">
@@ -171,6 +238,26 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
             onChange={(v) => patchAll({ heightMode: v as NodePatch["heightMode"] }, "Set height behaviour")}
           />
         </div>
+        {/* The floor and ceiling the layout engine has always clamped against
+            (`clampSize`), with no way to set them outside the AI. Empty means
+            unset, which is not the same as 0 — see `OptionalNumberField`. */}
+        <div className="grid grid-cols-2 gap-1.5 pt-1.5">
+          {LIMIT_FIELDS.map(({ key, label, name }) => {
+            const limit = shared(nodes, (n) => n.limits[key] ?? null);
+            return (
+              <OptionalNumberField
+                key={key}
+                label={label}
+                ariaLabel={name}
+                value={limit.value}
+                mixed={limit.mixed}
+                min={0}
+                disabled={readOnly}
+                onCommit={(v) => patchEach((node) => ({ limits: withLimit(node.limits, key, v) }), `Set ${name.toLowerCase()}`)}
+              />
+            );
+          })}
+        </div>
       </Section>
 
       <Section title="Constraints">
@@ -214,21 +301,37 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
         </div>
       </Section>
 
+      {inFlow && <LayoutChildSection nodes={nodes} patchEach={patchEach} readOnly={readOnly} />}
+
       {single && isContainer(single) && <AutoLayoutSection node={single} onApply={onApply} readOnly={readOnly} />}
 
-      {allSameType && first.type !== "line" && (
-        <Section title="Appearance">
-          <NumberField
-            label="Radius"
-            ariaLabel="Corner radius"
-            value={radius.value}
-            mixed={radius.mixed}
-            min={0}
+      <Section title="Appearance">
+        {/* Twelve blend modes have been in the model and honoured by the
+            renderer (`mix-blend-mode`) since the first slice with nothing
+            anywhere in the product able to set one. */}
+        <SelectField
+          label="Blend"
+          ariaLabel="Blend mode"
+          value={blendMode.value}
+          mixed={blendMode.mixed}
+          options={BLEND_MODE_OPTIONS}
+          disabled={readOnly}
+          onChange={(v) => patchAll({ blendMode: v as BlendMode }, "Set blend mode")}
+        />
+        {allSameType && first.type !== "line" && (
+          <CornerRadiusControl nodes={nodes} patchEach={patchEach} readOnly={readOnly} />
+        )}
+        {clips && (
+          <CheckboxField
+            label="Clip"
+            ariaLabel="Clip content to this frame"
+            checked={clips.value}
+            mixed={clips.mixed}
             disabled={readOnly}
-            onCommit={(v) => patchAll({ cornerRadius: v }, "Set corner radius")}
+            onChange={(v) => patchAll({ clipsContent: v }, v ? "Clip content" : "Show overflow")}
           />
-        </Section>
-      )}
+        )}
+      </Section>
 
       {/* A line is drawn from its stroke and has no interior, so a fill control
           on one is a control that does nothing. Effects are a different matter:
@@ -248,55 +351,13 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
 
       {single?.type === "image" && <ImageSection node={single} document={doc} onApply={onApply} readOnly={readOnly} />}
 
-      {single?.type === "text" && (
-        <Section title="Typography">
-          <TextField
-            label="Text"
-            value={single.characters}
-            multiline
-            disabled={readOnly}
-            onCommit={(value) => value !== single.characters && patchAll({ characters: value }, "Edit text")}
-          />
-          <div className="grid grid-cols-2 gap-1.5">
-            <NumberField
-              label="Size"
-              value={single.typography.fontSize}
-              min={1}
-              disabled={readOnly}
-              onCommit={(v) => patchAll({ typography: { fontSize: v } }, "Set font size")}
-            />
-            <NumberField
-              label="Weight"
-              value={single.typography.fontWeight}
-              min={100}
-              max={900}
-              step={100}
-              disabled={readOnly}
-              onCommit={(v) => patchAll({ typography: { fontWeight: v } }, "Set font weight")}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            <TextField
-              label="Family"
-              value={single.typography.fontFamily}
-              disabled={readOnly}
-              onCommit={(v) => v && patchAll({ typography: { fontFamily: v } }, "Set typeface")}
-            />
-            <SelectField
-              label="Align"
-              ariaLabel="Text alignment"
-              value={single.typography.textAlign}
-              options={[
-                { value: "left", label: "Left" },
-                { value: "center", label: "Center" },
-                { value: "right", label: "Right" },
-                { value: "justify", label: "Justify" },
-              ]}
-              disabled={readOnly}
-              onChange={(v) => patchAll({ typography: { textAlign: v as never } }, "Set text alignment")}
-            />
-          </div>
-        </Section>
+      {allSameType && first.type === "text" && (
+        <TypographySection
+          nodes={nodes as TextNode[]}
+          single={single?.type === "text" ? single : null}
+          patchAll={patchAll}
+          readOnly={readOnly}
+        />
       )}
 
       {Object.keys(doc.variables).length > 0 && single && (
@@ -325,6 +386,86 @@ export function InspectorPanel({ document: doc, selection, onApply, readOnly }: 
   );
 }
 
+/**
+ * What the inspector says when nothing is selected.
+ *
+ * It used to say one sentence, centred in the vertical middle of a 256px column
+ * — a hero layout in a place a tool should be dense, and the only screen in the
+ * editor where the eye has to travel to the middle of an empty rail to find one
+ * line of text. Figma answers an empty selection with the page and document
+ * instead, and so does this: the page's name, editable in place, and the counts
+ * this panel can derive from the document it already holds.
+ *
+ * The page's `backgroundColor` is deliberately absent, and it is the one thing
+ * that belongs here and cannot be offered yet: the canvas paints it, `createPage`
+ * takes one, and there is no operation that can change it afterwards. A colour
+ * well that could show the colour and not set it would be worse than none.
+ */
+function DocumentSection({
+  document: doc,
+  pageId,
+  onApply,
+  readOnly,
+}: {
+  document: DesignDocument;
+  pageId?: string;
+  onApply: (operations: DesignOperation[], summary: string) => void;
+  readOnly?: boolean;
+}) {
+  const page = doc.pages.find((p) => p.id === pageId) ?? doc.pages[0];
+  const onPage = page ? countSubtree(doc, page.children) : 0;
+
+  return (
+    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
+      <Section title="Page">
+        {page && (
+          <TextField
+            label="Name"
+            value={page.name}
+            disabled={readOnly}
+            onCommit={(value) => value.trim() && value !== page.name && onApply([{ op: "renamePage", pageId: page.id, name: value.trim() }], "Rename page")}
+          />
+        )}
+        <p className="text-caption text-muted-foreground">Select a layer to edit its properties.</p>
+      </Section>
+
+      <Section title="Document">
+        <dl className="space-y-1">
+          {[
+            { term: "Layers here", value: onPage },
+            { term: "Pages", value: doc.pages.length },
+            { term: "Components", value: Object.keys(doc.components).length },
+            { term: "Variables", value: Object.keys(doc.variables).length },
+            { term: "Interactions", value: Object.keys(doc.interactions).length },
+            { term: "Animations", value: Object.keys(doc.animations).length },
+          ].map((row) => (
+            <div key={row.term} className="flex items-baseline justify-between gap-2">
+              <dt className="truncate font-mono text-micro text-muted-foreground">{row.term}</dt>
+              <dd className="shrink-0 text-xs tabular-nums text-foreground">{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </Section>
+    </div>
+  );
+}
+
+/** Every node under these roots, the page's own children included — the number
+ *  a designer means by "how much is on this page". */
+function countSubtree(doc: DesignDocument, roots: NodeId[]): number {
+  let total = 0;
+  const walk = (ids: NodeId[]) => {
+    for (const id of ids) {
+      const node = doc.nodes[id];
+      if (!node) continue;
+      total += 1;
+      if (isContainer(node)) walk(node.children);
+    }
+  };
+  walk(roots);
+  return total;
+}
+
 const SIZING_OPTIONS = [
   { value: "fixed", label: "Fixed" },
   { value: "hug", label: "Hug" },
@@ -338,6 +479,458 @@ const CONSTRAINT_OPTIONS = [
   { value: "stretch", label: "Stretch" },
   { value: "scale", label: "Scale" },
 ];
+
+/** Both axes' floors and ceilings, in the order they pair up in the 2-up grid:
+ *  the two widths on one row, the two heights on the next. */
+const LIMIT_FIELDS: { key: keyof SizeLimits; label: string; name: string }[] = [
+  { key: "minWidth", label: "Min W", name: "Minimum width" },
+  { key: "maxWidth", label: "Max W", name: "Maximum width" },
+  { key: "minHeight", label: "Min H", name: "Minimum height" },
+  { key: "maxHeight", label: "Max H", name: "Maximum height" },
+];
+
+/** An absent limit is not a zero one — `clampSize` reads a `maxWidth` of 0 as
+ *  "zero points wide" — so clearing the field removes the key rather than
+ *  writing a number. */
+function withLimit(limits: SizeLimits, key: keyof SizeLimits, value: number | null): SizeLimits {
+  const next: SizeLimits = { ...limits };
+  if (value === null) delete next[key];
+  else next[key] = Math.max(0, value);
+  return next;
+}
+
+const BLEND_MODE_OPTIONS: { value: BlendMode; label: string }[] = [
+  { value: "normal", label: "Normal" },
+  { value: "multiply", label: "Multiply" },
+  { value: "screen", label: "Screen" },
+  { value: "overlay", label: "Overlay" },
+  { value: "darken", label: "Darken" },
+  { value: "lighten", label: "Lighten" },
+  { value: "color-dodge", label: "Colour dodge" },
+  { value: "color-burn", label: "Colour burn" },
+  { value: "hard-light", label: "Hard light" },
+  { value: "soft-light", label: "Soft light" },
+  { value: "difference", label: "Difference" },
+  { value: "exclusion", label: "Exclusion" },
+];
+
+/**
+ * Align and distribute — all eight, which is how many `align()` has always
+ * implemented.
+ *
+ * The toolbar wired three of them, so align-left, align-right, align-top,
+ * align-bottom and distribute-vertically were reachable by nothing at all. They
+ * live here rather than in the toolbar because this rail is where they survive a
+ * narrow window, and because the toolbar cluster appeared and disappeared with
+ * the selection and shoved everything to its right sideways as it did.
+ *
+ * Distribute needs three boxes to have anything to say — with two, the "even
+ * spacing" it computes is the one gap that is already there — so it is disabled
+ * below three rather than being a button that does nothing.
+ */
+function AlignSection({ count, onAlign, disabled }: { count: number; onAlign: (axis: AlignAxis) => void; disabled?: boolean }) {
+  return (
+    <Section title="Align">
+      <div className="grid grid-cols-4 gap-1">
+        {ALIGN_BUTTONS.map(({ axis, label, icon: Icon }) => (
+          <button
+            key={axis}
+            type="button"
+            aria-label={label}
+            title={label}
+            disabled={disabled || (axis.startsWith("distribute") && count < 3)}
+            onClick={() => onAlign(axis)}
+            className="pressable flex h-6 items-center justify-center rounded-control border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30 coarse:h-9"
+          >
+            <Icon className="size-3.5" aria-hidden />
+          </button>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+/** Horizontal ops on the first row, vertical on the second, each ending in its
+ *  own distribute — so the grid reads as one axis per line. */
+const ALIGN_BUTTONS = [
+  { axis: "left", label: "Align left edges", icon: AlignStartVertical },
+  { axis: "center-x", label: "Align horizontal centres", icon: AlignCenterVertical },
+  { axis: "right", label: "Align right edges", icon: AlignEndVertical },
+  { axis: "distribute-x", label: "Distribute horizontally", icon: AlignHorizontalDistributeCenter },
+  { axis: "top", label: "Align top edges", icon: AlignStartHorizontal },
+  { axis: "center-y", label: "Align vertical centres", icon: AlignCenterHorizontal },
+  { axis: "bottom", label: "Align bottom edges", icon: AlignEndHorizontal },
+  { axis: "distribute-y", label: "Distribute vertically", icon: AlignVerticalDistributeCenter },
+] as const satisfies readonly { axis: AlignAxis; label: string; icon: React.ComponentType<{ className?: string }> }[];
+
+/**
+ * Corner radius, per corner.
+ *
+ * The model has carried `number | [tl, tr, br, bl]` from the start and the
+ * renderer has drawn the tuple correctly since `roundedRectPathData` — but this
+ * field read `cornerRadius[0]` and wrote a scalar, so opening a card with only
+ * its top corners rounded and touching the radius silently flattened the other
+ * three. A card rounded at the top is one of the most ordinary shapes there is.
+ *
+ * Linked is the resting state because a uniform radius is the common case and
+ * four boxes for one number is noise; the chain breaks the link, and a document
+ * that already differs per corner opens unlinked so the field cannot lie about
+ * what it is showing. Writing goes back through `collapseCornerRadius`, so a
+ * shape whose corners agree stays the cheap scalar the renderer draws as a
+ * `<rect>`.
+ */
+function CornerRadiusControl({
+  nodes,
+  patchEach,
+  readOnly,
+}: {
+  nodes: DesignNode[];
+  patchEach: (build: (node: DesignNode) => NodePatch, summary: string) => void;
+  readOnly?: boolean;
+}) {
+  const corners = cornerValues(nodes[0].cornerRadius);
+  const perCorner = corners.some((value) => value !== corners[0]);
+  const [unlinked, setUnlinked] = React.useState(perCorner);
+  const separate = unlinked || perCorner;
+
+  const uniform = shared(nodes, (n) => cornerValues(n.cornerRadius)[0]);
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <div className="min-w-0 flex-1">
+          {separate ? (
+            <div className="grid grid-cols-4 gap-1.5">
+              {CORNERS.map(({ index, label, name }) => {
+                const value = shared(nodes, (n) => cornerValues(n.cornerRadius)[index]);
+                return (
+                  <NumberField
+                    key={label}
+                    label={label}
+                    ariaLabel={name}
+                    value={value.value}
+                    mixed={value.mixed}
+                    min={0}
+                    disabled={readOnly}
+                    onCommit={(v) =>
+                      patchEach((node) => {
+                        const next = cornerValues(node.cornerRadius);
+                        next[index] = Math.max(0, v);
+                        return { cornerRadius: collapseCornerRadius(next) };
+                      }, "Set corner radius")
+                    }
+                  />
+                );
+              })}
+            </div>
+          ) : (
+            <NumberField
+              label="Radius"
+              ariaLabel="Corner radius"
+              value={uniform.value}
+              mixed={uniform.mixed}
+              min={0}
+              disabled={readOnly}
+              onCommit={(v) => patchEach(() => ({ cornerRadius: Math.max(0, v) }), "Set corner radius")}
+            />
+          )}
+        </div>
+        <IconButton
+          label={separate ? "Link corner radii" : "Set each corner separately"}
+          onClick={() => {
+            if (!separate) return setUnlinked(true);
+            // Re-linking is an edit, not just a change of view: the four values
+            // have to become one, and the top-left is the one the collapsed
+            // field would have shown anyway.
+            setUnlinked(false);
+            if (perCorner) patchEach((node) => ({ cornerRadius: cornerValues(node.cornerRadius)[0] }), "Link corner radii");
+          }}
+          disabled={readOnly}
+        >
+          {separate ? <Link2Off className="size-3.5" aria-hidden /> : <Link2 className="size-3.5" aria-hidden />}
+        </IconButton>
+      </div>
+    </div>
+  );
+}
+
+/** Top-left clockwise, which is the order the model stores and the order a
+ *  reader's eye walks a box. */
+const CORNERS = [
+  { index: 0, label: "TL", name: "Top-left corner radius" },
+  { index: 1, label: "TR", name: "Top-right corner radius" },
+  { index: 2, label: "BR", name: "Bottom-right corner radius" },
+  { index: 3, label: "BL", name: "Bottom-left corner radius" },
+] as const;
+
+/**
+ * How this layer behaves inside its parent's auto layout.
+ *
+ * Keyed on the *parent* having a layout, because that is what makes any of it
+ * meaningful: `grow` and `alignSelf` are read by `placeNode` only for children
+ * in the flow, and `absolute` is the switch that takes a child out of it. All
+ * three have been in the layout engine and reachable by nothing but the AI.
+ */
+function LayoutChildSection({
+  nodes,
+  patchEach,
+  readOnly,
+}: {
+  nodes: DesignNode[];
+  patchEach: (build: (node: DesignNode) => NodePatch, summary: string) => void;
+  readOnly?: boolean;
+}) {
+  const grow = shared(nodes, (n) => n.layoutChild.grow);
+  const absolute = shared(nodes, (n) => n.layoutChild.absolute);
+  const alignSelf = shared(nodes, (n) => n.layoutChild.alignSelf ?? "");
+
+  const write = (partial: Partial<LayoutChild>, summary: string) =>
+    patchEach((node) => ({ layoutChild: { ...node.layoutChild, ...partial } }), summary);
+
+  return (
+    <Section title="In parent layout">
+      <div className="grid grid-cols-2 gap-1.5">
+        <CheckboxField
+          label="Grow"
+          ariaLabel="Fill the parent's main axis"
+          checked={grow.value}
+          mixed={grow.mixed}
+          disabled={readOnly}
+          onChange={(v) => write({ grow: v }, v ? "Grow to fill" : "Stop growing")}
+        />
+        <CheckboxField
+          label="Free"
+          ariaLabel="Ignore the parent's layout and keep x and y"
+          checked={absolute.value}
+          mixed={absolute.mixed}
+          disabled={readOnly}
+          onChange={(v) => write({ absolute: v }, v ? "Leave the layout flow" : "Rejoin the layout flow")}
+        />
+      </div>
+      <SelectField
+        label="Self"
+        ariaLabel="Cross-axis alignment for this layer"
+        value={alignSelf.value}
+        mixed={alignSelf.mixed}
+        options={[
+          // "" is the model's absent `alignSelf`, which means the parent's own
+          // `align` decides — not a fifth alignment of its own.
+          { value: "", label: "Auto" },
+          { value: "start", label: "Start" },
+          { value: "center", label: "Center" },
+          { value: "end", label: "End" },
+          { value: "baseline", label: "Baseline" },
+          { value: "stretch", label: "Stretch" },
+        ]}
+        disabled={readOnly}
+        onChange={(v) =>
+          patchEach(
+            (node) => {
+              const next: LayoutChild = { ...node.layoutChild };
+              if (v === "") delete next.alignSelf;
+              else next.alignSelf = v as LayoutChild["alignSelf"];
+              return { layoutChild: next };
+            },
+            "Set self alignment"
+          )
+        }
+      />
+    </Section>
+  );
+}
+
+/**
+ * Typography — all of it, across the whole selection.
+ *
+ * `lineHeight`, `letterSpacing`, `verticalAlign`, `textDecoration` and `italic`
+ * are in the model, validated by the schema and drawn by the renderer, and none
+ * of them had a control. The section was also gated on a single selection, alone
+ * among the inspector's sections, so "make these six labels 13pt" was six trips.
+ *
+ * `textCase` is deliberately still absent: nothing reads it — not the renderer,
+ * not one of the eight exporters — so a control for it would write a field the
+ * product cannot draw, which is worse than not offering it.
+ *
+ * Only the characters stay single-selection. Every other field here is a
+ * property of the type; the characters are the layer's content, and a "Text"
+ * box that quietly overwrote six different strings with one is not a multi-edit,
+ * it is a data loss.
+ */
+function TypographySection({
+  nodes,
+  single,
+  patchAll,
+  readOnly,
+}: {
+  nodes: TextNode[];
+  single: TextNode | null;
+  patchAll: (patch: NodePatch, summary: string) => void;
+  readOnly?: boolean;
+}) {
+  const type = (partial: Partial<Typography>, summary: string) => patchAll({ typography: partial }, summary);
+
+  const family = shared(nodes, (n) => n.typography.fontFamily);
+  const size = shared(nodes, (n) => n.typography.fontSize);
+  const weight = shared(nodes, (n) => n.typography.fontWeight);
+  const align = shared(nodes, (n) => n.typography.textAlign);
+  const vertical = shared(nodes, (n) => n.typography.verticalAlign);
+  const tracking = shared(nodes, (n) => n.typography.letterSpacing);
+  const decoration = shared(nodes, (n) => n.typography.textDecoration ?? "none");
+  const italic = shared(nodes, (n) => n.typography.italic === true);
+  // A percentage line height is relative to the size, an absolute one is not, so
+  // the unit is part of the value rather than a display preference — switching
+  // it converts, which is the only reading under which "150 %" then "24 pt" both
+  // mean what they say.
+  const leadingUnit = shared(nodes, (n) => (typeof n.typography.lineHeight === "number" ? "pt" : "percent"));
+  const leading = shared(nodes, (n) =>
+    typeof n.typography.lineHeight === "number" ? n.typography.lineHeight : n.typography.lineHeight.value
+  );
+
+  return (
+    <Section title="Typography">
+      {single && (
+        <TextField
+          label="Text"
+          value={single.characters}
+          multiline
+          disabled={readOnly}
+          onCommit={(value) => value !== single.characters && patchAll({ characters: value }, "Edit text")}
+        />
+      )}
+      <TextField
+        label="Family"
+        value={family.value}
+        mixed={family.mixed}
+        disabled={readOnly}
+        onCommit={(v) => v && type({ fontFamily: v }, "Set typeface")}
+      />
+      <div className="grid grid-cols-2 gap-1.5">
+        <NumberField
+          label="Size"
+          value={size.value}
+          mixed={size.mixed}
+          min={1}
+          disabled={readOnly}
+          onCommit={(v) => type({ fontSize: v }, "Set font size")}
+        />
+        <NumberField
+          label="Weight"
+          value={weight.value}
+          mixed={weight.mixed}
+          min={100}
+          max={900}
+          step={100}
+          disabled={readOnly}
+          onCommit={(v) => type({ fontWeight: v }, "Set font weight")}
+        />
+        <NumberField
+          label="Line"
+          ariaLabel="Line height"
+          value={leading.value}
+          mixed={leading.mixed}
+          min={0}
+          disabled={readOnly}
+          onCommit={(v) =>
+            type(
+              { lineHeight: leadingUnit.value === "percent" ? { unit: "percent", value: Math.max(0, v) } : Math.max(0, v) },
+              "Set line height"
+            )
+          }
+        />
+        <SelectField
+          label="Unit"
+          ariaLabel="Line height unit"
+          value={leadingUnit.value}
+          mixed={leadingUnit.mixed}
+          options={[
+            { value: "pt", label: "Points" },
+            { value: "percent", label: "Percent" },
+          ]}
+          disabled={readOnly}
+          onChange={(unit) =>
+            // Converted, not reinterpreted: 150 % of a 16pt face is 24pt, and
+            // switching the unit without converting would resize every line on
+            // screen while claiming to change only how the number is written.
+            patchAll(
+              {
+                typography: {
+                  lineHeight:
+                    unit === "percent"
+                      ? { unit: "percent", value: size.value > 0 ? Math.round((leading.value / size.value) * 100) : 100 }
+                      : Math.round(((leading.value * size.value) / 100) * 100) / 100,
+                },
+              },
+              "Set line height unit"
+            )
+          }
+        />
+        <NumberField
+          label="Track"
+          ariaLabel="Letter spacing"
+          value={tracking.value}
+          mixed={tracking.mixed}
+          min={-100}
+          max={100}
+          step={0.5}
+          disabled={readOnly}
+          onCommit={(v) => type({ letterSpacing: Math.max(-100, Math.min(100, v)) }, "Set letter spacing")}
+        />
+        <SelectField
+          label="Style"
+          ariaLabel="Type style"
+          value={italic.value ? "italic" : "regular"}
+          mixed={italic.mixed}
+          options={[
+            { value: "regular", label: "Regular" },
+            { value: "italic", label: "Italic" },
+          ]}
+          disabled={readOnly}
+          onChange={(v) => type({ italic: v === "italic" }, v === "italic" ? "Italicise" : "Set upright")}
+        />
+        <SelectField
+          label="Align"
+          ariaLabel="Horizontal text alignment"
+          value={align.value}
+          mixed={align.mixed}
+          options={[
+            { value: "left", label: "Left" },
+            { value: "center", label: "Center" },
+            { value: "right", label: "Right" },
+            { value: "justify", label: "Justify" },
+          ]}
+          disabled={readOnly}
+          onChange={(v) => type({ textAlign: v as Typography["textAlign"] }, "Set text alignment")}
+        />
+        <SelectField
+          label="Vert"
+          ariaLabel="Vertical text alignment"
+          value={vertical.value}
+          mixed={vertical.mixed}
+          options={[
+            { value: "top", label: "Top" },
+            { value: "middle", label: "Middle" },
+            { value: "bottom", label: "Bottom" },
+          ]}
+          disabled={readOnly}
+          onChange={(v) => type({ verticalAlign: v as Typography["verticalAlign"] }, "Set vertical alignment")}
+        />
+      </div>
+      <SelectField
+        label="Decoration"
+        ariaLabel="Text decoration"
+        value={decoration.value}
+        mixed={decoration.mixed}
+        options={[
+          { value: "none", label: "None" },
+          { value: "underline", label: "Underline" },
+          { value: "strikethrough", label: "Strikethrough" },
+        ]}
+        disabled={readOnly}
+        onChange={(v) => type({ textDecoration: v as Typography["textDecoration"] }, "Set text decoration")}
+      />
+    </Section>
+  );
+}
 
 function AutoLayoutSection({
   node,

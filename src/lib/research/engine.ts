@@ -37,6 +37,11 @@ import {
   tokenCoverage,
   type ResearchSourceType,
 } from "@/lib/research/claim-analysis";
+// Not from search-engine.ts: that module is `server-only` and importing it here
+// would put the whole state machine out of reach of `tsx --test`. url-safety.ts
+// exists precisely so the canonical-URL rule has one definition that both sides
+// of that line can use.
+import { canonicalUrl } from "@/lib/search/url-safety";
 
 /**
  * The durable research job.
@@ -233,6 +238,66 @@ export interface ResearchHit {
   rawContent?: string;
 }
 
+/**
+ * What one search backend did for one query.
+ *
+ * The fan-out used to swallow this entirely — a revoked key, an exhausted free
+ * tier and a healthy-but-quiet engine all looked identical from here, which is
+ * how a user ends up with a thin report and no way to find out why. Structural
+ * on purpose: the timeline renders it, so it has to be data rather than a log
+ * line nobody reading the run can see.
+ */
+export interface ResearchEngineReport {
+  name: string;
+  results: number;
+  status: string;
+  httpStatus?: number;
+}
+
+/** Whether this deployment is searching a real index or scraped endpoints. */
+export interface ResearchProviderStatus {
+  keyed: string[];
+  keyless: string[];
+  selfHostedSearxng: boolean;
+  hasGoodIndex: boolean;
+}
+
+/** A link a fetched page pointed at, for the bounded hop stage. */
+export interface ResearchPageLink {
+  href: string;
+  text: string;
+}
+
+/** A page that could not be turned into text, and the reason a user can act on. */
+export interface ResearchPageSkipped {
+  skipped: string;
+  detail?: string;
+}
+
+export type ResearchPageResult =
+  | { title: string; text: string; costMicroUsd: number; links?: ResearchPageLink[] }
+  | ResearchPageSkipped;
+
+export function pageWasSkipped(page: ResearchPageResult | null): page is ResearchPageSkipped {
+  return !!page && "skipped" in page;
+}
+
+/** Plain English for the timeline. The machine-readable reason travels beside it. */
+export function pageSkipMessage(page: ResearchPageSkipped): string {
+  switch (page.skipped) {
+    case "unsupported_content_type":
+      return `This build cannot extract text from ${page.detail ?? "that file type"}.`;
+    case "blocked_host":
+      return "That address is not one this app is allowed to fetch.";
+    case "http_error":
+      return `The site refused the request${page.detail ? ` (${page.detail})` : ""}.`;
+    case "empty_document":
+      return "The page loaded but contained no readable text.";
+    default:
+      return "Could not be read.";
+  }
+}
+
 export interface ResearchDeps {
   store: ResearchStore;
   /** Turns the goal (plus any steering constraints) into sub-questions. */
@@ -249,13 +314,30 @@ export interface ResearchDeps {
   search(input: { userId: string; query: string; signal?: AbortSignal }): Promise<{
     hits: ResearchHit[];
     costMicroUsd: number;
+    /** Optional: backends that can say how each engine did, do. */
+    engines?: ResearchEngineReport[];
+    providers?: ResearchProviderStatus;
   }>;
   /** Fetches a page the search backend did not return text for (pinned sources). */
-  fetchPage(input: { userId: string; url: string; signal?: AbortSignal }): Promise<{
-    title: string;
-    text: string;
-    costMicroUsd: number;
-  } | null>;
+  fetchPage(input: { userId: string; url: string; signal?: AbortSignal }): Promise<ResearchPageResult | null>;
+  /**
+   * Turns coverage gaps into genuinely NEW queries.
+   *
+   * Optional, and the templated follow-ups below remain the fallback — but the
+   * templates are the reason a follow-up round so often re-fetched the pages the
+   * original query already found: `"<objective> primary source evidence"` is a
+   * paraphrase of the query that produced the gap, and a paraphrase hits the
+   * same index entries. A model that is shown WHICH requirement went unmet and
+   * what has already been asked can go somewhere else.
+   */
+  expandQueries?(input: {
+    userId: string;
+    goal: string;
+    gaps: Array<{ question: string; status: string; missingReason?: string }>;
+    alreadyIssued: string[];
+    limit: number;
+    signal?: AbortSignal;
+  }): Promise<{ queries: string[]; costMicroUsd: number }>;
   /** Writes the report. Optional: the chat path streams synthesis itself. */
   synthesize?(input: {
     userId: string;
@@ -319,7 +401,19 @@ const SYNTHESIS_ESTIMATE_MICRO_USD = 120_000;
 const MAX_SOURCES = 250;
 /** Sources whose full text is stored as a snapshot. */
 const MAX_READ_SOURCES = 250;
-const SNAPSHOT_CHARS = 8_000;
+/**
+ * How much of a page is stored, and therefore how much reaches synthesis.
+ *
+ * This was 8_000 against a fetcher that returns 16_000 and a corpus builder that
+ * re-sliced at 16_000 — so half of every document was thrown away at the store
+ * and the corpus cap was dead code. It is exported and `buildResearchCorpus`
+ * uses it, because a storage cap and a prompt cap that disagree is exactly the
+ * kind of drift that silently halves what a report is written from. The number
+ * did not go all the way to 16k: 250 sources × 16k is a corpus no synthesis
+ * context holds, and the main-content extraction added alongside this means 12k
+ * of a stripped page is worth more than 16k of one with the nav bar still in it.
+ */
+export const SNAPSHOT_CHARS = 12_000;
 /**
  * Below this, what a search engine handed back is a preview rather than a page,
  * and the source is worth opening properly. Set well under `SNAPSHOT_CHARS` so a
@@ -335,11 +429,64 @@ const MAX_STEPS = 40;
 /** The goal is a prompt, not an essay; the column is Text but the bill is not. */
 const MAX_GOAL_CHARS = 8_000;
 
+/**
+ * How many pages READ opens at once, and why there is a number here at all.
+ *
+ * The counts above have allowed 250 sources for a while; a run never got near
+ * them, and the reason was not a cap — it was that READ was a
+ * `for (… of …) await` loop over a 25s-per-page fetch timeout. A couple of
+ * hundred pages one at a time is most of an hour of wall clock, and a run that
+ * cannot physically reach its own source ceiling has a clock for a ceiling, not
+ * a number. This is the change that makes the other limits in this file mean
+ * something.
+ *
+ * Eight rather than more because these are fetches against arbitrary third
+ * parties: past this, a run looks like a scraper to the sites it is reading and
+ * starts collecting 429s instead of documents.
+ */
+const READ_CONCURRENCY = 8;
+/**
+ * Outbound links one READ stage will follow.
+ *
+ * The hop is deliberately ONE deep and small. Following links transitively is
+ * a crawler, and a crawler is how a research run turns into an unbounded bill
+ * against a budget that was set for a report.
+ */
+const MAX_HOP_SOURCES = 24;
+/**
+ * How much of a link's anchor text has to be about an unmet objective.
+ *
+ * Anchor text is short, so this is measured as the fraction of the ANCHOR's
+ * tokens that appear in the objective rather than the other way round — "read
+ * the full 2024 methodology" scores well against a methodology question, while
+ * "privacy policy" scores zero against everything.
+ */
+const HOP_MIN_OVERLAP = 0.34;
+
+/**
+ * Runs `items` in waves of `size`, in order, awaiting each wave.
+ *
+ * A rolling window would keep utilisation marginally higher, but every caller
+ * here has to check two things between units of work — has the user cancelled,
+ * and can the budget still pay — and both need a barrier to be checked against
+ * a consistent state. A wave IS that barrier. With a rolling window the budget
+ * pre-check races its own in-flight calls and the batch overshoots the ceiling
+ * by however many requests were already dispatched.
+ */
+function waves<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 interface CoverageComputation {
   objectives: ResearchPlan["objectives"];
   coverage: ResearchCoverageEntry[];
   conflicts: ResearchConflict[];
+  /** Deterministic, templated follow-ups. The fallback when no expander is wired. */
   followUps: string[];
+  /** The same gaps, unrendered, for an expander that can write better queries. */
+  gaps: Array<{ question: string; status: string; missingReason?: string }>;
   policyExcluded: number;
 }
 
@@ -509,17 +656,33 @@ function computeCoverage(plan: ResearchPlan, sources: ResearchSourceRow[]): Cove
 
   const alreadyPlanned = new Set(plan.queries.map((query) => query.toLowerCase()));
   const followUps: string[] = [];
+  const gaps: CoverageComputation["gaps"] = [];
+  /*
+   * One follow-up per UNCOVERED objective, not one per round.
+   *
+   * There was a `break` after the first, so a plan with six unmet objectives
+   * chased exactly one of them and then paid for a whole sequential search
+   * sweep to do it — with four rounds available, a run could add at most four
+   * queries and could not possibly close six gaps. The bound that matters is
+   * MAX_FOLLOW_UP_ROUNDS (rounds cost a re-entry into gathering) and the free
+   * slots in MAX_PLAN_QUERIES, and `doCoverage` applies both; widening the
+   * round itself costs nothing extra because the queries in it run together.
+   */
   for (const objective of updatedObjectives) {
     const entry = coverage.find(
       (item) => item.objectiveId === objective.id && (item.status === "missing" || item.status === "weak")
     );
     if (!entry) continue;
+    gaps.push({
+      question: objective.question,
+      status: entry.status,
+      ...(entry.missingReason ? { missingReason: entry.missingReason } : {}),
+    });
     const suffix = entry.status === "missing" ? "primary source evidence" : "independent source and counter evidence";
     const query = `${objective.question} ${suffix}`.replace(/\s+/g, " ").trim().slice(0, 400);
     if (alreadyPlanned.has(query.toLowerCase())) continue;
     alreadyPlanned.add(query.toLowerCase());
     followUps.push(query);
-    if (followUps.length >= 1) break;
   }
   if (followUps.length === 0 && conflicts.some((conflict) => conflict.kind === "source_monoculture")) {
     const objective = updatedObjectives.find((item) => item.status !== "covered");
@@ -534,6 +697,7 @@ function computeCoverage(plan: ResearchPlan, sources: ResearchSourceRow[]): Cove
     coverage,
     conflicts: conflicts.slice(0, 24),
     followUps,
+    gaps,
     policyExcluded,
   };
 }
@@ -689,6 +853,25 @@ export function createResearchEngine(deps: ResearchDeps): ResearchEngine {
     return budgetAllows(spent, run.budgetMicroUsd, estimate);
   };
 
+  /**
+   * How many of `wanted` calls at `unit` each the run can still pay for.
+   *
+   * The whole point of dispatching a wave is that `affordable` is checked ONCE,
+   * before any of it goes out. Checking per call and then firing them in
+   * parallel is not a ceiling: eight requests already in flight against a budget
+   * with room for two is an overshoot no later check can undo. One read of the
+   * live spend, then arithmetic.
+   */
+  const affordableCount = async (run: ResearchRunRow, unit: number, wanted: number): Promise<number> => {
+    if (wanted <= 0) return 0;
+    const fresh = await store.loadRun(run.id, run.userId);
+    const spent = fresh?.costMicroUsd ?? run.costMicroUsd;
+    const budget = fresh?.budgetMicroUsd ?? run.budgetMicroUsd;
+    let n = wanted;
+    while (n > 0 && !budgetAllows(spent, budget, unit * n)) n -= 1;
+    return n;
+  };
+
   const stopForBudget = async (run: ResearchRunRow, estimate: number): Promise<StepOutcome> => {
     const progress = await store.progress(run.id, run.userId);
     const to = budgetStopState(progress);
@@ -800,7 +983,11 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       : { kind: "raced" };
   };
 
-  const doSearching = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
+  const doSearching = async (
+    run: ResearchRunRow,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<StepOutcome> => {
     const plan = parsePlan(run.plan);
     const queries = plan.queries.length ? plan.queries : [run.goal];
     const plannedIssued = new Set(plan.issuedQueries ?? []);
@@ -809,22 +996,55 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     const pending = plan.issuedQueries === undefined ? queries : queries.filter((query) => !plannedIssued.has(query));
     let current = run;
     const issued = new Set(plannedIssued);
+    // The provider roster is a property of the deployment, not of the query, so
+    // it rides the FIRST query of the sweep only. Repeating it on every event
+    // would be the same fact a dozen times in a timeline a person has to read.
+    let providersAnnounced = plannedIssued.size > 0;
+
+    /*
+     * SEARCH stays one query at a time, and that is a decision rather than an
+     * oversight — READ, next door, runs its fetches in waves.
+     *
+     * Two properties depend on it, both of them the reason the loop reads the
+     * run row between iterations. A cancel pressed while a query is in flight
+     * has to stop the sweep rather than let the queries already dispatched run
+     * to completion and bill; and the ceiling is checked against an ESTIMATE
+     * before each query, so the run stops at the first query it cannot project
+     * paying for rather than one wave later. Neither survives a batch: the
+     * moment four `deps.search` calls are handed to Promise.all, four queries
+     * are paid for whatever the fifth check would have said.
+     *
+     * The cost of keeping it serial is bounded, which is why this is the loop
+     * that gives way: a query fans out to seven backends concurrently
+     * underneath, so a sweep is dozens of requests wide already, and there are
+     * tens of queries against the hundreds of page fetches READ has to make.
+     */
     for (const query of pending) {
       if (!(await affordable(current, SEARCH_ESTIMATE_MICRO_USD))) {
         return stopForBudget(current, SEARCH_ESTIMATE_MICRO_USD);
       }
-      // Re-read between queries, not just between stages. A cancel pressed
-      // during a five-query sweep should stop the sweep, not be noticed once
-      // the last query has already been paid for.
       const fresh = await store.loadRun(current.id, current.userId);
       if (!fresh || fresh.state !== "searching") return { kind: "raced" };
       current = fresh;
+      // A long sweep can outlast the worker lease on its own, and a lease that
+      // expires mid-step is a second worker adopting a run that is still being
+      // driven — the same queries, billed twice.
+      await heartbeat?.();
 
       const found = await deps.search({ userId: run.userId, query, signal });
       await bill(current, found.costMicroUsd, "search");
       await append(run.id, run.userId, [
-        { kind: "query_issued", payload: { query, results: found.hits.length } },
+        {
+          kind: "query_issued",
+          payload: {
+            query,
+            results: found.hits.length,
+            ...(found.engines?.length ? { engines: found.engines } : {}),
+            ...(!providersAnnounced && found.providers ? { providers: found.providers } : {}),
+          },
+        },
       ]);
+      providersAnnounced = true;
       for (const hit of found.hits.slice(0, MAX_SOURCES)) {
         // Search backends that return the page body in the same call (Tavily's
         // `include_raw_content`) have already been paid for it. Storing the
@@ -874,7 +1094,11 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
    * it. This is also the stage steering lands in, which is why a run steered
    * with a new URL resumes here rather than re-planning.
    */
-  const doBrowsing = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
+  const doBrowsing = async (
+    run: ResearchRunRow,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<StepOutcome> => {
     const plan = parsePlan(run.plan);
     let current = run;
     for (const url of plan.pinnedSources.slice(0, MAX_PINNED_SOURCES)) {
@@ -884,14 +1108,25 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       const fresh = await store.loadRun(current.id, current.userId);
       if (!fresh || fresh.state !== "browsing") return { kind: "raced" };
       current = fresh;
+      await heartbeat?.();
 
       const page = await deps.fetchPage({ userId: run.userId, url, signal });
-      if (!page) {
+      if (!page || pageWasSkipped(page)) {
         // A pinned source that will not load is worth saying out loud: the user
         // chose it, and silently proceeding without it produces a report that
-        // looks like it considered something it never saw.
+        // looks like it considered something it never saw. The reason matters
+        // as much as the fact — "that URL is a PDF and this build cannot read
+        // one" is actionable; "could not be read" is not.
         await append(run.id, run.userId, [
-          { kind: "error", payload: { scope: "pinned_source", url, message: "Could not be read." } },
+          {
+            kind: "error",
+            payload: {
+              scope: "pinned_source",
+              url,
+              message: page ? pageSkipMessage(page) : "Could not be read.",
+              ...(page ? { reason: page.skipped } : {}),
+            },
+          },
         ]);
         continue;
       }
@@ -928,6 +1163,131 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
   };
 
   /**
+   * HOP: follow the links a page it just read pointed at.
+   *
+   * Every fetched page was already being parsed into markdown with its `<a>`
+   * tags turned into `[text](url)` — and then the links were dropped on the
+   * floor. Nothing in the run had ever followed one, which meant the corpus was
+   * strictly whatever a search index happened to rank: the primary source an
+   * article cites, the specification a summary links to, the dataset behind a
+   * chart, were all one click away and none of them reachable.
+   *
+   * Three things keep this from becoming a crawler. It runs ONE hop, from pages
+   * this stage opened, never from pages discovered by a previous hop. Candidates
+   * must earn it — the anchor text has to be about an objective, and an off-host
+   * link scores higher because a link to another page of the same site is the
+   * one least likely to add an independent witness. And it is bounded by
+   * `MAX_HOP_SOURCES`, by the run's remaining source budget, and by money: a hop
+   * the budget cannot pay for is skipped silently rather than ending the run,
+   * because unlike a source with no text at all, this was always optional.
+   */
+  const doLinkHop = async (
+    run: ResearchRunRow,
+    existing: ReadonlyArray<{ source: ResearchSourceRow }>,
+    discovered: ReadonlyArray<{ from: string; link: ResearchPageLink }>,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<{ run: ResearchRunRow; outcome?: StepOutcome; added: number; fetched: number; passages: number }> => {
+    const room = Math.min(MAX_HOP_SOURCES, MAX_SOURCES - existing.length);
+    if (discovered.length === 0 || room <= 0) return { run, added: 0, fetched: 0, passages: 0 };
+
+    const plan = parsePlan(run.plan);
+    const wanted = contentTokens(
+      [...plan.objectives.map((objective) => objective.question), ...plan.queries].join(" ")
+    );
+    if (wanted.size === 0) return { run, added: 0, fetched: 0, passages: 0 };
+
+    const known = new Set(existing.map(({ source }) => canonicalUrl(source.url)));
+    const ranked: Array<{ href: string; text: string; from: string; score: number }> = [];
+    for (const { from, link } of discovered) {
+      const key = canonicalUrl(link.href);
+      if (known.has(key)) continue;
+      known.add(key);
+      // The path segments count as anchor text: plenty of citation links are
+      // bare URLs or read "here", and `/reports/2024-emissions-methodology` is
+      // the only thing about them that says what they are.
+      let path = "";
+      try {
+        path = decodeURIComponent(new URL(link.href).pathname).replace(/[-_/.]+/g, " ");
+      } catch {
+        continue;
+      }
+      const anchorTokens = contentTokens(`${link.text} ${path}`);
+      if (anchorTokens.size < 2) continue;
+      let matched = 0;
+      for (const token of anchorTokens) if (wanted.has(token)) matched += 1;
+      let score = matched / anchorTokens.size;
+      if (hostOfUrl(link.href) !== hostOfUrl(from)) score += 0.15;
+      if (score < HOP_MIN_OVERLAP) continue;
+      ranked.push({ href: link.href, text: link.text, from, score });
+    }
+    if (ranked.length === 0) return { run, added: 0, fetched: 0, passages: 0 };
+
+    const targets = ranked.sort((a, b) => b.score - a.score).slice(0, room);
+    let current = run;
+    let added = 0;
+    let fetched = 0;
+    let passages = 0;
+
+    for (const wave of waves(targets, READ_CONCURRENCY)) {
+      const fresh = await store.loadRun(current.id, current.userId);
+      if (!fresh || fresh.state !== "reading_documents") return { run: current, outcome: { kind: "raced" }, added, fetched, passages };
+      current = fresh;
+      await heartbeat?.();
+
+      const allowed = await affordableCount(current, READ_ESTIMATE_MICRO_USD, wave.length);
+      if (allowed === 0) break;
+
+      const dispatched = wave.slice(0, allowed);
+      const pages = await Promise.all(
+        dispatched.map(async (target) => ({
+          target,
+          page: await deps.fetchPage({ userId: run.userId, url: target.href, signal }),
+        }))
+      );
+
+      for (const { target, page } of pages) {
+        // A link that will not load is not worth an event: unlike a pinned
+        // source or a ranked search result, nobody asked for this one and a
+        // timeline full of "a link failed" is noise around the real findings.
+        if (!page || pageWasSkipped(page)) continue;
+        await bill(current, page.costMicroUsd, "fetch");
+        const text = page.text.slice(0, SNAPSHOT_CHARS);
+        if (!text) continue;
+        const score = scoreSource({ url: target.href, text });
+        const stored = await store.upsertSource({
+          runId: run.id,
+          userId: run.userId,
+          url: target.href,
+          title: page.title || target.text || target.href,
+          contentHash: deps.hash(text),
+          snapshot: text,
+          ...score,
+          sourceType: sourceTypeOf({ url: target.href, text, authority: score.authority }),
+        });
+        fetched += 1;
+        if (stored.created) added += 1;
+        passages += await store.savePassages({
+          userId: run.userId,
+          sourceId: stored.id,
+          passages: splitPassages(text),
+        });
+        await append(run.id, run.userId, [
+          {
+            kind: "source_found",
+            payload: { url: target.href, title: page.title, via: target.from, hop: 1 },
+          },
+          { kind: "source_read", payload: { url: target.href, title: page.title, hop: 1 } },
+        ]);
+      }
+
+      if (allowed < wave.length) break;
+    }
+
+    return { run: current, added, fetched, passages };
+  };
+
+  /**
    * READ: fetch whatever has no stored body, then cut every body into passages.
    *
    * Passages are what a claim gets cited against, so they are extracted here
@@ -936,7 +1296,11 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
    * corpus where half the sources have passages and half do not is a report
    * that can only cite half of what it read.
    */
-  const doReading = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
+  const doReading = async (
+    run: ResearchRunRow,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<StepOutcome> => {
     const sources = (await store.listSources(run.id, run.userId))
       .map((source) => {
         const score = scoreSource({
@@ -978,10 +1342,18 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     let current = run;
     let fetched = 0;
     let passages = 0;
-    for (const { source } of sources.slice(0, MAX_READ_SOURCES)) {
+    /** Outbound links from pages this stage actually opened, for the hop below. */
+    const discovered: Array<{ from: string; link: ResearchPageLink }> = [];
+
+    const targets = sources.slice(0, MAX_READ_SOURCES);
+    for (const wave of waves(targets, READ_CONCURRENCY)) {
       const fresh = await store.loadRun(current.id, current.userId);
       if (!fresh || fresh.state !== "reading_documents") return { kind: "raced" };
       current = fresh;
+      // A wave of eight fetches at a 25s timeout each can outlive the two-minute
+      // worker lease on its own; without this the sweeper adopts a run that is
+      // still being driven and re-fetches every page against the same budget.
+      await heartbeat?.();
 
       /**
        * DEEPEN: open a page the search engine only skimmed.
@@ -1000,78 +1372,142 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
        * what we hold is too thin to be the real page. A run whose budget runs out
        * mid-deepening still has the snippets and still answers.
        */
-      let text = source.snapshot ?? "";
-      const tooThinToBeThePage = text.length > 0 && text.length < DEEPEN_BELOW_CHARS;
-      const worthDeepening = tooThinToBeThePage && fetched < MAX_DEEPENED_SOURCES;
-      if (worthDeepening && (await affordable(current, READ_ESTIMATE_MICRO_USD))) {
-        const page = await deps.fetchPage({ userId: run.userId, url: source.url, signal });
-        // Only take the deeper copy if it IS deeper; a paywall or a consent wall
-        // returns a short body, and overwriting a usable snippet with it would
-        // lose the only text this source ever had.
-        if (page && page.text.length > text.length) {
+      const jobs = wave.map(({ source }) => {
+        const text = source.snapshot ?? "";
+        return {
+          source,
+          text,
+          required: text.length === 0,
+          deepen: text.length > 0 && text.length < DEEPEN_BELOW_CHARS,
+        };
+      });
+      const required = jobs.filter((job) => job.required);
+      const deepenSlots = Math.max(0, MAX_DEEPENED_SOURCES - fetched);
+      const deepening = jobs.filter((job) => job.deepen).slice(0, deepenSlots);
+
+      // One budget decision for the whole wave, taken BEFORE anything is
+      // dispatched. Checking per fetch and then firing eight in parallel is not
+      // a ceiling — the requests already in flight cannot be recalled. Required
+      // fetches are served first: a source with no text at all is the
+      // difference between a source and a link, while a deepen is an upgrade
+      // the run can live without.
+      const allowed = await affordableCount(
+        current,
+        READ_ESTIMATE_MICRO_USD,
+        required.length + deepening.length
+      );
+      // Sequential reading stopped the run at the first required fetch it could
+      // not project paying for. Preserve that exactly: pay for as many of this
+      // wave's required fetches as the ceiling allows, then stop — rather than
+      // skipping the rest of the wave and carrying on into the next one, which
+      // would silently leave read-able sources unread with no receipt anywhere.
+      const budgetShort = allowed < required.length;
+      const dispatch = budgetShort
+        ? required.slice(0, allowed)
+        : [...required, ...deepening.slice(0, allowed - required.length)];
+      const pages = new Map<string, ResearchPageResult | null>();
+      await Promise.all(
+        dispatch.map(async (job) => {
+          pages.set(job.source.id, await deps.fetchPage({ userId: run.userId, url: job.source.url, signal }));
+        })
+      );
+
+      // Persisting is sequential on purpose. The parallel part is the network;
+      // the ledger, the event seq and the plan row are all per-run serial
+      // resources, and interleaving writes to them buys nothing and races.
+      for (const job of jobs) {
+        let text = job.text;
+        const page = pages.get(job.source.id) ?? null;
+
+        if (job.required) {
+          if (!page || pageWasSkipped(page)) {
+            if (page) {
+              await append(run.id, run.userId, [
+                {
+                  kind: "error",
+                  payload: {
+                    scope: "source",
+                    url: job.source.url,
+                    message: pageSkipMessage(page),
+                    reason: page.skipped,
+                  },
+                },
+              ]);
+            }
+            continue;
+          }
           await bill(current, page.costMicroUsd, "fetch");
           text = page.text.slice(0, SNAPSHOT_CHARS);
-          const score = scoreSource({ url: source.url, text, publishedAt: source.publishedAt });
+          const score = scoreSource({ url: job.source.url, text, publishedAt: job.source.publishedAt });
           await store.upsertSource({
             runId: run.id,
             userId: run.userId,
-            url: source.url,
-            title: page.title || source.title,
-            publishedAt: source.publishedAt,
+            url: job.source.url,
+            title: page.title || job.source.title,
+            publishedAt: job.source.publishedAt,
             contentHash: deps.hash(text),
             snapshot: text,
             ...score,
-            sourceType: sourceTypeOf({ url: source.url, text, authority: score.authority }),
+            sourceType: sourceTypeOf({ url: job.source.url, text, authority: score.authority }),
           });
           fetched += 1;
+          for (const link of page.links ?? []) discovered.push({ from: job.source.url, link });
           await append(run.id, run.userId, [
-            { kind: "source_read", payload: { url: source.url, title: page.title, deepened: true } },
+            { kind: "source_read", payload: { url: job.source.url, title: page.title } },
+          ]);
+        } else if (page && !pageWasSkipped(page) && page.text.length > text.length) {
+          // Only take the deeper copy if it IS deeper; a paywall or a consent wall
+          // returns a short body, and overwriting a usable snippet with it would
+          // lose the only text this source ever had.
+          await bill(current, page.costMicroUsd, "fetch");
+          text = page.text.slice(0, SNAPSHOT_CHARS);
+          const score = scoreSource({ url: job.source.url, text, publishedAt: job.source.publishedAt });
+          await store.upsertSource({
+            runId: run.id,
+            userId: run.userId,
+            url: job.source.url,
+            title: page.title || job.source.title,
+            publishedAt: job.source.publishedAt,
+            contentHash: deps.hash(text),
+            snapshot: text,
+            ...score,
+            sourceType: sourceTypeOf({ url: job.source.url, text, authority: score.authority }),
+          });
+          fetched += 1;
+          for (const link of page.links ?? []) discovered.push({ from: job.source.url, link });
+          await append(run.id, run.userId, [
+            { kind: "source_read", payload: { url: job.source.url, title: page.title, deepened: true } },
           ]);
         }
-      }
 
-      if (!text) {
-        if (!(await affordable(current, READ_ESTIMATE_MICRO_USD))) {
-          return stopForBudget(current, READ_ESTIMATE_MICRO_USD);
-        }
-        const page = await deps.fetchPage({ userId: run.userId, url: source.url, signal });
-        if (!page) continue;
-        await bill(current, page.costMicroUsd, "fetch");
-        text = page.text.slice(0, SNAPSHOT_CHARS);
-        const score = scoreSource({
-          url: source.url,
-          text,
-          publishedAt: source.publishedAt,
-        });
-        await store.upsertSource({
-          runId: run.id,
+        passages += await store.savePassages({
           userId: run.userId,
-          url: source.url,
-          title: page.title || source.title,
-          publishedAt: source.publishedAt,
-          contentHash: deps.hash(text),
-          snapshot: text,
-          ...score,
-          sourceType: sourceTypeOf({ url: source.url, text, authority: score.authority }),
+          sourceId: job.source.id,
+          passages: splitPassages(text),
         });
-        fetched += 1;
         await append(run.id, run.userId, [
-          { kind: "source_read", payload: { url: source.url, title: page.title } },
+          { kind: "source_read", payload: { url: job.source.url, title: job.source.title, ranked: true } },
         ]);
       }
-      passages += await store.savePassages({
-        userId: run.userId,
-        sourceId: source.id,
-        passages: splitPassages(text),
-      });
-      await append(run.id, run.userId, [
-        { kind: "source_read", payload: { url: source.url, title: source.title, ranked: true } },
-      ]);
+
+      if (budgetShort) return stopForBudget(current, READ_ESTIMATE_MICRO_USD);
     }
+
+    const hop = await doLinkHop(current, sources, discovered, signal, heartbeat);
+    if (hop.outcome) return hop.outcome;
+    current = hop.run;
+    fetched += hop.fetched;
+    passages += hop.passages;
+
     await append(run.id, run.userId, [
       {
         kind: "passages_extracted",
-        payload: { fetched, passages, sourcesTotal: sources.length },
+        payload: {
+          fetched,
+          passages,
+          sourcesTotal: sources.length + hop.added,
+          ...(hop.added > 0 ? { followedLinks: hop.added } : {}),
+        },
       },
     ]);
     const moved = await advance(current, "checking_coverage");
@@ -1085,7 +1521,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
    * plan can have plenty of sources and still miss one of its questions; the
    * controller must discover that while there is still budget to search.
    */
-  const doCoverage = async (run: ResearchRunRow): Promise<StepOutcome> => {
+  const doCoverage = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
     const progress = await store.progress(run.id, run.userId);
     const plan = parsePlan(run.plan);
     await append(run.id, run.userId, [
@@ -1115,7 +1551,47 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     };
     const round = plan.followUpRound ?? 0;
     const availableSlots = Math.max(0, MAX_PLAN_QUERIES - nextPlan.queries.length);
-    const followUps = round < MAX_FOLLOW_UP_ROUNDS ? computed.followUps.slice(0, availableSlots) : [];
+    /*
+     * Ask the model for the follow-ups when there is one wired, and fall back
+     * to the templates when there is not.
+     *
+     * The templates are `"<objective question> primary source evidence"` — a
+     * paraphrase of the query that produced the gap, which is why a follow-up
+     * round so often came back with the pages the first round had already
+     * found. A model that is told which requirement went unmet and what has
+     * already been asked can go at the gap from a different direction, which is
+     * the entire point of a follow-up. It is billed as `plan` because that is
+     * what it is, it is skipped rather than fatal when the budget is tight, and
+     * a failure falls through to the templates rather than ending the round.
+     */
+    let followUps = round < MAX_FOLLOW_UP_ROUNDS ? computed.followUps.slice(0, availableSlots) : [];
+    if (
+      deps.expandQueries &&
+      followUps.length > 0 &&
+      computed.gaps.length > 0 &&
+      (await affordable(run, PLAN_ESTIMATE_MICRO_USD))
+    ) {
+      const expanded = await deps.expandQueries({
+        userId: run.userId,
+        goal: run.goal,
+        gaps: computed.gaps,
+        alreadyIssued: [...nextPlan.queries, ...(plan.issuedQueries ?? [])],
+        limit: availableSlots,
+        signal,
+      });
+      await bill(run, expanded.costMicroUsd, "plan");
+      const seen = new Set(nextPlan.queries.map((query) => query.toLowerCase()));
+      const fresh = expanded.queries
+        .map((query) => query.replace(/\s+/g, " ").trim().slice(0, 400))
+        .filter((query) => {
+          const key = query.toLowerCase();
+          if (query.length < 8 || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .slice(0, availableSlots);
+      if (fresh.length > 0) followUps = fresh;
+    }
     await store.savePlan({
       runId: run.id,
       userId: run.userId,
@@ -1359,7 +1835,11 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
     return ended ? { kind: "finished", state: to } : { kind: "raced" };
   };
 
-  const step = async (run: ResearchRunRow, signal?: AbortSignal): Promise<StepOutcome> => {
+  const step = async (
+    run: ResearchRunRow,
+    signal?: AbortSignal,
+    heartbeat?: () => Promise<void>
+  ): Promise<StepOutcome> => {
     if (isTerminalResearchState(run.state)) {
       return { kind: "finished", state: run.state };
     }
@@ -1381,13 +1861,13 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       case "planning":
         return doPlanning(run, signal);
       case "searching":
-        return doSearching(run, signal);
+        return doSearching(run, signal, heartbeat);
       case "browsing":
-        return doBrowsing(run, signal);
+        return doBrowsing(run, signal, heartbeat);
       case "reading_documents":
-        return doReading(run, signal);
+        return doReading(run, signal, heartbeat);
       case "checking_coverage":
-        return doCoverage(run);
+        return doCoverage(run, signal);
       case "resolving_conflicts":
         return doConflicts(run);
       case "synthesizing":
@@ -1429,6 +1909,21 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
       let run = await store.loadRun(runId, userId);
       if (!run) return null;
       let leaseAnnounced = false;
+      /**
+       * Renews the lease from INSIDE a long stage.
+       *
+       * The lease was taken once per state-machine step, and a single reading
+       * step now dispatches waves of fetches that comfortably outlast
+       * RESEARCH_WORKER_LEASE_MS. An expired lease is not a stalled run — it is
+       * the sweeper adopting a run that is still being driven, issuing the same
+       * queries and billing them a second time. `claimRun` is idempotent for the
+       * same owner (its WHERE matches an unheld lease OR one this worker already
+       * holds), so calling it mid-stage extends rather than fights.
+       */
+      const heartbeat = async () => {
+        if (!store.claimRun || !workerId) return;
+        await store.claimRun({ runId, userId, workerId, leaseMs: RESEARCH_WORKER_LEASE_MS });
+      };
       for (let i = 0; i < MAX_STEPS; i += 1) {
         if (store.claimRun && workerId) {
           const claimed = await store.claimRun({
@@ -1454,7 +1949,7 @@ const VENDOR_BILLED_STEPS = new Set(["search", "fetch"]);
         }
         if (signal?.aborted) return run;
         if (until && run.state === until) return run;
-        const outcome = await step(run, signal);
+        const outcome = await step(run, signal, heartbeat);
         if (outcome.kind === "finished" || outcome.kind === "blocked") {
           return (await store.loadRun(runId, userId)) ?? run;
         }

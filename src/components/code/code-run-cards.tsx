@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { AnimatePresence, MotionConfig, motion, type Variants } from "framer-motion";
-import { ChevronRight, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Pressable } from "@/components/ui/pressable";
@@ -287,14 +287,138 @@ function totalChurn(files: CodeFileChange[]): { added: number; removed: number }
   return seen ? { added, removed } : null;
 }
 
+/*
+ * THE TREE THIS CARD SHOWS, BUILT FROM THE ONLY PATHS THE SESSION REPORTED.
+ *
+ * There is no workspace listing anywhere on the web: `GET /api/code/workspaces`
+ * returns `{id, key, name, path, lastOpenedAt}` and no route reads inside one.
+ * So this is not a repository browser and must not look like one — it is the
+ * run's own `file_change` paths given back their shape. Every node here stands
+ * for a file the session actually said it wrote; nothing is inferred about what
+ * else is in those directories, and an empty-looking folder is one this run did
+ * not touch rather than one that is empty.
+ */
+interface FileTreeNode {
+  /** The row's label: one path segment, or several joined by "/" where a chain
+   *  of single-child directories was folded into one row. */
+  name: string;
+  /** Full path from the root — the React key, and the collapse-state key. */
+  key: string;
+  /** Set on a leaf. A directory row carries null and summarises its subtree. */
+  file: CodeFileChange | null;
+  children: FileTreeNode[];
+  /** Files under this node, itself included. */
+  count: number;
+  churn: { added: number; removed: number } | null;
+}
+
+/**
+ * Paths → a tree, with single-child chains folded flat.
+ *
+ * The folding is what makes this worth doing at all. Without it a one-file run
+ * on `src/lib/a.ts` becomes three rows where it used to be one, and the card
+ * that exists to stay small above the composer would have grown for the
+ * commonest case. With it, a lone file is still one row reading the whole path,
+ * and the tree only appears where there is genuinely a shape to see.
+ *
+ * Order is directories first, then alphabetical. That discards the order the run
+ * wrote them in, which is the correct trade for the reason `useSessionFileChanges`
+ * already gives: this is a summary of the result, not a log, and a list that
+ * re-sorts itself as a run streams is one nobody can read a path off.
+ */
+function buildFileTree(files: readonly CodeFileChange[]): FileTreeNode[] {
+  const root: FileTreeNode = { name: "", key: "", file: null, children: [], count: 0, churn: null };
+
+  for (const file of files) {
+    const segments = file.path.split("/").filter((segment) => segment !== "");
+    if (segments.length === 0) continue;
+    let node = root;
+    segments.forEach((segment, index) => {
+      const key = node.key === "" ? segment : `${node.key}/${segment}`;
+      let next = node.children.find((child) => child.key === key);
+      if (!next) {
+        next = { name: segment, key, file: null, children: [], count: 0, churn: null };
+        node.children.push(next);
+      }
+      if (index === segments.length - 1) next.file = file;
+      node = next;
+    });
+  }
+
+  return finishNodes(root.children);
+}
+
+function finishNodes(nodes: FileTreeNode[]): FileTreeNode[] {
+  const done = nodes.map((node) => {
+    // Fold `src` → `lib` → `a.ts` down to whichever descendant first branches or
+    // first carries a change of its own. A node with a `file` is never folded
+    // away: it is a real row with a change kind and a churn on it.
+    let folded = node;
+    while (folded.file === null && folded.children.length === 1) {
+      const only = folded.children[0];
+      folded = { ...only, name: `${folded.name}/${only.name}` };
+    }
+    const children = finishNodes(folded.children);
+    const subtree = collectFiles(folded.file, children);
+    return { ...folded, children, count: subtree.length, churn: totalChurn(subtree) };
+  });
+
+  // Directories before files, then by name. `localeCompare` rather than `<` so
+  // a path with an accent in it sorts where a reader expects rather than after Z.
+  return done.sort((a, b) => {
+    const aDir = a.children.length > 0;
+    const bDir = b.children.length > 0;
+    if (aDir !== bDir) return aDir ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function collectFiles(own: CodeFileChange | null, children: readonly FileTreeNode[]): CodeFileChange[] {
+  const out = own ? [own] : [];
+  for (const child of children) {
+    if (child.file) out.push(child.file);
+    out.push(...collectFiles(null, child.children));
+  }
+  return out;
+}
+
+/** The visible rows, in reading order, given which directories are shut. */
+function flattenTree(
+  nodes: readonly FileTreeNode[],
+  collapsed: ReadonlySet<string>,
+  depth = 0
+): { node: FileTreeNode; depth: number }[] {
+  const rows: { node: FileTreeNode; depth: number }[] = [];
+  for (const node of nodes) {
+    rows.push({ node, depth });
+    if (node.children.length > 0 && !collapsed.has(node.key)) {
+      rows.push(...flattenTree(node.children, collapsed, depth + 1));
+    }
+  }
+  return rows;
+}
+
 /**
  * WHAT THE RUN CHANGED.
  *
  * Both footers on this surface promise you can "review the changes", and the
  * surface used to offer nowhere to do it: file changes arrive as real events
  * with a path, a change kind and +added/−removed, and their only destination
- * was a run trace with no way to open. A path-and-churn list is not a diff, but
- * it is the run's actual output, and it makes the promise in the footer true.
+ * was a run trace with no way to open.
+ *
+ * It is still not a diff, and the reason is upstream of this file rather than a
+ * decision taken in it: the `file_change` payload carries `path`, `changeKind`,
+ * `added` and `removed` and no patch text, so the readers that fold it into a
+ * message (`use-code-session.ts`, `code-remote.ts`) have nothing to hand a diff
+ * renderer. `src/components/aicss/file-diff.tsx` — parser and colour-blind-safe
+ * row renderer both — is sitting there finished and waiting for the day the
+ * producer sends the hunks. Until it does, drawing a diff here would mean
+ * inventing one.
+ *
+ * What this DOES do is give the paths back their shape. Fifty flat mono lines
+ * sharing a prefix is fifty lines you read character by character to find the
+ * one that is not under `src/components`; the same fifty as a tree is a handful
+ * of rows you can shut. See `buildFileTree` for what the tree is and is not.
  *
  * Collapsed by default: it sits directly above the composer, and a fifty-file
  * run must not push the prompt off screen. The header therefore has to carry
@@ -305,6 +429,20 @@ function ChangedFilesCard({ files }: { files: CodeFileChange[] }) {
   const [open, setOpen] = React.useState(false);
   const listId = React.useId();
   const churn = React.useMemo(() => totalChurn(files), [files]);
+  const tree = React.useMemo(() => buildFileTree(files), [files]);
+  // Directories start open, and a directory a run adds mid-stream opens too:
+  // this holds only the ones a reader has explicitly shut. The alternative —
+  // tracking which are open — would shut every folder that appeared after the
+  // first paint, which on a streaming run is most of them.
+  const [collapsed, setCollapsed] = React.useState<ReadonlySet<string>>(() => new Set<string>());
+  const rows = React.useMemo(() => flattenTree(tree, collapsed), [tree, collapsed]);
+
+  const toggleDirectory = (key: string) =>
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
 
   return (
     <section
@@ -361,28 +499,113 @@ function ChangedFilesCard({ files }: { files: CodeFileChange[] }) {
         )}
       >
         <div className="min-h-0 overflow-hidden">
-          <ul id={listId} aria-hidden={!open} className="space-y-1 px-2.5 pb-2 pt-1">
-            {files.map((file, i) => (
-              <li
-                key={file.path}
-                // Rows arrive as the run writes them, so they are dealt out
-                // rather than repainted. `tight` is the rung for dense rows,
-                // and the shared cap stops a fifty-file run from taking two
-                // seconds to finish appearing.
-                className="flex items-baseline gap-2 text-caption [animation-fill-mode:backwards] motion-safe:animate-fade-in-up"
-                style={staggerDelay(i, "tight")}
-              >
-                <span className={cn("shrink-0 font-mono", changeTone(file.changeKind))}>
-                  {file.changeKind}
-                </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-foreground" title={file.path}>
-                  {file.path}
-                </span>
-                {file.churn && (
-                  <span className="shrink-0 font-mono tabular-nums text-muted-foreground">{file.churn}</span>
-                )}
-              </li>
-            ))}
+          {/*
+            A LIST OF DISCLOSURES, NOT `role="tree"`.
+            The visual idiom is design/layers-panel.tsx's — 6px of inset plus
+            12px a level, one chevron column — but the ARIA is deliberately not:
+            a tree is a SELECTION widget, and nothing in here is selectable, so
+            `role="treeitem"` would have owed every row an `aria-selected` that
+            could only ever have been a lie, plus arrow-key navigation this card
+            does not implement. What a screen reader gets instead is what it
+            actually needs and what the indentation cannot give it — each file
+            row states its whole path, not the folded leaf name a sighted reader
+            reads off the row above.
+          */}
+          <ul id={listId} aria-hidden={!open} className="px-1.5 pb-2 pt-1">
+            {rows.map(({ node, depth }, i) => {
+              const directory = node.children.length > 0;
+              const shut = collapsed.has(node.key);
+              const row = (
+                <>
+                  {directory ? (
+                    shut ? (
+                      <ChevronRight className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    ) : (
+                      <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    )
+                  ) : (
+                    // The same 12px the chevron occupies, so file names line up
+                    // with the directory names above them instead of hanging
+                    // three pixels to their left.
+                    <span className="w-3 shrink-0" aria-hidden="true" />
+                  )}
+                  {node.file ? (
+                    <span className={cn("shrink-0 font-mono", changeTone(node.file.changeKind))}>
+                      {node.file.changeKind}
+                    </span>
+                  ) : (
+                    <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
+                      {node.count}
+                    </span>
+                  )}
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate font-mono",
+                      node.file ? "text-foreground" : "text-muted-foreground"
+                    )}
+                    title={node.file ? node.file.path : `${node.key}/`}
+                  >
+                    {/* Two spellings of the same fact. The eye reads the folded
+                        name and takes the rest from the indentation; a reader
+                        who cannot see the indentation gets the whole path. */}
+                    <span aria-hidden="true">{node.file ? node.name : `${node.name}/`}</span>
+                    <span className="sr-only">{node.file ? node.file.path : `${node.key}/`}</span>
+                  </span>
+                  {node.file?.churn ? (
+                    <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
+                      {node.file.churn}
+                    </span>
+                  ) : (
+                    // A shut directory must still say how much moved inside it,
+                    // otherwise collapsing the tree costs the summary the header
+                    // was rebuilt to provide.
+                    node.churn && (
+                      <span className="shrink-0 font-mono tabular-nums">
+                        <span className="text-success">+{node.churn.added}</span>{" "}
+                        <span className="text-destructive">−{node.churn.removed}</span>
+                      </span>
+                    )
+                  )}
+                </>
+              );
+
+              const shared = cn(
+                "flex w-full items-baseline gap-2 py-0.5 text-left text-caption",
+                // Rows are dealt out as the run writes them rather than
+                // repainted. `tight` is the rung for dense rows, and the shared
+                // cap stops a fifty-file run taking two seconds to appear.
+                "[animation-fill-mode:backwards] motion-safe:animate-fade-in-up"
+              );
+              // 6px of inset, then 12px a level — the layers panel's ladder, and
+              // the reason a nested path stays legible at `text-caption`.
+              const indent = { ...staggerDelay(i, "tight"), paddingLeft: 6 + depth * 12 };
+
+              return (
+                <li key={node.key}>
+                  {directory ? (
+                    <button
+                      type="button"
+                      aria-expanded={!shut}
+                      // Out of the tab order while the CARD is shut. The rows
+                      // stay in the document so the collapse has something to
+                      // animate, and `aria-hidden` over a focusable control is
+                      // the one way that trick goes wrong: Tab lands on a button
+                      // no screen reader will name.
+                      tabIndex={open ? 0 : -1}
+                      onClick={() => toggleDirectory(node.key)}
+                      className={cn(shared, "rounded-xs hover:bg-accent/60")}
+                      style={indent}
+                    >
+                      {row}
+                    </button>
+                  ) : (
+                    <span className={shared} style={indent}>
+                      {row}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       </div>

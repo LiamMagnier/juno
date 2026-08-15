@@ -103,12 +103,24 @@ export function InteractionsPanel({
     [doc.animations]
   );
 
+  const interactionCount = Object.keys(doc.interactions).length;
+
   if (selection.length !== 1 || !node) {
+    // Top-left, not a hero. This is a 256px working column beside a canvas, and
+    // a sentence centred in the vertical middle of it reads as an error page
+    // rather than as a panel waiting for a selection — the eye has to travel to
+    // the middle of an empty rail to find one line of text, and every real panel
+    // on this surface starts at the top.
     return (
-      <div className="flex h-full items-center justify-center px-4 text-center">
+      <div className="space-y-2 p-3">
         <p className="text-caption text-muted-foreground">
           {selection.length === 0 ? "Select a layer to give it a trigger." : "Interactions are authored one layer at a time."}
         </p>
+        {interactionCount > 0 && (
+          <p className="font-mono text-micro text-muted-foreground">
+            {interactionCount === 1 ? "1 interaction in this document." : `${interactionCount} interactions in this document.`}
+          </p>
+        )}
       </div>
     );
   }
@@ -274,6 +286,9 @@ function InteractionCard({
           aria-label="Remove this interaction"
           className="pressable mt-3 shrink-0 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:opacity-50"
         >
+          {/* Raw `X` — this destroys the interaction, so it is not
+              `ActionIcons.dismiss`. See motion-panel.tsx for why it is not
+              `ActionIcons.delete` either. */}
           <X className="size-3" aria-hidden />
         </button>
       </div>

@@ -63,6 +63,8 @@ const MARK_ICON: Record<PlanStepState, MarkIcon | null> = {
   active: Loader2,
   done: StatusIcons.success,
   skipped: Minus,
+  // Raw `X`, not `ActionIcons.dismiss`: a STATE opposite the tick above, drawn
+  // into a filled 14px slot. Nothing here is pressable.
   failed: X,
   // Deliberately no glyph. The step did not fail and it did not happen; an empty
   // dashed ring is the only mark that claims neither.

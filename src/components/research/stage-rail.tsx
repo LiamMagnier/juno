@@ -1,6 +1,6 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { StatusIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import {
   RESEARCH_STAGES,
@@ -73,7 +73,7 @@ export function StageRail({ state, live, className }: { state: ResearchState; li
                 status === "pending" && "border-border/55 text-muted-foreground/55"
               )}
             >
-              {status === "done" && <Check className="h-3 w-3" aria-hidden />}
+              {status === "done" && <StatusIcons.success className="h-3 w-3" aria-hidden />}
               {/* `animate-pulse`, not `animate-ping`. Tailwind's ping keyframe
                   scales its element to 2× and drives opacity to 0, holding it
                   there for ~75% of the cycle — it is written for a duplicate ring

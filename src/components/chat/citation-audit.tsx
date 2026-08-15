@@ -4,6 +4,7 @@ import * as React from "react";
 import { ChevronDown, CircleDashed, CircleSlash } from "lucide-react";
 import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { SourceFavicon, hostOf } from "@/components/chat/source-chip";
+import { PARTIAL_MIN, SUPPORTED_MIN, extractQuotes, normalizeText } from "@/lib/research/claim-analysis";
 import { cn } from "@/lib/utils";
 import type { ClientSource } from "@/types/chat";
 
@@ -35,6 +36,17 @@ export interface CitationAuditSource {
   freshness: number;
   directness: number;
   independence: number;
+  /**
+   * How the source was classified when it was gathered — official / primary /
+   * reputable_secondary / general / user_generated / unknown.
+   *
+   * It has been on `ClaimAuditSourceView` since the audit shipped and this
+   * interface simply did not declare it, so the panel could show four score
+   * meters about a source without ever saying whether it was a regulator or a
+   * forum post — which is the single fact that changes how much the other four
+   * are worth.
+   */
+  sourceType: string | null;
   duplicateOfIndex: number | null;
 }
 
@@ -196,7 +208,111 @@ export const AUDIT_COPY = {
   supported: "supported",
   notUsedAsEvidence: "not used as evidence for any claim",
   syndicatedCopyOf: "syndicated copy of",
+  quoteFound: "The quoted words, found verbatim in the saved copy",
+  confidence: "Support",
+  aboveBar: "at or above the 70% bar for an unqualified citation",
+  betweenBars: "on topic, but below the 70% bar for an unqualified citation",
+  belowBars: "below the 40% floor — the passage is barely about this claim",
+  savedCopy: "of the copy Juno saved",
+  characters: "characters",
 } as const;
+
+/**
+ * What `ResearchSource.sourceType` means to a reader.
+ *
+ * The stored values are the classifier's vocabulary (`sourceTypeOf` in
+ * claim-analysis.ts). Printing them raw would put `reputable_secondary` on
+ * screen; leaving them out entirely is what the panel did before, which let a
+ * forum post and a regulator wear the same four meters.
+ */
+const SOURCE_TYPE_LABEL: Record<string, string> = {
+  official: "Official source",
+  primary: "Primary source",
+  reputable_secondary: "Established publication",
+  general: "General web",
+  user_generated: "User-generated",
+  unknown: "Unclassified",
+};
+
+/**
+ * `chars:1240-2080` as provenance a person can act on.
+ *
+ * The locator is a character range into the SNAPSHOT — the copy taken when the
+ * report was written — which is what makes the quote above it checkable rather
+ * than merely plausible. It was previously appended raw to the host line, where
+ * it read as a database artefact and said nothing about what it points into.
+ */
+export function describeLocator(locator: string | null): string | null {
+  const match = /^chars:(\d+)-(\d+)$/.exec(locator?.trim() ?? "");
+  if (!match) return locator?.trim() || null;
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
+  return `${AUDIT_COPY.characters} ${start.toLocaleString()}–${end.toLocaleString()} ${AUDIT_COPY.savedCopy}`;
+}
+
+/**
+ * Where a claim's quotation sits inside the passage, in the passage's OWN
+ * characters.
+ *
+ * The server's test is `normalizeText(passage).includes(normalizeText(quote))`
+ * (claim-analysis.ts) and normalisation is lossy — it folds case, curly quotes,
+ * dashes and whitespace runs — so a match found in normalised space cannot be
+ * sliced out of the raw string by its normalised offsets. This walks the raw
+ * passage one character at a time, running each through the SAME exported
+ * `normalizeText`, and keeps a map from every normalised character back to the
+ * raw index it came from. The highlight is therefore the same verdict the
+ * validator reached, drawn on the same text the reader is looking at — not a
+ * second, looser match invented by the client.
+ *
+ * Returns null when there is no quotation, or when the quotation is absent —
+ * in which case the validator has already capped the link's strength and said
+ * so in `reasons`, and marking nothing is the honest drawing.
+ */
+export function matchedQuoteRange(passage: string, claim: string): [number, number] | null {
+  const quotes = extractQuotes(claim);
+  if (quotes.length === 0) return null;
+
+  let normalized = "";
+  const rawIndex: number[] = [];
+  for (let i = 0; i < passage.length; i += 1) {
+    const ch = passage[i]!;
+    if (/\s/.test(ch)) {
+      // Whitespace is collapsed by `normalizeText`, and a per-character call
+      // would have it trimmed to nothing — so runs are folded here instead,
+      // to the single space the normaliser leaves behind.
+      if (normalized.length > 0 && !normalized.endsWith(" ")) {
+        normalized += " ";
+        rawIndex.push(i);
+      }
+      continue;
+    }
+    const piece = normalizeText(ch);
+    for (let k = 0; k < piece.length; k += 1) {
+      normalized += piece[k];
+      rawIndex.push(i);
+    }
+  }
+
+  for (const quote of quotes) {
+    const needle = normalizeText(quote);
+    if (!needle) continue;
+    const at = normalized.indexOf(needle);
+    if (at < 0) continue;
+    const start = rawIndex[at];
+    const last = rawIndex[at + needle.length - 1];
+    if (start === undefined || last === undefined) continue;
+    return [start, last + 1];
+  }
+  return null;
+}
+
+/** One 0..1 support number, said in words against the thresholds that produced the label. */
+function strengthNote(strength: number): string {
+  if (strength >= SUPPORTED_MIN) return AUDIT_COPY.aboveBar;
+  if (strength >= PARTIAL_MIN) return AUDIT_COPY.betweenBars;
+  return AUDIT_COPY.belowBars;
+}
 
 export function SupportBadge({ label }: { label: CitationAuditClaim["label"] }) {
   const state = STATES[label];
@@ -242,9 +358,24 @@ export function ScoreMeter({ label, value }: { label: string; value: number }) {
  * not re-fetched — so it still says what the model was shown even after the
  * page changes.
  */
-function SourceInspector({ link, source }: { link: CitationAuditLink; source?: CitationAuditSource }) {
+function SourceInspector({
+  link,
+  source,
+  claimText,
+}: {
+  link: CitationAuditLink;
+  source?: CitationAuditSource;
+  /** The claim, so the quotation the validator checked can be marked in the passage. */
+  claimText: string;
+}) {
   const [copied, setCopied] = React.useState(false);
   const published = source?.publishedAt ? new Date(source.publishedAt) : null;
+  const quoteRange = React.useMemo(
+    () => matchedQuoteRange(link.passage, claimText),
+    [link.passage, claimText]
+  );
+  const provenance = describeLocator(link.locator);
+  const sourceTypeLabel = source?.sourceType ? SOURCE_TYPE_LABEL[source.sourceType] : undefined;
 
   return (
     <div className="mt-2 rounded-menu border border-border/70 bg-card p-3">
@@ -255,8 +386,15 @@ function SourceInspector({ link, source }: { link: CitationAuditLink; source?: C
           <p className="truncate font-mono text-caption text-muted-foreground">
             {source ? hostOf(source.url) : ""}
             {published ? ` · published ${published.toISOString().slice(0, 10)}` : " · no publication date"}
-            {link.locator ? ` · ${link.locator}` : ""}
           </p>
+          {/* What KIND of source this is, in front of the four score meters
+              below. A regulator's filing and a forum thread can score alike on
+              freshness and directness, and the panel used to let them. */}
+          {sourceTypeLabel && (
+            <p className="mt-1 inline-flex h-5 items-center rounded-full border border-border/70 px-1.5 font-mono text-caption text-muted-foreground">
+              {sourceTypeLabel}
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -279,14 +417,47 @@ function SourceInspector({ link, source }: { link: CitationAuditLink; source?: C
       </div>
 
       <blockquote className="mt-2 border-l-2 border-border pl-3 text-body leading-relaxed text-foreground/85">
-        {link.passage}
+        {quoteRange ? (
+          <>
+            {link.passage.slice(0, quoteRange[0])}
+            {/* The same drawing the command palette uses for a matched span —
+                one mark for "this is the bit that matched", rather than a
+                second highlight style invented for this panel. */}
+            <mark
+              className="rounded-micro bg-primary/15 px-0.5 text-primary-ink"
+              title={AUDIT_COPY.quoteFound}
+            >
+              {link.passage.slice(quoteRange[0], quoteRange[1])}
+            </mark>
+            {link.passage.slice(quoteRange[1])}
+          </>
+        ) : (
+          link.passage
+        )}
       </blockquote>
+      {quoteRange && <p className="mt-1 pl-3 text-caption text-muted-foreground">{AUDIT_COPY.quoteFound}</p>}
+      {provenance && (
+        <p className="mt-1 pl-3 font-mono text-caption text-muted-foreground">{provenance}</p>
+      )}
       <span aria-live="polite" className="sr-only">
         {copied ? "Passage copied" : ""}
       </span>
 
+      {/* The support number, not only the five-word label above it. The label
+          collapses 0.41 and 0.69 into the same words, and those are different
+          things to a reader deciding whether to lean on the sentence. */}
+      {link.strength !== null && (
+        <div className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <ScoreMeter label={AUDIT_COPY.confidence} value={link.strength} />
+          <span className="font-mono text-caption tabular-nums text-muted-foreground">
+            {Math.round(link.strength * 100)}%
+          </span>
+          <span className="text-caption text-muted-foreground">{strengthNote(link.strength)}</span>
+        </div>
+      )}
+
       {source && (
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
           <ScoreMeter label="Authority" value={source.authority ?? 0} />
           <ScoreMeter label="Freshness" value={source.freshness} />
           <ScoreMeter label="Directness" value={source.directness} />
@@ -352,6 +523,14 @@ function ClaimRow({ claim, sources }: { claim: CitationAuditClaim; sources: Cita
           <span className="block text-body leading-snug text-foreground/90">{claim.text}</span>
           <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <SupportBadge label={claim.label} />
+            {/* The number behind the badge, at the top level. "Partly
+                supported" is the same five words at 0.41 and at 0.69, and the
+                strength that separates them has been on the wire all along. */}
+            {claim.supportStrength !== null && (
+              <span className="font-mono text-caption tabular-nums text-muted-foreground">
+                {Math.round(claim.supportStrength * 100)}%
+              </span>
+            )}
             {claim.links.map((link, i) => (
               <span
                 key={`${link.sourceIndex}-${i}`}
@@ -389,7 +568,12 @@ function ClaimRow({ claim, sources }: { claim: CitationAuditClaim; sources: Cita
           <div className="px-2 pb-3">
             {hasEvidence ? (
               claim.links.map((link, i) => (
-                <SourceInspector key={`${link.sourceIndex}-${i}`} link={link} source={sourceOf(link.sourceIndex)} />
+                <SourceInspector
+                  key={`${link.sourceIndex}-${i}`}
+                  link={link}
+                  source={sourceOf(link.sourceIndex)}
+                  claimText={claim.text}
+                />
               ))
             ) : (
               <p className="mt-2 rounded-menu border border-border/70 bg-card p-3 text-body text-muted-foreground">

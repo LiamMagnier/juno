@@ -213,7 +213,7 @@ public enum JunoSpace {
 /// It also resolves three NAME COLLISIONS, which were the more dangerous half.
 /// Three tokens here shared a name with a web token of a different size:
 ///
-///     name        here   web `rounded-<name>`
+///     name        here   web `rounded-<name>` (at the time of the collision)
 ///     control     6      10
 ///     panel       12     28
 ///     composer    24     22
@@ -225,33 +225,42 @@ public enum JunoSpace {
 /// rung they actually equal; `composer` keeps its name and takes the web's
 /// value, because parity was the stated intent and it simply pointed at the
 /// wrong token (see below).
+///
+/// The web has retuned the ladder once since — fields to 10, cards and
+/// popovers to 14, the composer shell out to 26 — and these rungs followed it
+/// without a single edit here, which is the whole point of the aliasing. The
+/// numbers in the doc lines below are therefore descriptions of where the web
+/// currently sits, not commitments; the alias is the commitment.
 public enum JunoRadius {
     /// 6 — a compact control: a chip, a small button, a segment.
     ///
     /// Renamed from `control`, which collided with the web's `rounded-control`
-    /// at 10px. 6px is the web's `xs`, whose documented role — "chips, dots,
-    /// tiny badges" — is the same one this rung already described.
+    /// — 10px at the time, 9px now. 6px is the web's `xs`, whose documented
+    /// role — "chips, dots, tiny badges" — is the same one this rung already
+    /// described.
     public static let chip: CGFloat = JunoGeneratedRadius.xs
     /// 8 — a list row's selection shape. The web's `md`.
     public static let row: CGFloat = JunoGeneratedRadius.md
-    /// 12 — a code block, a table, an inspector card.
+    /// 10 — a code block, a table, an inspector card.
     ///
-    /// Renamed from `panel`, which collided with the web's `rounded-panel` at
-    /// 28px — a difference of more than double. 12px is the web's `field`, the
-    /// general small-container rung.
+    /// Renamed from `panel`, which collided with the web's `rounded-panel` —
+    /// 28px against this rung's 12px at the time, a difference of more than
+    /// double. This is the web's `field`, the general small-container rung.
     public static let well: CGFloat = JunoGeneratedRadius.field
-    /// 16 — a content card: a project tile, an artifact thumbnail.
+    /// 14 — a content card: a project tile, an artifact thumbnail.
     public static let card: CGFloat = JunoGeneratedRadius.card
-    /// 18 — a chat message bubble. The web's `popover`.
+    /// 14 — a chat message bubble. The web's `popover`.
     public static let message: CGFloat = JunoGeneratedRadius.popover
-    /// 18 — a floating surface: a floating toolbar, a transient control group.
+    /// 14 — a floating surface: a floating toolbar, a transient control group.
     public static let floating: CGFloat = JunoGeneratedRadius.popover
-    /// 22 — the composer's outer container.
+    /// 26 — the composer's outer container.
     ///
-    /// VALUE CHANGED, 24 → 22. This was the one rung that claimed parity in a
-    /// comment: "matching the web's `--radius: 24px`". `--radius` is 24px, but
-    /// the web composer shell has never used it — it uses `rounded-composer`,
-    /// which is 22px. The intent was to match the composer and it matched a
-    /// different token that happened to be nearby. Now it matches the composer.
+    /// VALUE CHANGED, 24 → the web's `rounded-composer`. This was the one rung
+    /// that claimed parity in a comment: "matching the web's `--radius: 24px`".
+    /// The web composer shell has never used `--radius` — it uses
+    /// `rounded-composer`, which was 22px then and is 26px now. The intent was
+    /// to match the composer and it matched a different token that happened to
+    /// be nearby; following the right token is what let the 22 → 26 retune
+    /// reach the Mac on its own.
     public static let composer: CGFloat = JunoGeneratedRadius.composer
 }

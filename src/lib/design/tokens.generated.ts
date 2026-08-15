@@ -4,7 +4,7 @@
 // Regenerate with `npm run design:tokens`; `npm run design:tokens:check`
 // fails CI when this file no longer matches its sources.
 //
-// tokens-digest: cb0f31b53b3285b3
+// tokens-digest: c17fa36c080de5ec
 //
 
 /** `--dur-*` in milliseconds. */

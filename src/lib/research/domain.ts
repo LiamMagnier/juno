@@ -673,8 +673,18 @@ export const EMPTY_PLAN: ResearchPlan = {
   confirmation: "required",
 };
 
-/** Bounds, applied on every write so a stored plan can never be unbounded. */
-export const MAX_PLAN_QUERIES = 20;
+/**
+ * Bounds, applied on every write so a stored plan can never be unbounded.
+ *
+ * `MAX_PLAN_QUERIES` was 20 against a planner that drafts 14, which left six
+ * slots for every follow-up round put together — and follow-ups are now one per
+ * uncovered objective rather than one per round, so with up to
+ * MAX_RESEARCH_OBJECTIVES gaps a single round could fill the remainder and
+ * starve the three rounds after it. 40 leaves room for the planner's 14 plus
+ * four genuinely wide rounds. It is a ceiling on the QUERY LIST, not a target:
+ * a run only issues follow-ups the coverage matrix actually asks for.
+ */
+export const MAX_PLAN_QUERIES = 40;
 export const MAX_PLAN_CONSTRAINTS = 16;
 export const MAX_PINNED_SOURCES = 24;
 export const MAX_QUERY_CHARS = 400;

@@ -5,7 +5,6 @@ import {
   Ban,
   ChevronRight,
   CircleDashed,
-  FileText,
   Layers,
   Link2,
   Loader2,
@@ -17,7 +16,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { StatusIcons } from "@/lib/app-icons";
+import { CodeIcons, StatusIcons } from "@/lib/app-icons";
 import { useWorkArrivals, type WorkArrivals } from "@/components/work/motion/use-work-arrivals";
 import { staggerDelay } from "@/lib/motion";
 import type { ClientWorkEvent } from "@/lib/work/serializers";
@@ -201,6 +200,8 @@ const STEP_ICON: Record<PlanStepState, React.ComponentType<{ className?: string 
   active: Loader2,
   done: StatusIcons.success,
   skipped: Minus,
+  // Raw `X`, not `ActionIcons.dismiss`: this is the STATE opposite the tick
+  // above it, not a control anybody can press.
   failed: X,
   // Not an X. The step did not fail — the run stopped while it was open, and
   // which of those two happened is a distinction the reader is owed.
@@ -1502,14 +1503,14 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
         title: `Created ${str(payload, "title") ?? "a file"}`,
         detail: str(payload, "kind"),
         tone: "good",
-        icon: FileText,
+        icon: CodeIcons.file,
       };
     case "artifact_updated":
       return {
         title: `Updated ${str(payload, "title") ?? "a file"}`,
         detail: str(payload, "kind"),
         tone: "quiet",
-        icon: FileText,
+        icon: CodeIcons.file,
       };
     case "source_cited":
       return {
@@ -1525,7 +1526,7 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
           changed === null ? "Changed files" : `Changed ${changed} file${changed === 1 ? "" : "s"}`,
         detail: str(payload, "summary"),
         tone: "normal",
-        icon: FileText,
+        icon: CodeIcons.file,
       };
     }
     case "batch_preview": {
@@ -1534,7 +1535,7 @@ function describeEvent(event: ClientWorkEvent, payload: Payload): EventDescripti
         title: size === null ? "Prepared a batch of changes" : `Prepared ${size} changes for review`,
         detail: str(payload, "summary"),
         tone: "normal",
-        icon: FileText,
+        icon: CodeIcons.file,
       };
     }
     case "batch_applied": {

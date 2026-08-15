@@ -16,6 +16,7 @@ import {
 } from "@/components/work/work-transport";
 import { workTimeAgo } from "@/components/work/work-vocabulary";
 import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
+import { canPreviewArtifact, WorkSitePreview } from "@/components/work/work-site-preview";
 import { cn, formatBytes } from "@/lib/utils";
 
 /*
@@ -40,6 +41,13 @@ import { cn, formatBytes } from "@/lib/utils";
  * task that regenerates a workbook on a daily schedule accumulates versions
  * indefinitely, and pulling every one of them for every document on first paint
  * would spend a second of somebody's time on rows nobody scrolls to.
+ *
+ * A `site` also gets a Preview, which is the other half of the sentence the
+ * comment above starts: a download is not a look, and a deliverable you have to
+ * put on disk and open in a second application before you can tell whether it is
+ * any good is one nobody checks. It is offered for that one kind and no other,
+ * for the reason `canPreviewArtifact` states — see work-site-preview.tsx, which
+ * also carries the whole sandbox argument.
  */
 
 export function WorkDocuments({
@@ -169,12 +177,20 @@ function KindBadge({ extension }: { extension: string }) {
  * somebody opening this panel wants; everything else — the older versions, what
  * each was made from, whether the validator could re-open it — is behind the
  * row rather than in front of it.
+ *
+ * Preview sits before Download and is a WORD rather than a glyph. There is no
+ * house mark for "look at this without keeping it" (app-icons.ts is explicit
+ * that a concept the web draws with no icon stays absent rather than being given
+ * one here), and inventing an eye for the one row that needs it would be drift.
+ * It leads because it is the cheaper of the two acts: looking costs a dialog,
+ * downloading costs a file on disk.
  */
 function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
   const [open, setOpen] = React.useState(false);
   const [detail, setDetail] = React.useState<WorkArtifactDetail | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
+  const [previewing, setPreviewing] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -226,6 +242,16 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
             {artifact.validatedAt === null && " · not re-opened"}
           </span>
         </button>
+        {canPreviewArtifact(artifact.kind) && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPreviewing(true)}
+            className="h-7 shrink-0"
+          >
+            Preview
+          </Button>
+        )}
         {/* The copy affordance a few rows up in Outputs is `Pressable kind="icon"`
             and therefore circular; this was a square box at the composer's own
             11px radius, borrowed into the rail. One glyph affordance, one shape. */}
@@ -324,6 +350,21 @@ function DocumentRow({ artifact }: { artifact: ClientWorkArtifact }) {
             </div>
           )}
         </div>
+      )}
+
+      {/* Mounted unconditionally, and cheap while shut: Radix renders no content
+          for a closed dialog, and the previewer downloads nothing until `open`
+          and frees the archive again the moment it closes. Unmounting it with
+          the row's own state instead would take the dialog's exit animation
+          with it. */}
+      {canPreviewArtifact(artifact.kind) && (
+        <WorkSitePreview
+          artifactId={artifact.id}
+          version={artifact.currentVersion}
+          title={artifact.title}
+          open={previewing}
+          onOpenChange={setPreviewing}
+        />
       )}
     </li>
   );

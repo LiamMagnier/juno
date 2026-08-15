@@ -17,7 +17,7 @@
  */
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { ColorField } from "@/components/design/effects-panel";
 import type { DesignEditorHandle } from "@/components/design/design-editor";
@@ -53,7 +53,7 @@ export function DesignAdjustments({ adjustments, editor, onDismiss }: Props) {
       <div className="flex items-center justify-between pb-2">
         <h2 className="font-mono text-micro text-muted-foreground">Tune Juno’s change</h2>
         <Button variant="ghost" size="icon-sm" onClick={onDismiss} aria-label="Hide these controls" className="text-muted-foreground hover:text-foreground">
-          <X className="size-3.5" aria-hidden />
+          <ActionIcons.dismiss className="size-3.5" aria-hidden />
         </Button>
       </div>
       <div className="space-y-2.5">

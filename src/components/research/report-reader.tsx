@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy, Download, PanelRightClose, PanelRightOpen, Printer, Share2 } from "lucide-react";
+import { PanelRightClose, PanelRightOpen, Printer } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { toast } from "sonner";
 import { Markdown } from "@/components/chat/markdown";
 import { SourceFavicon, hostOf, isRenderableSourceUrl, titleOf } from "@/components/chat/source-chip";
@@ -247,7 +248,7 @@ export function ReportReader({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="sm" onClick={handleCopy} className="h-8 gap-1.5 px-2.5 text-xs">
-                {copied ? <Check className="size-3.5 text-primary" /> : <Copy className="size-3.5" />}
+                {copied ? <StatusIcons.success className="size-3.5 text-primary" /> : <ActionIcons.copy className="size-3.5" />}
                 <span>{copied ? "Copied" : "Copy"}</span>
               </Button>
             </TooltipTrigger>
@@ -257,7 +258,7 @@ export function ReportReader({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="sm" onClick={handleDownload} className="h-8 gap-1.5 px-2.5 text-xs">
-                <Download className="size-3.5" />
+                <ActionIcons.download className="size-3.5" />
                 <span>Export .md</span>
               </Button>
             </TooltipTrigger>
@@ -277,7 +278,7 @@ export function ReportReader({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="sm" onClick={handleShare} className="h-8 gap-1.5 px-2.5 text-xs">
-                <Share2 className="size-3.5" />
+                <ActionIcons.share className="size-3.5" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>Share research link</TooltipContent>

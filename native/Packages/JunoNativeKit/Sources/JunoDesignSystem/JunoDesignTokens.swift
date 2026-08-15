@@ -61,13 +61,24 @@ public struct JunoColorToken: Hashable, Sendable {
         green: 0.9743,
         blue: 0.9646
     )
-    /// `--background` (dark): `48 7% 9%`. Warm — red highest, blue lowest. The
-    /// previous value was cool (blue highest), which read as a generic graphite
-    /// rather than as Juno.
+    /// `--background` (dark): `48 5% 4%`. Warm — red highest, blue lowest.
+    ///
+    /// Hand-transcribed rather than read from `JunoGeneratedColors`, because
+    /// this is the one ground the generator does not project. That is exactly
+    /// why it goes stale: it still said `48 7% 9%` after the web dropped to a
+    /// 4% ground, which inverted
+    /// ``JunoDesignTokensTests/testDarkCanvasIsDarkerThanEverySurfaceAboveIt``
+    /// — the canvas measured *lighter* than the card sitting on it, so in dark
+    /// mode every card would have read as a dent instead of a float.
+    ///
+    /// Saturation is 5%, not the old 7%, for the reason `globals.css` states
+    /// beside the dark ramp: 7% was tuned against a 9% ground, and the same
+    /// tint over near-black has no lightness left to dilute it and turns to
+    /// brown sludge in the shadows.
     public static let warmBlack = JunoColorToken(
-        uncheckedRed: 0.0963,
-        green: 0.0938,
-        blue: 0.0837
+        uncheckedRed: 0.042,
+        green: 0.0412,
+        blue: 0.038
     )
 }
 

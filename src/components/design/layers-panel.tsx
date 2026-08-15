@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ColorField, NumberField, PanelSelect, SelectField, TextField } from "@/components/design/effects-panel";
+import { renderNodeSvg, svgDataUrl } from "@/lib/design/render";
 import { activeModeId, hexToRgba, resolveVariable, rgbaToCss, rgbaToHex } from "@/lib/design/variables";
 import {
   isContainer,
@@ -82,6 +83,10 @@ function LayerTypeIcon({ type }: { type: string }) {
   const Icon = DesignIcons[type as DesignIconName] ?? Square;
   return <Icon aria-hidden className="size-3 shrink-0 text-muted-foreground" />;
 }
+
+/** The keys the tree itself answers. Everything else keeps bubbling — Delete
+ *  and the tool shortcuts belong to the editor even while a row has focus. */
+const TREE_KEYS = new Set(["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight", "Home", "End", "F2", "Enter"]);
 
 let pageCounter = 0;
 const nextPageId = () => `page-${Date.now().toString(36)}-${(pageCounter++).toString(36)}`;
@@ -120,6 +125,16 @@ export function LayersPanel({
   const [dragId, setDragId] = React.useState<NodeId | null>(null);
   const [dropTargetId, setDropTargetId] = React.useState<NodeId | null>(null);
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
+  const [renamingLayerId, setRenamingLayerId] = React.useState<NodeId | null>(null);
+  const [query, setQuery] = React.useState("");
+  /** Where a range selection is measured from: the last row clicked or arrowed
+   *  to without shift. Without an anchor, shift-click has nothing to select a
+   *  range *between* and can only toggle, which is what it used to do. */
+  const [anchorId, setAnchorId] = React.useState<NodeId | null>(null);
+  const [focusedId, setFocusedId] = React.useState<NodeId | null>(null);
+  /** The row buttons, so arrow keys can move focus without the tree owning a
+   *  second idea of which row is focused. */
+  const rowRefs = React.useRef(new Map<NodeId, HTMLButtonElement>());
 
   const page = doc.pages.find((p) => p.id === pageId) ?? doc.pages[0];
 
@@ -131,7 +146,36 @@ export function LayersPanel({
       return next;
     });
 
+  /**
+   * The visible rows, flat and in reading order.
+   *
+   * Flat is what makes range selection and arrow keys possible at all: a shift
+   * range is a slice of this array, and Up/Down are ±1 in it, so neither has to
+   * re-walk the tree or care how deep a row sits.
+   *
+   * A filter keeps the rows on the *path* to a match as well as the matches
+   * themselves. Showing only the hits would strand them: "Label" on its own says
+   * nothing about which of four cards it belongs to, and reparenting by drag
+   * needs the parent to still be a row. Filtering also ignores the collapse set —
+   * a match hidden inside a collapsed frame is a filter that lies about how many
+   * layers matched.
+   */
   const rows = React.useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const keep = new Set<NodeId>();
+    if (needle) {
+      const mark = (id: NodeId, ancestors: NodeId[]): void => {
+        const node = doc.nodes[id];
+        if (!node) return;
+        if (node.name.toLowerCase().includes(needle)) {
+          keep.add(id);
+          for (const ancestor of ancestors) keep.add(ancestor);
+        }
+        if (isContainer(node)) for (const child of node.children) mark(child, [...ancestors, id]);
+      };
+      for (const id of page.children) mark(id, []);
+    }
+
     const out: { id: NodeId; depth: number }[] = [];
     const walk = (ids: NodeId[], depth: number) => {
       // Reversed: the panel reads front-to-back, the array is back-to-front.
@@ -139,13 +183,120 @@ export function LayersPanel({
         const id = ids[i];
         const node = doc.nodes[id];
         if (!node) continue;
+        if (needle && !keep.has(id)) continue;
         out.push({ id, depth });
-        if (isContainer(node) && !collapsed.has(id)) walk(node.children, depth + 1);
+        if (isContainer(node) && (needle || !collapsed.has(id))) walk(node.children, depth + 1);
       }
     };
     walk(page.children, 0);
     return out;
-  }, [collapsed, doc.nodes, page.children]);
+  }, [collapsed, doc.nodes, page.children, query]);
+
+  /** The one row in the tab order. Roving, so Tab reaches the tree once and the
+   *  arrow keys move inside it — forty rows should not be forty tab stops. */
+  const tabRowId = rows.some((row) => row.id === focusedId) ? focusedId : rows[0]?.id ?? null;
+
+  const focusRow = (id: NodeId) => {
+    setFocusedId(id);
+    // After the state that may have added the row (expanding a container), so a
+    // right-arrow into a freshly revealed child lands on something.
+    requestAnimationFrame(() => rowRefs.current.get(id)?.focus());
+  };
+
+  /** Click, with the modifiers a tree is expected to honour. Shift takes the
+   *  range from the anchor — it used to toggle one row, which is what
+   *  cmd-click is for and left no gesture for "these twelve". */
+  const clickRow = (id: NodeId, index: number, event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
+    setFocusedId(id);
+    const from = anchorId ? rows.findIndex((row) => row.id === anchorId) : -1;
+    if (event.shiftKey && from >= 0) {
+      const [start, end] = from < index ? [from, index] : [index, from];
+      onSelect(rows.slice(start, end + 1).map((row) => row.id), "add");
+      return;
+    }
+    setAnchorId(id);
+    onSelect([id], event.metaKey || event.ctrlKey ? "toggle" : "replace");
+  };
+
+  const renameLayer = (id: NodeId, current: string, next: string) => {
+    setRenamingLayerId(null);
+    const name = next.trim();
+    const node = doc.nodes[id];
+    if (readOnly || !node || node.locked || !name || name === current) return;
+    onApply([{ op: "updateNode", nodeId: id, patch: { name } }], "Rename layer");
+  };
+
+  /**
+   * Arrow-key navigation over the same flat `rows`.
+   *
+   * The tree has declared `role="tree"` since it was written and behaved like a
+   * list of unrelated buttons: no arrow keys, no expand/collapse from the
+   * keyboard, and every row its own tab stop. Left and Right collapse and expand
+   * where that is meaningful and otherwise walk out to the parent and in to the
+   * first child, which is what a tree widget is specified to do and what makes a
+   * deep document navigable without a pointer.
+   */
+  const onRowKeyDown = (event: React.KeyboardEvent, id: NodeId, index: number) => {
+    const node = doc.nodes[id];
+    if (!node || !TREE_KEYS.has(event.key)) return;
+    // The editor nudges the selection by a point on every arrow key, from a
+    // listener on `window`. Without this, arrowing down the tree also walked the
+    // artwork across the canvas.
+    event.stopPropagation();
+    const container = isContainer(node) && node.children.length > 0;
+    const move = (to: number) => {
+      const target = rows[to];
+      if (!target) return;
+      event.preventDefault();
+      focusRow(target.id);
+      if (event.shiftKey && anchorId) {
+        const from = rows.findIndex((row) => row.id === anchorId);
+        const [start, end] = from < to ? [from, to] : [to, from];
+        onSelect(rows.slice(start, end + 1).map((row) => row.id), "add");
+      } else {
+        setAnchorId(target.id);
+        onSelect([target.id], "replace");
+      }
+    };
+
+    switch (event.key) {
+      case "ArrowDown":
+        return move(index + 1);
+      case "ArrowUp":
+        return move(index - 1);
+      case "Home":
+        return move(0);
+      case "End":
+        return move(rows.length - 1);
+      case "ArrowRight":
+        event.preventDefault();
+        if (container && collapsed.has(id)) return toggleCollapse(id);
+        if (container) return focusRow(rows[index + 1]?.id ?? id);
+        return;
+      case "ArrowLeft": {
+        event.preventDefault();
+        if (container && !collapsed.has(id)) return toggleCollapse(id);
+        // Out to the parent, which is the nearest row above at a lower depth.
+        const depth = rows[index].depth;
+        for (let i = index - 1; i >= 0; i--) {
+          if (rows[i].depth < depth) return focusRow(rows[i].id);
+        }
+        return;
+      }
+      case "F2":
+        event.preventDefault();
+        if (!readOnly && !node.locked) setRenamingLayerId(id);
+        return;
+      case "Enter":
+        // Enter would otherwise fire the button's click and re-select the row it
+        // is already on, which is the least useful thing it could do here.
+        event.preventDefault();
+        if (!readOnly && !node.locked) setRenamingLayerId(id);
+        return;
+      default:
+        return;
+    }
+  };
 
   const drop = (targetId: NodeId, position: "inside" | "above") => {
     if (!dragId || readOnly || dragId === targetId) return;
@@ -298,10 +449,31 @@ export function LayersPanel({
         </div>
       </div>
 
-      <p className="px-3 pb-1 pt-2 font-mono text-micro text-muted-foreground">Layers</p>
-      <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2" role="tree" aria-label="Layers">
-        {rows.length === 0 && <p className="px-3 py-6 text-center text-caption text-muted-foreground">Nothing on this page yet.</p>}
-        {rows.map(({ id, depth }) => {
+      <div className="flex items-center gap-1.5 px-3 pb-1 pt-2">
+        <p className="shrink-0 font-mono text-micro text-muted-foreground">Layers</p>
+        {/* A substring test over the rows, which is all a forty-row document
+            needs and all this can honestly offer — it matches the name, and the
+            name is the only thing the row shows. */}
+        <input
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === "Escape") setQuery("");
+          }}
+          aria-label="Filter layers by name"
+          placeholder="Filter"
+          className="ml-auto h-6 min-w-0 flex-1 rounded-md border border-border/60 bg-background px-1.5 text-xs outline-none transition-colors focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20 coarse:h-9"
+        />
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-1 pb-2" role="tree" aria-label="Layers" aria-multiselectable>
+        {rows.length === 0 && (
+          <p className="px-3 py-6 text-center text-caption text-muted-foreground">
+            {query.trim() ? `No layer matches “${query.trim()}”.` : "Nothing on this page yet."}
+          </p>
+        )}
+        {rows.map(({ id, depth }, index) => {
           const node = doc.nodes[id];
           const selected = selection.includes(id);
           const container = isContainer(node) && node.children.length > 0;
@@ -311,6 +483,7 @@ export function LayersPanel({
               role="treeitem"
               aria-selected={selected}
               aria-level={depth + 1}
+              aria-expanded={container ? !collapsed.has(id) : undefined}
               draggable={!readOnly}
               onDragStart={(event) => {
                 setDragId(id);
@@ -348,19 +521,49 @@ export function LayersPanel({
                 <span className="w-4 shrink-0" aria-hidden />
               )}
 
-              <button
-                type="button"
-                onClick={(e) => onSelect([id], e.shiftKey ? "toggle" : "replace")}
-                onDragEnter={() => dragId && dragId !== id && setDropTargetId(id)}
-                className={cn(
-                  "flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
-                  !node.visible && "opacity-40"
-                )}
-              >
-                <LayerTypeIcon type={node.type} />
+              {renamingLayerId === id ? (
+                /* The same inline input the pages above use, on the same
+                   gesture. Renaming a layer used to live only on the canvas
+                   right-click menu, so the one surface that lists every layer by
+                   name was the one place the name could not be changed. */
+                <input
+                  autoFocus
+                  defaultValue={node.name}
+                  aria-label={`Rename ${node.name}`}
+                  onBlur={(e) => renameLayer(id, node.name, e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                    if (e.key === "Escape") {
+                      setRenamingLayerId(null);
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  className="min-w-0 flex-1 rounded-xs border border-border/60 bg-background px-1.5 py-0.5 text-xs outline-none focus-visible:border-primary/60"
+                />
+              ) : (
+                <button
+                  type="button"
+                  ref={(element) => {
+                    if (element) rowRefs.current.set(id, element);
+                    else rowRefs.current.delete(id);
+                  }}
+                  tabIndex={tabRowId === id ? 0 : -1}
+                  onClick={(e) => clickRow(id, index, e)}
+                  onDoubleClick={() => !readOnly && !node.locked && setRenamingLayerId(id)}
+                  onKeyDown={(e) => onRowKeyDown(e, id, index)}
+                  onFocus={() => setFocusedId(id)}
+                  onDragEnter={() => dragId && dragId !== id && setDropTargetId(id)}
+                  className={cn(
+                    "flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+                    !node.visible && "opacity-40"
+                  )}
+                >
+                  <LayerTypeIcon type={node.type} />
 
-                <span className={cn("truncate text-xs", selected ? "text-primary" : "text-foreground")}>{node.name}</span>
-              </button>
+                  <span className={cn("truncate text-xs", selected ? "text-primary" : "text-foreground")}>{node.name}</span>
+                </button>
+              )}
 
               {/* Always visible, unlike the hover controls beside them: these
                   say what the layer *is*, and a badge you have to hover to find
@@ -382,6 +585,8 @@ export function LayersPanel({
                   aria-label={`${node.name} has an interaction — open the prototype panel`}
                   className="pressable shrink-0 rounded-sm p-0.5 text-primary/70 transition-colors hover:text-primary"
                 >
+                  {/* Raw `Zap`: prototyping, the same bolt design-editor's
+                      Prototype tab uses. Not the Juno Work destination. */}
                   <Zap className="size-3" aria-hidden />
                 </button>
               )}
@@ -398,6 +603,17 @@ export function LayersPanel({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem
+                    disabled={node.locked}
+                    // Radix returns focus to its trigger as it closes, so an
+                    // input mounted in the same tick loses the focus race and
+                    // the rename opens with the caret nowhere near it.
+                    onSelect={() => requestAnimationFrame(() => setRenamingLayerId(id))}
+                  >
+                    <ActionIcons.edit className="size-4" aria-hidden />
+                    Rename
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem disabled={node.locked} onSelect={() => reorder(id, "front")}>
                     <ArrowUpToLine className="size-4" aria-hidden />
                     Bring to front
@@ -416,6 +632,11 @@ export function LayersPanel({
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem variant="destructive" disabled={node.locked} onSelect={() => deleteLayer(id)}>
+                    {/* Raw `X`, and knowingly inconsistent: "Delete variable"
+                        further down this file already draws
+                        `ActionIcons.delete`. Reconciling the two means picking
+                        one DRAWING for destructive removal in this panel, which
+                        is a design decision, not a reference swap. */}
                     <X className="size-4" aria-hidden />
                     Delete layer
                   </DropdownMenuItem>
@@ -499,6 +720,29 @@ function ComponentLibrary({
 }) {
   const components = React.useMemo(() => Object.values(doc.components ?? {}), [doc.components]);
   const [open, setOpen] = React.useState(true);
+
+  /**
+   * A picture of each component, drawn by the renderer that draws the canvas.
+   *
+   * The list showed a generic component glyph beside a name, which tells you
+   * nothing about which of four buttons you are about to place. This costs
+   * nothing new: `renderNodeSvg` already produces SVG for any subtree — it is
+   * what the AI's screenshot and every frame export are built on — so the
+   * thumbnail is the component itself rather than an approximation of it.
+   *
+   * Only while the section is open, because it re-renders with the document and
+   * a closed section should not pay for pictures nobody is looking at.
+   */
+  const thumbnails = React.useMemo(() => {
+    const out = new Map<string, string>();
+    if (!open) return out;
+    for (const component of components) {
+      const rendered = renderNodeSvg(doc, component.rootNodeId);
+      if (rendered) out.set(component.id, svgDataUrl(rendered.svg));
+    }
+    return out;
+  }, [components, doc, open]);
+
   if (components.length === 0) return null;
 
   const place = (componentId: string) => {
@@ -526,22 +770,34 @@ function ComponentLibrary({
         <span className="ml-auto tabular-nums">{components.length}</span>
       </button>
       {open && (
-        <ul className="max-h-40 overflow-y-auto pb-1">
-          {components.map((component) => (
-            <li key={component.id}>
-              <button
-                type="button"
-                disabled={readOnly}
-                onClick={() => place(component.id)}
-                title={component.description || `Place an instance of ${component.name}`}
-                className="flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
-              >
-                <DesignIcons.component className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-                <span className="min-w-0 flex-1 truncate text-xs text-foreground">{component.name}</span>
-                <Plus className="size-3 shrink-0 text-muted-foreground" aria-hidden />
-              </button>
-            </li>
-          ))}
+        <ul className="max-h-56 overflow-y-auto pb-1">
+          {components.map((component) => {
+            const thumbnail = thumbnails.get(component.id);
+            return (
+              <li key={component.id}>
+                <button
+                  type="button"
+                  disabled={readOnly}
+                  onClick={() => place(component.id)}
+                  title={component.description || `Place an instance of ${component.name}`}
+                  className="flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left hover:bg-accent disabled:pointer-events-none disabled:opacity-40"
+                >
+                  <span className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-xs border border-border/60 bg-muted/40">
+                    {thumbnail ? (
+                      // Decorative: the name beside it is the accessible label,
+                      // and a component called "Primary button" gains nothing
+                      // from a second reading of the same words.
+                      <img src={thumbnail} alt="" className="max-h-full max-w-full object-contain" />
+                    ) : (
+                      <DesignIcons.component className="size-3 text-muted-foreground" aria-hidden />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-foreground">{component.name}</span>
+                  <Plus className="size-3 shrink-0 text-muted-foreground" aria-hidden />
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

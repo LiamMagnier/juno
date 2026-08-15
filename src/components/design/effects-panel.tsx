@@ -33,8 +33,14 @@
  */
 
 import * as React from "react";
-import { ChevronDown, ChevronUp, Eye, EyeOff, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, EyeOff, Plus } from "lucide-react";
 import { ActionIcons } from "@/lib/app-icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { effectLabel, type DesignOperation, type NodePatch } from "@/lib/design/operations";
@@ -299,7 +305,7 @@ function PaintListSection({
               setExpanded(paints.length);
             }}
           >
-            +
+            <Plus className="size-3" aria-hidden />
           </IconButton>
         </div>
       }
@@ -309,7 +315,20 @@ function PaintListSection({
         const hidden = paint.visible === false;
         const gradient = paint.type === "linear-gradient" || paint.type === "radial-gradient" ? paint : null;
         return (
-          <div key={index} className={cn("space-y-1.5 rounded-control border border-border/60 p-1.5", hidden && "opacity-50")}>
+          /* A hairline between rows, not a card around each one. The row is
+             already identified by its swatch, its value and its two buttons, and
+             it sits inside a titled Section — so the border was a third box
+             around a control that was already inside two, in a 256px rail. Only
+             the expanded detail keeps a rule, because that one genuinely marks
+             where a row stops and its innards start. */
+          <div
+            key={index}
+            // `index > 0` rather than a `first:` variant: these rows are not the
+            // first children of the section — the section's own title bar is —
+            // so a CSS first-child rule would draw a hairline under the heading
+            // and none between the heading and the first row's neighbours.
+            className={cn("space-y-1.5", index > 0 && "border-t border-border/40 pt-1.5", hidden && "opacity-50")}
+          >
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
@@ -372,24 +391,31 @@ function PaintListSection({
               </IconButton>
             </div>
 
-            {extra?.(index, first, patchAll)}
+            {/* Indented under the row it belongs to. With the row's own box
+                gone, indentation is what says "these fields are this paint's"
+                rather than another entry in the section. */}
+            {(extra || expanded === index) && (
+              <div className="space-y-1.5 pl-2">
+                {extra?.(index, first, patchAll)}
 
-            {expanded === index && (
-              <PaintEditor
-                paint={paint}
-                // Stop editing needs one list to edit. Across a mixed selection
-                // there is no such list, so the ramp is shown and the stops are
-                // not — the alternative is a stop editor that silently rewrites
-                // four layers from a fifth one's ramp.
-                singleLayer={nodes.length === 1}
-                disabled={readOnly}
-                onChange={(next, summary) => setPaint(index, next, summary)}
-              />
-            )}
-            {expanded === index && gradient === null && paint.type === "image" && (
-              <p className="text-micro leading-snug text-muted-foreground">
-                An image fill is placed from the canvas; its asset is not editable here.
-              </p>
+                {expanded === index && (
+                  <PaintEditor
+                    paint={paint}
+                    // Stop editing needs one list to edit. Across a mixed selection
+                    // there is no such list, so the ramp is shown and the stops are
+                    // not — the alternative is a stop editor that silently rewrites
+                    // four layers from a fifth one's ramp.
+                    singleLayer={nodes.length === 1}
+                    disabled={readOnly}
+                    onChange={(next, summary) => setPaint(index, next, summary)}
+                  />
+                )}
+                {expanded === index && gradient === null && paint.type === "image" && (
+                  <p className="text-micro leading-snug text-muted-foreground">
+                    An image fill is placed from the canvas; its asset is not editable here.
+                  </p>
+                )}
+              </div>
             )}
           </div>
         );
@@ -907,54 +933,48 @@ export function EffectsSection({
   );
 }
 
-/** The **+** and its menu. A listbox rather than a `<select>` because each item
- *  carries a one-line explanation of what it does, and an option element cannot
- *  hold one. */
+/**
+ * The **+** and its menu.
+ *
+ * A menu rather than a `<select>` because each item carries a one-line
+ * explanation of what it does and an `<option>` cannot hold one — and the shared
+ * DropdownMenu rather than the hand-rolled absolutely-positioned div this used
+ * to be. That div lived inside the inspector's `overflow-y-auto` column, so the
+ * column was its clipping context: opening the menu with Effects scrolled near
+ * the bottom of the rail cut it off at the fold instead of flipping it. Radix
+ * portals out of the scroller, flips, and caps itself to
+ * `--radix-dropdown-menu-content-available-height` — and brings the focus trap,
+ * the roving arrow keys and the Escape handling the hand-rolled one never had.
+ */
 function AddEffectMenu({ disabled, onAdd }: { disabled?: boolean; onAdd: (type: EffectType) => void }) {
-  const [open, setOpen] = React.useState(false);
-  const containerRef = React.useRef<HTMLDivElement>(null);
-
   return (
-    <div
-      ref={containerRef}
-      className="relative"
-      onBlur={(event) => {
-        // Closes when focus leaves the menu entirely, not when it moves between
-        // the button and the items — `relatedTarget` is what tells them apart.
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") setOpen(false);
-        event.stopPropagation();
-      }}
-    >
-      <IconButton label="Add effect" disabled={disabled} onClick={() => setOpen((value) => !value)}>
-        +
-      </IconButton>
-      {open && (
-        <div
-          role="menu"
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
           aria-label="Add effect"
-          className="absolute right-0 top-full z-30 mt-1 w-56 space-y-0.5 rounded-control border border-border/60 bg-popover p-1 shadow-soft"
+          title="Add effect"
+          disabled={disabled}
+          className="pressable rounded-xs px-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-30 coarse:min-h-8 coarse:min-w-8"
         >
-          {EFFECT_MENU.map((item) => (
-            <button
-              key={item.type}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                onAdd(item.type);
-                setOpen(false);
-              }}
-              className="pressable block w-full rounded-xs px-2 py-1 text-left transition-colors hover:bg-accent"
-            >
-              <span className="block text-xs text-foreground">{item.label}</span>
-              <span className="block text-micro leading-snug text-muted-foreground">{item.hint}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+          <Plus className="size-3" aria-hidden />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        // The canvas owns Delete, ⌘Z and the single-key tool shortcuts; without
+        // this a keystroke aimed at the open menu also reached the artwork.
+        onKeyDown={(event) => event.stopPropagation()}
+        className="w-56"
+      >
+        {EFFECT_MENU.map((item) => (
+          <DropdownMenuItem key={item.type} onSelect={() => onAdd(item.type)} className="flex-col items-start gap-0">
+            <span className="text-xs text-foreground">{item.label}</span>
+            <span className="text-micro leading-snug text-muted-foreground">{item.hint}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -980,7 +1000,8 @@ function EffectRow({
   const title = label.charAt(0).toUpperCase() + label.slice(1);
 
   return (
-    <div className={cn("space-y-1.5 rounded-control border border-border/60 p-2", hidden && "opacity-50")}>
+    /* Hairline, not a card — the same reasoning as the paint rows above. */
+    <div className={cn("space-y-1.5", index > 0 && "border-t border-border/40 pt-1.5", hidden && "opacity-50")}>
       <div className="flex items-center gap-1.5">
         <span className="min-w-0 flex-1 truncate font-mono text-micro text-muted-foreground">{title}</span>
         <div className="flex shrink-0 items-center gap-0.5">
@@ -1008,7 +1029,9 @@ function EffectRow({
           </IconButton>
         </div>
       </div>
-      <EffectFields effect={effect} disabled={disabled} onChange={onChange} />
+      <div className="space-y-1.5 pl-2">
+        <EffectFields effect={effect} disabled={disabled} onChange={onChange} />
+      </div>
     </div>
   );
 }
@@ -1395,7 +1418,7 @@ function MiniButton({ children, disabled, onClick }: { children: React.ReactNode
   );
 }
 
-function IconButton({
+export function IconButton({
   children,
   label,
   disabled,
@@ -1425,7 +1448,17 @@ function IconButton({
   );
 }
 
-function Segmented({
+/**
+ * A one-of-few choice, as a row of the same height as every other field.
+ *
+ * The height matters more than it looks: this control was taller than
+ * `FIELD_ROW`, so a segmented control and a number field in the same two-up grid
+ * did not line up, and inside a paint row that already had its own border it was
+ * the third box deep. The box stays — a segmented control with no boundary is
+ * three loose buttons — but it is now exactly one box, the same 24px as
+ * everything beside it.
+ */
+export function Segmented({
   value,
   options,
   label,
@@ -1439,7 +1472,7 @@ function Segmented({
   onChange: (value: string) => void;
 }) {
   return (
-    <div role="group" aria-label={label} className="flex gap-0.5 rounded-md border border-border/60 p-0.5">
+    <div role="group" aria-label={label} className="flex h-6 items-stretch gap-0.5 rounded-md border border-border/60 p-0.5 coarse:h-9">
       {options.map((option) => (
         <button
           key={option.value}
@@ -1448,7 +1481,7 @@ function Segmented({
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            "pressable flex-1 rounded-xs px-1 py-1 text-caption transition-colors disabled:opacity-50 coarse:min-h-8",
+            "pressable min-w-0 flex-1 truncate rounded-xs px-1 text-caption leading-none transition-colors disabled:opacity-50",
             value === option.value ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
           )}
         >
@@ -1632,10 +1665,100 @@ export function NumberField({
   );
 }
 
+/**
+ * A number that is allowed to be *absent*, which is a different thing from zero.
+ *
+ * `SizeLimits` is the reason this exists. An absent `maxWidth` means "no
+ * ceiling"; a `maxWidth` of 0 means "this layer is zero points wide", and the
+ * layout engine honours both literally (`clampSize` in `layout.ts`). A plain
+ * `NumberField` has no way to say the first — clearing it would either commit 0
+ * and collapse the layer or silently commit nothing — so the empty field commits
+ * `null` here and the caller drops the key.
+ *
+ * The commit rules are `NumberField`'s, for `NumberField`'s reasons: a value the
+ * browser computed (a stepper arrow, an arrow key, the wheel) commits as it
+ * happens and is coalesced into one undo step, and typing waits for Enter or
+ * blur so "120" is not committed at 1 and 12 on the way.
+ */
+export function OptionalNumberField({
+  label,
+  ariaLabel,
+  value,
+  mixed,
+  min,
+  max,
+  disabled,
+  onCommit,
+}: {
+  label: string;
+  ariaLabel?: string;
+  /** `null` when the property is not set on the layer. */
+  value: number | null;
+  mixed?: boolean;
+  min?: number;
+  max?: number;
+  disabled?: boolean;
+  onCommit: (value: number | null) => void;
+}) {
+  const [draft, setDraft] = React.useState<string | null>(null);
+  const { schedule, cancel } = useCoalescedCommit<number | null>();
+  const shown = draft ?? (mixed || value === null ? "" : String(Math.round(value * 100) / 100));
+
+  const parse = (text: string): number | null => {
+    if (text.trim() === "") return null;
+    const parsed = Number.parseFloat(text);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const changed = (next: number | null) => mixed === true || next !== value;
+
+  return (
+    <label className={cn(FIELD_ROW, disabled && "opacity-50")}>
+      <FieldLabel>{label}</FieldLabel>
+      <input
+        type="number"
+        aria-label={ariaLabel ?? label}
+        className={FIELD_CONTROL}
+        value={shown}
+        // Not "0": the empty field means the limit is off, and a placeholder
+        // reading 0 would say the opposite of what committing 0 would do.
+        placeholder={mixed ? "Mixed" : "None"}
+        min={min}
+        max={max}
+        disabled={disabled}
+        onChange={(event) => {
+          const next = event.target.value;
+          setDraft(next);
+          if (isTypedInput(event)) return;
+          const parsed = parse(next);
+          if (changed(parsed)) schedule(parsed, onCommit);
+        }}
+        onBlur={() => {
+          cancel();
+          if (draft !== null) {
+            const parsed = parse(draft);
+            if (changed(parsed)) onCommit(parsed);
+          }
+          setDraft(null);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") {
+            cancel();
+            setDraft(null);
+            (e.target as HTMLInputElement).blur();
+          }
+          e.stopPropagation();
+        }}
+      />
+    </label>
+  );
+}
+
 export function TextField({
   label,
   ariaLabel,
   value,
+  mixed,
   multiline,
   disabled,
   onCommit,
@@ -1643,22 +1766,27 @@ export function TextField({
   label: string;
   ariaLabel?: string;
   value: string;
+  /** The selected layers disagree: empty with a "Mixed" placeholder, the same
+   *  way `NumberField` reports it, rather than the first layer's text. */
+  mixed?: boolean;
   multiline?: boolean;
   disabled?: boolean;
   onCommit: (value: string) => void;
 }) {
   const [draft, setDraft] = React.useState<string | null>(null);
-  const shown = draft ?? value;
+  const shown = draft ?? (mixed ? "" : value);
   const shared = {
     "aria-label": ariaLabel ?? label,
     value: shown,
+    placeholder: mixed ? "Mixed" : undefined,
     disabled,
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(e.target.value),
     onBlur: () => {
       // Unchanged text is not an edit. Focusing a name field and leaving it
       // alone used to write the name back over itself and take a slot on the
-      // undo stack for it.
-      if (draft !== null && draft !== value) onCommit(draft);
+      // undo stack for it. Across a disagreeing selection there is no text to
+      // be unchanged from, so anything typed is a change.
+      if (draft !== null && (mixed === true || draft !== value)) onCommit(draft);
       setDraft(null);
     },
     onKeyDown: (e: React.KeyboardEvent) => {
@@ -1694,6 +1822,57 @@ export function TextField({
 /** Sentinel for the "Mixed" row. Not the empty string: some of these selects
  *  use "" for a real choice ("None"). */
 const MIXED_OPTION = " mixed";
+
+/**
+ * A boolean, on the same row as every other field.
+ *
+ * The bare `<input type="checkbox">` beside a word that this panel already uses
+ * reads fine on a line of its own and wrong inside the two-up grids the
+ * inspector is built from: a different height, and the label on the opposite
+ * side from every neighbour. So a checkbox gets the same `FIELD_ROW` a number
+ * does, with the box where the number would be.
+ *
+ * `mixed` drives the native indeterminate state rather than the "Mixed" word the
+ * other fields use, because a checkbox is the one control the platform already
+ * gives a third appearance for exactly this. Clicking it commits `true`, so the
+ * first click resolves the disagreement instead of toggling each layer away from
+ * whatever it happened to be.
+ */
+export function CheckboxField({
+  label,
+  ariaLabel,
+  checked,
+  mixed,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  ariaLabel?: string;
+  checked: boolean;
+  mixed?: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className={cn(FIELD_ROW, "cursor-pointer justify-between", disabled && "cursor-default opacity-50")}>
+      <FieldLabel>{label}</FieldLabel>
+      <input
+        type="checkbox"
+        aria-label={ariaLabel ?? label}
+        ref={(element) => {
+          if (element) element.indeterminate = mixed === true;
+        }}
+        checked={mixed ? false : checked}
+        disabled={disabled}
+        onChange={(event) => onChange(mixed ? true : event.target.checked)}
+        // The canvas owns Delete and the single-key tool shortcuts; a space bar
+        // aimed at this box must not also reach the artwork.
+        onKeyDown={(event) => event.stopPropagation()}
+        className="size-3.5 shrink-0 accent-primary"
+      />
+    </label>
+  );
+}
 
 export function SelectField({
   label,
@@ -1921,7 +2100,7 @@ export function ColorField({
           aria-label={`Remove ${name.toLowerCase()}`}
           className="pressable shrink-0 rounded-sm text-muted-foreground hover:text-destructive"
         >
-          <X className="size-3" aria-hidden />
+          <ActionIcons.dismiss className="size-3" aria-hidden />
         </button>
       )}
     </div>

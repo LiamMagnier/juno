@@ -7,14 +7,13 @@ import {
   ArrowRight,
   NotebookPen,
   ChevronDown,
-  Globe,
   MessageSquareText,
   Monitor,
   Moon,
   Search,
   Sun,
 } from "lucide-react";
-import { ActionIcons, StatusIcons } from "@/lib/app-icons";
+import { ActionIcons, ComposerIcons, StatusIcons } from "@/lib/app-icons";
 import { DotField } from "@/components/signature/dot-field";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { Button } from "@/components/ui/button";
@@ -102,6 +101,8 @@ function ModelField({
         className="w-[var(--radix-popover-trigger-width)] overflow-hidden rounded-menu p-0"
       >
         <div className="relative border-b p-2">
+          {/* Raw `Search`: a filter over this popover's model list, not the
+              app-wide search destination `AppIcons.search` names. */}
           <Search className="pointer-events-none absolute left-3.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             value={q}
@@ -332,7 +333,7 @@ export function Onboarding() {
     { icon: ActionIcons.edit, label: "Live canvas", desc: "Docs and apps in a side-by-side artifact." },
     { icon: NotebookPen, label: "Remembers you", desc: "Context and preferences carry between chats." },
     features.webSearch
-      ? { icon: Globe, label: "Web search", desc: "Answers grounded in live, cited sources." }
+      ? { icon: ComposerIcons.web, label: "Web search", desc: "Answers grounded in live, cited sources." }
       : null,
   ].filter(Boolean) as { icon: typeof NotebookPen; label: string; desc: string }[];
 

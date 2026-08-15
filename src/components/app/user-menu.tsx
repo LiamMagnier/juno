@@ -5,7 +5,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
-import { LogOut, Settings, User } from "lucide-react";
+import { LogOut, User } from "lucide-react";
+import { AppIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -171,7 +172,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         />
         <MenuRow
           onSelect={() => window.dispatchEvent(new CustomEvent("juno:settings", { detail: "general" }))}
-          icon={<Settings className="size-4" />}
+          icon={<AppIcons.settings className="size-4" />}
           label="Settings"
         />
 

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import type { ResearchEventDTO } from "@/lib/research/domain";
 
 /**
  * One research run, kept fresh — the client half of GET /api/research/[id].
@@ -36,11 +37,33 @@ export interface ResearchRunView {
       objectiveId: string;
       requirementId: string;
       status: string;
+      /**
+       * Which sources actually satisfy this requirement — the one honest
+       * objective→source edge the run persists. It has always been on the wire
+       * (run.ts serialises the whole ResearchCoverageEntry); this interface
+       * omitted it, which is why the panel could show that an objective was
+       * "covered" but never what covered it.
+       *
+       * `contradictingSourceIds` is deliberately NOT declared beside it. The
+       * engine hardcodes it to `[]` and nothing ever computes a contradiction
+       * edge, so a field here would invite a "disputed by" line that is empty
+       * when it is right and a lie when it is not.
+       */
+      supportingSourceIds: string[];
       independentSourceCount: number;
       evidenceStrength: number;
       missingReason?: string;
     }>;
-    conflicts?: Array<{ description: string; severity: string }>;
+    conflicts?: Array<{
+      id: string;
+      kind: string;
+      objectiveId?: string;
+      /** The sources the conflict is between — `ResearchSource.id`, joinable to `sources[]`. */
+      sourceIds: string[];
+      description: string;
+      severity: string;
+      resolved: boolean;
+    }>;
     followUpRound?: number;
   };
   auditSummary?: {
@@ -64,7 +87,24 @@ export interface ResearchRunView {
 
 export interface RunPayload {
   run: ResearchRunView;
+  /**
+   * Every event this hook has seen for the run, oldest first.
+   *
+   * The API has always returned the page next to the run state — the hook threw
+   * it away, which is why the panel could only ever draw the five-rung stage
+   * rail over a gather phase that runs for minutes. It is accumulated rather
+   * than replaced because the response only carries what is newer than the
+   * cursor.
+   */
+  events: ResearchEventDTO[];
+  /** Max `seq` the run has reached server-side. Not the cursor — see `load`. */
   lastSeq: number;
+}
+
+/** Merge a page into the accumulated log, newest-wins on `seq`. */
+function mergeEvents(seen: Map<number, ResearchEventDTO>, page: ResearchEventDTO[]): ResearchEventDTO[] {
+  for (const event of page) seen.set(event.seq, event);
+  return [...seen.values()].sort((a, b) => a.seq - b.seq);
 }
 
 /**
@@ -79,15 +119,43 @@ export interface RunPayload {
 export const WORKING_POLL_MS = 2_500;
 export const IDLE_POLL_MS = 8_000;
 
+/** One frozen array, so `events` is referentially stable before the first page. */
+const EMPTY_EVENTS: ResearchEventDTO[] = [];
+
 export function useResearchRun(runId: string | null) {
   const [payload, setPayload] = React.useState<RunPayload | null>(null);
   const [failed, setFailed] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
 
+  // The accumulated log and the cursor into it. Refs, not state: the poll loop
+  // below schedules itself from what a fetch just returned rather than from a
+  // render, so a cursor kept in state would still be the previous poll's value
+  // by the time the next request is built.
+  const seen = React.useRef(new Map<number, ResearchEventDTO>());
+  const cursor = React.useRef(0);
+
+  /**
+   * Fold one response into the hook's view of the run.
+   *
+   * THE CURSOR IS THE LAST ROW OF THE PAGE, NOT `lastSeq`. `lastSeq` is the max
+   * seq over ALL of the run's events, and the page is capped at 200 server-side
+   * — feeding it back as `after` would skip events 201..max outright on any run
+   * that emits more than one page. `readEvents` selects `seq > after` in
+   * ascending order, so the last row that actually arrived is the only value
+   * that cannot lose anything.
+   */
+  const absorb = React.useCallback((next: RunPayload): RunPayload => {
+    const page = next.events ?? [];
+    for (const event of page) cursor.current = Math.max(cursor.current, event.seq);
+    const merged = { ...next, events: mergeEvents(seen.current, page) };
+    setPayload(merged);
+    return merged;
+  }, []);
+
   const load = React.useCallback(async (): Promise<RunPayload | null> => {
     if (!runId) return null;
-    const res = await fetch(`/api/research/${runId}?after=0`);
+    const res = await fetch(`/api/research/${runId}?after=${cursor.current}`);
     if (!res.ok) {
       // Only a definitive "this run is not yours / does not exist" marks the
       // hook failed. A blip on a poll is retried by the next tick, and turning
@@ -95,16 +163,20 @@ export function useResearchRun(runId: string | null) {
       if (res.status === 404 || res.status === 401) setFailed(true);
       return null;
     }
-    const next = (await res.json()) as RunPayload;
-    setPayload(next);
+    const next = absorb((await res.json()) as RunPayload);
     setFailed(false);
     return next;
-  }, [runId]);
+  }, [runId, absorb]);
 
   React.useEffect(() => {
     setPayload(null);
     setNotice(null);
     setFailed(false);
+    // A different run is a different log. Carrying the previous run's events
+    // over would replay them under the new run's goal until its own first page
+    // landed on top of them.
+    seen.current = new Map();
+    cursor.current = 0;
     if (!runId) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -155,7 +227,11 @@ export function useResearchRun(runId: string | null) {
           await load().catch(() => undefined);
           return false;
         }
-        if (data.run) setPayload(data as RunPayload);
+        // The control routes answer with the same full view the GET does, read
+        // from `after: 0` — so it re-sends the head of the log. Absorbing it
+        // rather than assigning it is what keeps the merge idempotent and stops
+        // the cursor walking backwards after a pause or a steer.
+        if (data.run) absorb(data as RunPayload);
         return true;
       } catch {
         setNotice("Juno could not reach the server. Nothing was changed.");
@@ -164,8 +240,17 @@ export function useResearchRun(runId: string | null) {
         setBusy(false);
       }
     },
-    [runId, load]
+    [runId, load, absorb]
   );
 
-  return { payload, run: payload?.run ?? null, failed, busy, notice, post, reload: load };
+  return {
+    payload,
+    run: payload?.run ?? null,
+    events: payload?.events ?? EMPTY_EVENTS,
+    failed,
+    busy,
+    notice,
+    post,
+    reload: load,
+  };
 }

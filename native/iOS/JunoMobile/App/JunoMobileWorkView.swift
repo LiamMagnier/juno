@@ -395,7 +395,7 @@ private struct JunoMobileWorkThread: View {
     let sessionID: String
 
     @State private var isAnswering = false
-    @State private var isInstructing = false
+    @State private var isMessaging = false
     @State private var confirmingStop = false
     @State private var confirmingRetry = false
 
@@ -441,8 +441,8 @@ private struct JunoMobileWorkThread: View {
         .sheet(isPresented: $isAnswering) {
             JunoMobileWorkAnswerSheet(model: model)
         }
-        .sheet(isPresented: $isInstructing) {
-            JunoMobileWorkInstructionSheet(model: model)
+        .sheet(isPresented: $isMessaging) {
+            JunoMobileWorkThreadComposerSheet(model: model)
         }
         .confirmationDialog(
             "Stop this task?", isPresented: $confirmingStop, titleVisibility: .visible
@@ -503,17 +503,35 @@ private struct JunoMobileWorkThread: View {
                 // — shared with the Mac, mirroring the web's own rule — so
                 // asking it here rather than re-deriving "is there a question"
                 // locally is what keeps the answer path exactly as it was while
-                // the instruction path appears beside it.
+                // the other paths appear beside it.
                 //
                 // A `.closed` task draws nothing. The header above already
                 // carries the status sentence, and a second card repeating it
                 // would push the run's actual progress further down the scroll.
+                //
+                // **This switch is written out case by case rather than folded
+                // into `if let intent = …`, and that is the point.** It shipped
+                // once covering only three of the five cases, which meant a
+                // phone that could not start or restart a task the Mac started
+                // happily — and nothing caught it until the enum grew a case
+                // and the compiler refused the switch. Exhaustiveness here is
+                // the tripwire; an `else` branch would disarm it.
                 if isFollowing {
                     switch model.composerMode {
                     case .answer(let question):
                         JunoMobileWorkQuestionCard(question: question) { isAnswering = true }
                     case .instruction:
-                        JunoMobileWorkInstructionCard(model: model) { isInstructing = true }
+                        JunoMobileWorkThreadComposerCard(model: model, intent: .instruct) {
+                            isMessaging = true
+                        }
+                    case .start:
+                        JunoMobileWorkThreadComposerCard(model: model, intent: .start) {
+                            isMessaging = true
+                        }
+                    case .restart:
+                        JunoMobileWorkThreadComposerCard(model: model, intent: .restart) {
+                            isMessaging = true
+                        }
                     case .closed:
                         EmptyView()
                     }
@@ -1205,40 +1223,112 @@ private struct JunoMobileWorkAnswerSheet: View {
     }
 }
 
-/// Saying something to a run that has not asked anything.
+/// The three things a message to this task can be, when it is not an answer.
+///
+/// A separate type from ``NativeWorkModel/ComposerMode`` on purpose. That enum
+/// has five cases and two of them — a standing question, and a task with
+/// nowhere for words to go — are the other card and no card at all, so a view
+/// switching over all five would need copy for two arms that can never draw.
+/// Mapping once, here, is also what keeps the card and the sheet agreeing about
+/// which of the three they are in.
+private enum JunoMobileWorkComposeIntent {
+    /// The run is going: this is something to take into account.
+    case instruct
+    /// No attempt yet: this message starts one.
+    case start
+    /// The last attempt is terminal: this message starts a fresh one.
+    case restart
+
+    init?(_ mode: NativeWorkModel.ComposerMode) {
+        switch mode {
+        case .instruction: self = .instruct
+        case .start: self = .start
+        case .restart: self = .restart
+        case .answer, .closed: return nil
+        }
+    }
+}
+
+/// Saying something to a run that has not asked anything — including the first
+/// something, on a task that has not run yet.
 ///
 /// The twin of ``JunoMobileWorkQuestionCard``, in the same slot and the same
 /// shape, for the same reason it defers to a sheet: a text field partway down a
 /// scrolling thread fights the keyboard for the words being typed into it.
 ///
+/// The copy is the Mac's, sentence for sentence — `DesktopWorkThreadComposer`
+/// gives `.start` "your message starts this task" and `.restart` "this attempt
+/// is over · your message starts a new one", and a phone that described the
+/// same two states differently would make the pair read as different features.
+///
+/// `.restart` is deliberately *not* the menu's "Try again as a new task", and
+/// both are offered on a finished task on purpose. That item composes a second
+/// task with the same goal and leaves this one alone; this starts a fresh
+/// attempt on the task being read, carrying a message into it. They are the two
+/// different things a reader means by "again", and the wording of each says
+/// which one it is.
+///
 /// The line under the button is the server's sentence about the last
 /// instruction, never this screen's. The route writes one for each outcome and
 /// the web shows the same one; a local "Sent" here would mean an instruction
 /// queued at a Mac that is no longer paired read as a success on the phone and
-/// as a warning in the browser, for the identical event.
-private struct JunoMobileWorkInstructionCard: View {
+/// as a warning in the browser, for the identical event. It is drawn in all
+/// three intents because the model clears it when the open task changes, so on
+/// a restart it is this task's own last word and not the previous reader's.
+private struct JunoMobileWorkThreadComposerCard: View {
     let model: NativeWorkModel
+    let intent: JunoMobileWorkComposeIntent
     let compose: () -> Void
+
+    private var sentence: String {
+        switch intent {
+        case .instruct: "Juno is working. You can add something for it to take into account."
+        case .start: "This task has not started yet. Your message starts it, and Juno reads it before its first step."
+        case .restart: "This attempt is over. Your message starts a new one on this same task."
+        }
+    }
+
+    private var symbol: String {
+        switch intent {
+        case .instruct: "text.bubble"
+        case .start: "play.circle"
+        case .restart: "arrow.counterclockwise.circle"
+        }
+    }
+
+    private var actionTitle: String {
+        switch intent {
+        case .instruct: "Say something"
+        case .start: "Start this task"
+        case .restart: "Start it again"
+        }
+    }
 
     var body: some View {
         JunoCard {
             VStack(alignment: .leading, spacing: 12) {
                 Label {
-                    Text("Juno is working. You can add something for it to take into account.")
+                    Text(sentence)
                         .font(.callout)
                         .fixedSize(horizontal: false, vertical: true)
                 } icon: {
-                    Image(systemName: "text.bubble")
+                    Image(systemName: symbol)
                         .foregroundStyle(Color.junoAccent)
                 }
 
                 Button(action: compose) {
-                    Text("Say something")
+                    Text(actionTitle)
                         .fontWeight(.semibold)
                         .frame(maxWidth: .infinity)
                 }
                 .junoProminentAction()
                 .controlSize(.large)
+                // The identifiers stay on the instruction spelling across all
+                // three intents, exactly as the Mac reuses
+                // `juno.work.instruction.send` for everything that is not an
+                // answer. One name for one slot survives the next state being
+                // added to it; three names would leave a test asserting on a
+                // control that is correct but differently spelled today.
                 .accessibilityIdentifier("juno.mobile.work.instruct")
 
                 if let outcome = model.lastInstructionOutcome {
@@ -1260,53 +1350,94 @@ private struct JunoMobileWorkInstructionCard: View {
     }
 }
 
-/// Typing the instruction, with the keyboard up and nothing else on screen.
+/// Typing the message, with the keyboard up and nothing else on screen.
 ///
-/// Whether the task can still be told anything is read from the model on every
-/// redraw rather than captured when the sheet opens, exactly as the answer sheet
-/// reads the question. A run can stop and ask something while this sheet is
-/// open — from the phone's point of view a question simply arrives on the stream
-/// — and a sheet holding its own copy of "this run is going" would send an
-/// instruction the route refuses, leaving the run stopped and the reader told
-/// nothing useful about why.
-private struct JunoMobileWorkInstructionSheet: View {
+/// Which of the three the message is — an instruction, a first start, a fresh
+/// attempt — is read from the model on every redraw rather than captured when
+/// the sheet opens, exactly as the answer sheet reads the question. A run can
+/// stop and ask something while this sheet is open, and it can also *finish*
+/// while it is open; from the phone's point of view either simply arrives on
+/// the stream. A sheet holding its own copy of "this run is going" would send
+/// through the path the model has just closed, and both guards
+/// (``NativeWorkModel/sendInstruction(_:)`` and
+/// ``NativeWorkModel/startOpenRun(carrying:)`` each check `composerMode`
+/// themselves) would drop the words on the floor with nothing on screen to say
+/// why.
+private struct JunoMobileWorkThreadComposerSheet: View {
     let model: NativeWorkModel
 
     @Environment(\.dismiss) private var dismiss
     @State private var draft = ""
     @FocusState private var focused: Bool
 
-    private var isOpen: Bool { model.composerMode == .instruction }
+    private var intent: JunoMobileWorkComposeIntent? {
+        JunoMobileWorkComposeIntent(model.composerMode)
+    }
 
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isMutating
     }
 
+    private var title: String {
+        switch intent {
+        case .instruct, .none: "Add an instruction"
+        case .start: "Start this task"
+        case .restart: "Start it again"
+        }
+    }
+
+    private var sendTitle: String {
+        switch intent {
+        case .instruct, .none: "Send"
+        case .start, .restart: "Start"
+        }
+    }
+
+    private var lead: String {
+        switch intent {
+        case .instruct, .none:
+            "Juno reads this before its next step. It does not undo what it has already done."
+        case .start:
+            "Juno reads this before its first step, then works until it is done or it needs you."
+        case .restart:
+            "Juno starts a new attempt on this task and reads this before its first step. "
+                + "Everything the last attempt did stays as it is."
+        }
+    }
+
+    private var placeholder: String {
+        switch intent {
+        case .instruct, .none: "What should Juno take into account?"
+        case .start: "What should Juno do first?"
+        case .restart: "What should Juno do differently this time?"
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Group {
-                if isOpen {
+                if intent != nil {
                     field
                 } else {
                     ContentUnavailableView {
                         Label("Juno has stopped", systemImage: "questionmark.bubble")
                     } description: {
                         Text(
-                            "This task is waiting on you or has finished, so an instruction has "
-                                + "nowhere to go. Close this to see what it needs."
+                            "This task is waiting on your answer, or it is closed, so a message "
+                                + "has nowhere to go. Close this to see what it needs."
                         )
                     }
                 }
             }
-            .navigationTitle("Add an instruction")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Send") { send() }
-                        .disabled(!canSend || !isOpen)
+                    Button(sendTitle) { send() }
+                        .disabled(!canSend || intent == nil)
                         .accessibilityIdentifier("juno.mobile.work.instruct-send")
                 }
             }
@@ -1319,12 +1450,12 @@ private struct JunoMobileWorkInstructionSheet: View {
 
     private var field: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Juno reads this before its next step. It does not undo what it has already done.")
+            Text(lead)
                 .font(.callout)
                 .junoSecondaryInk()
                 .fixedSize(horizontal: false, vertical: true)
 
-            TextField("What should Juno take into account?", text: $draft, axis: .vertical)
+            TextField(placeholder, text: $draft, axis: .vertical)
                 .lineLimit(3...8)
                 .padding(12)
                 .background(
@@ -1341,15 +1472,25 @@ private struct JunoMobileWorkInstructionSheet: View {
     }
 
     private func send() {
-        guard canSend else { return }
+        guard canSend, let intent else { return }
         let text = draft
         // Dismissed before the round trip rather than after it, so a slow relay
         // cannot be sent twice by an impatient second tap. The outcome lands on
         // the card behind this sheet, which is where it stays put long enough to
         // be read — a sentence shown inside a sheet that is closing is a
         // sentence nobody reads.
+        //
+        // A start is two requests, not one, and the model owns both: it creates
+        // the attempt under a held idempotency key and then puts this message
+        // into it through the same instruction route. Doing that here would mean
+        // a lost response could fork the task into two attempts.
         dismiss()
-        Task { await model.sendInstruction(text) }
+        Task {
+            switch intent {
+            case .instruct: await model.sendInstruction(text)
+            case .start, .restart: await model.startOpenRun(carrying: text)
+            }
+        }
     }
 }
 

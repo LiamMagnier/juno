@@ -125,6 +125,8 @@ export function SourceFavicon({
           loaded && "opacity-0"
         )}
       >
+        {/* Raw `Globe`: the favicon fallback for a site. `ComposerIcons.web`
+            names the web-SEARCH tool, which is not what a source chip is. */}
         {letter ?? <Globe className={v.icon} />}
       </span>
       {src && (

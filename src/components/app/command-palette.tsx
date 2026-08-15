@@ -6,21 +6,18 @@ import { useTheme } from "next-themes";
 import {
   BookOpen,
   Columns2,
-  FileText,
   Keyboard,
   Map as MapIcon,
   MessageSquare,
   MessageSquareText,
   Moon,
   NotebookPen,
-  Search,
-  Settings,
   Zap,
   Sun,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useApp } from "@/components/app/app-provider";
-import { ActionIcons, AppIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, CodeIcons } from "@/lib/app-icons";
 import {
   SEARCH_TYPE_LABELS,
   SEARCH_WINDOWS,
@@ -247,7 +244,7 @@ function PaletteShell({
         {/* Search — the palette's one input, given real presence (52px) rather
             than the density of a list row. */}
         <div className="flex items-center gap-3 border-b border-border px-4">
-          <Search className="size-4.5 shrink-0 text-muted-foreground" />
+          <AppIcons.search className="size-4.5 shrink-0 text-muted-foreground" />
           <input
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
@@ -441,7 +438,7 @@ const SEARCH_TYPE_ICONS: Record<SearchType, React.ComponentType<{ className?: st
   conversation: MessageSquare,
   message: MessageSquareText,
   project: AppIcons.projects,
-  file: FileText,
+  file: CodeIcons.file,
   knowledge: BookOpen,
   artifact: AppIcons.artifacts,
   memory: NotebookPen,
@@ -992,7 +989,7 @@ function CommandMenu() {
         id: "see-all-chats",
         group: "Recents",
         label: "Search everything",
-        icon: Search,
+        icon: AppIcons.search,
         run: () => {
           setOpen(false);
           window.dispatchEvent(new CustomEvent("juno:search"));
@@ -1013,8 +1010,10 @@ function CommandMenu() {
       { id: "tasks", group: "Actions", label: "Tasks", icon: AppIcons.tasks, keywords: "scheduled recurring automation", run: () => go("/tasks") },
       { id: "compare", group: "Actions", label: "Compare models", icon: Columns2, keywords: "side by side race versus models", run: () => go("/compare") },
       { id: "memory", group: "Actions", label: "Memory", icon: NotebookPen, keywords: "remember facts", run: () => go("/memory") },
-      { id: "settings", group: "Actions", label: "Settings", icon: Settings, keywords: "preferences account theme", run: () => go("/settings") },
+      { id: "settings", group: "Actions", label: "Settings", icon: AppIcons.settings, keywords: "preferences account theme", run: () => go("/settings") },
       { id: "roadmap", group: "Actions", label: "Roadmap & feature requests", icon: MapIcon, keywords: "feedback vote ideas", run: () => go("/roadmap") },
+      // Raw `Zap`, not `AppIcons.work`: this bolt is billing, and the Work row
+      // three lines up is the destination that mark belongs to.
       { id: "upgrade", group: "Actions", label: "Plans & upgrade", icon: Zap, keywords: "billing pro max pricing", run: () => go("/upgrade") },
       {
         id: "theme",

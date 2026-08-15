@@ -6,7 +6,7 @@ import { estimateGenerationCostUsd } from "@/lib/pricing";
 import { truncate } from "@/lib/utils";
 import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@/lib/untrusted-content";
 import type { ModelInfo } from "@/lib/models";
-import type { ResearchDeps, ResearchHit, ResearchSourceRow } from "@/lib/research/engine";
+import { SNAPSHOT_CHARS, type ResearchDeps, type ResearchHit, type ResearchSourceRow } from "@/lib/research/engine";
 import type { ResearchPlan } from "@/lib/research/domain";
 
 /**
@@ -39,6 +39,19 @@ const FETCH_TIMEOUT_MS = 25_000;
 const RESULTS_PER_QUERY = 18;
 /** Queries the planner may draft up front. The engine's own ceiling is MAX_PLAN_QUERIES. */
 const PLANNED_QUERIES = 14;
+/** Queries one coverage-gap expansion may return. Slots are the engine's to allocate. */
+const EXPANDED_QUERIES = 8;
+/**
+ * How much of a page the fetcher hands back.
+ *
+ * Larger than SNAPSHOT_CHARS on purpose: the extractor now strips page chrome
+ * and prefers an `<article>`/`<main>` region, and that work needs headroom to
+ * be worth anything. What the run STORES, and therefore what synthesis reads,
+ * is SNAPSHOT_CHARS — imported rather than redeclared, because a storage cap
+ * and a prompt cap that quietly disagree is how half of every document ended up
+ * being thrown away with the corpus builder still slicing at a number nothing
+ * ever reached.
+ */
 const PAGE_CONTENT_CHARS = 16_000;
 const REVISION_REPORT_CHARS = 48_000;
 
@@ -249,7 +262,7 @@ export const planResearchQueries: ResearchDeps["plan"] = async ({
   };
 };
 
-import { executeMultiEngineSearch, extractUrlContent, isSearchEngineAvailable } from "@/lib/search/search-engine";
+import { extractUrlDocument, isSearchEngineAvailable, searchWithEngineReport } from "@/lib/search/search-engine";
 
 /** True when a search engine is available. */
 export function researchSearchConfigured(): boolean {
@@ -257,19 +270,24 @@ export function researchSearchConfigured(): boolean {
 }
 
 /**
- * SEARCH — Multi-engine search pipeline (Brave, Serper, Exa, DuckDuckGo).
+ * SEARCH — the multi-engine fan-out, with an account of which engines answered.
+ *
+ * The `engines` roster is not decoration. Every provider used to fail silently,
+ * so a revoked Brave key and a healthy-but-quiet Brave were indistinguishable
+ * from inside a run, and the only symptom either produced was a thinner report.
+ * Passing it up means `query_issued` can carry it and the timeline can show it.
  */
 export const searchTheWeb: ResearchDeps["search"] = async ({ query, signal }) => {
   if (!query.trim()) return { hits: [], costMicroUsd: 0 };
   const box = timeboxSignal(signal, SEARCH_TIMEOUT_MS);
   try {
-    const rawHits = await executeMultiEngineSearch({
+    const { results, engines, providers } = await searchWithEngineReport({
       query: query.slice(0, 400),
       count: RESULTS_PER_QUERY,
       signal: box.signal,
     });
 
-    const hits: ResearchHit[] = rawHits.map((r) => ({
+    const hits: ResearchHit[] = results.map((r) => ({
       url: r.url,
       title: r.title,
       snippet: r.snippet.slice(0, 800),
@@ -277,7 +295,17 @@ export const searchTheWeb: ResearchDeps["search"] = async ({ query, signal }) =>
       publishedAt: r.publishedAt,
     }));
 
-    return { hits, costMicroUsd: 1000 };
+    return {
+      hits,
+      costMicroUsd: 1000,
+      engines,
+      providers: {
+        keyed: providers.keyed,
+        keyless: providers.keyless,
+        selfHostedSearxng: providers.selfHostedSearxng,
+        hasGoodIndex: providers.hasGoodIndex,
+      },
+    };
   } catch (e) {
     if (!box.signal.aborted) console.error("[research] multi-engine search error", e);
     return { hits: [], costMicroUsd: 0 };
@@ -287,18 +315,32 @@ export const searchTheWeb: ResearchDeps["search"] = async ({ query, signal }) =>
 };
 
 /**
- * FETCH — Universal direct extractor with fallback to multi-engine extractors.
+ * FETCH — the universal extractor, including why a page produced no text.
+ *
+ * A bare null meant the engine could only skip in silence, which mattered most
+ * for exactly the documents the planner is prompted to chase: `application/pdf`
+ * fails the content-type gate, so specs, papers and government reports were
+ * dropped without a trace. The reason travels back so the run can say so.
  */
 export const fetchResearchPage: ResearchDeps["fetchPage"] = async ({ url, signal }) => {
   if (!url) return null;
   const box = timeboxSignal(signal, FETCH_TIMEOUT_MS);
   try {
-    const extracted = await extractUrlContent(url, box.signal);
-    if (!extracted || !extracted.text) return null;
+    const outcome = await extractUrlDocument(url, box.signal);
+    if (!outcome.ok) {
+      const failure = outcome.failure;
+      return {
+        skipped: failure.reason,
+        ...(failure.reason === "unsupported_content_type" ? { detail: failure.contentType } : {}),
+        ...(failure.reason === "http_error" ? { detail: String(failure.httpStatus) } : {}),
+      };
+    }
+    if (!outcome.page.text) return null;
     return {
-      title: (extracted.title || url).slice(0, 300),
-      text: extracted.text.slice(0, PAGE_CONTENT_CHARS),
+      title: (outcome.page.title || url).slice(0, 300),
+      text: outcome.page.text.slice(0, PAGE_CONTENT_CHARS),
       costMicroUsd: 500,
+      links: outcome.page.links,
     };
   } catch (e) {
     if (!box.signal.aborted) console.error("[research] fetch page extract error", e);
@@ -306,6 +348,64 @@ export const fetchResearchPage: ResearchDeps["fetchPage"] = async ({ url, signal
   } finally {
     box.release();
   }
+};
+
+/**
+ * EXPAND — new queries for the gaps the coverage matrix found.
+ *
+ * The engine's own fallback is a string template: the objective's question with
+ * "primary source evidence" glued on. That is a paraphrase of the query that
+ * produced the gap, and a paraphrase hits the same index entries — which is why
+ * a follow-up round so often came back with the pages the first round already
+ * had. Naming the already-issued queries in the prompt is the part that does
+ * the work; without it the model writes the same paraphrase the template does.
+ *
+ * Never throws, and returns nothing on failure so the templates still apply.
+ */
+const EXPANSION_SYSTEM = `You write web search queries that close a specific gap in a research corpus.
+
+You will be given a research goal, the questions the corpus has FAILED to answer, and the queries that have already been run. The already-run queries did not find the evidence — so do not paraphrase them.
+
+For each unmet question, write one query that attacks it from a different direction: name the specific institution, dataset, standard, filing, registry, court, journal or trade publication that would hold the answer; use the vocabulary that field would use rather than the vocabulary of the request; or search for the artefact (a report title, a docket number, a table) instead of the topic.
+
+Reply with ONLY the queries, one per line — no numbering, no bullets, no commentary. Each line must be a self-contained web search query. Write at most one line per unmet question.`;
+
+export const expandResearchQueries: NonNullable<ResearchDeps["expandQueries"]> = async ({
+  userId,
+  goal,
+  gaps,
+  alreadyIssued,
+  limit,
+  signal,
+}) => {
+  const planner = researchPlannerModel();
+  if (!planner || gaps.length === 0 || limit <= 0) return { queries: [], costMicroUsd: 0 };
+
+  const prompt = [
+    `Research goal: ${truncate(goal, 600)}`,
+    "",
+    "Questions the corpus has failed to answer:",
+    ...gaps.slice(0, EXPANDED_QUERIES).map((gap) => `- (${gap.status}) ${gap.question}${gap.missingReason ? ` — ${gap.missingReason}` : ""}`),
+    "",
+    "Queries already run, which did NOT find it:",
+    ...alreadyIssued.slice(0, 40).map((query) => `- ${query}`),
+  ].join("\n");
+
+  const expanded = await utilityCompletion({
+    userId,
+    model: planner,
+    system: EXPANSION_SYSTEM,
+    prompt: prompt.slice(0, 6_000),
+    maxTokens: 512,
+    timeoutMs: PLAN_TIMEOUT_MS,
+    signal,
+    label: "expand",
+  });
+
+  return {
+    queries: parsePlanLines(expanded.text, Math.min(limit, EXPANDED_QUERIES)),
+    costMicroUsd: expanded.costMicroUsd,
+  };
 };
 
 /**
@@ -333,7 +433,10 @@ export function buildResearchCorpus(
   const corpus = sources
     .map((source, i) => {
       const title = source.title.replace(/\s+/g, " ").slice(0, 200);
-      const body = (source.snapshot ?? "").slice(0, PAGE_CONTENT_CHARS);
+      // SNAPSHOT_CHARS, not PAGE_CONTENT_CHARS: the stored snapshot is already
+      // capped at the former, so slicing at the latter was a no-op pretending
+      // to be a limit.
+      const body = (source.snapshot ?? "").slice(0, SNAPSHOT_CHARS);
       return `[${i + 1}] ${title}\n${source.url}\n${wrapUntrusted(source.url, body)}`;
     })
     .join("\n\n");

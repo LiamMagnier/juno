@@ -11,9 +11,7 @@ import {
   NotebookPen,
   ChevronDown,
   Cpu,
-  FileText,
   FileUp,
-  Globe,
   GraduationCap,
   LayoutTemplate,
   Loader2,
@@ -26,12 +24,11 @@ import {
   Square,
   SquareDashedMousePointer,
   SquarePen,
-  Telescope,
   TextQuote,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
-import { ActionIcons, AppIcons, StatusIcons } from "@/lib/app-icons";
+import { ActionIcons, AppIcons, CodeIcons, ComposerIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -788,7 +785,7 @@ export function Composer({
         label: "/search",
         hint: "Let Juno search the web",
         group: "tools",
-        icon: Globe,
+        icon: ComposerIcons.web,
         on: webSearchEnabled,
         run: () => onToggleWebSearch?.(!webSearchEnabled),
       },
@@ -800,7 +797,7 @@ export function Composer({
               label: "/research",
               hint: "Deep-research the next message",
               group: "tools" as const,
-              icon: Telescope,
+              icon: ComposerIcons.research,
               on: research,
               run: () => setResearch((v) => !v),
             },
@@ -824,7 +821,7 @@ export function Composer({
         label: "@search",
         hint: "Search the web",
         group: "tools",
-        icon: Globe,
+        icon: ComposerIcons.web,
         on: canWebSearch ? webSearchEnabled : undefined,
         note: canWebSearch ? undefined : modality === "chat" ? "not on this model" : "chat only",
         run: canWebSearch
@@ -839,7 +836,7 @@ export function Composer({
               label: "@research",
               hint: "Deep-research the next message",
               group: "tools" as const,
-              icon: Telescope,
+              icon: ComposerIcons.research,
               on: planAllowsResearch ? research : undefined,
               note: planAllowsResearch ? undefined : "paid plan",
               run: planAllowsResearch
@@ -1323,7 +1320,7 @@ export function Composer({
       }}
     >
       <div className="flex min-w-0 flex-1 items-center">
-        <Telescope className="size-4 text-muted-foreground mr-2.5 shrink-0" />
+        <ComposerIcons.research className="size-4 text-muted-foreground mr-2.5 shrink-0" />
         <span className="truncate font-medium">Deep research</span>
       </div>
       {planAllowsResearch ? (
@@ -1534,7 +1531,7 @@ export function Composer({
                     {u.attachment?.kind === "IMAGE" ? (
                       <Image src={u.attachment.url} unoptimized={requiresViewerCredentials(u.attachment.url)} alt={u.fileName} width={32} height={32} className="size-8 rounded-xs object-cover" />
                     ) : (
-                      <FileText className="size-5 text-muted-foreground" />
+                      <CodeIcons.file className="size-5 text-muted-foreground" />
                     )}
                     <div className="max-w-[140px]">
                       <p className="truncate text-ui font-medium">{u.fileName}</p>
@@ -1934,7 +1931,7 @@ export function Composer({
                       className="flex h-9 items-center justify-between gap-2 rounded-menu px-2.5 cursor-pointer text-xs"
                     >
                       <div className="flex min-w-0 flex-1 items-center">
-                        <Globe className="size-4 text-muted-foreground mr-2.5 shrink-0" />
+                        <ComposerIcons.web className="size-4 text-muted-foreground mr-2.5 shrink-0" />
                         <span className="truncate font-medium">Web search</span>
                       </div>
                       {canWebSearch ? (
@@ -2054,6 +2051,9 @@ export function Composer({
                         <DropdownMenuSubContent className="w-64 p-1 rounded-card shadow-2xl">
                           <div className="border-b border-border/60 p-1.5">
                             <label className="relative block">
+                              {/* Raw `Search`: this filters the connector list in
+                                  place. `AppIcons.search` is the app's search
+                                  destination, which this never opens. */}
                               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                               <input
                                 value={connectorQuery}

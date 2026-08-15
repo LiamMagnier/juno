@@ -57,6 +57,9 @@ const INSPECTABLE_LANG = new Set(["html", "tsx", "jsx", "svg", "css"]);
 
 type OfficeFormat = "docx" | "xlsx" | "pptx";
 
+// `FileText` stays raw: it is the Word member of a three-mark office-format
+// set, and its two peers have no registry entry. `CodeIcons.file` means "this
+// thing is a file", which is not what a choice of export format is.
 const OFFICE_FORMATS: Record<OfficeFormat, { label: string; icon: LucideIcon }> = {
   docx: { label: "Word document (.docx)", icon: FileText },
   xlsx: { label: "Excel workbook (.xlsx)", icon: FileSpreadsheet },

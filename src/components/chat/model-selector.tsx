@@ -7,7 +7,6 @@ import {
   ChevronDown,
   Clock,
   Eye,
-  Globe,
   Image as ImageIcon,
   LayoutGrid,
   Lock,
@@ -16,7 +15,7 @@ import {
   Video,
   Zap,
 } from "lucide-react";
-import { StatusIcons } from "@/lib/app-icons";
+import { ComposerIcons, StatusIcons } from "@/lib/app-icons";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { ScrollFade } from "@/components/ui/scroll-fade";
@@ -233,7 +232,8 @@ function ModelDetailPanel({
             <div className="flex flex-wrap gap-1">
               {model.vision && <CapabilityChip icon={Eye} label="Vision" />}
               {model.reasoning && <CapabilityChip icon={Brain} label="Thinking" />}
-              {model.webSearch && <CapabilityChip icon={Globe} label="Search" />}
+              {model.webSearch && <CapabilityChip icon={ComposerIcons.web} label="Search" />}
+              {/* Raw `Zap`. This bolt is SPEED, not the Juno Work destination. */}
               {isFastModel(model) && <CapabilityChip icon={Zap} label="Fast" />}
             </div>
           )}
@@ -460,7 +460,7 @@ export function ModelSelector({
               {m.modality === "video" && <RowChip icon={Video} label="Video" tint />}
               {m.reasoning && <RowChip icon={Brain} label="Thinking" />}
               {m.vision && <RowChip icon={Eye} label="Vision" />}
-              {m.webSearch && <RowChip icon={Globe} label="Search" />}
+              {m.webSearch && <RowChip icon={ComposerIcons.web} label="Search" />}
               {isFastModel(m) && <RowChip icon={Zap} label="Fast" />}
             </div>
             {soon ? (
@@ -553,6 +553,8 @@ export function ModelSelector({
             {/* List */}
             <div className="flex min-w-0 flex-1 flex-col bg-background/50">
               <div className="relative border-b border-border/50 p-2">
+                {/* Raw `Search`: this narrows the model list in place, it does
+                    not open `AppIcons.search`'s destination. */}
                 <Search className="pointer-events-none absolute left-4 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={query}

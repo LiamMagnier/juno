@@ -16,7 +16,8 @@
  */
 
 import * as React from "react";
-import { ArrowUp, Loader2, X } from "lucide-react";
+import { ArrowUp, Loader2 } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { requestDesignEdit, DesignEditRequestError, type DesignEditProposal } from "@/components/design/design-edit-transport";
 import type { DesignEditorHandle } from "@/components/design/design-editor";
@@ -148,7 +149,7 @@ export const AskJunoBar = React.forwardRef<AskJunoBarHandle, Props>(function Ask
             )}
           >
             <span className="truncate">{scopeToSelection ? scopeLabel : "Whole design"}</span>
-            {scopeToSelection && <X className="size-2.5 shrink-0" aria-hidden />}
+            {scopeToSelection && <ActionIcons.dismiss className="size-2.5 shrink-0" aria-hidden />}
           </button>
         )}
 

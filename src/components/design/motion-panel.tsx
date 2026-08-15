@@ -29,8 +29,8 @@
  */
 
 import * as React from "react";
-import { Pause, Play, Plus, Repeat, SkipBack, X } from "lucide-react";
-import { ActionIcons } from "@/lib/app-icons";
+import { EyeOff, Pause, Play, Plus, Repeat, SkipBack, X } from "lucide-react";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import {
   ANIMATABLE_PROPERTIES,
   animationSpanMs,
@@ -459,7 +459,7 @@ export function MotionPanel({
           aria-label="Close the timeline"
           className="pressable rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
         >
-          <X className="size-3.5" aria-hidden />
+          <ActionIcons.dismiss className="size-3.5" aria-hidden />
         </button>
       </div>
 
@@ -525,14 +525,28 @@ export function MotionPanel({
                       </span>
                       <span className="pl-1 font-mono text-micro text-muted-foreground">{info.label}</span>
                     </button>
+                    {/* Two status marks, drawn rather than typed. They were a
+                        bare "○" and "!" in the mono face — glyphs borrowed from
+                        text to stand in for icons, which is the one place this
+                        panel still read as a terminal. The titles already carry
+                        the whole explanation, so the mark only has to say WHICH
+                        kind of thing it is: not shown here, versus wrong. */}
                     {!info.previewed && (
-                      <span title="Authored here, drawn in the HTML prototype — the SVG canvas does not draw blur." className="shrink-0 font-mono text-micro text-muted-foreground">
-                        ○
+                      <span
+                        title="Authored here, drawn in the HTML prototype — the SVG canvas does not draw blur."
+                        className="shrink-0 text-muted-foreground"
+                      >
+                        <EyeOff className="size-3" aria-hidden />
+                        <span className="sr-only">Not previewed on the canvas</span>
                       </span>
                     )}
                     {node && !applies && (
-                      <span title={`This layer has no ${info.requires === "text" ? "text" : info.requires} to animate.`} className="shrink-0 font-mono text-micro text-warning-foreground">
-                        !
+                      <span
+                        title={`This layer has no ${info.requires === "text" ? "text" : info.requires} to animate.`}
+                        className="shrink-0 text-warning-foreground"
+                      >
+                        <StatusIcons.warning className="size-3" aria-hidden />
+                        <span className="sr-only">Does not apply to this layer</span>
                       </span>
                     )}
                     <button
@@ -551,6 +565,10 @@ export function MotionPanel({
                       aria-label={`Remove the ${info.label} track`}
                       className="pressable shrink-0 rounded-sm p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
                     >
+                      {/* Raw `X`. This destroys a track, so by the registry it
+                          should be `ActionIcons.delete` ("never a bare X") — but
+                          that swaps the drawing for a trash can, which is a
+                          design call rather than part of this migration. */}
                       <X className="size-3" aria-hidden />
                     </button>
                   </div>

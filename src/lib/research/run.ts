@@ -28,7 +28,13 @@ import {
   type ResearchState,
   type ResearchTerminalState,
 } from "@/lib/research/domain";
-import { fetchResearchPage, planResearchQueries, searchTheWeb, writeResearchReport } from "@/lib/research/tools";
+import {
+  expandResearchQueries,
+  fetchResearchPage,
+  planResearchQueries,
+  searchTheWeb,
+  writeResearchReport,
+} from "@/lib/research/tools";
 import { recordCitationAudit } from "@/lib/research/claims";
 
 /**
@@ -468,6 +474,7 @@ export function researchEngine(): ResearchEngine {
     plan: planResearchQueries,
     search: searchTheWeb,
     fetchPage: fetchResearchPage,
+    expandQueries: expandResearchQueries,
     synthesize: writeResearchReport,
     validateReport: async ({ userId, runId, goal, report, sources }) => {
       const audit = await recordCitationAudit({
@@ -520,6 +527,7 @@ export function gatheringOnlyEngine(): ResearchEngine {
     plan: planResearchQueries,
     search: searchTheWeb,
     fetchPage: fetchResearchPage,
+    expandQueries: expandResearchQueries,
     hash: hashSnapshot,
     now: () => new Date(),
   });

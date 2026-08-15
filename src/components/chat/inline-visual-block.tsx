@@ -180,6 +180,8 @@ function itemsFor(block: VisualBlock): VisualItem[] {
 
 function iconFor(type: VisualKind) {
   if (type === "steps") return ListChecks;
+  // Raw `GitBranch`, not `CodeIcons.branch`: here the glyph is a node graph
+  // standing for a flow, not a repository ref.
   if (type === "flow" || type === "flowchart" || type === "diagram") return GitBranch;
   if (type === "comparison" || type === "table") return Table2;
   if (type === "quiz") return HelpCircle;

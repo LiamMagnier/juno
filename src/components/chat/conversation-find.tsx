@@ -85,6 +85,8 @@ export function ConversationFind({
           field with no fill and no recess at all. `.field-well` already picks
           the right rung per theme (page ground in light, --secondary in dark). */}
       <div className="flex min-w-0 flex-1 items-center gap-2 rounded-field border border-input px-3 py-1.5 field-well transition-[border-color,box-shadow] duration-base ease-out-soft focus-within:border-foreground/70 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background motion-reduce:transition-none">
+        {/* Raw `Search`: find-in-conversation. `AppIcons.search` is the app's
+            search destination, and this field never leaves the thread. */}
         <Search className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
         <input
           ref={inputRef}

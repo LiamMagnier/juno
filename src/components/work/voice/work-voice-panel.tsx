@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { RefreshCw } from "lucide-react";
+import { ActionIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/components/app/app-provider";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
@@ -216,7 +216,7 @@ export function WorkVoicePanel({ session, run, events, send, onClose }: WorkVoic
               The task has moved on since Juno was briefed
             </p>
             <Button type="button" variant="outline" size="sm" onClick={catchUp} className="gap-2">
-              <RefreshCw className="size-3.5" aria-hidden="true" />
+              <ActionIcons.refresh className="size-3.5" aria-hidden="true" />
               Bring Juno up to date
             </Button>
           </div>

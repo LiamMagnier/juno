@@ -15,14 +15,13 @@ import { toast } from "sonner";
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
-  Check,
+  AlignHorizontalDistributeCenter,
   Circle,
   Film,
   Frame,
   History,
   Image as ImageIcon,
   Layers,
-  Minus,
   MousePointer2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -36,7 +35,7 @@ import {
   Undo2,
   Zap,
 } from "lucide-react";
-import { ActionIcons } from "@/lib/app-icons";
+import { ActionIcons, StatusIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -47,7 +46,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DesignCanvas, type CanvasTool, type DesignViewportHandle } from "@/components/design/design-canvas";
-import { InspectorPanel } from "@/components/design/inspector-panel";
+import { InspectorPanel, type AlignAxis } from "@/components/design/inspector-panel";
 import { InteractionsPanel } from "@/components/design/interactions-panel";
 import { LayersPanel } from "@/components/design/layers-panel";
 import { MotionPanel, type MotionPreview } from "@/components/design/motion-panel";
@@ -64,6 +63,20 @@ import { buildSelectionContext } from "@/lib/design/selection-context";
 import { isContainer, type DesignDocument, type NodeId } from "@/lib/design/types";
 import type { DesignOperation } from "@/lib/design/operations";
 import { cn } from "@/lib/utils";
+
+/**
+ * The alignment gestures that keep a seat on the toolbar.
+ *
+ * `Distribute horizontally` was drawn with a `Minus` — a horizontal rule, which
+ * is Lucide's mark for a LINE and reads as "insert a divider". Lucide ships the
+ * actual glyph for this, and the icon is the only thing telling these three
+ * apart at 16px.
+ */
+const TOOLBAR_ALIGN = [
+  { axis: "center-x", label: "Align horizontal centres", icon: AlignCenterVertical },
+  { axis: "center-y", label: "Align vertical centres", icon: AlignCenterHorizontal },
+  { axis: "distribute-x", label: "Distribute horizontally · equal spacing", icon: AlignHorizontalDistributeCenter },
+] as const satisfies readonly { axis: AlignAxis; label: string; icon: React.ComponentType<{ className?: string }> }[];
 
 /** What the Export menu offers. `png` is rasterised in the browser from the
  *  SVG the server returns — see `src/lib/design/export.ts` on why the server
@@ -544,35 +557,33 @@ export function DesignEditor({
           <TooltipContent>Redo · ⇧⌘Z</TooltipContent>
         </Tooltip>
 
-        {selection.length > 1 && (
-          <>
-            <span aria-hidden className="mx-1 h-5 w-px bg-border/60" />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon-sm" onClick={() => align("center-x")} aria-label="Align horizontal centres" className="text-muted-foreground hover:text-foreground">
-                  <AlignCenterVertical className="size-4" aria-hidden />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Align horizontal centres</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon-sm" onClick={() => align("center-y")} aria-label="Align vertical centres" className="text-muted-foreground hover:text-foreground">
-                  <AlignCenterHorizontal className="size-4" aria-hidden />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Align vertical centres</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon-sm" onClick={() => align("distribute-x")} aria-label="Distribute horizontally" className="text-muted-foreground hover:text-foreground">
-                  <Minus className="size-4" aria-hidden />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Distribute horizontally · equal spacing</TooltipContent>
-            </Tooltip>
-          </>
-        )}
+        {/* Always mounted, disabled when there is nothing to align.
+            Mounting this cluster on `selection.length > 1` meant every control
+            to its right — Motion, Export, the whole right-hand half of the
+            toolbar — slid sideways the moment a second layer was selected, and
+            slid back when it was deselected. A disabled button is also the only
+            way to *discover* the gesture: a control that is absent until you
+            already know to select two layers teaches nobody.
+            The full eight live in the inspector (`AlignSection`); these three
+            are the ones worth a permanent seat on the toolbar. */}
+        <span aria-hidden className="mx-1 h-5 w-px bg-border/60" />
+        {TOOLBAR_ALIGN.map(({ axis, label, icon: Icon }) => (
+          <Tooltip key={axis}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                disabled={selection.length < (axis === "distribute-x" ? 3 : 2)}
+                onClick={() => align(axis)}
+                aria-label={label}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Icon className="size-4" aria-hidden />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{label}</TooltipContent>
+          </Tooltip>
+        ))}
 
         <div className="flex-1" />
 
@@ -775,13 +786,24 @@ export function DesignEditor({
                   rightPanel === value ? "text-primary" : "text-muted-foreground hover:text-foreground"
                 )}
               >
+                {/* Both raw. These sliders are the layer inspector, which is
+                    neither `ActionIcons.filter` (filtering a list) nor
+                    `ActionIcons.parameters` (a model's knobs); and this bolt is
+                    prototyping — interactivity — not the Juno Work destination. */}
                 {value === "design" ? <SlidersHorizontal className="size-3" aria-hidden /> : <Zap className="size-3" aria-hidden />}
                 {value === "design" ? "Design" : "Prototype"}
               </button>
             ))}
           </div>
           {rightPanel === "design" ? (
-            <InspectorPanel document={visibleDocument} selection={selection} onApply={(operations, summary) => apply(operations, summary)} readOnly={readOnly || !!state.pending} />
+            <InspectorPanel
+              document={visibleDocument}
+              selection={selection}
+              pageId={pageId}
+              onApply={(operations, summary) => apply(operations, summary)}
+              onAlign={align}
+              readOnly={readOnly || !!state.pending}
+            />
           ) : (
             <InteractionsPanel document={visibleDocument} selection={selection} onApply={(operations, summary) => apply(operations, summary)} readOnly={readOnly || !!state.pending} />
           )}
@@ -897,7 +919,7 @@ function ProposalReview({ state, onResolved }: { state: DesignEditorState; onRes
             }}
             className="gap-1.5"
           >
-            <Check className="size-3.5" aria-hidden /> Apply
+            <StatusIcons.success className="size-3.5" aria-hidden /> Apply
           </Button>
         </div>
       </div>

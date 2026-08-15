@@ -1043,3 +1043,70 @@ test("deepening never replaces a usable preview with a shorter body", async () =
   const [source] = await store.listSources(run.id, run.userId);
   assert.equal(source.snapshot?.length, 1_500, "the only usable text this source ever had is kept");
 });
+
+// ---------------------------------------------------------------------------
+// The link hop
+// ---------------------------------------------------------------------------
+
+test("a relevant link in a page this run read becomes a source of its own", async () => {
+  const { store, events } = memoryStore();
+  const engine = createResearchEngine(
+    deps(store, {
+      async plan() {
+        return { queries: ["scope three emissions methodology 2024"], costMicroUsd: 0 };
+      },
+      async search() {
+        return {
+          hits: [{ url: "https://news.example.com/story", title: "A story", snippet: "…" }],
+          costMicroUsd: 0,
+        };
+      },
+      async fetchPage({ url }) {
+        // Only the article carries links; the hop target is a leaf, which is
+        // what proves the hop is one deep rather than a crawl.
+        if (url === "https://news.example.com/story") {
+          return {
+            title: "A story",
+            text: `${"a".repeat(200)}\n\n${"b".repeat(200)}`,
+            costMicroUsd: 0,
+            links: [
+              {
+                href: "https://registry.example.org/scope-three-emissions-methodology-2024",
+                text: "the 2024 scope three emissions methodology",
+              },
+              // Every article has this one. It is same-host and shares no token
+              // with the plan, so it is the control: a hop that picks it up is
+              // following furniture, not evidence.
+              { href: "https://news.example.com/privacy", text: "privacy policy" },
+            ],
+          };
+        }
+        return { title: "Methodology 2024", text: `${"c".repeat(200)}\n\n${"d".repeat(200)}`, costMicroUsd: 0 };
+      },
+    })
+  );
+
+  const run = await started(engine);
+  await engine.drive({ runId: run.id, userId: run.userId });
+
+  const urls = (await store.listSources(run.id, run.userId)).map((source) => source.url);
+  assert.ok(
+    urls.includes("https://registry.example.org/scope-three-emissions-methodology-2024"),
+    `the cited methodology is the whole point of the hop, and it is missing: ${urls.join(", ")}`
+  );
+  assert.ok(
+    !urls.includes("https://news.example.com/privacy"),
+    "a boilerplate link that overlaps the plan on nothing must not be followed"
+  );
+  // `via` is what lets the panel draw the provenance edge; a hop source with no
+  // parent is indistinguishable from a search hit.
+  const found = events.find(
+    (event) =>
+      event.kind === "source_found" &&
+      (event.payload as { url?: string }).url ===
+        "https://registry.example.org/scope-three-emissions-methodology-2024"
+  );
+  assert.ok(found, "the hop must be narrated, not silently widen the source list");
+  assert.equal((found.payload as { hop?: number }).hop, 1);
+  assert.equal((found.payload as { via?: string }).via, "https://news.example.com/story");
+});
