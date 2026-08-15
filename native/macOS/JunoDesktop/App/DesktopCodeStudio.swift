@@ -1548,38 +1548,22 @@ struct DesktopCodeDraftDetail: View {
                 .allowsHitTesting(false)
 
                 VStack(spacing: JunoSpace.roomy) {
-                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                        HStack(spacing: JunoSpace.tight) {
-                            Image(systemName: "sparkles")
-                                .junoFont(size: 11, relativeTo: .caption, weight: .bold)
-                                .foregroundStyle(Color.junoAccent)
-                            Text("Juno Code Studio")
-                                .font(.caption.weight(.semibold))
-                                .junoSecondaryInk()
-                        }
-                        .padding(.horizontal, JunoSpace.snug)
-                        .padding(.vertical, JunoSpace.hairline + 1)
-                        .background(
-                            Color.junoRaised.opacity(0.8),
-                            in: Capsule()
-                        )
-                        .overlay(
-                            Capsule().stroke(Color.junoHairline, lineWidth: 0.5)
-                        )
-
-                        Text(record == nil ? "Build, debug, and automate at warp speed." : "What are we working on?")
-                            .junoFont(size: 26, relativeTo: .title, weight: .bold, design: .rounded)
+                    VStack(alignment: .center, spacing: JunoSpace.tight) {
+                        Text(record == nil ? "What do you want to build?" : "What are we working on?")
+                            .junoFont(size: 28, relativeTo: .title, weight: .semibold, design: .serif)
                             .junoInk()
+                            .multilineTextAlignment(.center)
 
                         Text(
                             record == nil
-                                ? "Full-stack autonomous agent with terminal execution, live reasoning, git integration, and cloud runners."
+                                ? "Autonomous coding tasks in your workspace or on a cloud runner with GitHub review."
                                 : "Describe the outcome. Juno will inspect the repository before it changes anything."
                         )
                             .font(.callout)
                             .junoSecondaryInk()
+                            .multilineTextAlignment(.center)
                     }
-                    .frame(maxWidth: 720, alignment: .leading)
+                    .frame(maxWidth: 680, alignment: .center)
 
                     if trimmedPrompt.isEmpty {
                         launchIntentList
@@ -1599,7 +1583,7 @@ struct DesktopCodeDraftDetail: View {
                         .multilineTextAlignment(.center)
                         .accessibilityHidden(true)
                 }
-                .frame(maxWidth: 800)
+                .frame(maxWidth: 760)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                 .padding(.horizontal, JunoSpace.roomy)
                 .padding(.vertical, JunoSpace.regular)
@@ -1639,61 +1623,38 @@ struct DesktopCodeDraftDetail: View {
     }
 
     private var launchIntentList: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.snug) {
-            Text("Suggested starts")
-                .font(.caption.weight(.semibold))
-                .junoMetaInk()
-
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: JunoSpace.snug),
-                    GridItem(.flexible(), spacing: JunoSpace.snug),
-                ],
-                alignment: .leading,
-                spacing: JunoSpace.snug
-            ) {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: JunoSpace.snug) {
                 ForEach(launchIntents) { intent in
                     Button {
                         apply(intent)
                     } label: {
-                        HStack(spacing: JunoSpace.snug) {
+                        HStack(spacing: JunoSpace.tight) {
                             Image(systemName: intent.icon)
-                                .junoFont(size: 13, relativeTo: .callout, weight: .semibold)
+                                .junoFont(size: 11, relativeTo: .caption, weight: .semibold)
                                 .foregroundStyle(intent.color)
-                                .frame(width: 28, height: 28)
-                                .background(intent.color.opacity(0.14), in: RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous))
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(intent.title)
-                                    .font(.callout.weight(.medium))
-                                    .junoInk()
-                                Text(intent.detail)
-                                    .font(.caption)
-                                    .junoSecondaryInk()
-                                    .lineLimit(1)
-                            }
-
-                            Spacer(minLength: 0)
+                            Text(intent.title)
+                                .font(.caption.weight(.medium))
+                                .junoInk()
                         }
-                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
                         .padding(.horizontal, JunoSpace.cozy)
                         .padding(.vertical, JunoSpace.snug)
                         .background(
                             Color.junoRaised.opacity(0.7),
-                            in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                            in: Capsule()
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                                .stroke(Color.junoHairline.opacity(0.7), lineWidth: 0.5)
+                            Capsule().stroke(Color.junoHairline, lineWidth: 0.5)
                         )
-                        .contentShape(.rect)
+                        .contentShape(Capsule())
                     }
                     .buttonStyle(.junoPress)
                     .accessibilityIdentifier("juno.code.launch-intent.\(intent.id)")
                 }
             }
+            .padding(.horizontal, JunoSpace.hairline)
         }
-        .frame(maxWidth: 720, alignment: .leading)
+        .frame(maxWidth: 720, alignment: .center)
     }
 
     private func apply(_ intent: LaunchIntent) {

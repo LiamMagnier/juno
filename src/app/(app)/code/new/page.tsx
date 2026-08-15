@@ -9,7 +9,6 @@ import {
   ArrowUp,
   ChevronDown,
   Clock,
-  Laptop,
   Loader2,
   Mic,
   Sparkles,
@@ -22,7 +21,6 @@ import { LibraryPicker } from "@/components/chat/library-picker";
 import { ComposerDictation } from "@/components/chat/composer-dictation";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
-import { JunoMark } from "@/components/brand/logo";
 import {
   CodeTargetPicker,
   type CloudRepo,
@@ -35,10 +33,7 @@ import {
   ComposerDropOverlay,
   ComposerFileInputs,
 } from "@/components/code/code-composer-parts";
-import {
-  CodeConnectorsMenu,
-  CodeActiveConnectorsBar,
-} from "@/components/code/code-connectors-menu";
+import { CodeConnectorsMenu } from "@/components/code/code-connectors-menu";
 import { CodePresetsGrid, type CodePreset } from "@/components/code/code-presets";
 import { CodeSurfaceNav } from "@/components/code/code-surface-nav";
 import { CodeVoicePanel, useCodeVoice, type CodeVoiceSend } from "@/components/code/code-voice";
@@ -53,11 +48,9 @@ import { isAutoModelId } from "@/lib/auto-model";
 import {
   clampReasoningEffort,
   defaultReasoning,
-  reasoningGlow,
   reasoningOptions,
   type ReasoningEffort,
 } from "@/lib/model-metrics";
-import { providerAccent } from "@/lib/provider-colors";
 import { setPendingCodePrompt } from "@/lib/code-session-handoff";
 import { cn } from "@/lib/utils";
 import type { ClientAttachment, ClientConversation } from "@/types/chat";
@@ -77,16 +70,11 @@ function CodeGreeting() {
 
   return (
     <div className="flex w-full flex-col items-center text-center">
-      <div className="mb-3.5 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 font-mono text-caption font-medium text-primary">
-        <JunoMark className="size-3.5 text-primary" />
-        <span>Juno Code Agent</span>
-      </div>
-
-      <h1 className="text-center font-serif text-display font-normal tracking-tight text-foreground">
+      <h1 className="text-center font-serif text-3xl font-normal tracking-tight text-foreground sm:text-4xl">
         What are we building today{firstName ? `, ${firstName}` : ""}?
       </h1>
-      <p className="mt-2.5 max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-        Autonomous coding tasks in your Mac&apos;s workspace or on an isolated cloud runner with full GitHub review.
+      <p className="mt-2 max-w-lg text-sm text-muted-foreground">
+        Autonomous coding tasks in your workspace or on an isolated cloud runner with GitHub review.
       </p>
     </div>
   );
@@ -215,23 +203,6 @@ export default function NewCodeSessionPage() {
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [dictating, setDictating] = React.useState(false);
   const canAttach = features.storage;
-
-  // —— Dynamic Aura Glow ——
-  const [auraSending, setAuraSending] = React.useState(false);
-  React.useEffect(() => {
-    if (!auraSending) return;
-    const t = window.setTimeout(() => setAuraSending(false), 1150);
-    return () => window.clearTimeout(t);
-  }, [auraSending]);
-
-  const auraProvider = React.useMemo(() => {
-    if (!modelInfo?.provider) return "hsl(var(--primary))";
-    return providerAccent(modelInfo.provider);
-  }, [modelInfo?.provider]);
-
-  const auraThink = React.useMemo(() => {
-    return reasoningGlow(reasoningEffort);
-  }, [reasoningEffort]);
 
   const { supported: speechSupported } = useSpeechRecognition();
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(null);
@@ -377,7 +348,6 @@ export default function NewCodeSessionPage() {
       if ((!text && attachments.length === 0) || submitting || isUploading) return false;
       if (target === "device" ? !selectedWorkspace : !selectedRepo) return false;
 
-      setAuraSending(true);
       setSubmitting(true);
       setCloudStartError(null);
       try {
@@ -510,43 +480,12 @@ export default function NewCodeSessionPage() {
       </div>
 
       <div className="flex flex-1 flex-col items-center justify-start px-4 py-8 sm:px-6 md:py-12">
-        <div className="relative isolate flex w-full max-w-[44rem] flex-col items-center gap-6 sm:gap-8">
+        <div className="relative flex w-full max-w-[44rem] flex-col items-center gap-6 sm:gap-7">
           <CodeGreeting />
-
-          {/* Execution Environment Status Pill */}
-          <div className="flex flex-wrap items-center justify-center gap-2 text-xs">
-            <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-3 py-1 text-muted-foreground">
-              {target === "device" ? (
-                <>
-                  <Laptop className="size-3.5 text-primary" />
-                  <span>Target: <strong className="text-foreground font-medium">{selectedWorkspace?.name || "Mac Workspace"}</strong></span>
-                </>
-              ) : (
-                <>
-                  <CodeIcons.cloud className="size-3.5 text-primary" />
-                  <span>Target: <strong className="text-foreground font-medium">{selectedRepo?.fullName || "GitHub Cloud Runner"}</strong></span>
-                </>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/40 px-3 py-1 text-muted-foreground">
-              <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Ready for tasks</span>
-            </div>
-          </div>
 
           {/* The Main Composer */}
           <div className="w-full">
-            <div
-              className={cn("composer-aura-host relative w-full", auraSending && "is-sending")}
-              style={
-                {
-                  "--aura-provider": auraProvider,
-                  "--aura-think": auraThink,
-                } as React.CSSProperties
-              }
-            >
-              {!codeVoice.open && <div aria-hidden className="composer-aura" />}
+            <div className="relative w-full">
               {codeVoice.open && (
                 <CodeVoicePanel briefing={voiceBriefing} send={voiceSend} onClose={codeVoice.close} />
               )}
@@ -796,54 +735,45 @@ export default function NewCodeSessionPage() {
                       </>
                     }
                     utility={
-                      <>
-                        <CodeTargetPicker
-                          target={target}
-                          onTargetChange={switchTarget}
-                          selectedWorkspace={selectedWorkspace}
-                          onSelectWorkspace={(w) => {
-                            setSelectedWorkspace(w);
-                            setCloudStartError(null);
-                          }}
-                          selectedRepo={selectedRepo}
-                          onSelectRepo={(r) => {
-                            setSelectedRepo(r);
-                            setBaseRef("");
-                            setCloudStartError(null);
-                            if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
-                          }}
-                          baseRef={baseRef}
-                          onBaseRefChange={setBaseRef}
-                          disabled={submitting}
-                          className="h-7"
-                        />
+                      <div className="flex w-full min-w-0 items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <CodeTargetPicker
+                            target={target}
+                            onTargetChange={switchTarget}
+                            selectedWorkspace={selectedWorkspace}
+                            onSelectWorkspace={(w) => {
+                              setSelectedWorkspace(w);
+                              setCloudStartError(null);
+                            }}
+                            selectedRepo={selectedRepo}
+                            onSelectRepo={(r) => {
+                              setSelectedRepo(r);
+                              setBaseRef("");
+                              setCloudStartError(null);
+                              if (r.fullName !== selectedRepo?.fullName) discardOrphanCloudSession();
+                            }}
+                            baseRef={baseRef}
+                            onBaseRefChange={setBaseRef}
+                            disabled={submitting}
+                            className="h-7"
+                          />
 
-                        {target === "cloud" && selectedRepo && (
-                          <>
-                            <span className={COMPOSER_DIVIDER} aria-hidden="true" />
-                            <span className="flex min-w-0 items-center gap-1 font-mono text-ui text-muted-foreground">
-                              <CodeIcons.branch className="size-3 shrink-0" aria-hidden="true" />
-                              <span className="sr-only">Base branch </span>
-                              <span className="min-w-0 truncate">
-                                {baseRef.trim() || selectedRepo.defaultBranch}
+                          {target === "cloud" && selectedRepo && (
+                            <>
+                              <span className={COMPOSER_DIVIDER} aria-hidden="true" />
+                              <span className="hidden min-w-0 items-center gap-1 font-mono text-ui text-muted-foreground sm:flex">
+                                <CodeIcons.branch className="size-3 shrink-0" aria-hidden="true" />
+                                <span className="sr-only">Base branch </span>
+                                <span className="min-w-0 truncate">
+                                  {baseRef.trim() || selectedRepo.defaultBranch}
+                                </span>
                               </span>
-                            </span>
-                          </>
-                        )}
+                            </>
+                          )}
+                        </div>
 
-                        <span className={COMPOSER_DIVIDER} aria-hidden="true" />
                         <PermissionFact target={target} />
-
-                        {enabledConnectors.length > 0 && (
-                          <>
-                            <span className={COMPOSER_DIVIDER} aria-hidden="true" />
-                            <CodeActiveConnectorsBar
-                              enabledConnectors={enabledConnectors}
-                              onToggleConnector={toggleConnector}
-                            />
-                          </>
-                        )}
-                      </>
+                      </div>
                     }
                   />
 
