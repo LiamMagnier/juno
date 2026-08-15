@@ -227,7 +227,6 @@ struct DesktopWorkWorkspace: View {
                 sessions: visibleSessions,
                 isSearching: !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                 selection: selection,
-                product: $product,
                 compose: compose,
                 openDesign: openDesign,
                 openSettings: { leaveForChat(.settings) },
@@ -427,6 +426,10 @@ struct DesktopWorkWorkspace: View {
         // this window has to move with them, because the one property that
         // control must have is that it does not travel across the window when
         // the product does.
+
+        ToolbarItem(placement: .principal) {
+            DesktopChatWorkSwitcher(selection: $product)
+        }
 
         ToolbarItem(placement: .primaryAction) {
             Button(action: compose) {
@@ -927,10 +930,6 @@ private struct DesktopWorkSidebar: View {
     /// with two different next steps.
     let isSearching: Bool
     @Binding var selection: DesktopWorkSidebarItem?
-    /// Which half of the app the window is showing, so the switch at the top of
-    /// this column can move it. Read by nothing else here — it exists to give
-    /// the header something to write through, exactly as Chat's and Code's do.
-    @Binding var product: DesktopProductMode
     let compose: () -> Void
     /// Opens Juno Design. It is not a page this window can draw — see
     /// ``DesktopWorkWorkspace/openDesign()`` — so the column asks for it rather
@@ -991,12 +990,6 @@ private struct DesktopWorkSidebar: View {
         }
         .listStyle(.sidebar)
         .focused($columnFocused)
-        // The strip at the top of the column, which is the product switch and
-        // not merely the space one would need. Laid out above the list rather
-        // than inset into it, so a section header — which a `.sidebar` List pins
-        // to the top of its own bounds, where no inset reaches it — pins below
-        // the strip instead of over the traffic lights.
-        .junoSidebarProductHeader(product: $product)
         // `safeAreaBar`, not `safeAreaInset` with `.background(.bar)`.
         //
         // Work was the last column in the window still painting an opaque lid

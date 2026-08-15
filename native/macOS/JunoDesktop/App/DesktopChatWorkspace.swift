@@ -159,6 +159,7 @@ struct DesktopChatWorkspace: View {
                 avatarModel: configuration.avatarModel,
                 workModel: configuration.workModel,
                 codeModel: configuration.codeModel,
+                projectModel: configuration.projectModel,
                 session: session,
                 product: $product,
                 destination: destination,
@@ -313,22 +314,13 @@ struct DesktopChatWorkspace: View {
     /// does not have to re-find it.
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
-        // **No product switch here.** It is the first thing in the sidebar now —
-        // `DesktopSidebarProductHeader`, drawn identically by both columns.
-        //
-        // It was in the toolbar because the first sidebar version was a bare
-        // `safeAreaInset` with nothing painted behind it, so scrolled rows slid
-        // under the switch and on under the traffic lights. That failure was the
-        // missing backing, not the placement, and the header fixes it there. What
-        // the toolbar cost in exchange was real: `.principal` competes with the
-        // window's own title for the centre of the bar, and a control that changes
-        // what the *navigation* column lists is a strange thing to have to reach
-        // for at the top of the *content* column. `.navigation` was never an
-        // option — in a `NavigationSplitView` it lands in the sidebar's titlebar,
-        // beside the traffic lights.
-        //
-        // Both windows still move together: the header is one view, so the switch
-        // cannot sit in one place in Chat and another in Code.
+        // Chat / Work is a window-level mode choice, so it stays centered in the
+        // titlebar. Chat / Code remains one level down in the sidebar because it
+        // changes the working surface without leaving the conversational mode.
+
+        ToolbarItem(placement: .principal) {
+            DesktopChatWorkSwitcher(selection: $product)
+        }
 
         ToolbarItem(placement: .primaryAction) {
             Button {
@@ -437,79 +429,52 @@ private struct DesktopChatSidebar: View {
     let avatarModel: NativeAvatarModel?
     let workModel: NativeWorkModel?
     let codeModel: NativeCodeModel?
+    let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let session: NativeAuthenticatedSession
     @Binding var product: DesktopProductMode
     @Binding var destination: DesktopDestination
     @Binding var selection: DesktopSidebarItem?
 
-    /// The recency sections, with the archive bucket dropped.
-    ///
-    /// Juno has no archive on the desktop any more: archiving a chat only ever
-    /// produced a second place for it to hide, so the row's one destructive action
-    /// is now Delete. `NativeConversationGrouping` is shared with the phone app and
-    /// still emits an `.archived` bucket for conversations the web archived, so it
-    /// is filtered here rather than removed there.
-    private var groups: [NativeConversationGroup] {
-        NativeConversationGrouping.groups(for: model.conversations, now: Date())
-            .filter { $0.bucket != .archived }
+    private var pinnedProjects: [NativeProject] {
+        (projectModel?.projects ?? [])
+            .filter(\.starred)
+            .sorted { $0.updatedAt > $1.updatedAt }
     }
 
-    /// Cross-product attention is a compact bridge into the owning product.
-    /// The source models remain authoritative; this sidebar only projects their
-    /// current rows and opens the selected record in its native workspace.
-    private var attentionItems: [JunoRecentItem] {
-        var items: [[JunoRecentItem]] = []
-        if let workModel {
-            items.append(
-                workModel.sessionsNeedingAttention
-                    .filter { !$0.archived }
-                    .map(\.junoRecentItem)
-            )
-        }
-        if let codeModel {
-            items.append(
-                codeModel.tasks
-                    .filter { $0.status == .awaitingApproval || $0.status == .failed }
-                    .map(\.junoRecentItem)
-            )
-        }
-        return JunoRecentActivity.attentionItems(
-            from: JunoRecentActivity.merge(items, limit: 20),
-            limit: 8
-        )
+    private var pinnedChats: [NativeConversation] {
+        model.conversations
+            .filter { $0.pinned && !$0.isArchived }
+            .sorted { $0.lastMessageAt > $1.lastMessageAt }
+    }
+
+    private var recentChats: [NativeConversation] {
+        model.conversations
+            .filter { !$0.pinned && !$0.isArchived }
+            .sorted { $0.lastMessageAt > $1.lastMessageAt }
     }
 
     var body: some View {
         List(selection: $selection) {
-            if !attentionItems.isEmpty {
-                Section {
-                    ForEach(attentionItems) { item in
-                        Button {
-                            openAttention(item)
-                        } label: {
-                            JunoRecentActivityRow(item: item)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("juno.desktop.attention.\(item.id)")
-                    }
-                } header: {
-                    // Sentence case, like every sibling header in this column
-                    // ("Previous 7 days", "Yesterday") — one section must not
-                    // announce itself in Title Case while the rest speak.
-                    Text("Attention required")
-                        .junoSidebarSection()
-                }
-            }
-
             Section {
                 ForEach(DesktopDestination.sidebarCases) { item in
                     destinationRow(item)
                 }
             }
 
-            ForEach(groups) { group in
-                Section(group.bucket.desktopTitle) {
-                    ForEach(group.conversations) { conversation in
+            if !pinnedProjects.isEmpty || !pinnedChats.isEmpty {
+                Section("Pinned") {
+                    ForEach(pinnedProjects) { project in
+                        projectRow(project)
+                    }
+                    ForEach(pinnedChats) { conversation in
+                        conversationRow(conversation)
+                    }
+                }
+            }
+
+            if !recentChats.isEmpty {
+                Section("Recent") {
+                    ForEach(recentChats) { conversation in
                         conversationRow(conversation)
                     }
                 }
@@ -529,22 +494,27 @@ private struct DesktopChatSidebar: View {
         .junoSidebarScrollEdge()
     }
 
-    private func openAttention(_ item: JunoRecentItem) {
-        switch item.kind {
-        case .work:
-            guard let session = workModel?.sessions.first(where: { $0.id == item.sourceID }) else { return }
-            workModel?.open(session)
-            product = .work
-        case .code:
-            guard let task = codeModel?.tasks.first(where: { $0.id == item.sourceID }) else { return }
-            codeModel?.open(task)
-            product = .code
-        case .chat:
-            model.selectedConversationID = item.sourceID
-            destination = .chat
-        case .project:
+    private func projectRow(_ project: NativeProject) -> some View {
+        Button {
+            projectModel?.selectedProjectID = project.id
             destination = .projects
+            selection = .destination(.projects)
+        } label: {
+            HStack(spacing: JunoSpace.tight) {
+                Image(systemName: "star.fill")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color.junoAccent)
+                    .frame(width: 12)
+                Text(project.name)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+            }
+            .junoSidebarRowInk()
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Pinned project, \(project.name)")
+        .accessibilityIdentifier("juno.desktop.project.\(project.id)")
     }
 
     private func destinationRow(_ item: DesktopDestination) -> some View {
@@ -2441,7 +2411,6 @@ struct DesktopComposer: View {
     @State private var showingLibrary = false
     @State private var showingModelSelector = false
     @State private var showingThinking = false
-    @State private var showingAddMenu = false
     @State private var dictating = false
     @State private var importError: String?
     /// Set while a spoken turn is on the wire, so a second Return cannot send
@@ -2454,9 +2423,6 @@ struct DesktopComposer: View {
     /// is in `prompt` and sent in full either way — this only decides whether it
     /// is live in the text field. See ``NativePromptLimits``.
     @State private var draftExpanded = false
-    @State private var isHoveringAdd = false
-    @State private var isHoveringModel = false
-    @State private var isHoveringThinking = false
     @State private var isHoveringDictate = false
     @FocusState private var focused: Bool
     /// The call this composer is inside, published by ``junoVoiceDock(_:)``.
@@ -3029,58 +2995,117 @@ struct DesktopComposer: View {
             || documentGroundingArmed
     }
 
-    /// The "+" itself. What it opens is ``JunoAddMenuContent``, which carries the
-    /// note on why this menu is drawn by hand rather than by `Menu`, and the marks
-    /// are the website's own — `composer.tsx` draws Files with `FileUp`, Deep
-    /// research with `Telescope`, Connectors with `Plug`.
+    /// The composer's native action menu.
+    ///
+    /// This is deliberately a real SwiftUI `Menu`. The previous implementation
+    /// recreated a dropdown inside a custom popover: it had to own hover fills,
+    /// nested drawers, checkmarks, disabled explanations, focus, dismissal and
+    /// glass independently from macOS. That is exactly why it looked foreign.
+    /// Native menu groups and submenus give the same information architecture as
+    /// the website while letting the platform own Liquid Glass and interaction.
     private var addMenu: some View {
-        Button {
-            showingAddMenu = true
+        Menu {
+            Button {
+                showingFileImporter = true
+            } label: {
+                Label(voiceActive ? "Attach images…" : "Attach files…", systemImage: "paperclip")
+            }
+            .disabled(voiceActive ? !canAttachInVoice : !(attachmentModel?.hasCapacity ?? false))
+
+            Button {
+                showingLibrary = true
+            } label: {
+                Label("Choose from Library…", systemImage: "books.vertical")
+            }
+            .disabled(voiceActive || !(attachmentModel?.hasCapacity ?? false))
+
+            if fixedProjectID == nil, let projectModel {
+                Menu {
+                    Button {
+                        selectedProjectID = nil
+                    } label: {
+                        Label("No project", systemImage: selectedProjectID == nil ? "checkmark" : "folder")
+                    }
+                    ForEach(projectModel.projects) { project in
+                        Button {
+                            selectedProjectID = project.id
+                        } label: {
+                            Label(
+                                project.name,
+                                systemImage: selectedProjectID == project.id ? "checkmark" : "folder"
+                            )
+                        }
+                    }
+                } label: {
+                    Label(selectedProjectName ?? "Add to project", systemImage: "folder")
+                }
+                .disabled(model.selectedConversationID != nil)
+            }
+
+            Divider()
+
+            Toggle(isOn: $deepResearch) {
+                Label("Deep research", systemImage: "telescope")
+            }
+
+            Toggle(isOn: $webSearch) {
+                Label("Web search", systemImage: "globe")
+            }
+            .disabled(selectedModel?.supportsWebSearch != true)
+
+            Toggle(isOn: $canvasEnabled) {
+                Label("Canvas & artifacts", systemImage: "rectangle.3.group")
+            }
+
+            if documentIndex != nil {
+                Toggle(isOn: $documentContext) {
+                    Label(
+                        indexedDocumentCount == 0 ? "My documents — none on this Mac" : "My documents",
+                        systemImage: "doc.text.magnifyingglass"
+                    )
+                }
+                .disabled(voiceActive || indexedDocumentCount == 0)
+            }
+
+            if connectorModel != nil {
+                Divider()
+                Menu {
+                    if connectedConnectors.isEmpty {
+                        Text("No connected apps")
+                    } else {
+                        ForEach(connectedConnectors) { connector in
+                            Toggle(
+                                connector.label,
+                                isOn: Binding(
+                                    get: { selectedConnectors.contains(connector.id) },
+                                    set: { _ in toggleConnector(connector.id) }
+                                )
+                            )
+                            .disabled(
+                                !selectedConnectors.contains(connector.id)
+                                    && selectedConnectors.count >= 5
+                            )
+                        }
+                    }
+                } label: {
+                    Label(
+                        selectedConnectors.isEmpty
+                            ? "Connectors" : "Connectors (\(selectedConnectors.count))",
+                        systemImage: "powerplug"
+                    )
+                }
+            }
         } label: {
-            DesktopAddMenuMark(
-                isOpen: showingAddMenu,
-                isHovering: isHoveringAdd,
-                isArmed: hasArmedTools
-            )
-            .onHover { isHoveringAdd = $0 }
+            DesktopAddMenuMark(isArmed: hasArmedTools)
+            .contentShape(.circle)
         }
-        .buttonStyle(.junoPress)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize()
         .help("Add files, tools, projects, or connected apps")
         .accessibilityLabel("Add")
         .accessibilityValue(hasArmedTools ? "Tools armed" : "")
         .accessibilityIdentifier("juno.desktop.chat.add")
-        .popover(
-            isPresented: $showingAddMenu,
-            attachmentAnchor: .rect(.bounds),
-            arrowEdge: .bottom
-        ) {
-            JunoAddMenuContent(
-                voiceActive: voiceActive,
-                voiceCanSeeImages: voiceCanSeeImages,
-                canAttachInVoice: canAttachInVoice,
-                hasCapacity: attachmentModel?.hasCapacity ?? false,
-                showFileImporter: { showingFileImporter = true },
-                showLibrary: { showingLibrary = true },
-                fixedProjectID: fixedProjectID,
-                projectModel: projectModel,
-                selectedProjectID: $selectedProjectID,
-                isConversationStarted: model.selectedConversationID != nil,
-                selectedProjectName: selectedProjectName,
-                deepResearch: $deepResearch,
-                webSearch: $webSearch,
-                supportsWebSearch: selectedModel?.supportsWebSearch == true,
-                canvasEnabled: $canvasEnabled,
-                documentContext: $documentContext,
-                indexedDocumentCount: documentIndex == nil ? nil : indexedDocumentCount,
-                connectorModel: connectorModel,
-                connectedConnectors: connectedConnectors,
-                selectedConnectors: $selectedConnectors,
-                toggleConnector: toggleConnector,
-                close: { showingAddMenu = false }
-            )
-        }
-        .desktopPreviewOverlays(addMenu: { showingAddMenu = true })
     }
 
     private var modelControl: some View {
@@ -3104,26 +3129,7 @@ struct DesktopComposer: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            // `junoRowHover`/`junoRowSelected` rather than a `Color.white` wash.
-            // White at 5% over a warm off-white canvas is nothing, so this whole
-            // control strip had a hover state in Dark Mode only.
-            .background(
-                Capsule()
-                    .fill(isHoveringModel ? Color.junoRowSelected : Color.junoRowHover)
-            )
-            .overlay(
-                Capsule()
-                    .strokeBorder(
-                        Color.junoBorder.opacity(isHoveringModel ? 1 : 0.55),
-                        lineWidth: 0.5
-                    )
-            )
-            .scaleEffect(isHoveringModel && !reduceMotion ? 1.02 : 1.0)
-            .animation(
-                JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
-                value: isHoveringModel
-            )
-            .onHover { isHoveringModel = $0 }
+            .junoGlass(in: Capsule(), interactive: true)
             .contentShape(.capsule)
         }
         .buttonStyle(.junoPress)
@@ -3197,23 +3203,7 @@ struct DesktopComposer: View {
                 .junoInk()
                 .padding(.horizontal, 9)
                 .padding(.vertical, 5)
-                .background(
-                    Capsule()
-                        .fill(isHoveringThinking ? Color.junoRowSelected : Color.junoRowHover)
-                )
-                .overlay(
-                    Capsule()
-                        .strokeBorder(
-                            Color.junoBorder.opacity(isHoveringThinking ? 1 : 0.55),
-                            lineWidth: 0.5
-                        )
-                )
-                .scaleEffect(isHoveringThinking && !reduceMotion ? 1.02 : 1.0)
-                .animation(
-                    JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
-                    value: isHoveringThinking
-                )
-                .onHover { isHoveringThinking = $0 }
+                .junoGlass(in: Capsule(), interactive: true)
                 .contentShape(.capsule)
             }
             .buttonStyle(.junoPress)
@@ -3236,7 +3226,7 @@ struct DesktopComposer: View {
                 )
                 popover.frame(
                     width: 268,
-                    height: 118 + (popover.showsModeToggles ? JunoThinkingMetrics.modeRowHeight : 0)
+                    height: JunoThinkingMetrics.captionedHeight
                 )
             }
         }
@@ -4574,21 +4564,9 @@ private struct JunoAddMenuRow: View {
     }
 }
 
-/// The composer's "+", and what it does while its menu is open.
-///
-/// **The mark morphs rather than swaps:** `plus` rotates 45° into a `×` for as
-/// long as the popover is up. It is the one thing on screen that says this button
-/// now closes what it opened — a menu anchored under the pointer is otherwise
-/// dismissed by clicking a button that still reads "add". ``JunoMotion/fast``'s
-/// own documentation names "icon morphs (e.g. + → ×)" as the rung's intent, and
-/// nothing in the product was doing one.
-///
-/// It reads Reduce Motion itself rather than taking it as a parameter, because
-/// the composer that owns this button does not otherwise need to know.
+/// The composer's native menu trigger. The system owns its pressed, hover and
+/// open states; Juno only adds a badge when one or more tools are armed.
 private struct DesktopAddMenuMark: View {
-    let isOpen: Bool
-    let isHovering: Bool
-    /// Whether the closed "+" is holding anything.
     let isArmed: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -4600,30 +4578,10 @@ private struct DesktopAddMenuMark: View {
             // make this the one control in the bar that ignores the setting.
             .junoFont(size: 13, relativeTo: .body, weight: .semibold)
             .junoInk()
-            .rotationEffect(.degrees(isOpen ? 45 : 0))
             .frame(width: 30, height: 30)
-            .background(
-                Circle().fill(
-                    isHovering || isOpen ? Color.junoRowSelected : Color.junoRowHover
-                )
-            )
-            .overlay(
-                Circle().strokeBorder(
-                    Color.junoBorder.opacity(isHovering || isOpen ? 1 : 0.55),
-                    lineWidth: 0.5
-                )
-            )
-            // Suppressed while the popover is up: the menu is anchored to this
-            // button's bounds, and a control that grows under an anchored
-            // presentation is a presentation that twitches.
-            .scaleEffect(isHovering && !isOpen && !reduceMotion ? 1.06 : 1)
+            .junoGlass(in: Circle(), interactive: true)
             .overlay(alignment: .topTrailing) { badge }
             .contentShape(.circle)
-            .animation(
-                JunoMotion.reduced(JunoMotion.fast, when: reduceMotion, tier: .tint),
-                value: isHovering
-            )
-            .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: isOpen)
             .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: isArmed)
     }
 
@@ -4633,7 +4591,7 @@ private struct DesktopAddMenuMark: View {
     /// behind were invisible once it closed.
     @ViewBuilder
     private var badge: some View {
-        if isArmed, !isOpen {
+        if isArmed {
             Circle()
                 .fill(Color.junoAccent)
                 .stroke(Color.junoSurface, lineWidth: 1.5)

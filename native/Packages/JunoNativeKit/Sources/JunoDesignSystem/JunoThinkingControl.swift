@@ -37,8 +37,9 @@ public struct JunoThinkingTrack: View {
     @Environment(\.colorSchemeContrast) private var contrast
     @FocusState private var focused: Bool
 
-    private let trackHeight: CGFloat = 34
-    private let thumb: CGFloat = 26
+    private let trackHeight: CGFloat = 32
+    private let thumbWidth: CGFloat = 20
+    private let thumbHeight: CGFloat = 28
     private let pad: CGFloat = 4
 
     private var count: Int { max(ladder.stops.count, 1) }
@@ -47,50 +48,16 @@ public struct JunoThinkingTrack: View {
 
     public var body: some View {
         GeometryReader { geometry in
-            let travel = max(geometry.size.width - pad * 2 - thumb, 0)
-            let fraction = count > 1 ? Double(index) / Double(max(lastIndex, 1)) : 0
+            let travel = trackTravel(for: geometry.size.width)
+            let fraction = positionFraction(for: index)
 
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.junoRowSelected)
-
-                // Coral → warm rose → restrained violet, clipped to the filled
-                // portion. Purely decorative: it never carries the value alone.
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: Self.gradientColours,
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(width: thumb + travel * fraction)
-                    .padding(pad)
-                    .opacity(reduceTransparency ? 1 : 0.92)
-
-                // Detents, so the stop count is visible even at rest.
-                ForEach(0..<count, id: \.self) { stop in
-                    let stopFraction = count > 1 ? Double(stop) / Double(max(lastIndex, 1)) : 0
-                    Circle()
-                        .fill(Color.junoForeground.opacity(stop <= index ? 0.28 : 0.16))
-                        .frame(width: 3, height: 3)
-                        .offset(x: pad + thumb / 2 - 1.5 + travel * stopFraction)
-                }
-
-                Circle()
-                    .fill(.white)
-                    .overlay(Circle().strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5))
-                    .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
-                    .frame(width: thumb, height: thumb)
-                    .offset(x: pad + travel * fraction)
-                    .animation(
-                        JunoMotion.reduced(JunoMotion.fast, when: reduceMotion),
-                        value: index
-                    )
-            }
+            trackArtwork(travel: travel, fraction: fraction)
             .frame(height: trackHeight)
             // The whole capsule is the control, so a click anywhere on the track
             // selects the nearest detent instead of requiring the thumb.
-            .contentShape(Capsule())
+            .contentShape(
+                RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+            )
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in select(at: value.location.x, travel: travel) }
@@ -98,11 +65,11 @@ public struct JunoThinkingTrack: View {
             )
         }
         .frame(height: trackHeight)
-        .overlay {
-            if contrast == .increased {
-                Capsule().strokeBorder(Color.junoForeground.opacity(0.4), lineWidth: 1)
-            }
-        }
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                .strokeBorder(Color.junoForeground.opacity(0.4), lineWidth: 1)
+                .opacity(contrast == .increased ? 1 : 0)
+        )
         // Native selection feedback at each detent, which respects the system
         // haptics setting rather than firing a generator unconditionally.
         .sensoryFeedback(.selection, trigger: index)
@@ -133,12 +100,65 @@ public struct JunoThinkingTrack: View {
         .disabled(!ladder.isAdjustable)
     }
 
+    private func trackArtwork(travel: CGFloat, fraction: CGFloat) -> some View {
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: JunoRadius.well, style: .continuous)
+                .fill(Color.junoRowSelected)
+
+            RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: Self.gradientColours,
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: thumbWidth / 2 + travel * fraction)
+                .padding(pad)
+                .opacity(reduceTransparency ? 1 : 0.92)
+
+            ForEach(0..<count, id: \.self) { stop in
+                Circle()
+                    .fill(Color.junoForeground.opacity(stop <= index ? 0.28 : 0.16))
+                    .frame(width: 3, height: 3)
+                    .offset(
+                        x: pad + thumbWidth / 2 - 1.5
+                            + travel * positionFraction(for: stop)
+                    )
+            }
+
+            RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
+                .fill(.white)
+                .overlay(
+                    RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
+                        .strokeBorder(Color.black.opacity(0.12), lineWidth: 0.5)
+                )
+                .shadow(color: .black.opacity(0.22), radius: 4, y: 2)
+                .frame(width: thumbWidth, height: thumbHeight)
+                .offset(x: pad + travel * fraction)
+                .animation(
+                    JunoMotion.reduced(JunoMotion.fast, when: reduceMotion),
+                    value: index
+                )
+        }
+    }
+
+    private func positionFraction(for stopIndex: Int) -> CGFloat {
+        guard count > 1 else { return 0 }
+        return CGFloat(stopIndex) / CGFloat(lastIndex)
+    }
+
+    private func trackTravel(for width: CGFloat) -> CGFloat {
+        let available = width - (pad * 2) - thumbWidth
+        return available > 0 ? available : 0
+    }
+
     /// Maps a touch to the nearest detent. `x` is measured from the track's
     /// leading edge; the thumb's own centre offset is removed first so the
     /// detent under the finger is the one that gets picked.
     private func select(at x: CGFloat, travel: CGFloat) {
         guard ladder.isAdjustable, travel > 0 else { return }
-        let position = (x - pad - thumb / 2) / travel
+        let position = (x - pad - thumbWidth / 2) / travel
         let target = Int((position * Double(lastIndex)).rounded())
         commit(min(max(target, 0), lastIndex))
     }
@@ -201,59 +221,48 @@ public struct JunoThinkingPanel: View {
     public var showsModeToggles: Bool { showsFast || showsPro }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            HStack {
-                Text("THINKING")
-                    .junoFont(size: 11, relativeTo: .caption, weight: .medium, design: .monospaced)
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack(spacing: JunoSpace.tight) {
+                Text("Effort")
+                    .junoFont(size: 12.5, relativeTo: .subheadline, weight: .medium)
                     .junoSecondaryInk()
-                    // Hidden individually rather than on the HStack. The whole
-                    // row used to carry `.accessibilityHidden(true)`, which is
-                    // correct for two decorative labels and silently fatal for a
-                    // button: the toggles below would have been on screen and
-                    // absent from the VoiceOver tree.
-                    .accessibilityHidden(true)
-                Spacer(minLength: JunoSpace.cozy)
                 Text(ladder.label(for: stopID))
-                    .junoFont(size: 11, relativeTo: .caption, weight: .semibold, design: .monospaced)
+                    .junoFont(size: 12.5, relativeTo: .subheadline, weight: .semibold)
                     .foregroundStyle(Color.junoAccent)
                     .accessibilityHidden(true)
-            }
-
-            JunoThinkingTrack(ladder: ladder, stopID: $stopID)
-
-            if showsModeToggles {
-                HStack(spacing: JunoSpace.cozy) {
-                    if showsFast, let fastMode {
-                        JunoModeToggle(
-                            isOn: fastMode,
-                            symbol: "bolt.fill",
-                            title: "Flash",
-                            detail: ladder.fastModeRateMultiplier.map {
-                                // The premium named, not gestured at. "Faster,
-                                // at a premium" is a sentence a reader believes
-                                // once; a number is one they can decide on.
-                                "\(JunoThinkingPanel.rate($0))x rate"
-                            } ?? "Premium rate",
-                            accessibilityName: "Flash mode"
-                        )
-                    }
-                    if showsPro, let proMode {
-                        JunoModeToggle(
-                            isOn: proMode,
-                            symbol: "sparkles",
-                            title: "Pro",
-                            // Deliberately NOT the same shape of sentence as
-                            // Flash. Pro is the same rate spent on more tokens;
-                            // describing both as "premium" would make the one
-                            // that multiplies the bill look like the one that
-                            // does not.
-                            detail: "Same rate",
-                            accessibilityName: "Pro mode"
-                        )
-                    }
-                    Spacer(minLength: 0)
+                Spacer(minLength: JunoSpace.cozy)
+                if showsFast, let fastMode {
+                    JunoModeToggle(
+                        isOn: fastMode,
+                        symbol: "bolt.fill",
+                        title: "Flash",
+                        detail: ladder.fastModeRateMultiplier.map {
+                            "\(JunoThinkingPanel.rate($0))x rate"
+                        } ?? "Premium rate",
+                        accessibilityName: "Flash mode"
+                    )
+                }
+                if showsPro, let proMode {
+                    JunoModeToggle(
+                        isOn: proMode,
+                        symbol: "sparkles",
+                        title: "Pro",
+                        detail: "Same rate",
+                        accessibilityName: "Pro mode"
+                    )
                 }
             }
+
+            HStack {
+                Text("Faster")
+                Spacer(minLength: 0)
+                Text("Smarter")
+            }
+            .junoFont(size: 10.5, relativeTo: .caption, weight: .medium)
+            .junoSecondaryInk()
+            .padding(.horizontal, 1)
+
+            JunoThinkingTrack(ladder: ladder, stopID: $stopID)
 
             if let caption = ladder.caption {
                 Text(caption)
@@ -420,19 +429,13 @@ public struct JunoThinkingButton: View {
 /// cannot be allowed to size itself.
 public enum JunoThinkingMetrics {
     public static let width: CGFloat = 268
-    /// Label row + track + padding.
-    public static let height: CGFloat = 88
-    /// The same, plus two lines of caption.
-    public static let captionedHeight: CGFloat = 118
-    /// What the Flash/Pro row adds: a 27pt pill plus the stack's spacing.
-    ///
-    /// A constant every caller adds for itself, because the panel cannot be
-    /// allowed to measure itself and tell them — a self-sizing AppKit popover
-    /// containing this file's `GeometryReader` recurses until the app dies, and
-    /// that shipped once as the 3.0.5 thinking-slider crash. Growing the panel
-    /// without growing the frame around it clips the toggles instead, silently
-    /// and only on macOS, which is the failure this constant exists to prevent.
-    public static let modeRowHeight: CGFloat = 39
+    /// Header + Faster/Smarter scale + track + padding.
+    public static let height: CGFloat = 122
+    /// The same, plus the explanatory caption.
+    public static let captionedHeight: CGFloat = 150
+    /// Flash and Pro now live in the header, matching the website, so they add
+    /// no vertical row of their own.
+    public static let modeRowHeight: CGFloat = 0
 
     /// The panel's height for a given shape. Callers state a fixed frame; this
     /// is the one place that decides what the number is.

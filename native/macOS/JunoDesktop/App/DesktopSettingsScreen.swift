@@ -214,10 +214,12 @@ struct DesktopSettingsScreen: View {
         HStack(alignment: .center, spacing: JunoSpace.regular) {
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 Text("Settings")
-                    .junoSettingsEyebrow()
-                Text(session.profile.name ?? "Your account")
-                    .font(JunoSerif.pageHeading())
-                Text(session.profile.email)
+                    .junoPageHeading()
+                Text("Personalize Juno, manage your account, and choose how the app works for you.")
+                    .junoRowLabel()
+                    .junoSecondaryInk()
+                    .fixedSize(horizontal: false, vertical: true)
+                Text([session.profile.name, session.profile.email].compactMap { $0 }.joined(separator: " · "))
                     .junoCaption()
                     .textSelection(.enabled)
             }

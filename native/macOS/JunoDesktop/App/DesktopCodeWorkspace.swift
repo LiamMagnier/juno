@@ -1093,6 +1093,10 @@ struct DesktopCodeWorkspace: View {
         // Both windows still move together: the header is one view, so the switch
         // cannot sit in one place in Chat and another in Code.
 
+        ToolbarItem(placement: .principal) {
+            DesktopChatWorkSwitcher(selection: $product)
+        }
+
         // Trailing, not `.navigation`: that placement draws into the *sidebar's*
         // titlebar beside the traffic lights, which is how a window action ended up
         // sitting inside the navigation column.

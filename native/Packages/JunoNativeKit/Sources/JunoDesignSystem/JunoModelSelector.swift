@@ -192,9 +192,8 @@ public struct JunoModelSelector: View {
     private func sectionView(_ section: CatalogSection) -> some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             Label(section.modality.sectionTitle, systemImage: section.modality.systemImage)
-                .junoFont(size: 10.5, relativeTo: .caption, weight: .semibold, design: .monospaced)
+                .junoFont(size: 11.5, relativeTo: .caption, weight: .semibold)
                 .junoSecondaryInk()
-                .textCase(.uppercase)
                 .padding(.horizontal, 3)
 
             ForEach(section.current) { model in
@@ -246,9 +245,13 @@ public struct JunoModelSelector: View {
                 JunoProviderMark(
                     providerID: model.providerID,
                     providerName: model.providerName,
-                    size: 25
+                    size: 22
                 )
-                .padding(.top, 1)
+                .padding(5)
+                .background(
+                    RoundedRectangle(cornerRadius: JunoRadius.chip, style: .continuous)
+                        .fill(Color.junoForeground.opacity(0.045))
+                )
 
                 VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                     HStack(spacing: JunoSpace.tight) {

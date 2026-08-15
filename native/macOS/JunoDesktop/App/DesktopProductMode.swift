@@ -12,6 +12,11 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
 
     var id: Self { self }
 
+    /// Chat and Code share the navigation column. Work is a separate operating
+    /// mode selected from the window toolbar, so it must not appear in the
+    /// sidebar switch as though it were another kind of conversation.
+    static let sidebarModes: [Self] = [.chat, .code]
+
     var label: String {
         switch self {
         case .chat: "Chat"
@@ -83,12 +88,54 @@ struct DesktopProductSwitcher: View {
 
     var body: some View {
         DesktopSegmented(
-            options: DesktopProductMode.allCases.map { .init($0, $0.label, symbol: $0.symbol) },
+            options: DesktopProductMode.sidebarModes.map { .init($0, $0.label, symbol: $0.symbol) },
             selection: $selection,
             accessibilityLabel: "Juno product",
             optionAccessibilityIdentifier: { "juno.product-brand.\($0.rawValue)" }
         )
         .accessibilityIdentifier("Juno product")
+    }
+}
+
+/// The window-level Chat / Work mode switch.
+///
+/// This intentionally uses the platform segmented picker. It lives in the
+/// titlebar among system controls, where macOS supplies the Liquid Glass
+/// material, keyboard traversal, focus behavior, and toolbar geometry. Code is
+/// represented as Chat here because it is selected one level down in the
+/// sidebar, alongside conversations and projects.
+struct DesktopChatWorkSwitcher: View {
+    @Binding var selection: DesktopProductMode
+
+    private enum Mode: String, CaseIterable, Identifiable {
+        case chat
+        case work
+
+        var id: Self { self }
+        var label: String { rawValue.capitalized }
+        var symbol: String { self == .chat ? "bubble.left" : "bolt" }
+    }
+
+    private var mode: Binding<Mode> {
+        Binding(
+            get: { selection == .work ? .work : .chat },
+            set: { selection = $0 == .work ? .work : .chat }
+        )
+    }
+
+    var body: some View {
+        Picker("Mode", selection: mode) {
+            ForEach(Mode.allCases) { mode in
+                Text(mode.label)
+                    .tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.small)
+        .frame(width: 168)
+        .help("Switch between Chat and Work")
+        .accessibilityIdentifier("juno.window-mode")
     }
 }
 
@@ -195,21 +242,7 @@ struct DesktopSidebarProductHeader: View {
             HStack(spacing: JunoSpace.snug) {
                 JunoLogo()
                     .foregroundStyle(Color.junoForeground)
-
-                Spacer(minLength: JunoSpace.snug)
-
-                // The mono eyebrow voice — `junoCodeSmall` + secondary ink +
-                // upper-casing — the same treatment every settings tile's
-                // eyebrow wears. It replaces a frozen 9pt rounded face that
-                // Dynamic Type could not move and that needed hand tracking to
-                // read as caps; the monospaced caption rung scales with the
-                // rest of the type ramp and carries its own letterspacing.
-                // Upper-cased by `textCase` rather than in the literal, so the
-                // string stays a word and the caps stay a style.
-                Text("Workspace")
-                    .junoCodeSmall()
-                    .junoSecondaryInk()
-                    .textCase(.uppercase)
+                Spacer(minLength: 0)
             }
 
             DesktopProductSwitcher(selection: $product)

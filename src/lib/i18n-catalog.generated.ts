@@ -2314,10 +2314,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "List the user's iCloud calendars by name."
   },
   {
-    "id": "2377070e17c10949",
-    "source": "Connected · 3"
-  },
-  {
     "id": "2380f018cc45becc",
     "source": "Search models…"
   },
@@ -5542,10 +5538,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": ": vous pouvez saisir la Commission nationale de l'informatique et des libertés (CNIL), 3 place de Fontenoy, TSA 80715, 75334 Paris Cedex 07 —"
   },
   {
-    "id": "56fc0ca26b09ed4c",
-    "source": "Filter files"
-  },
-  {
     "id": "573b8c055df44536",
     "source": "Tell me"
   },
@@ -5848,6 +5840,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5c10527cf881e625",
     "source": "The draft list didn’t come back. Nothing has been published or unpublished by the attempt."
+  },
+  {
+    "id": "5c193ace16800bbd",
+    "source": "The /library toolbar"
   },
   {
     "id": "5c39123805ffb4e2",
