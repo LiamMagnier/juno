@@ -241,29 +241,72 @@ public enum JunoMotion {
     /// 0.12, 0.2 beside `base` 0.22, and 0.3/0.32/0.34 beside `slow` 0.36. Four
     /// values that close read as one intention executed inconsistently, which is
     /// exactly what a ladder exists to prevent.
+    /// Every rung forwards to ``JunoGeneratedDuration``, which
+    /// `scripts/generate-design-tokens.ts` projects from the `--dur-*` custom
+    /// properties in `src/app/globals.css`.
+    ///
+    /// These used to be five independent literals that happened to equal the
+    /// generated ones. That is the same failure mode the colour tokens'
+    /// header describes: a conversion done by hand, once, with nothing
+    /// re-checking it. It was worse here than for colour, because
+    /// ``JunoGeneratedDuration`` already existed and had **no consumers at
+    /// all** — the projection was generated, verified by `design:tokens:check`,
+    /// and then ignored, while `JunoMotionTests` pinned the hand-written array.
+    /// Retuning `--dur-base` to 200ms on the web would have left Swift at 0.22
+    /// with every check still green.
+    ///
+    /// Forwarding costs nothing at runtime (these inline to the same constants)
+    /// and means the generator is now load-bearing rather than decorative.
     public enum Duration {
-        /// 70ms — a press dip.
-        public static let press: TimeInterval = 0.07
-        /// 120ms — a property changing on the element already under the pointer.
-        public static let fast: TimeInterval = 0.12
-        /// 160ms — a dismissal.
-        public static let exit: TimeInterval = 0.16
-        /// 220ms — the default. Something small moving a short distance.
-        public static let base: TimeInterval = 0.22
-        /// 360ms — a whole region changing.
-        public static let slow: TimeInterval = 0.36
+        /// `--dur-press`, 70ms — a press dip.
+        public static let press = JunoGeneratedDuration.press
+        /// `--dur-fast`, 120ms — a property changing on the element already
+        /// under the pointer.
+        public static let fast = JunoGeneratedDuration.fast
+        /// `--dur-exit`, 160ms — a dismissal.
+        public static let exit = JunoGeneratedDuration.exit
+        /// `--dur-base`, 220ms — the default. Something small moving a short
+        /// distance.
+        public static let base = JunoGeneratedDuration.base
+        /// `--dur-slow`, 360ms — a whole region changing.
+        public static let slow = JunoGeneratedDuration.slow
+        /// `--dur-emphasis`, 560ms — a one-shot that has to be *noticed*.
+        ///
+        /// Present on the web and in the projection since the ladder was
+        /// written, and unreachable from Swift until now because the hand-copied
+        /// enum stopped at five rungs. Deliberately more than double ``base``:
+        /// the web's own note beside it records that at 250–350ms an emphasis
+        /// move reads as slowness rather than as significance.
+        public static let emphasis = JunoGeneratedDuration.emphasis
     }
 
     /// The web's `--ease-out-soft`, for entrances. Deceleration: fast off the
     /// mark, settling at the end.
+    ///
+    /// The four control points come from ``JunoGeneratedEasing``, for the same
+    /// reason the durations do — they were inline literals here, and the
+    /// generator already projects every `--ease-*` curve the stylesheet
+    /// declares.
     public static func outSoft(_ duration: TimeInterval = Duration.slow) -> Animation {
-        .timingCurve(0.33, 1, 0.68, 1, duration: duration)
+        timingCurve(JunoGeneratedEasing.outSoft, duration: duration)
     }
 
     /// The web's `--ease-out-expo`. A harder deceleration than ``outSoft(_:)``,
     /// for a value that should read as *arriving* rather than as changing.
     public static func outExpo(_ duration: TimeInterval = Duration.slow) -> Animation {
-        .timingCurve(0.16, 1, 0.3, 1, duration: duration)
+        timingCurve(JunoGeneratedEasing.outExpo, duration: duration)
+    }
+
+    /// Builds a SwiftUI curve from a projected cubic-bezier quadruple.
+    ///
+    /// One place that knows the control-point order, so a new `--ease-*` rung
+    /// becomes a two-line addition rather than another inline `.timingCurve`
+    /// with four unlabelled numbers.
+    static func timingCurve(
+        _ curve: (x1: CGFloat, y1: CGFloat, x2: CGFloat, y2: CGFloat),
+        duration: TimeInterval
+    ) -> Animation {
+        .timingCurve(curve.x1, curve.y1, curve.x2, curve.y2, duration: duration)
     }
 
     // MARK: - Reduce Motion

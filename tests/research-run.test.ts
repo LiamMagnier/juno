@@ -16,6 +16,7 @@ import {
 } from "@/lib/research/domain";
 import {
   createResearchEngine,
+  pageSkipMessage,
   SEARCH_CONCURRENCY,
   type ResearchDeps,
   type ResearchEventRow,
@@ -1193,4 +1194,49 @@ test("a relevant link in a page this run read becomes a source of its own", asyn
   assert.ok(found, "the hop must be narrated, not silently widen the source list");
   assert.equal((found.payload as { hop?: number }).hop, 1);
   assert.equal((found.payload as { via?: string }).via, "https://news.example.com/story");
+});
+
+/**
+ * The four PDF failures each get their own sentence.
+ *
+ * Pinned because they used to share the generic default ("Could not be read."),
+ * which made a password-protected filing and a truncated download identical in
+ * the timeline — the reader could not tell which skips were worth acting on. The
+ * `detail` values are the `PdfFailureReason` union from src/lib/search/pdf-text.ts
+ * minus `no_text_layer`, which reports as `empty_document` because that file
+ * parsed fine and simply held no text.
+ */
+test("an unreadable PDF says which way it was unreadable", () => {
+  assert.equal(
+    pageSkipMessage({ skipped: "pdf_unreadable", detail: "encrypted" }),
+    "That PDF is password-protected."
+  );
+  assert.equal(
+    pageSkipMessage({ skipped: "pdf_unreadable", detail: "too_large" }),
+    "That PDF is too large to read in a run."
+  );
+  assert.equal(
+    pageSkipMessage({ skipped: "pdf_unreadable", detail: "malformed" }),
+    "That PDF is damaged and could not be opened."
+  );
+  assert.equal(
+    pageSkipMessage({ skipped: "pdf_unreadable", detail: "not_a_pdf" }),
+    "That link served something other than the PDF it advertised."
+  );
+});
+
+/**
+ * A reason this switch has never heard of must still say something true.
+ *
+ * `detail` crosses a network boundary as a plain string, so a `PdfFailureReason`
+ * added to pdf-text.ts and not mirrored here is a question of when, not if. The
+ * fallback has to stay a PDF sentence rather than the shared generic default —
+ * the caller does know it was a PDF, and throwing that away is a needless loss.
+ */
+test("an unknown PDF detail degrades to a true sentence, not a crash", () => {
+  assert.equal(
+    pageSkipMessage({ skipped: "pdf_unreadable", detail: "some_future_reason" }),
+    "That PDF could not be read."
+  );
+  assert.equal(pageSkipMessage({ skipped: "pdf_unreadable" }), "That PDF could not be read.");
 });

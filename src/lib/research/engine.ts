@@ -293,6 +293,35 @@ export function pageSkipMessage(page: ResearchPageSkipped): string {
       return `The site refused the request${page.detail ? ` (${page.detail})` : ""}.`;
     case "empty_document":
       return "The page loaded but contained no readable text.";
+    case "pdf_unreadable":
+      /*
+       * A PDF gets four sentences rather than one because the four failures send
+       * the reader somewhere completely different: a password-protected filing
+       * needs credentials we will never have, an oversized one needs a smaller
+       * copy, a damaged one needs a different mirror, and a mislabelled one was
+       * never a PDF at all. Folding them into the shared default ("Could not be
+       * read.") was the previous behaviour, and it made a run that skipped an
+       * encrypted SEC filing indistinguishable from one that hit a truncated
+       * download — so nobody could tell which skips were worth acting on.
+       *
+       * `detail` is the machine-readable `PdfFailureReason` minus `no_text_layer`
+       * (which reports as `empty_document` above, since the file parsed fine).
+       * The default stays because this switches on a plain string: a reason added
+       * to pdf-text.ts and not to this list must degrade to something true rather
+       * than crash a timeline render.
+       */
+      switch (page.detail) {
+        case "encrypted":
+          return "That PDF is password-protected.";
+        case "too_large":
+          return "That PDF is too large to read in a run.";
+        case "malformed":
+          return "That PDF is damaged and could not be opened.";
+        case "not_a_pdf":
+          return "That link served something other than the PDF it advertised.";
+        default:
+          return "That PDF could not be read.";
+      }
     default:
       return "Could not be read.";
   }

@@ -3,6 +3,76 @@ import XCTest
 @testable import JunoDesignSystem
 
 final class JunoDesignTokensTests: XCTestCase {
+    /// Every `JunoMotion.Duration` rung is the web rung it claims to be.
+    ///
+    /// The exact counterpart of ``testRadiusScaleMatchesTheWebLadder()``, and
+    /// the axis that was missing it. Radius and colour were genuinely
+    /// drift-proof; motion only looked it. `JunoGeneratedDuration` was
+    /// projected from the `--dur-*` properties, verified by
+    /// `design:tokens:check`, and had **zero consumers anywhere in the tree**,
+    /// while `JunoMotion.Duration` re-declared the same five numbers as
+    /// independent literals and the suite pinned only those literals. Retuning
+    /// `--dur-base` to 200ms on the web would have left Swift at 0.22 and left
+    /// every check green — a silent, permanent divergence in the one token
+    /// axis a reader feels rather than sees.
+    ///
+    /// Both halves are asserted for the reason the radius test states: the
+    /// token reference catches a Swift-side literal creeping back in, and the
+    /// number catches a web-side retune nobody meant to ship to the Mac.
+    func testMotionLadderMatchesTheWebDurations() {
+        XCTAssertEqual(JunoMotion.Duration.press, JunoGeneratedDuration.press)
+        XCTAssertEqual(JunoMotion.Duration.press, 0.07)
+
+        XCTAssertEqual(JunoMotion.Duration.fast, JunoGeneratedDuration.fast)
+        XCTAssertEqual(JunoMotion.Duration.fast, 0.12)
+
+        XCTAssertEqual(JunoMotion.Duration.exit, JunoGeneratedDuration.exit)
+        XCTAssertEqual(JunoMotion.Duration.exit, 0.16)
+
+        XCTAssertEqual(JunoMotion.Duration.base, JunoGeneratedDuration.base)
+        XCTAssertEqual(JunoMotion.Duration.base, 0.22)
+
+        XCTAssertEqual(JunoMotion.Duration.slow, JunoGeneratedDuration.slow)
+        XCTAssertEqual(JunoMotion.Duration.slow, 0.36)
+
+        // The rung the hand-copied enum never carried. `--dur-emphasis` has
+        // been in the stylesheet and in the projection since the ladder was
+        // written; Swift simply could not reach it.
+        XCTAssertEqual(JunoMotion.Duration.emphasis, JunoGeneratedDuration.emphasis)
+        XCTAssertEqual(JunoMotion.Duration.emphasis, 0.56)
+    }
+
+    /// The ladder is strictly increasing, with no two rungs close enough to
+    /// read as one intention executed inconsistently.
+    ///
+    /// `JunoMotion.Duration`'s own doc records the audit that motivated it: 35
+    /// inline curve constructors carrying 21 distinct durations, where the harm
+    /// was not the outliers but 0.15 sitting beside `fast` 0.12 and 0.2 beside
+    /// `base` 0.22. This asserts the property that audit was really about, so a
+    /// future rung cannot be added into one of those near-miss gaps.
+    func testMotionLadderRungsAreDistinguishable() {
+        let ladder: [TimeInterval] = [
+            JunoMotion.Duration.press,
+            JunoMotion.Duration.fast,
+            JunoMotion.Duration.exit,
+            JunoMotion.Duration.base,
+            JunoMotion.Duration.slow,
+            JunoMotion.Duration.emphasis,
+        ]
+        XCTAssertEqual(ladder, ladder.sorted(), "The ladder must read fastest-first.")
+        for (faster, slower) in zip(ladder, ladder.dropFirst()) {
+            XCTAssertGreaterThanOrEqual(
+                slower / faster,
+                1.3,
+                """
+                \(faster)s and \(slower)s are within 30% of each other. Two rungs \
+                that close cannot be told apart in use, so call sites pick between \
+                them arbitrarily — which is the drift this ladder exists to stop.
+                """
+            )
+        }
+    }
+
     /// Every `JunoRadius` rung is the web rung it claims to be.
     ///
     /// `JunoGeneratedRadius` is projected from tailwind.config.ts and guarded by

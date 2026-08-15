@@ -328,6 +328,40 @@ class EventSink {
     for (const ctl of data?.control ?? []) {
       if (typeof ctl?.seq === "number") this.afterControlSeq = Math.max(this.afterControlSeq, ctl.seq);
       if (ctl?.kind === "cancel_request") this.cancelled = true;
+      /*
+       * THE ROLLBACK VERBS (accept_change / reject_change / undo_change) ARE
+       * DELIBERATELY NOT HANDLED HERE, AND THIS RUNNER MUST NOT ANNOUNCE
+       * `rollback_ready`. The obvious implementation — announce after the first
+       * file_change, then call session.revertFile / keepFile / undoLastTurn — was
+       * tried against this file's actual control flow and produces a control that
+       * lies. Three structural reasons, all checkable:
+       *
+       * 1. THERE IS NO MID-RUN WINDOW. `AgentSession.prompt()` is ONE turn (the
+       *    whole tool loop runs inside `runAgentLoop`), this runner calls it
+       *    exactly once, and agent-core emits `files_changed` only after that
+       *    loop returns. So the earliest any file is visible is milliseconds
+       *    before the agent phase ends — there is no point during the run at
+       *    which a reader could intervene.
+       * 2. THE COMMIT HAS ALREADY HAPPENED. `git add -A` runs before
+       *    emitFileChanges, and commit/push/PR follow immediately. A revert
+       *    landing in the seconds-long push window would change the working tree
+       *    but NOT the staged content already captured — the PR would still
+       *    contain the change while the UI said "Reverted". That is a false
+       *    statement about the only artifact the reader actually gets.
+       * 3. "UNDO LAST TURN" WOULD MEAN "UNDO THE WHOLE TASK". With a single
+       *    turn, `undoLastTurn()` pops everything the run wrote, which is not
+       *    what the button says and not what anyone pressing it expects.
+       *
+       * After `finalize` the task is terminal and the rollback route correctly
+       * refuses with 409, so presses arriving later are already handled honestly.
+       *
+       * Making this real needs a review window that this runner does not have:
+       * emit file changes and hold BEFORE `git add -A`, wait a bounded time for
+       * control events, then stage whatever survived. That is a product decision
+       * about delaying every cloud PR, not a wiring fix — so it is left undone
+       * rather than faked. Until then no host announces, and the web renders no
+       * rollback controls at all, which is the designed behaviour and not a gap.
+       */
     }
     return { ok: true, status: res.status, retryAfterSeconds: null };
   }

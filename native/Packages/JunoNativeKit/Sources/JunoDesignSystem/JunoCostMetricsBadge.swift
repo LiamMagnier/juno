@@ -69,53 +69,11 @@ public struct JunoCostMetrics: Equatable, Sendable {
     public var totalTokens: Int { inputTokens + outputTokens }
 }
 
-/// Formats token counts and dollars for a dense metadata line.
-///
-/// Its own type so the rounding is testable without a view: these are the rules
-/// that decide whether a reader sees "$0.00" (which reads as free) or "<$0.01"
-/// (which reads as cheap), and that distinction is the whole point of the badge.
-public enum JunoCostFormatting {
-    /// Compact token counts: 847, 12.4K, 1.8M.
-    ///
-    /// Truncated, never rounded up, so the number shown is always one the
-    /// session has actually reached.
-    public static func tokens(_ count: Int) -> String {
-        let value = max(0, count)
-        switch value {
-        case 0..<1_000:
-            return "\(value)"
-        case 1_000..<1_000_000:
-            let thousands = Double(value) / 1_000
-            // One decimal below 10K where the digit carries information, none
-            // above it where it is noise on a line this dense.
-            return thousands < 10
-                ? "\((thousands * 10).rounded(.down) / 10)K"
-                : "\(Int(thousands.rounded(.down)))K"
-        default:
-            let millions = Double(value) / 1_000_000
-            return "\((millions * 10).rounded(.down) / 10)M"
-        }
-    }
-
-    /// Money, at the precision the amount deserves.
-    ///
-    /// A real but sub-cent amount becomes "<$0.01" rather than "$0.00": the
-    /// session did cost something, and a badge that says $0.00 for a paid turn
-    /// is simply wrong. Exact zero is the only thing allowed to print "$0.00".
-    public static func cost(_ usd: Double, isPartial: Bool = false) -> String {
-        let amount = max(0, usd)
-        let prefix = isPartial ? "≥" : ""
-        if amount == 0 { return "\(prefix)$0.00" }
-        if amount < 0.01 { return "\(prefix)<$0.01" }
-        if amount < 10 { return String(format: "\(prefix)$%.3f", amount) }
-        return String(format: "\(prefix)$%.2f", amount)
-    }
-
-    /// A percentage with no decimals — the badge has no room for them.
-    public static func percent(_ fraction: Double) -> String {
-        "\(Int((min(1, max(0, fraction)) * 100).rounded()))%"
-    }
-}
+// `JunoCostFormatting` used to live here, hard-coding "$" through
+// `String(format:)`. It moved to `JunoCostPresentation.swift` and became
+// locale-pinned and `Decimal`-backed, so that this badge and the nine call
+// sites that were writing `.formatted(.currency(code: "USD"))` — and therefore
+// rendering `0,41 US$` on a French Mac — round money the same way.
 
 /// A quiet, collapsible receipt for the current conversation.
 ///
