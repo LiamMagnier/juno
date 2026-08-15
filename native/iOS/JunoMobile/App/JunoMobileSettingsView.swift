@@ -49,6 +49,12 @@ import UIKit
 /// `.navigationDestination(isPresented:)` rather than by pushing links.
 struct JunoMobileSettingsView: View {
     @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
+    /// What ``MemoryExtractionEngine`` has noticed and not yet been answered on.
+    ///
+    /// Nil where nothing runs the engine — the DEBUG preview harness, and a launch
+    /// that could not open the local store. The review row is absent then rather
+    /// than leading to a queue that can never fill.
+    var learningModel: MemoryLearningModel<SQLiteAccountRepository>?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     var authModel: NativeAuthModel?
     var session: NativeAuthenticatedSession?
@@ -68,6 +74,10 @@ struct JunoMobileSettingsView: View {
 
     @State private var showingSignOut = false
     @State private var showMemoryPage = false
+    /// Pushes ``NativeMemoryManagerView`` — the consent surface where a proposal
+    /// is kept or discarded. Its own destination rather than a section inside the
+    /// memory page, so the reader can be sent straight to a decision.
+    @State private var showProposalsPage = false
     @State private var showSharedLinks = false
     @State private var showUsagePage = false
     @State private var showDiagnosticsPage = false
@@ -103,6 +113,29 @@ struct JunoMobileSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showMemoryPage) {
             JunoMobileMemoryView(model: model)
+        }
+        .navigationDestination(isPresented: $showProposalsPage) {
+            if let learningModel {
+                // `onDecideProposal` is the whole contract: keeping a candidate
+                // writes through `NativeMemorySettingsModel.createMemory`, the
+                // same call the "Add a memory" field makes. One write path means
+                // an accepted suggestion is a normal memory afterwards — same
+                // outbox, same sync, same delete — and the memory page above stays
+                // an honest account of everything Juno holds.
+                NativeMemoryManagerView(
+                    model: model,
+                    proposals: learningModel.proposals,
+                    onDecideProposal: { candidate, keep in
+                        Task {
+                            if keep {
+                                await learningModel.accept(candidate)
+                            } else {
+                                learningModel.decline(candidate)
+                            }
+                        }
+                    }
+                )
+            }
         }
         .navigationDestination(isPresented: $showSharedLinks) {
             NativeSharedLinksView(client: shareClient, accountID: session?.profile.id)
@@ -319,6 +352,27 @@ struct JunoMobileSettingsView: View {
                 value: Text("^[\(model.memories.count) memory](inflect: true)")
             ) { showMemoryPage = true }
             .accessibilityIdentifier("juno.mobile.settings-memory-link")
+
+            // A second row rather than a badge on the first, because the two are
+            // different surfaces answering different questions. The page above is
+            // the corpus — everything Juno has already stored. This is the short
+            // queue of things it *noticed* and has deliberately not stored,
+            // waiting for a yes or a no. An extraction that filed itself and
+            // turned up later is the version of this feature people call creepy;
+            // one that asks is the version they leave switched on, and it can only
+            // ask if there is somewhere to ask from.
+            if let learningModel {
+                JunoMobileSettingsLink(
+                    title: "Review what Juno noticed",
+                    symbol: "sparkles",
+                    value: Text(
+                        learningModel.proposals.isEmpty
+                            ? "Nothing waiting"
+                            : "^[\(learningModel.proposals.count) suggestion](inflect: true)"
+                    )
+                ) { showProposalsPage = true }
+                .accessibilityIdentifier("juno.mobile.settings-memory-proposals")
+            }
 
             // Beside Memory because both answer "what does the world already have
             // of mine?" — and a link is only safe to hand out if it can be taken

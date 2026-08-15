@@ -136,7 +136,8 @@ struct DesktopDestinationView: View {
                     // its own meters off a second route. This is the link.
                     openUsage: { destination = .usage },
                     codeHostModel: configuration.codeHostModel,
-                    workHostModel: configuration.workHostModel
+                    workHostModel: configuration.workHostModel,
+                    learningModel: configuration.memoryLearningModel
                 )
             } else {
                 unavailable("Settings", "Account settings could not be loaded.")

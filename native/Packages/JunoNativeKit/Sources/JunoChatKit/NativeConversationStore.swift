@@ -567,6 +567,44 @@ public enum NativeChatGenerationPhase: Equatable, Sendable {
     }
 }
 
+/// A turn that has actually finished, as anything reading conversations after the
+/// fact needs it.
+///
+/// Handed to ``NativeConversationModel/didFinishTurn`` rather than letting the
+/// observer reach back into the model, which is what keeps the two privacy rules
+/// enforceable in one place instead of at every call site.
+public struct NativeFinishedTurn: Equatable, Sendable {
+    public let conversationID: String
+
+    /// **The reader's own turns, and only those.**
+    ///
+    /// The model's replies are not merely filtered later, they are never put in
+    /// here. A memory extracted from "so you prefer dark roast" is the model's own
+    /// guess promoted to a stored fact about the reader, and from then on it is
+    /// reciting its own hallucination back as something they told it.
+    public let userTurns: [MemoryExtractionTurn]
+
+    /// False when this conversation's project withholds
+    /// ``ProjectWorkspaceTool/memoryRecall``.
+    ///
+    /// A persona that is not told what the account remembers must not be a way of
+    /// *adding* to it either. Withholding recall while still learning would make
+    /// the whitelist a one-way valve into a store the assistant is not allowed to
+    /// read — the reader would see facts appear from an assistant they had walled
+    /// off from memory entirely.
+    public let mayLearn: Bool
+
+    public init(
+        conversationID: String,
+        userTurns: [MemoryExtractionTurn],
+        mayLearn: Bool
+    ) {
+        self.conversationID = conversationID
+        self.userTurns = userTurns
+        self.mayLearn = mayLearn
+    }
+}
+
 @MainActor
 @Observable
 public final class NativeConversationModel<Repository: AccountScopedRepository> {
@@ -627,6 +665,41 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     /// on the greeting and empty composer while the sidebar still exposes the
     /// conversation history.
     public var opensMostRecentConversationOnLoad: Bool
+
+    // MARK: - Custom assistants and memory
+    //
+    // Two hooks, both optional, both left nil by every caller that does not use
+    // them — a client with neither behaves exactly as it did before these
+    // existed. They are here rather than in the two chat screens because there
+    // are two chat screens: the Mac's and the phone's. A hook wired once in the
+    // model is a guarantee; a hook wired twice in two views is a thing that is
+    // true on one platform.
+
+    /// Applies a project's tool whitelist to a turn, immediately before it is
+    /// sent.
+    ///
+    /// **This is where a whitelist stops being advice.** A restriction encoded as
+    /// prose in the project's instructions is one the model can decline to honour;
+    /// this is the client declining to send the flag at all, which is the only
+    /// version of a whitelist that is a gate. Wired to
+    /// ``ProjectWorkspaceConfiguration/permitting(_:)`` by the app; nil means no
+    /// custom assistants are configured on this device and every turn goes out as
+    /// the composer built it.
+    ///
+    /// Consulted only for conversations that belong to a project — plain Juno has
+    /// no persona and therefore nothing to be restricted by.
+    public var workspacePermissions: (
+        @MainActor (_ projectID: String, _ requested: ProjectWorkspaceTurnPermissions)
+            -> ProjectWorkspaceTurnPermissions
+    )?
+
+    /// Called once a turn has finalized and the transcript has been reloaded.
+    ///
+    /// The post-turn seam ``MemoryLearningModel`` needs, and the reason it is here:
+    /// only this object knows when a turn is genuinely *finished* — a stream that
+    /// ended in `.failed`, was cancelled, or is mid-reconnect has not finished, and
+    /// learning from one would file half a sentence.
+    public var didFinishTurn: (@MainActor (NativeFinishedTurn) -> Void)?
 
     public var selectedConversation: NativeConversation? {
         conversations.first { $0.id == selectedConversationID }
@@ -1290,6 +1363,65 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         return NativeMediaProgress.Modality(rawValue: model.modality)
     }
 
+    /// The permissions a turn in this conversation may actually be sent with.
+    ///
+    /// A conversation outside a project is plain Juno and comes back untouched —
+    /// not "restricted to nothing", which is what a default-deny would make of
+    /// every chat on a device that happens to have one custom assistant on it.
+    private func permitting(
+        _ requested: ProjectWorkspaceTurnPermissions,
+        conversationID: String
+    ) -> ProjectWorkspaceTurnPermissions {
+        guard let filter = workspacePermissions,
+            let projectID = conversations.first(where: { $0.id == conversationID })?.projectId,
+            !projectID.isEmpty
+        else { return requested }
+        return filter(projectID, requested)
+    }
+
+    /// The reader's side of a conversation, as the memory extractor takes it.
+    ///
+    /// Bounded to the tail rather than the whole transcript. The extractor is
+    /// re-run after every finished turn, so an unbounded projection would re-read
+    /// a three-hundred-message chat on each reply — work that grows with the
+    /// square of the conversation for candidates that were deduplicated against
+    /// the store the first fifty times. The tail is also where anything new was
+    /// said; nothing earlier can have changed since the previous pass.
+    private func memoryExtractionTurns(for conversationID: String) -> [MemoryExtractionTurn] {
+        visibleMessages(for: conversationID)
+            .suffix(Self.memoryExtractionWindow)
+            .filter { $0.role == .user && !$0.isPending && $0.errorDescription == nil }
+            .map { MemoryExtractionTurn(role: .user, text: $0.content) }
+    }
+
+    /// How much of a transcript one pass reads. Twenty messages is several turns
+    /// of context and a bounded amount of work.
+    private static var memoryExtractionWindow: Int { 20 }
+
+    /// Tells ``didFinishTurn`` about a turn that genuinely completed.
+    ///
+    /// Guarded on `chatPhase != .failed` by the caller: a stream that errored, was
+    /// stopped, or is reconnecting has not produced a finished turn, and extracting
+    /// from one would learn from a half-written message.
+    private func announceFinishedTurn(conversationID: String) {
+        guard let didFinishTurn else { return }
+        let turns = memoryExtractionTurns(for: conversationID)
+        guard !turns.isEmpty else { return }
+        // `permitting` answers the whitelist question for this conversation's
+        // project, so the observer never has to know what a project is.
+        let mayLearn = permitting(
+            ProjectWorkspaceTurnPermissions(memoryRecall: true),
+            conversationID: conversationID
+        ).memoryRecall
+        didFinishTurn(
+            NativeFinishedTurn(
+                conversationID: conversationID,
+                userTurns: turns,
+                mayLearn: mayLearn
+            )
+        )
+    }
+
     @discardableResult
     public func sendMessage(
         conversationID: String,
@@ -1363,6 +1495,31 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             chatErrorDescription = "Choose a model and reasoning level available to this account."
             return false
         }
+        // The whitelist, applied to the actual request rather than described in
+        // the prompt. Vetoes only — see
+        // ``ProjectWorkspaceConfiguration/permitting(_:)``, which cannot grant a
+        // capability the composer did not already ask for.
+        let permitted = permitting(
+            ProjectWorkspaceTurnPermissions(
+                webSearch: webSearch,
+                deepResearch: deepResearch,
+                canvasEnabled: canvasEnabled,
+                connectorIDs: connectors,
+                mediaGeneration: mediaModality(of: modelID) != nil,
+                memoryRecall: true
+            ),
+            conversationID: conversationID
+        )
+        // An image or video model *is* the capability, so a workspace that denies
+        // it cannot be honoured by stripping a flag — there is no flag, the model
+        // id is the request. Refusing with a reason is the only honest answer;
+        // silently routing to a chat model would answer a different question than
+        // the one that was asked.
+        guard permitted.mediaGeneration || mediaModality(of: modelID) == nil else {
+            chatErrorDescription =
+                "This assistant is not allowed to generate images or video. Choose a different model, or allow it in the project's Assistant settings."
+            return false
+        }
         let clientID = UUID().uuidString.lowercased()
         let now = Date()
         let context = RetryContext(
@@ -1373,10 +1530,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             modelID: modelID,
             reasoningEffort: reasoningEffort,
             attachmentIDs: attachmentIDs,
-            deepResearch: deepResearch,
-            webSearch: webSearch,
-            canvasEnabled: canvasEnabled,
-            connectors: connectors,
+            deepResearch: permitted.deepResearch,
+            webSearch: permitted.webSearch,
+            canvasEnabled: permitted.canvasEnabled,
+            connectors: permitted.connectorIDs,
             fastMode: fastMode,
             proMode: proMode,
             branchPlacement: branchPlacement,
@@ -1620,6 +1777,13 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     conversationID: context.conversationID,
                     phase: .completed
                 )
+                // After the reload, for the same reason the title pass is: the
+                // turn the extractor reads has to actually be in
+                // `visibleMessages`. Before this call there was no moment in the
+                // whole client at which anything looked at a finished
+                // conversation, which is why `MemoryExtractionEngine` had no
+                // caller at all.
+                announceFinishedTurn(conversationID: context.conversationID)
             }
         } catch is CancellationError {
             return

@@ -180,9 +180,24 @@ struct JunoDesktopRootView: View {
         configuration.searchModel?.start(for: accountID)
         configuration.privateChatModel?.start(for: accountID)
         configuration.libraryModel?.start(for: accountID)
+        // Before the first turn can be sent. Both hooks are pure composition and
+        // neither touches the network, so they are set synchronously rather than
+        // inside the task below — a whitelist that attaches a moment after the
+        // composer is usable is a whitelist with a window in it.
+        configuration.connectAssistantHooks()
         Task {
             await configuration.conversationModel?.start(for: accountID)
             await configuration.projectModel?.start(for: accountID)
+            // After the projects, and given their ids: the workspace store reports
+            // configurations whose project is missing so a screen can say so, and
+            // "missing" is only meaningful once the project list has actually
+            // loaded. Starting it first would report every assistant as orphaned.
+            await configuration.projectWorkspaceModel?.start(for: accountID)
+            await configuration.projectWorkspaceModel?.reload(
+                knownProjectIDs: Set(
+                    (configuration.projectModel?.projects ?? []).map(\.id)
+                )
+            )
             await configuration.artifactModel?.start(for: accountID)
             await configuration.memorySettingsModel?.start(for: accountID)
             await configuration.connectorModel?.start(for: accountID)
@@ -293,8 +308,15 @@ struct JunoDesktopRootView: View {
         configuration.conversationModel?.stop()
         configuration.privateChatModel?.stop()
         configuration.projectModel?.stop()
+        configuration.projectWorkspaceModel?.stop()
         configuration.artifactModel?.stop()
         configuration.memorySettingsModel?.stop()
+        // Async because the extraction throttle lives in an actor. Proposals are
+        // in-memory and account-scoped, so leaving them behind on sign-out would
+        // show the next account what the previous one had been asked about.
+        if let memoryLearningModel = configuration.memoryLearningModel {
+            Task { await memoryLearningModel.stop() }
+        }
         configuration.searchModel?.stop()
         configuration.connectorModel?.stop()
         configuration.scheduledTaskModel?.stop()

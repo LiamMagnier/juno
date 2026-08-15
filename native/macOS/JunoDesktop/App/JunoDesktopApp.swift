@@ -183,7 +183,12 @@ private struct JunoDesktopSettingsScene: View {
                     syncModel: configuration.syncModel,
                     outbox: configuration.outbox,
                     codeHostModel: configuration.codeHostModel,
-                    workHostModel: configuration.workHostModel
+                    workHostModel: configuration.workHostModel,
+                    // Every argument the workspace passes, passed here too — the
+                    // rule this scene's own note states. Omitting it would give
+                    // ⌘, a Memory tile with no way to answer a proposal, which is
+                    // exactly the degraded second copy that note is about.
+                    learningModel: configuration.memoryLearningModel
                     // No `openUsage`: this window has no sidebar to navigate, so
                     // the tile is absent here rather than offering a link that
                     // cannot go anywhere. Usage lives in the main window.
