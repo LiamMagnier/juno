@@ -195,6 +195,25 @@ export function WorkScheduleRow({
       </Link>
 
       <div className="flex shrink-0 items-center gap-1 py-3 pr-2.5">
+        {/*
+          The living task this schedule keeps.
+          A schedule points at ONE session and re-runs it, so its transcript and
+          its deliverables accumulate across every fire — which is the thing
+          about Juno's schedules worth knowing and the thing the UI never said.
+          A link rather than a line of prose, because "carries its history
+          forward" is only a claim until you can press it and see the history.
+          Outside the row's own anchor, like the two controls beside it: an
+          anchor nested in an anchor is invalid markup that browsers resolve by
+          following the outer one.
+        */}
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
+        >
+          <Link href={`/work/${schedule.sessionId}`}>Its task</Link>
+        </Button>
         <Button
           variant="ghost"
           size="sm"

@@ -8,6 +8,7 @@ import {
   WorkThreadComposer,
   type WorkComposerMode,
 } from "@/components/work/composer/work-thread-composer";
+import { PendingSteers, derivePendingSteers } from "@/components/work/steering/pending-steers";
 import { WorkVoicePanel, useWorkVoice } from "@/components/work/voice";
 
 /*
@@ -138,6 +139,14 @@ export function WorkConversation({
     [mode, onSend, sending]
   );
 
+  /*
+   * Memoised on the event list, not recomputed per render: this component
+   * re-renders about once a second while a run is live, and the derivation
+   * walks the whole stream backwards. It is cheap per call and free per second
+   * this way.
+   */
+  const pendingSteers = React.useMemo(() => derivePendingSteers(events), [events]);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="space-y-5">
@@ -207,6 +216,13 @@ export function WorkConversation({
             onClose={voice.close}
           />
         )}
+        {/* Instructions already sent that the run has not taken a turn on yet.
+            Above the field rather than in the transcript, because the question
+            it answers — "did my redirect land?" — is asked at the moment of
+            typing the next one, and an answer buried forty lines up in the
+            scrollback is an answer nobody finds. See `pending-steers.tsx` for
+            why there is no edit or reorder here. */}
+        <PendingSteers steers={pendingSteers} />
         <WorkThreadComposer
           session={session}
           mode={mode}

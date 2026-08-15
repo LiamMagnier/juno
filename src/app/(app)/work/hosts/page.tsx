@@ -1,144 +1,26 @@
-"use client";
-
-import * as React from "react";
-import { ActionIcons, CodeIcons } from "@/lib/app-icons";
-import { Button } from "@/components/ui/button";
-import type { ClientWorkHost } from "@/lib/work/serializers";
-import { WorkPageFrame } from "@/components/work/work-nav";
-import { WorkHostRow } from "@/components/work/work-host-row";
-import { WorkLoadError, WorkRowSkeletons } from "@/components/work/shell/work-states";
-import {
-  WORK_POLL_MS,
-  WORK_SYNC_EVENT,
-  fetchWorkHosts,
-} from "@/components/work/work-transport";
-import { WorkStateNote } from "@/components/work/work-vocabulary";
-import { EmptyState } from "@/components/ui/empty-state";
+import { redirect } from "next/navigation";
 
 /**
- * Every Mac that has registered itself with Juno Work.
+ * `/work/hosts` — kept as a redirect rather than deleted.
  *
- * This is the first surface in the browser that admits these machines exist. A
- * Mac has been able to register, heartbeat and execute tasks for some time, and
- * `/api/work/hosts` has been listing them the whole time — the composer reads
- * that list to decide whether a task can run locally, and never showed it. So a
- * user could watch a task be refused for want of a Mac with no way to find out
- * which of their Macs was asleep, what it was allowed to do, or how to stop it.
+ * The Macs list moved into `/work/permissions`, which is the subject it was
+ * always a part of: "which machines" is one of three questions about what Juno
+ * is allowed to do, and it was the only one with a page. The URL stays because
+ * it was linked — from the composer's refusal notes, from the native apps, and
+ * from whatever bookmarks somebody made while this was the only page in the
+ * browser that admitted these machines exist. A 404 on a URL that worked
+ * yesterday is the cheapest kind of broken and the easiest to avoid.
  *
- * Polled on the shared trio — interval, visibility, sync event — because
- * presence is the thing this page is for and it changes with nobody clicking.
- * The state on each row was computed by the server from `lastSeenAt` when the
- * response was written (90s to stale, 5 minutes to offline; see the note in
- * work-host-row.tsx), so a WORK_POLL_MS-old response is never more than one
- * 30-second interval behind the clock the dispatcher uses.
+ * A server redirect rather than a client one, so it costs no bundle and no
+ * flash of a page that is about to leave.
  *
- * Revoked Macs are in the list, deliberately, and the route sends them for the
- * same reason: a Mac switched off for Work is still one of the user's Macs, and
- * a page that stopped listing it could not show that it was revoked, when, or
- * offer to switch it back on.
+ * `/work/hosts/[id]` is deliberately untouched. A single Mac still has its own
+ * page with its own toggles, grants and revoke control; the permissions hub
+ * links to it. Only the index moved.
+ *
+ * The `loading.tsx` and `error.tsx` that sat beside this file are gone with it:
+ * a segment that only ever redirects can neither be slow nor throw.
  */
-export default function WorkHostsPage() {
-  const [hosts, setHosts] = React.useState<ClientWorkHost[] | null>(null);
-  const [failed, setFailed] = React.useState(false);
-
-  const load = React.useCallback(async () => {
-    const result = await fetchWorkHosts();
-    if (result.kind === "ok") {
-      setHosts(result.value);
-      setFailed(false);
-      return;
-    }
-    // `hosts` is deliberately not touched. Before the first success it is still
-    // null, and the note below renders instead of an empty list — an empty list
-    // and a failed request are the same picture, and only one of them means "you
-    // have no Macs". After a success it holds the last real answer, and a dropped
-    // poll establishes nothing about the fleet that would justify replacing it.
-    setFailed(true);
-  }, []);
-
-  React.useEffect(() => {
-    void load();
-    const tick = () => {
-      if (!document.hidden) void load();
-    };
-    const interval = window.setInterval(tick, WORK_POLL_MS);
-    window.addEventListener(WORK_SYNC_EVENT, tick);
-    document.addEventListener("visibilitychange", tick);
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener(WORK_SYNC_EVENT, tick);
-      document.removeEventListener("visibilitychange", tick);
-    };
-  }, [load]);
-
-  /**
-   * Revoked Macs last, and otherwise exactly the order the route sent.
-   *
-   * The route orders by `lastSeenAt` descending, which is the right order for
-   * the ones that still work — the Mac you were just using is the one you came
-   * here about. It is the wrong place for a revoked machine, which heartbeated
-   * recently precisely because it was in use right up until it was revoked, and
-   * would otherwise sit at the top of the list looking like the live one. This
-   * is a stable partition rather than a second sort, the same way the Work home
-   * lifts pinned tasks without re-ordering the rest.
-   */
-  const ordered = React.useMemo(() => {
-    const rows = hosts ?? [];
-    return [
-      ...rows.filter((host) => host.revokedAt === null),
-      ...rows.filter((host) => host.revokedAt !== null),
-    ];
-  }, [hosts]);
-
-  return (
-    <WorkPageFrame
-      title="Macs"
-      description="The Macs signed in to Juno Work. Anything a task needs a real machine for — a folder on disk, an app, your signed-in browser — happens on one of these, so this is where you say what each of them may do, and where you take it back."
-      action={
-        hosts === null ? null : (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => void load()}
-            className="h-7 gap-1.5 px-2 font-mono text-micro text-muted-foreground"
-          >
-            <ActionIcons.refresh className="size-3" aria-hidden="true" /> Refresh
-          </Button>
-        )
-      }
-    >
-      {failed && hosts === null ? (
-        <WorkLoadError onRetry={() => void load()}>
-          Couldn’t load your Macs. This page is empty because the request failed, not because you
-          have none — anything already signed in is still reachable by Juno, with whatever
-          permissions it had.
-        </WorkLoadError>
-      ) : hosts === null ? (
-        <WorkRowSkeletons count={2} />
-      ) : hosts.length === 0 ? (
-        <EmptyState
-          icon={CodeIcons.device}
-          title="No Macs yet"
-          description="A Mac appears here on its own once you install Juno on it, sign in and switch Work on from the app. Until one does, every task runs in the cloud — which means a task that needs a folder on your disk, an app or your signed-in browser cannot run at all."
-        />
-      ) : (
-        <>
-          {/* Shown above a list that still has real rows in it. Blanking the
-              list would state that the fleet is unknown, which the failed poll
-              did not establish; the rows are what we last actually knew. */}
-          {failed && (
-            <WorkStateNote tone="warning" className="mb-2.5">
-              These are the last answers Juno got. The most recent check failed, so a Mac may have
-              woken or gone away since.
-            </WorkStateNote>
-          )}
-          <div className="space-y-2.5">
-            {ordered.map((host, index) => (
-              <WorkHostRow key={host.id} host={host} index={index} />
-            ))}
-          </div>
-        </>
-      )}
-    </WorkPageFrame>
-  );
+export default function WorkHostsRedirect(): never {
+  redirect("/work/permissions");
 }
